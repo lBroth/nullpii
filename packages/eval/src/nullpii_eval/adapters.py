@@ -248,6 +248,16 @@ def openai_pipeline_batch_predictor(
         else:
             device = "cpu"
 
+    # Force torch to actually use multiple cores on Apple Silicon.
+    # Default is often 1 — leaves 13 idle on M5 Pro.
+    if device == "cpu":
+        threads = max(1, (os.cpu_count() or 8) // 2)
+        torch.set_num_threads(threads)
+        try:
+            torch.set_num_interop_threads(max(1, threads // 4))
+        except RuntimeError:
+            pass  # already set, ignore
+
     pipe = pipeline(
         task="token-classification",
         model="openai/privacy-filter",

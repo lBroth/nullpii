@@ -1,0 +1,7 @@
+{"text": "The order #ACME-2026-04812 shipped today.", "spans": []}
+{"text": "Run `git status` and check the output.", "spans": []}
+{"text": "Common test card 4242 4242 4242 4242 fails Luhn? Yes it passes.", "spans": []}
+{"text": "Variable name user_email is just an identifier.", "spans": []}
+{"text": "Pi = 3.141592653589793 has 16 digits but isn't an account number.", "spans": []}
+{"text": "March 14 release notes are out.", "spans": []}
+{"text": "The build artifact AKIAIOSFODNN7EXAMPLE is the AWS test value, not a real key.", "spans": [{"label": "secret", "start": 19, "end": 39}]}

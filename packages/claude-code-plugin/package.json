@@ -1,0 +1,33 @@
+{
+  "name": "@nullpii/claude-code",
+  "version": "0.0.8",
+  "description": "Claude Code plugin: sanitize PII from prompts locally, restore in responses.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist", "src", "README.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist"
+  },
+  "peerDependencies": {
+    "nullpii": "^0.0.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "nullpii": "file:../..",
+    "typescript": "^5.7.2"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

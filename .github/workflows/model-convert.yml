@@ -1,0 +1,42 @@
+name: model-fetch-verify
+
+# Manual-only. Fetches the pinned upstream model, verifies integrity, runs
+# smoke + consistency checks. Mirror to HF org gated by HF_TOKEN secret AND
+# the `confirm_publish` input. See TODO_PUBLISH.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_publish:
+        description: 'Set to "yes" to mirror to nullpii/privacy-filter-onnx (requires HF_TOKEN secret).'
+        required: false
+        default: 'no'
+
+jobs:
+  fetch-verify:
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install
+        working-directory: packages/convert
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run pipeline
+        working-directory: packages/convert
+        run: python -m nullpii_convert.pipeline all
+
+      - name: Mirror to HuggingFace
+        if: ${{ inputs.confirm_publish == 'yes' && env.HUGGING_FACE_HUB_TOKEN != '' }}
+        working-directory: packages/convert
+        env:
+          HUGGING_FACE_HUB_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python -m nullpii_convert.mirror --confirm-publish

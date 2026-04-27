@@ -1,0 +1,53 @@
+nullpii
+Copyright 2026 nullpii contributors
+
+This product includes software developed by the nullpii contributors.
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+------------------------------------------------------------------------
+Third-party attributions
+------------------------------------------------------------------------
+
+This product depends on the following third-party components.
+Run `npm run license-check` for the full machine-readable list.
+
+Runtime (npm):
+  - @anush008/tokenizers       MIT       (NAPI bindings to HF tokenizers)
+  - debug                       MIT
+  - onnxruntime-node            MIT       (peer, optional)
+  - commander                   MIT       (CLI)
+  - chalk                       MIT       (CLI)
+  - cli-progress                MIT       (CLI)
+  - @anthropic-ai/sdk           MIT       (peer, optional, Anthropic middleware)
+
+Build & dev:
+  - typescript                  Apache-2.0
+  - vitest                      MIT
+  - @vitest/coverage-v8         MIT
+  - @biomejs/biome              MIT or Apache-2.0
+  - madge                       MIT
+  - license-checker             BSD-3-Clause
+  - lefthook                    MIT
+  - tsx                         MIT
+
+Build-time conversion pipeline (`packages/convert/`, Python):
+  - huggingface-hub             Apache-2.0
+  - tokenizers                  Apache-2.0
+  - onnx                        Apache-2.0
+  - onnxruntime                 MIT
+  - scikit-learn                BSD-3-Clause
+  - numpy                       BSD-3-Clause
+  - click                       BSD-3-Clause
+
+Model & dataset:
+  - openai/privacy-filter       Apache-2.0 (per upstream model card on HF)
+
+License posture:
+  - 100% permissive runtime tree (MIT / Apache-2.0 / BSD / ISC / CC0).
+    Zero LGPL, GPL, AGPL, or SSPL components reachable from the published
+    package. Verified by `npm run license-check` in CI.
+  - Build-time Python pipeline (packages/convert/) includes two MPL-2.0
+    components (`certifi`, `tqdm` — `tqdm` is dual-licensed MIT). MPL-2.0
+    is file-level copyleft and imposes no obligation on this project's
+    own source. Documented in THIRD_PARTY_LICENSES.md.

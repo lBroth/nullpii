@@ -145,8 +145,16 @@ def main() -> None:
         log.info("  %s %d", name, len(samples))
 
     log.info("loading predictors…")
-    log.info("  nullpii pool: 4 daemons × 2 threads each = 8 ORT threads")
-    np_pred = nullpii_pool_predictor(pool_size=4, threads_each=2)
+    log.info(
+        "  nullpii pool: 4 daemons × 2 threads = 8 ORT threads (cpu + fp16; "
+        "cpu beats mps on this model — only ~24/365 ops are CoreML-eligible)",
+    )
+    np_pred = nullpii_pool_predictor(
+        pool_size=4,
+        threads_each=2,
+        backend="cpu",
+        variant="fp16",
+    )
     pr_pred = presidio_predictor()
     log.info("loading OpenAI HF pipeline (batched on MPS, batch=64)…")
     t0 = time.perf_counter()

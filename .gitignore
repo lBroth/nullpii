@@ -1,0 +1,52 @@
+node_modules/
+dist/
+build/
+coverage/
+.turbo/
+.cache/
+
+# typescript incremental
+*.tsbuildinfo
+
+# vitepress
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+
+# models / artifacts
+models/
+packages/convert/artifacts/*
+!packages/convert/artifacts/.gitkeep
+*.onnx
+*.onnx_data*
+*.mlpackage/
+*.gguf
+*.safetensors
+*.sha256
+*.sig
+
+# python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# logs
+*.log
+npm-debug.log*
+
+# tmp
+tmp/

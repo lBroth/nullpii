@@ -1,0 +1,43 @@
+// SPDX-License-Identifier: Apache-2.0
+import { hasCudaPath } from '../config.js';
+import { DEFAULT_VARIANT } from '../defaults.js';
+import { fileExists } from '../paths.js';
+import type { ModelVariant } from '../types/index.js';
+import { type BackendConfig, OrtBackend } from './ort-backend.js';
+
+const CUDA_CONFIG: BackendConfig = {
+  name: 'cuda',
+  executionProviders: [{ name: 'cuda' }, 'cpu'],
+  // CUDA: fp16 uses tensor cores (Volta+) for ~2× throughput vs fp32 on
+  // most modern GPUs, with negligible accuracy loss for this model.
+  autoVariant: 'fp16',
+};
+
+const LINUX_HINTS = ['/dev/nvidia0', '/proc/driver/nvidia/version'] as const;
+
+/**
+ * NVIDIA CUDA backend backed by `onnxruntime-node`'s `CUDAExecutionProvider`.
+ *
+ * The standard `onnxruntime-node` package ships with the CUDA EP on Linux
+ * and Windows. It loads `libcudart` (or `cudart64_*.dll`) at runtime;
+ * `isAvailable()` probes the well-known driver entry points before
+ * promising the backend can run.
+ */
+export class CudaBackend extends OrtBackend {
+  constructor(modelDir: string, variant: ModelVariant = DEFAULT_VARIANT) {
+    super(CUDA_CONFIG, modelDir, variant);
+  }
+
+  async isAvailable(): Promise<boolean> {
+    if (process.platform === 'darwin') return false;
+    return await hasCudaDriver();
+  }
+}
+
+async function hasCudaDriver(): Promise<boolean> {
+  if (process.platform === 'win32') return hasCudaPath();
+  for (const hint of LINUX_HINTS) {
+    if (await fileExists(hint)) return true;
+  }
+  return false;
+}

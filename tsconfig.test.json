@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "paths": {
+      "nullpii": ["./src/index.ts"]
+    }
+  },
+  "include": [
+    "src/**/*",
+    "test/**/*",
+    "packages/recognizers-*/src/**/*",
+    "packages/claude-code-plugin/src/**/*"
+  ],
+  "exclude": ["dist", "node_modules", "packages/convert", "packages/eval", "examples"]
+}

@@ -1,0 +1,102 @@
+name: release
+
+# Triggers when a tag matching v*.*.* is pushed (or a Release is published
+# from one). Runs the full CI gate, then publishes to npm with provenance.
+#
+# Required repo configuration (one-time):
+#   - Settings → Secrets and variables → Actions:
+#       NPM_TOKEN  (npm automation token, "Publish" scope)
+#   - Permissions on this workflow already include `id-token: write` so
+#     `--provenance` works without extra setup.
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v1.0.0)'
+        required: true
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: gate (lint + typecheck + test + build + license + circular + docs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          registry-url: 'https://registry.npmjs.org'
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm run license-check
+      - run: npm run circular-check
+      - run: npm run docs:build
+
+  publish:
+    name: npm publish --provenance
+    needs: verify
+    runs-on: ubuntu-latest
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/nullpii
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          registry-url: 'https://registry.npmjs.org'
+      - run: npm ci
+      - run: npm run build
+      - name: Verify tag matches package version
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          TAG=${GITHUB_REF#refs/tags/}
+          TAG=${TAG#v}
+          if [ "$PKG_VERSION" != "$TAG" ]; then
+            echo "tag $TAG does not match package.json version $PKG_VERSION"
+            exit 1
+          fi
+      - run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  github-release:
+    name: create GitHub Release (if tag-only push)
+    needs: publish
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract changelog body for tag
+        id: changelog
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          VERSION=${TAG#v}
+          awk "/^## \\[$VERSION\\]/{flag=1;next}/^## \\[/{flag=0}flag" CHANGELOG.md > /tmp/notes.md
+          if [ ! -s /tmp/notes.md ]; then echo "Release $VERSION." > /tmp/notes.md; fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.changelog.outputs.tag }}
+          body_path: /tmp/notes.md
+          generate_release_notes: false
+          draft: false
+          prerelease: false

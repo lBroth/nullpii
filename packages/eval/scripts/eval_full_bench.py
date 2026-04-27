@@ -156,9 +156,11 @@ def main() -> None:
         variant="fp16",
     )
     pr_pred = presidio_predictor()
-    log.info("loading OpenAI HF pipeline (batched on MPS, batch=64)…")
+    log.info("loading OpenAI HF pipeline (batched on CPU, batch=16)…")
+    log.info("  CPU beats MPS for this custom architecture (~24/365 ops")
+    log.info("  CoreML-eligible) and avoids GPU memory contention")
     t0 = time.perf_counter()
-    oa_batch = openai_pipeline_batch_predictor(batch_size=64)
+    oa_batch = openai_pipeline_batch_predictor(device="cpu", batch_size=16)
     log.info("  HF pipeline loaded in %.1fs", time.perf_counter() - t0)
 
     out_path = Path(args.out)
@@ -196,7 +198,7 @@ def main() -> None:
             # nullpii uses the 4-daemon pool, sharded across 4 inner
             # threads — true parallelism inside the predictor.
             fut_np = ex.submit(f1_parallel, np_pred, samples, workers=4)
-            fut_oa = ex.submit(f1_batch, oa_batch, samples, chunk=64)
+            fut_oa = ex.submit(f1_batch, oa_batch, samples, chunk=16)
             fut_pr = ex.submit(f1_single, pr_pred, samples)
             fut_sp = ex.submit(f1_single, sp_pred, samples) if sp_pred else None
             np_f1, np_el = fut_np.result()

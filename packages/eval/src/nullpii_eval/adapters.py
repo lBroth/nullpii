@@ -163,6 +163,63 @@ def nullpii_predictor(
     return _predict
 
 
+BatchPredictor = Callable[[list[str]], list[ToolResult]]
+
+
+def openai_pipeline_batch_predictor(
+    *,
+    device: str | None = None,
+    batch_size: int = 32,
+) -> BatchPredictor:
+    """Batched HF predictor — runs the pipeline on a list of texts in
+    one call, vastly faster than one-at-a-time on MPS where the
+    per-call dispatch overhead dominates."""
+    try:
+        import torch  # noqa: I001
+        from transformers import pipeline
+    except ImportError as e:
+        raise ImportError("transformers + torch required") from e
+
+    if device is None:
+        if torch.backends.mps.is_available():
+            device = "mps"
+        elif torch.cuda.is_available():
+            device = "cuda"
+        else:
+            device = "cpu"
+
+    pipe = pipeline(
+        task="token-classification",
+        model="openai/privacy-filter",
+        aggregation_strategy="simple",
+        device=device,
+        batch_size=batch_size,
+    )
+
+    def _predict_batch(texts: list[str]) -> list[ToolResult]:
+        t0 = time.perf_counter()
+        results_list = pipe(texts)
+        elapsed = (time.perf_counter() - t0) * 1000
+        per_call = elapsed / max(1, len(texts))
+        out: list[ToolResult] = []
+        # Pipeline returns either a list of lists (batch) or a single list
+        # (single text). Normalize.
+        if results_list and isinstance(results_list[0], dict):
+            results_list = [results_list]  # type: ignore[list-item]
+        for results in results_list:
+            spans: list[Span] = []
+            for r in results:
+                entity = str(r.get("entity_group") or r.get("entity") or "")
+                label = _strip_bioes(entity)
+                if label not in _OPENAI_LABELS:
+                    continue
+                spans.append(Span(label, int(r["start"]), int(r["end"])))
+            out.append(ToolResult(spans, per_call))
+        return out
+
+    return _predict_batch
+
+
 def openai_pipeline_predictor(
     *,
     device: str | None = None,

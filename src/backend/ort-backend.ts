@@ -25,6 +25,12 @@ export interface BackendConfig {
   readonly autoVariant: Exclude<ModelVariant, 'auto'>;
 }
 
+/** Per-session thread pool sizing. `0` = ORT default. */
+export interface SessionThreads {
+  readonly intraOpNumThreads?: number;
+  readonly interOpNumThreads?: number;
+}
+
 /**
  * Abstract base for every ONNX Runtime backend.
  *
@@ -39,6 +45,7 @@ export abstract class OrtBackend implements BackendProvider {
     private readonly config: BackendConfig,
     private readonly modelDir: string,
     readonly variant: ModelVariant,
+    private readonly threads: SessionThreads = {},
   ) {}
 
   get name(): BackendName {
@@ -54,10 +61,17 @@ export abstract class OrtBackend implements BackendProvider {
     if (!(await fileExists(onnxPath))) {
       throw new ModelNotFoundError(onnxPath);
     }
-    this.session = await Session.create(onnxPath, {
+    const sessionOptions: InferenceSession.SessionOptions = {
       executionProviders: [...this.config.executionProviders],
       graphOptimizationLevel: 'all',
-    });
+    };
+    if (this.threads.intraOpNumThreads !== undefined) {
+      sessionOptions.intraOpNumThreads = this.threads.intraOpNumThreads;
+    }
+    if (this.threads.interOpNumThreads !== undefined) {
+      sessionOptions.interOpNumThreads = this.threads.interOpNumThreads;
+    }
+    this.session = await Session.create(onnxPath, sessionOptions);
   }
 
   async infer(inputs: InferenceInputs): Promise<InferenceOutputs> {

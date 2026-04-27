@@ -43,13 +43,13 @@ The encoder emits three aligned arrays:
 The selected `BackendProvider` runs ONNX Runtime against one of the five
 ONNX variants in the upstream repo:
 
-| Variant       | Bytes (approx.) | Use case                          |
-| ------------- | --------------- | --------------------------------- |
-| `model.onnx`              | 5.4 GiB | full precision baseline            |
-| `model_fp16.onnx`         | 2.6 GiB | accelerated GPU/Neural Engine      |
-| `model_quantized.onnx`    | 1.5 GiB | int8 dynamic, CPU-friendly          |
-| `model_q4.onnx`           | 875 MiB | int4, edge devices                 |
-| `model_q4f16.onnx`        | 772 MiB | int4 + fp16, browser memory budget |
+| Variant                   | Bytes   | Use case                              |
+| ------------------------- | ------- | ------------------------------------- |
+| `model.onnx`              | 5.4 GiB | fp32 baseline / regression tests      |
+| **`model_fp16.onnx`**     | 2.6 GiB | **default — best CPU + GPU/ANE**      |
+| `model_quantized.onnx`    | 1.5 GiB | int8 dynamic, legacy CPU              |
+| `model_q4.onnx`           | 875 MiB | int4, edge devices                    |
+| `model_q4f16.onnx`        | 772 MiB | int4 + fp16, edge / browser           |
 
 Output: a `[1, seqLen, 33]` tensor of logits per BIOES label.
 

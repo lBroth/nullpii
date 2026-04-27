@@ -1,13 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * Hard upper bound on tokens fed into the model in a single inference.
- * The upstream tokenizer config says `model_max_length: 128000`, but the
- * ONNX runtime surface and memory footprint make 512 the practical ceiling
- * for the production CPU path. Backends MAY raise this internally; the
- * public API is capped here so user inputs cannot OOM the process.
+ * Per-chunk cap on tokens fed into the model in a single forward pass.
+ * The upstream model supports 131072 tokens (banded attention,
+ * `sliding_window: 128`), but per-chunk memory still scales with
+ * sequence length so 512 is the production CPU sweet spot. Inputs longer
+ * than this are split into overlapping chunks (see `CHUNK_OVERLAP_TOKENS`)
+ * unless `strictLength` is set.
  */
 export const MAX_SEQUENCE_LENGTH = 512;
+
+/**
+ * Token overlap between consecutive chunks. Spans straddling a chunk
+ * boundary appear in both chunks (full coverage if shorter than overlap)
+ * and are deduped post-decode.
+ */
+export const CHUNK_OVERLAP_TOKENS = 64;
+
+/**
+ * Hard upper bound on total input tokens after tokenization. Inputs above
+ * this are truncated with a debug warning to prevent pathological memory
+ * use. ~32k tokens ≈ 128k chars of plain text — far beyond any normal
+ * Claude prompt.
+ */
+export const MAX_INPUT_TOKENS = 32_768;
 
 /** Default on-disk model directory, relative to the consumer's `cwd`. */
 export const DEFAULT_MODEL_DIR = './models/privacy-filter';

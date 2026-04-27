@@ -3,7 +3,7 @@ import { hasCudaPath } from '../config.js';
 import { DEFAULT_VARIANT } from '../defaults.js';
 import { fileExists } from '../paths.js';
 import type { ModelVariant } from '../types/index.js';
-import { type BackendConfig, OrtBackend } from './ort-backend.js';
+import { type BackendConfig, OrtBackend, type SessionThreads } from './ort-backend.js';
 
 const CUDA_CONFIG: BackendConfig = {
   name: 'cuda',
@@ -24,8 +24,12 @@ const LINUX_HINTS = ['/dev/nvidia0', '/proc/driver/nvidia/version'] as const;
  * promising the backend can run.
  */
 export class CudaBackend extends OrtBackend {
-  constructor(modelDir: string, variant: ModelVariant = DEFAULT_VARIANT) {
-    super(CUDA_CONFIG, modelDir, variant);
+  constructor(
+    modelDir: string,
+    variant: ModelVariant = DEFAULT_VARIANT,
+    threads: SessionThreads = {},
+  ) {
+    super(CUDA_CONFIG, modelDir, variant, threads);
   }
 
   async isAvailable(): Promise<boolean> {

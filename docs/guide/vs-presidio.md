@@ -6,7 +6,9 @@ Honest 3-way comparison with real numbers across **5 locales** and
 nullpii's detector is OpenAI's
 [`privacy-filter`](https://huggingface.co/openai/privacy-filter)
 (Apache 2.0, 1.3B param token classifier) running locally via ONNX
-Runtime — `int8` (1.5 GB) or default `int4f16` (~772 MB).
+Runtime — default **`fp16`** (~3 GB, F1-equivalent to fp32, ~17%
+faster than int8 on CPU). Pin `int4f16` (~772 MB, ~6% F1 drop) for
+edge / memory-constrained installs.
 
 ## Head-to-head accuracy
 
@@ -61,7 +63,8 @@ Single-thread CPU inference, Apple M-series.
 | ------------------------ | -----------: | -----------: | ------------------------------ |
 | **bare spaCy NER**       |          ~3 |         ~10 | regex-free; pure spaCy pipeline |
 | **Microsoft Presidio**   |          6.9 |         22.9 | spaCy NER + ~30 regex recognizers |
-| nullpii (int8 ONNX)      |         34.7 |         57.7 | 1.3B param transformer          |
+| nullpii (fp16 ONNX, default) |     33.2 |       ~55  | 1.3B param transformer          |
+| nullpii (int4f16, edge)  |        ~38 |        ~60 | smaller, ~6% F1 drop            |
 
 **Tradeoff curve**: spaCy fastest + lowest PII F1; Presidio middle;
 nullpii slowest + highest PII F1. ~5× factor between extremes.
@@ -84,7 +87,7 @@ nullpii slowest + highest PII F1. ~5× factor between extremes.
 | Anthropic SDK middleware          | ✅ `withNullPii(client)`                          | ❌                                              | ❌                    |
 | Claude Code plugin                | ✅ `@nullpii/claude-code`                         | ❌                                              | ❌                    |
 | Streaming response restore        | ✅ `messages.stream` aware (cross-chunk buffer)   | ❌                                              | ❌                    |
-| First-run download                | ~772 MB (int4f16) once                           | ~50 MB per language                            | ~500 MB per language |
+| First-run download                | ~3 GB (fp16, default) or ~772 MB (int4f16) once  | ~50 MB per language                            | ~500 MB per language |
 | License purity (runtime)          | **100% Apache/MIT/BSD/ISC/CC0**                  | spaCy models vary (some CC-BY-SA-4.0)          | model-dependent      |
 | Image / file redaction            | ❌ text only                                      | ✅                                              | ❌                    |
 

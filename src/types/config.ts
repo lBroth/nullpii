@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+import type { PiiCategory } from './labels.js';
+import type { TransitionBiases } from './transition-biases.js';
 
 /** Hardware/runtime backends the library can dispatch to. */
 export type BackendName = 'cpu' | 'mps' | 'cuda' | 'rocm' | 'auto';
@@ -31,12 +33,34 @@ export interface NullPiiConfig {
   readonly backend?: BackendName;
   /** ONNX variant. `'auto'` picks based on backend + memory. */
   readonly variant?: ModelVariant;
-  /** Cap on input tokens per inference. Defaults to `MAX_SEQUENCE_LENGTH`. */
+  /** Cap on input tokens per chunk. Defaults to `MAX_SEQUENCE_LENGTH` (512).
+   * Long inputs are split into overlapping chunks of this size unless
+   * `strictLength` is set. */
   readonly maxSequenceLength?: number;
-  /** Throw `TextTooLongError` instead of silently truncating. Default: `false`. */
+  /** Token overlap between adjacent chunks. Defaults to
+   * `CHUNK_OVERLAP_TOKENS` (64). Spans shorter than this never split. */
+  readonly chunkOverlap?: number;
+  /** Throw `TextTooLongError` instead of chunking when input exceeds
+   * `maxSequenceLength`. Default: `false`. */
   readonly strictLength?: boolean;
-  /** Confidence threshold; spans below are dropped. Default: `0` (keep all). */
+  /** Global confidence threshold; spans below are dropped. Default: `0` (keep all).
+   * Per-label overrides via `categoryThresholds`. */
   readonly threshold?: number;
+  /** Per-category confidence thresholds. When set, takes priority over the
+   * global `threshold` for that label. Useful when secrets need stricter
+   * filtering than names. */
+  readonly categoryThresholds?: Partial<Record<PiiCategory, number>>;
+  /** Per-category log-prob biases shifted into the Viterbi transition
+   * matrix. Lets callers trade precision and recall without retraining.
+   * All defaults `0` = no shift (current behavior). */
+  readonly transitionBiases?: TransitionBiases;
+  /** Number of intra-op threads for the ONNX Runtime session.
+   * `0` = ORT default (typically physical core count). Lower values cap
+   * CPU usage; higher values may help on big-core machines. */
+  readonly intraOpNumThreads?: number;
+  /** Number of inter-op threads for the ONNX Runtime session.
+   * Rarely needed for token-classification; default `0` (ORT picks). */
+  readonly interOpNumThreads?: number;
   /** Timeout for first-time model download. */
   readonly downloadTimeoutMs?: number;
 }

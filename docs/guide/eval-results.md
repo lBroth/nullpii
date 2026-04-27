@@ -2,11 +2,16 @@
 
 Real numbers from `packages/eval/`. Reproducible — see bottom of page.
 
-**Last run**: 2026-04-27 on Apple M-series, macOS, Node 24, Python 3.12,
-nullpii int8 ONNX (CPU) running OpenAI
+**Last run**: 2026-04-27 on Apple M5 Pro 48 GB, macOS, Node 24, Python
+3.12, nullpii fp16 ONNX (CPU EP) running OpenAI
 [`privacy-filter`](https://huggingface.co/openai/privacy-filter)
 (Apache 2.0, 1.3B param), Microsoft Presidio 2.x with `*_core_web_lg` /
 `*_core_news_lg`.
+
+> **Why fp16 on CPU?** On this hardware (Apple Silicon ORT), fp16 is
+> F1-equivalent to fp32 and ~17% faster than int8 (33 ms vs 41 ms /
+> 512 tokens). MPS+CoreML EP only covers ~24/365 ops, so the partition
+> overhead beats the GPU/ANE gains for this custom architecture.
 
 ## Methodology
 
@@ -100,20 +105,18 @@ Single-thread CPU. Higher is better.
 Eval-runner numbers (subprocess JSON-lines, includes IPC overhead;
 real Anthropic middleware sees ~12 ms / 128 tok with no IPC):
 
-| Tool     | Hardware            | seq=128 ms | seq=512 ms |
-| -------- | ------------------- | ---------: | ---------: |
-| nullpii  | Apple M / arm64     |       34.7 |       57.7 |
-| Presidio | Apple M / arm64     |        6.9 |       22.9 |
+| Tool                  | Hardware            | seq=128 ms | seq=512 ms |
+| --------------------- | ------------------- | ---------: | ---------: |
+| nullpii (fp16, default)| Apple M5 Pro / arm64|      33.2 |       ~55  |
+| nullpii (int4f16, edge)| Apple M5 Pro / arm64|     ~38   |       ~60  |
+| Presidio              | Apple M5 Pro / arm64|       6.9 |       22.9 |
 
-Pure Node-side numbers from `BENCHMARK.md` (no IPC):
-
-| Backend | Variant | seq=128 (tok/s) | seq=512 (tok/s) |
-| ------- | ------- | --------------: | --------------: |
-| CPU     | int8    |           5,313 |           8,929 |
-
-> **Honest takeaway**: Presidio is ~5× faster on this hardware. Tradeoff:
-> nullpii catches contextual PII (better F1) at the cost of a transformer
-> forward pass; Presidio is regex + small spaCy NER (cheaper, lower F1).
+> **Honest takeaway**: Presidio is ~4× faster on this hardware.
+> Tradeoff: nullpii catches contextual PII (better F1) at the cost of
+> a transformer forward pass; Presidio is regex + small spaCy NER
+> (cheaper, lower F1). MPS / CoreML EP path is currently slower than
+> CPU EP because only ~24/365 model ops are CoreML-eligible —
+> partition overhead beats GPU/ANE gains for this custom architecture.
 
 ## When to use which
 

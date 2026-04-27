@@ -2,7 +2,7 @@
 import { DEFAULT_VARIANT } from '../defaults.js';
 import { fileExists } from '../paths.js';
 import type { ModelVariant } from '../types/index.js';
-import { type BackendConfig, OrtBackend } from './ort-backend.js';
+import { type BackendConfig, OrtBackend, type SessionThreads } from './ort-backend.js';
 
 const ROCM_KFD_DEVICE = '/dev/kfd';
 
@@ -19,8 +19,12 @@ const ROCM_CONFIG: BackendConfig = {
  * device which the ROCm runtime uses to talk to the GPU.
  */
 export class RocmBackend extends OrtBackend {
-  constructor(modelDir: string, variant: ModelVariant = DEFAULT_VARIANT) {
-    super(ROCM_CONFIG, modelDir, variant);
+  constructor(
+    modelDir: string,
+    variant: ModelVariant = DEFAULT_VARIANT,
+    threads: SessionThreads = {},
+  ) {
+    super(ROCM_CONFIG, modelDir, variant, threads);
   }
 
   async isAvailable(): Promise<boolean> {

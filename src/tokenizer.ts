@@ -5,7 +5,7 @@ import debug from 'debug';
 import { TOKENIZER_FILE } from './defaults.js';
 import { ModelNotFoundError } from './errors.js';
 import { fileExists } from './paths.js';
-import { MAX_SEQUENCE_LENGTH } from './types/index.js';
+import { MAX_INPUT_TOKENS, MAX_SEQUENCE_LENGTH } from './types/index.js';
 
 const log = debug('nullpii:tokenizer');
 
@@ -40,21 +40,29 @@ export class TokenizerWrapper {
     if (!(await fileExists(path))) {
       throw new ModelNotFoundError(path);
     }
-    log('loading %s (max_length=%d)', path, this.maxSequenceLength);
+    log(
+      'loading %s (per_chunk=%d, hard_ceiling=%d)',
+      path,
+      this.maxSequenceLength,
+      MAX_INPUT_TOKENS,
+    );
     const t = Tokenizer.fromFile(path);
-    t.setTruncation(this.maxSequenceLength);
+    // Hard ceiling caps pathological inputs; per-chunk size is enforced
+    // downstream by the chunking layer in `nullpii.ts`.
+    t.setTruncation(MAX_INPUT_TOKENS);
     this.impl = t;
     return t;
   }
 
   /** Tokenize `text`, returning aligned `inputIds`, `attentionMask`, and
-   * `offsetMapping`. Inputs longer than `maxSequenceLength` are truncated. */
+   * `offsetMapping`. Truncated only at the `MAX_INPUT_TOKENS` hard ceiling
+   * (~32k tokens); the chunking layer handles per-chunk sizing. */
   async encode(text: string): Promise<EncodeResult> {
     const tok = await this.load();
     const enc = await tok.encode(text);
     const ids = enc.getIds();
-    if (ids.length >= this.maxSequenceLength) {
-      log('input truncated to %d tokens', this.maxSequenceLength);
+    if (ids.length >= MAX_INPUT_TOKENS) {
+      log('input hit hard ceiling (%d tokens) — content beyond was dropped', MAX_INPUT_TOKENS);
     }
     const mask = enc.getAttentionMask();
     const offsets = enc.getOffsets();

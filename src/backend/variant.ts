@@ -12,7 +12,7 @@ export const VARIANT_TO_FILE: Readonly<Record<Exclude<ModelVariant, 'auto'>, str
 
 /**
  * Resolve a `ModelVariant` (including `'auto'`) to its concrete file.
- * Each backend supplies its own `autoVariant` (CPU prefers fp32, MPS prefers
+ * Each backend supplies its own `autoVariant` (CPU prefers fp16, MPS prefers
  * fp16, etc.); this keeps the resolver pure and testable.
  */
 export function resolveVariantFile(

@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 import debug from 'debug';
+import type { SessionThreads } from './backend/ort-backend.js';
 import { BACKEND_AUTO_PRIORITY, DEFAULT_BACKEND, DEFAULT_VARIANT } from './defaults.js';
 import { BackendNotAvailableError } from './errors.js';
 import type { BackendName, BackendProvider, ModelVariant, NullPiiConfig } from './types/index.js';
 
 const log = debug('nullpii:router');
 
-type BackendCtor = new (modelDir: string, variant: ModelVariant) => BackendProvider;
+type BackendCtor = new (
+  modelDir: string,
+  variant: ModelVariant,
+  threads?: SessionThreads,
+) => BackendProvider;
 
 async function loadBackend(name: Exclude<BackendName, 'auto'>): Promise<BackendCtor> {
   switch (name) {
@@ -44,10 +49,13 @@ export async function selectBackend(
 ): Promise<BackendProvider> {
   const variant: ModelVariant = config.variant ?? DEFAULT_VARIANT;
   const requested = config.backend ?? DEFAULT_BACKEND;
+  const threads: { -readonly [K in keyof SessionThreads]: SessionThreads[K] } = {};
+  if (config.intraOpNumThreads !== undefined) threads.intraOpNumThreads = config.intraOpNumThreads;
+  if (config.interOpNumThreads !== undefined) threads.interOpNumThreads = config.interOpNumThreads;
 
   if (requested !== 'auto') {
     const Ctor = await loadBackend(requested);
-    const backend = new Ctor(modelDir, variant);
+    const backend = new Ctor(modelDir, variant, threads);
     if (!(await backend.isAvailable())) {
       throw new BackendNotAvailableError(requested);
     }
@@ -57,7 +65,7 @@ export async function selectBackend(
 
   for (const name of BACKEND_AUTO_PRIORITY) {
     const Ctor = await loadBackend(name);
-    const backend = new Ctor(modelDir, variant);
+    const backend = new Ctor(modelDir, variant, threads);
     if (await backend.isAvailable()) {
       log('selected backend (auto): %s', name);
       return backend;

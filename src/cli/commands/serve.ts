@@ -22,6 +22,11 @@ export function registerServe(program: Command): void {
     .option('--model-dir <path>', 'use a local model directory (skip download)')
     .option('--backend <name>', 'force backend: cpu | mps | cuda | rocm | auto')
     .option('--variant <v>', 'fp32 | fp16 | int8 | int4 | int4f16 | auto')
+    .option('--enter-bias <n>', 'transition bias added on entering a span', Number.parseFloat)
+    .option('--background-bias <n>', 'transition bias on O→O self-loops', Number.parseFloat)
+    .option('--continue-bias <n>', 'transition bias on B/I → I/E', Number.parseFloat)
+    .option('--threshold <n>', 'global score threshold; spans below are dropped', Number.parseFloat)
+    .option('--threads <n>', 'ORT intraOp thread count (0 = ORT default)', Number.parseInt)
     .action(runServe);
 }
 

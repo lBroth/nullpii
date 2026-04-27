@@ -50,3 +50,6 @@ npm-debug.log*
 
 # tmp
 tmp/
+
+# eval curiosity results (StreamGuard etc — not committed)
+packages/eval/results/

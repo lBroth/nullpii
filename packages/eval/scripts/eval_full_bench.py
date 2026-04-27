@@ -16,6 +16,7 @@ Tradeoff: still capped (not "full 209k Isotonic"); run with
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import logging
 import sys
@@ -133,26 +134,48 @@ def main() -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     out: dict = {"_meta": {"started": datetime.now().isoformat(), "n_total": n_total}}
+    spacy_cache: dict = {}
+
+    def _get_spacy(locale: str):
+        if locale not in spacy_cache:
+            try:
+                spacy_cache[locale] = spacy_predictor(locale=locale)
+            except Exception as e:  # noqa: BLE001
+                spacy_cache[locale] = e
+        cached = spacy_cache[locale]
+        return None if isinstance(cached, Exception) else cached
+
     for idx, (name, samples) in enumerate(runs, start=1):
         loc = name.split("-", 1)[1] if "-" in name else "en"
         if loc.startswith("prompts-") or loc == "synthetic":
             loc = "en"
-        log.info("[%d/%d] %s n=%d — running nullpii…", idx, len(runs), name, len(samples))
-        np_f1, np_el = f1_single(np_pred, samples)
-        log.info("  nullpii F1=%.4f (%.1fs)", np_f1, np_el)
-        log.info("[%d/%d] %s — running OpenAI bare HF (MPS, batch=32)…", idx, len(runs), name)
-        oa_f1, oa_el = f1_batch(oa_batch, samples, chunk=32)
-        log.info("  openai_clean F1=%.4f (%.1fs)", oa_f1, oa_el)
-        log.info("[%d/%d] %s — running Presidio…", idx, len(runs), name)
-        pr_f1, pr_el = f1_single(pr_pred, samples)
-        log.info("  presidio F1=%.4f (%.1fs)", pr_f1, pr_el)
-        try:
-            sp = spacy_predictor(locale=loc)
-            sp_f1, sp_el = f1_single(sp, samples)
-            log.info("  spacy F1=%.4f (%.1fs)", sp_f1, sp_el)
-        except Exception as e:  # noqa: BLE001
-            log.warning("  spacy failed for %s: %s", loc, e)
-            sp_f1, sp_el = float("nan"), 0.0
+        log.info(
+            "[%d/%d] %s n=%d — dispatching 4 predictors in parallel…",
+            idx, len(runs), name, len(samples),
+        )
+        ds_t0 = time.perf_counter()
+        # All four predictors run concurrently per dataset. nullpii uses
+        # CPU ORT (auto-threaded), HF uses MPS (separate accelerator),
+        # Presidio + spaCy are CPU regex/NER. The nullpii adapter has a
+        # threading.Lock around its stdin/stdout so requests don't
+        # interleave; HF, Presidio, and spaCy are stateless under the GIL
+        # release of their underlying C extensions.
+        sp_pred = _get_spacy(loc)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+            fut_np = ex.submit(f1_single, np_pred, samples)
+            fut_oa = ex.submit(f1_batch, oa_batch, samples, chunk=32)
+            fut_pr = ex.submit(f1_single, pr_pred, samples)
+            fut_sp = ex.submit(f1_single, sp_pred, samples) if sp_pred else None
+            np_f1, np_el = fut_np.result()
+            oa_f1, oa_el = fut_oa.result()
+            pr_f1, pr_el = fut_pr.result()
+            sp_f1, sp_el = fut_sp.result() if fut_sp else (float("nan"), 0.0)
+        ds_wall = time.perf_counter() - ds_t0
+        log.info(
+            "  nullpii=%.4f (%.1fs) openai=%.4f (%.1fs) presidio=%.4f (%.1fs) "
+            "spacy=%.4f (%.1fs) | wall=%.1fs",
+            np_f1, np_el, oa_f1, oa_el, pr_f1, pr_el, sp_f1, sp_el, ds_wall,
+        )
         out[name] = {
             "n": len(samples),
             "nullpii_f1": np_f1,
@@ -163,6 +186,7 @@ def main() -> None:
             "openai_clean_s": oa_el,
             "presidio_s": pr_el,
             "spacy_s": sp_el,
+            "wall_s": ds_wall,
         }
         # Persist partial results after each dataset so a crash mid-run
         # leaves us with everything completed so far.

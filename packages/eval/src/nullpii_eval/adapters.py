@@ -13,6 +13,7 @@ import atexit
 import json
 import os
 import subprocess
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -89,15 +90,20 @@ class _NullpiiServer:
             seen.append(line)
             if "ready" in line:
                 break
+        # stdin/stdout are a single full-duplex pipe pair to one daemon.
+        # Multiple threads writing/reading concurrently would interleave
+        # request and response lines. Serialize via a per-server lock.
+        self._lock = threading.Lock()
         atexit.register(self.close)
 
     def request(self, text: str) -> tuple[list[Span], float]:
         if self.proc.stdin is None or self.proc.stdout is None:
             raise RuntimeError("nullpii serve: pipes closed")
         t0 = time.perf_counter()
-        self.proc.stdin.write(f"{json.dumps({'text': text})}\n")
-        self.proc.stdin.flush()
-        line = self.proc.stdout.readline()
+        with self._lock:
+            self.proc.stdin.write(f"{json.dumps({'text': text})}\n")
+            self.proc.stdin.flush()
+            line = self.proc.stdout.readline()
         elapsed = (time.perf_counter() - t0) * 1000
         if line == "":
             raise RuntimeError(f"nullpii serve died: {self._stderr_tail()}")

@@ -35,16 +35,38 @@ Predictor = Callable[[str], ToolResult]
 
 
 class _NullpiiServer:
-    def __init__(self, *, model_dir: Path, backend: str, variant: str) -> None:
+    def __init__(
+        self,
+        *,
+        model_dir: Path,
+        backend: str,
+        variant: str,
+        enter_bias: float | None = None,
+        background_bias: float | None = None,
+        continue_bias: float | None = None,
+        threshold: float | None = None,
+        threads: int | None = None,
+    ) -> None:
+        argv = [
+            "node",
+            str(NULLPII_BIN),
+            "serve",
+            "--model-dir", str(model_dir),
+            "--backend", backend,
+            "--variant", variant,
+        ]
+        if enter_bias is not None:
+            argv += ["--enter-bias", str(enter_bias)]
+        if background_bias is not None:
+            argv += ["--background-bias", str(background_bias)]
+        if continue_bias is not None:
+            argv += ["--continue-bias", str(continue_bias)]
+        if threshold is not None:
+            argv += ["--threshold", str(threshold)]
+        if threads is not None:
+            argv += ["--threads", str(threads)]
         self.proc = subprocess.Popen(
-            [
-                "node",
-                str(NULLPII_BIN),
-                "serve",
-                "--model-dir", str(model_dir),
-                "--backend", backend,
-                "--variant", variant,
-            ],
+            argv,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -54,10 +76,19 @@ class _NullpiiServer:
         )
         if self.proc.stderr is None:
             raise RuntimeError("nullpii serve: failed to capture stderr")
-        ready_line = self.proc.stderr.readline()
-        if "ready" not in ready_line:
-            self.proc.kill()
-            raise RuntimeError(f"nullpii serve did not become ready: {ready_line.strip()}")
+        # Some backends (e.g. CoreML) log warnings to stderr before our
+        # ready signal. Drain lines until we see ready or the process exits.
+        seen: list[str] = []
+        while True:
+            line = self.proc.stderr.readline()
+            if line == "":
+                self.proc.kill()
+                raise RuntimeError(
+                    "nullpii serve did not become ready: " + " | ".join(s.strip() for s in seen)
+                )
+            seen.append(line)
+            if "ready" in line:
+                break
         atexit.register(self.close)
 
     def request(self, text: str) -> tuple[list[Span], float]:
@@ -102,17 +133,107 @@ def nullpii_predictor(
     *,
     model_dir: Path = DEFAULT_MODEL_DIR,
     backend: str = "cpu",
-    variant: str = "int8",
+    # fp16 beats int8 on CPU for this model: same F1, ~17% faster on Apple
+    # M-series. MPS path is slower because only ~24 of 365 ops are CoreML-
+    # eligible — partition overhead dominates.
+    variant: str = "fp16",
+    enter_bias: float | None = None,
+    background_bias: float | None = None,
+    continue_bias: float | None = None,
+    threshold: float | None = None,
+    threads: int | None = None,
 ) -> Predictor:
     if not NULLPII_BIN.is_file():
         raise FileNotFoundError(f"nullpii CLI not found at {NULLPII_BIN}")
-    server = _NullpiiServer(model_dir=model_dir, backend=backend, variant=variant)
+    server = _NullpiiServer(
+        model_dir=model_dir,
+        backend=backend,
+        variant=variant,
+        enter_bias=enter_bias,
+        background_bias=background_bias,
+        continue_bias=continue_bias,
+        threshold=threshold,
+        threads=threads,
+    )
 
     def _predict(text: str) -> ToolResult:
         spans, elapsed = server.request(text)
         return ToolResult(spans, elapsed)
 
     return _predict
+
+
+def openai_pipeline_predictor(
+    *,
+    device: str | None = None,
+    batch_size: int = 1,
+) -> Predictor:
+    """Upstream-reference predictor: `transformers.pipeline` on the bare HF
+    weights. No chunking, no Viterbi biases — just HF's default token
+    classification decoder. Used to verify that nullpii's runtime adds
+    value beyond what the model alone would produce.
+
+    `device='mps'` on Apple Silicon offloads to the GPU via MPS, ~3-5×
+    faster than CPU for transformer inference. `batch_size>1` lets the
+    pipeline parallelize when called via `pipe(list_of_texts)`.
+    """
+    try:
+        import torch  # noqa: I001
+        from transformers import pipeline
+    except ImportError as e:
+        raise ImportError(
+            "transformers not installed; run `pip install transformers torch` to use this adapter",
+        ) from e
+
+    if device is None:
+        if torch.backends.mps.is_available():
+            device = "mps"
+        elif torch.cuda.is_available():
+            device = "cuda"
+        else:
+            device = "cpu"
+
+    pipe = pipeline(
+        task="token-classification",
+        model="openai/privacy-filter",
+        aggregation_strategy="simple",
+        device=device,
+        batch_size=batch_size,
+    )
+
+    def _predict(text: str) -> ToolResult:
+        t0 = time.perf_counter()
+        results = pipe(text)
+        elapsed = (time.perf_counter() - t0) * 1000
+        spans: list[Span] = []
+        for r in results:
+            entity = str(r.get("entity_group") or r.get("entity") or "")
+            label = _strip_bioes(entity)
+            if label not in _OPENAI_LABELS:
+                continue
+            spans.append(Span(label, int(r["start"]), int(r["end"])))
+        return ToolResult(spans, elapsed)
+
+    return _predict
+
+
+_OPENAI_LABELS = {
+    "account_number",
+    "private_address",
+    "private_date",
+    "private_email",
+    "private_person",
+    "private_phone",
+    "private_url",
+    "secret",
+}
+
+
+def _strip_bioes(entity: str) -> str:
+    """`B-private_email` / `I-private_email` / `private_email` → `private_email`."""
+    if entity.startswith(("B-", "I-", "E-", "S-")):
+        return entity[2:]
+    return entity
 
 
 def presidio_predictor(*, language: str = "en") -> Predictor:

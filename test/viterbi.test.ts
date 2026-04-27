@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from 'vitest';
 import { LABEL_MAP, NUM_LABELS, isValidTransition } from '../src/labels-bioes.js';
-import { buildTransitionMatrix, viterbiBioesDecode } from '../src/viterbi.js';
+import {
+  buildTransitionMatrix,
+  forwardBackwardMarginals,
+  viterbiBioesDecode,
+} from '../src/viterbi.js';
 
 const BIG = 100; // a strongly preferred score
 
@@ -103,5 +107,81 @@ describe('viterbiBioesDecode', () => {
     expect(() =>
       viterbiBioesDecode(new Float32Array(NUM_LABELS), 1, NUM_LABELS - 1, LABEL_MAP),
     ).toThrow();
+  });
+
+  it('enterSpan bias swings borderline tokens into spans', () => {
+    // Three tokens with weak preference for S-secret over O.
+    const seqLen = 3;
+    const logits = new Float32Array(seqLen * NUM_LABELS);
+    for (let t = 0; t < seqLen; t++) {
+      logits[t * NUM_LABELS + indexOf('O')] = 1.0;
+      logits[t * NUM_LABELS + indexOf('S-secret')] = 0.95;
+    }
+    const baseline = viterbiBioesDecode(logits, seqLen, NUM_LABELS, LABEL_MAP);
+    const recallBoost = viterbiBioesDecode(logits, seqLen, NUM_LABELS, LABEL_MAP, {
+      enterSpan: 1.0,
+    });
+    expect(baseline.every((l) => l === 'O')).toBe(true);
+    expect(recallBoost.some((l) => l !== 'O')).toBe(true);
+  });
+
+  it('background bias swings borderline tokens out of spans', () => {
+    const seqLen = 3;
+    const logits = new Float32Array(seqLen * NUM_LABELS);
+    for (let t = 0; t < seqLen; t++) {
+      logits[t * NUM_LABELS + indexOf('O')] = 0.95;
+      logits[t * NUM_LABELS + indexOf('S-secret')] = 1.0;
+    }
+    const baseline = viterbiBioesDecode(logits, seqLen, NUM_LABELS, LABEL_MAP);
+    const precisionBoost = viterbiBioesDecode(logits, seqLen, NUM_LABELS, LABEL_MAP, {
+      background: 1.0,
+    });
+    expect(baseline.some((l) => l !== 'O')).toBe(true);
+    expect(precisionBoost.every((l) => l === 'O')).toBe(true);
+  });
+});
+
+describe('forwardBackwardMarginals', () => {
+  it('returns log-marginals shape [seqLen × numLabels]', () => {
+    const seqLen = 4;
+    const logits = makeLogits(seqLen, ['O', 'O', 'S-secret', 'O']);
+    const marg = forwardBackwardMarginals(logits, seqLen, NUM_LABELS, LABEL_MAP);
+    expect(marg.length).toBe(seqLen * NUM_LABELS);
+  });
+
+  it('per-token marginals form a valid probability distribution (sum ≈ 1)', () => {
+    const seqLen = 5;
+    const logits = makeLogits(seqLen, [
+      'O',
+      'B-private_email',
+      'I-private_email',
+      'E-private_email',
+      'O',
+    ]);
+    const marg = forwardBackwardMarginals(logits, seqLen, NUM_LABELS, LABEL_MAP);
+    for (let t = 0; t < seqLen; t++) {
+      let sum = 0;
+      for (let j = 0; j < NUM_LABELS; j++) {
+        const lp = marg[t * NUM_LABELS + j];
+        if (lp !== undefined && lp !== Number.NEGATIVE_INFINITY) sum += Math.exp(lp);
+      }
+      expect(sum).toBeCloseTo(1, 4);
+    }
+  });
+
+  it('confident chosen-label tokens get marginal close to 1', () => {
+    const seqLen = 3;
+    const logits = makeLogits(seqLen, ['O', 'S-secret', 'O']);
+    const marg = forwardBackwardMarginals(logits, seqLen, NUM_LABELS, LABEL_MAP);
+    const sIdx = LABEL_MAP.indexOf('S-secret');
+    const lp = marg[1 * NUM_LABELS + sIdx];
+    expect(lp).toBeDefined();
+    if (lp !== undefined) expect(Math.exp(lp)).toBeGreaterThan(0.9);
+  });
+
+  it('seqLen=0 returns empty array', () => {
+    expect(forwardBackwardMarginals(new Float32Array(0), 0, NUM_LABELS, LABEL_MAP)).toEqual(
+      new Float64Array(0),
+    );
   });
 });

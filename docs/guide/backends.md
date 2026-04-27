@@ -2,7 +2,7 @@
 
 | Backend | Platform              | Default variant | Notes                                              |
 | ------- | --------------------- | --------------- | -------------------------------------------------- |
-| `cpu`   | All                   | `fp32`          | Universal. Recommended on macOS today.             |
+| `cpu`   | All                   | `fp16`          | Universal. F1-equivalent to fp32, ~3× faster.      |
 | `mps`   | Apple Silicon         | `fp16`          | CoreML EP; partial op coverage — see BENCHMARK.md. |
 | `cuda`  | Linux/Windows + NVIDIA| `fp16`          | Tensor cores on Volta+. CUDA EP via ORT.           |
 | `rocm`  | Linux + AMD           | `fp16`          | MFMA on RDNA3+ / CDNA. ROCm EP via ORT.            |
@@ -20,14 +20,14 @@ The first one whose `isAvailable()` resolves `true` wins.
 
 ## Variants
 
-| Variant   | Tolerance vs fp32 (measured) | Recommended for                  |
-| --------- | ---------------------------- | -------------------------------- |
-| `fp32`    | 0.0% (baseline)              | reference, regression tests      |
-| `fp16`    | ~0.0%                        | accelerated backends (GPU / ANE) |
-| `int8`    | ~0.5%                        | CPU production                   |
-| `int4`    | ~5.5%                        | edge / memory-constrained        |
-| `int4f16` | ~5.5%                        | edge with fp16 activations       |
-| `auto`    | per-backend default          | most setups                      |
+| Variant   | Size  | Tolerance vs fp32 | Recommended for                       |
+| --------- | ----: | ----------------- | ------------------------------------- |
+| `fp32`    | ~5 GB | 0.0% (baseline)   | reference, regression tests           |
+| **`fp16`**|~3 GB  | ~0.0%             | **default — best CPU + GPU**          |
+| `int8`    |~1.5 GB| ~0.5%             | legacy CPU; superseded by fp16        |
+| `int4`    | ~772 MB | ~5.5%           | edge / memory-constrained             |
+| `int4f16` | ~772 MB | ~5.5%           | edge with fp16 activations            |
+| `auto`    | n/a   | per-backend       | most setups (resolves to fp16 on CPU) |
 
 The validation pipeline (`packages/convert/`) enforces these tolerances
 on every fetch with a `consistency` step.

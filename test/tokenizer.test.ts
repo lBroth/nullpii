@@ -36,10 +36,12 @@ describe('TokenizerWrapper.encode', () => {
     }
   });
 
-  it('truncates inputs that exceed maxSequenceLength', async () => {
+  it('encodes the full input — chunking layer handles the per-chunk cap', async () => {
     const tok = new TokenizerWrapper(FIXTURE_DIR, 5);
     const enc = await tok.encode('hello world my name is john the quick brown fox hello world');
-    expect(enc.inputIds.length).toBeLessThanOrEqual(5);
+    // Per-chunk size from constructor is no longer enforced at the tokenizer
+    // level — it is consulted by `partitionTokens` downstream.
+    expect(enc.inputIds.length).toBeGreaterThan(5);
   });
 
   it('reuses the loaded tokenizer across calls (cached)', async () => {

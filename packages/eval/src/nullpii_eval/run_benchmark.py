@@ -18,7 +18,7 @@ PROMPT_512 = "John Smith lives at 42 Oak Avenue, Brooklyn, NY 11201. " * 16
 @click.command()
 @click.option("--out", type=click.Path(dir_okay=False), required=True)
 @click.option("--runs", type=int, default=3)
-@click.option("--variant", default="int8")
+@click.option("--variant", default="fp16")
 @click.option("--include-presidio/--no-include-presidio", default=True)
 def main(out: str, runs: int, variant: str, include_presidio: bool) -> None:
     np_pred = nullpii_predictor(variant=variant)

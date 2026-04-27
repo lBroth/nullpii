@@ -26,8 +26,9 @@
 >
 > Detection runs locally via OpenAI's
 > [`privacy-filter`](https://huggingface.co/openai/privacy-filter)
-> (Apache 2.0, 1.3B param token classifier, ONNX int8/int4f16) — no
-> cloud calls. Tradeoff: nullpii is ~5× slower per call than Presidio.
+> (Apache 2.0, 1.3B param token classifier, ONNX fp16 by default;
+> int4f16 for edge installs) — no cloud calls. Tradeoff: nullpii is
+> ~4× slower per call than Presidio.
 > See [vs Presidio + spaCy](docs/guide/vs-presidio.md) for full
 > multi-locale tables + reproduce script.
 
@@ -236,7 +237,8 @@ char-level offsets from the tokenizer.
 | `rocm`  | Linux + AMD           | MFMA on RDNA3+ / CDNA. ROCm EP via ORT.            |
 
 Auto-selects in priority **CUDA → MPS → ROCm → CPU**. Pin one with
-`{ backend: 'cpu', variant: 'int8' }`.
+`{ backend: 'cpu', variant: 'fp16' }` (default), or `'int4f16'` for a
+~772 MB download (~6% F1 drop).
 
 ---
 

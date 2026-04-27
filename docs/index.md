@@ -54,7 +54,8 @@ offsets — no regex, no language-specific tweaks.
 
 ## How it stays cheap
 
-- One ONNX file (~1.5 GiB int8) cached in `~/.nullpii/models/`
+- One ONNX file (~3 GiB fp16, default) cached in `~/.cache/nullpii/`.
+  Pin `variant: 'int4f16'` (~772 MiB, ~6% F1 drop) for edge installs
 - Backend auto-selects CUDA → MPS → ROCm → CPU
-- ~60 ms / 512 tokens on Apple Silicon CPU (int8)
+- ~33 ms / 512 tokens on Apple Silicon CPU (fp16); chunked above 512
 - Zero outbound traffic for the detection step

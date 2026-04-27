@@ -35,7 +35,7 @@ from .metrics import evaluate, macro_f1
     default=None,
     help="Cap samples for smoke runs. Omit for full dataset (release benchmark).",
 )
-@click.option("--variant", default="int8")
+@click.option("--variant", default="fp16")
 @click.option("--include-spacy/--no-include-spacy", default=True)
 @click.option("--include-presidio/--no-include-presidio", default=True)
 def main(

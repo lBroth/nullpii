@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import debug from 'debug';
+import { type TokenChunk, dedupeSpans, partitionTokens } from './chunking.js';
 import { DEFAULT_MODEL_REPO, DEFAULT_MODEL_REVISION, DEFAULT_VARIANT } from './defaults.js';
 import { ModelNotInitializedError, TextTooLongError } from './errors.js';
 import { LABEL_MAP, NUM_LABELS } from './labels-bioes.js';
@@ -10,6 +11,7 @@ import { decodeSpans } from './span-decoder.js';
 import { TokenizerWrapper } from './tokenizer.js';
 import {
   type BackendProvider,
+  CHUNK_OVERLAP_TOKENS,
   MAX_SEQUENCE_LENGTH,
   type NullPiiConfig,
   type PiiSpan,
@@ -18,7 +20,7 @@ import {
   type SanitizeResult,
 } from './types/index.js';
 import { PiiVault } from './vault.js';
-import { viterbiBioesDecode } from './viterbi.js';
+import { forwardBackwardMarginals, viterbiBioesDecode } from './viterbi.js';
 
 const log = debug('nullpii');
 
@@ -76,28 +78,60 @@ export class NullPii {
     const escaped = escapePlaceholders(text);
     const enc = await tokenizer.encode(escaped);
 
-    const maxLen = this.config.maxSequenceLength ?? MAX_SEQUENCE_LENGTH;
-    if (this.config.strictLength === true && enc.inputIds.length >= maxLen) {
-      throw new TextTooLongError(enc.inputIds.length, maxLen);
+    const chunkSize = this.config.maxSequenceLength ?? MAX_SEQUENCE_LENGTH;
+    const overlap = this.config.chunkOverlap ?? CHUNK_OVERLAP_TOKENS;
+    if (this.config.strictLength === true && enc.inputIds.length > chunkSize) {
+      throw new TextTooLongError(enc.inputIds.length, chunkSize);
     }
 
+    const chunks = partitionTokens(enc, chunkSize, overlap);
+    const allSpans: PiiSpan[] = [];
+    for (const chunk of chunks) {
+      const spans = await this.inferChunk(backend, chunk, escaped);
+      allSpans.push(...spans);
+    }
+    const mlSpans = chunks.length === 1 ? allSpans : dedupeSpans(allSpans);
+    const recoSpans = dedupeSpans(runRecognizers(escaped, this.recognizers, mlSpans));
+    const spans = applyThresholds(
+      [...mlSpans, ...recoSpans],
+      this.config.threshold ?? 0,
+      this.config.categoryThresholds ?? {},
+    );
+
+    const session = sessionId ?? this.vault.createSession();
+    log(
+      'sanitize: spans=%d chunks=%d session=%s',
+      spans.length,
+      chunks.length,
+      session.slice(0, 8),
+    );
+    const result = this.vault.sanitize(escaped, spans, session);
+    return mapBackToOriginal(result, text);
+  }
+
+  private async inferChunk(
+    backend: BackendProvider,
+    chunk: TokenChunk,
+    escaped: string,
+  ): Promise<PiiSpan[]> {
     const out = await backend.infer({
-      inputIds: enc.inputIds,
-      attentionMask: enc.attentionMask,
+      inputIds: chunk.inputIds,
+      attentionMask: chunk.attentionMask,
     });
     if (out.numLabels !== NUM_LABELS) {
       throw new Error(`sanitize: model emits ${out.numLabels} labels, expected ${NUM_LABELS}`);
     }
-    const labels = viterbiBioesDecode(out.logits, out.seqLen, out.numLabels, LABEL_MAP);
-    const scores = perTokenScores(out.logits, out.seqLen, out.numLabels, labels);
-    const mlSpans = decodeSpans(labels, enc.offsetMapping, scores, escaped);
-    const recoSpans = runRecognizers(escaped, this.recognizers, mlSpans);
-    const spans = applyThreshold([...mlSpans, ...recoSpans], this.config.threshold ?? 0);
-
-    const session = sessionId ?? this.vault.createSession();
-    log('sanitize: spans=%d session=%s', spans.length, session.slice(0, 8));
-    const result = this.vault.sanitize(escaped, spans, session);
-    return mapBackToOriginal(result, text);
+    const biases = this.config.transitionBiases ?? {};
+    const labels = viterbiBioesDecode(out.logits, out.seqLen, out.numLabels, LABEL_MAP, biases);
+    const marginals = forwardBackwardMarginals(
+      out.logits,
+      out.seqLen,
+      out.numLabels,
+      LABEL_MAP,
+      biases,
+    );
+    const scores = posteriorScores(marginals, out.seqLen, out.numLabels, labels);
+    return decodeSpans(labels, chunk.offsetMapping, scores, escaped);
   }
 
   restore(text: string, sessionId: string): RestoreResult {
@@ -146,36 +180,37 @@ export class NullPii {
   }
 }
 
-/** Compute the softmax score of the chosen label at each position. */
-function perTokenScores(
-  logits: Float32Array,
+/** Per-token posterior probability of the chosen Viterbi label.
+ * Uses forward-backward marginals so the score reflects the model's full
+ * sequence-level posterior, not just the local-best softmax. */
+function posteriorScores(
+  marginals: Float64Array,
   seqLen: number,
   numLabels: number,
   labels: readonly string[],
 ): number[] {
   const out: number[] = new Array(seqLen);
   for (let t = 0; t < seqLen; t++) {
-    const offset = t * numLabels;
-    let max = Number.NEGATIVE_INFINITY;
-    for (let j = 0; j < numLabels; j++) {
-      const v = logits[offset + j] ?? 0;
-      if (v > max) max = v;
-    }
-    let sumExp = 0;
-    for (let j = 0; j < numLabels; j++) {
-      sumExp += Math.exp((logits[offset + j] ?? 0) - max);
-    }
     const labelIdx = LABEL_MAP.indexOf(labels[t] ?? 'O');
-    const v = logits[offset + labelIdx] ?? 0;
-    out[t] = Math.exp(v - max) / sumExp;
+    const logProb = marginals[t * numLabels + labelIdx];
+    out[t] = logProb === undefined || logProb === Number.NEGATIVE_INFINITY ? 0 : Math.exp(logProb);
   }
   return out;
 }
 
-/** Drop spans below the configured score threshold. */
-function applyThreshold(spans: PiiSpan[], threshold: number): PiiSpan[] {
-  if (threshold <= 0) return spans;
-  return spans.filter((s) => s.score >= threshold);
+/** Drop spans below the configured score thresholds.
+ * Per-category override wins over the global threshold when set. */
+function applyThresholds(
+  spans: PiiSpan[],
+  globalThreshold: number,
+  perLabel: Partial<Record<string, number>>,
+): PiiSpan[] {
+  const noPerLabel = Object.keys(perLabel).length === 0;
+  if (globalThreshold <= 0 && noPerLabel) return spans;
+  return spans.filter((s) => {
+    const t = perLabel[s.label] ?? globalThreshold;
+    return s.score >= t;
+  });
 }
 
 /** Escape literal `[[` in user text so it cannot collide with our placeholder

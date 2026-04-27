@@ -13,7 +13,9 @@ describe('public API surface', () => {
   it('does not export anything not in the documented surface', () => {
     const allowed = new Set([
       'PII_LABELS',
+      'CHUNK_OVERLAP_TOKENS',
       'DEFAULT_MODEL_DIR',
+      'MAX_INPUT_TOKENS',
       'MAX_SEQUENCE_LENGTH',
       'MODEL_DOWNLOAD_TIMEOUT_MS',
       'PLACEHOLDER_REGEX',

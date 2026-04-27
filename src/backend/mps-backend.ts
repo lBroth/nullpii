@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { DEFAULT_VARIANT } from '../defaults.js';
 import type { ModelVariant } from '../types/index.js';
-import { type BackendConfig, OrtBackend } from './ort-backend.js';
+import { type BackendConfig, OrtBackend, type SessionThreads } from './ort-backend.js';
 
 /**
  * MPS (Apple Silicon) backend backed by `onnxruntime-node` with the
@@ -17,8 +17,12 @@ const MPS_CONFIG: BackendConfig = {
 };
 
 export class MpsBackend extends OrtBackend {
-  constructor(modelDir: string, variant: ModelVariant = DEFAULT_VARIANT) {
-    super(MPS_CONFIG, modelDir, variant);
+  constructor(
+    modelDir: string,
+    variant: ModelVariant = DEFAULT_VARIANT,
+    threads: SessionThreads = {},
+  ) {
+    super(MPS_CONFIG, modelDir, variant, threads);
   }
 
   isAvailable(): Promise<boolean> {

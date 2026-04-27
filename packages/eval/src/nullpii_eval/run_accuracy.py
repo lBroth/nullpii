@@ -25,7 +25,7 @@ from .metrics import evaluate, macro_f1
 )
 @click.option("--max-samples", type=int, default=200)
 @click.option("--backend", default="cpu")
-@click.option("--variant", default="int8")
+@click.option("--variant", default="fp16")
 def main(out: str, dataset: str, max_samples: int, backend: str, variant: str) -> None:
     predictor = nullpii_predictor(backend=backend, variant=variant)
     if dataset == "bundled":

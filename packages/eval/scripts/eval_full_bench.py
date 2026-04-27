@@ -33,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from nullpii_eval import public_datasets
 from nullpii_eval.adapters import (
-    nullpii_predictor,
+    nullpii_pool_predictor,
     openai_pipeline_batch_predictor,
     presidio_predictor,
     spacy_predictor,
@@ -46,6 +46,28 @@ def f1_single(pred, samples) -> tuple[float, float]:
     truths = [list(s.spans) for s in samples]
     t0 = time.perf_counter()
     out = [list(pred(s.text).spans) for s in samples]
+    el = time.perf_counter() - t0
+    return macro_f1(evaluate(out, truths)), el
+
+
+def f1_parallel(pred, samples, *, workers: int) -> tuple[float, float]:
+    """Parallel-call variant for predictors backed by a pool (e.g. the
+    nullpii pool with N daemons). Each thread loops over a shard of
+    samples; preserves order on the way out for F1 scoring."""
+    truths = [list(s.spans) for s in samples]
+    out: list[list] = [None] * len(samples)  # type: ignore[list-item]
+
+    def _work(indices: list[int]) -> None:
+        for i in indices:
+            out[i] = list(pred(samples[i].text).spans)
+
+    shards: list[list[int]] = [[] for _ in range(workers)]
+    for i in range(len(samples)):
+        shards[i % workers].append(i)
+
+    t0 = time.perf_counter()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+        list(ex.map(_work, shards))
     el = time.perf_counter() - t0
     return macro_f1(evaluate(out, truths)), el
 
@@ -123,11 +145,12 @@ def main() -> None:
         log.info("  %s %d", name, len(samples))
 
     log.info("loading predictors…")
-    np_pred = nullpii_predictor()
+    log.info("  nullpii pool: 4 daemons × 2 threads each = 8 ORT threads")
+    np_pred = nullpii_pool_predictor(pool_size=4, threads_each=2)
     pr_pred = presidio_predictor()
-    log.info("loading OpenAI HF pipeline (batched on MPS)…")
+    log.info("loading OpenAI HF pipeline (batched on MPS, batch=64)…")
     t0 = time.perf_counter()
-    oa_batch = openai_pipeline_batch_predictor(batch_size=32)
+    oa_batch = openai_pipeline_batch_predictor(batch_size=64)
     log.info("  HF pipeline loaded in %.1fs", time.perf_counter() - t0)
 
     out_path = Path(args.out)
@@ -162,8 +185,10 @@ def main() -> None:
         # release of their underlying C extensions.
         sp_pred = _get_spacy(loc)
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
-            fut_np = ex.submit(f1_single, np_pred, samples)
-            fut_oa = ex.submit(f1_batch, oa_batch, samples, chunk=32)
+            # nullpii uses the 4-daemon pool, sharded across 4 inner
+            # threads — true parallelism inside the predictor.
+            fut_np = ex.submit(f1_parallel, np_pred, samples, workers=4)
+            fut_oa = ex.submit(f1_batch, oa_batch, samples, chunk=64)
             fut_pr = ex.submit(f1_single, pr_pred, samples)
             fut_sp = ex.submit(f1_single, sp_pred, samples) if sp_pred else None
             np_f1, np_el = fut_np.result()

@@ -135,6 +135,60 @@ class _NullpiiServer:
                 self.proc.kill()
 
 
+class _NullpiiServerPool:
+    """A pool of N independent `nullpii serve` daemons.
+
+    Each daemon owns its own ORT session and stdin/stdout pipe, so
+    `request()` calls dispatched to different daemons execute in true
+    parallel (no shared lock). Round-robin assignment via an index lock.
+    """
+
+    def __init__(self, *, size: int, **server_kwargs) -> None:
+        if size < 1:
+            raise ValueError("pool size must be >= 1")
+        self.servers = [_NullpiiServer(**server_kwargs) for _ in range(size)]
+        self._next = 0
+        self._next_lock = threading.Lock()
+
+    def request(self, text: str) -> tuple[list[Span], float]:
+        with self._next_lock:
+            srv = self.servers[self._next % len(self.servers)]
+            self._next += 1
+        return srv.request(text)
+
+    def close(self) -> None:
+        for s in self.servers:
+            s.close()
+
+
+def nullpii_pool_predictor(
+    *,
+    pool_size: int = 4,
+    threads_each: int = 2,
+    model_dir: Path = DEFAULT_MODEL_DIR,
+    backend: str = "cpu",
+    variant: str = "fp16",
+) -> Predictor:
+    """Pool-backed predictor — N nullpii daemons with capped per-daemon
+    threads. Total threads = pool_size × threads_each. Round-robin
+    dispatch lets multiple eval threads run truly concurrently."""
+    if not NULLPII_BIN.is_file():
+        raise FileNotFoundError(f"nullpii CLI not found at {NULLPII_BIN}")
+    pool = _NullpiiServerPool(
+        size=pool_size,
+        model_dir=model_dir,
+        backend=backend,
+        variant=variant,
+        threads=threads_each,
+    )
+
+    def _predict(text: str) -> ToolResult:
+        spans, elapsed = pool.request(text)
+        return ToolResult(spans, elapsed)
+
+    return _predict
+
+
 def nullpii_predictor(
     *,
     model_dir: Path = DEFAULT_MODEL_DIR,

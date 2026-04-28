@@ -264,6 +264,7 @@ def openai_pipeline_batch_predictor(
         aggregation_strategy="simple",
         device=device,
         batch_size=batch_size,
+        trust_remote_code=True,
     )
 
     def _predict_batch(texts: list[str]) -> list[ToolResult]:
@@ -326,6 +327,7 @@ def openai_pipeline_predictor(
         aggregation_strategy="simple",
         device=device,
         batch_size=batch_size,
+        trust_remote_code=True,
     )
 
     def _predict(text: str) -> ToolResult:
@@ -593,6 +595,85 @@ def gliner_pii_predictor(
             if label is None:
                 continue
             spans.append(Span(label, int(e["start"]), int(e["end"])))
+        return ToolResult(spans, elapsed)
+
+    return _predict
+
+
+def gliner_chunked_predictor(
+    *,
+    threshold: float = 0.5,
+    chunk_chars: int = 1400,
+    overlap_chars: int = 200,
+) -> Predictor:
+    """nullpii-style pipeline (chunking + span dedupe) on top of GLiNER's
+    zero-shot NER. Tests whether nullpii's runtime ideas transfer to a
+    different backbone — bare GLiNER hits 0.000 on long-prompts-en
+    because of max-sequence-length truncation; chunked GLiNER should
+    recover the spans past that boundary the same way nullpii does
+    over openai/privacy-filter.
+
+    Char-level chunking (4 chars/token approximation): 1400 chars ≈ 350
+    tokens, well under GLiNER's mBERT-base 512-tok cap. 200 char overlap
+    keeps any short span fully visible in at least one chunk."""
+    try:
+        from gliner import GLiNER  # noqa: I001
+    except ImportError as e:
+        raise ImportError("gliner required") from e
+
+    model = GLiNER.from_pretrained("urchade/gliner_multi_pii-v1")
+
+    def _dedupe(spans: list[Span]) -> list[Span]:
+        if len(spans) <= 1:
+            return spans
+        sorted_spans = sorted(spans, key=lambda s: (s.start, -s.end))
+        out: list[Span] = []
+        for s in sorted_spans:
+            merged = False
+            for i in range(len(out) - 1, -1, -1):
+                prev = out[i]
+                if prev.end <= s.start:
+                    break
+                if prev.label != s.label:
+                    continue
+                prev_len = prev.end - prev.start
+                s_len = s.end - s.start
+                if s_len > prev_len:
+                    out[i] = s
+                merged = True
+                break
+            if not merged:
+                out.append(s)
+        return sorted(out, key=lambda s: s.start)
+
+    def _predict(text: str) -> ToolResult:
+        t0 = time.perf_counter()
+        spans: list[Span] = []
+        if len(text) <= chunk_chars:
+            entities = model.predict_entities(text, _GLINER_LABELS, threshold=threshold)
+            for e in entities:
+                label = _GLINER_LABEL_MAP.get(e.get("label"))
+                if label is None:
+                    continue
+                spans.append(Span(label, int(e["start"]), int(e["end"])))
+        else:
+            stride = chunk_chars - overlap_chars
+            for offset in range(0, len(text), stride):
+                chunk = text[offset : offset + chunk_chars]
+                if not chunk:
+                    break
+                entities = model.predict_entities(chunk, _GLINER_LABELS, threshold=threshold)
+                for e in entities:
+                    label = _GLINER_LABEL_MAP.get(e.get("label"))
+                    if label is None:
+                        continue
+                    spans.append(
+                        Span(label, int(e["start"]) + offset, int(e["end"]) + offset),
+                    )
+                if offset + chunk_chars >= len(text):
+                    break
+            spans = _dedupe(spans)
+        elapsed = (time.perf_counter() - t0) * 1000
         return ToolResult(spans, elapsed)
 
     return _predict

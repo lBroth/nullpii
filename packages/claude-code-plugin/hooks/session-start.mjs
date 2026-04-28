@@ -11,7 +11,7 @@
 //   Stop → SIGTERM the daemon, unlink socket + state
 
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -63,11 +63,38 @@ async function main() {
   const socket = socketPathFor(sessionId);
   const state = statePath(sessionId);
 
-  // If a daemon is already alive for this session, do nothing.
+  // If a state file exists, only short-circuit when the recorded
+  // pid is *actually* still alive. Otherwise the previous session
+  // crashed without firing Stop and a stale file would block every
+  // future SessionStart from spawning a fresh daemon.
   if (existsSync(state)) {
-    process.stderr.write(`[nullpii] daemon already registered for ${sessionId}\n`);
-    process.stdout.write('\n');
-    return;
+    let staleReason = 'unreadable';
+    try {
+      const info = JSON.parse(readFileSync(state, 'utf8'));
+      const pid = typeof info.pid === 'number' ? info.pid : -1;
+      const sock = typeof info.socket === 'string' ? info.socket : '';
+      if (pid > 0) {
+        try {
+          process.kill(pid, 0);
+          if (sock !== '' && existsSync(sock)) {
+            process.stderr.write(`[nullpii] daemon already alive (pid=${pid})\n`);
+            process.stdout.write('\n');
+            return;
+          }
+          staleReason = `socket missing for pid=${pid}`;
+        } catch {
+          staleReason = `pid=${pid} dead`;
+        }
+      } else {
+        staleReason = 'no pid in state';
+      }
+    } catch (err) {
+      staleReason = `parse error: ${err.message}`;
+    }
+    process.stderr.write(`[nullpii] removing stale state file (${staleReason})\n`);
+    try {
+      unlinkSync(state);
+    } catch {}
   }
 
   // Claude Code passes its own pid as PPID to the hook. Forward it so

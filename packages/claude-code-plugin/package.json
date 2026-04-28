@@ -1,6 +1,6 @@
 {
   "name": "@nullpii/claude-code",
-  "version": "0.0.11",
+  "version": "0.0.12",
   "description": "Claude Code plugin: sanitize PII from prompts locally, restore in responses.",
   "license": "Apache-2.0",
   "type": "module",

@@ -608,6 +608,62 @@ def gliner_pii_predictor(
     return _predict
 
 
+def regex_recognizer_predictor(
+    *,
+    patterns: list[tuple[str, str]],
+) -> Predictor:
+    """Lightweight regex-based predictor.
+
+    `patterns` is a list of `(label, regex)` tuples; matches yield Spans
+    with that label. Useful as a Tier-2 ensemble member to fill gaps
+    where ML detectors miss structured formats (URLs, IBANs, etc.)."""
+    import re as _re
+
+    compiled = [(label, _re.compile(pat)) for label, pat in patterns]
+
+    def _predict(text: str) -> ToolResult:
+        t0 = time.perf_counter()
+        spans: list[Span] = []
+        for label, regex in compiled:
+            for m in regex.finditer(text):
+                spans.append(Span(label, m.start(), m.end()))
+        elapsed = (time.perf_counter() - t0) * 1000
+        return ToolResult(spans, elapsed)
+
+    return _predict
+
+
+# Pre-baked recognizer patterns covering nullpii's biggest miss-rate
+# categories. Keeps the regex set small, defensible, and composable.
+DEFAULT_REGEX_PATTERNS: list[tuple[str, str]] = [
+    # URL: nullpii misses 66% of these. Covers http(s)://… plus bare
+    # domain.tld/path; allows query strings, ports.
+    ("private_url", r"\b(?:https?://|www\.)[^\s<>\"]+"),
+    ("private_url", r"\b(?:[a-zA-Z0-9-]+\.)+(?:com|org|net|io|co|dev|ai|app|me|us|uk|de|fr|it|es)(?:/[^\s<>\"]*)?\b"),
+    # Email — straightforward. nullpii already low miss but cheap to add.
+    ("private_email", r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),
+    # AWS access key
+    ("secret", r"\bAKIA[0-9A-Z]{16}\b"),
+    # GitHub PAT (classic + fine-grained)
+    ("secret", r"\bghp_[A-Za-z0-9]{36,}\b"),
+    ("secret", r"\bghs_[A-Za-z0-9]{36,}\b"),
+    ("secret", r"\bgithub_pat_[A-Za-z0-9_]{82,}\b"),
+    # Stripe keys
+    ("secret", r"\bsk_(?:live|test)_[A-Za-z0-9]{24,}\b"),
+    # OpenAI/Anthropic keys
+    ("secret", r"\bsk-[A-Za-z0-9]{32,}\b"),
+    ("secret", r"\bsk-ant-[A-Za-z0-9_-]{50,}\b"),
+    # IBAN (rough — IT, GB, DE, FR, ES; trims at non-alphanum)
+    ("account_number", r"\b[A-Z]{2}\d{2}[A-Z0-9]{1,4}(?:[ \t]?\d{4}){2,5}(?:[ \t]?\d{1,4})?\b"),
+    # Credit card (16 digits with optional spaces/dashes)
+    ("account_number", r"\b(?:\d{4}[-\s]?){3}\d{4}\b"),
+    # SSN US
+    ("account_number", r"\b\d{3}-\d{2}-\d{4}\b"),
+    # Phone (international)
+    ("private_phone", r"\+\d{1,3}[\s-]?(?:\(\d+\)[\s-]?)?\d{2,4}[\s-]?\d{2,4}[\s-]?\d{2,4}\b"),
+]
+
+
 def multi_ensemble_predictor(
     *,
     predictors: list[Predictor],

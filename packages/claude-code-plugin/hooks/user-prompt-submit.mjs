@@ -140,13 +140,23 @@ async function main() {
     writeOutput({ continue: true });
     return;
   }
+
+  // Claude Code's UserPromptSubmit hook cannot rewrite the outgoing
+  // prompt — it can only add context (additionalContext) or block
+  // (decision: 'block'). The 'prompt' field is silently ignored.
+  // To actually prevent PII leakage we must BLOCK the original prompt
+  // and surface the sanitized version in the rejection reason. The
+  // user copies it and resends. Better UX (network proxy / MCP server)
+  // tracked on the roadmap.
   writeOutput({
-    continue: true,
-    prompt: result.sanitized,
-    hookSpecificOutput: {
-      hookEventName: 'UserPromptSubmit',
-      additionalContext: `[nullpii] redacted ${spanCount} PII span(s) before send.`,
-    },
+    decision: 'block',
+    reason: [
+      `[nullpii] blocked: ${spanCount} PII span(s) detected in your prompt.`,
+      '',
+      'Your prompt has not been sent to Claude. Sanitized version below — copy + resend if intended:',
+      '',
+      result.sanitized,
+    ].join('\n'),
   });
 }
 

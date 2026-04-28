@@ -63,23 +63,32 @@ plugin's `.claude-plugin/plugin.json` manifest is missing or
 incomplete — verify exact required fields with `/plugin --help` on
 your Claude Code version.
 
-## What it does
+## What it does (current behaviour)
 
-Two hooks, registered automatically:
+Three hooks, registered automatically:
 
-- **`prePrompt`** — every outgoing prompt is run through nullpii.
-  Detected PII spans become typed placeholders. The vault session id
-  is stashed against your conversation id.
-- **`postResponse`** — the model's reply is matched against
-  `PLACEHOLDER_REGEX` and any placeholders that originated in this
-  conversation are restored to their original values before display.
+- **`SessionStart`** — spawns a background `nullpii serve` daemon over
+  a Unix socket. Loads the model ONCE per session (~5–10 s on first
+  prompt; subsequent prompts ~30 ms).
+- **`UserPromptSubmit`** — sends every outgoing prompt to the daemon.
+  If PII is detected, the hook **blocks** the prompt with
+  `decision: 'block'` and surfaces the sanitized version in the
+  rejection reason. You copy + resend the redacted text.
+- **`Stop`** — SIGTERMs the daemon, unlinks the socket, frees the
+  model.
 
-Multi-turn conversations reuse the same vault session, so a follow-up
-that quotes back an earlier value (e.g. "remind me, what was John's
-email again?") resolves correctly.
+::: warning Why "block" and not silent rewrite
+Claude Code's `UserPromptSubmit` hook contract supports two outcomes:
+add context (`additionalContext`) or block (`decision: 'block'`). It
+**cannot rewrite the outgoing prompt**. So to actually prevent a
+leak we must block the original and let you decide whether to resend
+the sanitized version. A future build will sit between Claude Code
+and the Anthropic API as an MCP server / local proxy and rewrite
+transparently — see roadmap.
+:::
 
-When the conversation ends, the session is destroyed and the underlying
-`Map` becomes unreachable. No PII is persisted.
+When the conversation ends, the session is destroyed and the
+underlying `Map` becomes unreachable. No PII is persisted to disk.
 
 ## Example
 
@@ -90,26 +99,22 @@ Draft a polite refund email to Maria Rossi (maria.rossi@example.it)
 about order #ACME-2026-04812.
 ```
 
-Anthropic's API sees:
+Claude Code shows the prompt was blocked:
 
 ```
+[nullpii] blocked: 2 PII span(s) detected in your prompt.
+
+Your prompt has not been sent to Claude. Sanitized version below —
+copy + resend if intended:
+
 Draft a polite refund email to [[NULLPII:private_person:0]]
 ([[NULLPII:private_email:0]]) about order #ACME-2026-04812.
 ```
 
-You see in your terminal:
-
-```
-Subject: Refund for order #ACME-2026-04812
-
-Hi Maria,
-
-Thanks for your patience. We've processed your refund for order
-#ACME-2026-04812 to maria.rossi@example.it. ...
-```
-
-Maria's name and email never left your machine. The order id stays
-intact because it doesn't match any of the eight PII categories.
+You copy the sanitized line, paste it back, hit enter. Anthropic's
+API only ever sees the placeholders. The model's reply contains the
+placeholders too (until the proxy / MCP variant lands and restores
+them in-flight) — Maria's name and email never left your machine.
 
 ## Configuration
 

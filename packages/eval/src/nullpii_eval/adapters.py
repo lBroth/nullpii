@@ -689,8 +689,8 @@ DEFAULT_REGEX_PATTERNS: list[tuple[str, str]] = [
     ("secret", r"\bsk-ant-[A-Za-z0-9_-]{50,}\b"),
     # IBAN (rough — IT, GB, DE, FR, ES; trims at non-alphanum)
     ("account_number", r"\b[A-Z]{2}\d{2}[A-Z0-9]{1,4}(?:[ \t]?\d{4}){2,5}(?:[ \t]?\d{1,4})?\b"),
-    # Credit card (16 digits with optional spaces/dashes)
-    ("account_number", r"\b(?:\d{4}[-\s]?){3}\d{4}\b"),
+    # Credit card 16-digit pattern dropped: matches phone numbers,
+    # version strings, dataset row IDs etc. — too many FPs.
     # SSN US
     ("account_number", r"\b\d{3}-\d{2}-\d{4}\b"),
     # Phone (international)

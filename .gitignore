@@ -51,5 +51,6 @@ npm-debug.log*
 # tmp
 tmp/
 
-# eval curiosity results (StreamGuard etc — not committed)
+# eval results — bench artifacts (full-bench.json, *.log) are large and
+# regenerable; numbers ship in docs/guide/eval-results.md instead.
 packages/eval/results/

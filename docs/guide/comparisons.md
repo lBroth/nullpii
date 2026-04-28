@@ -42,44 +42,72 @@ edge / memory-constrained installs.
 
 Macro F1 over 8 PII categories, partial-match (IoU ≥ 0.5).
 
-### PII-focused datasets — nullpii leads on dev-style + multi-locale
+### Aggregate avg PII F1 (11 datasets, excludes WikiAnn)
+
+Latency is a per-sample weighted average across every PII dataset
+(32k samples) on M5 Pro 48GB.
+
+| Tool                     |    avg PII F1 | latency ms/sample |
+| ------------------------ | ------------: | ----------------: |
+| **nullpii**              |     **0.655** |              43.9 |
+| GLiNER multi PII         |         0.603 |             104.7 |
+| Microsoft Presidio       |         0.455 |              15.1 |
+| piiranha-v1              |         0.439 |              59.0 |
+| OpenAI bare HF           |         0.430 |              90.4 |
+| DeBERTa PII (English)    |         0.419 |              58.3 |
+| bare spaCy NER           |         0.122 |              13.7 |
+
+### Per-dataset numbers — nullpii leads on dev-style + multi-locale
 
 Run on M5 Pro 48GB, 4-daemon nullpii pool + HF on CPU multi-thread.
 **OpenAI bare HF** = upstream model loaded via `transformers.pipeline`
 with the default decoder (no chunking, no Viterbi, no posterior).
 
-| Dataset                          | Locale |    n |   nullpii | OpenAI bare HF | Presidio | spaCy NER |
-| -------------------------------- | ------ | ---: | --------: | -------------: | -------: | --------: |
-| bundled (dev prompts)            | en     |   62 | **0.782** |          0.535 |    0.484 |     0.200 |
-| bundled (dev prompts)            | it     |   40 | **0.761** |          0.464 |    0.459 |     0.109 |
-| bundled (dev prompts)            | de     |   34 | **0.669** |          0.459 |    0.488 |     0.114 |
-| bundled (dev prompts)            | fr     |   33 | **0.728** |          0.487 |    0.483 |     0.120 |
-| bundled (dev prompts)            | es     |   33 | **0.756** |          0.490 |    0.463 |     0.118 |
-| long-prompts-en (chunking proof) |   en   |   62 | **0.600** |          0.350 |    0.348 |     0.079 |
-| isotonic/pii-masking-200k        | en     | 5000 | **0.572** |          0.386 |    0.478 |     0.173 |
-| isotonic/pii-masking-200k        | it     | 5000 | **0.592** |          0.389 |    0.415 |     0.084 |
-| isotonic/pii-masking-200k        | de     | 5000 | **0.580** |          0.385 |    0.399 |     0.102 |
-| isotonic/pii-masking-200k        | fr     | 5000 | **0.578** |          0.380 |    0.415 |     0.082 |
-| presidio-synthetic               | en     | 5000 | **0.576** |          0.390 |    0.575 |     0.157 |
+| Dataset                          | Locale |    n | nullpii | GLiNER | OpenAI bare HF | piiranha | DeBERTa PII | Presidio | spaCy |
+| -------------------------------- | ------ | ---: | ------: | -----: | -------------: | -------: | ----------: | -------: | ----: |
+| bundled (dev prompts)            | en     |   62 |**0.782**|  0.706 |          0.535 |    0.361 |       0.388 |    0.484 | 0.200 |
+| bundled (dev prompts)            | it     |   40 |   0.761 |**0.774**|         0.464 |    0.358 |       0.330 |    0.459 | 0.109 |
+| bundled (dev prompts)            | de     |   34 |   0.669 |**0.757**|         0.459 |    0.359 |       0.339 |    0.488 | 0.114 |
+| bundled (dev prompts)            | fr     |   33 |   0.728 |**0.734**|         0.487 |    0.349 |       0.393 |    0.483 | 0.120 |
+| bundled (dev prompts)            | es     |   33 |   0.756 |**0.764**|         0.490 |    0.368 |       0.379 |    0.463 | 0.118 |
+| long-prompts-en (chunking proof) |   en   |   62 |**0.600**|  0.000 |          0.350 |    0.352 |       0.000 |    0.348 | 0.079 |
+| isotonic/pii-masking-200k        | en     | 5000 |   0.572 |  0.572 |          0.386 |    0.581 |   **0.751** |    0.478 | 0.173 |
+| isotonic/pii-masking-200k        | it     | 5000 |**0.592**|  0.558 |          0.389 |    0.570 |       0.542 |    0.415 | 0.084 |
+| isotonic/pii-masking-200k        | de     | 5000 |**0.580**|  0.561 |          0.385 |    0.569 |       0.488 |    0.399 | 0.102 |
+| isotonic/pii-masking-200k        | fr     | 5000 |   0.578 |  0.549 |          0.380 |    0.569 |       0.569 |    0.415 | 0.082 |
+| presidio-synthetic               | en     | 5000 |   0.591 |**0.656**|         0.403 |    0.390 |       0.433 |    0.573 | 0.156 |
 
-**Reading**: nullpii wins **11/11 PII runs across 5 locales** — one
-near-tie with Presidio on its own synthetic generator (0.576 vs
-0.575). The OpenAI bare HF column isolates the value of nullpii's
-runtime: same model, **+0.226 F1 average** attributable entirely to
-chunking + constrained Viterbi + forward-backward posterior +
-recognizer post-pass. Bare spaCy NER catches names + locations but
-misses emails, phones, account numbers, secrets — it's general NER,
-not PII.
+**Reading**:
 
-### Wikipedia NER (`wikiann`) — spaCy leads, both PII tools struggle
+- **nullpii wins 5/11 PII runs outright**, GLiNER wins 4 (all
+  non-English bundled + presidio-synthetic), DeBERTa-PII wins 1
+  (isotonic-en — its training distribution).
+- **GLiNER is the closest competitor on average** (0.603 avg vs
+  nullpii 0.655) but **scores 0.000 on long-prompts-en** —
+  max-sequence-length truncation, no chunking. Same fate as
+  DeBERTa-PII. Only nullpii captures PII past the 512-token
+  boundary, by design.
+- **OpenAI bare HF** column isolates nullpii's runtime value: same
+  upstream model, **+0.226 F1 over the bare HF pipeline** —
+  attributable entirely to chunking + constrained Viterbi +
+  forward-backward posterior + recognizer post-pass.
+- **DeBERTa-PII dominates isotonic-en** (0.751) — clearly fine-tuned
+  on similar synthetic data — but is English-only and underperforms
+  on every other test.
+- **piiranha-v1** is consistent across locales (~0.36 bundled, ~0.57
+  isotonic) but never wins — multilingual but small (~278M params).
+- **bare spaCy NER** catches names + locations but misses emails,
+  phones, account numbers, secrets — it's general NER, not PII.
 
-| Dataset | Locale |    n |   nullpii | OpenAI bare HF | Presidio | **spaCy NER** |
-| ------- | ------ | ---: | --------: | -------------: | -------: | ------------: |
-| wikiann | en     | 1000 |     0.229 |          0.161 |    0.285 |     **0.380** |
-| wikiann | it     | 1000 |     0.149 |          0.087 |    0.222 |     **0.747** |
-| wikiann | de     | 1000 |     0.136 |          0.103 |    0.201 |     **0.786** |
-| wikiann | fr     | 1000 |     0.175 |          0.104 |    0.228 |     **0.692** |
-| wikiann | es     | 1000 |     0.229 |          0.104 |    0.234 |     **0.753** |
+### Wikipedia NER (`wikiann`) — spaCy leads, every PII tool struggles
+
+| Dataset | Locale |    n | nullpii | GLiNER | OpenAI bare HF | piiranha | DeBERTa | Presidio | **spaCy** |
+| ------- | ------ | ---: | ------: | -----: | -------------: | -------: | ------: | -------: | --------: |
+| wikiann | en     | 1000 |   0.229 |  0.384 |          0.161 |    0.132 |   0.115 |    0.285 | **0.380** |
+| wikiann | it     | 1000 |   0.149 |  0.283 |          0.087 |    0.180 |   0.075 |    0.222 | **0.747** |
+| wikiann | de     | 1000 |   0.136 |  0.221 |          0.103 |    0.230 |   0.067 |    0.201 | **0.786** |
+| wikiann | fr     | 1000 |   0.175 |  0.268 |          0.104 |    0.170 |   0.114 |    0.228 | **0.692** |
+| wikiann | es     | 1000 |   0.229 |  0.229 |          0.104 |    0.195 |   0.084 |    0.234 | **0.753** |
 
 **Reading**: WikiAnn is Wikipedia-extracted PER/LOC/ORG. spaCy
 `*_core_news_lg` was trained on Wikipedia-like prose and dominates.

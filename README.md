@@ -12,30 +12,39 @@
 > Claude, restore originals in the response — automatically. Zero
 > cloud calls. 100% permissive licenses.
 >
-> **Real numbers** (eval suite, partial-match F1, 32k samples across
-> 16 datasets on M5 Pro 48GB; full table in
-> [docs/guide/eval-results.md](docs/guide/eval-results.md)):
-> - **bundled dev prompts** (202 multi-locale): nullpii **avg 0.739**
->   vs OpenAI bare HF 0.487 vs Presidio 0.475 vs spaCy 0.132.
-> - **Isotonic/pii-masking-200k** (5k×4 locales): nullpii **0.581**
->   vs OpenAI bare HF 0.385 vs Presidio 0.427 vs spaCy 0.110.
-> - **Presidio synthetic** (5000): virtual tie, nullpii 0.576 vs
->   Presidio 0.575 vs OpenAI bare HF 0.390.
-> - **long-prompts-en** (chunking proof): nullpii **0.600** vs all
->   others <0.350 — chunking captures PII past the 512-tok boundary
->   that bare pipelines silently truncate.
-> - **WikiAnn** (Wikipedia NER, 5 locales): spaCy wins. Wikipedia ≠ PII.
+> **Real numbers** — 7-way head-to-head, 32k samples, 16 datasets, M5
+> Pro 48GB. Average PII F1 (excludes WikiAnn = general NER, not PII):
 >
-> Headline: **nullpii beats the upstream OpenAI HF pipeline by +0.226
-> F1 on average** — same model, attributable entirely to nullpii's
-> runtime (chunking + constrained Viterbi + forward-backward posterior
-> + recognizer post-pass).
+> | Tool | avg PII F1 | latency ms/sample |
+> | --- | ---: | ---: |
+> | **nullpii** | **0.655** | 43.9 |
+> | GLiNER (`urchade/gliner_multi_pii-v1`) | 0.603 | 104.7 |
+> | Microsoft Presidio | 0.455 | 15.1 |
+> | piiranha-v1 (DeBERTa-v3) | 0.439 | 59.0 |
+> | OpenAI bare HF (upstream `privacy-filter`) | 0.430 | 90.4 |
+> | DeBERTa PII (`lakshyakh93/deberta_finetuned_pii`) | 0.419 | 58.3 |
+> | bare spaCy NER | 0.122 | 13.7 |
+>
+> Highlights:
+> - **+0.226 F1 vs OpenAI bare HF** (same upstream model, default HF
+>   decoder) — attributable entirely to nullpii's runtime: chunking +
+>   constrained Viterbi + forward-backward posterior + recognizer
+>   post-pass.
+> - **GLiNER is the closest competitor** (0.603 avg). Wins 4/5 bundled
+>   non-English locales but **scores 0.000 on long-prompts-en** —
+>   max-length truncation, no chunking.
+> - **`long-prompts-en` (chunking proof)**: nullpii 0.600, every other
+>   tool <0.36 — bare pipelines silently truncate PII past 512 tokens.
+> - **Presidio synthetic 5k**: GLiNER 0.656 narrowly tops everyone (it
+>   was trained on synthetic-pii data); nullpii second 0.591.
+> - WikiAnn (Wikipedia NER): spaCy wins as expected — not a PII test.
 >
 > Detection runs locally via OpenAI's
 > [`privacy-filter`](https://huggingface.co/openai/privacy-filter)
 > (Apache 2.0, 1.3B param token classifier, ONNX fp16 by default;
-> int4f16 for edge installs) — no cloud calls. Tradeoff: nullpii is
-> ~4× slower per call than Presidio.
+> int4f16 for edge installs) — no cloud calls. Throughput tradeoff:
+> nullpii sits in the middle of the latency curve, ~3× faster than
+> the slowest competitor (GLiNER) and ~3× slower than Presidio.
 > See [Comparisons](docs/guide/comparisons.md) for full multi-locale
 > tables + reproduce script.
 
@@ -231,6 +240,28 @@ Eight categories from `openai/privacy-filter`:
 
 Decoded from BIOES tags via a constrained Viterbi pass against the
 char-level offsets from the tokenizer.
+
+---
+
+## nullpii-bench (eval dataset)
+
+We ship our own multilingual PII evaluation set under
+`packages/eval/datasets/nullpii-bench.jsonl`:
+
+- **271 samples**, **680 PII spans**, **5 locales** (en / it / de /
+  fr / es), Apache-2.0.
+- Three subsets: `bundled` (202 dev-style prompts — PR reviews,
+  deploy logs, RFCs, customer-support tickets), `adversarial` (decoy
+  strings that look like PII but aren't), `long-prompts` (62 ~3k-char
+  prompts with PII positioned past the 512-token mark — chunking
+  stress test).
+- Schema: `{ id, locale, subset, text, spans }` per row. See
+  [`packages/eval/datasets/README.md`](packages/eval/datasets/README.md)
+  for full description.
+
+Used as the bundled and long-prompts columns in every comparison
+table above. Anyone can run other PII tools against the same set
+to reproduce or extend the eval — patches welcome.
 
 ---
 

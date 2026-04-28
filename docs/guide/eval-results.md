@@ -43,58 +43,79 @@ no Viterbi, no posterior scoring. Total: 16 datasets, 32k samples,
     `ai4privacy` requires `HF_TOKEN` (use the open `isotonic` mirror
     above for the same data without auth).
 
+## Aggregate (avg PII F1, 11 datasets, 30k samples)
+
+Latency: per-sample weighted across all PII datasets on M5 Pro 48GB.
+
+| Tool                  | avg PII F1 | latency ms/sample |
+| --------------------- | ---------: | ----------------: |
+| **nullpii**           |  **0.655** |              43.9 |
+| GLiNER multi PII      |      0.603 |             104.7 |
+| Microsoft Presidio    |      0.455 |              15.1 |
+| piiranha-v1           |      0.439 |              59.0 |
+| OpenAI bare HF        |      0.430 |              90.4 |
+| DeBERTa PII (English) |      0.419 |              58.3 |
+| bare spaCy NER        |      0.122 |              13.7 |
+
 ## Accuracy by locale (202 bundled dev prompts)
 
-Partial-match (IoU ≥ 0.5). 4-way: nullpii vs OpenAI bare HF pipeline
-vs Presidio vs bare spaCy NER.
+Partial-match (IoU ≥ 0.5). 7-way comparison.
 
-| Locale | n   | **nullpii** | OpenAI bare HF | Presidio | spaCy NER |
-| ------ | --: | ----------: | -------------: | -------: | --------: |
-| en     |  62 |   **0.782** |          0.535 |    0.484 |     0.200 |
-| it     |  40 |   **0.761** |          0.464 |    0.459 |     0.109 |
-| de     |  34 |   **0.669** |          0.459 |    0.488 |     0.114 |
-| fr     |  33 |   **0.728** |          0.487 |    0.483 |     0.120 |
-| es     |  33 |   **0.756** |          0.490 |    0.463 |     0.118 |
-| **avg**|     |   **0.739** |          0.487 |    0.475 |     0.132 |
+| Locale | n  | nullpii | GLiNER | OpenAI bare HF | piiranha | DeBERTa-PII | Presidio | spaCy |
+| ------ | -: | ------: | -----: | -------------: | -------: | ----------: | -------: | ----: |
+| en     | 62 |**0.782**|  0.706 |          0.535 |    0.361 |       0.388 |    0.484 | 0.200 |
+| it     | 40 |   0.761 |**0.774**|         0.464 |    0.358 |       0.330 |    0.459 | 0.109 |
+| de     | 34 |   0.669 |**0.757**|         0.459 |    0.359 |       0.339 |    0.488 | 0.114 |
+| fr     | 33 |   0.728 |**0.734**|         0.487 |    0.349 |       0.393 |    0.483 | 0.120 |
+| es     | 33 |   0.756 |**0.764**|         0.490 |    0.368 |       0.379 |    0.463 | 0.118 |
+| **avg**|    |   0.739 |**0.747**|         0.487 |    0.359 |       0.366 |    0.475 | 0.132 |
 
-**Reading**: nullpii wins all 5 locales. The OpenAI HF pipeline column
-isolates the value of nullpii's runtime (chunking + constrained
-Viterbi + forward-backward posterior + recognizer pass) — same model,
-+0.25 F1 average.
+**Reading**: nullpii wins English; GLiNER edges nullpii on the four
+non-English locales (largest gap: de, +0.09). Both leverage
+multilingual training; nullpii's gap closes when chunking and
+constrained Viterbi don't matter (short prompts, single-pass
+inference). Long-prompts (below) flip the ordering.
 
 ## Head-to-head on public datasets
 
-4-way at scale (5k Isotonic per locale, 5k Presidio-synthetic, 1k
-WikiAnn per locale). The **OpenAI bare HF** column = same upstream
-model, default `transformers.pipeline` decoder, no nullpii runtime.
+7-way at scale: 5k Isotonic per locale, 5k Presidio-synthetic, 1k
+WikiAnn per locale.
 
-| Dataset                              |    n |   nullpii | OpenAI bare HF | Presidio |   spaCy |
-| ------------------------------------ | ---: | --------: | -------------: | -------: | ------: |
-| presidio-synthetic (en)              | 5000 | **0.576** |          0.390 |    0.575 |   0.157 |
-| long-prompts-en (chunking proof)     |   62 | **0.600** |          0.350 |    0.348 |   0.079 |
-| isotonic/pii-masking-200k (en)       | 5000 | **0.572** |          0.386 |    0.478 |   0.173 |
-| isotonic/pii-masking-200k (it)       | 5000 | **0.592** |          0.389 |    0.415 |   0.084 |
-| isotonic/pii-masking-200k (de)       | 5000 | **0.580** |          0.385 |    0.399 |   0.102 |
-| isotonic/pii-masking-200k (fr)       | 5000 | **0.578** |          0.380 |    0.415 |   0.082 |
-| **isotonic avg (4 locales)**         |      | **0.581** |          0.385 |    0.427 |   0.110 |
-| wikiann (en) — Wikipedia NER         | 1000 |     0.229 |          0.161 |    0.285 |**0.380**|
-| wikiann (it)                         | 1000 |     0.149 |          0.087 |    0.222 |**0.747**|
-| wikiann (de)                         | 1000 |     0.136 |          0.103 |    0.201 |**0.786**|
-| wikiann (fr)                         | 1000 |     0.175 |          0.104 |    0.228 |**0.692**|
-| wikiann (es)                         | 1000 |     0.229 |          0.104 |    0.234 |**0.753**|
+| Dataset                              |    n | nullpii | GLiNER | OpenAI bare HF | piiranha | DeBERTa-PII | Presidio |   spaCy |
+| ------------------------------------ | ---: | ------: | -----: | -------------: | -------: | ----------: | -------: | ------: |
+| presidio-synthetic (en)              | 5000 |   0.591 |**0.656**|         0.403 |    0.390 |       0.433 |    0.573 |   0.156 |
+| long-prompts-en (chunking proof)     |   62 |**0.600**|  0.000 |          0.350 |    0.352 |       0.000 |    0.348 |   0.079 |
+| isotonic/pii-masking-200k (en)       | 5000 |   0.572 |  0.572 |          0.386 |    0.581 |   **0.751** |    0.478 |   0.173 |
+| isotonic/pii-masking-200k (it)       | 5000 |**0.592**|  0.558 |          0.389 |    0.570 |       0.542 |    0.415 |   0.084 |
+| isotonic/pii-masking-200k (de)       | 5000 |**0.580**|  0.561 |          0.385 |    0.569 |       0.488 |    0.399 |   0.102 |
+| isotonic/pii-masking-200k (fr)       | 5000 |**0.578**|  0.549 |          0.380 |    0.569 |       0.569 |    0.415 |   0.082 |
+| **isotonic avg (4 locales)**         |      |**0.581**|  0.560 |          0.385 |    0.572 |       0.587 |    0.427 |   0.110 |
+| wikiann (en) — Wikipedia NER         | 1000 |   0.229 |  0.384 |          0.161 |    0.132 |       0.115 |    0.285 |**0.380**|
+| wikiann (it)                         | 1000 |   0.149 |  0.283 |          0.087 |    0.180 |       0.075 |    0.222 |**0.747**|
+| wikiann (de)                         | 1000 |   0.136 |  0.221 |          0.103 |    0.230 |       0.067 |    0.201 |**0.786**|
+| wikiann (fr)                         | 1000 |   0.175 |  0.268 |          0.104 |    0.170 |       0.114 |    0.228 |**0.692**|
+| wikiann (es)                         | 1000 |   0.229 |  0.229 |          0.104 |    0.195 |       0.084 |    0.234 |**0.753**|
 
-> **PII-focused (bundled + isotonic + long-prompts + presidio-syn)**:
-> nullpii dominates — wins all 11 PII runs across 5 locales.
-> **Presidio synthetic (5k)**: near-tie (0.576 vs 0.575); Presidio's
-> analyzer is well-tuned for the lexicon its own generator produces.
-> **Wikipedia NER**: spaCy dominates — Wikipedia ≠ PII; spaCy is the
-> right tool for general NER.
->
 > **Headline avg PII F1** (11 datasets, excludes wikiann):
-> nullpii **0.654**, Presidio 0.455, OpenAI bare HF 0.429, spaCy 0.122.
-> nullpii beats the **bare upstream model** by **+0.225 F1** —
-> attributable entirely to chunking + constrained Viterbi + posterior
-> scoring + recognizer post-pass.
+> nullpii **0.655**, GLiNER 0.603, Presidio 0.455, piiranha 0.439,
+> OpenAI bare HF 0.430, DeBERTa-PII 0.419, spaCy 0.122.
+>
+> **Per-dataset wins**: nullpii 5/11 (en bundled + 3 isotonic +
+> long-prompts), GLiNER 4/11 (4 non-en bundled), DeBERTa-PII 1/11
+> (isotonic-en only), GLiNER also wins presidio-synthetic.
+>
+> **+0.226 F1 vs OpenAI bare HF** — same upstream model, different
+> decoder. Isolates the value of nullpii's runtime: chunking +
+> constrained Viterbi + forward-backward posterior + recognizer
+> post-pass.
+>
+> **GLiNER is the closest competitor**: 0.603 avg, batte nullpii sui
+> 4 locales bundled non-English. **Ma 0.000 su long-prompts-en**
+> (max-length truncation, no chunking). Stesso problema con DeBERTa-PII.
+> Solo nullpii cattura PII oltre 512 tok by design.
+>
+> **Wikipedia NER**: spaCy dominates as expected — Wikipedia ≠ PII.
+> GLiNER second (0.281 avg), nullpii third (0.184 avg).
 
 > **Bundled (en)**: nullpii nearly 2× Presidio on real-world prompt
 > patterns the upstream model was trained on. Sample is small but

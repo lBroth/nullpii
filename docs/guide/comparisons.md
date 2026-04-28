@@ -1,7 +1,28 @@
-# nullpii vs Microsoft Presidio vs bare spaCy NER
+# Comparisons
 
-Honest 3-way comparison with real numbers across **5 locales** and
-**4 public datasets**. All measurements reproducible — see bottom.
+Honest head-to-head numbers vs every PII / NER tool we can run on the
+same datasets. Measurements reproducible — see bottom.
+
+**Tools currently compared**:
+
+- **nullpii** (this library) — `openai/privacy-filter` 1.3B
+  via ONNX Runtime + chunking + constrained Viterbi + posterior
+  scoring + recognizer post-pass.
+- **OpenAI bare HF pipeline** — same upstream model loaded via
+  `transformers.pipeline()` with the default decoder. Isolates the
+  value of nullpii's runtime over the bare upstream pipeline.
+- **Microsoft Presidio** 2.x — regex + small spaCy NER, English-tuned
+  recognizer set.
+- **bare spaCy NER** — `*_core_news_lg` / `en_core_web_lg`, no PII
+  recognizers. General NER baseline.
+
+Other tools considered (see notes at bottom):
+
+- [StreamGuard](https://github.com/d-barletta/StreamGuard) — Rust+WASM
+  guardrail engine. Different layer (output-stream enforcement, not
+  reversible input vault). Not a primary PII detector — covers only
+  email/URL/IPv4/credit-card patterns. Curiosity benchmark in
+  `packages/eval/scripts/eval_streamguard.py` (results gitignored).
 
 nullpii's detector is OpenAI's
 [`privacy-filter`](https://huggingface.co/openai/privacy-filter)

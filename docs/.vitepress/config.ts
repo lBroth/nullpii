@@ -29,7 +29,7 @@ export default defineConfig({
             { text: 'How it works', link: '/guide/how-it-works' },
             { text: 'Backends', link: '/guide/backends' },
             { text: 'Security model', link: '/guide/security' },
-            { text: 'vs Presidio + spaCy', link: '/guide/vs-presidio' },
+            { text: 'Comparisons', link: '/guide/comparisons' },
             { text: 'Eval results', link: '/guide/eval-results' },
             { text: 'Contributing', link: '/guide/contributing' },
           ],

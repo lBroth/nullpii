@@ -2,26 +2,21 @@
 
 Tracked from the iter-N exploration loop on `nullpii-gliner-ensemble` /
 `iter-explore-19-21` branches. These are functions / patterns the
-benchmark proved dead or marginal — safe to remove or simplify.
+benchmark proved dead or marginal.
 
-## Confirmed dead (Δ F1 ≤ 0.001 across 4271 samples)
+## Done — purged from codebase
 
-- **CC 16-digit regex** — already dropped in iter-22 (commit 95484ce).
-  Never fires on any dataset.
-- **Bare-domain URL regex** — already dropped in iter-20 (commit a3c01b6).
-  Was a net negative (FP > recall).
-
-## Marginal / candidate for removal
-
-- **Phone regex** (`r"\+\d{1,3}[\s-]?…"`) — iter-21 shows -0.005 on
-  long-prompts when removed. GLiNER already at 7% miss on phones.
-  Low value, occasional FP on version strings. Consider drop.
-- **`category_routing_predictor`** in adapters.py — strategy proven
-  worse than `primary` on every dataset (iter-8 -0.135 vs baseline).
-  Keep API surface for users but document as not recommended.
+- **CC 16-digit regex** (iter-22, commit 95484ce). Never fires.
+- **Bare-domain URL regex** (iter-20, commit a3c01b6). FP > recall.
+- **Phone regex** — removed from `DEFAULT_REGEX_PATTERNS`. Low value,
+  GLiNER already at 7% miss on phones, FP on version strings.
+- **`category_routing_predictor`** — removed from adapters.py.
+  iter-8 showed -0.135 vs `primary`.
 - **`multi_ensemble_predictor` strategies `intersection`, `majority`** —
-  both lose vs `primary` (iter-15 union -0.026, iter-16 majority -0.075).
-  Keep but document as recall-killers.
+  removed. iter-15 union -0.026, iter-16 majority -0.075 vs `primary`.
+- **`nullpii_gliner_ensemble_predictor`** — removed (legacy, superseded
+  by `multi_ensemble_predictor`).
+- **`_merge_intersection`** in `eval_ensemble.py` — removed.
 
 ## Code added during iter-26..28 — confirmed dead
 
@@ -84,17 +79,11 @@ quick_ensemble.py \
 - Regex pack: URL (http(s)/www only), email, AWS+GitHub+Stripe+OpenAI
   keys, IBAN, SSN, phone
 
-## Functions to potentially purge
+## Kept (benchmarking-only, not in default ensemble)
 
-If we ship this as the production ensemble:
-
-- `category_routing_predictor` — kept for API completeness, document as
-  experimental
-- `intersection` and `majority` mergers in `multi_ensemble_predictor` —
-  same
-- `nullpii_gliner_ensemble_predictor` — superseded by
-  `multi_ensemble_predictor`. Mark deprecated or remove.
-- DeBERTa / piiranha adapters — keep for benchmarking-only docs section
+- `deberta_pii_predictor`, `piiranha_predictor` — competitor adapters,
+  used by quick smoke for comparison, not in `make_best_ensemble`.
+- `presidio_predictor` — same.
 
 ## Path to higher F1 (excluded from current loop)
 

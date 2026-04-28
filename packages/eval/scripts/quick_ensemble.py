@@ -3,8 +3,8 @@
 """Fast ensemble smoke against nullpii-bench + 1k Isotonic.
 
 Configurable via CLI:
-  --tools     comma list from {nullpii, gliner, presidio, deberta, piiranha}
-  --strategy  union | primary | intersection | majority | category-routing
+  --tools     comma list from {nullpii, gliner, presidio, deberta, piiranha, regex}
+  --strategy  primary | union  (other strategies tested + dropped, see CLEANUP_TODO)
   --gliner-threshold N
 
 Prints per-dataset F1 + AVG. ~2-3 min wall-clock.
@@ -24,7 +24,6 @@ from nullpii_eval import public_datasets
 from nullpii_eval.adapters import (
     DEFAULT_REGEX_PATTERNS,
     boundary_refined_predictor,
-    category_routing_predictor,
     deberta_pii_predictor,
     gliner_chunked_predictor,
     multi_ensemble_predictor,
@@ -33,7 +32,7 @@ from nullpii_eval.adapters import (
     presidio_predictor,
     regex_recognizer_predictor,
 )
-from nullpii_eval.datasets import Sample, Span, load
+from nullpii_eval.datasets import Sample, Span
 from nullpii_eval.metrics import evaluate, macro_f1
 
 
@@ -48,19 +47,6 @@ def load_nullpii_bench() -> dict[str, list[Sample]]:
     return by_subset
 
 
-# Per-category routing derived from miss-rate analysis (lower is better).
-DEFAULT_ROUTING = {
-    "private_url":     "gliner",
-    "private_person":  "gliner",
-    "private_phone":   "gliner",
-    "private_email":   "nullpii",
-    "private_address": "presidio",
-    "private_date":    "presidio",
-    "account_number":  "presidio",
-    "secret":          "gliner",
-}
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -68,8 +54,8 @@ def main() -> None:
         help="comma list from {nullpii, gliner, presidio, deberta, piiranha, regex}",
     )
     parser.add_argument(
-        "--strategy", default="primary",
-        choices=["union", "primary", "intersection", "majority", "category-routing", "category"],
+        "--strategy", default="primary", choices=["primary", "union"],
+        help="primary = winner-take-overlap (production default); union = recall-tilted",
     )
     parser.add_argument("--gliner-threshold", type=float, default=0.8)
     parser.add_argument("--isotonic", type=int, default=1000)
@@ -103,16 +89,10 @@ def main() -> None:
         print(f"  loading {t}…")
         preds_by_name[t] = builders[t]()
 
-    if args.strategy in {"category-routing", "category"}:
-        routing = {label: preds_by_name[tool] for label, tool in DEFAULT_ROUTING.items() if tool in preds_by_name}
-        fallback = preds_by_name.get("nullpii") or next(iter(preds_by_name.values()))
-        ens = category_routing_predictor(routing=routing, fallback=fallback)
-        print(f"  routing: {DEFAULT_ROUTING}")
-    else:
-        ens = multi_ensemble_predictor(
-            predictors=[preds_by_name[t] for t in tools],
-            strategy=args.strategy,
-        )
+    ens = multi_ensemble_predictor(
+        predictors=[preds_by_name[t] for t in tools],
+        strategy=args.strategy,
+    )
     if args.refine_boundaries:
         ens = boundary_refined_predictor(inner=ens)
         print("  boundary-refinement enabled")

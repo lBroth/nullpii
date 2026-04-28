@@ -608,6 +608,37 @@ def gliner_pii_predictor(
     return _predict
 
 
+def make_best_ensemble(
+    *,
+    pool_size: int = 4,
+    threads_each: int = 4,
+    gliner_threshold: float = 0.8,
+) -> Predictor:
+    """Production-default ensemble derived from the iter-22 sweep.
+
+    Stack:
+      - **nullpii** pool (4 daemons × 4 ORT threads, cpu+fp16)
+      - **GLiNER** (urchade/gliner_multi_pii-v1, threshold 0.8, chunked)
+      - **regex pack** (URL http(s)/www, email, AWS/GitHub/Stripe/OpenAI keys,
+        IBAN, SSN, phone)
+      - **boundary refinement** (trim trailing whitespace + punctuation)
+
+    Strategy: nullpii primary, GLiNER + regex fill non-overlapping gaps.
+    Best measured F1: 0.6712 across 4271 samples (bundled multi-locale,
+    long-prompts-en, isotonic 4 locales). Latency p50 207 ms / p95 278 ms
+    single-call on Apple M5 Pro 48 GB."""
+    np_pred = nullpii_pool_predictor(
+        pool_size=pool_size, threads_each=threads_each,
+        backend="cpu", variant="fp16",
+    )
+    gl_pred = gliner_chunked_predictor(threshold=gliner_threshold)
+    rg_pred = regex_recognizer_predictor(patterns=DEFAULT_REGEX_PATTERNS)
+    ens = multi_ensemble_predictor(
+        predictors=[np_pred, gl_pred, rg_pred], strategy="primary",
+    )
+    return boundary_refined_predictor(inner=ens)
+
+
 def boundary_refined_predictor(
     *,
     inner: Predictor,

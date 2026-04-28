@@ -1,34 +1,17 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: Apache-2.0
 //
-// Claude Code UserPromptSubmit hook for @nullpii/claude-code.
+// UserPromptSubmit hook: talk to the per-session `nullpii serve`
+// daemon over a Unix socket. The daemon was spawned by the
+// SessionStart hook so the model is already loaded.
 //
-// Contract:
-//  - stdin: JSON `{ prompt: string, session_id?: string, ... }`
-//  - stdout: JSON `{ continue: true, prompt: <sanitized>, ... }`
-//
-// We spawn the `nullpii` CLI as a subprocess instead of importing the
-// `nullpii` module. Reason: when Claude Code copies the plugin into
-// its cache (e.g. `~/.claude/plugins/cache/<plugin>/`), no
-// `node_modules/` is shipped along. The CLI binary, however, lives in
-// the user-installed `nullpii` package on PATH (or beside the plugin
-// during local-marketplace installs) and carries its own resolved
-// deps.
-//
-// Resolution order for the binary:
-//   1. `nullpii` on PATH (post-publish, after `npm i -g @nullpii/claude-code`)
-//   2. `${CLAUDE_PLUGIN_ROOT}/../../bin/nullpii.mjs` (local marketplace)
-//   3. fallthrough → passthrough with stderr warning, never block.
-//
-// On any error: forward the original prompt unchanged. PII leaking
+// On any error: forward the original prompt unchanged. PII leakage
 // is bad; blocking the user is worse.
 
-import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
+import { existsSync, readFileSync } from 'node:fs';
+import { connect } from 'node:net';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 function readStdin() {
   return new Promise((resolve) => {
@@ -52,54 +35,70 @@ function passthrough(prompt, reason) {
   writeOutput({ continue: true, prompt });
 }
 
-function locateBinary() {
-  const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
-  // 1. Local-marketplace install: plugin copied alongside the source repo
-  //    (or hooks/ sits two levels under the repo root).
-  const candidates = [];
-  if (pluginRoot !== undefined) {
-    candidates.push(join(pluginRoot, '..', '..', 'bin', 'nullpii.mjs'));
-  }
-  // 2. Same-repo dev: hooks/../../../../bin/nullpii.mjs (this file path)
-  candidates.push(join(__dirname, '..', '..', '..', 'bin', 'nullpii.mjs'));
-  for (const p of candidates) {
-    if (existsSync(p)) return { kind: 'mjs', path: p };
-  }
-  // 3. PATH lookup will be tried by spawn('nullpii', ...) directly.
-  return { kind: 'path', path: 'nullpii' };
+function statePath(sessionId) {
+  return join(homedir(), '.cache', 'nullpii', 'plugin', `daemon-${sessionId}.json`);
 }
 
-function runSanitize(prompt) {
+function readDaemonState(sessionId) {
+  const state = statePath(sessionId);
+  if (!existsSync(state)) return null;
+  try {
+    const info = JSON.parse(readFileSync(state, 'utf8'));
+    if (typeof info.socket === 'string' && existsSync(info.socket)) {
+      return info;
+    }
+  } catch {}
+  return null;
+}
+
+function sanitizeViaDaemon(socketPath, prompt, sessionId) {
   return new Promise((resolve) => {
-    const bin = locateBinary();
-    const argv = bin.kind === 'mjs'
-      ? ['node', bin.path, 'sanitize', '--stdin', '--format', 'json']
-      : ['nullpii', 'sanitize', '--stdin', '--format', 'json'];
-    const child = spawn(argv[0], argv.slice(1), { stdio: ['pipe', 'pipe', 'pipe'] });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (c) => {
-      stdout += c;
-    });
-    child.stderr.on('data', (c) => {
-      stderr += c;
-    });
-    child.on('error', (err) => {
-      resolve({ ok: false, reason: `spawn failed: ${err.message}`, stderr });
-    });
-    child.on('exit', (code) => {
-      if (code !== 0) {
-        resolve({ ok: false, reason: `nullpii exit ${code}`, stderr });
-        return;
-      }
+    const client = connect(socketPath);
+    let buffer = '';
+    let settled = false;
+    const settle = (value) => {
+      if (settled) return;
+      settled = true;
       try {
-        const parsed = JSON.parse(stdout);
-        resolve({ ok: true, sanitized: parsed.sanitized, spans: parsed.spans, sessionId: parsed.sessionId, stderr });
+        client.end();
+      } catch {}
+      resolve(value);
+    };
+    const timer = setTimeout(() => {
+      settle({ ok: false, reason: 'daemon timeout (30s)' });
+    }, 30_000);
+    client.setEncoding('utf8');
+    client.on('connect', () => {
+      const req = JSON.stringify({ id: 1, text: prompt, sessionId });
+      client.write(`${req}\n`);
+    });
+    client.on('data', (chunk) => {
+      buffer += chunk;
+      const nl = buffer.indexOf('\n');
+      if (nl < 0) return;
+      const line = buffer.slice(0, nl).trim();
+      try {
+        const resp = JSON.parse(line);
+        clearTimeout(timer);
+        if (resp.error !== undefined && resp.error !== null) {
+          settle({ ok: false, reason: `daemon error: ${resp.error}` });
+        } else {
+          settle({
+            ok: true,
+            sanitized: resp.sanitized,
+            sessionId: resp.sessionId,
+            spans: resp.spans ?? [],
+          });
+        }
       } catch (err) {
-        resolve({ ok: false, reason: `parse stdout failed: ${err.message}`, stderr });
+        clearTimeout(timer);
+        settle({ ok: false, reason: `parse failed: ${err.message}` });
       }
     });
-    child.stdin.end(prompt);
+    client.on('error', (err) => {
+      clearTimeout(timer);
+      settle({ ok: false, reason: `socket error: ${err.message}` });
+    });
   });
 }
 
@@ -120,11 +119,18 @@ async function main() {
     return;
   }
 
-  const result = await runSanitize(prompt);
+  const sessionId = payload.session_id ?? payload.sessionId ?? `default-${process.pid}`;
+  const daemon = readDaemonState(sessionId);
+  if (daemon === null) {
+    passthrough(
+      prompt,
+      `no daemon registered for session ${sessionId} — SessionStart hook may have failed`,
+    );
+    return;
+  }
+
+  const result = await sanitizeViaDaemon(daemon.socket, prompt, sessionId);
   if (!result.ok) {
-    if (result.stderr !== undefined && result.stderr !== '') {
-      process.stderr.write(`[nullpii] subprocess stderr: ${result.stderr}\n`);
-    }
     passthrough(prompt, result.reason);
     return;
   }

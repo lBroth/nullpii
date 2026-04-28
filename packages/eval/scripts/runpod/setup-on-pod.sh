@@ -43,25 +43,30 @@ else
     /workspace/.venv/bin/pip install --quiet --upgrade pip wheel
 
     echo "$LOG_PREFIX core deps + onnxruntime-gpu + competitors…"
+    # Pin torch cu128 FIRST so subsequent installs (gliner pulls torch as
+    # transitive dep) reuse it instead of installing the cu130 default
+    # wheel that doesn't run on RunPod's CUDA 12.8 driver.
+    /workspace/.venv/bin/pip install --quiet \
+        torch --index-url https://download.pytorch.org/whl/cu128
+    # Then install everything else. gliner pins transformers<5.2; we
+    # immediately upgrade transformers to >=5.6 below for the
+    # openai/privacy-filter custom architecture (gliner remains
+    # functional in our actual call paths despite the pip warning).
     /workspace/.venv/bin/pip install --quiet \
         onnxruntime-gpu \
-        transformers torch \
         gliner \
         presidio-analyzer presidio-anonymizer \
-        spacy \
         datasets \
         rich numpy
-
-    /workspace/.venv/bin/python -m spacy download en_core_web_lg --quiet || true
+    /workspace/.venv/bin/pip install --quiet 'transformers>=5.6'
 
     touch "$MARK"
 fi
 
-# Per-run extras (cheap if already installed).
-echo "$LOG_PREFIX ensure eval-package python deps…"
-if [ -f packages/eval/pyproject.toml ]; then
-    /workspace/.venv/bin/pip install --quiet -e packages/eval || true
-fi
+# eval-package install — required so `from nullpii_eval import ...`
+# resolves without sys.path tricks. Failure here is fatal.
+echo "$LOG_PREFIX install eval package (editable)…"
+/workspace/.venv/bin/pip install --quiet -e packages/eval
 
 # nullpii pool predictor spawns `node bin/nullpii.mjs serve` which loads
 # dist/cli/index.js — need built dist. Strip package-lock.json to avoid
@@ -85,19 +90,15 @@ from huggingface_hub import snapshot_download
 import os
 snapshot_download(
     repo_id='openai/privacy-filter',
-    allow_patterns=['*.json', '*.txt', '*fp16*.onnx', '*fp16*.onnx_data', 'tokenizer*'],
+    # NB: '*fp16*.onnx_data*' (trailing wildcard) catches sharded
+    # external-data files (model_fp16.onnx_data, _1, _2…). Without
+    # the trailing star ONNX init fails on shard 1+.
+    allow_patterns=['*.json', '*.txt', '*fp16*.onnx', '*fp16*.onnx_data*', 'tokenizer*'],
     local_dir='$MODELS_DIR',
     token=os.environ.get('HUGGING_FACE_HUB_TOKEN') or None,
 )
-" || echo "$LOG_PREFIX (model download deferred — will retry inside bench)"
+"
 fi
-# Cleanup wrong-path download from earlier setup runs.
-rm -rf /workspace/nullpii/models/privacy-filter 2>/dev/null || true
-
-# Symlink venv into eval package so quick scripts find it.
-mkdir -p packages/eval/.venv-py/bin
-ln -sf /workspace/.venv/bin/python packages/eval/.venv-py/bin/python
-ln -sf /workspace/.venv/bin/python3 packages/eval/.venv-py/bin/python3
 
 echo "$LOG_PREFIX done. python: $(/workspace/.venv/bin/python --version)"
 echo "$LOG_PREFIX cuda visible: $(/workspace/.venv/bin/python -c 'import torch; print(torch.cuda.is_available(), torch.cuda.device_count())')"

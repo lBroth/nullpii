@@ -13,6 +13,7 @@ import atexit
 import json
 import os
 import subprocess
+import sys
 import threading
 import time
 from collections.abc import Callable
@@ -114,20 +115,30 @@ class _NullpiiServer:
         return spans, elapsed
 
     def _stderr_tail(self) -> str:
+        # Used inside an already-failing path (e.g. "daemon died" message
+        # construction). MUST return a string — raising here replaces the
+        # original error with this one and erases the actual cause.
+        # Read errors are surfaced as the returned diagnostic string.
         if self.proc.stderr is None:
-            return ""
+            return "<no stderr captured>"
         try:
-            return self.proc.stderr.read() or ""
-        except Exception:  # noqa: BLE001
-            return ""
+            data = self.proc.stderr.read()
+        except (OSError, ValueError) as e:
+            return f"<could not read stderr: {type(e).__name__}: {e}>"
+        return data if data else "<empty stderr>"
 
     def close(self) -> None:
+        # `atexit`-registered cleanup. We MUST not crash interpreter
+        # shutdown for unrelated daemons; but any unexpected error here
+        # gets re-raised so test harnesses see it. BrokenPipe on a
+        # daemon that already exited is the only routine condition.
         if self.proc.poll() is None:
-            try:
-                if self.proc.stdin is not None:
+            if self.proc.stdin is not None:
+                try:
                     self.proc.stdin.close()
-            except Exception:  # noqa: BLE001
-                pass
+                except BrokenPipeError as e:
+                    print(f"[nullpii-pool] stdin already closed: {e}",
+                          file=sys.stderr, flush=True)
             self.proc.terminate()
             try:
                 self.proc.wait(timeout=5)
@@ -942,69 +953,6 @@ _PRESIDIO_TO_NULLPII = {
 
 def _map_presidio_entity(entity_type: str) -> str | None:
     return _PRESIDIO_TO_NULLPII.get(entity_type)
-
-
-# Per-locale spaCy model name. Each is `<lang>_core_news_lg` (or `_web_lg` for en/zh).
-_SPACY_MODEL_BY_LOCALE: dict[str, str] = {
-    "en": "en_core_web_lg",
-    "it": "it_core_news_lg",
-    "de": "de_core_news_lg",
-    "fr": "fr_core_news_lg",
-    "es": "es_core_news_lg",
-    "ja": "ja_core_news_lg",
-    "zh": "zh_core_web_lg",
-}
-
-_SPACY_LABEL_TO_NULLPII = {
-    "PERSON": "private_person",
-    "PER": "private_person",
-    "PERS": "private_person",
-    "GPE": "private_address",
-    "LOC": "private_address",
-    "FAC": "private_address",
-    "DATE": "private_date",
-    "TIME": "private_date",
-    "URL": "private_url",
-    "MONEY": None,
-    "ORG": None,
-    "MISC": None,
-}
-
-
-def spacy_predictor(*, locale: str = "en") -> Predictor:
-    """Bare spaCy NER. Uses `_core_news_lg` for non-English locales,
-    `en_core_web_lg` for English. Maps NER labels onto our 8 categories."""
-    try:
-        import spacy  # noqa: I001
-    except ImportError as e:
-        raise ImportError(
-            "spacy not installed; run `pip install spacy` to use this predictor",
-        ) from e
-
-    model_name = _SPACY_MODEL_BY_LOCALE.get(locale)
-    if model_name is None:
-        raise ValueError(f"spacy_predictor: no model registered for locale '{locale}'")
-    try:
-        nlp = spacy.load(model_name)
-    except OSError as e:
-        raise OSError(
-            f"spaCy model '{model_name}' not installed; "
-            f"run `python -m spacy download {model_name}`",
-        ) from e
-
-    def _predict(text: str) -> ToolResult:
-        t0 = time.perf_counter()
-        doc = nlp(text)
-        elapsed = (time.perf_counter() - t0) * 1000
-        spans: list[Span] = []
-        for ent in doc.ents:
-            label = _SPACY_LABEL_TO_NULLPII.get(ent.label_)
-            if label is None:
-                continue
-            spans.append(Span(label, int(ent.start_char), int(ent.end_char)))
-        return ToolResult(spans, elapsed)
-
-    return _predict
 
 
 def has_artifacts() -> bool:

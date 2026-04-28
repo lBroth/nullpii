@@ -2,6 +2,7 @@
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import debug from 'debug';
+import { xdgCacheHome } from './config.js';
 import {
   CACHE_DIR_NAME,
   CACHE_MODELS_SUBDIR,
@@ -55,8 +56,7 @@ export const DEFAULT_MODEL: ModelRef = {
 /** XDG-style default cache: `$XDG_CACHE_HOME/nullpii/models/` if set,
  * else `~/.cache/nullpii/models/`. Shared across projects on the same host. */
 export function defaultCacheDir(): string {
-  const xdg = process.env.XDG_CACHE_HOME;
-  const root = xdg !== undefined && xdg !== '' ? xdg : join(homedir(), '.cache');
+  const root = xdgCacheHome() ?? join(homedir(), '.cache');
   return join(root, CACHE_DIR_NAME, CACHE_MODELS_SUBDIR);
 }
 

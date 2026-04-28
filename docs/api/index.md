@@ -40,6 +40,33 @@ The functional wrappers share a process-wide instance per `config`
 (keyed by `JSON.stringify(config)`). For tight control, prefer the
 class.
 
+## Default pipeline
+
+`new NullPii()` with no config gives you the full default pipeline:
+
+| Stage | What runs by default | Override |
+|---|---|---|
+| **Backend** | `auto` → CUDA → MPS → ROCm → CPU | `backend: 'cpu' \| 'mps' \| 'cuda' \| 'rocm'` |
+| **Variant** | `auto` → fp16 (~3 GB) | `variant: 'fp32' \| 'fp16' \| 'int8' \| 'int4' \| 'int4f16'` |
+| **Chunking** | sliding window 512 tokens, 64 overlap | `maxSequenceLength`, `chunkOverlap`, `strictLength` |
+| **Viterbi BIOES decode** | constrained transitions, posterior scores | `transitionBiases`, `threshold`, `categoryThresholds` |
+| **Recognizer pack** | `DEFAULT_RECOGNIZERS` (URL, email, AWS / GitHub / Stripe / OpenAI / Anthropic keys, IBAN, SSN) | `recognizers: 'none'` to disable; `recognizers: [...]` to replace |
+| **Boundary refinement** | trim whitespace + punctuation from span edges | `boundaryRefine: false` |
+| **Vault** | new in-memory `Map` per instance | per-call `sessionId` for multi-turn |
+
+All defaults live in `src/defaults.ts`. Adding a new default? Put it
+there. Reading one elsewhere? Import from there. No `?? 'auto'`
+scattered across modules.
+
+```ts
+// Inspect or extend the built-in recognizer pack:
+import { DEFAULT_RECOGNIZERS } from 'nullpii';
+
+const np = new NullPii({
+  recognizers: [...DEFAULT_RECOGNIZERS, myCustomRecognizer],
+});
+```
+
 ## Backends
 
 ```ts

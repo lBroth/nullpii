@@ -132,6 +132,15 @@ ML-first, regex-augmented. No "no regex" purity theatre.
   optional via `peerDependency`
 - **a constrained Viterbi pass** — enforces valid BIOES transitions so
   the model can't emit garbage like `O → I-X`
+- **a default recognizer pack** — URL, email, AWS / GitHub / Stripe /
+  OpenAI / Anthropic keys, IBAN, US SSN — auto-registered on every
+  `new NullPii()`. Closes the ~66% URL-miss gap and the long tail of
+  secrets the model alone won't catch. Opt out with
+  `new NullPii({ recognizers: 'none' })`.
+- **boundary refinement** — trims trailing punctuation / whitespace
+  from span edges so partial-match scoring (IoU≥0.5) doesn't reject a
+  span just because the model included a closing bracket. Opt out
+  with `boundaryRefine: false`.
 
 ---
 

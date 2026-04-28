@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import type { PiiCategory } from './labels.js';
+import type { Recognizer } from './recognizer.js';
 import type { TransitionBiases } from './transition-biases.js';
 
 /** Hardware/runtime backends the library can dispatch to. */
@@ -63,4 +64,15 @@ export interface NullPiiConfig {
   readonly interOpNumThreads?: number;
   /** Timeout for first-time model download. */
   readonly downloadTimeoutMs?: number;
+  /** Recognizer set to register at construction.
+   * - omitted (default) → `DEFAULT_RECOGNIZERS` from `defaults.ts`
+   *   (URL, email, AWS/GitHub/Stripe/OpenAI/Anthropic keys, IBAN, SSN)
+   * - `'none'` → no built-in recognizers; only what you add via
+   *   `np.addRecognizer(...)` runs as a post-pass
+   * - `Recognizer[]` → exact list, replaces defaults (but you can
+   *   re-add defaults manually via `import { DEFAULT_RECOGNIZERS }`) */
+  readonly recognizers?: 'none' | readonly Recognizer[];
+  /** Trim whitespace + common punctuation from span edges as a final
+   * post-pass. Improves partial-match (IoU≥0.5) scoring. Default: `true`. */
+  readonly boundaryRefine?: boolean;
 }

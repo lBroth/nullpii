@@ -202,15 +202,27 @@ function restoreBody(engine: NullPii, body: unknown, sessionId: string): void {
     for (const block of content as Array<Record<string, unknown>>) {
       if (block.type === 'text' && typeof block.text === 'string') {
         block.text = engine.restore(block.text, sessionId).restored;
-      }
-    }
-  }
-  // Tool inputs / outputs may also carry text — keep restore-friendly.
-  const toolUses = obj.tool_uses;
-  if (Array.isArray(toolUses)) {
-    for (const tu of toolUses as Array<Record<string, unknown>>) {
-      if (typeof tu.input === 'object' && tu.input !== null) {
-        restoreObject(engine, tu.input as Record<string, unknown>, sessionId);
+      } else if (block.type === 'tool_use') {
+        // Tool calls (Write/Edit/Bash/etc.) carry the file body /
+        // command in `input`. The model only ever saw placeholders, so
+        // we MUST restore the originals here or the tool runs against
+        // the redacted text.
+        if (typeof block.input === 'object' && block.input !== null) {
+          restoreObject(engine, block.input as Record<string, unknown>, sessionId);
+        }
+      } else if (block.type === 'tool_result') {
+        // Some tool results are reflected back into the conversation
+        // before the final text reply — keep them readable too.
+        const tcontent = block.content;
+        if (typeof tcontent === 'string') {
+          block.content = engine.restore(tcontent, sessionId).restored;
+        } else if (Array.isArray(tcontent)) {
+          for (const tb of tcontent as Array<Record<string, unknown>>) {
+            if (tb.type === 'text' && typeof tb.text === 'string') {
+              tb.text = engine.restore(tb.text, sessionId).restored;
+            }
+          }
+        }
       }
     }
   }

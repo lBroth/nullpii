@@ -1,6 +1,6 @@
 {
   "name": "nullpii",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "description": "Manage the local nullpii daemon + HTTP proxy. Sanitizes Anthropic API requests via ANTHROPIC_BASE_URL=http://localhost:7330.",
   "author": {
     "name": "nullpii",

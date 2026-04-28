@@ -1,7 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 import debug from 'debug';
 import { type TokenChunk, dedupeSpans, partitionTokens } from './chunking.js';
-import { DEFAULT_MODEL_REPO, DEFAULT_MODEL_REVISION, DEFAULT_VARIANT } from './defaults.js';
+import {
+  BOUNDARY_REFINE_TRIM_CHARS,
+  DEFAULT_BOUNDARY_REFINE,
+  DEFAULT_MODEL_REPO,
+  DEFAULT_MODEL_REVISION,
+  DEFAULT_RECOGNIZERS,
+  DEFAULT_RECOGNIZERS_ENABLED,
+  DEFAULT_VARIANT,
+} from './defaults.js';
 import { ModelNotInitializedError, TextTooLongError } from './errors.js';
 import { LABEL_MAP, NUM_LABELS } from './labels-bioes.js';
 import { ModelManager } from './model-manager.js';
@@ -46,6 +54,16 @@ export class NullPii {
 
   constructor(config: NullPiiConfig = {}) {
     this.config = config;
+    // Auto-register the built-in regex pack unless the caller opted out
+    // or supplied their own list. They can still call addRecognizer()
+    // afterwards to layer extra patterns on top.
+    if (config.recognizers === 'none') {
+      // explicit opt-out, leave empty
+    } else if (Array.isArray(config.recognizers)) {
+      this.recognizers.push(...(config.recognizers as readonly Recognizer[]));
+    } else if (DEFAULT_RECOGNIZERS_ENABLED) {
+      this.recognizers.push(...DEFAULT_RECOGNIZERS);
+    }
   }
 
   /** Register a custom regex-based recognizer that runs as a post-pass
@@ -92,11 +110,13 @@ export class NullPii {
     }
     const mlSpans = chunks.length === 1 ? allSpans : dedupeSpans(allSpans);
     const recoSpans = dedupeSpans(runRecognizers(escaped, this.recognizers, mlSpans));
-    const spans = applyThresholds(
+    const merged = applyThresholds(
       [...mlSpans, ...recoSpans],
       this.config.threshold ?? 0,
       this.config.categoryThresholds ?? {},
     );
+    const refineOn = this.config.boundaryRefine ?? DEFAULT_BOUNDARY_REFINE;
+    const spans = refineOn ? refineSpanBoundaries(escaped, merged) : merged;
 
     const session = sessionId ?? this.vault.createSession();
     log(
@@ -194,6 +214,31 @@ function posteriorScores(
     const labelIdx = LABEL_MAP.indexOf(labels[t] ?? 'O');
     const logProb = marginals[t * numLabels + labelIdx];
     out[t] = logProb === undefined || logProb === Number.NEGATIVE_INFINITY ? 0 : Math.exp(logProb);
+  }
+  return out;
+}
+
+/** Trim leading / trailing whitespace + common punctuation from each
+ * span's edges. Drops spans that collapse to empty. ML detectors often
+ * include a trailing dot or close-bracket that ground-truth annotations
+ * exclude — refining boundaries lifts partial-match (IoU≥0.5) F1
+ * without changing the underlying detector. */
+function refineSpanBoundaries(text: string, spans: readonly PiiSpan[]): PiiSpan[] {
+  const trim = BOUNDARY_REFINE_TRIM_CHARS;
+  const out: PiiSpan[] = [];
+  for (const s of spans) {
+    let start = s.start;
+    let end = s.end;
+    while (start < end && trim.includes(text[start] as string)) start += 1;
+    while (end > start && trim.includes(text[end - 1] as string)) end -= 1;
+    if (start >= end) continue;
+    if (start === s.start && end === s.end) {
+      out.push(s);
+    } else {
+      // Recompute the `text` slice — vault uses span.text verbatim,
+      // so leaving stale post-refine text breaks restore.
+      out.push({ ...s, start, end, text: text.slice(start, end) });
+    }
   }
   return out;
 }

@@ -76,15 +76,24 @@ intact because it doesn't match any of the eight PII categories.
 
 Lives under the `nullpii` key in `.claude/settings.json`:
 
-| Field      | Type                                                   | Default |
-| ---------- | ------------------------------------------------------ | ------- |
-| `backend`  | `cpu` / `mps` / `cuda` / `rocm` / `auto`               | `auto`  |
-| `variant`  | `fp32` / `fp16` / `int8` / `int4` / `int4f16` / `auto` | `auto`  |
-| `modelDir` | string                                                 | (auto)  |
+| Field             | Type                                                   | Default |
+| ----------------- | ------------------------------------------------------ | ------- |
+| `backend`         | `cpu` / `mps` / `cuda` / `rocm` / `auto`               | `auto`  |
+| `variant`         | `fp32` / `fp16` / `int8` / `int4` / `int4f16` / `auto` | `auto`  |
+| `modelDir`        | string                                                 | (auto)  |
+| `recognizers`     | `'none'` (disable built-ins) or `Recognizer[]` (replace) | built-in pack |
+| `boundaryRefine`  | `boolean` (trim span edges)                            | `true`  |
 
 `backend: 'auto'` walks **CUDA → MPS → ROCm → CPU**. On most macOS
 laptops today, `cpu` with `variant: 'int8'` is the fastest path
 (see [Backends](/guide/backends)).
+
+The built-in recognizer pack covers URL, email, AWS / GitHub / Stripe
+/ OpenAI / Anthropic keys, IBAN, US SSN. The ML model alone misses
+~66% of URLs and most secrets even with clear surrounding context;
+the pack closes that gap with high-precision regexes (≥0.9
+confidence each). All defaults live in `nullpii`'s `src/defaults.ts`
+— a single source of truth.
 
 Unknown fields are ignored — forward-compatible.
 

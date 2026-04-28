@@ -3,6 +3,7 @@ import { type Socket, createServer } from 'node:net';
 import { createInterface } from 'node:readline';
 import type { Command } from 'commander';
 import { NullPii } from '../../nullpii.js';
+import { startProxy } from '../../proxy.js';
 import type { PiiSpan } from '../../types/index.js';
 import { type CliConfigOptions, configFromOptions } from '../config-from-options.js';
 
@@ -47,6 +48,11 @@ export function registerServe(program: Command): void {
       'auto-terminate when the given pid no longer exists (socket mode only)',
       Number.parseInt,
     )
+    .option(
+      '--http-proxy <port>',
+      'also listen on http://localhost:<port> as an Anthropic API reverse proxy that sanitizes outgoing prompts and restores responses',
+      Number.parseInt,
+    )
     .action(runServe);
 }
 
@@ -54,6 +60,7 @@ interface ServeOptions extends CliConfigOptions {
   socket?: string;
   idleTimeoutMs?: number;
   parentPid?: number;
+  httpProxy?: number;
 }
 
 async function runServe(options: ServeOptions): Promise<void> {
@@ -61,14 +68,34 @@ async function runServe(options: ServeOptions): Promise<void> {
   await engine.init();
   process.stderr.write('nullpii serve ready\n');
 
-  if (typeof options.socket === 'string' && options.socket !== '') {
-    await runSocket(engine, options.socket, {
-      idleTimeoutMs: options.idleTimeoutMs,
-      parentPid: options.parentPid,
-    });
-    return;
+  let proxyHandle: { close: () => Promise<void> } | undefined;
+  if (typeof options.httpProxy === 'number' && options.httpProxy > 0) {
+    proxyHandle = await startProxy(engine, options.httpProxy);
   }
-  await runStdio(engine);
+
+  try {
+    if (typeof options.socket === 'string' && options.socket !== '') {
+      await runSocket(engine, options.socket, {
+        idleTimeoutMs: options.idleTimeoutMs,
+        parentPid: options.parentPid,
+      });
+      return;
+    }
+    if (proxyHandle !== undefined) {
+      // Proxy-only mode: stay alive until SIGTERM/SIGINT.
+      await new Promise<void>((resolve) => {
+        const stop = () => resolve();
+        process.on('SIGTERM', stop);
+        process.on('SIGINT', stop);
+      });
+      return;
+    }
+    await runStdio(engine);
+  } finally {
+    if (proxyHandle !== undefined) {
+      await proxyHandle.close();
+    }
+  }
 }
 
 async function runStdio(engine: NullPii): Promise<void> {

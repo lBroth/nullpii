@@ -1,29 +1,45 @@
 # Claude Code
 
-`@nullpii/claude-code` is a **lifecycle plugin**: it loads the PII
-model into memory when Claude Code starts and unloads it when the
-session ends. The plugin itself does not rewrite prompts — that is
-not possible with the current Claude Code hook API. **For actual
-in-flight sanitization use the [Anthropic SDK middleware](./anthropic.md)**
-in your application code.
+`@nullpii/claude-code` ships a lifecycle plugin **plus** an HTTP
+proxy. Together they sanitize every prompt Claude Code sends to
+`api.anthropic.com` and restore the originals in the response —
+transparently, no manual copy-paste.
 
-What the plugin gives you:
+What the plugin does:
 
-- `SessionStart` → spawns a `nullpii serve --socket <path>` daemon in
-  the background. The model is downloaded on first run (~3 GB fp16,
-  cached in `~/.cache/nullpii/`) and stays resident across prompts.
-- `Stop` → SIGTERMs the daemon, unlinks the socket + state file.
-- **Watchdogs** for the case where Claude Code exits without running
-  the Stop hook:
-  - **idle timeout** — the daemon self-terminates after 30 min with
-    no socket activity.
-  - **parent-pid liveness** — the daemon polls the Claude Code pid
-    every 5 s; if it disappears, daemon self-terminates.
+- `SessionStart` → spawns a `nullpii serve` daemon that
+  - listens on a Unix socket for SDK-mode clients
+  - **listens on `http://localhost:7330` as an Anthropic API reverse
+    proxy** (configurable via `NULLPII_PROXY_PORT`)
+  - loads the PII model once (~3 GB fp16, cached in `~/.cache/nullpii/`)
+- `Stop` → SIGTERMs the daemon, unlinks state.
+- Watchdogs (in case Claude Code exits without running `Stop`):
+  - **idle timeout** — daemon self-terminates after 30 min idle.
+  - **parent-pid liveness** — daemon polls the Claude Code pid
+    every 5 s and self-terminates when it disappears.
 
-No on-the-wire interception happens from inside Claude Code. If you
-need transparent sanitize-then-restore around Anthropic API calls,
-write your code against `@anthropic-ai/sdk` and wrap the client with
-`withNullPii(client)`.
+To route Claude Code through the proxy, set `ANTHROPIC_BASE_URL`
+before launching:
+
+```bash
+export ANTHROPIC_BASE_URL=http://localhost:7330
+claude
+```
+
+From that point on every `messages.create` call goes:
+
+```
+Claude Code → http://localhost:7330 (sanitize) → https://api.anthropic.com
+                                                          ↓
+              ←——————— restore placeholders ←——————— response
+```
+
+::: warning Streaming responses
+v1 forces `stream: false` on the way out so the proxy can restore
+placeholders in the buffered JSON response. Claude Code still works,
+but token-by-token output is collapsed into a single chunk. Real
+SSE-aware restoration is on the roadmap.
+:::
 
 ## Install
 

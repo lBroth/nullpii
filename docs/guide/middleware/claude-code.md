@@ -1,7 +1,29 @@
 # Claude Code
 
-The fastest way to put `nullpii` in front of an LLM. **No code changes
-to your codebase**, just a one-line plugin install.
+`@nullpii/claude-code` is a **lifecycle plugin**: it loads the PII
+model into memory when Claude Code starts and unloads it when the
+session ends. The plugin itself does not rewrite prompts — that is
+not possible with the current Claude Code hook API. **For actual
+in-flight sanitization use the [Anthropic SDK middleware](./anthropic.md)**
+in your application code.
+
+What the plugin gives you:
+
+- `SessionStart` → spawns a `nullpii serve --socket <path>` daemon in
+  the background. The model is downloaded on first run (~3 GB fp16,
+  cached in `~/.cache/nullpii/`) and stays resident across prompts.
+- `Stop` → SIGTERMs the daemon, unlinks the socket + state file.
+- **Watchdogs** for the case where Claude Code exits without running
+  the Stop hook:
+  - **idle timeout** — the daemon self-terminates after 30 min with
+    no socket activity.
+  - **parent-pid liveness** — the daemon polls the Claude Code pid
+    every 5 s; if it disappears, daemon self-terminates.
+
+No on-the-wire interception happens from inside Claude Code. If you
+need transparent sanitize-then-restore around Anthropic API calls,
+write your code against `@anthropic-ai/sdk` and wrap the client with
+`withNullPii(client)`.
 
 ## Install
 
@@ -63,58 +85,36 @@ plugin's `.claude-plugin/plugin.json` manifest is missing or
 incomplete — verify exact required fields with `/plugin --help` on
 your Claude Code version.
 
-## What it does (current behaviour)
+## What it does
 
-Three hooks, registered automatically:
+Two hooks, registered automatically:
 
-- **`SessionStart`** — spawns a background `nullpii serve` daemon over
-  a Unix socket. Loads the model ONCE per session (~5–10 s on first
-  prompt; subsequent prompts ~30 ms).
-- **`UserPromptSubmit`** — sends every outgoing prompt to the daemon.
-  If PII is detected, the hook **blocks** the prompt with
-  `decision: 'block'` and surfaces the sanitized version in the
-  rejection reason. You copy + resend the redacted text.
-- **`Stop`** — SIGTERMs the daemon, unlinks the socket, frees the
-  model.
+- **`SessionStart`** — spawns a background `nullpii serve` daemon
+  over a Unix socket and pre-loads the model. First run downloads
+  ~3 GB; subsequent runs reuse the cache.
+- **`Stop`** — terminates the daemon and unlinks its state.
 
-::: warning Why "block" and not silent rewrite
-Claude Code's `UserPromptSubmit` hook contract supports two outcomes:
-add context (`additionalContext`) or block (`decision: 'block'`). It
-**cannot rewrite the outgoing prompt**. So to actually prevent a
-leak we must block the original and let you decide whether to resend
-the sanitized version. A future build will sit between Claude Code
-and the Anthropic API as an MCP server / local proxy and rewrite
-transparently — see roadmap.
+The daemon is configured with two safety-net watchdogs so the model
+unloads even if Claude Code exits without firing `Stop`:
+- **idle timeout** (`--idle-timeout-ms`, default 30 min)
+- **parent-pid liveness** (`--parent-pid`, polled every 5 s)
+
+::: tip For real sanitization
+The plugin does not block or rewrite prompts. Use the
+[`withNullPii(client)`](./anthropic.md) middleware around your
+Anthropic SDK client for transparent in-flight sanitize → API →
+restore.
 :::
 
-When the conversation ends, the session is destroyed and the
-underlying `Map` becomes unreachable. No PII is persisted to disk.
+## Verifying the daemon
 
-## Example
-
-You type into Claude Code:
-
+```bash
+# After Claude Code session opens:
+ls ~/.cache/nullpii/plugin/        # daemon-<sessionId>.json present
+lsof -U | grep nullpii              # daemon listening on socket
+# After Stop fires (or Claude Code exits + watchdog kicks in):
+ls ~/.cache/nullpii/plugin/        # state file gone
 ```
-Draft a polite refund email to Maria Rossi (maria.rossi@example.it)
-about order #ACME-2026-04812.
-```
-
-Claude Code shows the prompt was blocked:
-
-```
-[nullpii] blocked: 2 PII span(s) detected in your prompt.
-
-Your prompt has not been sent to Claude. Sanitized version below —
-copy + resend if intended:
-
-Draft a polite refund email to [[NULLPII:private_person:0]]
-([[NULLPII:private_email:0]]) about order #ACME-2026-04812.
-```
-
-You copy the sanitized line, paste it back, hit enter. Anthropic's
-API only ever sees the placeholders. The model's reply contains the
-placeholders too (until the proxy / MCP variant lands and restores
-them in-flight) — Maria's name and email never left your machine.
 
 ## Configuration
 

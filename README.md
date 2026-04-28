@@ -79,10 +79,15 @@ npm install -g @nullpii/claude-code
 ```
 
 ```jsonc
-// .claude/settings.json
+// .claude/settings.json — replace <marketplace-id> with the marketplace
+// the plugin is registered under (e.g. `anthropic` once published).
 {
-  "plugins": ["@nullpii/claude-code"],
-  "nullpii": { "backend": "auto" }
+  "enabledPlugins": {
+    "@nullpii/claude-code@<marketplace-id>": true
+  },
+  "pluginConfigs": {
+    "@nullpii/claude-code@<marketplace-id>": { "backend": "auto" }
+  }
 }
 ```
 

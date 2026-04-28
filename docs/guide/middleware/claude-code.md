@@ -9,20 +9,31 @@ to your codebase**, just a one-line plugin install.
 npm install -g @nullpii/claude-code
 ```
 
+Then enable + configure the plugin in `.claude/settings.json`. Claude
+Code uses an `enabledPlugins` map (not a bare array) and a parallel
+`pluginConfigs` map, both keyed by `<plugin-id>@<marketplace-id>`:
+
 ```jsonc
 // .claude/settings.json
 {
-  "plugins": ["@nullpii/claude-code"],
-  "nullpii": {
-    "backend": "auto"
+  "enabledPlugins": {
+    "@nullpii/claude-code@<marketplace-id>": true
+  },
+  "pluginConfigs": {
+    "@nullpii/claude-code@<marketplace-id>": {
+      "backend": "auto"
+    }
   }
 }
 ```
 
-That's it. Open Claude Code, send a prompt with PII, and watch the wire
-traffic — all you'll see is `[[NULLPII:private_person:0]]` and
-friends. The reply you read in the chat panel has the originals
-restored.
+Replace `<marketplace-id>` with the marketplace where the plugin is
+registered (`anthropic` for the official marketplace once we publish;
+your custom marketplace id for self-hosted or dev-local installs).
+
+Open Claude Code, send a prompt with PII, and watch the wire traffic
+— all you'll see is `[[NULLPII:private_person:0]]` and friends. The
+reply you read in the chat panel has the originals restored.
 
 ## What it does
 
@@ -74,7 +85,7 @@ intact because it doesn't match any of the eight PII categories.
 
 ## Configuration
 
-Lives under the `nullpii` key in `.claude/settings.json`:
+Lives under `pluginConfigs["@nullpii/claude-code@<marketplace-id>"]`:
 
 | Field             | Type                                                   | Default |
 | ----------------- | ------------------------------------------------------ | ------- |

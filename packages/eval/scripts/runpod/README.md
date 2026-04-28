@@ -189,6 +189,12 @@ Outputs in `packages/eval/results/runpod-YYYYMMDD/`:
 
 ## Known issues
 
+- **5090 (Blackwell SM_120) + ONNX Runtime MoE** — `openai/privacy-filter`
+  uses MoE layers; ONNX Runtime CUDA EP CUTLASS-based MoE GEMM kernels
+  don't include SM_120 yet. nullpii CUDA fails with `Non-zero status
+  code returned while running MoE node`. Workaround: `--nullpii-backend
+  cpu` (already default in bench-on-pod.sh). Other tools (gliner,
+  deberta, piiranha) work fine on CUDA via PyTorch.
 - **Spot eviction** — RunPod community-cloud spot can preempt at any
   time. Re-launch + resume; checkpoints survive.
 - **HF gate** — `bigcode/bigcode-pii-dataset` and ai4privacy require

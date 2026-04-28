@@ -57,6 +57,7 @@ from nullpii_eval.adapters import (
     gliner_chunked_predictor,
     multi_ensemble_predictor,
     nullpii_pool_predictor,
+    openai_pipeline_batch_predictor,
     piiranha_predictor,
     presidio_predictor,
     regex_recognizer_predictor,
@@ -92,28 +93,31 @@ def _load_nullpii_bench(subset: str, n: int | None) -> list[Sample]:
     return out
 
 
-# default_n picked so a complete run on 4090 finishes <2 days. Override
-# globally with --max-per-dataset N (caps everything to N) or --no-cap
-# (ignores all defaults, runs full).
+# Dev-focused dataset suite (open licensing only).
+#
+#  - bench-* — project-bundled, Apache 2.0
+#  - dev-prompts-synth — local generator, Apache 2.0, fully synthetic
+#  - enron-planted — Enron Email Corpus (FERC public-domain release)
+#                    + planted PII at known offsets
+#  - stackoverflow-planted — StackExchange CC-BY-SA archive
+#                            + planted PII at known offsets
+#
+# Excluded:
+#  - bigcode/bigcode-pii-dataset — gated, requires auth + acceptance
+#  - bigcode/the-stack-smol — opt-out concerns; not safe-by-default
+#  - ai4privacy / Isotonic / wikiann / conll / presidio-synthetic —
+#    helpers in public_datasets.py kept for future use but not
+#    registered here. Re-register if needed.
+#
+# ~65k samples total; nullpii cpu pool=8 → ~3h on RunPod 5090 host.
+# Override with --max-per-dataset N or --no-cap.
 DATASET_CONFIGS: list[DatasetSpec] = [
     DatasetSpec("bench-bundled",         lambda n: _load_nullpii_bench("bundled", n),         None),
     DatasetSpec("bench-adversarial",     lambda n: _load_nullpii_bench("adversarial", n),     None),
     DatasetSpec("bench-long-prompts",    lambda n: _load_nullpii_bench("long-prompts", n),    None),
-    DatasetSpec("isotonic-en",           _isotonic("en"),                                     30_000),
-    DatasetSpec("isotonic-it",           _isotonic("it"),                                     30_000),
-    DatasetSpec("isotonic-de",           _isotonic("de"),                                     30_000),
-    DatasetSpec("isotonic-fr",           _isotonic("fr"),                                     30_000),
-    DatasetSpec("isotonic-es",           _isotonic("es"),                                     30_000),
-    DatasetSpec("presidio-synthetic",    lambda n: list(public_datasets._load_presidio_synthetic(n).samples),  5_000),
-    DatasetSpec("ai4privacy-300k",       lambda n: list(public_datasets._load_ai4privacy(n).samples),          30_000),
-    DatasetSpec("ai4privacy-400k",       lambda n: list(public_datasets._load_ai4privacy_400k(n).samples),     30_000),
-    DatasetSpec("bigcode-pii",           lambda n: list(public_datasets._load_bigcode_pii(n).samples),         20_000),
-    DatasetSpec("dev-prompts-synth",     lambda n: list(public_datasets._generate_dev_prompts(n).samples),     10_000),
-    DatasetSpec("enron-planted",         lambda n: list(public_datasets._load_enron_planted(n).samples),       5_000),
-    DatasetSpec("stackoverflow-planted", lambda n: list(public_datasets._load_stackoverflow_planted(n).samples), 5_000),
-    DatasetSpec("thestack-planted",      lambda n: list(public_datasets._load_thestack_planted(n).samples),    5_000),
-    DatasetSpec("wikiann-en",            lambda n: list(public_datasets._load_wikiann(n, lang="en").samples),   5_000),
-    DatasetSpec("conll2003",             lambda n: list(public_datasets._load_conll(n).samples),                None),
+    DatasetSpec("dev-prompts-synth",     lambda n: list(public_datasets._generate_dev_prompts(n).samples),     30_000),
+    DatasetSpec("enron-planted",         lambda n: list(public_datasets._load_enron_planted(n).samples),       10_000),
+    DatasetSpec("stackoverflow-planted", lambda n: list(public_datasets._load_stackoverflow_planted(n).samples), 10_000),
 ]
 
 
@@ -126,15 +130,21 @@ def _wrap_batch(batch_pred):
 
 def build_tools(args) -> dict[str, Callable]:
     backend = args.backend
+    nullpii_backend = args.nullpii_backend or backend
+    openai_backend = args.openai_backend or backend
     builders: dict[str, Callable[[], Callable]] = {
         "nullpii":  lambda: nullpii_pool_predictor(
             pool_size=args.pool_size, threads_each=args.threads_each,
-            backend=backend, variant="fp16",
+            backend=nullpii_backend, variant="fp16",
         ),
         "gliner":   lambda: gliner_chunked_predictor(threshold=args.gliner_threshold),
         "presidio": lambda: presidio_predictor(),
         "deberta":  lambda: _wrap_batch(deberta_pii_predictor(device=backend, batch_size=32)),
         "piiranha": lambda: _wrap_batch(piiranha_predictor(device=backend, batch_size=32)),
+        # Bare openai/privacy-filter via HF transformers pipeline — no nullpii
+        # pipeline overlay (no BIOES/Viterbi/chunking). Apple-to-apple delta
+        # vs `nullpii` row shows what the custom pipeline adds.
+        "openai":   lambda: _wrap_batch(openai_pipeline_batch_predictor(device=openai_backend, batch_size=8)),
         "regex":    lambda: regex_recognizer_predictor(patterns=DEFAULT_REGEX_PATTERNS),
     }
     requested = [t.strip() for t in args.tools.split(",") if t.strip()]
@@ -214,7 +224,12 @@ def run_combo(
     tool_name: str, predictor: Callable, dataset: DatasetSpec, samples: list[Sample],
     ckpt_dir: Path, *, want_confusion: bool,
 ) -> tuple[float, float, int, dict | None]:
-    """Returns (f1, wall_seconds, n_processed, confusion_or_None). Resumes from checkpoint."""
+    """Returns (f1, wall_seconds, n_processed, confusion_or_None).
+
+    Resumes from checkpoint. Per-sample exceptions ARE NOT swallowed —
+    they propagate up to the caller. The caller (main()) records the
+    cell as CRASHED in the matrix and moves on to the next combo.
+    """
     pred_path, state_path = _checkpoint_paths(ckpt_dir, tool_name, dataset.key)
     done_idx = _load_done_idx(state_path)
 
@@ -238,8 +253,16 @@ def run_combo(
             try:
                 spans = list(predictor(samples[i].text).spans)
             except Exception as e:
-                print(f"  [{tool_name}/{dataset.key}] idx={i} ERROR {type(e).__name__}: {e}", flush=True)
-                spans = []
+                # No silent recovery — flush partial state then re-raise so
+                # the (tool, dataset) cell is marked CRASHED at the outer
+                # loop. Empty-spans fallback would silently corrupt F1.
+                f.flush()
+                state_path.write_text(str(i - 1))
+                msg = f"{type(e).__name__}: {e}"
+                print(f"  [{tool_name}/{dataset.key}] idx={i} FATAL {msg}", flush=True)
+                raise RuntimeError(
+                    f"{tool_name}/{dataset.key} failed at idx={i}: {msg}",
+                ) from e
             preds.append(spans)
             f.write(json.dumps({"idx": i, "spans": [(s.start, s.end, s.label) for s in spans]}) + "\n")
             if (i + 1) % flush_every == 0:
@@ -262,6 +285,13 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--tools", default="nullpii,gliner,presidio,deberta,piiranha,regex,ensemble")
     parser.add_argument("--backend", default="cuda", choices=["cpu", "cuda"])
+    parser.add_argument("--nullpii-backend", default="",
+                        help="override backend just for nullpii (e.g. cpu when ORT MoE "
+                             "kernels lack Blackwell SM_120 support). Defaults to --backend.")
+    parser.add_argument("--openai-backend", default="",
+                        help="override backend just for the bare openai/privacy-filter "
+                             "HF pipeline (1.3B params; CPU inference is too slow). "
+                             "Defaults to --backend.")
     parser.add_argument("--datasets", default="all")
     parser.add_argument("--max-per-dataset", type=int, default=0,
                         help="0 = use per-dataset defaults; >0 = cap every dataset to N")
@@ -323,21 +353,40 @@ def main() -> None:
         try:
             samples = ds.loader(n_arg)
         except Exception as e:
-            print(f"[bench] FAILED to load {ds.key}: {type(e).__name__}: {e}", flush=True)
+            msg = f"{type(e).__name__}: {e}"
+            print(f"[bench] FAILED to load {ds.key}: {msg}", flush=True)
+            # Record the failure visibly in the matrix so post-hoc
+            # readers see WHY a dataset is missing, not just absence.
+            matrix.setdefault(ds.key, {})["_load_error"] = msg
+            matrix_path.write_text(json.dumps(matrix, indent=2))
             continue
         if not samples:
             print(f"[bench] {ds.key}: 0 samples — skipping", flush=True)
+            matrix.setdefault(ds.key, {})["_load_error"] = "loader returned 0 samples"
+            matrix_path.write_text(json.dumps(matrix, indent=2))
             continue
         cap_label = "full" if n_arg is None else f"cap {n_arg}"
         print(f"[bench] {ds.key}: {len(samples)} samples ({cap_label})", flush=True)
 
-        def _record(tool_name: str, result: tuple[float, float, int, dict | None] | BaseException) -> None:
+        def _record(tool_name: str, result: tuple | BaseException) -> None:
             if isinstance(result, BaseException):
-                print(f"[bench] {tool_name}/{ds.key} CRASHED: "
-                      f"{type(result).__name__}: {result}", flush=True)
+                err = f"{type(result).__name__}: {result}"
+                print(f"[bench] {tool_name}/{ds.key} CRASHED: {err}", flush=True)
+                # Record CRASHED status in the matrix — invisible skips
+                # would silently corrupt the comparison story.
+                matrix.setdefault(ds.key, {})[tool_name] = {
+                    "status": "CRASHED",
+                    "error": err,
+                    "f1": None,
+                    "wall_s": 0.0,
+                    "n": 0,
+                    "samples_per_s": 0.0,
+                }
+                matrix_path.write_text(json.dumps(matrix, indent=2))
                 return
             f1, el, n, conf = result
             matrix.setdefault(ds.key, {})[tool_name] = {
+                "status": "OK",
                 "f1": f1, "wall_s": el, "n": n,
                 "samples_per_s": n / max(1e-3, el),
             }
@@ -378,7 +427,10 @@ def main() -> None:
 
     # CSV matrix view: rows = datasets, cols = tools.
     csv_path = out_dir / "matrix.csv"
-    tool_cols = sorted({t for d in matrix.values() for t in d})
+    tool_cols = sorted({
+        t for d in matrix.values() for t in d
+        if not t.startswith("_")
+    })
     with csv_path.open("w", encoding="utf-8", newline="") as f:
         w = csv.writer(f)
         w.writerow(["dataset", *tool_cols])
@@ -386,10 +438,34 @@ def main() -> None:
             row = [ds_key]
             for t in tool_cols:
                 cell = matrix[ds_key].get(t)
-                row.append(f"{cell['f1']:.4f}" if cell else "")
+                if not cell:
+                    row.append("")
+                elif cell.get("status") == "CRASHED":
+                    row.append("CRASHED")
+                elif cell.get("f1") is None:
+                    row.append("")
+                else:
+                    row.append(f"{cell['f1']:.4f}")
             w.writerow(row)
     print(f"\n[bench] matrix → {matrix_path}", flush=True)
     print(f"[bench] csv    → {csv_path}", flush=True)
+
+    # Summary: surface failures explicitly so they cannot be missed.
+    failures: list[str] = []
+    for ds_key, cells in matrix.items():
+        if "_load_error" in cells:
+            failures.append(f"  LOAD_FAIL  {ds_key}: {cells['_load_error']}")
+        for tname, cell in cells.items():
+            if tname.startswith("_"):
+                continue
+            if cell.get("status") == "CRASHED":
+                failures.append(f"  CRASHED    {tname}/{ds_key}: {cell.get('error', '?')}")
+    if failures:
+        print(f"\n[bench] {len(failures)} CELLS WITH FAILURES:", flush=True)
+        for line in failures:
+            print(line, flush=True)
+    else:
+        print("\n[bench] no failures recorded.", flush=True)
 
 
 if __name__ == "__main__":

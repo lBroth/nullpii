@@ -283,8 +283,10 @@ def _load_isotonic(max_samples: int | None, *, lang: str = "en") -> PublicDatase
 
     `max_samples=None` → load the entire `train` split, no cap.
     """
-    from datasets import load_dataset
     import ast
+    import sys
+
+    from datasets import load_dataset
 
     if max_samples is None:
         ds = load_dataset("Isotonic/pii-masking-200k", split="train")
@@ -298,28 +300,41 @@ def _load_isotonic(max_samples: int | None, *, lang: str = "en") -> PublicDatase
         if max_samples is not None and len(samples) >= max_samples:
             break
         if str(row.get("language", "")).lower() != lang.lower():
-            continue
+            continue  # locale filter, not an error
         text = str(row.get("unmasked_text") or "")
-        if text == "":
-            continue
+        if not text:
+            # Upstream sometimes ships rows with empty unmasked_text.
+            # Refuse to silently drop — schema regression should be loud.
+            raise ValueError(
+                f"[isotonic/{lang}] row has empty unmasked_text "
+                f"(row keys: {list(row.keys())})",
+            )
         span_labels_raw = row.get("span_labels")
         if isinstance(span_labels_raw, str):
             try:
                 span_labels = ast.literal_eval(span_labels_raw)
-            except (ValueError, SyntaxError):
-                continue
+            except (ValueError, SyntaxError) as e:
+                # Bad row format == upstream schema break. Fail loud
+                # so the matrix marks isotonic-{lang} CRASHED rather
+                # than silently shipping a sample-thin dataset.
+                raise ValueError(
+                    f"[isotonic/{lang}] could not parse span_labels: "
+                    f"{type(e).__name__}: {e}; raw={span_labels_raw!r}",
+                ) from e
         else:
             span_labels = span_labels_raw or []
         spans: list[Span] = []
         for entry in span_labels:
             if not isinstance(entry, (list, tuple)) or len(entry) < 3:
-                continue
+                raise ValueError(
+                    f"[isotonic/{lang}] malformed span entry: {entry!r}",
+                )
             start, end, raw_label = int(entry[0]), int(entry[1]), str(entry[2])
             if raw_label == "O":
-                continue
+                continue  # explicit "no label" sentinel from upstream
             mapped = _ISOTONIC_LABEL_MAP.get(_strip_index(raw_label).upper())
             if mapped is None:
-                continue
+                continue  # label intentionally outside our 8-class taxonomy
             spans.append(Span(mapped, start, end))
         samples.append(Sample(text=text, spans=tuple(spans)))
     return PublicDataset(
@@ -764,6 +779,7 @@ def _load_thestack_planted(max_samples: int | None) -> PublicDataset:
     to `python` + `javascript` lang. Truncate to 2000 chars.
     """
     import random
+
     from datasets import load_dataset
 
     n = 5000 if max_samples is None else max_samples
@@ -773,13 +789,13 @@ def _load_thestack_planted(max_samples: int | None) -> PublicDataset:
         if len(samples) >= n:
             break
         prefetch = max((n - len(samples)) * 3, 500)
-        try:
-            ds = load_dataset(
-                "bigcode/the-stack-smol", data_dir=f"data/{lang_subset}",
-                split=f"train[:{prefetch}]",
-            )
-        except Exception:
-            continue
+        # Let HF datasets exceptions propagate — silently skipping a
+        # language causes 0-sample datasets that look like silent
+        # failures upstream.
+        ds = load_dataset(
+            "bigcode/the-stack-smol", data_dir=f"data/{lang_subset}",
+            split=f"train[:{prefetch}]",
+        )
         for row in ds:
             if len(samples) >= n:
                 break
@@ -792,6 +808,12 @@ def _load_thestack_planted(max_samples: int | None) -> PublicDataset:
             if not spans:
                 continue
             samples.append(Sample(text=new_text, spans=tuple(spans)))
+    if not samples:
+        raise RuntimeError(
+            "thestack-planted: produced 0 samples — all rows below "
+            "length threshold or plant_pii returned empty. Bench cannot "
+            "proceed with an empty dataset.",
+        )
     return PublicDataset(
         name="thestack-planted",
         citation="BigCode The Stack v1.2 (smol) + nullpii planted secrets.",

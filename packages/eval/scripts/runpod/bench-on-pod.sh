@@ -34,11 +34,15 @@ export TF_CPP_MIN_LOG_LEVEL=3
 export TOKENIZERS_PARALLELISM=true
 
 EXTRA_FLAGS=""
-PARALLEL=4   # 5090 32GB fits 4 ML tools concurrently
+# RunPod 5090 secure-cloud instance ships 256 vCPU + 1.1 TiB RAM. With
+# CPU backend, parallel=4 + pool=8 saturates ~half the cores (room for
+# other tools). Override POOL_SIZE / PARALLEL via env if cores differ.
+PARALLEL="${PARALLEL:-4}"
+POOL_SIZE="${POOL_SIZE:-8}"
 case "$MODE" in
-    smoke)    EXTRA_FLAGS="--max-per-dataset 1000"; PARALLEL=1 ;;
-    medium)   EXTRA_FLAGS="" ;;                                  # per-dataset caps (~1h with 5090)
-    full)     EXTRA_FLAGS="--no-cap" ;;                          # publishable, ~12h on 5090
+    smoke)    EXTRA_FLAGS="--max-per-dataset 1000" ;;
+    medium)   EXTRA_FLAGS="" ;;            # per-dataset caps
+    full)     EXTRA_FLAGS="--no-cap" ;;    # publishable
     *)
         EXTRA_FLAGS="--datasets $MODE"
         ;;
@@ -48,16 +52,32 @@ echo "[bench] mode=$MODE out=$OUT_DIR"
 echo "[bench] python=$VENV"
 $VENV --version
 
+# BACKEND defaults:
+#   smoke = cpu (apple-to-apple sanity)
+#   medium/full = cuda for ML competitors, cpu for nullpii (ORT
+#                 Blackwell SM_120 MoE limitation)
+case "$MODE" in
+    smoke) BACKEND_DEFAULT=cpu ;;
+    *)     BACKEND_DEFAULT=cuda ;;
+esac
+BACKEND="${BACKEND:-$BACKEND_DEFAULT}"
+
+# nullpii always cpu on Blackwell. On Ada (4090) cuda works and could
+# be set to cuda manually via NULLPII_BACKEND env override.
+NULLPII_BE="${NULLPII_BACKEND:-cpu}"
+
 $VENV packages/eval/scripts/bench_full.py \
-    --backend cuda \
-    --tools nullpii,gliner,presidio,deberta,piiranha,regex,ensemble \
+    --backend "$BACKEND" \
+    --nullpii-backend "$NULLPII_BE" \
+    --openai-backend cuda \
+    --tools nullpii,openai,gliner,presidio,deberta,piiranha,regex,ensemble \
     --datasets all \
     --confusion \
     --parallel-tools "$PARALLEL" \
     $EXTRA_FLAGS \
     --out-dir "$OUT_DIR" \
     --checkpoint-dir "$OUT_DIR/checkpoints" \
-    --pool-size 4 --threads-each 4 \
+    --pool-size "$POOL_SIZE" --threads-each 4 \
     --gliner-threshold 0.8 \
     2>&1 | tee "$OUT_DIR/run.log"
 

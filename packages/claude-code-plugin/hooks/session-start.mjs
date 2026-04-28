@@ -97,10 +97,10 @@ async function main() {
     } catch {}
   }
 
-  // Claude Code passes its own pid as PPID to the hook. Forward it so
-  // the daemon can self-terminate if Claude Code crashes without
-  // running the Stop hook (no workaround for direct exit).
-  const parentPid = String(process.ppid);
+  // No --parent-pid: process.ppid inside this hook script is the
+  // ephemeral hook-runner, not Claude Code itself. Wiring that as the
+  // watchdog pid would kill the daemon within seconds of every
+  // SessionStart. Idle-timeout is the only crash safety net.
   const idleMs = '1800000'; // 30 min idle = self-shutdown safety net
   const httpProxyPort = process.env.NULLPII_PROXY_PORT ?? '7330';
 
@@ -109,8 +109,6 @@ async function main() {
     'serve',
     '--socket',
     socket,
-    '--parent-pid',
-    parentPid,
     '--idle-timeout-ms',
     idleMs,
     '--http-proxy',
@@ -125,12 +123,9 @@ async function main() {
   });
   child.unref();
 
-  writeFileSync(
-    state,
-    JSON.stringify({ pid: child.pid, socket, sessionId, parentPid, httpProxyPort }),
-  );
+  writeFileSync(state, JSON.stringify({ pid: child.pid, socket, sessionId, httpProxyPort }));
   process.stderr.write(
-    `[nullpii] daemon spawned pid=${child.pid} parent=${parentPid} socket=${socket} proxy=:${httpProxyPort}\n`,
+    `[nullpii] daemon spawned pid=${child.pid} socket=${socket} proxy=:${httpProxyPort}\n`,
   );
 
   // Surface a heads-up so the user knows what to do to actually wire

@@ -10,14 +10,38 @@
   "license": "Apache-2.0",
   "keywords": ["pii", "privacy", "redaction", "local", "onnx"],
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.mjs\"",
+            "timeout": 60,
+            "statusMessage": "nullpii: loading PII model (first run downloads ~3 GB)…"
+          }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
         "hooks": [
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/user-prompt-submit.mjs\"",
-            "timeout": 60,
+            "timeout": 30,
             "statusMessage": "nullpii: scanning prompt for PII…"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/stop.mjs\"",
+            "timeout": 5,
+            "statusMessage": "nullpii: unloading model…"
           }
         ]
       }

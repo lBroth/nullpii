@@ -1,0 +1,26 @@
+{
+  "name": "nullpii",
+  "version": "0.0.8",
+  "description": "Sanitize PII from prompts locally before they leave your machine.",
+  "author": {
+    "name": "nullpii",
+    "url": "https://github.com/lBroth/nullpii"
+  },
+  "homepage": "https://github.com/lBroth/nullpii",
+  "license": "Apache-2.0",
+  "keywords": ["pii", "privacy", "redaction", "local", "onnx"],
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/user-prompt-submit.mjs\"",
+            "timeout": 60,
+            "statusMessage": "nullpii: scanning prompt for PII…"
+          }
+        ]
+      }
+    ]
+  }
+}

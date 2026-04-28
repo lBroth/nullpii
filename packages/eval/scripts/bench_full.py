@@ -78,13 +78,20 @@ def _isotonic(loc: str) -> Callable[[int | None], list[Sample]]:
     return lambda n: list(public_datasets._load_isotonic(n, lang=loc).samples)
 
 
-def _load_nullpii_bench(subset: str, n: int | None) -> list[Sample]:
+def _load_nullpii_bench(n: int | None) -> list[Sample]:
+    """Load the bundled `nullpii-bench.jsonl` dataset.
+
+    Merges the `bundled` and `long-prompts` subsets into one set
+    (264 samples total). The legacy `adversarial` subset (7 samples)
+    is excluded — it tested regex behaviour only and gave perfect
+    score for trivial reasons, not a meaningful comparison row.
+    """
     path = Path(__file__).resolve().parent.parent / "datasets" / "nullpii-bench.jsonl"
     out: list[Sample] = []
     with path.open(encoding="utf-8") as f:
         for line in f:
             row = json.loads(line)
-            if row["subset"] != subset:
+            if row["subset"] not in ("bundled", "long-prompts"):
                 continue
             spans = tuple(Span(s["label"], int(s["start"]), int(s["end"])) for s in row["spans"])
             out.append(Sample(row["text"], spans))
@@ -95,7 +102,9 @@ def _load_nullpii_bench(subset: str, n: int | None) -> list[Sample]:
 
 # Dev-focused dataset suite (open licensing only).
 #
-#  - bench-* — project-bundled, Apache 2.0
+#  - nullpii-bench — project-bundled (bundled + long-prompts subsets
+#    merged), Apache 2.0. Adversarial subset excluded as it only
+#    exercised the regex pack.
 #  - dev-prompts-synth — local generator, Apache 2.0, fully synthetic
 #  - enron-planted — Enron Email Corpus (FERC public-domain release)
 #                    + planted PII at known offsets
@@ -109,12 +118,10 @@ def _load_nullpii_bench(subset: str, n: int | None) -> list[Sample]:
 #    helpers in public_datasets.py kept for future use but not
 #    registered here. Re-register if needed.
 #
-# ~65k samples total; nullpii cpu pool=8 → ~3h on RunPod 5090 host.
+# ~50k samples total; nullpii cpu pool=8 → ~2.5h on RunPod 5090 host.
 # Override with --max-per-dataset N or --no-cap.
 DATASET_CONFIGS: list[DatasetSpec] = [
-    DatasetSpec("bench-bundled",         lambda n: _load_nullpii_bench("bundled", n),         None),
-    DatasetSpec("bench-adversarial",     lambda n: _load_nullpii_bench("adversarial", n),     None),
-    DatasetSpec("bench-long-prompts",    lambda n: _load_nullpii_bench("long-prompts", n),    None),
+    DatasetSpec("nullpii-bench",         _load_nullpii_bench,                                                  None),
     DatasetSpec("dev-prompts-synth",     lambda n: list(public_datasets._generate_dev_prompts(n).samples),     30_000),
     DatasetSpec("enron-planted",         lambda n: list(public_datasets._load_enron_planted(n).samples),       10_000),
     DatasetSpec("stackoverflow-planted", lambda n: list(public_datasets._load_stackoverflow_planted(n).samples), 10_000),

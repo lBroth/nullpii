@@ -22,7 +22,7 @@ for the live tabulation. Reproduction recipe at the bottom.
 
 Dev-focused: "developer pastes prod data into LLM" is the threat model.
 
-- `bench-bundled`, `bench-adversarial`, `bench-long-prompts` — project-bundled
+- `nullpii-bench` — project-bundled (curated sentences + long real-world prompts)
 - `bigcode-pii` — labelled secrets in source code
 - `dev-prompts-synth` — local generator with planted PII
 - `enron-planted`, `stackoverflow-planted`, `thestack-planted` —

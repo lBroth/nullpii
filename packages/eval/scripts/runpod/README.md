@@ -51,7 +51,7 @@ Bids `$0.40/h` on community-cloud 4090. Writes `.runpod-state` with
 bash packages/eval/scripts/runpod/resume.sh           # medium (per-dataset defaults, ~1 day)
 bash packages/eval/scripts/runpod/resume.sh smoke     # 1k cap per dataset (~1h)
 bash packages/eval/scripts/runpod/resume.sh full      # --no-cap, every dataset full (multi-day)
-bash packages/eval/scripts/runpod/resume.sh bench-bundled,isotonic-en   # only those two datasets
+bash packages/eval/scripts/runpod/resume.sh nullpii-bench,dev-prompts-synth   # only those two datasets
 ```
 
 **Modes**

@@ -33,22 +33,16 @@ level surface upstream loader failures.
 The bench is dev-focused — "developer pastes prod data into LLM" is the
 threat model — and ships these datasets:
 
-- **bench-bundled** — curated sentences shipped with the project (5
-  locales).
-- **bench-adversarial** — handcrafted edge cases from the iter-N
-  exploration loop.
-- **bench-long-prompts** — long real-world prompts that exercise
-  chunking + Viterbi.
-- **bigcode-pii** — gated `bigcode/bigcode-pii-dataset` with labelled
-  secrets and emails inside source code.
+- **nullpii-bench** — project-bundled, ~264 samples merging the
+  `bundled` (curated 5-locale sentences) and `long-prompts` (real
+  long inputs that exercise chunking + Viterbi) subsets.
 - **dev-prompts-synth** — local generator (`_generate_dev_prompts`),
-  10k+ templates with planted PII at known offsets.
-- **enron-planted** — real Enron Email Corpus + planted PII (gold
-  positions exact).
+  fully synthetic templates with PII planted at known offsets
+  (Apache 2.0).
+- **enron-planted** — real Enron Email Corpus (FERC public-domain)
+  + planted PII (gold positions exact).
 - **stackoverflow-planted** — StackExchange CC-BY-SA archive +
-  planted PII.
-- **thestack-planted** — `bigcode/the-stack-smol` Python+JS files +
-  planted secrets.
+  planted PII (gold positions exact).
 
 ## How to reproduce
 

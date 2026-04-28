@@ -15,14 +15,21 @@ same datasets. Measurements reproducible — see bottom.
   recognizer set.
 - **bare spaCy NER** — `*_core_news_lg` / `en_core_web_lg`, no PII
   recognizers. General NER baseline.
-
-Other tools considered (see notes at bottom):
-
-- [StreamGuard](https://github.com/d-barletta/StreamGuard) — Rust+WASM
-  guardrail engine. Different layer (output-stream enforcement, not
-  reversible input vault). Not a primary PII detector — covers only
-  email/URL/IPv4/credit-card patterns. Curiosity benchmark in
-  `packages/eval/scripts/eval_streamguard.py` (results gitignored).
+- **piiranha-v1** — [`iiiorg/piiranha-v1-detect-personal-information`](https://huggingface.co/iiiorg/piiranha-v1-detect-personal-information),
+  DeBERTa-v3-based multilingual PII detector (~278M params, 6
+  languages — en/es/fr/de/it/nl, 17 PII labels, 256-tok max). Smaller
+  cousin of nullpii's upstream model; useful as a "small PII model"
+  baseline.
+- **deberta-pii** — [`lakshyakh93/deberta_finetuned_pii`](https://huggingface.co/lakshyakh93/deberta_finetuned_pii),
+  DeBERTa-base English-only PII detector with rich label set (~50+
+  categories — IBAN, Bitcoin, BIC, IPv4/v6, GPS, etc.). Mapped down
+  to nullpii's 8 categories; tests how a label-rich English-only
+  model performs on multilingual evals.
+- **GLiNER PII** — [`urchade/gliner_multi_pii-v1`](https://huggingface.co/urchade/gliner_multi_pii-v1),
+  zero-shot NER built on `urchade/gliner_multi-v2.1` (BERT-like).
+  Accepts arbitrary label sets at inference time; we pass a curated
+  list of 18 PII categories. Different paradigm from straight token
+  classification.
 
 nullpii's detector is OpenAI's
 [`privacy-filter`](https://huggingface.co/openai/privacy-filter)

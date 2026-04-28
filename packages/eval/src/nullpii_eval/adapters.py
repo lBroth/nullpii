@@ -344,6 +344,260 @@ def openai_pipeline_predictor(
     return _predict
 
 
+_PIIRANHA_LABEL_MAP = {
+    "ACCOUNTNUM": "account_number",
+    "CREDITCARDNUMBER": "account_number",
+    "IDCARDNUM": "account_number",
+    "SOCIALNUM": "account_number",
+    "TAXNUM": "account_number",
+    "DRIVERLICENSENUM": "account_number",
+    "BUILDINGNUM": "private_address",
+    "CITY": "private_address",
+    "STREET": "private_address",
+    "ZIPCODE": "private_address",
+    "DATEOFBIRTH": "private_date",
+    "EMAIL": "private_email",
+    "GIVENNAME": "private_person",
+    "SURNAME": "private_person",
+    "TELEPHONENUM": "private_phone",
+    "PASSWORD": "secret",
+}
+
+
+def piiranha_predictor(
+    *,
+    device: str | None = None,
+    batch_size: int = 32,
+) -> BatchPredictor:
+    """`iiiorg/piiranha-v1-detect-personal-information` — DeBERTa-v3-based
+    multilingual PII detector (en/es/fr/de/it/nl, 17 PII labels, 256-tok
+    max). Smaller than openai/privacy-filter (~278M params vs 1.3B), no
+    chunking, no Viterbi — bare HF token-classification pipeline."""
+    try:
+        import torch  # noqa: I001
+        from transformers import pipeline
+    except ImportError as e:
+        raise ImportError("transformers + torch required") from e
+
+    if device is None:
+        device = "mps" if torch.backends.mps.is_available() else (
+            "cuda" if torch.cuda.is_available() else "cpu"
+        )
+    if device == "cpu":
+        threads = max(1, (os.cpu_count() or 8) // 2)
+        torch.set_num_threads(threads)
+        try:
+            torch.set_num_interop_threads(max(1, threads // 4))
+        except RuntimeError:
+            pass
+
+    pipe = pipeline(
+        task="token-classification",
+        model="iiiorg/piiranha-v1-detect-personal-information",
+        aggregation_strategy="simple",
+        device=device,
+        batch_size=batch_size,
+    )
+
+    def _predict_batch(texts: list[str]) -> list[ToolResult]:
+        t0 = time.perf_counter()
+        results_list = pipe(texts)
+        elapsed = (time.perf_counter() - t0) * 1000
+        per_call = elapsed / max(1, len(texts))
+        out: list[ToolResult] = []
+        if results_list and isinstance(results_list[0], dict):
+            results_list = [results_list]  # type: ignore[list-item]
+        for results in results_list:
+            spans: list[Span] = []
+            for r in results:
+                entity = str(r.get("entity_group") or r.get("entity") or "")
+                key = _strip_bioes(entity).upper()
+                label = _PIIRANHA_LABEL_MAP.get(key)
+                if label is None:
+                    continue
+                spans.append(Span(label, int(r["start"]), int(r["end"])))
+            out.append(ToolResult(spans, per_call))
+        return out
+
+    return _predict_batch
+
+
+_DEBERTA_LABEL_MAP = {
+    "FIRSTNAME": "private_person",
+    "LASTNAME": "private_person",
+    "MIDDLENAME": "private_person",
+    "PREFIX": "private_person",
+    "ACCOUNTNAME": None,
+    "ACCOUNTNUMBER": "account_number",
+    "BIC": "account_number",
+    "IBAN": "account_number",
+    "BITCOINADDRESS": "account_number",
+    "ETHEREUMADDRESS": "account_number",
+    "LITECOINADDRESS": "account_number",
+    "MASKEDNUMBER": "account_number",
+    "CREDITCARDNUMBER": "account_number",
+    "CREDITCARDCVV": "account_number",
+    "VEHICLEVRM": "account_number",
+    "VEHICLEVIN": "account_number",
+    "PIN": "secret",
+    "PASSWORD": "secret",
+    "SSN": "account_number",
+    "EMAIL": "private_email",
+    "PHONENUMBER": "private_phone",
+    "PHONEIMEI": "account_number",
+    "STREET": "private_address",
+    "STREETADDRESS": "private_address",
+    "BUILDINGNUMBER": "private_address",
+    "ZIPCODE": "private_address",
+    "CITY": "private_address",
+    "STATE": "private_address",
+    "COUNTY": "private_address",
+    "COUNTRY": "private_address",
+    "GPSCOORDINATES": "private_address",
+    "DOB": "private_date",
+    "DATE": "private_date",
+    "TIME": "private_date",
+    "URL": "private_url",
+    "USERAGENT": None,
+    "USERNAME": None,
+    "IP": None,
+    "IPV4": None,
+    "IPV6": None,
+    "MAC": None,
+}
+
+
+def deberta_pii_predictor(
+    *,
+    device: str | None = None,
+    batch_size: int = 32,
+) -> BatchPredictor:
+    """`lakshyakh93/deberta_finetuned_pii` — DeBERTa-base English-only PII
+    detector with rich label set (~50+ categories). Mapped down to
+    nullpii's 8 categories."""
+    try:
+        import torch  # noqa: I001
+        from transformers import pipeline
+    except ImportError as e:
+        raise ImportError("transformers + torch required") from e
+
+    if device is None:
+        device = "mps" if torch.backends.mps.is_available() else (
+            "cuda" if torch.cuda.is_available() else "cpu"
+        )
+    if device == "cpu":
+        threads = max(1, (os.cpu_count() or 8) // 2)
+        torch.set_num_threads(threads)
+        try:
+            torch.set_num_interop_threads(max(1, threads // 4))
+        except RuntimeError:
+            pass
+
+    pipe = pipeline(
+        task="token-classification",
+        model="lakshyakh93/deberta_finetuned_pii",
+        aggregation_strategy="first",
+        device=device,
+        batch_size=batch_size,
+    )
+
+    def _predict_batch(texts: list[str]) -> list[ToolResult]:
+        t0 = time.perf_counter()
+        results_list = pipe(texts)
+        elapsed = (time.perf_counter() - t0) * 1000
+        per_call = elapsed / max(1, len(texts))
+        out: list[ToolResult] = []
+        if results_list and isinstance(results_list[0], dict):
+            results_list = [results_list]  # type: ignore[list-item]
+        for results in results_list:
+            spans: list[Span] = []
+            for r in results:
+                entity = str(r.get("entity_group") or r.get("entity") or "")
+                key = _strip_bioes(entity).upper()
+                label = _DEBERTA_LABEL_MAP.get(key)
+                if label is None:
+                    continue
+                spans.append(Span(label, int(r["start"]), int(r["end"])))
+            out.append(ToolResult(spans, per_call))
+        return out
+
+    return _predict_batch
+
+
+_GLINER_LABELS = [
+    "person",
+    "email",
+    "phone number",
+    "mobile phone number",
+    "address",
+    "postal code",
+    "date of birth",
+    "credit card number",
+    "bank account number",
+    "IBAN",
+    "social security number",
+    "passport number",
+    "driver's license",
+    "national identification number",
+    "URL",
+    "API key",
+    "password",
+    "username",
+]
+
+_GLINER_LABEL_MAP = {
+    "person": "private_person",
+    "email": "private_email",
+    "phone number": "private_phone",
+    "mobile phone number": "private_phone",
+    "address": "private_address",
+    "postal code": "private_address",
+    "date of birth": "private_date",
+    "credit card number": "account_number",
+    "bank account number": "account_number",
+    "IBAN": "account_number",
+    "social security number": "account_number",
+    "passport number": "account_number",
+    "driver's license": "account_number",
+    "national identification number": "account_number",
+    "URL": "private_url",
+    "API key": "secret",
+    "password": "secret",
+    "username": None,
+}
+
+
+def gliner_pii_predictor(
+    *,
+    threshold: float = 0.5,
+) -> Predictor:
+    """`urchade/gliner_multi_pii-v1` — GLiNER zero-shot NER. Supports
+    arbitrary label sets at inference; we pass a curated PII list and
+    map to nullpii's 8 categories."""
+    try:
+        from gliner import GLiNER  # noqa: I001
+    except ImportError as e:
+        raise ImportError(
+            "gliner not installed; run `pip install gliner` to use this adapter",
+        ) from e
+
+    model = GLiNER.from_pretrained("urchade/gliner_multi_pii-v1")
+
+    def _predict(text: str) -> ToolResult:
+        t0 = time.perf_counter()
+        entities = model.predict_entities(text, _GLINER_LABELS, threshold=threshold)
+        elapsed = (time.perf_counter() - t0) * 1000
+        spans: list[Span] = []
+        for e in entities:
+            label = _GLINER_LABEL_MAP.get(e.get("label"))
+            if label is None:
+                continue
+            spans.append(Span(label, int(e["start"]), int(e["end"])))
+        return ToolResult(spans, elapsed)
+
+    return _predict
+
+
 _OPENAI_LABELS = {
     "account_number",
     "private_address",

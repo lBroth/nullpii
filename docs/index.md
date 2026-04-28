@@ -5,6 +5,9 @@ hero:
   name: nullpii
   text: Stop leaking PII to LLMs.
   tagline: Local PII detection with OpenAI's `privacy-filter`. Reversible vault. Zero cloud calls. Apache 2.0.
+  image:
+    src: /logo-256.png
+    alt: nullpii logo
   actions:
     - theme: brand
       text: Use it with Claude Code

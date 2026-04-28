@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./assets/logo.png" alt="nullpii" width="128" height="128" />
+</p>
+
 # nullpii
 
 [![CI](https://github.com/lBroth/nullpii/actions/workflows/ci.yml/badge.svg)](https://github.com/lBroth/nullpii/actions/workflows/ci.yml)

@@ -6,7 +6,10 @@ export default defineConfig({
   description: 'Stop leaking PII to LLMs. Local detection, reversible vault, Apache 2.0.',
   base: '/nullpii/',
   cleanUrls: true,
+  head: [['link', { rel: 'icon', type: 'image/png', href: '/nullpii/favicon.png' }]],
   themeConfig: {
+    logo: { src: '/logo-128.png', width: 24, height: 24 },
+    siteTitle: 'nullpii',
     nav: [
       { text: 'Claude Code', link: '/guide/middleware/claude-code' },
       { text: 'Guide', link: '/guide/getting-started' },

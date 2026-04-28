@@ -38,6 +38,9 @@ __pycache__/
 .env.*
 !.env.example
 
+# runpod transient state (pod_id + ssh coords)
+.runpod-state
+
 # editor / OS
 .DS_Store
 .idea/

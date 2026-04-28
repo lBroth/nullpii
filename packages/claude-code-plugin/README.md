@@ -10,25 +10,40 @@ on your machine — zero cloud calls for the PII detection step.
 npm install -g @nullpii/claude-code
 ```
 
-Then add to `.claude/settings.json`:
+Claude Code 2.x uses two parallel maps in `.claude/settings.json`,
+both keyed by `<plugin-id>@<marketplace-id>`:
 
 ```json
 {
-  "plugins": ["@nullpii/claude-code"],
-  "nullpii": {
-    "backend": "auto",
-    "variant": "auto"
+  "enabledPlugins": {
+    "@nullpii/claude-code@<marketplace-id>": true
+  },
+  "pluginConfigs": {
+    "@nullpii/claude-code@<marketplace-id>": {
+      "backend": "auto",
+      "variant": "auto"
+    }
   }
 }
 ```
 
+`<marketplace-id>` = the marketplace where the plugin is registered.
+Pre-publish, point Claude Code at a local checkout:
+
+```bash
+/plugin add /absolute/path/to/nullpii/packages/claude-code-plugin
+/plugin list   # shows the loaded plugin and its assigned marketplace id
+```
+
 ## Configuration
 
-| Field      | Type               | Default | Description                                            |
-| ---------- | ------------------ | ------- | ------------------------------------------------------ |
-| `backend`  | `cpu`/`mps`/`cuda`/`rocm`/`webgpu`/`auto` | `auto`  | Hardware backend                                       |
-| `variant`  | `fp32`/`fp16`/`int8`/`int4`/`int4f16`/`auto` | `auto`  | ONNX model variant                                     |
-| `modelDir` | string             | (auto)  | Override local model dir (skip download)               |
+| Field      | Type                                          | Default | Description                                |
+| ---------- | --------------------------------------------- | ------- | ------------------------------------------ |
+| `backend`  | `cpu` / `mps` / `cuda` / `rocm` / `auto`      | `auto`  | Hardware backend                           |
+| `variant`  | `fp32` / `fp16` / `int8` / `int4` / `int4f16` / `auto` | `auto` | ONNX model variant                  |
+| `modelDir` | string                                        | (auto)  | Override local model dir                   |
+| `recognizers` | `'none'` or `Recognizer[]`                 | built-in pack | Disable / replace built-in regex set |
+| `boundaryRefine` | `boolean`                              | `true`  | Trim whitespace + punctuation from span edges |
 
 ## How it works
 

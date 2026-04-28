@@ -64,20 +64,21 @@ DEFAULT_ROUTING = {
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--tools", default="nullpii,gliner,presidio",
-        help="comma list from {nullpii, gliner, presidio, deberta, piiranha}",
+        "--tools", default="nullpii,gliner,regex",
+        help="comma list from {nullpii, gliner, presidio, deberta, piiranha, regex}",
     )
     parser.add_argument(
         "--strategy", default="primary",
         choices=["union", "primary", "intersection", "majority", "category-routing", "category"],
     )
-    parser.add_argument("--gliner-threshold", type=float, default=0.5)
+    parser.add_argument("--gliner-threshold", type=float, default=0.8)
     parser.add_argument("--isotonic", type=int, default=1000)
     parser.add_argument("--pool-size", type=int, default=4)
     parser.add_argument("--threads-each", type=int, default=4)
     parser.add_argument(
-        "--refine-boundaries", action="store_true",
-        help="trim trailing punct/whitespace from final spans",
+        "--no-refine-boundaries", dest="refine_boundaries",
+        action="store_false", default=True,
+        help="disable boundary trim (default: enabled)",
     )
     args = parser.parse_args()
 

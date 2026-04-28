@@ -670,10 +670,10 @@ def regex_recognizer_predictor(
 # Pre-baked recognizer patterns covering nullpii's biggest miss-rate
 # categories. Keeps the regex set small, defensible, and composable.
 DEFAULT_REGEX_PATTERNS: list[tuple[str, str]] = [
-    # URL: nullpii misses 66% of these. Covers http(s)://… plus bare
-    # domain.tld/path; allows query strings, ports.
+    # URL: nullpii misses 66% of these. Only http(s):// + www. — bare
+    # domain.tld pattern dropped because it creates many FPs (matches
+    # filenames, user.email-like fragments, etc.) without real recall lift.
     ("private_url", r"\b(?:https?://|www\.)[^\s<>\"]+"),
-    ("private_url", r"\b(?:[a-zA-Z0-9-]+\.)+(?:com|org|net|io|co|dev|ai|app|me|us|uk|de|fr|it|es)(?:/[^\s<>\"]*)?\b"),
     # Email — straightforward. nullpii already low miss but cheap to add.
     ("private_email", r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),
     # AWS access key

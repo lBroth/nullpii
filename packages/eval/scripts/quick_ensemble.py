@@ -125,21 +125,29 @@ def main() -> None:
             runs.append((f"isotonic-{loc}", list(public_datasets._load_isotonic(args.isotonic, lang=loc).samples)))
 
     print(
-        f"\n{'dataset':<22} {'n':>5} {'wall':>7} {'ms/req':>7} {'F1':>7}",
+        f"\n{'dataset':<22} {'n':>5} {'wall':>6} {'tput':>5} {'p50':>5} {'p95':>5} {'F1':>7}",
     )
-    print("-" * 53)
+    print("-" * 60)
     f1_values: list[float] = []
     n_total = 0
     workers = args.pool_size
     total_wall = 0.0
+    all_latencies: list[float] = []
     t_all = time.perf_counter()
     for name, samples in runs:
         truths = [list(s.spans) for s in samples]
         out: list[list] = [None] * len(samples)  # type: ignore[list-item]
+        latencies: list[float] = []
+        latencies_lock = __import__("threading").Lock()
 
-        def _work(indices: list[int], _samples=samples, _out=out) -> None:
+        def _work(indices: list[int], _samples=samples, _out=out, _lat=latencies) -> None:
+            local: list[float] = []
             for i in indices:
+                t0 = time.perf_counter()
                 _out[i] = list(ens(_samples[i].text).spans)
+                local.append((time.perf_counter() - t0) * 1000)
+            with latencies_lock:
+                _lat.extend(local)
 
         shards: list[list[int]] = [[] for _ in range(workers)]
         for i in range(len(samples)):
@@ -148,22 +156,33 @@ def main() -> None:
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
             list(ex.map(_work, shards))
         el = time.perf_counter() - t0
-        # Per-request latency under parallel dispatch — reflects throughput
-        # the client sees, not wall_per_sample of an isolated call.
-        ms_per_req = el * 1000 / max(1, len(samples))
+        tput_ms = el * 1000 / max(1, len(samples))
+        latencies.sort()
+        p50 = latencies[len(latencies) // 2] if latencies else 0.0
+        p95_idx = int(len(latencies) * 0.95)
+        p95 = latencies[min(p95_idx, len(latencies) - 1)] if latencies else 0.0
         f1 = macro_f1(evaluate(out, truths))
-        print(f"{name:<22} {len(samples):>5} {el:>7.1f} {ms_per_req:>7.1f} {f1:>7.4f}")
+        print(
+            f"{name:<22} {len(samples):>5} {el:>6.1f} {tput_ms:>5.1f} {p50:>5.0f} {p95:>5.0f} {f1:>7.4f}",
+        )
         if name != "bench-adversarial":
             f1_values.append(f1)
         n_total += len(samples)
         total_wall += el
-    print("-" * 53)
+        all_latencies.extend(latencies)
+    print("-" * 60)
     avg = sum(f1_values) / max(1, len(f1_values))
     wall = time.perf_counter() - t_all
-    avg_ms = total_wall * 1000 / max(1, n_total)
+    tput_avg = total_wall * 1000 / max(1, n_total)
+    all_latencies.sort()
+    p50_all = all_latencies[len(all_latencies) // 2] if all_latencies else 0.0
+    p95_all = all_latencies[int(len(all_latencies) * 0.95)] if all_latencies else 0.0
     print(
-        f"{'AVG PII (excl adv)':<22} {n_total:>5} {wall:>7.1f} {avg_ms:>7.1f} {avg:>7.4f}",
+        f"{'AVG PII (excl adv)':<22} {n_total:>5} {wall:>6.1f} {tput_avg:>5.1f} "
+        f"{p50_all:>5.0f} {p95_all:>5.0f} {avg:>7.4f}",
     )
+    print()
+    print("legend: wall=dataset wall(s), tput=ms/req parallel, p50/p95=single-call latency ms")
     print(f"\nCONFIG tools={tools} strategy={args.strategy} gliner_th={args.gliner_threshold}")
 
 

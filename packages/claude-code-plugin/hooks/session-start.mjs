@@ -75,6 +75,7 @@ async function main() {
   // running the Stop hook (no workaround for direct exit).
   const parentPid = String(process.ppid);
   const idleMs = '1800000'; // 30 min idle = self-shutdown safety net
+  const httpProxyPort = process.env.NULLPII_PROXY_PORT ?? '7330';
 
   const bin = locateBinary();
   const baseArgs = [
@@ -85,6 +86,8 @@ async function main() {
     parentPid,
     '--idle-timeout-ms',
     idleMs,
+    '--http-proxy',
+    httpProxyPort,
   ];
   const argv = bin.kind === 'mjs' ? ['node', bin.path, ...baseArgs] : ['nullpii', ...baseArgs];
 
@@ -95,10 +98,23 @@ async function main() {
   });
   child.unref();
 
-  writeFileSync(state, JSON.stringify({ pid: child.pid, socket, sessionId, parentPid }));
-  process.stderr.write(
-    `[nullpii] daemon spawned pid=${child.pid} parent=${parentPid} socket=${socket}\n`,
+  writeFileSync(
+    state,
+    JSON.stringify({ pid: child.pid, socket, sessionId, parentPid, httpProxyPort }),
   );
+  process.stderr.write(
+    `[nullpii] daemon spawned pid=${child.pid} parent=${parentPid} socket=${socket} proxy=:${httpProxyPort}\n`,
+  );
+
+  // Surface a heads-up so the user knows what to do to actually wire
+  // the proxy into Claude Code's outgoing API calls.
+  const expected = `http://localhost:${httpProxyPort}`;
+  if (process.env.ANTHROPIC_BASE_URL !== expected) {
+    process.stderr.write(
+      `[nullpii] note: ANTHROPIC_BASE_URL is "${process.env.ANTHROPIC_BASE_URL ?? '<unset>'}". ` +
+        `Set it to "${expected}" before launching Claude Code to route prompts through the sanitizing proxy.\n`,
+    );
+  }
   // Empty stdout — Claude Code does not require output for SessionStart.
   process.stdout.write('\n');
 }

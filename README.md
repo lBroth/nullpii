@@ -36,8 +36,8 @@
 > (Apache 2.0, 1.3B param token classifier, ONNX fp16 by default;
 > int4f16 for edge installs) — no cloud calls. Tradeoff: nullpii is
 > ~4× slower per call than Presidio.
-> See [vs Presidio + spaCy](docs/guide/vs-presidio.md) for full
-> multi-locale tables + reproduce script.
+> See [Comparisons](docs/guide/comparisons.md) for full multi-locale
+> tables + reproduce script.
 
 ```ts
 // Without nullpii ❌

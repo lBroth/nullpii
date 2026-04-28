@@ -16,36 +16,42 @@ Macro F1 over 8 PII categories, partial-match (IoU ≥ 0.5).
 
 ### PII-focused datasets — nullpii leads on dev-style + multi-locale
 
-| Dataset                          | Locale | n   |   nullpii | Presidio | spaCy NER |
-| -------------------------------- | ------ | --: | --------: | -------: | --------: |
-| bundled (dev prompts)            | en     |  40 | **0.751** |    0.536 |     0.219 |
-| bundled (dev prompts)            | it     |  40 | **0.761** |    0.459 |     0.109 |
-| bundled (dev prompts)            | de     |  34 | **0.669** |    0.488 |     0.114 |
-| bundled (dev prompts)            | fr     |  33 | **0.746** |    0.483 |     0.120 |
-| bundled (dev prompts)            | es     |  33 | **0.735** |    0.463 |     0.118 |
-| isotonic/pii-masking-200k        | en     | 200 | **0.548** |    0.499 |     0.185 |
-| isotonic/pii-masking-200k        | it     | 200 | **0.597** |    0.409 |     0.075 |
-| isotonic/pii-masking-200k        | de     | 200 | **0.604** |    0.401 |     0.106 |
-| isotonic/pii-masking-200k        | fr     | 200 | **0.582** |    0.437 |     0.070 |
-| presidio-synthetic               | en     | 500 |     0.548 |**0.558** |     0.157 |
+Run on M5 Pro 48GB, 4-daemon nullpii pool + HF on CPU multi-thread.
+**OpenAI bare HF** = upstream model loaded via `transformers.pipeline`
+with the default decoder (no chunking, no Viterbi, no posterior).
 
-**Reading**: nullpii wins 9/10 PII runs across 5 locales — including
-800 samples of the open ai4privacy mirror in 4 languages, where
-Presidio's English-tuned recognizer set is noticeably weaker. The one
-exception is Presidio's own synthetic generator at 500 samples, where
-the analyzer wins by 0.01 — a tie within noise. Bare spaCy NER catches
-names + locations but misses emails, phones, account numbers, secrets
-— it's general NER, not PII.
+| Dataset                          | Locale |    n |   nullpii | OpenAI bare HF | Presidio | spaCy NER |
+| -------------------------------- | ------ | ---: | --------: | -------------: | -------: | --------: |
+| bundled (dev prompts)            | en     |   62 | **0.782** |          0.535 |    0.484 |     0.200 |
+| bundled (dev prompts)            | it     |   40 | **0.761** |          0.464 |    0.459 |     0.109 |
+| bundled (dev prompts)            | de     |   34 | **0.669** |          0.459 |    0.488 |     0.114 |
+| bundled (dev prompts)            | fr     |   33 | **0.728** |          0.487 |    0.483 |     0.120 |
+| bundled (dev prompts)            | es     |   33 | **0.756** |          0.490 |    0.463 |     0.118 |
+| long-prompts-en (chunking proof) |   en   |   62 | **0.600** |          0.350 |    0.348 |     0.079 |
+| isotonic/pii-masking-200k        | en     | 5000 | **0.572** |          0.386 |    0.478 |     0.173 |
+| isotonic/pii-masking-200k        | it     | 5000 | **0.592** |          0.389 |    0.415 |     0.084 |
+| isotonic/pii-masking-200k        | de     | 5000 | **0.580** |          0.385 |    0.399 |     0.102 |
+| isotonic/pii-masking-200k        | fr     | 5000 | **0.578** |          0.380 |    0.415 |     0.082 |
+| presidio-synthetic               | en     | 5000 | **0.576** |          0.390 |    0.575 |     0.157 |
+
+**Reading**: nullpii wins **11/11 PII runs across 5 locales** — one
+near-tie with Presidio on its own synthetic generator (0.576 vs
+0.575). The OpenAI bare HF column isolates the value of nullpii's
+runtime: same model, **+0.226 F1 average** attributable entirely to
+chunking + constrained Viterbi + forward-backward posterior +
+recognizer post-pass. Bare spaCy NER catches names + locations but
+misses emails, phones, account numbers, secrets — it's general NER,
+not PII.
 
 ### Wikipedia NER (`wikiann`) — spaCy leads, both PII tools struggle
 
-| Dataset    | Locale | n   | nullpii | Presidio | **spaCy NER** |
-| ---------- | ------ | --: | ------: | -------: | ------------: |
-| wikiann    | en     | 200 |   0.257 |    0.271 |     **0.362** |
-| wikiann    | it     | 200 |   0.174 |    0.347 |     **0.725** |
-| wikiann    | de     | 200 |   0.245 |    0.289 |     **0.778** |
-| wikiann    | fr     | 200 |   0.162 |    0.223 |     **0.611** |
-| wikiann    | es     | 200 |   0.224 |    0.335 |     **0.766** |
+| Dataset | Locale |    n |   nullpii | OpenAI bare HF | Presidio | **spaCy NER** |
+| ------- | ------ | ---: | --------: | -------------: | -------: | ------------: |
+| wikiann | en     | 1000 |     0.229 |          0.161 |    0.285 |     **0.380** |
+| wikiann | it     | 1000 |     0.149 |          0.087 |    0.222 |     **0.747** |
+| wikiann | de     | 1000 |     0.136 |          0.103 |    0.201 |     **0.786** |
+| wikiann | fr     | 1000 |     0.175 |          0.104 |    0.228 |     **0.692** |
+| wikiann | es     | 1000 |     0.229 |          0.104 |    0.234 |     **0.753** |
 
 **Reading**: WikiAnn is Wikipedia-extracted PER/LOC/ORG. spaCy
 `*_core_news_lg` was trained on Wikipedia-like prose and dominates.
@@ -75,10 +81,11 @@ nullpii slowest + highest PII F1. ~5× factor between extremes.
 | --------------------------------- | ------------------------------------------------ | ---------------------------------------------- | -------------------- |
 | Primary language                  | **TypeScript / Node**                            | Python                                         | Python               |
 | Detector                          | OpenAI [`privacy-filter`](https://huggingface.co/openai/privacy-filter) — 1.3B token classifier (Apache 2.0), ONNX | spaCy NER + regex recognizers | spaCy NER alone |
-| Avg PII F1 (bundled, 5 locales)   | **0.732**                                        | 0.486                                          | 0.136                |
-| Avg PII F1 (isotonic, 4 locales)  | **0.583**                                        | 0.436                                          | 0.109                |
-| F1 on Presidio's own synthetic    | 0.548                                            | **0.558**                                      | 0.157                |
-| F1 on Wikipedia NER (5 locales)   | 0.212                                            | 0.293                                          | **0.648**            |
+| Avg PII F1 (bundled, 5 locales)   | **0.739**                                        | 0.475                                          | 0.132                |
+| Avg PII F1 (isotonic 5k, 4 locales)|**0.581**                                        | 0.427                                          | 0.110                |
+| F1 on Presidio's own synthetic 5k | **0.576**                                        | 0.575                                          | 0.157                |
+| F1 on Wikipedia NER (5 locales)   | 0.184                                            | 0.234                                          | **0.672**            |
+| Avg PII F1 vs OpenAI bare HF (Δ)  | **+0.226 F1** over upstream pipeline             | n/a                                            | n/a                  |
 | Latency (seq=512, ms)             | 57.7                                             | 22.9                                           | **~10**              |
 | Default categories                | 8 PII                                            | 50+ PII / general                              | 18 NER               |
 | Locales (production-tested)       | 5 with **30–40 dev prompts each**                | English mainly + 6 partial                     | **20+ via spaCy**    |

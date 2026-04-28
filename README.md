@@ -12,17 +12,24 @@
 > Claude, restore originals in the response — automatically. Zero
 > cloud calls. 100% permissive licenses.
 >
-> **Real numbers** (eval suite, partial-match F1, three public PII
-> benchmarks + bundled dev prompts across 5 locales):
-> - **bundled dev prompts** (180 multi-locale, dev-style — PR reviews,
->   deploy logs, solution-design RFCs): nullpii **avg 0.732** vs
->   Presidio 0.486 vs bare spaCy 0.136.
-> - **Isotonic/pii-masking-200k** (open ai4privacy mirror, 800 samples
->   across en/it/de/fr): nullpii **avg 0.583** vs Presidio 0.436 vs
->   spaCy 0.109.
-> - **Presidio synthetic** (500 samples, en): nullpii 0.548 vs
->   Presidio 0.558 vs spaCy 0.157 — near-tie on Presidio's own data.
+> **Real numbers** (eval suite, partial-match F1, 32k samples across
+> 16 datasets on M5 Pro 48GB; full table in
+> [docs/guide/eval-results.md](docs/guide/eval-results.md)):
+> - **bundled dev prompts** (202 multi-locale): nullpii **avg 0.739**
+>   vs OpenAI bare HF 0.487 vs Presidio 0.475 vs spaCy 0.132.
+> - **Isotonic/pii-masking-200k** (5k×4 locales): nullpii **0.581**
+>   vs OpenAI bare HF 0.385 vs Presidio 0.427 vs spaCy 0.110.
+> - **Presidio synthetic** (5000): virtual tie, nullpii 0.576 vs
+>   Presidio 0.575 vs OpenAI bare HF 0.390.
+> - **long-prompts-en** (chunking proof): nullpii **0.600** vs all
+>   others <0.350 — chunking captures PII past the 512-tok boundary
+>   that bare pipelines silently truncate.
 > - **WikiAnn** (Wikipedia NER, 5 locales): spaCy wins. Wikipedia ≠ PII.
+>
+> Headline: **nullpii beats the upstream OpenAI HF pipeline by +0.226
+> F1 on average** — same model, attributable entirely to nullpii's
+> runtime (chunking + constrained Viterbi + forward-backward posterior
+> + recognizer post-pass).
 >
 > Detection runs locally via OpenAI's
 > [`privacy-filter`](https://huggingface.co/openai/privacy-filter)

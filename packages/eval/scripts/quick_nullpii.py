@@ -10,6 +10,7 @@ Takes ~30-60s wall-clock, depending on hardware.
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import sys
 import time
@@ -56,11 +57,12 @@ def main() -> None:
         help="global confidence threshold (default: 0)",
     )
     parser.add_argument("--pool-size", type=int, default=4)
+    parser.add_argument("--threads-each", type=int, default=4)
     args = parser.parse_args()
 
     np_pred = nullpii_pool_predictor(
         pool_size=args.pool_size,
-        threads_each=2,
+        threads_each=args.threads_each,
         backend="cpu",
         variant="fp16",
         enter_bias=args.enter_bias,
@@ -86,12 +88,24 @@ def main() -> None:
     f1_values: list[float] = []
     n_total = 0
     t_all = time.perf_counter()
+    workers = args.pool_size  # one calling thread per daemon
     for name, samples in runs:
         truths = [list(s.spans) for s in samples]
+        out: list[list] = [None] * len(samples)  # type: ignore[list-item]
+
+        def _work(indices: list[int], _samples=samples, _out=out) -> None:
+            for i in indices:
+                _out[i] = list(np_pred(_samples[i].text).spans)
+
+        shards: list[list[int]] = [[] for _ in range(workers)]
+        for i in range(len(samples)):
+            shards[i % workers].append(i)
+
         t0 = time.perf_counter()
-        preds = [list(np_pred(s.text).spans) for s in samples]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+            list(ex.map(_work, shards))
         el = time.perf_counter() - t0
-        f1 = macro_f1(evaluate(preds, truths))
+        f1 = macro_f1(evaluate(out, truths))
         print(f"{name:<22} {len(samples):>5} {el:>7.1f} {f1:>7.4f}")
         # Adversarial subset has no positive PII — F1 collapses to 0 with
         # any false positive. Track it separately, exclude from avg.

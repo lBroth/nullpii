@@ -23,6 +23,39 @@ benchmark proved dead or marginal — safe to remove or simplify.
   both lose vs `primary` (iter-15 union -0.026, iter-16 majority -0.075).
   Keep but document as recall-killers.
 
+## Code added during iter-26..28 — confirmed dead
+
+These predictors / wrappers were authored as candidates but failed
+their smoke test. Safe to drop (or keep behind opt-in flag, undocumented):
+
+- **`negative_context_predictor`** (iter-27): drops spans near
+  "example/test/placeholder" keywords. Lost -0.10 bundled / -0.09
+  long-prompts because legitimate "example.com" emails get filtered.
+  Drop or only enable for adversarial subset.
+- **`span_coalesce_predictor`** (iter-28): merges same-label adjacent
+  spans separated by gap. Wins bundled +0.008 but loses isotonic
+  -0.010 each locale. Net -0.004. Drop.
+- **`boundary_refined_predictor.expand_word_chars=True`** (iter-26):
+  extends spans outward to word boundaries instead of trimming.
+  Bundled -0.008, isotonic noise. Drop the option.
+- **Locale-specific regex** (iter-25 — German Steuer-ID 11-digit, IT
+  codice fiscale, ES NIF, FR SIREN, IPv4, crypto addresses): the
+  German 11-digit `r"\b\d{11}\b"` is too greedy and creates FPs on
+  any 11-digit number. Drop or tighten radically.
+- **GLiNER non-PII variants** (iter-23 `urchade/gliner_multi-v2.1`):
+  base model loses -0.027 bundled. Keep `model_name` parameter but
+  document gliner_multi_pii-v1 as the only recommended.
+
+## Insight (iter-32 relaxed IoU 0.3)
+
+Annotation-noise ceiling: re-running best config with IoU 0.3 instead
+of strict 0.5 gives F1 **0.6860** (vs 0.6713). The +0.0147 gap is
+"free" recovery only with looser matching — i.e. the bench dataset
+ground truth has real boundary noise on bundled (+0.023) and isotonic
+(+0.014..0.020), but long-prompts annotations are tight (+0.002).
+Implication: target ≥0.80 strict IoU is NOT reachable without
+LLM-judge or model finetune (both excluded from this loop).
+
 ## Strategies tested and rejected (do not reintroduce)
 
 | Strategy | Best Δ | Reason |

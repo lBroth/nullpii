@@ -57,3 +57,7 @@ tmp/
 # eval results — bench artifacts (full-bench.json, *.log) are large and
 # regenerable; numbers ship in docs/guide/eval-results.md instead.
 packages/eval/results/
+
+# bench scripts + tests — internal, not yet public release
+packages/eval/scripts/
+packages/eval/tests/

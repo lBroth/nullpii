@@ -1,0 +1,17 @@
+{
+  "name": "nullpii-local",
+  "owner": {
+    "name": "nullpii",
+    "url": "https://github.com/lBroth/nullpii"
+  },
+  "plugins": [
+    {
+      "name": "nullpii",
+      "source": "./",
+      "description": "Sanitize PII from prompts locally before they leave your machine.",
+      "version": "0.0.8",
+      "category": "privacy",
+      "keywords": ["pii", "privacy", "redaction", "local", "onnx"]
+    }
+  ]
+}

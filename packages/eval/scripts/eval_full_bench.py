@@ -33,8 +33,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from nullpii_eval import public_datasets
 from nullpii_eval.adapters import (
+    deberta_pii_predictor,
+    gliner_pii_predictor,
     nullpii_pool_predictor,
     openai_pipeline_batch_predictor,
+    piiranha_predictor,
     presidio_predictor,
     spacy_predictor,
 )
@@ -162,6 +165,18 @@ def main() -> None:
     t0 = time.perf_counter()
     oa_batch = openai_pipeline_batch_predictor(device="cpu", batch_size=16)
     log.info("  HF pipeline loaded in %.1fs", time.perf_counter() - t0)
+    log.info("loading piiranha-v1 (DeBERTa-v3, 6 lang, 17 PII labels)…")
+    t0 = time.perf_counter()
+    pi_batch = piiranha_predictor(device="cpu", batch_size=32)
+    log.info("  piiranha pipeline loaded in %.1fs", time.perf_counter() - t0)
+    log.info("loading deberta_finetuned_pii (DeBERTa, English-only)…")
+    t0 = time.perf_counter()
+    db_batch = deberta_pii_predictor(device="cpu", batch_size=32)
+    log.info("  deberta-pii pipeline loaded in %.1fs", time.perf_counter() - t0)
+    log.info("loading gliner_multi_pii-v1 (zero-shot NER, 6 lang)…")
+    t0 = time.perf_counter()
+    gl_pred = gliner_pii_predictor()
+    log.info("  GLiNER pipeline loaded in %.1fs", time.perf_counter() - t0)
 
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -194,31 +209,45 @@ def main() -> None:
         # interleave; HF, Presidio, and spaCy are stateless under the GIL
         # release of their underlying C extensions.
         sp_pred = _get_spacy(loc)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=7) as ex:
             # nullpii uses the 4-daemon pool, sharded across 4 inner
             # threads — true parallelism inside the predictor.
             fut_np = ex.submit(f1_parallel, np_pred, samples, workers=4)
             fut_oa = ex.submit(f1_batch, oa_batch, samples, chunk=16)
+            fut_pi = ex.submit(f1_batch, pi_batch, samples, chunk=32)
+            fut_db = ex.submit(f1_batch, db_batch, samples, chunk=32)
+            fut_gl = ex.submit(f1_single, gl_pred, samples)
             fut_pr = ex.submit(f1_single, pr_pred, samples)
             fut_sp = ex.submit(f1_single, sp_pred, samples) if sp_pred else None
             np_f1, np_el = fut_np.result()
             oa_f1, oa_el = fut_oa.result()
+            pi_f1, pi_el = fut_pi.result()
+            db_f1, db_el = fut_db.result()
+            gl_f1, gl_el = fut_gl.result()
             pr_f1, pr_el = fut_pr.result()
             sp_f1, sp_el = fut_sp.result() if fut_sp else (float("nan"), 0.0)
         ds_wall = time.perf_counter() - ds_t0
         log.info(
-            "  nullpii=%.4f (%.1fs) openai=%.4f (%.1fs) presidio=%.4f (%.1fs) "
+            "  nullpii=%.4f (%.1fs) openai=%.4f (%.1fs) piiranha=%.4f (%.1fs) "
+            "deberta=%.4f (%.1fs) gliner=%.4f (%.1fs) presidio=%.4f (%.1fs) "
             "spacy=%.4f (%.1fs) | wall=%.1fs",
-            np_f1, np_el, oa_f1, oa_el, pr_f1, pr_el, sp_f1, sp_el, ds_wall,
+            np_f1, np_el, oa_f1, oa_el, pi_f1, pi_el, db_f1, db_el,
+            gl_f1, gl_el, pr_f1, pr_el, sp_f1, sp_el, ds_wall,
         )
         out[name] = {
             "n": len(samples),
             "nullpii_f1": np_f1,
             "openai_clean_f1": oa_f1,
+            "piiranha_f1": pi_f1,
+            "deberta_pii_f1": db_f1,
+            "gliner_pii_f1": gl_f1,
             "presidio_f1": pr_f1,
             "spacy_f1": sp_f1,
             "nullpii_s": np_el,
             "openai_clean_s": oa_el,
+            "piiranha_s": pi_el,
+            "deberta_pii_s": db_el,
+            "gliner_pii_s": gl_el,
             "presidio_s": pr_el,
             "spacy_s": sp_el,
             "wall_s": ds_wall,
@@ -235,8 +264,35 @@ def main() -> None:
             f"spacy={sp_f1:.4f} ({sp_el:5.1f}s)"
         )
 
+    # Aggregate per-predictor latency: total seconds / total samples → ms.
+    predictors = [
+        "nullpii", "openai_clean", "piiranha", "deberta_pii", "gliner_pii",
+        "presidio", "spacy",
+    ]
+    latency_summary: dict = {}
+    for p in predictors:
+        total_s = 0.0
+        total_n = 0
+        for name, v in out.items():
+            if name == "_meta":
+                continue
+            elapsed = v.get(f"{p}_s")
+            if elapsed is None or elapsed == 0.0:
+                continue
+            total_s += elapsed
+            total_n += v["n"]
+        if total_n > 0:
+            latency_summary[p] = {
+                "total_s": total_s,
+                "total_samples": total_n,
+                "ms_per_sample": (total_s / total_n) * 1000,
+            }
     out["_meta"]["finished"] = datetime.now().isoformat()
+    out["_meta"]["latency_per_predictor"] = latency_summary
     out_path.write_text(json.dumps(out, indent=2), encoding="utf-8")
+    log.info("=== latency summary (avg ms/sample over all datasets) ===")
+    for p, stat in latency_summary.items():
+        log.info("  %-14s %7.2f ms (%d samples)", p, stat["ms_per_sample"], stat["total_samples"])
     log.info("complete — results → %s, log → %s", out_path, log_path)
 
 

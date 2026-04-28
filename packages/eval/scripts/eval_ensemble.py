@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""nullpii + GLiNER ensemble — 3 merge strategies + per-category error
+"""nullpii + GLiNER ensemble — merge strategies + per-category error
 analysis.
 
 Tests whether combining nullpii (full pipeline) with GLiNER (zero-shot)
@@ -11,7 +11,6 @@ Predictors compared:
 - GLiNER chunked (zero-shot multilingual + nullpii-style chunking)
 - ensemble:union — both, longest-wins dedupe
 - ensemble:nullpii_primary — nullpii first, GLiNER fills non-overlapping gaps
-- ensemble:intersection — only spans both tools agree on
 """
 from __future__ import annotations
 
@@ -102,23 +101,12 @@ def _merge_primary(np_spans: list[Span], gl_spans: list[Span]) -> list[Span]:
     return sorted(added, key=lambda s: s.start)
 
 
-def _merge_intersection(np_spans: list[Span], gl_spans: list[Span]) -> list[Span]:
-    out: list[Span] = []
-    for n in np_spans:
-        for g in gl_spans:
-            if n.label == g.label and _overlaps(n, g):
-                out.append(n)
-                break
-    return out
-
-
 def merge_f1(np_preds: list, gl_preds: list, samples, *, strategy: str) -> float:
     """In-memory merger — no model calls, just pure span arithmetic."""
     truths = [list(s.spans) for s in samples]
     merger = {
         "union": _merge_union,
         "nullpii_primary": _merge_primary,
-        "intersection": _merge_intersection,
     }[strategy]
     merged = [merger(np_preds[i], gl_preds[i]) for i in range(len(samples))]
     return macro_f1(evaluate(merged, truths))
@@ -208,7 +196,6 @@ def main() -> None:
         t0 = time.perf_counter()
         u_f1 = merge_f1(np_preds, gl_preds, samples, strategy="union")
         p_f1 = merge_f1(np_preds, gl_preds, samples, strategy="nullpii_primary")
-        i_f1 = merge_f1(np_preds, gl_preds, samples, strategy="intersection")
         merge_el = time.perf_counter() - t0
         out[name] = {
             "n": len(samples),
@@ -216,7 +203,6 @@ def main() -> None:
             "gliner_f1": gl_f1,
             "ensemble_union_f1": u_f1,
             "ensemble_primary_f1": p_f1,
-            "ensemble_intersect_f1": i_f1,
             "nullpii_s": np_el,
             "gliner_s": gl_el,
             "merge_s": merge_el,
@@ -225,8 +211,8 @@ def main() -> None:
         }
         out_path.write_text(json.dumps(out, indent=2), encoding="utf-8")
         log.info(
-            "  np=%.4f gl=%.4f union=%.4f primary=%.4f intersect=%.4f (np_s=%.1f gl_s=%.1f)",
-            np_f1, gl_f1, u_f1, p_f1, i_f1, np_el, gl_el,
+            "  np=%.4f gl=%.4f union=%.4f primary=%.4f (np_s=%.1f gl_s=%.1f)",
+            np_f1, gl_f1, u_f1, p_f1, np_el, gl_el,
         )
 
     out["_meta"]["finished"] = datetime.now().isoformat()

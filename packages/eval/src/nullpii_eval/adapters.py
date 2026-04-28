@@ -724,24 +724,23 @@ DEFAULT_REGEX_PATTERNS: list[tuple[str, str]] = [
     # version strings, dataset row IDs etc. — too many FPs.
     # SSN US
     ("account_number", r"\b\d{3}-\d{2}-\d{4}\b"),
-    # Phone (international)
-    ("private_phone", r"\+\d{1,3}[\s-]?(?:\(\d+\)[\s-]?)?\d{2,4}[\s-]?\d{2,4}[\s-]?\d{2,4}\b"),
 ]
 
 
 def multi_ensemble_predictor(
     *,
     predictors: list[Predictor],
-    strategy: str = "union",
+    strategy: str = "primary",
 ) -> Predictor:
-    """Generic N-way ensemble. Strategies:
+    """Generic N-way ensemble. Two strategies (others tested and dropped
+    in iter loop — see CLEANUP_TODO.md):
 
-    - **union**: all spans, longest-wins on overlap (recall++)
-    - **primary**: predictors[0] wins, others fill non-overlapping gaps
-    - **intersection**: keep span only if ≥2 predictors agree
-    - **majority**: keep span only if >N/2 predictors agree
+    - **primary**: predictors[0] wins, others fill non-overlapping gaps.
+      Production default; +0.046 F1 vs primary alone in 11-dataset bench.
+    - **union**: all spans, longest-wins on overlap. Higher recall, more
+      false positives. Lost vs primary by -0.026 in iter-15.
     """
-    if strategy not in {"union", "primary", "intersection", "majority"}:
+    if strategy not in {"union", "primary"}:
         raise ValueError(f"unknown strategy: {strategy}")
     if not predictors:
         raise ValueError("at least one predictor required")
@@ -787,173 +786,13 @@ def multi_ensemble_predictor(
                 primary.append(s)
         return sorted(primary, key=lambda s: s.start)
 
-    def _merge_intersection(spans_per_tool: list[list[Span]]) -> list[Span]:
-        # Span is kept if ≥2 predictors find an overlapping same-label span.
-        out: list[Span] = []
-        for i, spans in enumerate(spans_per_tool):
-            for s in spans:
-                hits = 0
-                for j, other in enumerate(spans_per_tool):
-                    if i == j:
-                        continue
-                    if any(_overlaps(s, o) and s.label == o.label for o in other):
-                        hits += 1
-                        break
-                if hits > 0:
-                    out.append(s)
-        return _dedupe_longest(out)
-
-    def _merge_majority(spans_per_tool: list[list[Span]]) -> list[Span]:
-        threshold = len(spans_per_tool) / 2
-        candidates = _dedupe_longest([s for spans in spans_per_tool for s in spans])
-        out: list[Span] = []
-        for s in candidates:
-            agree = sum(
-                1
-                for spans in spans_per_tool
-                if any(_overlaps(s, o) and s.label == o.label for o in spans)
-            )
-            if agree > threshold:
-                out.append(s)
-        return out
-
-    mergers = {
-        "union": _merge_union,
-        "primary": _merge_primary,
-        "intersection": _merge_intersection,
-        "majority": _merge_majority,
-    }
-    merger = mergers[strategy]
+    merger = {"union": _merge_union, "primary": _merge_primary}[strategy]
 
     def _predict(text: str) -> ToolResult:
         t0 = time.perf_counter()
         results = [pred(text) for pred in predictors]
         spans_per_tool = [list(r.spans) for r in results]
         merged = merger(spans_per_tool)
-        elapsed = (time.perf_counter() - t0) * 1000
-        return ToolResult(merged, elapsed)
-
-    return _predict
-
-
-def category_routing_predictor(
-    *,
-    routing: dict[str, Predictor],
-    fallback: Predictor | None = None,
-) -> Predictor:
-    """Route output by PII category — pick the best-performing tool per
-    label based on per-category miss-rate analysis. Each tool is
-    queried, then we keep only the spans whose label matches that
-    tool's responsibility per `routing`. Optional `fallback` covers
-    labels not in the routing map."""
-    if not routing:
-        raise ValueError("routing map required")
-
-    # Deduplicate predictors so we don't call the same one twice.
-    unique_preds: dict[int, Predictor] = {}
-    for pred in routing.values():
-        unique_preds[id(pred)] = pred
-    if fallback is not None:
-        unique_preds[id(fallback)] = fallback
-    pred_list = list(unique_preds.values())
-
-    def _predict(text: str) -> ToolResult:
-        t0 = time.perf_counter()
-        per_pred_spans: dict[int, list[Span]] = {}
-        for pred in pred_list:
-            per_pred_spans[id(pred)] = list(pred(text).spans)
-        out: list[Span] = []
-        for label, pred in routing.items():
-            for s in per_pred_spans[id(pred)]:
-                if s.label == label:
-                    out.append(s)
-        if fallback is not None:
-            covered = set(routing.keys())
-            for s in per_pred_spans[id(fallback)]:
-                if s.label not in covered:
-                    out.append(s)
-        # Dedupe (in case overlap from multiple tools assigned same label).
-        out_sorted = sorted(out, key=lambda s: s.start)
-        elapsed = (time.perf_counter() - t0) * 1000
-        return ToolResult(out_sorted, elapsed)
-
-    return _predict
-
-
-def nullpii_gliner_ensemble_predictor(
-    *,
-    nullpii_pred: Predictor,
-    gliner_pred: Predictor,
-    strategy: str = "union",
-) -> Predictor:
-    """Combine nullpii and GLiNER outputs.
-
-    Strategies:
-    - **union**: merge spans from both, dedupe overlapping (longest wins;
-      ties go to higher score). Maximizes recall.
-    - **nullpii_primary**: keep all nullpii spans; add GLiNER spans only
-      where they don't overlap nullpii output. Mirrors the
-      ML+recognizer fill-the-gaps philosophy.
-    - **intersection**: keep only spans both tools agree on (same label,
-      overlapping range). Maximizes precision.
-    """
-    if strategy not in {"union", "nullpii_primary", "intersection"}:
-        raise ValueError(f"unknown strategy: {strategy}")
-
-    def _overlaps(a: Span, b: Span) -> bool:
-        return a.start < b.end and b.start < a.end
-
-    def _dedupe_longest(spans: list[Span]) -> list[Span]:
-        if len(spans) <= 1:
-            return spans
-        sorted_spans = sorted(spans, key=lambda s: (s.start, -s.end))
-        out: list[Span] = []
-        for s in sorted_spans:
-            replaced = False
-            for i in range(len(out) - 1, -1, -1):
-                prev = out[i]
-                if prev.end <= s.start:
-                    break
-                if not _overlaps(prev, s):
-                    continue
-                if prev.label != s.label:
-                    continue
-                # Keep the longer one.
-                if (s.end - s.start) > (prev.end - prev.start):
-                    out[i] = s
-                replaced = True
-                break
-            if not replaced:
-                out.append(s)
-        return sorted(out, key=lambda s: s.start)
-
-    def _union(np_spans: list[Span], gl_spans: list[Span]) -> list[Span]:
-        return _dedupe_longest(np_spans + gl_spans)
-
-    def _nullpii_primary(np_spans: list[Span], gl_spans: list[Span]) -> list[Span]:
-        added: list[Span] = list(np_spans)
-        for g in gl_spans:
-            if any(_overlaps(g, n) for n in np_spans):
-                continue
-            added.append(g)
-        return sorted(added, key=lambda s: s.start)
-
-    def _intersection(np_spans: list[Span], gl_spans: list[Span]) -> list[Span]:
-        out: list[Span] = []
-        for n in np_spans:
-            for g in gl_spans:
-                if n.label == g.label and _overlaps(n, g):
-                    out.append(n)
-                    break
-        return out
-
-    merger = {"union": _union, "nullpii_primary": _nullpii_primary, "intersection": _intersection}[strategy]
-
-    def _predict(text: str) -> ToolResult:
-        t0 = time.perf_counter()
-        np_result = nullpii_pred(text)
-        gl_result = gliner_pred(text)
-        merged = merger(list(np_result.spans), list(gl_result.spans))
         elapsed = (time.perf_counter() - t0) * 1000
         return ToolResult(merged, elapsed)
 

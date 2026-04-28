@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from nullpii_eval import public_datasets
 from nullpii_eval.adapters import (
+    DEFAULT_REGEX_PATTERNS,
     category_routing_predictor,
     deberta_pii_predictor,
     gliner_chunked_predictor,
@@ -29,6 +30,7 @@ from nullpii_eval.adapters import (
     nullpii_pool_predictor,
     piiranha_predictor,
     presidio_predictor,
+    regex_recognizer_predictor,
 )
 from nullpii_eval.datasets import Sample, Span, load
 from nullpii_eval.metrics import evaluate, macro_f1
@@ -86,6 +88,7 @@ def main() -> None:
         "presidio": lambda: presidio_predictor(),
         "deberta": lambda: _wrap_batch(deberta_pii_predictor(device="cpu", batch_size=16)),
         "piiranha": lambda: _wrap_batch(piiranha_predictor(device="cpu", batch_size=16)),
+        "regex": lambda: regex_recognizer_predictor(patterns=DEFAULT_REGEX_PATTERNS),
     }
     preds_by_name: dict[str, object] = {}
     for t in tools:

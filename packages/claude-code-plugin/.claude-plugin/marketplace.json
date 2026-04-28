@@ -9,7 +9,7 @@
       "name": "nullpii",
       "source": "./",
       "description": "Sanitize PII from prompts locally before they leave your machine.",
-      "version": "0.0.9",
+      "version": "0.0.10",
       "category": "privacy",
       "keywords": ["pii", "privacy", "redaction", "local", "onnx"]
     }

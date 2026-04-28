@@ -17,6 +17,16 @@ benchmark proved dead or marginal.
 - **`nullpii_gliner_ensemble_predictor`** — removed (legacy, superseded
   by `multi_ensemble_predictor`).
 - **`_merge_intersection`** in `eval_ensemble.py` — removed.
+- **All `quick_*.py`, `eval_*.py` scripts** — replaced by single
+  `scripts/bench_full.py` (matrix tool×dataset with checkpoint
+  resume, `--datasets X` for single-dataset, `--confusion` for
+  per-label TP/FP/FN, `--no-cap`/`--max-per-dataset`/per-dataset
+  defaults). Deleted: `quick_ensemble.py`, `quick_confusion.py`,
+  `quick_nullpii.py`, `eval_ensemble.py`, `eval_4way.py`,
+  `eval_best_config.py`, `eval_chunking_proof.py`,
+  `eval_full_bench.py`, `eval_gliner_pipeline.py`, `run_sweep.py`,
+  `build_long_prompts.py`, `eval_backend_check.py`, `eval_full.sh`,
+  `eval_smoke.sh`.
 
 ## Code added during iter-26..28 — confirmed dead
 

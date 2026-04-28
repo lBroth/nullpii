@@ -38,7 +38,7 @@ reply you read in the chat panel has the originals restored.
 ## Local development install (pre-publish)
 
 Before the plugin lands on the official marketplace, point Claude Code
-at the local checkout directly:
+at the local checkout as a marketplace source:
 
 ```bash
 # 1. Build the core + plugin once
@@ -48,15 +48,16 @@ npm install
 npm run build
 cd packages/claude-code-plugin && npm install && npm run build && cd -
 
-# 2. Inside Claude Code, add the local plugin
-/plugin add /absolute/path/to/nullpii/packages/claude-code-plugin
+# 2. Inside Claude Code, register the local plugin path as a marketplace
+/plugin marketplace add /absolute/path/to/nullpii/packages/claude-code-plugin
 
-# 3. Confirm the plugin is visible
+# 3. Confirm the marketplace + plugin are visible
+/plugin marketplace list
 /plugin list
 ```
 
-Claude Code reports the marketplace id assigned to the local install —
-use it in `enabledPlugins` / `pluginConfigs` exactly like the
+Claude Code prints the marketplace id assigned to the local source.
+Use that id in `enabledPlugins` / `pluginConfigs` exactly like the
 production snippet above. If the schema rejects the path, the
 plugin's `.claude-plugin/plugin.json` manifest is missing or
 incomplete — verify exact required fields with `/plugin --help` on

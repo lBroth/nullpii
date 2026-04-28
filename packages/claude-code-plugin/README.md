@@ -28,11 +28,13 @@ both keyed by `<plugin-id>@<marketplace-id>`:
 ```
 
 `<marketplace-id>` = the marketplace where the plugin is registered.
-Pre-publish, point Claude Code at a local checkout:
+Pre-publish, point Claude Code at a local checkout as a marketplace
+source:
 
 ```bash
-/plugin add /absolute/path/to/nullpii/packages/claude-code-plugin
-/plugin list   # shows the loaded plugin and its assigned marketplace id
+/plugin marketplace add /absolute/path/to/nullpii/packages/claude-code-plugin
+/plugin marketplace list   # shows the assigned marketplace id
+/plugin list               # confirms the plugin loaded
 ```
 
 ## Configuration

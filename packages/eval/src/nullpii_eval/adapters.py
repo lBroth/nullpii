@@ -168,6 +168,10 @@ def nullpii_pool_predictor(
     model_dir: Path = DEFAULT_MODEL_DIR,
     backend: str = "cpu",
     variant: str = "fp16",
+    enter_bias: float | None = None,
+    background_bias: float | None = None,
+    continue_bias: float | None = None,
+    threshold: float | None = None,
 ) -> Predictor:
     """Pool-backed predictor — N nullpii daemons with capped per-daemon
     threads. Total threads = pool_size × threads_each. Round-robin
@@ -180,6 +184,10 @@ def nullpii_pool_predictor(
         backend=backend,
         variant=variant,
         threads=threads_each,
+        enter_bias=enter_bias,
+        background_bias=background_bias,
+        continue_bias=continue_bias,
+        threshold=threshold,
     )
 
     def _predict(text: str) -> ToolResult:

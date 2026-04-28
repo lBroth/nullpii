@@ -83,7 +83,7 @@ def main() -> None:
         f"{'dataset':<22} {'n':>5} {'wall':>7} {'F1':>7}",
     )
     print("-" * 45)
-    totals: list[float] = []
+    f1_values: list[float] = []
     n_total = 0
     t_all = time.perf_counter()
     for name, samples in runs:
@@ -93,13 +93,19 @@ def main() -> None:
         el = time.perf_counter() - t0
         f1 = macro_f1(evaluate(preds, truths))
         print(f"{name:<22} {len(samples):>5} {el:>7.1f} {f1:>7.4f}")
-        totals.append(f1)
+        # Adversarial subset has no positive PII — F1 collapses to 0 with
+        # any false positive. Track it separately, exclude from avg.
+        if name != "bench-adversarial":
+            f1_values.append(f1)
         n_total += len(samples)
     print("-" * 45)
-    avg = sum(totals) / max(1, len(totals))
+    avg = sum(f1_values) / max(1, len(f1_values))
     wall = time.perf_counter() - t_all
-    print(f"{'AVG (unweighted)':<22} {n_total:>5} {wall:>7.1f} {avg:>7.4f}")
-    print(f"\nCONFIG enter={args.enter_bias} bg={args.background_bias} continue={args.continue_bias} threshold={args.threshold}")
+    print(f"{'AVG PII (excl adv)':<22} {n_total:>5} {wall:>7.1f} {avg:>7.4f}")
+    print(
+        f"\nCONFIG enter={args.enter_bias} bg={args.background_bias} "
+        f"continue={args.continue_bias} threshold={args.threshold}",
+    )
 
 
 if __name__ == "__main__":

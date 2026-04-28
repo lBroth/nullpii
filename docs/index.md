@@ -21,8 +21,6 @@ hero:
 features:
   - title: One line for Claude Code
     details: '`npm install -g @nullpii/claude-code`, add it to `.claude/settings.json`, done. Every prompt sanitized before it leaves your machine, every response restored before display.'
-  - title: Drop-in for any SDK
-    details: '`withNullPii(client)` for `@anthropic-ai/sdk`. Same TypeScript surface as the original client.'
   - title: Reversible by default
     details: Each PII span becomes a typed placeholder; the original lives in an in-memory vault keyed by an opaque session id. Round-trip is byte-for-byte exact.
   - title: 100% permissive licenses
@@ -31,22 +29,13 @@ features:
 
 ## What it does in 4 lines
 
-```ts
-import Anthropic from '@anthropic-ai/sdk';
-import { withNullPii } from 'nullpii/middleware/anthropic';
-
-const safe = withNullPii(new Anthropic());
-
-const reply = await safe.messages.create({
-  model: 'claude-haiku-4-5',
-  max_tokens: 200,
-  messages: [
-    { role: 'user', content: 'Email John Smith at john@acme.com about his SSN.' },
-  ],
-});
-// The Anthropic API saw `[[NULLPII:private_person:0]]` and `[[NULLPII:private_email:0]]`.
-// `reply` reads as natural English with the originals restored.
+```bash
+npm install -g @nullpii/claude-code
+# add the plugin to .claude/settings.json — done.
 ```
+
+Now every Claude Code prompt is sanitized before leaving your machine,
+and every response is restored before display.
 
 ## What gets caught
 

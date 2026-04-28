@@ -20,10 +20,7 @@ export default defineConfig({
       '/guide/': [
         {
           text: 'Integrations',
-          items: [
-            { text: 'Claude Code', link: '/guide/middleware/claude-code' },
-            { text: 'Anthropic SDK', link: '/guide/middleware/anthropic' },
-          ],
+          items: [{ text: 'Claude Code', link: '/guide/middleware/claude-code' }],
         },
         {
           text: 'Guide',

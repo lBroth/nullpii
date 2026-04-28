@@ -33,10 +33,6 @@
     "./backend/rocm": {
       "types": "./dist/backend/rocm-backend.d.ts",
       "import": "./dist/backend/rocm-backend.js"
-    },
-    "./middleware/anthropic": {
-      "types": "./dist/middleware/anthropic.d.ts",
-      "import": "./dist/middleware/anthropic.js"
     }
   },
   "files": ["dist", "src", "README.md", "LICENSE", "NOTICE", "bin"],
@@ -65,19 +61,14 @@
     "debug": "^4.4.3"
   },
   "peerDependencies": {
-    "@anthropic-ai/sdk": "^0.30.0",
     "onnxruntime-node": "^1.20.0"
   },
   "peerDependenciesMeta": {
     "onnxruntime-node": {
       "optional": true
-    },
-    "@anthropic-ai/sdk": {
-      "optional": true
     }
   },
   "devDependencies": {
-    "@anthropic-ai/sdk": "^0.91.1",
     "@biomejs/biome": "^1.9.4",
     "@types/cli-progress": "^3.11.6",
     "@types/debug": "^4.1.13",

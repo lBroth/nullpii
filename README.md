@@ -52,19 +52,24 @@
 > See [Comparisons](docs/guide/comparisons.md) for full multi-locale
 > tables + reproduce script.
 
-**With nullpii ✅** — every prompt sent through Claude Code:
+```ts
+// Without nullpii ❌
+await client.messages.create({
+  messages: [{ role: 'user', content: 'Email John Smith at john@acme.com about his SSN 123-45-6789' }],
+});
+// → John's name, email, SSN all leave your machine.
 
-```text
-"Email John Smith at john@acme.com about his SSN 123-45-6789"
-        ↓ sanitize ↓
-"Email [[NULLPII:private_person:0]] at [[NULLPII:private_email:0]] about
- his [[NULLPII:secret:0]]"
-        ↓ goes on the wire ↓
-        ↓ Claude responds, placeholders restored in-place ↓
-"Drafted: Hi John Smith, regarding your SSN 123-45-6789…"
+// With nullpii ✅
+import { withNullPii } from 'nullpii/middleware/anthropic';
+const safe = withNullPii(client);
+await safe.messages.create({
+  messages: [{ role: 'user', content: 'Email John Smith at john@acme.com about his SSN 123-45-6789' }],
+});
+// → "Email [[NULLPII:private_person:0]] at [[NULLPII:private_email:0]] about
+//    his [[NULLPII:secret:0]]" goes on the wire.
+//   The reply is restored to readable English before you see it.
+//   John's PII never leaves your process.
 ```
-
-John's PII never leaves your process.
 
 ---
 
@@ -135,6 +140,8 @@ ML-first, regex-augmented. No "no regex" purity theatre.
   in-memory `Map` keyed by an opaque session id
 - **a router** — picks CUDA → MPS → ROCm → CPU automatically, all
   optional via `peerDependency`
+- **drop-in middleware** — `withNullPii(client)` for `@anthropic-ai/sdk`;
+  the proxy preserves your client's TypeScript types
 - **a constrained Viterbi pass** — enforces valid BIOES transitions so
   the model can't emit garbage like `O → I-X`
 - **a default recognizer pack** — URL, email, AWS / GitHub / Stripe /
@@ -151,7 +158,30 @@ ML-first, regex-augmented. No "no regex" purity theatre.
 
 ## Wow examples
 
-### 1. Programmatic for RAG / batch jobs
+### 1. Customer support agent (Anthropic SDK)
+
+```ts
+import Anthropic from '@anthropic-ai/sdk';
+import { withNullPii } from 'nullpii/middleware/anthropic';
+
+const safe = withNullPii(new Anthropic());
+
+const ticket = `
+  Hi, I'm Maria Rossi (maria.rossi@example.it). My order #ACME-2026-04812
+  shipped to via Roma 45, 00184 Roma, Italia, but never arrived. My
+  customer card ending 4242 was charged. Help?
+`;
+
+const reply = await safe.messages.create({
+  model: 'claude-haiku-4-5',
+  max_tokens: 400,
+  messages: [{ role: 'user', content: ticket }],
+});
+// reply.content[0].text reads naturally, with Maria, her email, and
+// the address restored — but the LLM only ever saw placeholders.
+```
+
+### 2. Programmatic for RAG / batch jobs
 
 ```ts
 import { NullPii } from 'nullpii';
@@ -165,7 +195,7 @@ for (const doc of corpus) {
 }
 ```
 
-### 2. CLI for one-off scrubs
+### 3. CLI for one-off scrubs
 
 ```bash
 $ npx nullpii sanitize --stdin --format json < customer-email.txt | jq .sanitized
@@ -304,8 +334,8 @@ See [ROADMAP.md](./ROADMAP.md) for what's coming next.
 
 - The PII detection step **never touches the network**.
 - The vault is **in-memory only** — never serialized to disk.
-- `destroySession()` purges the mapping; the Claude Code plugin also
-  auto-destroys sessions at the end of each prompt round-trip.
+- `destroySession()` purges the mapping; sessions also auto-destroy at
+  the end of every middleware-wrapped LLM call.
 - No `console.log` of PII; debug logs only carry counts and short ids.
 - See [SECURITY.md](SECURITY.md) for the full threat model and how to
   report a vulnerability.

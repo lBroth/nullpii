@@ -112,11 +112,14 @@ def main() -> None:
         for loc in ("en", "it", "de", "fr"):
             runs.append((f"isotonic-{loc}", list(public_datasets._load_isotonic(args.isotonic, lang=loc).samples)))
 
-    print(f"\n{'dataset':<22} {'n':>5} {'wall':>7} {'F1':>7}")
-    print("-" * 45)
+    print(
+        f"\n{'dataset':<22} {'n':>5} {'wall':>7} {'ms/req':>7} {'F1':>7}",
+    )
+    print("-" * 53)
     f1_values: list[float] = []
     n_total = 0
     workers = args.pool_size
+    total_wall = 0.0
     t_all = time.perf_counter()
     for name, samples in runs:
         truths = [list(s.spans) for s in samples]
@@ -133,15 +136,22 @@ def main() -> None:
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
             list(ex.map(_work, shards))
         el = time.perf_counter() - t0
+        # Per-request latency under parallel dispatch — reflects throughput
+        # the client sees, not wall_per_sample of an isolated call.
+        ms_per_req = el * 1000 / max(1, len(samples))
         f1 = macro_f1(evaluate(out, truths))
-        print(f"{name:<22} {len(samples):>5} {el:>7.1f} {f1:>7.4f}")
+        print(f"{name:<22} {len(samples):>5} {el:>7.1f} {ms_per_req:>7.1f} {f1:>7.4f}")
         if name != "bench-adversarial":
             f1_values.append(f1)
         n_total += len(samples)
-    print("-" * 45)
+        total_wall += el
+    print("-" * 53)
     avg = sum(f1_values) / max(1, len(f1_values))
     wall = time.perf_counter() - t_all
-    print(f"{'AVG PII (excl adv)':<22} {n_total:>5} {wall:>7.1f} {avg:>7.4f}")
+    avg_ms = total_wall * 1000 / max(1, n_total)
+    print(
+        f"{'AVG PII (excl adv)':<22} {n_total:>5} {wall:>7.1f} {avg_ms:>7.1f} {avg:>7.4f}",
+    )
     print(f"\nCONFIG tools={tools} strategy={args.strategy} gliner_th={args.gliner_threshold}")
 
 

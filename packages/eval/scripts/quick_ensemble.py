@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from nullpii_eval import public_datasets
 from nullpii_eval.adapters import (
     DEFAULT_REGEX_PATTERNS,
+    boundary_refined_predictor,
     category_routing_predictor,
     deberta_pii_predictor,
     gliner_chunked_predictor,
@@ -74,6 +75,10 @@ def main() -> None:
     parser.add_argument("--isotonic", type=int, default=1000)
     parser.add_argument("--pool-size", type=int, default=4)
     parser.add_argument("--threads-each", type=int, default=4)
+    parser.add_argument(
+        "--refine-boundaries", action="store_true",
+        help="trim trailing punct/whitespace from final spans",
+    )
     args = parser.parse_args()
 
     tools = [t.strip() for t in args.tools.split(",") if t.strip()]
@@ -107,6 +112,9 @@ def main() -> None:
             predictors=[preds_by_name[t] for t in tools],
             strategy=args.strategy,
         )
+    if args.refine_boundaries:
+        ens = boundary_refined_predictor(inner=ens)
+        print("  boundary-refinement enabled")
 
     runs: list[tuple[str, list[Sample]]] = []
     for subset, samples in load_nullpii_bench().items():

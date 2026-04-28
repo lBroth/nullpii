@@ -600,6 +600,86 @@ def gliner_pii_predictor(
     return _predict
 
 
+def nullpii_gliner_ensemble_predictor(
+    *,
+    nullpii_pred: Predictor,
+    gliner_pred: Predictor,
+    strategy: str = "union",
+) -> Predictor:
+    """Combine nullpii and GLiNER outputs.
+
+    Strategies:
+    - **union**: merge spans from both, dedupe overlapping (longest wins;
+      ties go to higher score). Maximizes recall.
+    - **nullpii_primary**: keep all nullpii spans; add GLiNER spans only
+      where they don't overlap nullpii output. Mirrors the
+      ML+recognizer fill-the-gaps philosophy.
+    - **intersection**: keep only spans both tools agree on (same label,
+      overlapping range). Maximizes precision.
+    """
+    if strategy not in {"union", "nullpii_primary", "intersection"}:
+        raise ValueError(f"unknown strategy: {strategy}")
+
+    def _overlaps(a: Span, b: Span) -> bool:
+        return a.start < b.end and b.start < a.end
+
+    def _dedupe_longest(spans: list[Span]) -> list[Span]:
+        if len(spans) <= 1:
+            return spans
+        sorted_spans = sorted(spans, key=lambda s: (s.start, -s.end))
+        out: list[Span] = []
+        for s in sorted_spans:
+            replaced = False
+            for i in range(len(out) - 1, -1, -1):
+                prev = out[i]
+                if prev.end <= s.start:
+                    break
+                if not _overlaps(prev, s):
+                    continue
+                if prev.label != s.label:
+                    continue
+                # Keep the longer one.
+                if (s.end - s.start) > (prev.end - prev.start):
+                    out[i] = s
+                replaced = True
+                break
+            if not replaced:
+                out.append(s)
+        return sorted(out, key=lambda s: s.start)
+
+    def _union(np_spans: list[Span], gl_spans: list[Span]) -> list[Span]:
+        return _dedupe_longest(np_spans + gl_spans)
+
+    def _nullpii_primary(np_spans: list[Span], gl_spans: list[Span]) -> list[Span]:
+        added: list[Span] = list(np_spans)
+        for g in gl_spans:
+            if any(_overlaps(g, n) for n in np_spans):
+                continue
+            added.append(g)
+        return sorted(added, key=lambda s: s.start)
+
+    def _intersection(np_spans: list[Span], gl_spans: list[Span]) -> list[Span]:
+        out: list[Span] = []
+        for n in np_spans:
+            for g in gl_spans:
+                if n.label == g.label and _overlaps(n, g):
+                    out.append(n)
+                    break
+        return out
+
+    merger = {"union": _union, "nullpii_primary": _nullpii_primary, "intersection": _intersection}[strategy]
+
+    def _predict(text: str) -> ToolResult:
+        t0 = time.perf_counter()
+        np_result = nullpii_pred(text)
+        gl_result = gliner_pred(text)
+        merged = merger(list(np_result.spans), list(gl_result.spans))
+        elapsed = (time.perf_counter() - t0) * 1000
+        return ToolResult(merged, elapsed)
+
+    return _predict
+
+
 def gliner_chunked_predictor(
     *,
     threshold: float = 0.5,

@@ -608,6 +608,157 @@ def gliner_pii_predictor(
     return _predict
 
 
+def multi_ensemble_predictor(
+    *,
+    predictors: list[Predictor],
+    strategy: str = "union",
+) -> Predictor:
+    """Generic N-way ensemble. Strategies:
+
+    - **union**: all spans, longest-wins on overlap (recall++)
+    - **primary**: predictors[0] wins, others fill non-overlapping gaps
+    - **intersection**: keep span only if ≥2 predictors agree
+    - **majority**: keep span only if >N/2 predictors agree
+    """
+    if strategy not in {"union", "primary", "intersection", "majority"}:
+        raise ValueError(f"unknown strategy: {strategy}")
+    if not predictors:
+        raise ValueError("at least one predictor required")
+
+    def _overlaps(a: Span, b: Span) -> bool:
+        return a.start < b.end and b.start < a.end
+
+    def _dedupe_longest(spans: list[Span]) -> list[Span]:
+        if len(spans) <= 1:
+            return spans
+        sorted_spans = sorted(spans, key=lambda s: (s.start, -s.end))
+        out: list[Span] = []
+        for s in sorted_spans:
+            replaced = False
+            for i in range(len(out) - 1, -1, -1):
+                prev = out[i]
+                if prev.end <= s.start:
+                    break
+                if not _overlaps(prev, s):
+                    continue
+                if prev.label != s.label:
+                    continue
+                if (s.end - s.start) > (prev.end - prev.start):
+                    out[i] = s
+                replaced = True
+                break
+            if not replaced:
+                out.append(s)
+        return sorted(out, key=lambda s: s.start)
+
+    def _merge_union(spans_per_tool: list[list[Span]]) -> list[Span]:
+        flat: list[Span] = []
+        for spans in spans_per_tool:
+            flat.extend(spans)
+        return _dedupe_longest(flat)
+
+    def _merge_primary(spans_per_tool: list[list[Span]]) -> list[Span]:
+        primary = list(spans_per_tool[0])
+        for other_spans in spans_per_tool[1:]:
+            for s in other_spans:
+                if any(_overlaps(s, p) for p in primary):
+                    continue
+                primary.append(s)
+        return sorted(primary, key=lambda s: s.start)
+
+    def _merge_intersection(spans_per_tool: list[list[Span]]) -> list[Span]:
+        # Span is kept if ≥2 predictors find an overlapping same-label span.
+        out: list[Span] = []
+        for i, spans in enumerate(spans_per_tool):
+            for s in spans:
+                hits = 0
+                for j, other in enumerate(spans_per_tool):
+                    if i == j:
+                        continue
+                    if any(_overlaps(s, o) and s.label == o.label for o in other):
+                        hits += 1
+                        break
+                if hits > 0:
+                    out.append(s)
+        return _dedupe_longest(out)
+
+    def _merge_majority(spans_per_tool: list[list[Span]]) -> list[Span]:
+        threshold = len(spans_per_tool) / 2
+        candidates = _dedupe_longest([s for spans in spans_per_tool for s in spans])
+        out: list[Span] = []
+        for s in candidates:
+            agree = sum(
+                1
+                for spans in spans_per_tool
+                if any(_overlaps(s, o) and s.label == o.label for o in spans)
+            )
+            if agree > threshold:
+                out.append(s)
+        return out
+
+    mergers = {
+        "union": _merge_union,
+        "primary": _merge_primary,
+        "intersection": _merge_intersection,
+        "majority": _merge_majority,
+    }
+    merger = mergers[strategy]
+
+    def _predict(text: str) -> ToolResult:
+        t0 = time.perf_counter()
+        results = [pred(text) for pred in predictors]
+        spans_per_tool = [list(r.spans) for r in results]
+        merged = merger(spans_per_tool)
+        elapsed = (time.perf_counter() - t0) * 1000
+        return ToolResult(merged, elapsed)
+
+    return _predict
+
+
+def category_routing_predictor(
+    *,
+    routing: dict[str, Predictor],
+    fallback: Predictor | None = None,
+) -> Predictor:
+    """Route output by PII category — pick the best-performing tool per
+    label based on per-category miss-rate analysis. Each tool is
+    queried, then we keep only the spans whose label matches that
+    tool's responsibility per `routing`. Optional `fallback` covers
+    labels not in the routing map."""
+    if not routing:
+        raise ValueError("routing map required")
+
+    # Deduplicate predictors so we don't call the same one twice.
+    unique_preds: dict[int, Predictor] = {}
+    for pred in routing.values():
+        unique_preds[id(pred)] = pred
+    if fallback is not None:
+        unique_preds[id(fallback)] = fallback
+    pred_list = list(unique_preds.values())
+
+    def _predict(text: str) -> ToolResult:
+        t0 = time.perf_counter()
+        per_pred_spans: dict[int, list[Span]] = {}
+        for pred in pred_list:
+            per_pred_spans[id(pred)] = list(pred(text).spans)
+        out: list[Span] = []
+        for label, pred in routing.items():
+            for s in per_pred_spans[id(pred)]:
+                if s.label == label:
+                    out.append(s)
+        if fallback is not None:
+            covered = set(routing.keys())
+            for s in per_pred_spans[id(fallback)]:
+                if s.label not in covered:
+                    out.append(s)
+        # Dedupe (in case overlap from multiple tools assigned same label).
+        out_sorted = sorted(out, key=lambda s: s.start)
+        elapsed = (time.perf_counter() - t0) * 1000
+        return ToolResult(out_sorted, elapsed)
+
+    return _predict
+
+
 def nullpii_gliner_ensemble_predictor(
     *,
     nullpii_pred: Predictor,

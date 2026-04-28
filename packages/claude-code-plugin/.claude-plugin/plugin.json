@@ -1,7 +1,7 @@
 {
   "name": "nullpii",
   "version": "0.0.8",
-  "description": "Sanitize PII from prompts locally before they leave your machine.",
+  "description": "Manage the local nullpii daemon (load/unload the PII model). Sanitization itself happens in your application code via the SDK middleware (`withNullPii(client)`).",
   "author": {
     "name": "nullpii",
     "url": "https://github.com/lBroth/nullpii"
@@ -18,18 +18,6 @@
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.mjs\"",
             "timeout": 60,
             "statusMessage": "nullpii: loading PII model (first run downloads ~3 GB)…"
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/user-prompt-submit.mjs\"",
-            "timeout": 30,
-            "statusMessage": "nullpii: scanning prompt for PII…"
           }
         ]
       }

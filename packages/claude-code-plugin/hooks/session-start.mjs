@@ -70,11 +70,23 @@ async function main() {
     return;
   }
 
+  // Claude Code passes its own pid as PPID to the hook. Forward it so
+  // the daemon can self-terminate if Claude Code crashes without
+  // running the Stop hook (no workaround for direct exit).
+  const parentPid = String(process.ppid);
+  const idleMs = '1800000'; // 30 min idle = self-shutdown safety net
+
   const bin = locateBinary();
-  const argv =
-    bin.kind === 'mjs'
-      ? ['node', bin.path, 'serve', '--socket', socket]
-      : ['nullpii', 'serve', '--socket', socket];
+  const baseArgs = [
+    'serve',
+    '--socket',
+    socket,
+    '--parent-pid',
+    parentPid,
+    '--idle-timeout-ms',
+    idleMs,
+  ];
+  const argv = bin.kind === 'mjs' ? ['node', bin.path, ...baseArgs] : ['nullpii', ...baseArgs];
 
   const child = spawn(argv[0], argv.slice(1), {
     detached: true,
@@ -83,8 +95,10 @@ async function main() {
   });
   child.unref();
 
-  writeFileSync(state, JSON.stringify({ pid: child.pid, socket, sessionId }));
-  process.stderr.write(`[nullpii] daemon spawned pid=${child.pid} socket=${socket}\n`);
+  writeFileSync(state, JSON.stringify({ pid: child.pid, socket, sessionId, parentPid }));
+  process.stderr.write(
+    `[nullpii] daemon spawned pid=${child.pid} parent=${parentPid} socket=${socket}\n`,
+  );
   // Empty stdout — Claude Code does not require output for SessionStart.
   process.stdout.write('\n');
 }

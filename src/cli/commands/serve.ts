@@ -37,16 +37,35 @@ export function registerServe(program: Command): void {
       '--socket <path>',
       'listen on a Unix socket; one JSON request per line, response per line',
     )
+    .option(
+      '--idle-timeout-ms <n>',
+      'auto-terminate after this many ms with no requests (socket mode only)',
+      Number.parseInt,
+    )
+    .option(
+      '--parent-pid <n>',
+      'auto-terminate when the given pid no longer exists (socket mode only)',
+      Number.parseInt,
+    )
     .action(runServe);
 }
 
-async function runServe(options: CliConfigOptions & { socket?: string }): Promise<void> {
+interface ServeOptions extends CliConfigOptions {
+  socket?: string;
+  idleTimeoutMs?: number;
+  parentPid?: number;
+}
+
+async function runServe(options: ServeOptions): Promise<void> {
   const engine = new NullPii(configFromOptions(options));
   await engine.init();
   process.stderr.write('nullpii serve ready\n');
 
   if (typeof options.socket === 'string' && options.socket !== '') {
-    await runSocket(engine, options.socket);
+    await runSocket(engine, options.socket, {
+      idleTimeoutMs: options.idleTimeoutMs,
+      parentPid: options.parentPid,
+    });
     return;
   }
   await runStdio(engine);
@@ -63,8 +82,14 @@ async function runStdio(engine: NullPii): Promise<void> {
   await engine.dispose();
 }
 
-function runSocket(engine: NullPii, socketPath: string): Promise<void> {
+interface SocketOptions {
+  readonly idleTimeoutMs: number | undefined;
+  readonly parentPid: number | undefined;
+}
+
+function runSocket(engine: NullPii, socketPath: string, opts: SocketOptions): Promise<void> {
   return new Promise((resolve, reject) => {
+    let lastActivity = Date.now();
     const server = createServer((sock: Socket) => {
       let buffer = '';
       sock.setEncoding('utf8');
@@ -76,6 +101,7 @@ function runSocket(engine: NullPii, socketPath: string): Promise<void> {
           const line = buffer.slice(0, nl).trim();
           buffer = buffer.slice(nl + 1);
           if (line === '') continue;
+          lastActivity = Date.now();
           handle(engine, line)
             .then((resp) => sock.write(`${JSON.stringify(resp)}\n`))
             .catch((err) =>
@@ -91,13 +117,37 @@ function runSocket(engine: NullPii, socketPath: string): Promise<void> {
     server.listen(socketPath, () => {
       process.stderr.write(`nullpii serve listening on ${socketPath}\n`);
     });
-    const shutdown = (): void => {
+    const shutdown = (reason: string): void => {
+      process.stderr.write(`nullpii serve shutting down: ${reason}\n`);
       server.close(() => {
         engine.dispose().finally(() => resolve());
       });
     };
-    process.on('SIGTERM', shutdown);
-    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
+
+    // Best-effort cleanup if Claude Code (parent) crashes without
+    // invoking the Stop hook. Two independent watchdogs:
+    //   1. idle timeout — kill self after N ms of no requests
+    //   2. parent-pid liveness — poll if the registered pid is gone
+    const idleMs = opts.idleTimeoutMs ?? 30 * 60_000;
+    if (idleMs > 0) {
+      setInterval(() => {
+        if (Date.now() - lastActivity > idleMs) {
+          shutdown(`idle for ${Math.round((Date.now() - lastActivity) / 1000)}s`);
+        }
+      }, 60_000).unref();
+    }
+    if (typeof opts.parentPid === 'number' && opts.parentPid > 0) {
+      const pid = opts.parentPid;
+      setInterval(() => {
+        try {
+          process.kill(pid, 0); // signal 0 = liveness check, no actual signal
+        } catch {
+          shutdown(`parent pid ${pid} no longer exists`);
+        }
+      }, 5_000).unref();
+    }
   });
 }
 

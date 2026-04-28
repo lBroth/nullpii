@@ -1,7 +1,7 @@
 {
   "name": "nullpii",
-  "version": "0.0.9",
-  "description": "Manage the local nullpii daemon (load/unload the PII model). Sanitization itself happens in your application code via the SDK middleware (`withNullPii(client)`).",
+  "version": "0.0.10",
+  "description": "Manage the local nullpii daemon + HTTP proxy. Sanitizes Anthropic API requests via ANTHROPIC_BASE_URL=http://localhost:7330.",
   "author": {
     "name": "nullpii",
     "url": "https://github.com/lBroth/nullpii"
@@ -22,7 +22,7 @@
         ]
       }
     ],
-    "Stop": [
+    "SessionEnd": [
       {
         "hooks": [
           {

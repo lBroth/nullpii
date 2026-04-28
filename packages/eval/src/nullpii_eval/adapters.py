@@ -608,6 +608,40 @@ def gliner_pii_predictor(
     return _predict
 
 
+def boundary_refined_predictor(
+    *,
+    inner: Predictor,
+    trim_chars: str = " \t\n\r,.;:!?\"'()[]{}<>",
+) -> Predictor:
+    """Wrap a predictor and refine span boundaries — trim leading/trailing
+    whitespace + common punctuation. Helps partial-match scoring (IoU
+    >= 0.5) where ML models include trailing dots / brackets that
+    ground-truth annotations exclude."""
+
+    def _refine(text: str, s: Span) -> Span | None:
+        start, end = s.start, s.end
+        while start < end and text[start] in trim_chars:
+            start += 1
+        while end > start and text[end - 1] in trim_chars:
+            end -= 1
+        if start >= end:
+            return None
+        return Span(s.label, start, end)
+
+    def _predict(text: str) -> ToolResult:
+        t0 = time.perf_counter()
+        result = inner(text)
+        out: list[Span] = []
+        for s in result.spans:
+            refined = _refine(text, s)
+            if refined is not None:
+                out.append(refined)
+        elapsed = (time.perf_counter() - t0) * 1000
+        return ToolResult(out, elapsed)
+
+    return _predict
+
+
 def regex_recognizer_predictor(
     *,
     patterns: list[tuple[str, str]],

@@ -7,16 +7,13 @@
  * model, or the default test-artifact path under `.nullpii-test-artifacts/`).
  */
 import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { CpuBackend } from '../../src/backend/cpu-backend.js';
 import { MpsBackend } from '../../src/backend/mps-backend.js';
 import type { BackendProvider, ModelVariant } from '../../src/types/index.js';
+import { TEST_MODEL_DIR } from '../_env.js';
 
-const MODEL_DIR = resolve(
-  process.env.NULLPII_TEST_MODEL_DIR ??
-    new URL('../../.nullpii-test-artifacts/model', import.meta.url).pathname,
-);
+const MODEL_DIR = TEST_MODEL_DIR;
 const SEQ_LENGTHS = [128, 256, 512];
 const RUNS_PER_LEN = 3;
 

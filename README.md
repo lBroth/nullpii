@@ -19,8 +19,8 @@
 Two deliverables and the experiment that produced them:
 
 1. **npm library** — `nullpii` (this package). Sanitize / restore engine over `openai/privacy-filter` with the constrained Viterbi BIOES decoder + chunking + recognizer post-pass + reversible vault. CLI binary `nullpii sanitize|restore|scan|benchmark|...` plus a TS API (`sanitize()`, `restore()`, `NullPii` class).
-2. **HuggingFace model** — [`lBroth/nullpii`](https://huggingface.co/lBroth/nullpii) (publication script under `packages/eval/scripts/release/`). GLiNER fine-tune in PT, ONNX FP32 and ONNX INT4 variants. Pin `local_files_only=True` and use the standard `gliner.GLiNER.from_pretrained(...)` API.
-3. **Reproducibility kit** — `packages/eval/` with the full bench harness, dataset loaders (ai4privacy, Isotonic, the project's own `nullpii-bench`), the training scripts that produced v2, and the comparison results (`packages/eval/results/`).
+2. **HuggingFace model** — [`lBroth/nullpii`](https://huggingface.co/lBroth/nullpii) (publication script: `scripts/release/push-to-hf.sh`). GLiNER fine-tune in PT, ONNX FP32 and ONNX INT4 variants. Use the standard `gliner.GLiNER.from_pretrained(...)` API.
+3. **Reproducibility kit** — `packages/eval/` with the bench harness, dataset loaders (ai4privacy, Isotonic, project-bundled `nullpii-bench`), training scripts, and comparison results.
 
 ## The headline comparison
 

@@ -66,9 +66,22 @@ Outputs land in `packages/eval/results/runpod-YYYYMMDD/`: `matrix.json`,
   + chunking + constrained Viterbi BIOES + recognizer post-pass + gliner
   zero-shot pass + regex secrets, merged with `primary` strategy +
   boundary refinement.
-- **openai (bare)** — same upstream `openai/privacy-filter` model, run
-  via default `transformers.pipeline()`. Reference for what the nullpii
-  pipeline adds over the raw model.
+- **openai (bare)** — same upstream `openai/privacy-filter` model run
+  via the default `transformers.pipeline()` with
+  `aggregation_strategy="simple"`. **Caveat**: the model card describes
+  inference as applying a constrained Viterbi BIOES decoder; the
+  transformers integration ships only per-token logits, so `simple`
+  aggregation is naive same-base-label adjacency grouping (no boundary
+  enforcement) and spans look fragmented. This row is the fair
+  "naive HF usage" baseline, not the model's intended quality. The
+  intended quality is reachable in two ways: (a) the official `opf`
+  CLI from
+  [`github.com/openai/privacy-filter`](https://github.com/openai/privacy-filter)
+  which ships the full Viterbi decoder, or (b) nullpii's runtime
+  (the `nullpii` row above), which also implements that decoder.
+  `docs/guide/comparisons.md` adds a third row using a small Python
+  BIOES decoder that recovers most of the gap with no extra
+  dependency.
 - **gliner** — `urchade/gliner_multi_pii-v1`, zero-shot multilingual,
   ~278M params.
 - **deberta** — `lakshyakh93/deberta_finetuned_pii`, English-only.
@@ -145,3 +158,47 @@ realistic dataset on F1.
   realistic prompts; useful as a structured-secret pre-pass, not standalone.
 - **deberta**, **piiranha**, **presidio** all underperform on the dev-
   paste threat model the suite targets.
+
+## Fine-tuned GLiNER v2 (preview)
+
+A two-round fine-tune of `urchade/gliner_multi_pii-v1` on a mix of
+`ai4privacy/pii-masking-300k`, `Isotonic/pii-masking-200k` (en/de/fr/it),
+and our `dev-prompts-synth` generator. Round 1 specialised on
+ai4privacy + isotonic and lost dev-synth quality; round 2 added dev-synth
+to the training mix and recovered it without giving back the multilingual
+gains. Best checkpoint = epoch 8 (eval_loss 1.528).
+
+Source: `packages/eval/results/train/variant_bench_v2.json` (cap=100
+per dataset — preview, full bench pending). Ran on the same 5090 host.
+
+### F1 (n=100 per dataset)
+
+| Dataset | baseline gliner | v2-pt-cuda | v2-onnx-int4 |
+| ------- | --------------: | ---------: | -----------: |
+| isotonic-en | 0.462 | 0.951 | **0.961** |
+| isotonic-de | 0.497 | 0.932 | **0.939** |
+| isotonic-fr | 0.477 | 0.947 | **0.967** |
+| isotonic-it | 0.509 | 0.938 | **0.959** |
+| ai4privacy-300k | 0.309 | 0.800 | **0.864** |
+| dev-prompts-synth | 0.618 | 0.821 | 0.801 |
+
+### Latency + size
+
+| Variant | p50 ms | Size MB | Backend |
+| ------- | -----: | ------: | ------- |
+| v2-pt-cuda | 14 | 1102 | CUDA (RTX 5090) |
+| v2-onnx-fp32 | 670 | 1104 | CPU |
+| v2-onnx-int4 | 602 | 844 | CPU |
+| v2-onnx-int8 | 614 | 333 | CPU (F1 collapse, avoid) |
+
+### Takeaways (preview)
+
+- **v2 beats baseline gliner by +0.45–0.55 F1** on every multilingual
+  dataset.
+- **INT4 quantization matches or BEATS the FP32 model** on F1 (matmul-
+  only quant smooths the round-1 overfit). Best CPU production option.
+- **INT8 dynamic quant collapses** (avg F1 ~0.58) — too lossy.
+- **dev-prompts-synth recovered** vs round-1 (0.43 → 0.82) by mixing
+  dev-synth into the training set.
+- Numbers are preview-grade (n=100) — full bench against the same
+  datasets as the base table is pending.

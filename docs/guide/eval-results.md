@@ -6,6 +6,24 @@ bench runs on a RunPod 5090 host (CUDA mix, nullpii forced CPU due to
 ONNX Runtime Blackwell SM_120 MoE limitation — see
 `packages/eval/scripts/runpod/README.md`).
 
+## Backend latency (npm runtime, openai/privacy-filter)
+
+Per-sequence latency in `onnxruntime-node@1.24` for the npm runtime
+over `openai/privacy-filter`. Source: `npx tsx test/backend/benchmark.ts`,
+3 runs after warmup.
+
+| Backend | Variant | seq=128 ms | seq=256 ms | seq=512 ms |
+| ------- | ------- | ---------: | ---------: | ---------: |
+| CPU     | int8    |       24.1 |       34.5 |       57.3 |
+| MPS     | fp16    |       44.8 |       71.8 |      159.0 |
+| CUDA    | —       |   pending  |   pending  |   pending  |
+| ROCm    | —       |   pending  |   pending  |   pending  |
+
+**MPS slower than CPU** on this model — ORT's `CoreMLExecutionProvider`
+falls back to CPU mid-graph for ops it cannot service in the custom
+`OpenAIPrivacyFilterForTokenClassification` architecture. CPU + int8 is
+the recommended macOS path until upstream op coverage improves.
+
 ## How to read
 
 `matrix.json` shape:

@@ -96,9 +96,9 @@ Outputs land in `packages/eval/results/runpod-YYYYMMDD/`: `matrix.json`,
   [`github.com/openai/privacy-filter`](https://github.com/openai/privacy-filter)
   which ships the full Viterbi decoder, or (b) nullpii's runtime
   (the `nullpii` row above), which also implements that decoder.
-  `docs/guide/comparisons.md` adds a third row using a small Python
-  BIOES decoder that recovers most of the gap with no extra
-  dependency.
+  See the "openai/privacy-filter: HF naive vs BIOES decoder" section
+  below for a small Python BIOES decoder that recovers most of the gap
+  with no extra dependency.
 - **gliner** — `urchade/gliner_multi_pii-v1`, zero-shot multilingual,
   ~278M params.
 - **deberta** — `lakshyakh93/deberta_finetuned_pii`, English-only.
@@ -168,6 +168,34 @@ realistic dataset on F1.
   realistic prompts; useful as a structured-secret pre-pass, not standalone.
 - **deberta**, **piiranha**, **presidio** all underperform on the dev-
   paste threat model the suite targets.
+
+## openai/privacy-filter: HF naive vs BIOES decoder
+
+The "openai (bare)" row above uses `transformers.pipeline()` with
+`aggregation_strategy="simple"` — naive same-base-label adjacency
+grouping, no boundary enforcement. The model card describes inference
+as a constrained Viterbi BIOES decoder, but the transformers
+integration ships only per-token logits. A small Python BIOES decoder
+(no extra dependency, ~30 LoC) recovers most of that gap.
+
+Source: `packages/eval/results/openai_decoders.json`,
+`packages/eval/scripts/bench_openai_decoders.py`. Same model, same
+input, different decoder. Run on Mac M-series CPU.
+
+| Dataset                  |    HF pipeline |     BIOES decoder |       Δ |
+| ------------------------ | -------------: | ----------------: | ------: |
+| nullpii-bench (n=264)    |          0.458 |         **0.737** |  +0.278 |
+| ai4privacy-300k (n=200)  |          0.129 |         **0.236** |  +0.107 |
+| isotonic-en (n=200)      |          0.374 |         **0.527** |  +0.153 |
+| isotonic-de (n=200)      |          0.383 |         **0.541** |  +0.158 |
+| isotonic-fr (n=200)      |          0.375 |         **0.538** |  +0.163 |
+| isotonic-it (n=200)      |          0.371 |         **0.537** |  +0.166 |
+
+The BIOES decoder closes most of the naive-HF gap but does **not**
+match the official `opf` CLI numbers — the upstream decoder is fully
+constrained Viterbi over the BIOES schema; this is a single-pass
+greedy reconstruction. Use it as a "what does this model actually
+know" reference, not as production inference.
 
 ## nullpii (fine-tuned GLiNER) (preview)
 

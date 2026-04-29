@@ -27,10 +27,6 @@ async function loadBackend(name: Exclude<BackendName, 'auto'>): Promise<BackendC
       const m = await import('./backend/cuda-backend.js');
       return m.CudaBackend as BackendCtor;
     }
-    case 'rocm': {
-      const m = await import('./backend/rocm-backend.js');
-      return m.RocmBackend as BackendCtor;
-    }
   }
 }
 

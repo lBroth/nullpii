@@ -5,7 +5,6 @@
 | `cpu`   | All                   | `int4`          | Universal. F1-equivalent to fp32, ~3× faster.      |
 | `mps`   | Apple Silicon         | `int4`          | CoreML EP; partial op coverage — see [Eval results / Backend latency](/guide/eval-results). |
 | `cuda`  | Linux/Windows + NVIDIA| `int4`          | Tensor cores on Volta+. CUDA EP via ORT.           |
-| `rocm`  | Linux + AMD           | `int4`          | MFMA on RDNA3+ / CDNA. ROCm EP via ORT.            |
 
 ## Auto-selection
 
@@ -13,8 +12,7 @@
 
 1. `cuda`
 2. `mps`
-3. `rocm`
-4. `cpu`
+3. `cpu`
 
 The first one whose `isAvailable()` resolves `true` wins.
 
@@ -42,7 +40,6 @@ Apache-2.0 / MIT permissive — no LGPL/GPL anywhere in the dep tree.
 | `cpu`   | always available                                        |
 | `mps`   | `process.platform === 'darwin'`                         |
 | `cuda`  | `/dev/nvidia0` (Linux) or `CUDA_PATH` env (Windows)     |
-| `rocm`  | `/dev/kfd` (Linux only)                                 |
 
 If you need a different probe (containerized GPUs, custom drivers),
 construct the backend directly and call `isAvailable()` yourself.

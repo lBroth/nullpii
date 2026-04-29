@@ -120,7 +120,7 @@ npm install nullpii onnxruntime-node
 ```
 
 `onnxruntime-node` is an **optional peer dependency** — install it only
-if you want the Node-side backend (CPU / MPS / CUDA / ROCm). The
+if you want the Node-side backend (CPU / MPS / CUDA). The
 library is also usable in browsers / WebGPU via the `nullpii/backend/*`
 subpath imports.
 
@@ -133,9 +133,8 @@ Requires **Node 24 LTS** (see `.nvmrc`).
 | `cpu`   | All                   | Universal. Currently fastest on macOS.             |
 | `mps`   | Apple Silicon         | CoreML EP; partial op coverage — see `docs/guide/eval-results.md`. |
 | `cuda`  | Linux/Windows + NVIDIA| Tensor cores on Volta+. CUDA EP via ORT.           |
-| `rocm`  | Linux + AMD           | MFMA on RDNA3+ / CDNA. ROCm EP via ORT.            |
 
-Auto-selects in priority **CUDA → MPS → ROCm → CPU**. Default variant
+Auto-selects in priority **CUDA → MPS → CPU**. Default variant
 is `int4` (~875 MB, ~6% F1 drop). Pin `variant: 'fp32'` (~5 GB) when
 you need maximum accuracy or a regression baseline.
 
@@ -146,7 +145,7 @@ input text
    │
    ▼                  ┌──────────────────────────────┐
 tokenizer ─offsets─►  │ ONNX Runtime (CPU / MPS /    │
-   │                  │             CUDA / ROCm EP)  │
+   │                  │             CUDA EP)  │
    │                  │                              │
    ▼                  └────────────────┬─────────────┘
 attention_mask                          │ logits [seq × 33]

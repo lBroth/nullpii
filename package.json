@@ -1,7 +1,7 @@
 {
   "name": "nullpii",
   "version": "0.0.7",
-  "description": "Sanitize PII from LLM prompts locally. Reversible vault. Zero cloud calls. Multi-backend (CPU/MPS/CUDA/ROCm/WebGPU).",
+  "description": "Sanitize PII from LLM prompts locally. Reversible vault. Zero cloud calls. Multi-backend (CPU/MPS/CUDA).",
   "license": "Apache-2.0",
   "type": "module",
   "sideEffects": false,
@@ -29,10 +29,6 @@
     "./backend/cuda": {
       "types": "./dist/backend/cuda-backend.d.ts",
       "import": "./dist/backend/cuda-backend.js"
-    },
-    "./backend/rocm": {
-      "types": "./dist/backend/rocm-backend.d.ts",
-      "import": "./dist/backend/rocm-backend.js"
     }
   },
   "files": ["dist", "src", "README.md", "LICENSE", "NOTICE", "bin"],

@@ -66,6 +66,6 @@ offsets — no regex, no language-specific tweaks.
 
 - One ONNX file (~875 MiB int4, default) cached in `~/.cache/nullpii/`.
   Pin `variant: 'fp32'` (~5 GiB) for max accuracy
-- Backend auto-selects CUDA → MPS → ROCm → CPU
+- Backend auto-selects CUDA → MPS → CPU
 - ~25 ms / 512 tokens on Apple Silicon CPU (int4); chunked above 512
 - Zero outbound traffic for the detection step

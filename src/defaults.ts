@@ -22,7 +22,6 @@ export const DEFAULT_VARIANT: ModelVariant = 'auto';
 export const BACKEND_AUTO_PRIORITY: readonly Exclude<BackendName, 'auto'>[] = [
   'cuda',
   'mps',
-  'rocm',
   'cpu',
 ];
 

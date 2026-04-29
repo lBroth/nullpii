@@ -51,6 +51,31 @@
 > the slowest competitor (GLiNER) and ~3× slower than Presidio.
 > See [Comparisons](docs/guide/comparisons.md) for full multi-locale
 > tables + reproduce script.
+>
+> **Preview: `gliner-v2` fine-tune** (preliminary, n=100 per dataset)
+> — a two-round fine-tune of `urchade/gliner_multi_pii-v1` on
+> ai4privacy + Isotonic + our dev-prompts-synth lifts multilingual F1
+> from 0.46–0.51 (baseline gliner) to **0.93–0.97 (en/de/fr/it)**, and
+> ai4privacy from 0.31 to **0.86** — at 14 ms/sample on a single 5090
+> GPU. INT4 ONNX export (`MatMulNBitsQuantizer`, 844 MB) preserves the
+> F1 on CPU; INT8 dynamic quant collapses (avoid). Side-by-side spans
+> in `packages/eval/results/train/qualitative_compare.md`. Numbers
+> graduate from "preview" to docs once the full bench (n≥5k) lands.
+>
+> **Note on the `openai (bare HF)` row above.** That row uses
+> `transformers.pipeline()` with `aggregation_strategy="simple"`, which
+> is the default HF usage but does NOT implement the constrained
+> Viterbi BIOES decoder the model card describes. The transformers
+> integration ships only per-token logits; the Viterbi has to be
+> applied externally. The intended quality is reachable through (a) the
+> official [`opf` CLI](https://github.com/openai/privacy-filter) from
+> the openai/privacy-filter GitHub repo, or (b) nullpii's runtime —
+> both ship the constrained Viterbi. The nullpii row IS that external
+> decoder applied over the same upstream model — apples-to-apples
+> that's where the +0.226 gap comes from. A simpler in-Python BIOES
+> boundary parser (no learned transition biases) recovers most of the
+> gap on its own; see `qualitative_compare.md` for the decoder-aware
+> comparison.
 
 ```ts
 // Without nullpii ❌

@@ -901,6 +901,95 @@ _OPENAI_LABELS = {
 }
 
 
+_NULLPII_8 = [
+    "account_number",
+    "private_address",
+    "private_date",
+    "private_email",
+    "private_person",
+    "private_phone",
+    "private_url",
+    "secret",
+]
+
+
+def gliner_v2_predictor(
+    model_path: str,
+    *,
+    onnx_file: str | None = None,
+    device: str = "cuda",
+    threshold: float = 0.5,
+    chunk_chars: int = 1400,
+    overlap_chars: int = 200,
+) -> Predictor:
+    """Predictor for our fine-tuned GLiNER (v2). Trained directly on the
+    nullpii 8-category schema, so no label remap — labels passed verbatim.
+
+    Loads either the PyTorch checkpoint (`onnx_file=None`) on the chosen
+    device, or an exported ONNX model (`onnx_file="model_int4.onnx"`,
+    forced to CPU since onnxruntime CPUExecutionProvider is what we ship).
+    Chunking + dedupe identical to gliner_chunked_predictor.
+    """
+    try:
+        from gliner import GLiNER
+    except ImportError as e:
+        raise ImportError("gliner required") from e
+
+    kwargs: dict = {"local_files_only": True}
+    if onnx_file:
+        kwargs["load_onnx_model"] = True
+        kwargs["onnx_model_file"] = onnx_file
+        model = GLiNER.from_pretrained(model_path, **kwargs)
+    else:
+        model = GLiNER.from_pretrained(model_path, **kwargs).to(device)
+        model.eval()
+
+    def _dedupe(spans: list[Span]) -> list[Span]:
+        if len(spans) <= 1:
+            return spans
+        sorted_spans = sorted(spans, key=lambda s: (s.start, -s.end))
+        out: list[Span] = []
+        for s in sorted_spans:
+            merged = False
+            for i in range(len(out) - 1, -1, -1):
+                prev = out[i]
+                if prev.end <= s.start:
+                    break
+                if prev.label != s.label:
+                    continue
+                if (s.end - s.start) > (prev.end - prev.start):
+                    out[i] = s
+                merged = True
+                break
+            if not merged:
+                out.append(s)
+        return sorted(out, key=lambda s: s.start)
+
+    def _predict(text: str) -> ToolResult:
+        t0 = time.perf_counter()
+        spans: list[Span] = []
+        if len(text) <= chunk_chars:
+            for e in model.predict_entities(text, _NULLPII_8, threshold=threshold):
+                spans.append(Span(e["label"], int(e["start"]), int(e["end"])))
+        else:
+            stride = chunk_chars - overlap_chars
+            for offset in range(0, len(text), stride):
+                chunk = text[offset : offset + chunk_chars]
+                if not chunk:
+                    break
+                for e in model.predict_entities(chunk, _NULLPII_8, threshold=threshold):
+                    spans.append(
+                        Span(e["label"], int(e["start"]) + offset, int(e["end"]) + offset),
+                    )
+                if offset + chunk_chars >= len(text):
+                    break
+            spans = _dedupe(spans)
+        elapsed = (time.perf_counter() - t0) * 1000
+        return ToolResult(spans, elapsed)
+
+    return _predict
+
+
 def _strip_bioes(entity: str) -> str:
     """`B-private_email` / `I-private_email` / `private_email` → `private_email`."""
     if entity.startswith(("B-", "I-", "E-", "S-")):

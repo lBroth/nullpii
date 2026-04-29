@@ -19,7 +19,6 @@ Runtime (npm):
   - commander                   MIT       (CLI)
   - chalk                       MIT       (CLI)
   - cli-progress                MIT       (CLI)
-  - @anthropic-ai/sdk           MIT       (peer, optional, Anthropic middleware)
 
 Build & dev:
   - typescript                  Apache-2.0
@@ -41,7 +40,11 @@ Build-time conversion pipeline (`packages/convert/`, Python):
   - click                       BSD-3-Clause
 
 Model & dataset:
-  - openai/privacy-filter       Apache-2.0 (per upstream model card on HF)
+  - openai/privacy-filter       Apache-2.0 (npm runtime — upstream model card on HF)
+  - urchade/gliner_multi_pii-v1 Apache-2.0 (base for the nullpii fine-tune
+                                           published as lBroth/nullpii on HF)
+  - ai4privacy/pii-masking-300k Apache-2.0 (fine-tune training data)
+  - Isotonic/pii-masking-200k   Apache-2.0 (fine-tune training data)
 
 License posture:
   - 100% permissive runtime tree (MIT / Apache-2.0 / BSD / ISC / CC0).

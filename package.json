@@ -50,8 +50,7 @@
     "prepare": "lefthook install || true",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
-    "docs:preview": "vitepress preview docs",
-    "size-check": "node scripts/size-check.mjs"
+    "docs:preview": "vitepress preview docs"
   },
   "dependencies": {
     "@anush008/tokenizers": "^0.6.0",

@@ -21,7 +21,7 @@ hero:
 features:
   - title: openai/privacy-filter, used right
     details: 'The 1.5B model needs a constrained Viterbi BIOES decoder. The HF transformers integration ships only logits, so naive `pipeline()` fragments spans. Use the official `opf` CLI or nullpii''s runtime, which both ship the Viterbi.'
-  - title: GLiNER fine-tune (v2)
+  - title: GLiNER fine-tune (nullpii)
     details: 'Two-round fine-tune of `urchade/gliner_multi_pii-v1` on ai4privacy + Isotonic + dev-prompts-synth. Multilingual F1 0.93–0.97 (en/de/fr/it), 14 ms/sample on a 5090. PT, ONNX FP32 and ONNX INT4 published.'
   - title: Reversible vault library
     details: 'Same npm package ships a sanitize / restore engine: each PII span becomes a typed placeholder, the original lives in an in-memory vault keyed by an opaque session id. Round-trip is byte-for-byte exact.'
@@ -40,7 +40,7 @@ Two deliverables:
 
 1. **npm library** (`nullpii`) — sanitize / restore engine over
    `openai/privacy-filter`, with a constrained Viterbi BIOES decoder.
-2. **HF model** (`lBroth/nullpii-gliner-pii-v2`) — the GLiNER fine-tune
+2. **HF model** (`lBroth/nullpii`) — the GLiNER fine-tune
    in PT, ONNX FP32 and ONNX INT4 variants.
 
 ## Library mode (4 lines)

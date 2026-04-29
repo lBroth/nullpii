@@ -21,7 +21,7 @@ datasets:
   - Isotonic/pii-masking-200k
 ---
 
-# nullpii-gliner-pii-v2
+# nullpii
 
 A two-round fine-tune of [`urchade/gliner_multi_pii-v1`](https://huggingface.co/urchade/gliner_multi_pii-v1)
 on a mix of `ai4privacy/pii-masking-300k`, `Isotonic/pii-masking-200k`
@@ -53,7 +53,7 @@ parameters. See the comparison write-up at
 
 ## Benchmark (preview, n=100 per dataset, IoU ≥ 0.5)
 
-| Dataset                  | baseline GLiNER | **v2 PT FP32** | v2 ONNX INT4 |
+| Dataset                  | baseline GLiNER | **nullpii PT FP32** | nullpii ONNX INT4 |
 | ------------------------ | --------------: | -------------: | -----------: |
 | isotonic-en              |           0.462 |          0.951 |    **0.961** |
 | isotonic-de              |           0.497 |          0.932 |    **0.939** |
@@ -73,7 +73,7 @@ matters. INT4 is a *memory* win, not a *latency* win on CPU.
 ```python
 from gliner import GLiNER
 
-model = GLiNER.from_pretrained("lBroth/nullpii-gliner-pii-v2")
+model = GLiNER.from_pretrained("lBroth/nullpii")
 labels = ["account_number", "private_address", "private_date",
           "private_email", "private_person", "private_phone",
           "private_url", "secret"]
@@ -87,7 +87,7 @@ ONNX:
 
 ```python
 model = GLiNER.from_pretrained(
-    "lBroth/nullpii-gliner-pii-v2",
+    "lBroth/nullpii",
     load_onnx_model=True,
     onnx_model_file="onnx/model_int4.onnx",
 )
@@ -117,7 +117,7 @@ model = GLiNER.from_pretrained(
   CJK-heavy data. Documented as a known gap.
 - **`bench-adversarial` regression**: the small adversarial subset
   (n=6) is dominated by structured-secret patterns the regex pack
-  catches trivially; the v2 model on its own is not optimised for
+  catches trivially; the nullpii model on its own is not optimised for
   these. Use the `nullpii` runtime's recognizer post-pass for
   guaranteed regex coverage.
 - **INT8 dynamic quant collapse**: do not use the INT8 ONNX path; F1

@@ -1,7 +1,7 @@
 # Roadmap
 
 Two deliverables drive the roadmap: the **npm library** (`nullpii`) and
-the **HuggingFace model** (`lBroth/nullpii-gliner-pii-v2`). Everything
+the **HuggingFace model** (`lBroth/nullpii`). Everything
 else is in service of the comparison study they enable.
 
 Legend:
@@ -29,11 +29,11 @@ Legend:
 
 ## 🔥 Research deliverables
 
-- [ ] **Full bench (n≥5k per dataset)** for v2 to graduate from preview.
-      Output: `packages/eval/results/runpod-YYYY-v2-full/matrix.{json,csv}`
+- [ ] **Full bench (n≥5k per dataset)** for nullpii to graduate from preview.
+      Output: `packages/eval/results/runpod-YYYY-nullpii-full/matrix.{json,csv}`
       next to the existing 5090 matrix; mirror the table into
       `docs/guide/eval-results.md`.
-- [ ] **Publish `lBroth/nullpii-gliner-pii-v2` to HF Hub** with a model
+- [ ] **Publish `lBroth/nullpii` to HF Hub** with a model
       card linking back to the comparison write-up. Recipe under
       `scripts/release/push-to-hf.sh`.
 - [ ] **Japanese / non-Latin support gap** — known weakness on both
@@ -95,7 +95,7 @@ Legend:
 ## Cut list
 
 **0.x → 1.0 (must-have)**: every 🚨 above, engines bump, full bench
-n≥5k, v2 HF publish, recognizer API examples.
+n≥5k, nullpii HF publish, recognizer API examples.
 
 **1.x (next two months)**: WASM build, benchmark dashboard, mutation
 tests, public examples repo, JP / non-Latin round-3 fine-tune.

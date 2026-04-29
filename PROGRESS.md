@@ -9,9 +9,10 @@ Local pipeline complete end-to-end:
 - Detection runs locally on `openai/privacy-filter` (Apache-2.0)
 - Reversible vault: sanitize → LLM → restore byte-for-byte
 - Backends: CPU / MPS / CUDA / ROCm — all tree-shakable subpath exports
-- Middleware: `@anthropic-ai/sdk` (sole supported SDK by design — see ROADMAP)
-- Claude Code plugin (`packages/claude-code-plugin/`)
 - CLI: `npx nullpii scan|sanitize|restore|models|benchmark`
+- GLiNER v2 fine-tune (HF model `lBroth/nullpii-gliner-pii-v2`):
+  PT FP32 + ONNX FP32 + ONNX INT4, multilingual F1 0.93–0.97 on
+  isotonic-en/de/fr/it (preview, n=100)
 - Build-time pipeline (`packages/convert/`): pinned upstream revision,
   SHA256 + sigstore verify, smoke + per-format consistency checks
 - 100% permissive license tree (zero LGPL/GPL/AGPL)
@@ -25,9 +26,10 @@ See `TODO_PUBLISH.md`. Requires user approval — not auto-executed.
 
 - npm publish `nullpii@1.0.0` (with `--provenance`)
 - HuggingFace mirror `nullpii/privacy-filter-onnx`
+- HuggingFace upload `lBroth/nullpii-gliner-pii-v2` (PT + ONNX FP32 + INT4 + model card)
 - GitHub Pages deploy (workflow ready)
 - Hardware-gated tests (CUDA/ROCm runners)
-- Manual smoke test of the Claude Code plugin in a real session
+- Full bench (n≥5k per dataset) for the v2 fine-tune to graduate from preview
 
 ## Notable decisions
 

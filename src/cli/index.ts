@@ -10,7 +10,6 @@ import { registerPrefetch } from './commands/prefetch.js';
 import { registerRestore } from './commands/restore.js';
 import { registerSanitize } from './commands/sanitize.js';
 import { registerScan } from './commands/scan.js';
-import { registerServe } from './commands/serve.js';
 
 function readPackageVersion(): string {
   try {
@@ -32,7 +31,6 @@ export function buildProgram(): Command {
   registerScan(program);
   registerSanitize(program);
   registerRestore(program);
-  registerServe(program);
   registerModels(program);
   registerPrefetch(program);
   registerDoctor(program);

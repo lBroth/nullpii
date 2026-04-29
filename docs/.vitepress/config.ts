@@ -11,20 +11,13 @@ export default defineConfig({
     logo: { src: '/logo-128.png', width: 24, height: 24 },
     siteTitle: 'nullpii',
     nav: [
-      { text: 'Claude Code', link: '/guide/middleware/claude-code' },
       { text: 'Guide', link: '/guide/getting-started' },
+      { text: 'Comparisons', link: '/guide/comparisons' },
       { text: 'API', link: '/api/' },
       { text: 'GitHub', link: 'https://github.com/lBroth/nullpii' },
     ],
     sidebar: {
       '/guide/': [
-        {
-          text: 'Integrations',
-          items: [
-            { text: 'Claude Code', link: '/guide/middleware/claude-code' },
-            { text: 'Anthropic SDK', link: '/guide/middleware/anthropic' },
-          ],
-        },
         {
           text: 'Guide',
           items: [

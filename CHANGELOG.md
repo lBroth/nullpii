@@ -50,13 +50,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CLI** — `npx nullpii scan|sanitize|restore|models|benchmark` with
   `--format json` and `--model-dir` overrides. `commander` + `chalk` +
   `cli-progress` (all MIT).
-- **Anthropic middleware** — `nullpii/middleware/anthropic`. Drop-in
-  proxy that preserves the SDK's TypeScript surface.
-- **Claude Code plugin** (`packages/claude-code-plugin/`) — `prePrompt`
-  + `postResponse` hooks, per-conversation session reuse, settings
-  read from `.claude/settings.json`.
+- **GLiNER fine-tune (v2)** — two-round fine-tune of
+  `urchade/gliner_multi_pii-v1` on ai4privacy + Isotonic + the project's
+  own dev-prompts-synth generator. Multilingual F1 0.93–0.97 on
+  isotonic-en/de/fr/it (preview, n=100). Published as PT FP32 +
+  ONNX FP32 + ONNX INT4 (`MatMulNBitsQuantizer`). HF model id
+  `lBroth/nullpii-gliner-pii-v2` (publication script under
+  `scripts/release/`).
 - **Documentation** — full README with quick-start examples, this
-  CHANGELOG, CONTRIBUTING.md, SECURITY.md, BENCHMARK.md.
+  CHANGELOG, CONTRIBUTING.md, SECURITY.md, BENCHMARK.md, plus the
+  research write-up in `docs/guide/comparisons.md` +
+  `docs/guide/eval-results.md`.
 
 ### Architecture decision
 
@@ -64,12 +68,17 @@ Project shipped as a single `nullpii` npm package (was originally
 multi-package). Backend tree-shaking preserved via conditional subpath
 exports + optional `peerDependency` `onnxruntime-node`.
 
-### Scope (focused on Claude Code + TS ecosystem)
+### Scope (focused on the comparison study)
 
-OpenAI SDK and Vercel AI SDK middleware were removed before 1.0 to keep
-the surface area narrow and the marketing message clear. The library
-targets Claude Code users + TS developers using `@anthropic-ai/sdk` or
-the programmatic `NullPii` class directly.
+The project pivoted from a Claude Code plugin to a research +
+reproducibility kit comparing `openai/privacy-filter` (the well-known
+1.5B model) against a fine-tuned `urchade/gliner_multi_pii-v1` (278M)
+on the same PII detection task. The npm library is the runtime over
+`openai/privacy-filter`; the HF model is the GLiNER fine-tune; the
+write-up lives in `docs/guide/{comparisons,eval-results}.md`. The
+Claude Code plugin and Anthropic SDK middleware that earlier 0.x
+versions shipped have been removed; previous code is preserved on
+the `plugin-backup-v0.0.9` branch.
 
 ### Removed before 1.0
 

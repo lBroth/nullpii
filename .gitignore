@@ -65,3 +65,5 @@ packages/eval/tests/
 # sub-package lockfiles leak the dev's private registry URLs
 # (popgrinder CodeArtifact); root lockfile is the single source of truth
 packages/*/package-lock.json
+
+.claude/

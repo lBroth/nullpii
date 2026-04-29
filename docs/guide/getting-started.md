@@ -60,10 +60,10 @@ and produces character-level spans against your original input.
 in that priority. To pin one explicitly:
 
 ```ts
-new NullPii({ backend: 'cpu', variant: 'fp16' });    // default — best CPU
-new NullPii({ backend: 'cpu', variant: 'int4f16' }); // ~772 MB, ~6% F1 drop
-new NullPii({ backend: 'mps', variant: 'fp16' });    // Apple Silicon
-new NullPii({ backend: 'cuda', variant: 'fp16' });   // NVIDIA
+new NullPii({ backend: 'cpu', variant: 'int4' });   // default — small footprint
+new NullPii({ backend: 'cpu', variant: 'fp32' });   // baseline / max accuracy
+new NullPii({ backend: 'mps', variant: 'int4' });   // Apple Silicon
+new NullPii({ backend: 'cuda', variant: 'int4' });  // NVIDIA
 ```
 
 ## CLI

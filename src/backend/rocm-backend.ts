@@ -9,8 +9,8 @@ const ROCM_KFD_DEVICE = '/dev/kfd';
 const ROCM_CONFIG: BackendConfig = {
   name: 'rocm',
   executionProviders: [{ name: 'rocm' }, 'cpu'],
-  // ROCm: fp16 leverages MFMA on RDNA3+ / CDNA — same rationale as CUDA.
-  autoVariant: 'fp16',
+  // Default to int4 (~875 MB, ~6% F1 vs fp32). Pin fp32 for accuracy.
+  autoVariant: 'int4',
 };
 
 /**

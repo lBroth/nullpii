@@ -35,6 +35,6 @@ describe('ModelManager', () => {
     const m = new ModelManager(cache);
     const stub = vi.fn().mockRejectedValue(new ModelNotFoundError('boom'));
     vi.doMock('../src/hf-hub.js', () => ({ ensureFile: stub }));
-    await expect(m.ensure({ variant: 'int8', timeoutMs: 1 })).rejects.toBeDefined();
+    await expect(m.ensure({ variant: 'int4', timeoutMs: 1 })).rejects.toBeDefined();
   });
 });

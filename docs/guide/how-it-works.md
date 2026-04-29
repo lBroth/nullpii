@@ -19,11 +19,10 @@ for char-level span reconstruction).
 ONNX Runtime against one of the upstream `openai/privacy-filter`
 variants:
 
-| Variant         | Size    | Use case                               |
-| --------------- | ------- | -------------------------------------- |
-| `model_fp16`    | 2.6 GiB | **default — best CPU + GPU/ANE**       |
-| `model_q4f16`   | 772 MiB | edge / browser, ~6% F1 drop            |
-| `model_quant`   | 1.5 GiB | int8 dynamic, legacy CPU               |
+| Variant      | Size    | Use case                              |
+| ------------ | ------- | ------------------------------------- |
+| `model.onnx` | 5.4 GiB | fp32 baseline / regression tests      |
+| `model_q4`   | 875 MiB | **default — small footprint, ~6% F1** |
 
 Output: `[1, seqLen, 33]` logits per BIOES label (8 categories × 4
 boundary tags + `O`).

@@ -27,11 +27,10 @@ export const BACKEND_AUTO_PRIORITY: readonly Exclude<BackendName, 'auto'>[] = [
 ];
 
 /** Variant the `ModelManager` downloads when `variant: 'auto'`.
- * `fp16` (~3 GB) — F1-equivalent to fp32 (~5 GB) but ~3× faster on CPU
- * ORT. Same F1 as int8 with ~17% better latency and no quantization
- * artifacts. Users who need a smaller first-run download can pin
- * `variant: 'int4f16'` (~772 MB, ~6% F1 drop). */
-export const MANAGER_DEFAULT_VARIANT: Exclude<ModelVariant, 'auto'> = 'fp16';
+ * `int4` (~875 MB, ~6% F1 drop) — small first-run footprint. Pin
+ * `variant: 'fp32'` (~5 GB) when you need maximum accuracy or a
+ * regression baseline. */
+export const MANAGER_DEFAULT_VARIANT: Exclude<ModelVariant, 'auto'> = 'int4';
 
 /** ONNX subdirectory inside a model directory. */
 export const ONNX_SUBDIR = 'onnx';

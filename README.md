@@ -135,9 +135,9 @@ Requires **Node 24 LTS** (see `.nvmrc`).
 | `cuda`  | Linux/Windows + NVIDIA| Tensor cores on Volta+. CUDA EP via ORT.           |
 | `rocm`  | Linux + AMD           | MFMA on RDNA3+ / CDNA. ROCm EP via ORT.            |
 
-Auto-selects in priority **CUDA → MPS → ROCm → CPU**. Pin one with
-`{ backend: 'cpu', variant: 'fp16' }` (default), or `'int4f16'` for a
-~772 MB download (~6% F1 drop).
+Auto-selects in priority **CUDA → MPS → ROCm → CPU**. Default variant
+is `int4` (~875 MB, ~6% F1 drop). Pin `variant: 'fp32'` (~5 GB) when
+you need maximum accuracy or a regression baseline.
 
 ## Architecture
 

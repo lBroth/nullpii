@@ -11,7 +11,7 @@ export function registerScan(program: Command): void {
     .option('--format <fmt>', 'output format: pretty | json', 'pretty')
     .option('--model-dir <path>', 'use a local model directory (skip download)')
     .option('--backend <name>', 'force backend: cpu | mps | cuda | rocm | auto')
-    .option('--variant <v>', 'fp32 | fp16 | int8 | int4 | int4f16 | auto')
+    .option('--variant <v>', 'fp32 | int4 | auto')
     .action(async (text: string, options: { format: string } & CliConfigOptions) => {
       const engine = new NullPii(configFromOptions(options));
       const result = await engine.sanitize(text);

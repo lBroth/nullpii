@@ -8,9 +8,8 @@ import { type BackendConfig, OrtBackend, type SessionThreads } from './ort-backe
 const CUDA_CONFIG: BackendConfig = {
   name: 'cuda',
   executionProviders: [{ name: 'cuda' }, 'cpu'],
-  // CUDA: fp16 uses tensor cores (Volta+) for ~2× throughput vs fp32 on
-  // most modern GPUs, with negligible accuracy loss for this model.
-  autoVariant: 'fp16',
+  // Default to int4 (~875 MB, ~6% F1 vs fp32). Pin fp32 for accuracy.
+  autoVariant: 'int4',
 };
 
 const LINUX_HINTS = ['/dev/nvidia0', '/proc/driver/nvidia/version'] as const;

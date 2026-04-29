@@ -5,10 +5,10 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { CpuBackend } from '../../src/backend/cpu-backend.js';
 import { ModelNotFoundError, ModelNotInitializedError } from '../../src/errors.js';
-import { HAS_TEST_QUANTIZED, TEST_MODEL_DIR } from '../_env.js';
+import { HAS_TEST_ARTIFACTS, TEST_MODEL_DIR } from '../_env.js';
 
 const ARTIFACT_MODEL_DIR = TEST_MODEL_DIR;
-const itIfArtifacts = HAS_TEST_QUANTIZED ? it : it.skip;
+const itIfArtifacts = HAS_TEST_ARTIFACTS ? it : it.skip;
 
 describe('CpuBackend lifecycle', () => {
   it('reports name = "cpu" and is always available', async () => {
@@ -41,9 +41,9 @@ describe('CpuBackend lifecycle', () => {
 
 describe('CpuBackend integration (gated on artifacts/model)', () => {
   itIfArtifacts(
-    'init → infer → dispose round-trip on int8 variant',
+    'init → infer → dispose round-trip on int4 variant',
     async () => {
-      const b = new CpuBackend(ARTIFACT_MODEL_DIR, 'int8');
+      const b = new CpuBackend(ARTIFACT_MODEL_DIR, 'int4');
       await b.init();
       const seqLen = 8;
       const result = await b.infer({
@@ -61,7 +61,7 @@ describe('CpuBackend integration (gated on artifacts/model)', () => {
   itIfArtifacts(
     'infer() throws after dispose()',
     async () => {
-      const b = new CpuBackend(ARTIFACT_MODEL_DIR, 'int8');
+      const b = new CpuBackend(ARTIFACT_MODEL_DIR, 'int4');
       await b.init();
       await b.dispose();
       await expect(

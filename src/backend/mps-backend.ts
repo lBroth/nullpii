@@ -12,8 +12,8 @@ const MPS_CONFIG: BackendConfig = {
   name: 'mps',
   // CoreML first, CPU as fallback within the same session
   executionProviders: [{ name: 'coreml' }, 'cpu'],
-  // CoreML excels at fp16 — minimal accuracy loss on this model (≤0.5%)
-  autoVariant: 'fp16',
+  // Default to int4 (~875 MB, ~6% F1 vs fp32). Pin fp32 for accuracy.
+  autoVariant: 'int4',
 };
 
 export class MpsBackend extends OrtBackend {

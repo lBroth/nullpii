@@ -10,8 +10,7 @@ creates GitHub Release. Trigger by pushing a `v*.*.*` tag whose value
 matches `package.json` `version` (workflow asserts this and refuses
 otherwise).
 
-- [ ] Bump `package.json` `version` to `1.0.0` (and `nullpii` peer in
-      `packages/claude-code-plugin/package.json`)
+- [ ] Bump `package.json` `version` to `1.0.0`
 - [ ] Update `CHANGELOG.md` — replace `[Unreleased]` with `[1.0.0] — YYYY-MM-DD`
 - [ ] Create + push tag: `git tag v1.0.0 && git push origin v1.0.0`
 - [ ] Watch `Actions` tab — `release.yml` will publish + create the Release
@@ -34,6 +33,9 @@ otherwise).
 - [ ] Mirror upstream artifacts: ONNX (fp32/fp16/int8/int4/int4f16),
       tokenizer.json, config.json, viterbi_calibration.json + SHA256 sidecars
 - [ ] Verify pinned revision still resolves to the mirrored repo
+- [ ] Publish `lBroth/nullpii-gliner-pii-v2` (PT + ONNX FP32 + ONNX INT4 +
+      tokenizer + model card). Recipe under
+      `scripts/release/push-to-hf.sh`.
 
 ## Gated tests (require hardware / browser / external host)
 
@@ -41,10 +43,9 @@ otherwise).
 - [ ] **ROCm backend**: integration test on Linux + AMD runner
 - [ ] **MPS backend benchmark**: ONNX op coverage in `CoreMLExecutionProvider`
       improves → re-bench, expect MPS to overtake CPU
-- [ ] **Claude Code plugin**: manual smoke test inside a real Claude Code
-      session — install `@nullpii/claude-code`, configure
-      `.claude/settings.json`, send a prompt with PII, verify it's sanitized
-      on the wire and the response is restored on display
+- [ ] **Full v2 bench (n≥5k per dataset)**: graduate the multilingual F1
+      preview from `eval-results.md` to a stable bench row with
+      confidence intervals.
 
 ## Verification post-publish
 

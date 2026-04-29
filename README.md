@@ -8,143 +8,98 @@
 [![docs](https://github.com/lBroth/nullpii/actions/workflows/docs.yml/badge.svg)](https://lbroth.github.io/nullpii/)
 [![npm](https://img.shields.io/npm/v/nullpii?color=cb3837)](https://www.npmjs.com/package/nullpii)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
-[![model](https://img.shields.io/badge/model-openai%2Fprivacy--filter-black)](https://huggingface.co/openai/privacy-filter)
 
-> **Stop leaking PII to LLMs.** ML-first sanitization with OpenAI's
-> `privacy-filter` model, plus user-defined recognizers for known
-> formats (IBAN, AWS keys, internal IDs). Send the redacted text to
-> Claude, restore originals in the response — automatically. Zero
-> cloud calls. 100% permissive licenses.
+> **A study + reproducibility kit.** What does it cost — in F1, latency, and engineering — to replace the well-known `openai/privacy-filter` (1.5B, gpt-oss style) with a fine-tuned, much smaller `urchade/gliner_multi_pii-v1` (278M, older) on the same PII detection task?
 >
-> **Real numbers** — 7-way head-to-head, 32k samples, 16 datasets, M5
-> Pro 48GB. Average PII F1 (excludes WikiAnn = general NER, not PII):
+> **TL;DR**: a 2-round fine-tune lifts GLiNER from 0.46–0.51 multilingual F1 to **0.93–0.97 (en/de/fr/it)** at ~14 ms/sample on a 5090 GPU and ~125 ms/sample on a Mac CPU. ONNX INT4 (`MatMulNBitsQuantizer`, 844 MB) keeps the F1 but only saves memory, not latency. ONNX CPU on Apple Silicon is ~25× faster than ONNX CPU on Linux x86 for this model. INT8 dynamic quant collapses (avoid).
 >
-> | Tool | avg PII F1 | latency ms/sample |
-> | --- | ---: | ---: |
-> | **nullpii** | **0.655** | 43.9 |
-> | GLiNER (`urchade/gliner_multi_pii-v1`) | 0.603 | 104.7 |
-> | Microsoft Presidio | 0.455 | 15.1 |
-> | piiranha-v1 (DeBERTa-v3) | 0.439 | 59.0 |
-> | OpenAI bare HF (upstream `privacy-filter`) | 0.430 | 90.4 |
-> | DeBERTa PII (`lakshyakh93/deberta_finetuned_pii`) | 0.419 | 58.3 |
-> | bare spaCy NER | 0.122 | 13.7 |
->
-> Highlights:
-> - **+0.226 F1 vs OpenAI bare HF** (same upstream model, default HF
->   decoder) — attributable entirely to nullpii's runtime: chunking +
->   constrained Viterbi + forward-backward posterior + recognizer
->   post-pass.
-> - **GLiNER is the closest competitor** (0.603 avg). Wins 4/5 bundled
->   non-English locales but **scores 0.000 on long-prompts-en** —
->   max-length truncation, no chunking.
-> - **`long-prompts-en` (chunking proof)**: nullpii 0.600, every other
->   tool <0.36 — bare pipelines silently truncate PII past 512 tokens.
-> - **Presidio synthetic 5k**: GLiNER 0.656 narrowly tops everyone (it
->   was trained on synthetic-pii data); nullpii second 0.591.
-> - WikiAnn (Wikipedia NER): spaCy wins as expected — not a PII test.
->
-> Detection runs locally via OpenAI's
-> [`privacy-filter`](https://huggingface.co/openai/privacy-filter)
-> (Apache 2.0, 1.3B param token classifier, ONNX fp16 by default;
-> int4f16 for edge installs) — no cloud calls. Throughput tradeoff:
-> nullpii sits in the middle of the latency curve, ~3× faster than
-> the slowest competitor (GLiNER) and ~3× slower than Presidio.
-> See [Comparisons](docs/guide/comparisons.md) for full multi-locale
-> tables + reproduce script.
->
-> **Preview: `gliner-v2` fine-tune** (preliminary, n=100 per dataset)
-> — a two-round fine-tune of `urchade/gliner_multi_pii-v1` on
-> ai4privacy + Isotonic + our dev-prompts-synth lifts multilingual F1
-> from 0.46–0.51 (baseline gliner) to **0.93–0.97 (en/de/fr/it)**, and
-> ai4privacy from 0.31 to **0.86** — at 14 ms/sample on a single 5090
-> GPU. INT4 ONNX export (`MatMulNBitsQuantizer`, 844 MB) preserves the
-> F1 on CPU; INT8 dynamic quant collapses (avoid). Side-by-side spans
-> in `packages/eval/results/train/qualitative_compare.md`. Numbers
-> graduate from "preview" to docs once the full bench (n≥5k) lands.
->
-> **Note on the `openai (bare HF)` row above.** That row uses
-> `transformers.pipeline()` with `aggregation_strategy="simple"`, which
-> is the default HF usage but does NOT implement the constrained
-> Viterbi BIOES decoder the model card describes. The transformers
-> integration ships only per-token logits; the Viterbi has to be
-> applied externally. The intended quality is reachable through (a) the
-> official [`opf` CLI](https://github.com/openai/privacy-filter) from
-> the openai/privacy-filter GitHub repo, or (b) nullpii's runtime —
-> both ship the constrained Viterbi. The nullpii row IS that external
-> decoder applied over the same upstream model — apples-to-apples
-> that's where the +0.226 gap comes from. A simpler in-Python BIOES
-> boundary parser (no learned transition biases) recovers most of the
-> gap on its own; see `qualitative_compare.md` for the decoder-aware
-> comparison.
+> **The openai/privacy-filter caveat**: per its model card, inference is supposed to apply a constrained Viterbi BIOES decoder; the upstream `transformers` integration ships only per-token logits. Calling `transformers.pipeline()` with default `aggregation_strategy="simple"` therefore produces fragmented spans (`.com`, `+1-843-555-014` then `2`, `aitre`). That is **not the model's intended quality** — just naive HF usage. To get its real output you need either (a) the official [`opf` CLI](https://github.com/openai/privacy-filter), or (b) nullpii's runtime, which both ship the constrained Viterbi.
+
+## What's in this repo
+
+Two deliverables and the experiment that produced them:
+
+1. **npm library** — `nullpii` (this package). Sanitize / restore engine over `openai/privacy-filter` with the constrained Viterbi BIOES decoder + chunking + recognizer post-pass + reversible vault. CLI binary `nullpii sanitize|restore|scan|benchmark|...` plus a TS API (`sanitize()`, `restore()`, `NullPii` class).
+2. **HuggingFace model** — [`lBroth/nullpii-gliner-pii-v2`](https://huggingface.co/lBroth/nullpii-gliner-pii-v2) (publication script under `packages/eval/scripts/release/`). GLiNER fine-tune in PT, ONNX FP32 and ONNX INT4 variants. Pin `local_files_only=True` and use the standard `gliner.GLiNER.from_pretrained(...)` API.
+3. **Reproducibility kit** — `packages/eval/` with the full bench harness, dataset loaders (ai4privacy, Isotonic, the project's own `nullpii-bench`), the training scripts that produced v2, and the comparison results (`packages/eval/results/`).
+
+## The headline comparison
+
+Multilingual F1 (preview, n=100 per dataset, IoU ≥ 0.5; full bench is the next milestone):
+
+| Dataset                  | baseline GLiNER | **v2 PT FP32** | v2 ONNX INT4 | openai (proper Viterbi) | openai (HF naive) |
+| ------------------------ | --------------: | -------------: | -----------: | ----------------------: | ----------------: |
+| isotonic-en              |           0.462 |          0.951 |    **0.961** |                       — |  fragmented (n/a) |
+| isotonic-de              |           0.497 |          0.932 |    **0.939** |                       — |  fragmented (n/a) |
+| isotonic-fr              |           0.471 |          0.947 |    **0.967** |                       — |  fragmented (n/a) |
+| isotonic-it              |           0.509 |          0.938 |    **0.959** |                       — |  fragmented (n/a) |
+| ai4privacy-300k          |           0.309 |          0.800 |    **0.864** |                       — |  fragmented (n/a) |
+| dev-prompts-synth        |       **0.618** |          0.821 |        0.801 |                       — |  fragmented (n/a) |
+
+`docs/guide/comparisons.md` carries the full multi-platform tables, the
+in-Python BIOES decoder used to recover most of the openai/privacy-filter
+quality without extra deps, and the qualitative comparison
+(`packages/eval/results/train/qualitative_compare.md`) over 30 real
+prompts (medical records, contracts, multilingual itineraries, GitHub
+issues from openai/privacy-filter, JP/CN/KR cases that surface known
+non-Latin gaps).
+
+## Library mode (the npm path)
 
 ```ts
-// Without nullpii ❌
-await client.messages.create({
-  messages: [{ role: 'user', content: 'Email John Smith at john@acme.com about his SSN 123-45-6789' }],
-});
-// → John's name, email, SSN all leave your machine.
+import { sanitize, restore } from 'nullpii';
 
-// With nullpii ✅
-import { withNullPii } from 'nullpii/middleware/anthropic';
-const safe = withNullPii(client);
-await safe.messages.create({
-  messages: [{ role: 'user', content: 'Email John Smith at john@acme.com about his SSN 123-45-6789' }],
-});
-// → "Email [[NULLPII:private_person:0]] at [[NULLPII:private_email:0]] about
-//    his [[NULLPII:secret:0]]" goes on the wire.
-//   The reply is restored to readable English before you see it.
-//   John's PII never leaves your process.
+const safe = await sanitize('Email John Smith at john@acme.com about his SSN 123-45-6789');
+// safe.text = 'Email [[NULLPII:private_person:0]] at [[NULLPII:private_email:0]] about his [[NULLPII:secret:0]]'
+// safe.session = opaque session id
+
+// ... pass safe.text to any LLM ...
+const reply = `Hello [[NULLPII:private_person:0]], we received your request.`;
+
+const back = await restore(reply, safe.session);
+// back = 'Hello John Smith, we received your request.'
 ```
 
----
+Programmatic API (full control):
 
-## Use it with Claude Code (1-line install)
+```ts
+import { NullPii } from 'nullpii';
 
-`nullpii` ships a [Claude Code](https://claude.com/claude-code) plugin
-that intercepts every prompt automatically. **No code changes — just
-config.**
+const np = new NullPii({ backend: 'auto' });
+
+const { sessionId, sanitized, spans } = await np.sanitize(
+  "Hi, I'm Maria Rossi (maria.rossi@example.it). My order #ACME-2026-04812 shipped to via Roma 45, 00184 Roma.",
+);
+
+// ... LLM call uses `sanitized` ...
+const reply = '...';
+
+const { restored } = np.restore(reply, sessionId);
+await np.dispose();
+```
+
+CLI:
 
 ```bash
-npm install -g @nullpii/claude-code
+$ npx nullpii sanitize --stdin --format json < customer-email.txt | jq .sanitized
+"Hi [[NULLPII:private_person:0]], thanks for reaching out about [[NULLPII:account_number:0]]..."
 ```
 
-```jsonc
-// .claude/settings.json — replace <marketplace-id> with the marketplace
-// the plugin is registered under (e.g. `anthropic` once published).
-{
-  "enabledPlugins": {
-    "@nullpii/claude-code@<marketplace-id>": true
-  },
-  "pluginConfigs": {
-    "@nullpii/claude-code@<marketplace-id>": { "backend": "auto" }
-  }
-}
-```
+## What gets caught (8 categories)
 
-From this point on, every prompt you send through Claude Code is
-sanitized before it leaves your machine, and every response has
-placeholders restored in-place. Multi-turn conversations reuse the same
-vault, so a follow-up that quotes back an earlier value resolves
-correctly.
+| Label             | Examples                                             |
+| ----------------- | ---------------------------------------------------- |
+| `private_person`  | personal names                                       |
+| `private_email`   | email addresses                                      |
+| `private_phone`   | phone / fax numbers                                  |
+| `private_address` | street addresses                                     |
+| `private_date`    | birth dates, hire dates, anniversaries               |
+| `private_url`     | private URLs (admin panels, internal wikis)          |
+| `account_number`  | bank accounts, IBAN, customer IDs                    |
+| `secret`          | API keys, passwords, JWT tokens                      |
 
----
-
-## Why this exists
-
-Most PII redaction is regex. Regex breaks on:
-
-- non-ASCII names (`Müller`, `田中`, `O'Connor`)
-- formats it wasn't trained on (`+44 (0)20 7946 0958` vs `(212) 555-7890 ext. 405`)
-- ambiguous strings (is `4242 4242 4242 4242` a card or a hash?)
-- context-dependent fields ("born March 14" vs "March 14 release")
-
-`openai/privacy-filter` is a 1.3B-parameter token classifier trained
-specifically for this. It catches what regex misses (names, addresses,
-contextual dates), runs locally in ONNX Runtime, and emits
-character-level spans you can reverse.
-
-For known formats with low ML coverage (your internal employee ID,
-AWS access keys, SWIFT BIC), add custom regex-based recognizers as
+For known formats with low ML coverage (your internal employee ID, AWS
+access keys, SWIFT BIC), add custom regex-based recognizers as a
 post-pass:
 
 ```ts
@@ -158,155 +113,18 @@ np.addRecognizer({
 
 ML-first, regex-augmented. No "no regex" purity theatre.
 
-`nullpii` wraps it with:
-
-- **a vault** — each detected span becomes a typed placeholder
-  (`[[NULLPII:private_person:0]]`); the original lives only in an
-  in-memory `Map` keyed by an opaque session id
-- **a router** — picks CUDA → MPS → ROCm → CPU automatically, all
-  optional via `peerDependency`
-- **drop-in middleware** — `withNullPii(client)` for `@anthropic-ai/sdk`;
-  the proxy preserves your client's TypeScript types
-- **a constrained Viterbi pass** — enforces valid BIOES transitions so
-  the model can't emit garbage like `O → I-X`
-- **a default recognizer pack** — URL, email, AWS / GitHub / Stripe /
-  OpenAI / Anthropic keys, IBAN, US SSN — auto-registered on every
-  `new NullPii()`. Closes the ~66% URL-miss gap and the long tail of
-  secrets the model alone won't catch. Opt out with
-  `new NullPii({ recognizers: 'none' })`.
-- **boundary refinement** — trims trailing punctuation / whitespace
-  from span edges so partial-match scoring (IoU≥0.5) doesn't reject a
-  span just because the model included a closing bracket. Opt out
-  with `boundaryRefine: false`.
-
----
-
-## Wow examples
-
-### 1. Customer support agent (Anthropic SDK)
-
-```ts
-import Anthropic from '@anthropic-ai/sdk';
-import { withNullPii } from 'nullpii/middleware/anthropic';
-
-const safe = withNullPii(new Anthropic());
-
-const ticket = `
-  Hi, I'm Maria Rossi (maria.rossi@example.it). My order #ACME-2026-04812
-  shipped to via Roma 45, 00184 Roma, Italia, but never arrived. My
-  customer card ending 4242 was charged. Help?
-`;
-
-const reply = await safe.messages.create({
-  model: 'claude-haiku-4-5',
-  max_tokens: 400,
-  messages: [{ role: 'user', content: ticket }],
-});
-// reply.content[0].text reads naturally, with Maria, her email, and
-// the address restored — but the LLM only ever saw placeholders.
-```
-
-### 2. Programmatic for RAG / batch jobs
-
-```ts
-import { NullPii } from 'nullpii';
-
-const np = new NullPii({ backend: 'auto' });
-
-for (const doc of corpus) {
-  const { sanitized, sessionId, spans } = await np.sanitize(doc.text);
-  // index sanitized text in your vector DB; keep sessionId for restore
-  await indexer.upsert(doc.id, embed(sanitized), { sessionId, spans });
-}
-```
-
-### 3. CLI for one-off scrubs
-
-```bash
-$ npx nullpii sanitize --stdin --format json < customer-email.txt | jq .sanitized
-"Hi [[NULLPII:private_person:0]], thanks for reaching out about [[NULLPII:account_number:0]]..."
-```
-
----
-
-## Programmatic API (when middleware is too magic)
-
-```ts
-import { NullPii } from 'nullpii';
-
-const np = new NullPii({ backend: 'auto' });
-
-const { sessionId, sanitized, spans } = await np.sanitize(
-  'Hi, my name is John Smith and my email is john@example.com.',
-);
-// sanitized = "Hi, my name is [[NULLPII:private_person:0]] and my email is [[NULLPII:private_email:0]]."
-// spans     = [{ label: 'private_person', start: 14, end: 24, text: 'John Smith', score: 0.9996 }, ...]
-
-// ... pass `sanitized` to any LLM ...
-const reply = `Hello [[NULLPII:private_person:0]]`;
-
-const { restored } = np.restore(reply, sessionId);
-// restored = "Hello John Smith"
-
-await np.dispose();
-```
-
----
-
 ## Install
 
 ```bash
 npm install nullpii onnxruntime-node
 ```
 
-`onnxruntime-node` is an **optional peer dependency** — installed only
-if you want a Node-side backend (CPU / MPS / CUDA / ROCm).
+`onnxruntime-node` is an **optional peer dependency** — install it only
+if you want the Node-side backend (CPU / MPS / CUDA / ROCm). The
+library is also usable in browsers / WebGPU via the `nullpii/backend/*`
+subpath imports.
 
 Requires **Node 24 LTS** (see `.nvmrc`).
-
----
-
-## What gets detected
-
-Eight categories from `openai/privacy-filter`:
-
-| Label             | Examples                                             |
-| ----------------- | ---------------------------------------------------- |
-| `private_person`  | personal names                                       |
-| `private_email`   | email addresses                                      |
-| `private_phone`   | phone / fax numbers                                  |
-| `private_address` | street addresses                                     |
-| `private_date`    | birth dates, hire dates, anniversaries               |
-| `private_url`     | private URLs (admin panels, internal wikis)          |
-| `account_number`  | bank accounts, IBAN, customer IDs                    |
-| `secret`          | API keys, passwords, JWT tokens                      |
-
-Decoded from BIOES tags via a constrained Viterbi pass against the
-char-level offsets from the tokenizer.
-
----
-
-## nullpii-bench (eval dataset)
-
-We ship our own multilingual PII evaluation set under
-`packages/eval/datasets/nullpii-bench.jsonl`:
-
-- **271 samples**, **680 PII spans**, **5 locales** (en / it / de /
-  fr / es), Apache-2.0.
-- Three subsets: `bundled` (202 dev-style prompts — PR reviews,
-  deploy logs, RFCs, customer-support tickets), `adversarial` (decoy
-  strings that look like PII but aren't), `long-prompts` (62 ~3k-char
-  prompts with PII positioned past the 512-token mark — chunking
-  stress test).
-- Schema: `{ id, locale, subset, text, spans }` per row. See
-  [`packages/eval/datasets/README.md`](packages/eval/datasets/README.md)
-  for full description.
-
-Used as the bundled and long-prompts columns in every comparison
-table above. Anyone can run other PII tools against the same set
-to reproduce or extend the eval — patches welcome.
-
----
 
 ## Backends
 
@@ -320,8 +138,6 @@ to reproduce or extend the eval — patches welcome.
 Auto-selects in priority **CUDA → MPS → ROCm → CPU**. Pin one with
 `{ backend: 'cpu', variant: 'fp16' }` (default), or `'int4f16'` for a
 ~772 MB download (~6% F1 drop).
-
----
 
 ## Architecture
 
@@ -350,22 +166,27 @@ attention_mask                          │ logits [seq × 33]
                             vault.restore(sessionId) ──► original text
 ```
 
-See [docs](./docs/) for the full guide and API reference.
-See [ROADMAP.md](./ROADMAP.md) for what's coming next.
+See [docs](./docs/) for the full guide.
 
----
+## nullpii-bench (eval dataset)
+
+We ship a small multilingual PII evaluation set under
+`packages/eval/datasets/nullpii-bench.jsonl`:
+
+- **271 samples**, **680 PII spans**, **5 locales** (en / it / de / fr / es), Apache-2.0.
+- Three subsets: `bundled` (202 dev-style prompts — PR reviews, deploy logs, RFCs, customer-support tickets), `adversarial` (decoys), `long-prompts` (62 ~3k-char prompts that exercise chunking).
+- Schema: `{ id, locale, subset, text, spans }` per row. See [`packages/eval/datasets/README.md`](packages/eval/datasets/README.md).
+
+Anyone can run other PII tools against the same set to reproduce or
+extend the comparison — patches welcome.
 
 ## Privacy guarantees
 
 - The PII detection step **never touches the network**.
 - The vault is **in-memory only** — never serialized to disk.
-- `destroySession()` purges the mapping; sessions also auto-destroy at
-  the end of every middleware-wrapped LLM call.
+- `destroySession()` purges the mapping.
 - No `console.log` of PII; debug logs only carry counts and short ids.
-- See [SECURITY.md](SECURITY.md) for the full threat model and how to
-  report a vulnerability.
-
----
+- See [SECURITY.md](SECURITY.md) for the full threat model and how to report a vulnerability.
 
 ## License
 

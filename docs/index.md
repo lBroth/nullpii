@@ -3,49 +3,56 @@ layout: home
 title: nullpii
 hero:
   name: nullpii
-  text: Stop leaking PII to LLMs.
-  tagline: Local PII detection with OpenAI's `privacy-filter`. Reversible vault. Zero cloud calls. Apache 2.0.
+  text: A study in PII detection.
+  tagline: openai/privacy-filter (1.5B) used the right way vs a fine-tuned GLiNER (278M). Same task, different trade-offs. Apache 2.0.
   image:
     src: /logo-256.png
     alt: nullpii logo
   actions:
     - theme: brand
-      text: Use it with Claude Code
-      link: /guide/middleware/claude-code
+      text: Read the comparison
+      link: /guide/comparisons
     - theme: alt
-      text: 5-minute quickstart
-      link: /guide/getting-started
+      text: Eval results
+      link: /guide/eval-results
     - theme: alt
       text: GitHub
       link: https://github.com/lBroth/nullpii
 features:
-  - title: One line for Claude Code
-    details: '`npm install -g @nullpii/claude-code`, add it to `.claude/settings.json`, done. Every prompt sanitized before it leaves your machine, every response restored before display.'
-  - title: Drop-in for any SDK
-    details: '`withNullPii(client)` for `@anthropic-ai/sdk`. Same TypeScript surface as the original client.'
-  - title: Reversible by default
-    details: Each PII span becomes a typed placeholder; the original lives in an in-memory vault keyed by an opaque session id. Round-trip is byte-for-byte exact.
-  - title: 100% permissive licenses
-    details: MIT / Apache-2.0 / BSD / ISC / CC0 only. Zero LGPL / GPL / AGPL anywhere in the runtime tree. Audit table in `THIRD_PARTY_LICENSES.md`.
+  - title: openai/privacy-filter, used right
+    details: 'The 1.5B model needs a constrained Viterbi BIOES decoder. The HF transformers integration ships only logits, so naive `pipeline()` fragments spans. Use the official `opf` CLI or nullpii''s runtime, which both ship the Viterbi.'
+  - title: GLiNER fine-tune (v2)
+    details: 'Two-round fine-tune of `urchade/gliner_multi_pii-v1` on ai4privacy + Isotonic + dev-prompts-synth. Multilingual F1 0.93–0.97 (en/de/fr/it), 14 ms/sample on a 5090. PT, ONNX FP32 and ONNX INT4 published.'
+  - title: Reversible vault library
+    details: 'Same npm package ships a sanitize / restore engine: each PII span becomes a typed placeholder, the original lives in an in-memory vault keyed by an opaque session id. Round-trip is byte-for-byte exact.'
+  - title: Permissive licenses only
+    details: MIT / Apache-2.0 / BSD / ISC / CC0 in the runtime tree. Zero LGPL / GPL / AGPL. Audit table in `THIRD_PARTY_LICENSES.md`.
 ---
 
-## What it does in 4 lines
+## What this repo is
+
+A study + reproducibility kit. We compare the well-known
+`openai/privacy-filter` (1.5B parameters, gpt-oss style architecture)
+against a fine-tuned, much smaller `urchade/gliner_multi_pii-v1`
+(278M, older) on the same PII detection task.
+
+Two deliverables:
+
+1. **npm library** (`nullpii`) — sanitize / restore engine over
+   `openai/privacy-filter`, with a constrained Viterbi BIOES decoder.
+2. **HF model** (`lBroth/nullpii-gliner-pii-v2`) — the GLiNER fine-tune
+   in PT, ONNX FP32 and ONNX INT4 variants.
+
+## Library mode (4 lines)
 
 ```ts
-import Anthropic from '@anthropic-ai/sdk';
-import { withNullPii } from 'nullpii/middleware/anthropic';
+import { sanitize, restore } from 'nullpii';
 
-const safe = withNullPii(new Anthropic());
+const safe = await sanitize('Email John Smith at john@acme.com about his SSN.');
+// safe.text → 'Email [[NULLPII:private_person:0]] at [[NULLPII:private_email:0]] about his SSN.'
 
-const reply = await safe.messages.create({
-  model: 'claude-haiku-4-5',
-  max_tokens: 200,
-  messages: [
-    { role: 'user', content: 'Email John Smith at john@acme.com about his SSN.' },
-  ],
-});
-// The Anthropic API saw `[[NULLPII:private_person:0]]` and `[[NULLPII:private_email:0]]`.
-// `reply` reads as natural English with the originals restored.
+const back = await restore(safe.text, safe.session);
+// back === original text, byte for byte.
 ```
 
 ## What gets caught

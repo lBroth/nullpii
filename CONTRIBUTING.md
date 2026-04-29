@@ -92,7 +92,7 @@ fix(vault): restore returned wrong replacement count
 docs(readme): clarify peerDeps
 test(viterbi): cover invalid-transition edge case
 chore(deps): bump onnxruntime-node 1.20 → 1.21
-refactor(middleware): extract MiddlewareSession
+refactor(adapters): extract shared chunking helper
 perf(tokenizer): cache loaded Tokenizer per modelDir
 ```
 

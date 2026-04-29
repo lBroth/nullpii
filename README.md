@@ -188,8 +188,7 @@ extend the comparison — patches welcome.
 
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE), [NOTICE](NOTICE),
-[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+Apache 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
 The full runtime tree is **100% permissive** (MIT / Apache-2.0 / BSD /
 ISC / CC0). Verified by `npm run license-check` in CI.

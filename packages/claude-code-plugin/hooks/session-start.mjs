@@ -16,6 +16,29 @@ import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+const VALID_VARIANTS = new Set(['fp32', 'fp16', 'int8', 'int4', 'int4f16', 'auto']);
+const VALID_BACKENDS = new Set(['cpu', 'mps', 'cuda', 'rocm', 'auto']);
+
+function configPath() {
+  const dir = join(homedir(), '.cache', 'nullpii', 'plugin');
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  return join(dir, 'config.json');
+}
+
+function readConfig() {
+  const p = configPath();
+  if (!existsSync(p)) return { variant: 'auto', backend: 'auto' };
+  try {
+    const cfg = JSON.parse(readFileSync(p, 'utf8'));
+    return {
+      variant: VALID_VARIANTS.has(cfg.variant) ? cfg.variant : 'auto',
+      backend: VALID_BACKENDS.has(cfg.backend) ? cfg.backend : 'auto',
+    };
+  } catch {
+    return { variant: 'auto', backend: 'auto' };
+  }
+}
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 function readStdin() {
@@ -103,6 +126,7 @@ async function main() {
   // SessionStart. Idle-timeout is the only crash safety net.
   const idleMs = '1800000'; // 30 min idle = self-shutdown safety net
   const httpProxyPort = process.env.NULLPII_PROXY_PORT ?? '7330';
+  const cfg = readConfig();
 
   const bin = locateBinary();
   const baseArgs = [
@@ -113,6 +137,10 @@ async function main() {
     idleMs,
     '--http-proxy',
     httpProxyPort,
+    '--variant',
+    cfg.variant,
+    '--backend',
+    cfg.backend,
   ];
   const argv = bin.kind === 'mjs' ? ['node', bin.path, ...baseArgs] : ['nullpii', ...baseArgs];
 
@@ -123,9 +151,19 @@ async function main() {
   });
   child.unref();
 
-  writeFileSync(state, JSON.stringify({ pid: child.pid, socket, sessionId, httpProxyPort }));
+  writeFileSync(
+    state,
+    JSON.stringify({
+      pid: child.pid,
+      socket,
+      sessionId,
+      httpProxyPort,
+      variant: cfg.variant,
+      backend: cfg.backend,
+    }),
+  );
   process.stderr.write(
-    `[nullpii] daemon spawned pid=${child.pid} socket=${socket} proxy=:${httpProxyPort}\n`,
+    `[nullpii] daemon spawned pid=${child.pid} socket=${socket} proxy=:${httpProxyPort} variant=${cfg.variant} backend=${cfg.backend}\n`,
   );
 
   // Surface a heads-up so the user knows what to do to actually wire

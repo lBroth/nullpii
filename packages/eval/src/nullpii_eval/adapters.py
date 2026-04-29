@@ -364,6 +364,114 @@ def openai_pipeline_predictor(
     return _predict
 
 
+def openai_bioes_predictor(
+    *,
+    device: str | None = None,
+    max_length: int = 4096,
+) -> Predictor:
+    """`openai/privacy-filter` with a Python BIOES decoder.
+
+    The model card prescribes a constrained Viterbi BIOES decoder, but the
+    HF `transformers` integration only exposes per-token logits via
+    `pipeline()` with `aggregation_strategy="simple"`, which produces
+    fragmented spans. This predictor closes most of that gap by running
+    the raw model and decoding tags greedily (BIOES adjacency, no Viterbi
+    transition cost). Reference for the model's actual quality without
+    the official `opf` CLI.
+    """
+    try:
+        import torch  # noqa: I001
+        from transformers import AutoModelForTokenClassification, AutoTokenizer
+    except ImportError as e:
+        raise ImportError("transformers + torch required") from e
+
+    if device is None:
+        if torch.backends.mps.is_available():
+            device = "mps"
+        elif torch.cuda.is_available():
+            device = "cuda"
+        else:
+            device = "cpu"
+
+    if device == "cpu":
+        threads = max(1, (os.cpu_count() or 8) // 2)
+        torch.set_num_threads(threads)
+        try:
+            torch.set_num_interop_threads(max(1, threads // 4))
+        except RuntimeError:
+            pass
+
+    tok = AutoTokenizer.from_pretrained("openai/privacy-filter", trust_remote_code=True)
+    model = (
+        AutoModelForTokenClassification.from_pretrained(
+            "openai/privacy-filter", trust_remote_code=True,
+        )
+        .to(device)
+        .eval()
+    )
+    id2lab = model.config.id2label
+
+    def _predict(text: str) -> ToolResult:
+        t0 = time.perf_counter()
+        enc = tok(
+            text, return_tensors="pt", return_offsets_mapping=True,
+            truncation=True, max_length=max_length,
+        )
+        offsets = enc.pop("offset_mapping").squeeze(0).tolist()
+        enc = {k: v.to(device) for k, v in enc.items()}
+        with torch.no_grad():
+            logits = model(**enc).logits.argmax(dim=-1).squeeze(0).tolist()
+
+        spans: list[Span] = []
+        cur_label: str | None = None
+        cur_start: int | None = None
+        cur_end: int | None = None
+
+        def _close() -> None:
+            nonlocal cur_label, cur_start, cur_end
+            if (
+                cur_label is not None
+                and cur_start is not None
+                and cur_end is not None
+                and cur_end > cur_start
+            ):
+                lab = cur_label.lower()
+                if lab in _OPENAI_LABELS:
+                    spans.append(Span(lab, cur_start, cur_end))
+            cur_label = cur_start = cur_end = None
+
+        for tok_id, (st, en) in zip(logits, offsets):
+            if st == en == 0:
+                _close()
+                continue
+            lab = id2lab[tok_id]
+            if lab == "O":
+                _close()
+                continue
+            prefix, _, cat = lab.partition("-")
+            if prefix == "S":
+                _close()
+                low = cat.lower()
+                if low in _OPENAI_LABELS:
+                    spans.append(Span(low, st, en))
+            elif prefix == "B":
+                _close()
+                cur_label, cur_start, cur_end = cat, st, en
+            elif prefix in ("I", "E"):
+                if cur_label == cat:
+                    cur_end = en
+                    if prefix == "E":
+                        _close()
+                else:
+                    _close()
+        _close()
+
+        elapsed = (time.perf_counter() - t0) * 1000
+        return ToolResult(spans, elapsed)
+
+    return _predict
+
+
 _PIIRANHA_LABEL_MAP = {
     "ACCOUNTNUM": "account_number",
     "CREDITCARDNUMBER": "account_number",

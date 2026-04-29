@@ -63,7 +63,7 @@ Then:
 1. Add a subpath in `package.json` `exports`.
 2. Add a `loadBackend` case in `src/router.ts`.
 3. Write unit tests under `test/backend/` (lifecycle + platform check).
-4. Document in `README.md` and `docs/guide/eval-results.md` (Backend latency section).
+4. Document in `README.md` and `EVAL_RESULTS.md` (Backend latency section).
 
 ## Tests
 

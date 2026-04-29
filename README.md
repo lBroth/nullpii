@@ -5,7 +5,6 @@
 # nullpii
 
 [![CI](https://github.com/lBroth/nullpii/actions/workflows/ci.yml/badge.svg)](https://github.com/lBroth/nullpii/actions/workflows/ci.yml)
-[![docs](https://github.com/lBroth/nullpii/actions/workflows/docs.yml/badge.svg)](https://lbroth.github.io/nullpii/)
 [![npm](https://img.shields.io/npm/v/nullpii?color=cb3837)](https://www.npmjs.com/package/nullpii)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
@@ -36,7 +35,7 @@ Multilingual F1 (preview, n=100 per dataset, IoU ≥ 0.5; full bench is the next
 | ai4privacy-300k          |           0.309 |          0.800 |    **0.864** |                       — |  fragmented (n/a) |
 | dev-prompts-synth        |       **0.618** |          0.821 |        0.801 |                       — |  fragmented (n/a) |
 
-`docs/guide/comparisons.md` carries the full multi-platform tables, the
+`COMPARISONS.md` carries the full multi-platform tables, the
 in-Python BIOES decoder used to recover most of the openai/privacy-filter
 quality without extra deps, and the qualitative comparison
 (`packages/eval/results/train/qualitative_compare.md`) over 30 real
@@ -131,7 +130,7 @@ Requires **Node 24 LTS** (see `.nvmrc`).
 | Backend | Platform              | Notes                                              |
 | ------- | --------------------- | -------------------------------------------------- |
 | `cpu`   | All                   | Universal. Currently fastest on macOS.             |
-| `mps`   | Apple Silicon         | CoreML EP; partial op coverage — see `docs/guide/eval-results.md`. |
+| `mps`   | Apple Silicon         | CoreML EP; partial op coverage — see `EVAL_RESULTS.md`. |
 | `cuda`  | Linux/Windows + NVIDIA| Tensor cores on Volta+. CUDA EP via ORT.           |
 
 Auto-selects in priority **CUDA → MPS → CPU**. Default variant

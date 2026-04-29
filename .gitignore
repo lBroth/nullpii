@@ -67,3 +67,4 @@ packages/eval/tests/
 packages/*/package-lock.json
 
 .claude/
+THIRD_PARTY_LICENSES.csv

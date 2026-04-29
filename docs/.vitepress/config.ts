@@ -3,7 +3,8 @@ import { defineConfig } from 'vitepress';
 
 export default defineConfig({
   title: 'nullpii',
-  description: 'Stop leaking PII to LLMs. Local detection, reversible vault, Apache 2.0.',
+  description:
+    'A study comparing openai/privacy-filter (1.5B) and a fine-tuned GLiNER (278M) for local PII detection. npm library + HuggingFace model. Apache 2.0.',
   base: '/nullpii/',
   cleanUrls: true,
   head: [['link', { rel: 'icon', type: 'image/png', href: '/nullpii/favicon.png' }]],

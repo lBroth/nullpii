@@ -5,8 +5,8 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ModelNotFoundError } from '../src/errors.js';
 import { ModelManager } from '../src/model-manager.js';
+import { NETWORK_OK } from './_env.js';
 
-const NETWORK_OK = process.env.NULLPII_E2E === '1';
 const itIfNetwork = NETWORK_OK ? it : it.skip;
 
 afterEach(() => vi.restoreAllMocks());

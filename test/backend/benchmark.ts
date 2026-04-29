@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 /**
  * Multi-backend throughput benchmark on bundled artifacts.
  *

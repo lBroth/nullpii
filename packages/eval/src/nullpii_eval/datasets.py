@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: Apache-2.0
 """Bundled datasets — no gated downloads, no real PII."""
 from __future__ import annotations
 

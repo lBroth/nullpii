@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import debug from 'debug';

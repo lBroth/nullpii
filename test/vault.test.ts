@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from 'vitest';
 import { SessionNotFoundError } from '../src/errors.js';
 import type { PiiSpan } from '../src/types/index.js';

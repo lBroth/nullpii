@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import type { Recognizer } from 'nullpii';
 
 /** AWS access key id (`AKIA...` for IAM, `ASIA...` for STS). */

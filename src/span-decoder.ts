@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import { parseLabel } from './labels-bioes.js';
 import type { PiiCategory, PiiSpan } from './types/index.js';
 

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import chalk from 'chalk';
 import cliProgress from 'cli-progress';
 import type { Command } from 'commander';

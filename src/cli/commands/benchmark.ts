@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import { performance } from 'node:perf_hooks';
 import chalk from 'chalk';
 import type { Command } from 'commander';

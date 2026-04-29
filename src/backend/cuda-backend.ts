@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import { hasCudaPath } from '../config.js';
 import { DEFAULT_VARIANT } from '../defaults.js';
 import { fileExists } from '../paths.js';

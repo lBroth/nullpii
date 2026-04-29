@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
-
 /**
  * Per-chunk cap on tokens fed into the model in a single forward pass.
  * The upstream model supports 131072 tokens (banded attention,

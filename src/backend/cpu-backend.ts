@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import { DEFAULT_VARIANT } from '../defaults.js';
 import type { ModelVariant } from '../types/index.js';
 import { type BackendConfig, OrtBackend, type SessionThreads } from './ort-backend.js';

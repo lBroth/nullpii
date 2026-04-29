@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from 'vitest';
 import { LABEL_MAP, NUM_LABELS, isValidTransition } from '../src/labels-bioes.js';
 import {

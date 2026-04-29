@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import debug from 'debug';
 import { type TokenChunk, dedupeSpans, partitionTokens } from './chunking.js';
 import {

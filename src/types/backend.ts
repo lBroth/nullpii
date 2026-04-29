@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import type { BackendName, ModelVariant } from './config.js';
 
 /** Inputs the model expects per inference. Names match the ONNX graph. */

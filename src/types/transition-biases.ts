@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
-
 /**
  * Tunable log-prob biases added to the Viterbi transition matrix.
  *

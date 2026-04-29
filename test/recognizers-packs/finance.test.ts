@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from 'vitest';
 import { CREDIT_CARD, IBAN, iban97, luhn } from '../../packages/recognizers-finance/src/index.js';
 import { runRecognizers } from '../../src/recognizers.js';

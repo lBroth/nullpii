@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from 'vitest';
 import { dedupeSpans, partitionTokens } from '../src/chunking.js';
 import type { EncodeResult } from '../src/tokenizer.js';

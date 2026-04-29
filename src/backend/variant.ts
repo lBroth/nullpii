@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import type { ModelVariant } from '../types/index.js';
 
 /** Map a `ModelVariant` to the ONNX filename within `<modelDir>/onnx/`. */

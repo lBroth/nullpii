@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import { CLOUD_KEYS } from '../packages/recognizers-cloud/src/index.js';
 import { FINANCE } from '../packages/recognizers-finance/src/index.js';
 import { ITALIAN_IDS } from '../packages/recognizers-id-it/src/index.js';

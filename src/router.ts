@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import debug from 'debug';
 import type { SessionThreads } from './backend/ort-backend.js';
 import { BACKEND_AUTO_PRIORITY, DEFAULT_BACKEND, DEFAULT_VARIANT } from './defaults.js';

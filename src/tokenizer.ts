@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import { join } from 'node:path';
 import { Tokenizer } from '@anush008/tokenizers';
 import debug from 'debug';

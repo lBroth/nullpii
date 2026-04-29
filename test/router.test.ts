@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BackendNotAvailableError } from '../src/errors.js';
 import { selectBackend } from '../src/router.js';

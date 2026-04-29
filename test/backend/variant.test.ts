@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from 'vitest';
 import { VARIANT_TO_FILE, resolveVariantFile } from '../../src/backend/variant.js';
 

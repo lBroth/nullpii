@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import type { PiiCategory } from './labels.js';
 import type { Recognizer } from './recognizer.js';
 import type { TransitionBiases } from './transition-biases.js';

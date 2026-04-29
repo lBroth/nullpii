@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import type { Recognizer } from 'nullpii';
 
 /** Luhn check digit validation for credit-card numbers. */

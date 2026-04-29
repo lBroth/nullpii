@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import { isValidStart, isValidTransition, parseLabel } from './labels-bioes.js';
 import type { TransitionBiases } from './types/index.js';
 

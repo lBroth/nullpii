@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 //
 // Runtime configuration: every environment-variable read in nullpii.
 // Adding a new env var? Put its name here AND a typed reader. Don't read

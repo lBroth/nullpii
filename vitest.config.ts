@@ -21,7 +21,7 @@ export default defineConfig({
         // Re-export barrels — verified by surface tests, not coverage
         'src/index.ts',
         'src/types/index.ts',
-        // Network I/O — covered by gated end-to-end test (NULLPII_E2E=1)
+        // Network I/O — exercised by integration runs, not unit coverage
         'src/hf-hub.ts',
         // Hardware-gated backends — covered by gated runners (Linux+GPU)
         'src/backend/cuda-backend.ts',

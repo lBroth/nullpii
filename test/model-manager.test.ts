@@ -5,9 +5,6 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ModelNotFoundError } from '../src/errors.js';
 import { ModelManager } from '../src/model-manager.js';
-import { NETWORK_OK } from './_env.js';
-
-const itIfNetwork = NETWORK_OK ? it : it.skip;
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -29,22 +26,9 @@ describe('ModelManager', () => {
     expect(m.modelDir.includes('..')).toBe(false);
   });
 
-  itIfNetwork(
-    'downloads, caches, and re-uses files (int8 variant; requires network)',
-    async () => {
-      const cache = mkdtempSync(join(tmpdir(), 'nullpii-cache-net-'));
-      const m = new ModelManager(cache);
-      const t0 = Date.now();
-      const a = await m.ensure({ variant: 'int8' });
-      const t1 = Date.now();
-      const b = await m.ensure({ variant: 'int8' });
-      const t2 = Date.now();
-      expect(a.modelDir).toBe(b.modelDir);
-      // Second call should be near-instant (cache hit)
-      expect(t2 - t1).toBeLessThan((t1 - t0) / 2 + 100);
-    },
-    600_000,
-  );
+  // Network-gated download/cache test removed — it required NULLPII_E2E=1
+  // and a real HF round-trip. The non-network behaviours (deterministic
+  // modelDir, error surfacing) are covered above and don't need an env flag.
 
   it('surfaces ModelNotFoundError when the underlying download fails', async () => {
     const cache = mkdtempSync(join(tmpdir(), 'nullpii-cache-'));

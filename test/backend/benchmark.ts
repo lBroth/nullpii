@@ -2,9 +2,9 @@
 /**
  * Multi-backend throughput benchmark on bundled artifacts.
  *
- * Run with: `npx tsx test/backend/benchmark.ts`
- * (requires `$NULLPII_TEST_MODEL_DIR` to point to a local copy of the
- * model, or the default test-artifact path under `.nullpii-test-artifacts/`).
+ * Run with: `npx tsx test/backend/benchmark.ts`. Requires the model
+ * at `.nullpii-test-artifacts/model` (gitignored, downloaded by the
+ * developer once via `npx nullpii prefetch` or similar).
  */
 import { existsSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';

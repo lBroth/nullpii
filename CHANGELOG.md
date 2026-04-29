@@ -21,8 +21,7 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
   GLiNER fine-tune scripts.
 - Fine-tuned model `lBroth/nullpii` on HuggingFace Hub: PT FP32 +
   ONNX FP32 + ONNX INT4 (`MatMulNBitsQuantizer`). Multilingual F1
-  0.93–0.97 on isotonic-en/de/fr/it (preview, n=100). Publication
-  script: `scripts/release/push-to-hf.sh`.
+  0.93–0.97 on isotonic-en/de/fr/it (preview, n=100).
 - Tests: 145 pass / 8 skipped (artifact-gated). Coverage thresholds
   85% lines / 80% branches in CI.
 

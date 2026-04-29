@@ -25,7 +25,7 @@ nullpii/backend/rocm        → RocmBackend
 
 `onnxruntime-node` is the only optional peerDependency for runtime.
 
-`packages/convert/` is a separate Python build-time tool (not published to npm).
+`packages/eval/` is the Python research kit (eval + training, gitignored — not published to npm).
 
 Internal source layout (strict, no circular):
 

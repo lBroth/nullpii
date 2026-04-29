@@ -14,12 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Vitest with 85/80 coverage thresholds, Lefthook pre-commit, license-checker,
   madge circular-import check, GitHub Actions CI on Node 24 (Ubuntu / macOS /
   Windows), Apache 2.0 LICENSE + NOTICE.
-- **Model fetch & verify pipeline** (`packages/convert/`) — Python 3.12.
-  Pins `openai/privacy-filter` to commit SHA `7ffa9a04…`, downloads the ONNX
-  variants (fp32 / fp16 / int8 / int4 / int4+fp16), produces a deterministic
-  `manifest.json`, runs SHA256 + optional sigstore integrity, smoke-tests
-  every variant, and runs an inter-format consistency check on 50 bundled
-  prompts.
+- **Model fetch at runtime** — `src/model-manager.ts` pulls
+  `openai/privacy-filter` at the pinned commit SHA defined in
+  `src/defaults.ts` (`DEFAULT_MODEL_REVISION`). The earlier
+  Python build-time fetch+verify pipeline was dropped; reproducibility
+  lives in the SHA pin and HF's own integrity guarantees.
 - **Type system + errors** — `PiiLabel` / `PiiCategory` unions, `PII_LABELS`
   tuple (33 BIOES), `PiiSpan`, `VaultToken`, `SanitizeResult`,
   `RestoreResult`, `NullPiiConfig`, `BackendName`, `ModelVariant`,

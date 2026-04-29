@@ -22,16 +22,8 @@ npm run lint
 npm run typecheck
 ```
 
-The model conversion / fetch pipeline lives under `packages/convert/`
-and is **Python 3.12** (separate `pyproject.toml`):
-
-```bash
-cd packages/convert
-python3.12 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-python -m nullpii_convert.pipeline all
-```
+The eval / training kit (Python 3.12, gitignored) lives under
+`packages/eval/`. See `packages/eval/README.md` for setup.
 
 ## Architecture rules
 

@@ -42,11 +42,9 @@
     "format": "biome format --write .",
     "typecheck": "tsc --noEmit -p tsconfig.test.json",
     "license-check": "license-checker --production --excludePrivatePackages --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;CC0-1.0;Apache 2.0;BlueOak-1.0.0;Unlicense;0BSD'",
+    "license-list": "license-checker --production --excludePrivatePackages --csv > THIRD_PARTY_LICENSES.csv && echo 'wrote THIRD_PARTY_LICENSES.csv'",
     "circular-check": "madge --circular --extensions ts src/",
-    "prepare": "lefthook install || true",
-    "docs:dev": "vitepress dev docs",
-    "docs:build": "vitepress build docs",
-    "docs:preview": "vitepress preview docs"
+    "prepare": "lefthook install || true"
   },
   "dependencies": {
     "@anush008/tokenizers": "^0.6.0",
@@ -76,7 +74,6 @@
     "onnxruntime-node": "^1.20.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.2",
-    "vitepress": "^1.6.4",
     "vitest": "^2.1.8"
   },
   "publishConfig": {

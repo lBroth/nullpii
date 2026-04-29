@@ -35,10 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Span decoder** — `decodeSpans` builds char-level `PiiSpan`s from BIOES
   labels and offset mapping, including mean per-span score.
 - **Backends** — `OrtBackend` abstract base; `CpuBackend`, `MpsBackend`,
-  `CudaBackend`, `RocmBackend`. Tree-shakable via subpath exports.
-  ORT execution providers cover all four.
+  `CudaBackend`. Tree-shakable via subpath exports.
 - **Router + Model Manager** — `selectBackend(modelDir, config)` with
-  dynamic backend imports and CUDA → MPS → ROCm → CPU auto priority;
+  dynamic backend imports and CUDA → MPS → CPU auto priority;
   `ModelManager` with HF download + SHA256 cache under `~/.nullpii/models/`.
 - **PiiVault** — `createSession` (UUID v4), `sanitize`, `restore`,
   `destroySession`. Per-label indexed placeholders. Back-to-front
@@ -56,10 +55,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ONNX FP32 + ONNX INT4 (`MatMulNBitsQuantizer`). HF model id
   `lBroth/nullpii` (publication script under
   `scripts/release/`).
-- **Documentation** — full README with quick-start examples, this
-  CHANGELOG, CONTRIBUTING.md, SECURITY.md, BENCHMARK.md, plus the
-  research write-up in `docs/guide/comparisons.md` +
-  `docs/guide/eval-results.md`.
+- **Documentation** — README with quick-start examples, this
+  CHANGELOG, CONTRIBUTING.md, SECURITY.md, plus the research write-up
+  in `COMPARISONS.md` + `EVAL_RESULTS.md` at the repo root.
 
 ### Architecture decision
 
@@ -74,9 +72,9 @@ reproducibility kit comparing `openai/privacy-filter` (the well-known
 1.5B model) against a fine-tuned `urchade/gliner_multi_pii-v1` (278M)
 on the same PII detection task. The npm library is the runtime over
 `openai/privacy-filter`; the HF model is the GLiNER fine-tune; the
-write-up lives in `docs/guide/{comparisons,eval-results}.md`. The
-Claude Code plugin and Anthropic SDK middleware that earlier 0.x
-versions shipped have been removed; previous code is preserved on
+write-up lives in `COMPARISONS.md` + `EVAL_RESULTS.md` at the repo
+root. The Claude Code plugin and Anthropic SDK middleware that earlier
+0.x versions shipped have been removed; previous code is preserved on
 the `plugin-backup-v0.0.9` branch.
 
 ### Removed before 1.0

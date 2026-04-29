@@ -20,14 +20,14 @@
 Two deliverables and the experiment that produced them:
 
 1. **npm library** — `nullpii` (this package). Sanitize / restore engine over `openai/privacy-filter` with the constrained Viterbi BIOES decoder + chunking + recognizer post-pass + reversible vault. CLI binary `nullpii sanitize|restore|scan|benchmark|...` plus a TS API (`sanitize()`, `restore()`, `NullPii` class).
-2. **HuggingFace model** — [`lBroth/nullpii-gliner-pii-v2`](https://huggingface.co/lBroth/nullpii-gliner-pii-v2) (publication script under `packages/eval/scripts/release/`). GLiNER fine-tune in PT, ONNX FP32 and ONNX INT4 variants. Pin `local_files_only=True` and use the standard `gliner.GLiNER.from_pretrained(...)` API.
+2. **HuggingFace model** — [`lBroth/nullpii`](https://huggingface.co/lBroth/nullpii) (publication script under `packages/eval/scripts/release/`). GLiNER fine-tune in PT, ONNX FP32 and ONNX INT4 variants. Pin `local_files_only=True` and use the standard `gliner.GLiNER.from_pretrained(...)` API.
 3. **Reproducibility kit** — `packages/eval/` with the full bench harness, dataset loaders (ai4privacy, Isotonic, the project's own `nullpii-bench`), the training scripts that produced v2, and the comparison results (`packages/eval/results/`).
 
 ## The headline comparison
 
 Multilingual F1 (preview, n=100 per dataset, IoU ≥ 0.5; full bench is the next milestone):
 
-| Dataset                  | baseline GLiNER | **v2 PT FP32** | v2 ONNX INT4 | openai (proper Viterbi) | openai (HF naive) |
+| Dataset                  | baseline GLiNER | **nullpii PT FP32** | nullpii ONNX INT4 | openai (proper Viterbi) | openai (HF naive) |
 | ------------------------ | --------------: | -------------: | -----------: | ----------------------: | ----------------: |
 | isotonic-en              |           0.462 |          0.951 |    **0.961** |                       — |  fragmented (n/a) |
 | isotonic-de              |           0.497 |          0.932 |    **0.939** |                       — |  fragmented (n/a) |

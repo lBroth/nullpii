@@ -159,7 +159,7 @@ realistic dataset on F1.
 - **deberta**, **piiranha**, **presidio** all underperform on the dev-
   paste threat model the suite targets.
 
-## Fine-tuned GLiNER v2 (preview)
+## nullpii (fine-tuned GLiNER) (preview)
 
 A two-round fine-tune of `urchade/gliner_multi_pii-v1` on a mix of
 `ai4privacy/pii-masking-300k`, `Isotonic/pii-masking-200k` (en/de/fr/it),
@@ -173,7 +173,7 @@ per dataset — preview, full bench pending). Ran on the same 5090 host.
 
 ### F1 (n=100 per dataset)
 
-| Dataset | baseline gliner | v2-pt-cuda | v2-onnx-int4 |
+| Dataset | baseline gliner | nullpii-pt-cuda | nullpii-onnx-int4 |
 | ------- | --------------: | ---------: | -----------: |
 | isotonic-en | 0.462 | 0.951 | **0.961** |
 | isotonic-de | 0.497 | 0.932 | **0.939** |
@@ -186,14 +186,14 @@ per dataset — preview, full bench pending). Ran on the same 5090 host.
 
 | Variant | p50 ms | Size MB | Backend |
 | ------- | -----: | ------: | ------- |
-| v2-pt-cuda | 14 | 1102 | CUDA (RTX 5090) |
-| v2-onnx-fp32 | 670 | 1104 | CPU |
-| v2-onnx-int4 | 602 | 844 | CPU |
-| v2-onnx-int8 | 614 | 333 | CPU (F1 collapse, avoid) |
+| nullpii-pt-cuda | 14 | 1102 | CUDA (RTX 5090) |
+| nullpii-onnx-fp32 | 670 | 1104 | CPU |
+| nullpii-onnx-int4 | 602 | 844 | CPU |
+| nullpii ONNX INT8 | 614 | 333 | CPU (F1 collapse, avoid) |
 
 ### Takeaways (preview)
 
-- **v2 beats baseline gliner by +0.45–0.55 F1** on every multilingual
+- **nullpii beats baseline GLiNER by +0.45–0.55 F1** on every multilingual
   dataset.
 - **INT4 quantization matches or BEATS the FP32 model** on F1 (matmul-
   only quant smooths the round-1 overfit). Best CPU production option.

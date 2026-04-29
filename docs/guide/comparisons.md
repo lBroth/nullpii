@@ -10,7 +10,7 @@ for the live tabulation. Reproduction recipe at the bottom.
 | Tool | Source | Notes |
 |------|--------|-------|
 | **nullpii** | `openai/privacy-filter` ONNX + nullpii pipeline | Chunking + constrained Viterbi BIOES + recognizers |
-| **gliner-v2 (fine-tuned)** | `urchade/gliner_multi_pii-v1` fine-tuned on ai4privacy + Isotonic + dev-prompts-synth | 2-round fine-tune, ~278M PT or ONNX (FP32 / INT4) |
+| **nullpii (fine-tuned GLiNER)** | `urchade/gliner_multi_pii-v1` fine-tuned on ai4privacy + Isotonic + dev-prompts-synth | 2-round fine-tune, ~278M PT or ONNX (FP32 / INT4) |
 | **openai (bare HF)** | same upstream model, `transformers.pipeline()` | Isolates the value of the nullpii runtime |
 | **gliner** | `urchade/gliner_multi_pii-v1` | Zero-shot multilingual, ~278M params |
 | **deberta** | `lakshyakh93/deberta_finetuned_pii` | English-only specialised |
@@ -35,26 +35,9 @@ upstream gold otherwise.
 
 ## Reading the matrix
 
-`matrix.csv` is a pivot: rows = datasets, columns = tools, cells = F1.
-Crashed cells render as `CRASHED` (string) — never silently empty.
-`matrix.json` carries the full record per cell:
-
-```json
-{
-  "<dataset>": {
-    "<tool>": {
-      "status": "OK" | "CRASHED",
-      "f1": 0.xxx,
-      "wall_s": 12.3,
-      "n": 1000,
-      "samples_per_s": 81.3
-    }
-  }
-}
-```
-
-`confusion.json` has per-label TP/FP/FN per cell when the bench is run
-with `--confusion` (default in `bench-on-pod.sh`).
+`matrix.csv` is the headline pivot (rows = datasets, columns = tools,
+cells = F1). `matrix.json` carries the per-cell wall-clock and sample
+count, `confusion.json` per-label TP/FP/FN.
 
 ## Qualitative comparison
 
@@ -64,7 +47,7 @@ for downstream redaction. See
 side-by-side across four models: `openai/privacy-filter` via the
 default `transformers.pipeline()` (`aggregation_strategy="simple"`),
 `openai/privacy-filter` with a Python BIOES decoder, the `gliner`
-zero-shot baseline, and our fine-tuned `gliner-v2`. Inputs are 20 short
+zero-shot baseline, and our fine-tuned `nullpii`. Inputs are 20 short
 prompts (real-world patterns + adversarial edge cases) and 10 longer
 documents (medical records, contracts, bank statements, deposition
 transcript, multilingual itineraries). All fake.
@@ -107,12 +90,12 @@ Headline (latency on 5090 GPU, 30 cases avg):
 | openai HF pipeline (`agg=simple`) | ~230 ms | fragmented (`.com`, `aitre`, `Mr.`) |
 | openai + Python BIOES decoder | ~207 ms | clean (`0xA9B4FF12`, `FR76 ... 184`) |
 | gliner baseline (zero-shot) | ~26 ms | clean, broad coverage |
-| nullpii v2 (gliner ft) | ~33 ms | clean, tightest spans |
+| nullpii (fine-tuned GLiNER) | ~33 ms | clean, tightest spans |
 
 `openai/privacy-filter` is ~10× slower than the gliner-based models
 because it's ~1.5B parameters vs ~278M.
 
-### Cross-platform latency (v2 models, same code, p50 ms over 30 cases)
+### Cross-platform latency (nullpii models, same code, p50 ms over 30 cases)
 
 | backend                   | RunPod 5090 (Linux x86) | Mac (M-series) |
 | ------------------------- | ----------------------: | -------------: |
@@ -150,20 +133,20 @@ to stress real failure modes. A few highlights:
 - `japanese-date` / `japanese-mixed` — `openai/privacy-filter` does NOT
   detect non-Latin date formats (e.g. `1985年7月3日`, `平成元年4月15日`).
   This is a known limitation per the model card ("performance may drop
-  on non-English text, non-Latin scripts"). Our v2 fine-tune was
+  on non-English text, non-Latin scripts"). Our nullpii fine-tune was
   trained on multilingual but not Japanese-heavy data, so it also
   misses these — flagged as future work.
-- `markdown-table` — every model except v2 over-tags the headers
-  ("Name", "Email", "Phone") as PII; v2 under-tags (catches only
-  some emails).
+- `markdown-table` — every model except nullpii over-tags the
+  headers (`Name`, `Email`, `Phone`) as PII; nullpii under-tags
+  (catches only some emails).
 - `adversarial-code-looking-like-pii` — JS regex patterns get
-  misclassified by the openai-bare HF pipeline; v2 keeps it clean.
+  misclassified by the openai-bare HF pipeline; nullpii keeps it clean.
 - `code-with-api-keys` — only models with explicit `secret` training
   signal (openai BIOES, nullpii TS, v2) detect the JWT / SK keys.
 
 ## Fine-tune details
 
-`gliner-v2` is two rounds of fine-tune from `urchade/gliner_multi_pii-v1`:
+`nullpii` is two rounds of fine-tune from `urchade/gliner_multi_pii-v1`:
 
 1. **Round 1** — ai4privacy/pii-masking-300k + Isotonic/pii-masking-200k
    (en/de/fr/it). 6 epochs (early-stopped). Multilingual F1 jumped to
@@ -178,10 +161,10 @@ Quantization deltas (preview, n=100 per dataset, IoU ≥ 0.5):
 
 | Variant | avg F1 | Size MB | p50 latency (CPU) |
 | ------- | -----: | ------: | ----------------: |
-| v2 PT (CUDA) | 0.91 | 1102 | 14 ms (5090 GPU) |
-| v2 ONNX FP32 (CPU) | 0.91 | 1104 | 670 ms |
-| v2 ONNX INT4 (CPU) | **0.92** | 844 | 602 ms |
-| v2 ONNX INT8 (CPU) | 0.58 | **333** | 614 ms — **F1 collapse, avoid** |
+| nullpii PT (CUDA) | 0.91 | 1102 | 14 ms (5090 GPU) |
+| nullpii ONNX FP32 (CPU) | 0.91 | 1104 | 670 ms |
+| nullpii ONNX INT4 (CPU) | **0.92** | 844 | 602 ms |
+| nullpii ONNX INT8 (CPU) | 0.58 | **333** | 614 ms — **F1 collapse, avoid** |
 
 INT4 (matmul-only nbits quant) actually beats FP32 marginally on F1;
 INT8 dynamic quant is too lossy on this architecture.

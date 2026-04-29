@@ -50,12 +50,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CLI** — `npx nullpii scan|sanitize|restore|models|benchmark` with
   `--format json` and `--model-dir` overrides. `commander` + `chalk` +
   `cli-progress` (all MIT).
-- **GLiNER fine-tune (v2)** — two-round fine-tune of
+- **GLiNER fine-tune (nullpii)** — two-round fine-tune of
   `urchade/gliner_multi_pii-v1` on ai4privacy + Isotonic + the project's
   own dev-prompts-synth generator. Multilingual F1 0.93–0.97 on
   isotonic-en/de/fr/it (preview, n=100). Published as PT FP32 +
   ONNX FP32 + ONNX INT4 (`MatMulNBitsQuantizer`). HF model id
-  `lBroth/nullpii-gliner-pii-v2` (publication script under
+  `lBroth/nullpii` (publication script under
   `scripts/release/`).
 - **Documentation** — full README with quick-start examples, this
   CHANGELOG, CONTRIBUTING.md, SECURITY.md, BENCHMARK.md, plus the

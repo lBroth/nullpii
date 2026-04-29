@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# One-shot publish of the v2 fine-tune (PT + ONNX FP32 + ONNX INT4 +
+# One-shot publish of the nullpii fine-tune (PT + ONNX FP32 + ONNX INT4 +
 # tokenizer + model card) to HuggingFace Hub.
 #
 # Prerequisites:
@@ -10,7 +10,7 @@
 #   git lfs install                 # for *.bin / *.onnx
 #
 # Inputs (override via env):
-#   HF_REPO           — target HF model repo, default lBroth/nullpii-gliner-pii-v2
+#   HF_REPO           — target HF model repo, default lBroth/nullpii
 #   V2_PT_DIR         — path to PT checkpoint, default packages/eval/results/train/gliner-pii-finetuned-v2/final
 #   V2_ONNX_DIR       — path to ONNX dir, default packages/eval/results/train/gliner-pii-finetuned-v2-onnx
 #   STAGING_DIR       — temp dir for the assembled HF tree, default ./hf-staging
@@ -21,7 +21,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-HF_REPO="${HF_REPO:-lBroth/nullpii-gliner-pii-v2}"
+HF_REPO="${HF_REPO:-lBroth/nullpii}"
 V2_PT_DIR="${V2_PT_DIR:-$REPO_ROOT/packages/eval/results/train/gliner-pii-finetuned-v2/final}"
 V2_ONNX_DIR="${V2_ONNX_DIR:-$REPO_ROOT/packages/eval/results/train/gliner-pii-finetuned-v2-onnx}"
 STAGING_DIR="${STAGING_DIR:-$REPO_ROOT/hf-staging}"
@@ -56,7 +56,7 @@ if [ -f "$REPO_ROOT/scripts/release/MODEL_CARD.md" ]; then
     cp -v "$REPO_ROOT/scripts/release/MODEL_CARD.md" "$STAGING_DIR/README.md"
 else
     echo "[hf-publish] no MODEL_CARD.md — placeholder will be written"
-    echo "# nullpii-gliner-pii-v2 (placeholder)" > "$STAGING_DIR/README.md"
+    echo "# nullpii (placeholder)" > "$STAGING_DIR/README.md"
 fi
 cp -v "$REPO_ROOT/LICENSE" "$STAGING_DIR/LICENSE" 2>/dev/null || true
 
@@ -74,7 +74,7 @@ git remote add origin "https://huggingface.co/$HF_REPO"
 git fetch origin main 2>/dev/null || true
 
 git add .
-git commit -q -m "Publish nullpii-gliner-pii-v2 (PT + ONNX FP32 + ONNX INT4)"
+git commit -q -m "Publish nullpii (PT + ONNX FP32 + ONNX INT4)"
 git branch -M main
 git push -u origin main
 

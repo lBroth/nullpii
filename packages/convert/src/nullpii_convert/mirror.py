@@ -2,7 +2,7 @@
 """Mirror fetched artifacts to the nullpii HF org. DEFERRED.
 
 Will not run unless `HUGGING_FACE_HUB_TOKEN` is set AND `--confirm-publish`
-is passed. See TODO_PUBLISH.md.
+is passed.
 """
 from __future__ import annotations
 
@@ -23,9 +23,7 @@ def mirror(target_repo: str = TARGET_HF_REPO, source: Path = MODEL_DIR) -> None:
     """Upload everything under `source` to `target_repo` on HF Hub.
     Refuses to run without env token + explicit CLI confirmation."""
     if CONFIRM_FLAG not in sys.argv:
-        raise SystemExit(
-            f"mirror: refusing to publish without {CONFIRM_FLAG} (see TODO_PUBLISH.md)",
-        )
+        raise SystemExit(f"mirror: refusing to publish without {CONFIRM_FLAG}")
     token = os.environ.get(ENV_TOKEN)
     if not token:
         raise SystemExit(f"mirror: {ENV_TOKEN} env var required")

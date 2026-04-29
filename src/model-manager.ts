@@ -33,10 +33,7 @@ const VARIANT_FILES: Readonly<Record<Exclude<ModelVariant, 'auto'>, readonly str
     'onnx/model.onnx_data_1',
     'onnx/model.onnx_data_2',
   ],
-  fp16: ['onnx/model_fp16.onnx', 'onnx/model_fp16.onnx_data', 'onnx/model_fp16.onnx_data_1'],
-  int8: ['onnx/model_quantized.onnx', 'onnx/model_quantized.onnx_data'],
   int4: ['onnx/model_q4.onnx', 'onnx/model_q4.onnx_data'],
-  int4f16: ['onnx/model_q4f16.onnx', 'onnx/model_q4f16.onnx_data'],
 };
 
 /** Identifies which model artifact set to fetch. Pluggable so callers can

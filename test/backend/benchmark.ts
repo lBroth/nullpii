@@ -29,13 +29,13 @@ interface Bench {
 }
 
 const benches: Bench[] = [
-  { label: 'CPU int8', variant: 'int8', factory: () => new CpuBackend(MODEL_DIR, 'int8') },
+  { label: 'CPU int4', variant: 'int4', factory: () => new CpuBackend(MODEL_DIR, 'int4') },
 ];
 if (process.platform === 'darwin') {
   benches.push({
-    label: 'MPS fp16',
-    variant: 'fp16',
-    factory: () => new MpsBackend(MODEL_DIR, 'fp16'),
+    label: 'MPS int4',
+    variant: 'int4',
+    factory: () => new MpsBackend(MODEL_DIR, 'int4'),
   });
 }
 

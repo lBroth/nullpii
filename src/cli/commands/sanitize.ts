@@ -14,7 +14,7 @@ export function registerSanitize(program: Command): void {
     .option('--session <id>', 'reuse an existing vault session id')
     .option('--model-dir <path>', 'use a local model directory (skip download)')
     .option('--backend <name>', 'force backend: cpu | mps | cuda | rocm | auto')
-    .option('--variant <v>', 'fp32 | fp16 | int8 | int4 | int4f16 | auto')
+    .option('--variant <v>', 'fp32 | int4 | auto')
     .action(
       async (
         text: string | undefined,

@@ -11,7 +11,7 @@ export function registerPrefetch(program: Command): void {
     .description(
       'download the model into the local cache (run once at install / CI / Docker build)',
     )
-    .option('--variant <v>', 'fp32 | fp16 | int8 | int4 | int4f16 | auto', 'auto')
+    .option('--variant <v>', 'fp32 | int4 | auto', 'auto')
     .action(runPrefetch);
 }
 

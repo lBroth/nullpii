@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildProgram } from '../src/cli/index.js';
-import { HAS_TEST_QUANTIZED, TEST_MODEL_DIR } from './_env.js';
+import { HAS_TEST_ARTIFACTS, TEST_MODEL_DIR } from './_env.js';
 
 const ARTIFACT_MODEL_DIR = TEST_MODEL_DIR;
-const itIfArtifacts = HAS_TEST_QUANTIZED ? it : it.skip;
+const itIfArtifacts = HAS_TEST_ARTIFACTS ? it : it.skip;
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -58,7 +58,7 @@ describe('CLI end-to-end (gated on artifacts/model)', () => {
           '--backend',
           'cpu',
           '--variant',
-          'int8',
+          'int4',
         ]);
       });
       const parsed = JSON.parse(output) as { spans: ReadonlyArray<unknown> };
@@ -85,7 +85,7 @@ describe('CLI end-to-end (gated on artifacts/model)', () => {
           '--backend',
           'cpu',
           '--variant',
-          'int8',
+          'int4',
         ]);
       });
       const parsed = JSON.parse(output) as { sanitized: string; spans: ReadonlyArray<unknown> };

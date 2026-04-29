@@ -6,9 +6,8 @@ import { type BackendConfig, OrtBackend, type SessionThreads } from './ort-backe
 const CPU_CONFIG: BackendConfig = {
   name: 'cpu',
   executionProviders: ['cpu'],
-  // fp16 dominates fp32/int8 on CPU ORT for this model: identical F1,
-  // ~3× faster than fp32, ~17% faster than int8.
-  autoVariant: 'fp16',
+  // Default to int4 (~875 MB, ~6% F1 vs fp32). Pin fp32 for accuracy.
+  autoVariant: 'int4',
 };
 
 /** CPU inference backend backed by `onnxruntime-node` (always available). */

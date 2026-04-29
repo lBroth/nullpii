@@ -8,15 +8,14 @@ export type BackendName = 'cpu' | 'mps' | 'cuda' | 'rocm' | 'auto';
 
 /**
  * ONNX model variant the backend will load.
- * - `fp32` — full-precision baseline
- * - `fp16` — half-precision; lossless in practice (≤0.5% F1 divergence)
- * - `int8` — dynamic quantization; production-acceptable (≤1% divergence)
- * - `int4` / `int4f16` — edge / memory-constrained (≤6% divergence)
+ * - `fp32` — full-precision baseline (~5 GB)
+ * - `int4` — quantized; ~6% F1 drop, ~875 MB; default
  *
- * `'auto'` picks the most accurate variant the chosen backend can run
- * without exceeding available memory.
+ * `'auto'` defers to the backend's preferred default (currently `int4`
+ * everywhere — small footprint, acceptable accuracy. Pin `'fp32'` for
+ * regression baselines or maximum accuracy).
  */
-export type ModelVariant = 'fp32' | 'fp16' | 'int8' | 'int4' | 'int4f16' | 'auto';
+export type ModelVariant = 'fp32' | 'int4' | 'auto';
 
 /** Identifies which model artifact set to load. */
 export interface ModelRefConfig {

@@ -4,23 +4,22 @@ import { VARIANT_TO_FILE, resolveVariantFile } from '../../src/backend/variant.j
 
 describe('VARIANT_TO_FILE', () => {
   it('covers every concrete ModelVariant', () => {
-    const expected = ['fp32', 'fp16', 'int8', 'int4', 'int4f16'];
+    const expected = ['fp32', 'int4'] as const;
     for (const k of expected) {
       expect(VARIANT_TO_FILE).toHaveProperty(k);
-      expect(VARIANT_TO_FILE[k as keyof typeof VARIANT_TO_FILE]).toMatch(/\.onnx$/);
+      expect(VARIANT_TO_FILE[k]).toMatch(/\.onnx$/);
     }
   });
 });
 
 describe('resolveVariantFile', () => {
   it('maps explicit variants to their file', () => {
-    expect(resolveVariantFile('int8', 'fp32')).toBe('model_quantized.onnx');
-    expect(resolveVariantFile('fp16', 'fp32')).toBe('model_fp16.onnx');
+    expect(resolveVariantFile('fp32', 'int4')).toBe('model.onnx');
+    expect(resolveVariantFile('int4', 'fp32')).toBe('model_q4.onnx');
   });
 
   it('maps auto to the supplied autoVariant (per-backend policy)', () => {
     expect(resolveVariantFile('auto', 'fp32')).toBe('model.onnx');
-    expect(resolveVariantFile('auto', 'fp16')).toBe('model_fp16.onnx');
-    expect(resolveVariantFile('auto', 'int8')).toBe('model_quantized.onnx');
+    expect(resolveVariantFile('auto', 'int4')).toBe('model_q4.onnx');
   });
 });

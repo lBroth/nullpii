@@ -22,9 +22,9 @@ describe('MpsBackend', () => {
 
 describe('MpsBackend integration (gated on macOS + artifacts)', () => {
   itIfMacWithArtifacts(
-    'init → infer → dispose round-trip on fp16 variant via CoreML',
+    'init → infer → dispose round-trip on int4 variant via CoreML',
     async () => {
-      const b = new MpsBackend(ARTIFACT_MODEL_DIR, 'fp16');
+      const b = new MpsBackend(ARTIFACT_MODEL_DIR, 'int4');
       await b.init();
       const seqLen = 8;
       const result = await b.infer({

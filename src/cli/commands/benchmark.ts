@@ -10,10 +10,10 @@ const RUNS = 3;
 
 const CANDIDATES: ReadonlyArray<{ backend: Exclude<BackendName, 'auto'>; variant: ModelVariant }> =
   [
-    { backend: 'cpu', variant: 'int8' },
-    { backend: 'mps', variant: 'fp16' },
-    { backend: 'cuda', variant: 'fp16' },
-    { backend: 'rocm', variant: 'fp16' },
+    { backend: 'cpu', variant: 'int4' },
+    { backend: 'mps', variant: 'int4' },
+    { backend: 'cuda', variant: 'int4' },
+    { backend: 'rocm', variant: 'int4' },
   ];
 
 export function registerBenchmark(program: Command): void {

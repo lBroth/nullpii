@@ -6,8 +6,8 @@ import cliProgress from 'cli-progress';
 import type { Command } from 'commander';
 import { ModelManager, defaultCacheDir } from '../../model-manager.js';
 
-type Variant = 'fp32' | 'fp16' | 'int8' | 'int4' | 'int4f16' | 'auto';
-const VARIANT_HELP = 'fp32 | fp16 | int8 | int4 | int4f16 | auto';
+type Variant = 'fp32' | 'int4' | 'auto';
+const VARIANT_HELP = 'fp32 | int4 | auto';
 
 export function registerModels(program: Command): void {
   const models = program.command('models').description('manage cached model artifacts');

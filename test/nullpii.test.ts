@@ -2,14 +2,14 @@
 import { describe, expect, it } from 'vitest';
 import { ModelNotInitializedError } from '../src/errors.js';
 import { NullPii } from '../src/nullpii.js';
-import { HAS_TEST_QUANTIZED, TEST_MODEL_DIR } from './_env.js';
+import { HAS_TEST_ARTIFACTS, TEST_MODEL_DIR } from './_env.js';
 
 const ARTIFACT_MODEL_DIR = TEST_MODEL_DIR;
-const itIfArtifacts = HAS_TEST_QUANTIZED ? it : it.skip;
+const itIfArtifacts = HAS_TEST_ARTIFACTS ? it : it.skip;
 
 describe('NullPii lifecycle', () => {
   it('rejects sanitize after dispose with ModelNotInitializedError', async () => {
-    const n = new NullPii({ modelDir: ARTIFACT_MODEL_DIR, backend: 'cpu', variant: 'int8' });
+    const n = new NullPii({ modelDir: ARTIFACT_MODEL_DIR, backend: 'cpu', variant: 'int4' });
     await n.dispose();
     await expect(n.sanitize('hi')).rejects.toBeInstanceOf(ModelNotInitializedError);
   });
@@ -19,7 +19,7 @@ describe('NullPii end-to-end (gated on artifacts/model)', () => {
   itIfArtifacts(
     'sanitize → restore is byte-for-byte idempotent',
     async () => {
-      const n = new NullPii({ modelDir: ARTIFACT_MODEL_DIR, backend: 'cpu', variant: 'int8' });
+      const n = new NullPii({ modelDir: ARTIFACT_MODEL_DIR, backend: 'cpu', variant: 'int4' });
       const text = 'Hi, my name is John Smith and my email is john@example.com.';
       const out = await n.sanitize(text);
       expect(out.sanitized).not.toBe(text);
@@ -34,7 +34,7 @@ describe('NullPii end-to-end (gated on artifacts/model)', () => {
   itIfArtifacts(
     'sanitize on PII-free text returns text unchanged',
     async () => {
-      const n = new NullPii({ modelDir: ARTIFACT_MODEL_DIR, backend: 'cpu', variant: 'int8' });
+      const n = new NullPii({ modelDir: ARTIFACT_MODEL_DIR, backend: 'cpu', variant: 'int4' });
       const text = 'The quick brown fox jumps over the lazy dog.';
       const out = await n.sanitize(text);
       expect(out.sanitized).toBe(text);
@@ -47,7 +47,7 @@ describe('NullPii end-to-end (gated on artifacts/model)', () => {
   itIfArtifacts(
     'init() is idempotent (concurrent calls share one promise)',
     async () => {
-      const n = new NullPii({ modelDir: ARTIFACT_MODEL_DIR, backend: 'cpu', variant: 'int8' });
+      const n = new NullPii({ modelDir: ARTIFACT_MODEL_DIR, backend: 'cpu', variant: 'int4' });
       const a = n.init();
       const b = n.init();
       // both promises resolve together — same underlying init

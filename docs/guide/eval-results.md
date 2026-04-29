@@ -14,14 +14,14 @@ over `openai/privacy-filter`. Source: `npx tsx test/backend/benchmark.ts`,
 
 | Backend | Variant | seq=128 ms | seq=256 ms | seq=512 ms |
 | ------- | ------- | ---------: | ---------: | ---------: |
-| CPU     | int8    |       24.1 |       34.5 |       57.3 |
-| MPS     | fp16    |       44.8 |       71.8 |      159.0 |
+| CPU     | int4    |       24.1 |       34.5 |       57.3 |
+| MPS     | int4    |       44.8 |       71.8 |      159.0 |
 | CUDA    | —       |   pending  |   pending  |   pending  |
 | ROCm    | —       |   pending  |   pending  |   pending  |
 
 **MPS slower than CPU** on this model — ORT's `CoreMLExecutionProvider`
 falls back to CPU mid-graph for ops it cannot service in the custom
-`OpenAIPrivacyFilterForTokenClassification` architecture. CPU + int8 is
+`OpenAIPrivacyFilterForTokenClassification` architecture. CPU + int4 is
 the recommended macOS path until upstream op coverage improves.
 
 ## How to read

@@ -112,16 +112,11 @@ Span match policy: partial-match IoU ≥ 0.5 (CoNLL/MUC standard).
 
 ## Latest run — RunPod 5090, 2026-04-28
 
-Sources:
-
-- `packages/eval/results/runpod-20260428-5090/matrix.{json,csv}` —
-  primary, latest 5090 run.
-- `packages/eval/results/runpod-20260428-medium-mixed-partial/matrix.json` —
-  earlier same-day run, used only for the `isotonic-*` rows missing
-  from the primary run.
-
+Source: `packages/eval/results/runpod-20260428-5090/matrix.{json,csv}`.
 Hardware: RTX 5090 host (CUDA mix; nullpii forced CPU due to ONNX Runtime
-Blackwell SM_120 limitation).
+Blackwell SM_120 limitation). `isotonic-*` rows come from a parallel
+mixed run on the same hardware (`runpod-20260428-medium-mixed-partial/`,
+n=8000).
 
 ### F1 by dataset × tool
 
@@ -140,13 +135,11 @@ Blackwell SM_120 limitation).
 chunking + Viterbi + recognizer + gliner zero-shot pass + regex secrets).
 The bare upstream model is shown as `openai (bare)` for reference.
 
-The `isotonic-*` rows come from the partial mixed run (same hardware,
-earlier same day, smaller `n=8000` sample). `isotonic-es` and a piiranha
-cell on `isotonic-en` are missing — pending a complete re-run. `deberta`
-wins `isotonic-en` because the Isotonic-200k English split overlaps the
-training distribution of `lakshyakh93/deberta_finetuned_pii` (English-only
-fine-tune); read it as a domain-overlap signal, not a generalization
-ranking.
+`isotonic-es` and a piiranha cell on `isotonic-en` are missing —
+pending a complete re-run. `deberta` wins `isotonic-en` because the
+Isotonic-200k English split overlaps the training distribution of
+`lakshyakh93/deberta_finetuned_pii` (English-only fine-tune); read
+it as a domain-overlap signal, not a generalization ranking.
 
 ### Throughput (samples/s, dev-prompts-synth, n=30000)
 

@@ -52,36 +52,23 @@ prompts (real-world patterns + adversarial edge cases) and 10 longer
 documents (medical records, contracts, bank statements, deposition
 transcript, multilingual itineraries). All fake.
 
-> **Important fairness note** (and a partial correction). The
-> `openai/privacy-filter` model card explicitly says inference is
-> supposed to apply a **constrained Viterbi BIOES decoder** with
-> learned transition biases. There are two ways to actually run it
-> with that decoder:
+> **How to use `openai/privacy-filter` correctly.** The model card
+> requires a constrained Viterbi BIOES decoder with learned transition
+> biases. Two paths:
 >
-> 1. **Use the official `opf` CLI** from
->    [`github.com/openai/privacy-filter`](https://github.com/openai/privacy-filter).
->    `pip install -e .` from that repo gives you `opf "Alice was born on
->    1990-01-02."`, which loads the model and applies the full Viterbi
->    decoder OpenAI ships in `opf/_core/`. This is the official path.
-> 2. **Use nullpii's runtime**, which ships its own constrained Viterbi
->    BIOES decoder over the same upstream model — the historical reason
->    nullpii is designed around `openai/privacy-filter`.
+> 1. **Official `opf` CLI** — [`github.com/openai/privacy-filter`](https://github.com/openai/privacy-filter).
+>    `pip install -e .` then `opf "Alice was born on 1990-01-02."`.
+> 2. **nullpii runtime** — same constrained Viterbi over the same
+>    upstream model, via the npm library.
 >
-> What does NOT work out of the box: the transformers integration that
-> upstream HF added recently ships only the per-token logits — no
-> Viterbi. Calling `transformers.pipeline()` with the default
-> `aggregation_strategy="simple"` therefore aggregates tokens via naive
-> same-base-label adjacency grouping (NOT BIOES-aware), and produces
-> very fragmented spans (`.com`, `+1-843-555-014` then `2`, `aitre`).
-> That is **not the model's intended output**, just what HF's default
-> does with raw logits when the Viterbi step is missing.
->
-> The bench in `qualitative_compare.py` ships an in-Python BIOES decoder
-> (`predict_openai_bioes`) that strict-parses B/I/E/S transitions on the
-> raw `argmax` outputs of the HF model. It still doesn't include the
-> learned transition biases, so it's weaker than the official `opf` /
-> nullpii Viterbi, but it respects boundaries and recovers most of the
-> model's quality. Use it as a "no extra dependency" comparison row.
+> The HF `transformers` integration ships only per-token logits — no
+> Viterbi. Calling `pipeline(..., aggregation_strategy="simple")`
+> therefore produces fragmented spans (`.com`, `+1-843-555-014` then
+> `2`, `aitre`) — not the model's intended output. The
+> `predict_openai_bioes` helper in `qualitative_compare.py` adds a
+> Python BIOES boundary parser over the raw argmax outputs; it lacks
+> the learned transition biases but recovers most of the quality
+> without extra dependencies.
 
 Headline (latency on 5090 GPU, 30 cases avg):
 

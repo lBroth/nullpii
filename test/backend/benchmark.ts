@@ -3,7 +3,8 @@
  * Multi-backend throughput benchmark on bundled artifacts.
  *
  * Run with: `npx tsx test/backend/benchmark.ts`
- * (requires `packages/convert/artifacts/model` to be present locally).
+ * (requires `$NULLPII_TEST_MODEL_DIR` to point to a local copy of the
+ * model, or the default test-artifact path under `.nullpii-test-artifacts/`).
  */
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -13,7 +14,8 @@ import { MpsBackend } from '../../src/backend/mps-backend.js';
 import type { BackendProvider, ModelVariant } from '../../src/types/index.js';
 
 const MODEL_DIR = resolve(
-  new URL('../../packages/convert/artifacts/model', import.meta.url).pathname,
+  process.env.NULLPII_TEST_MODEL_DIR ??
+    new URL('../../.nullpii-test-artifacts/model', import.meta.url).pathname,
 );
 const SEQ_LENGTHS = [128, 256, 512];
 const RUNS_PER_LEN = 3;

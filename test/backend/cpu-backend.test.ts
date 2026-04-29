@@ -7,7 +7,8 @@ import { CpuBackend } from '../../src/backend/cpu-backend.js';
 import { ModelNotFoundError, ModelNotInitializedError } from '../../src/errors.js';
 
 const ARTIFACT_MODEL_DIR = resolve(
-  new URL('../../packages/convert/artifacts/model', import.meta.url).pathname,
+  process.env.NULLPII_TEST_MODEL_DIR ??
+    new URL('../.nullpii-test-artifacts/model', import.meta.url).pathname,
 );
 const HAS_ARTIFACTS = existsSync(join(ARTIFACT_MODEL_DIR, 'onnx', 'model_quantized.onnx'));
 const itIfArtifacts = HAS_ARTIFACTS ? it : it.skip;

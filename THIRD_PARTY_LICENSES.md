@@ -4,7 +4,6 @@ Auto-collated for human review. Regenerate with:
 
 ```bash
 npx license-checker --production --excludePrivatePackages --csv > /tmp/js.csv
-cd packages/convert && .venv/bin/pip-licenses --format=csv > /tmp/py.csv
 ```
 
 ## Status legend

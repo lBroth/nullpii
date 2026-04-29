@@ -5,7 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { MpsBackend } from '../../src/backend/mps-backend.js';
 
 const ARTIFACT_MODEL_DIR = resolve(
-  new URL('../../packages/convert/artifacts/model', import.meta.url).pathname,
+  process.env.NULLPII_TEST_MODEL_DIR ??
+    new URL('../.nullpii-test-artifacts/model', import.meta.url).pathname,
 );
 const HAS_ARTIFACTS = existsSync(join(ARTIFACT_MODEL_DIR, 'onnx', 'model_fp16.onnx'));
 const IS_DARWIN = process.platform === 'darwin';

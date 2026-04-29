@@ -1,6 +1,6 @@
 # NULLPII
 
-Open-source npm library (Apache 2.0) that sanitizes PII from LLM prompts using `openai/privacy-filter` locally, with a reversible vault to restore original values in LLM responses. Multi-backend: CPU, MPS, CUDA, ROCm.
+Open-source npm library (Apache 2.0) that sanitizes PII from LLM prompts using `openai/privacy-filter` locally, with a reversible vault to restore original values in LLM responses. Backends: CPU, MPS, CUDA.
 
 ## Commands
 
@@ -20,7 +20,6 @@ nullpii                     → core API (sanitize/restore/types/errors)
 nullpii/backend/cpu         → CpuBackend (onnxruntime-node)
 nullpii/backend/mps         → MpsBackend (CoreMLExecutionProvider)
 nullpii/backend/cuda        → CudaBackend
-nullpii/backend/rocm        → RocmBackend
 ```
 
 `onnxruntime-node` is the only optional peerDependency for runtime.
@@ -31,9 +30,8 @@ Internal source layout (strict, no circular):
 
 ```
 src/types/* → src/{errors,labels-bioes,paths,tokenizer,viterbi}.ts
-            → src/backend/{ort-backend,variant,fs}.ts
-            → src/backend/{cpu,mps,cuda,rocm}-backend.ts
-            → src/middleware/* → src/cli/*
+            → src/backend/{ort-backend,variant}.ts
+            → src/backend/{cpu,mps,cuda}-backend.ts → src/cli/*
 ```
 
 - **PII detection**: ML model only, no regex

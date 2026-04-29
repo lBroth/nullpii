@@ -4,18 +4,10 @@ build/
 coverage/
 .turbo/
 .cache/
-
-# typescript incremental
 *.tsbuildinfo
 
-# vitepress
-docs/.vitepress/dist/
-docs/.vitepress/cache/
-
-# models / artifacts
+# models / artifacts (large, regenerable)
 models/
-packages/convert/artifacts/*
-!packages/convert/artifacts/.gitkeep
 *.onnx
 *.onnx_data*
 *.mlpackage/
@@ -36,9 +28,8 @@ __pycache__/
 # env / secrets
 .env
 .env.*
-!.env.example
 
-# runpod transient state (pod_id + ssh coords)
+# runpod transient state
 .runpod-state
 
 # editor / OS
@@ -54,18 +45,22 @@ npm-debug.log*
 # tmp
 tmp/
 
-# eval results — bench artifacts (full-bench.json, *.log) are large and
-# regenerable; numbers ship in docs/guide/eval-results.md instead.
+# eval results — large and regenerable; numbers ship in EVAL_RESULTS.md
 packages/eval/results/
 
-# bench scripts + tests — internal, not yet public release
+# eval scripts + tests — internal research kit, not part of npm publish
 packages/eval/scripts/
 packages/eval/tests/
 
-# sub-package lockfiles leak the dev's private registry URLs
-# (popgrinder CodeArtifact); root lockfile is the single source of truth
+# sub-package lockfiles leak dev registry URLs; root lockfile is canonical
 packages/*/package-lock.json
 
+# Claude Code session state
 .claude/
+
+# generated SBOM
 bom.json
 bom.xml
+
+# generated test artifacts
+.nullpii-test-artifacts/

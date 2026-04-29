@@ -25,6 +25,40 @@ const log = debug('nullpii:proxy');
 const UPSTREAM_HOST = 'api.anthropic.com';
 const UPSTREAM_PORT = 443;
 const SANITIZE_PATHS = new Set(['/v1/messages']);
+const ISSUES_URL = 'https://github.com/lBroth/nullpii/issues';
+
+interface ProxyErrorBody {
+  type: 'error';
+  error: { type: string; message: string };
+}
+
+/**
+ * Build an Anthropic-shaped error envelope. Claude Code (and any
+ * Anthropic SDK) renders `error.message` directly to the user, so we
+ * pack a one-line cause + a hint + the issue tracker URL into the
+ * message itself.
+ */
+function buildProxyError(kind: string, cause: string, hint: string): ProxyErrorBody {
+  const link = `${ISSUES_URL}?labels=proxy&title=${encodeURIComponent(`[proxy] ${kind}: ${cause}`)}`;
+  const message = `[nullpii ${kind}] ${cause}\n\nWhat to try: ${hint}\n\nIf this keeps happening, open an issue: ${link}`;
+  return { type: 'error', error: { type: 'nullpii_proxy_error', message } };
+}
+
+function sendProxyError(
+  res: ServerResponse,
+  status: number,
+  kind: string,
+  cause: string,
+  hint: string,
+): void {
+  if (res.headersSent) return;
+  const body = JSON.stringify(buildProxyError(kind, cause, hint));
+  res.writeHead(status, {
+    'content-type': 'application/json',
+    'content-length': String(Buffer.byteLength(body)),
+  });
+  res.end(body);
+}
 
 interface SanitizedConversation {
   readonly sessionId: string;
@@ -34,13 +68,18 @@ interface SanitizedConversation {
  * succeeds. Caller is responsible for SIGTERM/SIGINT handling. */
 export function startProxy(engine: NullPii, port: number): Promise<{ close: () => Promise<void> }> {
   return new Promise((resolve, reject) => {
+    const state = { sanitize: true };
     const server = httpServer((req, res) => {
-      handleRequest(engine, req, res).catch((err) => {
+      if (handleControl(state, req, res)) return;
+      handleRequest(engine, state, req, res).catch((err) => {
         log('handler crashed: %o', err);
-        if (!res.headersSent) {
-          res.writeHead(500, { 'content-type': 'application/json' });
-          res.end(JSON.stringify({ error: { message: `proxy crashed: ${asMessage(err)}` } }));
-        }
+        sendProxyError(
+          res,
+          500,
+          'crashed',
+          asMessage(err),
+          'restart the daemon: pkill -f "nullpii.*serve"; rm -f ~/.cache/nullpii/plugin/daemon-*.json — then relaunch Claude Code',
+        );
       });
     });
     server.on('error', reject);
@@ -56,14 +95,46 @@ export function startProxy(engine: NullPii, port: number): Promise<{ close: () =
   });
 }
 
+interface ProxyState {
+  sanitize: boolean;
+}
+
+function handleControl(state: ProxyState, req: IncomingMessage, res: ServerResponse): boolean {
+  const url = new URL(req.url ?? '/', 'http://localhost');
+  if (!url.pathname.startsWith('/control/')) return false;
+  const method = req.method ?? 'GET';
+  res.setHeader('content-type', 'application/json');
+  if (url.pathname === '/control/status' && method === 'GET') {
+    res.statusCode = 200;
+    res.end(JSON.stringify({ sanitize: state.sanitize }));
+    return true;
+  }
+  if (url.pathname === '/control/on' && method === 'POST') {
+    state.sanitize = true;
+    res.statusCode = 200;
+    res.end(JSON.stringify({ sanitize: true }));
+    return true;
+  }
+  if (url.pathname === '/control/off' && method === 'POST') {
+    state.sanitize = false;
+    res.statusCode = 200;
+    res.end(JSON.stringify({ sanitize: false }));
+    return true;
+  }
+  res.statusCode = 404;
+  res.end(JSON.stringify({ error: 'unknown control endpoint' }));
+  return true;
+}
+
 async function handleRequest(
   engine: NullPii,
+  state: ProxyState,
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
   const method = req.method ?? 'GET';
   const url = new URL(req.url ?? '/', 'http://localhost');
-  const sanitizable = method === 'POST' && SANITIZE_PATHS.has(url.pathname);
+  const sanitizable = state.sanitize && method === 'POST' && SANITIZE_PATHS.has(url.pathname);
 
   const inboundBody = await readAll(req);
   let sanitizedBody = inboundBody;
@@ -77,8 +148,17 @@ async function handleRequest(
       // Streaming is now supported — see handleSseStream below.
       sanitizedBody = Buffer.from(JSON.stringify(parsed));
     } catch (err) {
-      log('inbound parse failed, forwarding as-is: %o', err);
-      sanitizedBody = inboundBody;
+      // Sanitization failure must FAIL CLOSED. Forwarding the original
+      // body would leak the PII the user expected us to redact.
+      log('sanitize failed, blocking request: %o', err);
+      sendProxyError(
+        res,
+        502,
+        'sanitize',
+        asMessage(err),
+        'the model failed to load or process the prompt. Try /nullpii restart, or switch variant: /nullpii variant int4f16 for a smaller/faster model.',
+      );
+      return;
     }
   }
 
@@ -94,19 +174,25 @@ async function handleRequest(
     (upRes) => {
       handleUpstreamResponse(engine, convo, upRes, res).catch((err) => {
         log('upstream handler crashed: %o', err);
-        if (!res.headersSent) {
-          res.writeHead(502, { 'content-type': 'application/json' });
-          res.end(JSON.stringify({ error: { message: `proxy upstream: ${asMessage(err)}` } }));
-        }
+        sendProxyError(
+          res,
+          502,
+          'response',
+          asMessage(err),
+          'check internet + Anthropic status. If response was compressed unexpectedly, the proxy strips Accept-Encoding upstream — verify daemon is at the latest plugin version.',
+        );
       });
     },
   );
   upReq.on('error', (err) => {
     log('upstream connect failed: %o', err);
-    if (!res.headersSent) {
-      res.writeHead(502, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ error: { message: `proxy connect: ${err.message}` } }));
-    }
+    sendProxyError(
+      res,
+      502,
+      'connect',
+      err.message,
+      'check internet + DNS. If you set ANTHROPIC_BASE_URL but the proxy is down, run /nullpii status to verify the daemon is alive on port 7330.',
+    );
   });
   upReq.write(sanitizedBody);
   upReq.end();
@@ -169,6 +255,7 @@ async function handleUpstreamResponse(
   for (const [k, v] of Object.entries(upRes.headers)) {
     const lower = k.toLowerCase();
     if (lower === 'content-length' || lower === 'transfer-encoding') continue;
+    if (lower === 'content-encoding') continue;
     headers[k] = v;
   }
 
@@ -258,10 +345,15 @@ function filterRequestHeaders(
     if (v === undefined) continue;
     const lower = k.toLowerCase();
     if (lower === 'host' || lower === 'content-length' || lower === 'connection') continue;
+    if (lower === 'accept-encoding') continue;
     out[k] = v;
   }
   out.host = UPSTREAM_HOST;
   out['content-length'] = String(contentLength);
+  // Force identity so we never have to decode gzip/brotli before
+  // restoring placeholders. Compression below the proxy is pointless
+  // anyway — loopback to upstream is plaintext.
+  out['accept-encoding'] = 'identity';
   return out;
 }
 
@@ -305,6 +397,7 @@ function handleSseStream(
     for (const [k, v] of Object.entries(upRes.headers)) {
       const lower = k.toLowerCase();
       if (lower === 'content-length' || lower === 'transfer-encoding') continue;
+      if (lower === 'content-encoding') continue;
       headers[k] = v;
     }
     res.writeHead(upRes.statusCode ?? 500, headers);

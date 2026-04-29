@@ -1,11 +1,14 @@
 {
   "name": "nullpii",
+  "version": "0.0.18",
   "description": "Manage the local nullpii daemon + HTTP proxy. Sanitizes Anthropic API requests via ANTHROPIC_BASE_URL=http://localhost:7330.",
   "author": {
     "name": "nullpii",
     "url": "https://github.com/lBroth/nullpii"
   },
-  "version": "0.0.20",
+  "homepage": "https://github.com/lBroth/nullpii",
+  "license": "Apache-2.0",
+  "keywords": ["pii", "privacy", "redaction", "local", "onnx"],
   "hooks": {
     "SessionStart": [
       {

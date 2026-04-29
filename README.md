@@ -131,7 +131,7 @@ Requires **Node 24 LTS** (see `.nvmrc`).
 | Backend | Platform              | Notes                                              |
 | ------- | --------------------- | -------------------------------------------------- |
 | `cpu`   | All                   | Universal. Currently fastest on macOS.             |
-| `mps`   | Apple Silicon         | CoreML EP; partial op coverage — see BENCHMARK.md. |
+| `mps`   | Apple Silicon         | CoreML EP; partial op coverage — see `docs/guide/eval-results.md`. |
 | `cuda`  | Linux/Windows + NVIDIA| Tensor cores on Volta+. CUDA EP via ORT.           |
 | `rocm`  | Linux + AMD           | MFMA on RDNA3+ / CDNA. ROCm EP via ORT.            |
 

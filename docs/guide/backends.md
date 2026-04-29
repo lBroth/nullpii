@@ -3,7 +3,7 @@
 | Backend | Platform              | Default variant | Notes                                              |
 | ------- | --------------------- | --------------- | -------------------------------------------------- |
 | `cpu`   | All                   | `fp16`          | Universal. F1-equivalent to fp32, ~3× faster.      |
-| `mps`   | Apple Silicon         | `fp16`          | CoreML EP; partial op coverage — see BENCHMARK.md. |
+| `mps`   | Apple Silicon         | `fp16`          | CoreML EP; partial op coverage — see [Eval results / Backend latency](/guide/eval-results). |
 | `cuda`  | Linux/Windows + NVIDIA| `fp16`          | Tensor cores on Volta+. CUDA EP via ORT.           |
 | `rocm`  | Linux + AMD           | `fp16`          | MFMA on RDNA3+ / CDNA. ROCm EP via ORT.            |
 

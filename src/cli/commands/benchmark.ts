@@ -13,7 +13,6 @@ const CANDIDATES: ReadonlyArray<{ backend: Exclude<BackendName, 'auto'>; variant
     { backend: 'cpu', variant: 'int4' },
     { backend: 'mps', variant: 'int4' },
     { backend: 'cuda', variant: 'int4' },
-    { backend: 'rocm', variant: 'int4' },
   ];
 
 export function registerBenchmark(program: Command): void {

@@ -7,7 +7,7 @@ npm install nullpii onnxruntime-node
 ```
 
 `onnxruntime-node` is an **optional** peer dependency. Install it only if
-you need a Node-side backend (CPU / MPS / CUDA / ROCm).
+you need a Node-side backend (CPU / MPS / CUDA).
 
 ::: tip Node version
 nullpii requires **Node 24 LTS** or later. See `.nvmrc`.
@@ -56,7 +56,7 @@ and produces character-level spans against your original input.
 
 ## Choosing a backend
 
-`{ backend: 'auto' }` (the default) picks **CUDA → MPS → ROCm → CPU**,
+`{ backend: 'auto' }` (the default) picks **CUDA → MPS → CPU**,
 in that priority. To pin one explicitly:
 
 ```ts

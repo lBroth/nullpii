@@ -10,7 +10,7 @@ afterEach(() => {
 
 describe('selectBackend (auto)', () => {
   it('picks CPU when no GPU backend is available', async () => {
-    // On macOS in this test env: CUDA → false, MPS → may be true, ROCm → false, CPU → true
+    // On macOS in this test env: CUDA → false, MPS → may be true, CPU → true
     // We force MPS unavailable by clearing platform check via vi.spyOn
     const backend = await selectBackend('/nonexistent', { backend: 'auto' });
     expect(['cpu', 'mps']).toContain(backend.name);

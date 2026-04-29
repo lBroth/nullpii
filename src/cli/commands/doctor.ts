@@ -5,7 +5,6 @@ import chalk from 'chalk';
 import type { Command } from 'commander';
 import { CudaBackend } from '../../backend/cuda-backend.js';
 import { MpsBackend } from '../../backend/mps-backend.js';
-import { RocmBackend } from '../../backend/rocm-backend.js';
 import { ModelManager, defaultCacheDir } from '../../model-manager.js';
 
 export function registerDoctor(program: Command): void {
@@ -82,7 +81,6 @@ async function checkBackends(): Promise<boolean> {
     ['cpu (always)', () => Promise.resolve(true)],
     ['mps (Apple)', () => new MpsBackend('/').isAvailable()],
     ['cuda (NVIDIA)', () => new CudaBackend('/').isAvailable()],
-    ['rocm (AMD)', () => new RocmBackend('/').isAvailable()],
   ];
   let any = false;
   for (const [label, probe] of probes) {

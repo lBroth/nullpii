@@ -17,7 +17,6 @@ over `openai/privacy-filter`. Source: `npx tsx test/backend/benchmark.ts`,
 | CPU     | int4    |       24.1 |       34.5 |       57.3 |
 | MPS     | int4    |       44.8 |       71.8 |      159.0 |
 | CUDA    | —       |   pending  |   pending  |   pending  |
-| ROCm    | —       |   pending  |   pending  |   pending  |
 
 **MPS slower than CPU** on this model — ORT's `CoreMLExecutionProvider`
 falls back to CPU mid-graph for ops it cannot service in the custom

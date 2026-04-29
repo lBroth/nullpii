@@ -13,7 +13,7 @@ export function registerSanitize(program: Command): void {
     .option('--format <fmt>', 'output format: pretty | json', 'pretty')
     .option('--session <id>', 'reuse an existing vault session id')
     .option('--model-dir <path>', 'use a local model directory (skip download)')
-    .option('--backend <name>', 'force backend: cpu | mps | cuda | rocm | auto')
+    .option('--backend <name>', 'force backend: cpu | mps | cuda | auto')
     .option('--variant <v>', 'fp32 | int4 | auto')
     .action(
       async (

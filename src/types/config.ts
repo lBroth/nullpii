@@ -4,7 +4,7 @@ import type { Recognizer } from './recognizer.js';
 import type { TransitionBiases } from './transition-biases.js';
 
 /** Hardware/runtime backends the library can dispatch to. */
-export type BackendName = 'cpu' | 'mps' | 'cuda' | 'rocm' | 'auto';
+export type BackendName = 'cpu' | 'mps' | 'cuda' | 'auto';
 
 /**
  * ONNX model variant the backend will load.

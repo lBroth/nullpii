@@ -1,9 +1,11 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "outDir": "dist",
-    "rootDir": "src"
+    "noEmit": true,
+    "paths": {
+      "nullpii": ["./src/index.ts"]
+    }
   },
-  "include": ["src/**/*"],
-  "exclude": ["dist", "node_modules", "test", "packages"]
+  "include": ["src/**/*", "test/**/*", "packages/recognizers-*/src/**/*"],
+  "exclude": ["dist", "node_modules", "packages/eval", "examples"]
 }

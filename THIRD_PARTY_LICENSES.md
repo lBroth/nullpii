@@ -24,12 +24,10 @@ Any ⛔ blocks release.
 ## JavaScript runtime — `dependencies` + reachable peer transitive (41)
 
 The list end-users actually receive when they `npm install nullpii`,
-plus the optional peers `onnxruntime-node`, `@anthropic-ai/sdk`,
-`@anthropic-ai/sdk`. **100% permissive.** Zero LGPL.
+plus the optional peer `onnxruntime-node`. **100% permissive.** Zero LGPL.
 
 | Package                                          | License             | Status |
 | ------------------------------------------------ | ------------------- | ------ |
-| `@anthropic-ai/sdk@0.91.1`                       | MIT                 | ✅     |
 | `@anush008/tokenizers@0.6.0`                     | MIT                 | ✅     |
 | `@anush008/tokenizers-darwin-universal@0.6.0`    | MIT                 | ✅     |
 | `@babel/runtime@7.29.2`                          | MIT                 | ✅     |

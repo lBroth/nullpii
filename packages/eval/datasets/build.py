@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: Apache-2.0
 """Build JSONL datasets from `<locale>-templates.txt` template files.
 
 Template format: one prompt per line. PII spans are wrapped as

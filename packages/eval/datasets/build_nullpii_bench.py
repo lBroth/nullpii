@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: Apache-2.0
 """Merge per-locale bundled datasets + adversarial + long-prompts into a
 single `nullpii-bench.jsonl` shareable dataset.
 

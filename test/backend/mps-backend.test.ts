@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from 'vitest';
 import { MpsBackend } from '../../src/backend/mps-backend.js';
 import { HAS_TEST_ARTIFACTS, TEST_MODEL_DIR } from '../_env.js';

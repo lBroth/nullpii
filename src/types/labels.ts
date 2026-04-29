@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
-
 /**
  * Ordered tuple of every PII label produced by `openai/privacy-filter`.
  * The 8 categories are exactly those documented in the upstream model card,

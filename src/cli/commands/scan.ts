@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import chalk from 'chalk';
 import type { Command } from 'commander';
 import { NullPii } from '../../nullpii.js';

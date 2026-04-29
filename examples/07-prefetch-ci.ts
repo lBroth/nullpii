@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import { ModelManager } from '../src/index.js';
 
 // Run during CI / Docker build to bake the model into the image.

@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: Apache-2.0
 """Tool adapters: each takes `text` and returns a list of `Span`.
 
 The nullpii adapter spawns a long-running `nullpii serve` process and

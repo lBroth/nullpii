@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: Apache-2.0
 """Loaders for public NER / PII benchmarks.
 
 Each loader returns `(samples, citation)` where samples is a list of

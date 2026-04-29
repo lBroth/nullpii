@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import type { EncodeResult } from './tokenizer.js';
 import type { PiiSpan } from './types/index.js';
 

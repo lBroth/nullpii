@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from 'vitest';
 import { ModelNotInitializedError } from '../src/errors.js';
 import { NullPii } from '../src/nullpii.js';

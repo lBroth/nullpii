@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 //
 // Public API surface. Internal modules (`labels-bioes`, `viterbi`,
 // `span-decoder`, `tokenizer`, `hf-hub`) are deliberately not re-exported.

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import { PII_LABELS, type PiiCategory } from './types/index.js';
 
 /** BIOES tag of a label. `O` = outside any span. */

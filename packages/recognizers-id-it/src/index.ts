@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import type { Recognizer } from 'nullpii';
 
 const ODD_VALUES: Readonly<Record<string, number>> = {

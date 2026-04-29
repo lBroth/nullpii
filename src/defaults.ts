@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 //
 // Single source of truth for every user-facing default in nullpii.
 // Adding a new default? Put it here. Reading a default elsewhere? Import

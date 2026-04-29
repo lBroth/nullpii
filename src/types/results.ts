@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import type { PiiSpan } from './spans.js';
 
 /**

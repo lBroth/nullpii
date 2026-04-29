@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import { join } from 'node:path';
 import { type InferenceSession, InferenceSession as Session, Tensor } from 'onnxruntime-node';
 import { ONNX_SUBDIR } from '../defaults.js';

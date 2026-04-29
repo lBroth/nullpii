@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: Apache-2.0
 """Span-level precision / recall / F1 with exact or partial (IoU) matching."""
 from __future__ import annotations
 

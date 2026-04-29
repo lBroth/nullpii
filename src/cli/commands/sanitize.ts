@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import { readFileSync } from 'node:fs';
 import chalk from 'chalk';
 import type { Command } from 'commander';

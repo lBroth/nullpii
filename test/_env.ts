@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 //
 // Single point for environment-driven test gating. Tests that need a
 // local copy of `openai/privacy-filter` look here for the path + a

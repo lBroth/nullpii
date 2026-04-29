@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import { existsSync, statSync } from 'node:fs';
 import { freemem, totalmem } from 'node:os';
 import chalk from 'chalk';

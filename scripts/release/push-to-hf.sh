@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: Apache-2.0
 #
 # One-shot publish of the nullpii fine-tune (PT + ONNX FP32 + ONNX INT4 +
 # tokenizer + model card) to HuggingFace Hub.

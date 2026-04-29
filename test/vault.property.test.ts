@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 import * as fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import type { PiiCategory, PiiSpan } from '../src/types/index.js';

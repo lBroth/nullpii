@@ -1,3 +1,4 @@
+import { writeSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import chalk from 'chalk';
 import type { Command } from 'commander';
@@ -54,6 +55,13 @@ export function registerScan(program: Command): void {
 
 async function runNdjson(engine: NullPii): Promise<void> {
   const rl = createInterface({ input: process.stdin, crlfDelay: Number.POSITIVE_INFINITY });
+  // `process.stdout.write` is block-buffered when piped (~64KB), so the
+  // Python bench harness blocks on readline() and the subprocess looks
+  // hung even though it's still inferring. `fs.writeSync(1, ...)` calls
+  // write(2) directly on the stdout fd — synchronous, unbuffered.
+  const writeLine = (s: string): void => {
+    writeSync(1, s);
+  };
   for await (const line of rl) {
     const trimmed = line.trim();
     if (!trimmed) continue;
@@ -61,17 +69,15 @@ async function runNdjson(engine: NullPii): Promise<void> {
     try {
       payload = JSON.parse(trimmed);
     } catch (e) {
-      process.stdout.write(
-        `${JSON.stringify({ error: `invalid json: ${(e as Error).message}` })}\n`,
-      );
+      writeLine(`${JSON.stringify({ error: `invalid json: ${(e as Error).message}` })}\n`);
       continue;
     }
     const text = payload.text;
     if (typeof text !== 'string') {
-      process.stdout.write(`${JSON.stringify({ error: 'missing text field' })}\n`);
+      writeLine(`${JSON.stringify({ error: 'missing text field' })}\n`);
       continue;
     }
     const result = await engine.sanitize(text);
-    process.stdout.write(`${JSON.stringify({ spans: result.spans })}\n`);
+    writeLine(`${JSON.stringify({ spans: result.spans })}\n`);
   }
 }

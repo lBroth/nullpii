@@ -31,49 +31,76 @@ datasets:
 [![npm](https://img.shields.io/npm/v/nullpii?color=cb3837)](https://www.npmjs.com/package/nullpii)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-> **A study + reproducibility kit.** What does it cost — in F1, latency, and engineering — to replace the well-known `openai/privacy-filter` (1.5B, gpt-oss style) with a fine-tuned, much smaller `urchade/gliner_multi_pii-v1` (278M, older) on the same PII detection task?
+> **What this is.** Two independent deliverables packaged together with an honest evaluation. Read the limitations before quoting any number.
 >
-> **TL;DR**: a 2-round fine-tune lifts GLiNER from 0.46–0.51 multilingual F1 to **0.93–0.97 (en/de/fr/it)** at ~14 ms/sample on a 5090 GPU and ~125 ms/sample on a Mac CPU. ONNX INT4 (`MatMulNBitsQuantizer`, 844 MB) keeps the F1 but only saves memory, not latency. ONNX CPU on Apple Silicon is ~25× faster than ONNX CPU on Linux x86 for this model. INT8 dynamic quant collapses (avoid).
+> 1. **npm library** — `nullpii` on npm. Wraps `openai/privacy-filter` (1.5B) with the constrained Viterbi BIOES decoder, chunking, regex recognizers, and a reversible in-memory vault. Independent of the fine-tuned model below.
+> 2. **HuggingFace model** — `lBroth/nullpii` on HF. A separate fine-tune of `urchade/gliner_multi_pii-v1` (278M). Useful as a smaller, drop-in detector. **Not used by the npm library.**
 >
-> **The openai/privacy-filter caveat**: per its model card, inference is supposed to apply a constrained Viterbi BIOES decoder; the upstream `transformers` integration ships only per-token logits. Calling `transformers.pipeline()` with default `aggregation_strategy="simple"` therefore produces fragmented spans (`.com`, `+1-843-555-014` then `2`, `aitre`). That is **not the model's intended quality** — just naive HF usage. To get its real output you need either (a) the official [`opf` CLI](https://github.com/openai/privacy-filter), (b) nullpii's npm runtime which ships the constrained Viterbi, or (c) the small Python BIOES decoder in `packages/eval/scripts/bench_openai_decoders.py` that recovers most of the gap with no extra dependency.
+> **Headline finding (validated)**: HF `transformers.pipeline()` with the default `aggregation_strategy="simple"` *does not implement* the constrained Viterbi BIOES decoder that `openai/privacy-filter`'s model card prescribes. Naive HF usage produces fragmented spans (`.com`, `+1-843-555-014` then `2`, `aitre`). The official [`opf` CLI](https://github.com/openai/privacy-filter) ships the real decoder; calling it via `opf._api.OPF` recovers ~+0.30 F1 on `nullpii-bench`. **This is the most honest, reproducible result in this repo.**
+>
+> **Headline finding (qualified)**: A 2-round fine-tune of GLiNER on a subset of `ai4privacy/pii-masking-300k` + `Isotonic/pii-masking-200k` improves F1 substantially on **held-out splits** of those same datasets (overnight bench in flight). The earlier preview "0.93–0.97 multilingual F1" was measured **on the training distribution** (same dataset slices the model was trained on) — that is memorization, not generalization. Headline numbers are being re-measured on `*-heldout` splits drawn from rows the model never saw; those are the only fine-tune numbers worth quoting.
 
 ## What's in this repo
 
-Two deliverables and the experiment that produced them:
+Two **independent** deliverables and the eval kit:
 
-1. **npm library** — `nullpii` (this package). Sanitize / restore engine over `openai/privacy-filter` with the constrained Viterbi BIOES decoder + chunking + recognizer post-pass + reversible vault. CLI binary `nullpii sanitize|restore|scan|benchmark|...` plus a TS API (`sanitize()`, `restore()`, `NullPii` class).
-2. **HuggingFace model** — [`lBroth/nullpii`](https://huggingface.co/lBroth/nullpii). GLiNER fine-tune in PT FP32, ONNX FP32 and ONNX INT4 variants. Use the standard `gliner.GLiNER.from_pretrained(...)` API.
-3. **Reproducibility kit** — `packages/eval/` with the bench harness, dataset loaders (ai4privacy, Isotonic, project-bundled `nullpii-bench`, plant-and-detect Enron / StackOverflow / The-Stack), training scripts, and comparison results.
+1. **npm library** — `nullpii` (this package). Sanitize / restore engine over `openai/privacy-filter` with the constrained Viterbi BIOES decoder + chunking + recognizer post-pass + reversible vault. CLI binary `nullpii sanitize|restore|scan|benchmark|...` plus a TS API (`sanitize()`, `restore()`, `NullPii` class). Does **not** depend on the fine-tuned HF model below.
+2. **HuggingFace model** — [`lBroth/nullpii`](https://huggingface.co/lBroth/nullpii). GLiNER fine-tune in PT FP32, ONNX FP32 and ONNX INT4 variants. Standalone — use via `gliner.GLiNER.from_pretrained(...)`. Does **not** depend on the npm library.
+3. **Reproducibility kit** — `packages/eval/` with the bench harness, dataset loaders (held-out splits supported), training scripts, and comparison results.
+
+## Honest limitations (read this first)
+
+Past versions of this README quoted "0.93–0.97 multilingual F1" as a headline. Those numbers were measured on the same dataset slices the model was fine-tuned on (`isotonic-{en,de,fr,it}` and `ai4privacy-300k`, first N rows). That is **memorization measurement, not generalization**. The current overnight bench replaces those numbers with measurements on **held-out** splits (`*-heldout`, drawn from rows after the training cut at `ai4privacy[100000:]` and `isotonic[200000:]`).
+
+Other limitations the previous version hid:
+
+- **No `opf` CLI baseline.** The phrase "openai (proper Viterbi)" appeared in old tables next to `—` cells: we never ran the real reference. The `openai-bioes` row was a hand-rolled approximation (greedy, no transition costs), not the upstream Viterbi. The current bench includes `openai-official` (the actual `opf._api.OPF` Python API). Old `openai-bioes` numbers should be discarded.
+- **`dev-prompts-synth` is a self-graded test.** The generator (10 hand-written templates) is ours, and 30k samples from it were mixed into round-2 training. Benchmarking on it tests recall of training distribution, not detection capability. Dropped from the headline; kept only as a regression sentinel.
+- **WikiAnn schema mismatch.** PER → `private_person`, LOC → `private_address` is a loose mapping. Numbers should be read as a non-Latin transfer signal (es/zh/ja), not absolute PII F1.
+- **No statistical tests in published numbers yet.** Single-seed benches at fixed `n`. Bootstrap CI + multi-seed are pending; numbers below are point estimates only.
+- **`enron-planted`, `stackoverflow-planted`, `thestack-planted`, `conll2003` loaders are broken on the open-data path** (mirrors removed/renamed/gated). The "real-text + planted PII" generalization datasets are not available to us right now; the only true OOD row is `nullpii-bench` (264 samples, project-bundled). Pending fix.
+- **Two independent deliverables, not one study.** The npm library wraps `openai/privacy-filter` (1.5B). The HF model is the GLiNER fine-tune (278M). They share a repo, an evaluation kit, and a license — that is all. The "unified study" framing in older versions was post-hoc.
 
 ## Headline comparison
 
-Multilingual F1, IoU ≥ 0.5. **Numbers update progressively as the overnight Mac CPU bench completes** — cells marked `N/D` are queued. Source: `packages/eval/results/openai_decoders.json` (openai-* rows, n=200 cap, fresh) + `packages/eval/results/train/variant_bench_v2.json` (nullpii-* rows, n=100 cap, preview).
+F1, IoU ≥ 0.5. **Numbers update progressively as the overnight bench completes**; this section will be rewritten end-to-end when the run finishes (`packages/eval/results/mac-overnight-20260430-v2/matrix.json`).
 
-| Dataset                  | baseline GLiNER | **nullpii PT FP32** | nullpii ONNX INT4 | openai (BIOES decoder) | openai (HF naive) |
-| ------------------------ | --------------: | ------------------: | ----------------: | ---------------------: | ----------------: |
-| isotonic-en              |          0.462¹ |              0.951¹ |        **0.961¹** |                  0.527 |             0.374 |
-| isotonic-de              |          0.497¹ |              0.932¹ |        **0.939¹** |                  0.541 |             0.383 |
-| isotonic-fr              |          0.471¹ |              0.947¹ |        **0.967¹** |                  0.538 |             0.375 |
-| isotonic-it              |          0.509¹ |              0.938¹ |        **0.959¹** |                  0.537 |             0.371 |
-| ai4privacy-300k          |          0.309¹ |              0.800¹ |        **0.864¹** |                  0.236 |             0.129 |
-| nullpii-bench            |             N/D |                 N/D |               N/D |              **0.737** |             0.458 |
-| dev-prompts-synth²       |          0.618¹ |              0.821¹ |             0.801¹ |                    N/D |               N/D |
-| wikiann-es³              |             N/D |                 N/D |               N/D |                    N/D |               N/D |
-| wikiann-zh³              |             N/D |                 N/D |               N/D |                    N/D |               N/D |
-| wikiann-ja³              |             N/D |                 N/D |               N/D |                    N/D |               N/D |
+The columns under headline are **held-out** (suffix `-heldout`): never seen at training time. Training-distribution rows live in the appendix below as a regression sentinel only.
 
-¹ Preview-grade (n=100, single seed). Full-bench numbers (n=5000) land progressively as the Mac overnight run finishes. ² See "Dataset taxonomy" below — `dev-prompts-synth` is training-overlap. ³ WikiAnn is PER/LOC/ORG NER, not PII; `PER → private_person`, `LOC → private_address` is a loose schema match. Read the row as a non-Latin transfer signal (es/zh/ja), not an absolute F1.
+| Dataset                  | baseline GLiNER | **nullpii PT FP32** | nullpii ONNX INT4 | openai (official Viterbi) | openai (HF naive) |
+| ------------------------ | --------------: | ------------------: | ----------------: | ------------------------: | ----------------: |
+| nullpii-bench (n=264)    |             N/D |                 N/D |               N/D |                       N/D |             0.458 |
+| ai4privacy-heldout       |             N/D |                 N/D |               N/D |                       N/D |               N/D |
+| isotonic-en-heldout      |             N/D |                 N/D |               N/D |                       N/D |               N/D |
+| isotonic-de-heldout      |             N/D |                 N/D |               N/D |                       N/D |               N/D |
+| isotonic-fr-heldout      |             N/D |                 N/D |               N/D |                       N/D |               N/D |
+| isotonic-it-heldout      |             N/D |                 N/D |               N/D |                       N/D |               N/D |
 
-### Dataset taxonomy
+### Appendix — training-overlap rows (regression check, NOT generalization)
 
-The bench mixes datasets the model **was trained on** with datasets it has **never seen**. Reading the rows requires keeping these straight.
+These rows are kept to confirm the fine-tune did not collapse on its training data. They are **not** evidence of generalization. Do not quote them as headline numbers.
 
-- **`dev-prompts-synth` is ours, not public.** Generated in-process by `_generate_dev_prompts` in `packages/eval/src/nullpii_eval/public_datasets.py`: 10 hand-written templates (AWS key, phone, JWT, email, …), PII planted at known positions via `_DEV_PROMPT_SYNTH` faker functions, stable RNG seed `2026`, Apache 2.0. No HF download, zero IO.
-- **Critical caveat**: round 2 of the fine-tune added 30k samples from this same generator to the training mix (it had to, because round 1 regressed on it). Benching on `dev-prompts-synth` therefore tests training-distribution recall, **not** generalization. Treat it as a regression check.
-- **Generalization rows** (out-of-distribution, never-seen): `nullpii-bench`, `enron-planted`, `stackoverflow-planted`, `thestack-planted`, `wikiann-{es,zh,ja}`, `conll2003`. These are the rows that say something honest about the model's transfer.
-- **Training-overlap rows**: `dev-prompts-synth`, `ai4privacy-300k` (training set), `isotonic-{en,de,fr,it}` (training set). Strong numbers here are necessary but not sufficient.
+| Dataset                       | nullpii PT FP32 | nullpii ONNX INT4 | openai (official Viterbi) |
+| ----------------------------- | --------------: | ----------------: | ------------------------: |
+| ai4privacy-traindist          |             N/D |               N/D |                       N/D |
+| isotonic-en-traindist         |             N/D |               N/D |                       N/D |
 
-`COMPARISONS.md` carries the full multi-platform tables, the in-Python BIOES decoder used to recover most of the openai/privacy-filter quality without extra deps, and the qualitative comparison (`packages/eval/results/train/qualitative_compare.md`) over 30 real prompts (medical records, contracts, multilingual itineraries, GitHub issues from openai/privacy-filter, JP/CN/KR cases that surface known non-Latin gaps).
+### Appendix — loose-schema rows (WikiAnn PER/LOC, not PII)
+
+PER → `private_person`, LOC → `private_address` is a loose mapping. Read these as non-Latin transfer signals only.
+
+| Dataset      | nullpii PT FP32 | openai (official Viterbi) |
+| ------------ | --------------: | ------------------------: |
+| wikiann-es   |             N/D |                       N/D |
+| wikiann-zh   |             N/D |                       N/D |
+| wikiann-ja   |             N/D |                       N/D |
+
+### Dataset notes
+
+- **`nullpii-bench` (n=264)** — project-bundled, `packages/eval/datasets/nullpii-bench.jsonl`. The only true OOD generalization dataset currently working. Apache-2.0.
+- **`*-heldout`** — `ai4privacy[100000:105000]` and `isotonic[200000:200000+prefetch]` (per locale, after lang filter). Slice indices documented in `packages/eval/scripts/bench_full.py` (`_AI4_HELDOUT_OFFSET`, `_ISOTONIC_HELDOUT_ROW_OFFSET`).
+- **`*-traindist`** — first-rows slices, same indices the model was trained on. Regression sentinel.
+- **`dev-prompts-synth`** — ours, training-overlap. Removed from default bench; see `packages/eval/src/nullpii_eval/public_datasets.py:_generate_dev_prompts` if you need it.
 
 ## Library mode (npm)
 

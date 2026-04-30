@@ -364,6 +364,45 @@ def openai_pipeline_predictor(
     return _predict
 
 
+def openai_official_predictor(*, device: str = "cpu") -> Predictor:
+    """Official `opf` CLI Python API — full constrained Viterbi BIOES decoder.
+
+    Uses `opf` (`github.com/openai/privacy-filter`, Apache-2.0). This is
+    the **reference predictor** for `openai/privacy-filter` quality:
+    the model card prescribes constrained Viterbi over BIOES, and this
+    adapter calls the actual implementation rather than a re-derived
+    approximation. Replaces the strawman comparison against our own
+    Python BIOES decoder (`openai_bioes_predictor`) with the upstream
+    truth.
+    """
+    try:
+        from opf._api import OPF
+    except ImportError as e:
+        raise ImportError(
+            "opf not installed; clone github.com/openai/privacy-filter "
+            "and run `pip install -e .` to use this adapter",
+        ) from e
+
+    if device not in ("cpu", "cuda"):
+        device = "cpu"
+    opf_runtime = OPF(device=device, output_mode="typed", decode_mode="viterbi")  # type: ignore[arg-type]
+
+    def _predict(text: str) -> ToolResult:
+        t0 = time.perf_counter()
+        res = opf_runtime.redact(text)
+        elapsed = (time.perf_counter() - t0) * 1000
+        spans: list[Span] = []
+        # Returned type is RedactionResult when output_mode='typed'.
+        for sp in getattr(res, "detected_spans", ()) or ():
+            label = str(getattr(sp, "label", "")).lower()
+            if label not in _OPENAI_LABELS:
+                continue
+            spans.append(Span(label, int(sp.start), int(sp.end)))
+        return ToolResult(spans, elapsed)
+
+    return _predict
+
+
 def openai_bioes_predictor(
     *,
     device: str | None = None,

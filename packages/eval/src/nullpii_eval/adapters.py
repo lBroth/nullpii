@@ -171,13 +171,77 @@ class _NullpiiServerPool:
             s.close()
 
 
+def nullpii_runtime_predictor(
+    *,
+    backend: str = "cpu",
+    variant: str = "int4",
+    threshold: float | None = None,
+) -> Predictor:
+    """Predictor backed by the npm package's `scan --ndjson` mode.
+
+    Spawns `node bin/nullpii.mjs scan --ndjson` once, loads the engine
+    in that subprocess, then streams texts in NDJSON form on stdin and
+    reads JSON-per-line span results from stdout. One model load for
+    the whole bench — no per-call startup cost.
+
+    This is the **npm runtime** path: `openai/privacy-filter` ONNX +
+    constrained Viterbi BIOES + chunking + recognizer post-pass +
+    in-memory vault. Tests whether the runtime adds value beyond the
+    bare model with proper Viterbi (\`openai-official\`).
+    """
+    if not NULLPII_BIN.is_file():
+        raise FileNotFoundError(f"nullpii CLI not found at {NULLPII_BIN}")
+
+    argv = [
+        "node", str(NULLPII_BIN), "scan", "--ndjson",
+        "--backend", backend, "--variant", variant,
+    ]
+    if threshold is not None:
+        argv += ["--threshold", str(threshold)]
+
+    proc = subprocess.Popen(
+        argv,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        bufsize=1,
+    )
+    if proc.stdin is None or proc.stdout is None:
+        raise RuntimeError("nullpii subprocess: stdin/stdout pipes failed to open")
+
+    def _predict(text: str) -> ToolResult:
+        t0 = time.perf_counter()
+        proc.stdin.write(json.dumps({"text": text}) + "\n")  # type: ignore[union-attr]
+        proc.stdin.flush()  # type: ignore[union-attr]
+        line = proc.stdout.readline()  # type: ignore[union-attr]
+        elapsed = (time.perf_counter() - t0) * 1000
+        if not line:
+            raise RuntimeError(
+                "nullpii subprocess closed stdout unexpectedly. "
+                f"return code: {proc.poll()}",
+            )
+        result = json.loads(line)
+        if "error" in result:
+            raise RuntimeError(f"nullpii ndjson error: {result['error']}")
+        spans: list[Span] = []
+        for s in result.get("spans", []):
+            label = str(s.get("label", "")).lower()
+            if label not in _OPENAI_LABELS:
+                continue
+            spans.append(Span(label, int(s["start"]), int(s["end"])))
+        return ToolResult(spans, elapsed)
+
+    return _predict
+
+
 def nullpii_pool_predictor(
     *,
     pool_size: int = 4,
     threads_each: int = 2,
     model_dir: Path = DEFAULT_MODEL_DIR,
     backend: str = "cpu",
-    variant: str = "fp16",
+    variant: str = "int4",
     enter_bias: float | None = None,
     background_bias: float | None = None,
     continue_bias: float | None = None,
@@ -211,10 +275,7 @@ def nullpii_predictor(
     *,
     model_dir: Path = DEFAULT_MODEL_DIR,
     backend: str = "cpu",
-    # fp16 beats int8 on CPU for this model: same F1, ~17% faster on Apple
-    # M-series. MPS path is slower because only ~24 of 365 ops are CoreML-
-    # eligible — partition overhead dominates.
-    variant: str = "fp16",
+    variant: str = "int4",
     enter_bias: float | None = None,
     background_bias: float | None = None,
     continue_bias: float | None = None,
@@ -958,6 +1019,7 @@ def multi_ensemble_predictor(
 
 def gliner_chunked_predictor(
     *,
+    model_path: str = "urchade/gliner_multi_pii-v1",
     threshold: float = 0.5,
     chunk_chars: int = 1400,
     overlap_chars: int = 200,
@@ -969,6 +1031,10 @@ def gliner_chunked_predictor(
     recover the spans past that boundary the same way nullpii does
     over openai/privacy-filter.
 
+    `model_path` defaults to the PII-specialised v1 baseline. Pass
+    `urchade/gliner_multi-v2.1` to compare a generic-NER GLiNER v2.1
+    backbone (no PII fine-tuning) on the same chunking + dedupe path.
+
     Char-level chunking (4 chars/token approximation): 1400 chars ≈ 350
     tokens, well under GLiNER's mBERT-base 512-tok cap. 200 char overlap
     keeps any short span fully visible in at least one chunk."""
@@ -977,7 +1043,7 @@ def gliner_chunked_predictor(
     except ImportError as e:
         raise ImportError("gliner required") from e
 
-    model = GLiNER.from_pretrained("urchade/gliner_multi_pii-v1")
+    model = GLiNER.from_pretrained(model_path)
 
     def _dedupe(spans: list[Span]) -> list[Span]:
         if len(spans) <= 1:

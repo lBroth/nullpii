@@ -916,33 +916,98 @@ def regex_recognizer_predictor(
     return _predict
 
 
-# Pre-baked recognizer patterns covering nullpii's biggest miss-rate
-# categories. Keeps the regex set small, defensible, and composable.
+# Default recognizer pack — merged set covering both the original
+# small pack (URL/email/AKIA/etc.) and the `gitleaks/config/gitleaks.toml`
+# self-anchored rules (MIT). Excluded the keyword-anchored gitleaks rules
+# (those need a label like "adafruit" near the secret — useless on bare
+# pasted tokens). Three extra patterns derived from failure_analysis.py
+# on `gliner+regex/nullpii-bench`: db connection strings, AWS ARNs, and
+# Italian Codice Fiscale — each consistently missed by the ML detector.
 DEFAULT_REGEX_PATTERNS: list[tuple[str, str]] = [
-    # URL: nullpii misses 66% of these. Only http(s):// + www. — bare
-    # domain.tld pattern dropped because it creates many FPs (matches
-    # filenames, user.email-like fragments, etc.) without real recall lift.
+    # ─── URL / Email ────────────────────────────────────────────────
+    # URL: only http(s):// + www. (bare domain.tld dropped — many FPs).
     ("private_url", r"\b(?:https?://|www\.)[^\s<>\"]+"),
-    # Email — straightforward. nullpii already low miss but cheap to add.
+    # Email
     ("private_email", r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),
-    # AWS access key
-    ("secret", r"\bAKIA[0-9A-Z]{16}\b"),
-    # GitHub PAT (classic + fine-grained)
+    # ─── DB / message-bus connection strings (failure_analysis.py) ─
+    # `postgres://user:pass@host:5432/db`, `mongodb://`, etc. Consistently
+    # missed by the ML detector on dev-paste prompts; high-confidence
+    # secret because the URI carries credentials inline.
+    ("secret", r"\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqp|rabbitmq|kafka|clickhouse|cassandra)://[^\s/@]+:[^@\s]+@[^\s/]+(?:/[^\s]*)?"),
+    # ─── AWS ────────────────────────────────────────────────────────
+    # All access-token prefixes (A3T*, AKIA, ASIA, ABIA, ACCA)
+    ("secret", r"\b(?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z2-7]{16}\b"),
+    # AWS Bedrock long-lived
+    ("secret", r"\bABSK[A-Za-z0-9+/]{109,269}={0,2}"),
+    # AWS resource ARN — high-info, distinctive prefix.
+    ("secret", r"\barn:aws:[a-z0-9-]+:[a-z0-9-]*:\d{12}:[\w/.:-]+"),
+    # ─── GitHub ─────────────────────────────────────────────────────
     ("secret", r"\bghp_[A-Za-z0-9]{36,}\b"),
     ("secret", r"\bghs_[A-Za-z0-9]{36,}\b"),
+    ("secret", r"\bgho_[A-Za-z0-9]{36,}\b"),
+    ("secret", r"\bghu_[A-Za-z0-9]{36,}\b"),
+    ("secret", r"\bghr_[A-Za-z0-9]{36,}\b"),
     ("secret", r"\bgithub_pat_[A-Za-z0-9_]{82,}\b"),
-    # Stripe keys
-    ("secret", r"\bsk_(?:live|test)_[A-Za-z0-9]{24,}\b"),
-    # OpenAI/Anthropic keys
+    # ─── OpenAI / Anthropic ─────────────────────────────────────────
     ("secret", r"\bsk-[A-Za-z0-9]{32,}\b"),
     ("secret", r"\bsk-ant-[A-Za-z0-9_-]{50,}\b"),
-    # IBAN (rough — IT, GB, DE, FR, ES; trims at non-alphanum)
+    ("secret", r"\bsk-ant-admin01-[a-zA-Z0-9_\-]{93}AA\b"),
+    ("secret", r"\bsk-ant-api03-[a-zA-Z0-9_\-]{93}AA\b"),
+    # ─── Stripe ─────────────────────────────────────────────────────
+    ("secret", r"\bsk_(?:live|test)_[A-Za-z0-9]{24,}\b"),
+    # ─── 1Password / Adobe / Age / Airtable / Alibaba ──────────────
+    ("secret", r"\bA3-[A-Z0-9]{6}-(?:[A-Z0-9]{11}|[A-Z0-9]{6}-[A-Z0-9]{5})-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}\b"),
+    ("secret", r"\bops_eyJ[a-zA-Z0-9+/]{250,}={0,3}"),
+    ("secret", r"\bp8e-[a-zA-Z0-9]{32}\b"),
+    ("secret", r"AGE-SECRET-KEY-1[QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L]{58}"),
+    ("secret", r"\bpat[a-zA-Z0-9]{14}\.[a-f0-9]{64}\b"),
+    ("secret", r"\bLTAI[a-zA-Z0-9]{20}\b"),
+    # ─── Artifactory / Atlassian ───────────────────────────────────
+    ("secret", r"\bAKCp[A-Za-z0-9]{69}\b"),
+    ("secret", r"\bcmVmd[A-Za-z0-9]{59}\b"),
+    ("secret", r"\bATATT3[A-Za-z0-9_\-=]{186}\b"),
+    # ─── Misc cloud / SaaS providers ───────────────────────────────
+    ("secret", r"\b4b1d[A-Za-z0-9]{38}\b"),
+    ("secret", r"(?i)\bCLOJARS_[a-z0-9]{60}\b"),
+    ("secret", r"\bv1\.0-[a-f0-9]{24}-[a-f0-9]{146}\b"),
+    ("secret", r"\bdapi[a-f0-9]{32}(?:-\d)?\b"),
+    ("secret", r"\bdoo_v1_[a-f0-9]{64}\b"),
+    ("secret", r"\bdop_v1_[a-f0-9]{64}\b"),
+    ("secret", r"\bdor_v1_[a-f0-9]{64}\b"),
+    # ─── Slack ──────────────────────────────────────────────────────
+    ("secret", r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"),
+    ("secret", r"\bxoxe\.xoxp-[0-9]+-[A-Za-z0-9]+\b"),
+    # ─── GitLab / SendGrid / Twilio / NPM / PyPI / HF / GitLab ──
+    ("secret", r"\bglpat-[A-Za-z0-9_\-]{20,}\b"),
+    ("secret", r"\bSG\.[A-Za-z0-9_\-]{22}\.[A-Za-z0-9_\-]{43}\b"),
+    ("secret", r"\bAC[a-f0-9]{32}\b"),
+    ("secret", r"\bSK[a-f0-9]{32}\b"),
+    ("secret", r"\bnpm_[A-Za-z0-9]{36,}\b"),
+    ("secret", r"\bpypi-AgEIcHlwaS5vcmc[A-Za-z0-9_\-]{50,}\b"),
+    ("secret", r"\bhf_[A-Za-z0-9]{34,}\b"),
+    ("secret", r"\b[a-f0-9]{32}-us[0-9]{1,2}\b"),  # Mailchimp
+    ("secret", r"\bsecret_[A-Za-z0-9]{43}\b"),  # Notion
+    ("secret", r"\blin_api_[A-Za-z0-9]{40,}\b"),
+    # ─── PEM private keys / JWT ─────────────────────────────────────
+    ("secret", r"-----BEGIN (?:RSA|DSA|EC|OPENSSH|PGP) PRIVATE KEY-----"),
+    ("secret", r"\beyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\b"),
+    # ─── Account-number patterns ────────────────────────────────────
+    # IBAN (rough — IT, GB, DE, FR, ES)
     ("account_number", r"\b[A-Z]{2}\d{2}[A-Z0-9]{1,4}(?:[ \t]?\d{4}){2,5}(?:[ \t]?\d{1,4})?\b"),
-    # Credit card 16-digit pattern dropped: matches phone numbers,
-    # version strings, dataset row IDs etc. — too many FPs.
     # SSN US
     ("account_number", r"\b\d{3}-\d{2}-\d{4}\b"),
+    # Italian Codice Fiscale (16-char structured, missed by ML on
+    # nullpii-bench per failure_analysis.py)
+    ("account_number", r"\b[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]\b"),
 ]
+
+
+# Backwards-compat alias — `EXTENDED_REGEX_PATTERNS` was the merged
+# default+gitleaks pack while we A/B'd the two. After the merge it's
+# identical to `DEFAULT_REGEX_PATTERNS`. Kept to avoid breaking the
+# bench harness that imported it; new code should use
+# `DEFAULT_REGEX_PATTERNS` directly.
+EXTENDED_REGEX_PATTERNS: list[tuple[str, str]] = DEFAULT_REGEX_PATTERNS
 
 
 def multi_ensemble_predictor(

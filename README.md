@@ -36,9 +36,9 @@ datasets:
 > 1. **npm library** — `nullpii` on npm. Wraps `openai/privacy-filter` (1.5B) with the constrained Viterbi BIOES decoder, chunking, regex recognizers, and a reversible in-memory vault. Independent of the fine-tuned model below.
 > 2. **HuggingFace model** — `lBroth/nullpii` on HF. A separate fine-tune of `urchade/gliner_multi_pii-v1` (278M). Useful as a smaller, drop-in detector. **Not used by the npm library.**
 >
-> **Headline finding (validated)**: HF `transformers.pipeline()` with the default `aggregation_strategy="simple"` *does not implement* the constrained Viterbi BIOES decoder that `openai/privacy-filter`'s model card prescribes. Naive HF usage produces fragmented spans (`.com`, `+1-843-555-014` then `2`, `aitre`). The official [`opf` CLI](https://github.com/openai/privacy-filter) ships the real decoder; calling it via `opf._api.OPF` recovers ~+0.30 F1 on `nullpii-bench`. **This is the most honest, reproducible result in this repo.**
+> **Headline finding (validated, useful)**: HF `transformers.pipeline()` with the default `aggregation_strategy="simple"` *does not implement* the constrained Viterbi BIOES decoder that `openai/privacy-filter`'s model card prescribes. Naive HF usage produces fragmented spans. Calling the official [`opf` CLI](https://github.com/openai/privacy-filter) (via `opf._api.OPF`) recovers **+0.10–0.25 F1** across every benchmark row — see "Headline comparison" below for the table. **This is the most reproducible useful result in this repo.**
 >
-> **Headline finding (qualified)**: A 2-round fine-tune of GLiNER on a subset of `ai4privacy/pii-masking-300k` + `Isotonic/pii-masking-200k` improves F1 substantially on **held-out splits** of those same datasets (overnight bench in flight). The earlier preview "0.93–0.97 multilingual F1" was measured **on the training distribution** (same dataset slices the model was trained on) — that is memorization, not generalization. Headline numbers are being re-measured on `*-heldout` splits drawn from rows the model never saw; those are the only fine-tune numbers worth quoting.
+> **Headline finding (negative, more important)**: A 2-round fine-tune of GLiNER on a subset of `ai4privacy/pii-masking-300k` + `Isotonic/pii-masking-200k` **loses 0.22 F1 on the only true out-of-distribution dataset** (`nullpii-bench`: baseline GLiNER 0.69 → fine-tune 0.47). The fine-tune wins by 0.30+ F1 on held-out rows of the *same* training datasets, but held-out vs train-dist numbers are identical to within 0.005 — that's memorization at the format/style level, not generalization. The earlier preview "0.93–0.97 multilingual F1" was measured on the training distribution and is misleading. **Default to baseline GLiNER + the runtime decoder, not the fine-tune, until a generalisation-aware training mix is built.**
 
 ## What's in this repo
 
@@ -63,37 +63,47 @@ Other limitations the previous version hid:
 
 ## Headline comparison
 
-F1, IoU ≥ 0.5. **Numbers update progressively as the overnight bench completes**; this section will be rewritten end-to-end when the run finishes (`packages/eval/results/mac-overnight-20260430-v2/matrix.json`).
+F1, IoU ≥ 0.5. Mac M-series CPU bench, n=2000 per dataset (n=264 for `nullpii-bench`), single seed. Source: `packages/eval/results/mac-overnight-20260430-v2/matrix.json`.
 
-The columns under headline are **held-out** (suffix `-heldout`): never seen at training time. Training-distribution rows live in the appendix below as a regression sentinel only.
+The headline row is **`nullpii-bench`** — the only true out-of-distribution dataset (264 project-bundled prompts, never used in training). The `*-heldout` rows below it are slices of the *training* datasets that the fine-tune never saw, but same distribution → numbers cluster with `*-traindist` (see appendix).
 
-| Dataset                  | baseline GLiNER | **nullpii PT FP32** | nullpii ONNX INT4 | openai (official Viterbi) | openai (HF naive) |
-| ------------------------ | --------------: | ------------------: | ----------------: | ------------------------: | ----------------: |
-| nullpii-bench (n=264)    |             N/D |                 N/D |               N/D |                       N/D |             0.458 |
-| ai4privacy-heldout       |             N/D |                 N/D |               N/D |                       N/D |               N/D |
-| isotonic-en-heldout      |             N/D |                 N/D |               N/D |                       N/D |               N/D |
-| isotonic-de-heldout      |             N/D |                 N/D |               N/D |                       N/D |               N/D |
-| isotonic-fr-heldout      |             N/D |                 N/D |               N/D |                       N/D |               N/D |
-| isotonic-it-heldout      |             N/D |                 N/D |               N/D |                       N/D |               N/D |
+| Dataset                  | baseline GLiNER | nullpii PT FP32 | nullpii ONNX INT4 | openai (official Viterbi) | openai (HF naive) |
+| ------------------------ | --------------: | --------------: | ----------------: | ------------------------: | ----------------: |
+| **nullpii-bench (OOD)**  |      **0.6947** |          0.4737 |            0.3966 |                    0.6764 |            0.4264 |
+| ai4privacy-heldout       |          0.1267 |          0.3285 |        **0.3855** |                    0.2303 |            0.1451 |
+| isotonic-en-heldout      |          0.6016 |          0.9277 |        **0.9339** |                    0.5631 |            0.3822 |
+| isotonic-de-heldout      |          0.5912 |          0.9371 |        **0.9495** |                    0.5734 |            0.3809 |
+| isotonic-fr-heldout      |          0.5953 |          0.9387 |        **0.9480** |                    0.5766 |            0.3771 |
+| isotonic-it-heldout      |          0.5818 |          0.9372 |        **0.9384** |                    0.6053 |            0.3894 |
 
-### Appendix — training-overlap rows (regression check, NOT generalization)
+**Reading the table:**
 
-These rows are kept to confirm the fine-tune did not collapse on its training data. They are **not** evidence of generalization. Do not quote them as headline numbers.
+- The fine-tune (`nullpii PT FP32` / `ONNX INT4`) **loses 0.22 F1 on the only true-OOD row** (`nullpii-bench`: baseline 0.69 → fine-tune 0.47). It wins on `*-heldout` rows by 0.30+ F1, but those are same-distribution-different-rows — the appendix shows `traindist` and `heldout` numbers are within 0.005 of each other, confirming "held-out" is not a generalization test.
+- `openai-official` (the real Viterbi via `opf._api.OPF`) is competitive with the **baseline** GLiNER on OOD (0.68 vs 0.69) and beats `openai-naive` on every row by 0.10–0.18 F1 — that delta quantifies what the constrained Viterbi BIOES decoder buys you over `transformers.pipeline()` defaults. **This is the most reproducible useful finding in the repo.**
+- `openai-naive` (HF default `aggregation_strategy='simple'`) is the worst tool across the board on real tasks. Do not use the model that way.
 
-| Dataset                       | nullpii PT FP32 | nullpii ONNX INT4 | openai (official Viterbi) |
-| ----------------------------- | --------------: | ----------------: | ------------------------: |
-| ai4privacy-traindist          |             N/D |               N/D |                       N/D |
-| isotonic-en-traindist         |             N/D |               N/D |                       N/D |
+### Appendix — training-distribution rows (regression sentinel)
 
-### Appendix — loose-schema rows (WikiAnn PER/LOC, not PII)
+Same datasets as headline, but slice indices the model **was** trained on. By construction these should match `*-heldout` if the fine-tune neither memorised individual rows nor regressed on its train set. They do, within 0.005 F1.
 
-PER → `private_person`, LOC → `private_address` is a loose mapping. Read these as non-Latin transfer signals only.
+| Dataset                  | baseline GLiNER | nullpii PT FP32 | nullpii ONNX INT4 | openai (official Viterbi) | openai (HF naive) |
+| ------------------------ | --------------: | --------------: | ----------------: | ------------------------: | ----------------: |
+| ai4privacy-traindist     |          0.1171 |          0.3718 |        **0.3859** |                    0.2224 |            0.1392 |
+| isotonic-en-traindist    |          0.6065 |          0.9324 |        **0.9341** |                    0.5767 |            0.3860 |
 
-| Dataset      | nullpii PT FP32 | openai (official Viterbi) |
-| ------------ | --------------: | ------------------------: |
-| wikiann-es   |             N/D |                       N/D |
-| wikiann-zh   |             N/D |                       N/D |
-| wikiann-ja   |             N/D |                       N/D |
+The takeaway is *not* "the fine-tune is great on its training data" (it had to be). It's that **same-dataset held-out is nearly identical to train-dist** — i.e. shifting the slice index doesn't measure generalization. The OOD signal lives only in `nullpii-bench`.
+
+### Appendix — WikiAnn (loose-schema NER, not native PII)
+
+PER → `private_person`, LOC → `private_address` is a loose mapping. Read as non-Latin transfer signals only — absolute F1 is not directly comparable to the headline rows.
+
+| Dataset      | baseline GLiNER | nullpii PT FP32 | nullpii ONNX INT4 | openai (official Viterbi) | openai (HF naive) |
+| ------------ | --------------: | --------------: | ----------------: | ------------------------: | ----------------: |
+| wikiann-es   |      **0.3326** |          0.2262 |            0.1686 |                    0.1844 |            0.0878 |
+| wikiann-zh   |          0.1353 |          0.1518 |        **0.1549** |                    0.0863 |            0.0383 |
+| wikiann-ja   |          0.0665 |      **0.1080** |            0.0974 |                    0.0563 |            0.0344 |
+
+Two patterns: (1) Spanish (Latin script, in training) — baseline GLiNER beats the fine-tune (overfitting cost again). (2) Chinese / Japanese (CJK, NOT in training) — every tool collapses below 0.16 F1. The fine-tune holds a tiny edge on `wikiann-ja` but the absolute floor is too low to call it useful. **CJK is a dead zone across the board** until someone trains on CJK PII data.
 
 ### Dataset notes
 

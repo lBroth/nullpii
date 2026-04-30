@@ -120,10 +120,21 @@ def _load_wikiann(max_samples: int | None, *, lang: str = "en") -> PublicDataset
     )
 
 
-def _load_ai4privacy(max_samples: int | None) -> PublicDataset:
+def _load_ai4privacy(
+    max_samples: int | None, *, offset: int = 0,
+) -> PublicDataset:
+    """Load ai4privacy/pii-masking-300k.
+
+    `offset` skips the first N rows — use this to construct a held-out
+    split that is disjoint from the slice the model was trained on
+    (training default cap = 100000; pass offset=100000 for held-out).
+    """
     from datasets import load_dataset
 
-    split = "train" if max_samples is None else f"train[:{max_samples}]"
+    if max_samples is None:
+        split = "train" if offset == 0 else f"train[{offset}:]"
+    else:
+        split = f"train[{offset}:{offset + max_samples}]"
     ds = load_dataset("ai4privacy/pii-masking-300k", split=split)
     samples: list[Sample] = []
     for row in ds:
@@ -136,9 +147,12 @@ def _load_ai4privacy(max_samples: int | None) -> PublicDataset:
                 continue
             spans.append(Span(label, int(s["start"]), int(s["end"])))
         samples.append(Sample(text=text, spans=tuple(spans)))
+    citation = "ai4privacy. PII Masking 300k."
+    if offset > 0:
+        citation += f" Held-out slice [{offset}:{offset + (max_samples or 0)}]."
     return PublicDataset(
         name="ai4privacy/pii-masking-300k",
-        citation="ai4privacy. PII Masking 300k (gated, requires HF_TOKEN).",
+        citation=citation,
         samples=tuple(samples),
     )
 
@@ -274,13 +288,19 @@ def _strip_index(label: str) -> str:
     return label
 
 
-def _load_isotonic(max_samples: int | None, *, lang: str = "en") -> PublicDataset:
+def _load_isotonic(
+    max_samples: int | None, *, lang: str = "en", row_offset: int = 0,
+) -> PublicDataset:
     """Isotonic/pii-masking-200k — open mirror of ai4privacy's PII set.
 
     Multi-lingual (`language` field). Filtered by `lang`. Uses `unmasked_text`
     + `span_labels` (list of `[start, end, label]`).
 
     `max_samples=None` → load the entire `train` split, no cap.
+    `row_offset` slices the underlying train split BEFORE language filtering.
+    Use it to build a held-out split disjoint from the slice the model was
+    trained on. Training default prefetched 200000 rows for the 20k-per-locale
+    cap, so pass `row_offset=200000` for a clean held-out split.
     """
     import ast
     import sys
@@ -288,12 +308,14 @@ def _load_isotonic(max_samples: int | None, *, lang: str = "en") -> PublicDatase
     from datasets import load_dataset
 
     if max_samples is None:
-        ds = load_dataset("Isotonic/pii-masking-200k", split="train")
+        slice_spec = "train" if row_offset == 0 else f"train[{row_offset}:]"
+        ds = load_dataset("Isotonic/pii-masking-200k", split=slice_spec)
     else:
         # ~21% of dataset is the smallest locale (en), so 10× buffer
         # guarantees enough samples after language filtering.
         prefetch = max(max_samples * 10, 2000)
-        ds = load_dataset("Isotonic/pii-masking-200k", split=f"train[:{prefetch}]")
+        slice_spec = f"train[{row_offset}:{row_offset + prefetch}]"
+        ds = load_dataset("Isotonic/pii-masking-200k", split=slice_spec)
     samples: list[Sample] = []
     for row in ds:
         if max_samples is not None and len(samples) >= max_samples:
@@ -336,9 +358,12 @@ def _load_isotonic(max_samples: int | None, *, lang: str = "en") -> PublicDatase
                 continue  # label intentionally outside our 8-class taxonomy
             spans.append(Span(mapped, start, end))
         samples.append(Sample(text=text, spans=tuple(spans)))
+    citation = "Isotonic. PII Masking 200k (open mirror of ai4privacy)."
+    if row_offset > 0:
+        citation += f" Held-out slice (row_offset={row_offset})."
     return PublicDataset(
         name=f"isotonic/pii-masking-200k/{lang}",
-        citation="Isotonic. PII Masking 200k (open mirror of ai4privacy).",
+        citation=citation,
         samples=tuple(samples),
     )
 

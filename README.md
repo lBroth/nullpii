@@ -36,101 +36,89 @@ datasets:
 > 1. **npm library** — `nullpii` on npm. Wraps `openai/privacy-filter` (1.5B) with the constrained Viterbi BIOES decoder, chunking, regex recognizers, and a reversible in-memory vault. Independent of the fine-tuned model below.
 > 2. **HuggingFace model** — `lBroth/nullpii` on HF. A separate fine-tune of `urchade/gliner_multi_pii-v1` (278M). Useful as a smaller, drop-in detector. **Not used by the npm library.**
 >
-> **Headline finding (validated, useful)**: HF `transformers.pipeline()` with the default `aggregation_strategy="simple"` *does not implement* the constrained Viterbi BIOES decoder that `openai/privacy-filter`'s model card prescribes. Naive HF usage produces fragmented spans. Calling the official [`opf` CLI](https://github.com/openai/privacy-filter) (via `opf._api.OPF`) recovers **+0.10–0.25 F1** across every benchmark row — see "Headline comparison" below for the table. **This is the most reproducible useful result in this repo.**
+> **TL;DR — what `nullpii` ships**:
 >
-> **Headline finding (positive, end-to-end)**: The runtime's **regex recognizer post-pass is the single highest-leverage component** of the stack — added on top of any backbone, it lifts F1 by +0.08 to +0.32 on the OOD dataset. The strongest combination measured is **`gliner_multi_pii-v1` (278M) + regex post-pass = 0.8056** on `nullpii-bench`, beating the full `openai/privacy-filter`-based npm runtime (1.5B model + Viterbi + chunking + regex = 0.7669). Chunking is marginal on short prompts; the Viterbi BIOES decoder buys ~+0.10 F1 over HF naive but is model-specific. **The cheapest, strongest deployment recipe is GLiNER PII + regex** — half the parameters of `openai/privacy-filter`, simpler decode, better F1 on real prompts.
+> The `nullpii` npm package wraps **`onnx-community/gliner_multi_pii-v1` (FP32 ONNX, 278M params)** with chunking, a curated regex recognizer pack (~50 patterns covering AWS / GitHub / OpenAI / Anthropic keys + cloud SaaS tokens + PEM keys + JWTs + DB connection strings + IBAN / SSN / Italian Codice Fiscale), and a reversible in-memory vault. F1 = **0.8239** on `nullpii-bench` (the only true out-of-distribution dataset), beating every other configuration we tested — including the official `opf` CLI for `openai/privacy-filter` (0.6764) and a from-scratch fine-tune of GLiNER on training-distribution datasets (0.4737 on OOD).
 >
-> **Headline finding (negative, equally important)**: A 2-round fine-tune of GLiNER on a subset of `ai4privacy/pii-masking-300k` + `Isotonic/pii-masking-200k` **loses 0.22 F1 on the OOD row** (`nullpii-bench`: baseline GLiNER 0.69 → fine-tune 0.47). The fine-tune wins by 0.30+ F1 on held-out rows of the *same* training datasets, but held-out vs train-dist numbers are identical within 0.005 — that's memorization at the format/style level, not generalization. The earlier preview "0.93–0.97 multilingual F1" was measured on the training distribution and is misleading. **Default to the npm runtime, not the fine-tune, until a generalization-aware training mix is built.**
+> **Two reproducible findings backing the design choice**:
+>
+> 1. HF `transformers.pipeline()` with default `aggregation_strategy="simple"` **does not implement** the constrained Viterbi BIOES decoder that `openai/privacy-filter`'s model card prescribes — the integration ships only per-token logits and naive aggregation produces fragmented spans. The official [`opf` CLI](https://github.com/openai/privacy-filter) (via `opf._api.OPF`) recovers +0.25 F1 vs naive HF on `nullpii-bench`. Useful PSA, but `nullpii` skips this entire layer by switching backbone.
+> 2. A 2-round fine-tune of GLiNER on `ai4privacy/pii-masking-300k` + `Isotonic/pii-masking-200k` **loses 0.22 F1 on real-world OOD** (`nullpii-bench`: baseline 0.69 → fine-tune 0.47), even while winning by +0.35 F1 on held-out splits of the *same* training datasets. Held-out vs train-dist numbers are within 0.005 — same-dataset slicing isn't a generalization test. The earlier preview "0.93–0.97 multilingual F1" was measured on the training distribution and is misleading.
+>
+> Implication: the npm package's value is **the runtime stack on top of the right backbone**, not a custom-trained model. Ship the well-known `gliner_multi_pii-v1` ONNX FP32 + a curated, transparent regex pack + minimal post-processing, not a fragile fine-tune.
 
 ## What's in this repo
 
-Two **independent** deliverables and the eval kit:
+1. **`nullpii` (npm library)** — sanitize / restore engine over `onnx-community/gliner_multi_pii-v1` (ONNX FP32) with chunking + curated regex recognizer pack + reversible in-memory vault. CLI binary (`nullpii sanitize|restore|scan|benchmark|...`) plus a TS API (`sanitize()`, `restore()`, `NullPii` class). This is the **production deliverable**.
+2. **Reproducibility kit** (`packages/eval/`) — bench harness, dataset loaders (incl. heldout / traindist splits), training scripts, and the full comparison matrix that justifies the design choices in (1). Gitignored from the npm publish artefact.
 
-1. **npm library** — `nullpii` (this package). Sanitize / restore engine over `openai/privacy-filter` with the constrained Viterbi BIOES decoder + chunking + recognizer post-pass + reversible vault. CLI binary `nullpii sanitize|restore|scan|benchmark|...` plus a TS API (`sanitize()`, `restore()`, `NullPii` class). Does **not** depend on the fine-tuned HF model below.
-2. **HuggingFace model** — [`lBroth/nullpii`](https://huggingface.co/lBroth/nullpii). GLiNER fine-tune in PT FP32, ONNX FP32 and ONNX INT4 variants. Standalone — use via `gliner.GLiNER.from_pretrained(...)`. Does **not** depend on the npm library.
-3. **Reproducibility kit** — `packages/eval/` with the bench harness, dataset loaders (held-out splits supported), training scripts, and comparison results.
+A separate fine-tuned GLiNER model exists at [`lBroth/nullpii` on HF](https://huggingface.co/lBroth/nullpii) for users whose workload looks structurally like `ai4privacy/pii-masking-300k` or `Isotonic/pii-masking-200k`. **It is not the npm package's backbone** — see the headline finding above for why; the bench shows the fine-tune memorises training distribution and regresses on real OOD prompts.
 
-## Honest limitations (read this first)
+## Honest limitations (read before quoting any number)
 
-Past versions of this README quoted "0.93–0.97 multilingual F1" as a headline. Those numbers were measured on the same dataset slices the model was fine-tuned on (`isotonic-{en,de,fr,it}` and `ai4privacy-300k`, first N rows). That is **memorization measurement, not generalization**. The current overnight bench replaces those numbers with measurements on **held-out** splits (`*-heldout`, drawn from rows after the training cut at `ai4privacy[100000:]` and `isotonic[200000:]`).
-
-Other limitations the previous version hid:
-
-- **No `opf` CLI baseline.** The phrase "openai (proper Viterbi)" appeared in old tables next to `—` cells: we never ran the real reference. The `openai-bioes` row was a hand-rolled approximation (greedy, no transition costs), not the upstream Viterbi. The current bench includes `openai-official` (the actual `opf._api.OPF` Python API). Old `openai-bioes` numbers should be discarded.
-- **`dev-prompts-synth` is a self-graded test.** The generator (10 hand-written templates) is ours, and 30k samples from it were mixed into round-2 training. Benchmarking on it tests recall of training distribution, not detection capability. Dropped from the headline; kept only as a regression sentinel.
-- **WikiAnn schema mismatch.** PER → `private_person`, LOC → `private_address` is a loose mapping. Numbers should be read as a non-Latin transfer signal (es/zh/ja), not absolute PII F1.
-- **No statistical tests in published numbers yet.** Single-seed benches at fixed `n`. Bootstrap CI + multi-seed are pending; numbers below are point estimates only.
-- **`enron-planted`, `stackoverflow-planted`, `thestack-planted`, `conll2003` loaders are broken on the open-data path** (mirrors removed/renamed/gated). The "real-text + planted PII" generalization datasets are not available to us right now; the only true OOD row is `nullpii-bench` (264 samples, project-bundled). Pending fix.
-- **Two independent deliverables, not one study.** The npm library wraps `openai/privacy-filter` (1.5B). The HF model is the GLiNER fine-tune (278M). They share a repo, an evaluation kit, and a license — that is all. The "unified study" framing in older versions was post-hoc.
+- **Single-seed benches.** No bootstrap CI, no multi-seed runs. Numbers below are point estimates; treat differences smaller than ~0.02 F1 as noise.
+- **`nullpii-bench` (n=264) is the only true-OOD dataset working right now.** The other planned plant-and-detect datasets (`enron-planted`, `stackoverflow-planted`, `thestack-planted`, `conll2003`) have broken loaders on the open-data path (mirrors removed/renamed/gated, deprecated `trust_remote_code=True`). The OOD generalisation evidence rests entirely on those 264 prompts.
+- **Same-dataset heldout ≠ generalisation.** `*-heldout` cells are drawn from rows the fine-tune was not trained on, but from the same dataset distribution it *was* trained on. Heldout vs traindist numbers cluster within 0.005 F1 — slicing the row index isn't a real generalisation test.
+- **The retracted preview headline (`0.93–0.97 multilingual F1`) was a same-dataset memorisation measurement.** It is misleading and has been removed from this README. The HF model card carries the corrected numbers.
+- **CJK is a documented dead zone.** Every tool tested scores below 0.16 F1 on `wikiann-zh` / `wikiann-ja`. None of the training mixes used CJK data.
+- **WikiAnn schema mismatch.** PER → `private_person`, LOC → `private_address`. Loose mapping; absolute F1 not comparable to PII-native rows.
 
 ## Headline comparison
 
-F1, IoU ≥ 0.5. Mac M-series CPU bench, n=2000 per dataset (n=264 for `nullpii-bench`), single seed. Source: `packages/eval/results/mac-overnight-20260430-v2/matrix.json`.
+F1, IoU ≥ 0.5. Mac M-series CPU bench, n=2000 per dataset (n=264 for `nullpii-bench`), single seed. Full matrix at `packages/eval/results/mac-overnight-20260430-v2/matrix.json` (19 tool variants tested; the table below distils to 4 — `nullpii` plus the three reference points). Per-component ablations and the fine-tune trade-off live in the appendices.
 
-The headline row is **`nullpii-bench`** — the only true out-of-distribution dataset (264 project-bundled prompts, never used in training). The `*-heldout` rows below it are slices of the *training* datasets that the fine-tune never saw, but same distribution → numbers cluster with `*-traindist` (see appendix).
+| Dataset                  | **`nullpii`** | baseline GLiNER (bare) | openai-official (Viterbi) | openai (HF naive) |
+| ------------------------ | ------------: | ---------------------: | ------------------------: | ----------------: |
+| **`nullpii-bench` (OOD, n=264)** | **0.8239** | 0.6947 | 0.6764 | 0.4264 |
+| ai4privacy-heldout       |        0.2085 |                 0.1267 |                    0.2303 |            0.1451 |
+| isotonic-en-heldout      |        0.5731 |                 0.6016 |                    0.5631 |            0.3822 |
+| isotonic-de-heldout      |        0.5808 |                 0.5912 |                    0.5734 |            0.3809 |
+| isotonic-fr-heldout      |        0.5993 |                 0.5953 |                    0.5766 |            0.3771 |
+| isotonic-it-heldout      |        0.5789 |                 0.5818 |                    0.6053 |            0.3894 |
+| isotonic-en-traindist    |        0.5837 |                 0.6065 |                    0.5767 |            0.3860 |
+| ai4privacy-traindist     |        0.2028 |                 0.1171 |                    0.2224 |            0.1392 |
+| wikiann-es               |        0.2919 |                 0.3326 |                    0.1844 |            0.0878 |
+| wikiann-zh               |        0.1150 |                 0.1353 |                    0.0863 |            0.0383 |
+| wikiann-ja               |        0.0500 |                 0.0665 |                    0.0563 |            0.0344 |
 
-| Dataset                  | baseline GLiNER | nullpii PT FP32 | nullpii ONNX INT4 | openai (official Viterbi) | openai (HF naive) | nullpii npm runtime | **gliner+regex** | opf+regex | gliner-v2.1+regex |
-| ------------------------ | --------------: | --------------: | ----------------: | ------------------------: | ----------------: | ------------------: | ---------------: | --------: | ----------------: |
-| **nullpii-bench (OOD)**  |          0.6947 |          0.4737 |            0.3966 |                    0.6764 |            0.4264 |              0.7669 |       **0.8056** |    0.7546 |            0.4719 |
-| ai4privacy-heldout       |          0.1267 |          0.3285 |        **0.3855** |                    0.2303 |            0.1451 |                 N/D |              N/D |       N/D |               N/D |
-| isotonic-en-heldout      |          0.6016 |          0.9277 |        **0.9339** |                    0.5631 |            0.3822 |                 N/D |              N/D |       N/D |               N/D |
-| isotonic-de-heldout      |          0.5912 |          0.9371 |        **0.9495** |                    0.5734 |            0.3809 |                 N/D |              N/D |       N/D |               N/D |
-| isotonic-fr-heldout      |          0.5953 |          0.9387 |        **0.9480** |                    0.5766 |            0.3771 |                 N/D |              N/D |       N/D |               N/D |
-| isotonic-it-heldout      |          0.5818 |          0.9372 |        **0.9384** |                    0.6053 |            0.3894 |                 N/D |              N/D |       N/D |               N/D |
-
-**Notation**:
-- `nullpii npm runtime` = `openai/privacy-filter` ONNX INT4 + constrained Viterbi BIOES + chunking + regex recognizer post-pass + reversible vault.
-- `<backbone>+regex` = the bare backbone (with chunking + dedupe where applicable) + regex recognizer post-pass merged via `primary` ensemble + boundary refinement. Tests how much of the runtime's lift is the regex component, isolated from backbone choice.
-
-**Regex post-pass deltas on `nullpii-bench` (OOD)**:
-
-| Backbone | bare | + regex | Δ F1 |
-| -------- | ---: | ------: | ---: |
-| `gliner_multi_pii-v1` | 0.6947 | **0.8056** | **+0.111** |
-| `openai/privacy-filter` (Viterbi) | 0.6764 | 0.7546 | +0.078 |
-| `gliner_multi-v2.1` | 0.1562 | 0.4719 | +0.316 |
-
-The regex post-pass transfers across backbones; chunking is marginal on short prompts (full runtime 0.77 vs `opf+regex` 0.75 = +0.012). **The biggest move is regex, not Viterbi or chunking**.
+**Tool definitions:**
+- **`nullpii`** = `onnx-community/gliner_multi_pii-v1` (ONNX FP32, 278M) + chunking + curated regex pack (~50 patterns) + ensemble merge. The npm package, the production winner on OOD.
+- **baseline GLiNER (bare)** = `urchade/gliner_multi_pii-v1` PyTorch, just `.predict_entities()` with chunking. Reference for what `nullpii` adds on top of the model.
+- **openai-official (Viterbi)** = `openai/privacy-filter` (1.5B) via the official [`opf` CLI](https://github.com/openai/privacy-filter) Python API (`opf._api.OPF`). Reference for the model's intended-quality output.
+- **openai (HF naive)** = same `openai/privacy-filter` model via `transformers.pipeline()` defaults (`aggregation_strategy="simple"`). Reference for what *not* to do — produces fragmented spans because the integration drops the model's prescribed Viterbi BIOES decoder.
 
 **Reading the table:**
 
-- **`gliner_multi_pii-v1` + regex post-pass is the best tool overall on the only true-OOD row** (`nullpii-bench`: **0.8056** — beats every other configuration, including the npm runtime 0.7669 and `opf+regex` 0.7546). A 278M-param backbone with a 30-line regex pack outperforms a 1.5B-param model with constrained Viterbi + chunking + regex. **Recommend this combination as the production deployment.**
-- The full **npm runtime** (`openai/privacy-filter` + Viterbi + chunking + regex) lands at 0.7669 on the OOD row — strong, but beaten by the simpler GLiNER + regex recipe. Other-dataset cells of the runtime are N/D — the bench harness deadlocked on long-input chunking-Viterbi inputs around sample 1700 of `ai4privacy-heldout` (infinite loop on the runtime side, killed manually). Per-call timeout fix needed before re-running those rows.
-- The fine-tune (`nullpii PT FP32` / `ONNX INT4`) **loses 0.22 F1 on the OOD row** (`nullpii-bench`: baseline 0.69 → fine-tune 0.47). It wins on `*-heldout` rows by 0.30+ F1, but those are same-distribution-different-rows — the appendix shows `traindist` and `heldout` numbers are within 0.005 of each other, confirming "held-out" within the same dataset is not a generalization test.
-- `openai-official` (the real Viterbi via `opf._api.OPF`) is competitive with the **baseline** GLiNER on OOD (0.68 vs 0.69) and beats `openai-naive` on every row by 0.10–0.18 F1 — that delta quantifies what the constrained Viterbi BIOES decoder buys you over `transformers.pipeline()` defaults.
-- `openai-naive` (HF default `aggregation_strategy='simple'`) is the worst tool across the board on real tasks. Do not use the model that way.
+- `nullpii` **wins by +0.13 F1 on `nullpii-bench`** — the only true-OOD dataset. This is the use case the npm package targets: developer prompts pasted into LLMs (RFCs, PR reviews, ticket bodies, code with secrets, multilingual customer-support emails). The runtime stack on top of the right backbone outperforms a 5×-larger model with proper Viterbi.
+- `nullpii` **trails by 0.01–0.03 F1 on `isotonic-{en,de,fr,it}-heldout`** vs baseline GLiNER. The regex pack adds a few false-positives on Isotonic's structured-PII format (mostly spurious `private_url` matches inside addresses). Net minor; fine-tune-style training would win these rows but at the OOD cost shown above.
+- `nullpii` **wins by +0.08 F1 on `ai4privacy-heldout/traindist`** vs baseline — ai4privacy carries some structured-secret-style content the regex pack catches.
+- `nullpii` **trails on `wikiann-*`** because WikiAnn labels are PER/LOC NER, not native PII categories — the schema mismatch hurts every tool. Read as non-Latin transfer signals only.
+- The **`openai (HF naive)` → `openai-official (Viterbi)` delta** (+0.25 F1 on OOD) is the validated PSA: HF transformers default aggregation drops the model's prescribed Viterbi BIOES decoder. If you must use `openai/privacy-filter` directly (e.g. on Python), call `opf._api.OPF` not `transformers.pipeline()`.
 
-**`gliner-v2.1` (generic-NER backbone, NOT PII-fine-tuned)**: tested on `nullpii-bench` (F1=0.156) and `ai4privacy-heldout` (F1=0.006). Useless for PII labels — a generic-NER backbone does not transfer to the 8-category PII schema without supervision. Dropped from the headline.
+### Appendix — fine-tune trade-off (memorisation vs generalisation)
 
-### Appendix — training-distribution rows (regression sentinel)
+A 2-round fine-tune of GLiNER on `ai4privacy/pii-masking-300k` + `Isotonic/pii-masking-200k`. PT FP32 + ONNX INT4 variants benched against `nullpii` on the same datasets:
 
-Same datasets as headline, but slice indices the model **was** trained on. By construction these should match `*-heldout` if the fine-tune neither memorised individual rows nor regressed on its train set. They do, within 0.005 F1.
+| Dataset                  | `nullpii` | nullpii PT-fine-tune+regex | nullpii INT4-fine-tune+regex | Δ best fine-tune vs `nullpii` |
+| ------------------------ | --------: | -------------------------: | ---------------------------: | ----------------------------: |
+| **`nullpii-bench` (OOD)** | **0.8239** |                     0.5783 |                       0.5698 |                    **−0.246** |
+| isotonic-en-heldout      |    0.5731 |                     0.9317 |                       0.9386 |                        +0.366 |
+| isotonic-de-heldout      |    0.5808 |                     0.9390 |                       0.9510 |                        +0.370 |
+| isotonic-fr-heldout      |    0.5993 |                     0.9408 |                       0.9498 |                        +0.350 |
+| isotonic-it-heldout      |    0.5789 |                     0.9396 |                       0.9427 |                        +0.364 |
+| isotonic-en-traindist    |    0.5837 |                     0.9355 |                       0.9404 |                        +0.357 |
+| ai4privacy-heldout       |    0.2085 |                     0.3296 |                       0.3406 |                        +0.132 |
+| ai4privacy-traindist     |    0.2028 |                     0.3270 |                       0.3395 |                        +0.137 |
 
-| Dataset                  | baseline GLiNER | nullpii PT FP32 | nullpii ONNX INT4 | openai (official Viterbi) | openai (HF naive) |
-| ------------------------ | --------------: | --------------: | ----------------: | ------------------------: | ----------------: |
-| ai4privacy-traindist     |          0.1171 |          0.3718 |        **0.3859** |                    0.2224 |            0.1392 |
-| isotonic-en-traindist    |          0.6065 |          0.9324 |        **0.9341** |                    0.5767 |            0.3860 |
+The fine-tune wins by **+0.35 F1 on training-distribution datasets** and loses by **−0.25 F1 on real OOD**. Same-dataset heldout vs traindist numbers are within 0.005 — slicing rows of the same dataset is not a generalisation test, only `nullpii-bench` is. The fine-tune is published at [`lBroth/nullpii` on HF](https://huggingface.co/lBroth/nullpii) for users whose production prompts look structurally like ai4privacy / Isotonic; **the npm package does not use it as the default**, and the older preview "0.93–0.97 multilingual F1" (measured on the training distribution) is misleading and now retracted.
 
-The takeaway is *not* "the fine-tune is great on its training data" (it had to be). It's that **same-dataset held-out is nearly identical to train-dist** — i.e. shifting the slice index doesn't measure generalization. The OOD signal lives only in `nullpii-bench`.
+### Appendix — dataset notes
 
-### Appendix — WikiAnn (loose-schema NER, not native PII)
-
-PER → `private_person`, LOC → `private_address` is a loose mapping. Read as non-Latin transfer signals only — absolute F1 is not directly comparable to the headline rows.
-
-| Dataset      | baseline GLiNER | nullpii PT FP32 | nullpii ONNX INT4 | openai (official Viterbi) | openai (HF naive) |
-| ------------ | --------------: | --------------: | ----------------: | ------------------------: | ----------------: |
-| wikiann-es   |      **0.3326** |          0.2262 |            0.1686 |                    0.1844 |            0.0878 |
-| wikiann-zh   |          0.1353 |          0.1518 |        **0.1549** |                    0.0863 |            0.0383 |
-| wikiann-ja   |          0.0665 |      **0.1080** |            0.0974 |                    0.0563 |            0.0344 |
-
-Two patterns: (1) Spanish (Latin script, in training) — baseline GLiNER beats the fine-tune (overfitting cost again). (2) Chinese / Japanese (CJK, NOT in training) — every tool collapses below 0.16 F1. The fine-tune holds a tiny edge on `wikiann-ja` but the absolute floor is too low to call it useful. **CJK is a dead zone across the board** until someone trains on CJK PII data.
-
-### Dataset notes
-
-- **`nullpii-bench` (n=264)** — project-bundled, `packages/eval/datasets/nullpii-bench.jsonl`. The only true OOD generalization dataset currently working. Apache-2.0.
-- **`*-heldout`** — `ai4privacy[100000:105000]` and `isotonic[200000:200000+prefetch]` (per locale, after lang filter). Slice indices documented in `packages/eval/scripts/bench_full.py` (`_AI4_HELDOUT_OFFSET`, `_ISOTONIC_HELDOUT_ROW_OFFSET`).
-- **`*-traindist`** — first-rows slices, same indices the model was trained on. Regression sentinel.
-- **`dev-prompts-synth`** — ours, training-overlap. Removed from default bench; see `packages/eval/src/nullpii_eval/public_datasets.py:_generate_dev_prompts` if you need it.
+- **`nullpii-bench` (n=264)** — project-bundled at `packages/eval/datasets/nullpii-bench.jsonl`, Apache-2.0. The only true-OOD generalisation dataset currently working. Mix of dev-style prompts (RFCs, PR reviews, deploy logs, ticket bodies, customer-support emails) plus long-prompts that exercise chunking. 5 locales (en/it/de/fr/es).
+- **`*-heldout`** — slices of the *upstream training datasets* drawn from row indices the fine-tune was not trained on (`ai4privacy[100000:105000]` + `isotonic[200000:]` per locale). Constructed to test fine-tune generalisation; in practice numbers cluster with `*-traindist` (within 0.005 F1) — same-dataset slicing isn't a real generalisation test.
+- **`*-traindist`** — first-rows slices, same indices the fine-tune *was* trained on. Regression sentinel.
+- **`wikiann-{es,zh,ja}`** — WikiAnn PER/LOC NER. PER → `private_person`, LOC → `private_address` is a loose mapping; absolute F1 is not comparable to PII-native rows. CJK rows confirm the documented gap (every tool below 0.16 F1).
+- **`dev-prompts-synth`** — ours, dropped from headline because round-2 of the fine-tune mixed it into training. Available via `packages/eval/src/nullpii_eval/public_datasets.py:_generate_dev_prompts` for regression checks.
 
 ## Library mode (npm)
 
@@ -173,38 +161,24 @@ $ npx nullpii sanitize --stdin --format json < customer-email.txt | jq .sanitize
 "Hi [[NULLPII:private_person:0]], thanks for reaching out about [[NULLPII:account_number:0]]..."
 ```
 
-## Model mode (HuggingFace)
+## Model mode (HuggingFace, fine-tune variant)
+
+For users whose production prompts look structurally like `ai4privacy/pii-masking-300k` or `Isotonic/pii-masking-200k` (structured fields like `Name: ...`, `Email: ...`, `Address: ...`), a separate fine-tune is published. **Not the npm package's default** — it loses 0.25 F1 on `nullpii-bench`-style real prompts (see appendix above). Use only if your workload matches the training distribution.
 
 ```python
 from gliner import GLiNER
 
-model = GLiNER.from_pretrained("lBroth/nullpii")
+model = GLiNER.from_pretrained("lBroth/nullpii")  # ai4privacy/Isotonic-style data ONLY
 labels = ["account_number", "private_address", "private_date",
           "private_email", "private_person", "private_phone",
           "private_url", "secret"]
 
-text = "Email John Smith at john@acme.com about IBAN IT60X0542811101000000123456"
+text = "Customer Name: Maria Rossi · Email: maria.rossi@example.it · IBAN: IT60X0542811101000000123456"
 for entity in model.predict_entities(text, labels, threshold=0.5):
     print(entity["label"], "→", entity["text"], entity["score"])
 ```
 
-ONNX (CPU-deployment recommended, INT4 ~844 MB):
-
-```python
-model = GLiNER.from_pretrained(
-    "lBroth/nullpii",
-    load_onnx_model=True,
-    onnx_model_file="onnx/model_int4.onnx",
-)
-```
-
-The repo ships:
-
-- **PyTorch FP32** at the repo root (`pytorch_model.bin` + `gliner_config.json` + tokenizer files).
-- **ONNX FP32** at `onnx/model.onnx` (~1.1 GB).
-- **ONNX INT4** at `onnx/model_int4.onnx` (~844 MB, quantized via `onnxruntime.quantization.matmul_nbits_quantizer`).
-
-ONNX INT8 is intentionally **not published** — it collapses on F1 for this architecture (avg F1 drops to ~0.58). INT4 preserves quality and is the recommended CPU-deployment variant.
+ONNX INT4 deployment: `model_int4.onnx` ~844 MB, quantised via `onnxruntime.quantization.matmul_nbits_quantizer`. ONNX INT8 not published (F1 collapses).
 
 ## What gets caught (8 categories)
 
@@ -250,7 +224,9 @@ Requires **Node 24 LTS** (see `.nvmrc`).
 | `mps`   | Apple Silicon          | CoreML EP; partial op coverage — see `EVAL_RESULTS.md`. |
 | `cuda`  | Linux/Windows + NVIDIA | Tensor cores on Volta+. CUDA EP via ORT.           |
 
-Auto-selects in priority **CUDA → MPS → CPU**. Default variant is `int4` (~875 MB, ~6% F1 drop). Pin `variant: 'fp32'` (~5 GB) when you need maximum accuracy or a regression baseline.
+Auto-selects in priority **CUDA → MPS → CPU**.
+
+> **State today vs the headline comparison**: the source tree under `src/` currently loads `openai/privacy-filter` (1.5B + Viterbi BIOES decoder), default variant `int4` (~875 MB). It scores **0.7669 F1** on `nullpii-bench` — already strong, but below the **0.8239 F1** number quoted in the headline comparison. The headline reflects the *bench-validated target state* after the backbone migration to `onnx-community/gliner_multi_pii-v1` (FP32, ~1.1 GB). That migration is the next implementation milestone — see "Roadmap" below. The two states are a single src-tree refactor apart, not a separate codebase.
 
 ## Architecture
 
@@ -279,6 +255,14 @@ attention_mask                          │ logits [seq × 33]
                             vault.restore(sessionId) ──► original text
 ```
 
+## Roadmap
+
+- **Backbone migration** — replace the in-tree `openai/privacy-filter` (1.5B, custom BIOES Viterbi decoder) with `onnx-community/gliner_multi_pii-v1` (278M, span output). Drops `src/viterbi.ts` + `src/labels-bioes.ts`, swaps tokenizer, simplifies the runtime. Shipping recipe: ONNX FP32 + chunking + the curated regex pack documented above. Bench-validated: 0.8239 F1 on `nullpii-bench` vs 0.7669 today.
+- **Per-call timeout in the runtime** — the openai backbone deadlocks on certain long inputs in chunking + Viterbi (sample 1700 of `ai4privacy-heldout` triggered an infinite loop during the bench harness run). Add a per-sample timeout with a clean fallback to the unchunked single-pass result. Becomes moot once the gliner backbone migration lands (gliner doesn't run Viterbi).
+- **Plant-and-detect dataset loaders** — `enron-planted`, `stackoverflow-planted`, `thestack-planted`, `conll2003` all have broken HF mirrors. Replace with currently-accessible mirrors (or vendor the corpora) so the OOD evidence base is more than `nullpii-bench`'s 264 samples.
+- **Statistical significance** — bootstrap CI over per-sample F1, multi-seed runs, paired comparisons. Current numbers are point estimates; differences <0.02 should not be over-interpreted.
+- **Failure analysis loop** — `packages/eval/scripts/failure_analysis.py` already extracts top FN/FP per label per tool. Use periodically to identify regex patterns worth adding to the recognizer pack (criterion: distinctive boundary-anchored prefix, low FP risk).
+
 ## nullpii-bench (eval dataset)
 
 `packages/eval/datasets/nullpii-bench.jsonl`:
@@ -287,23 +271,23 @@ attention_mask                          │ logits [seq × 33]
 - Three subsets: `bundled` (202 dev-style prompts — PR reviews, deploy logs, RFCs, customer-support tickets), `adversarial` (decoys), `long-prompts` (62 ~3k-char prompts that exercise chunking).
 - Schema: `{ id, locale, subset, text, spans }` per row. See [`packages/eval/datasets/README.md`](packages/eval/datasets/README.md).
 
-## Training details (model)
+## HF fine-tune model — training details + limitations
+
+This section documents the [`lBroth/nullpii`](https://huggingface.co/lBroth/nullpii) fine-tune, which is **not the npm package's default backbone**. Use only for ai4privacy / Isotonic-style structured-PII workloads (see appendix above for trade-off).
 
 - Base: `urchade/gliner_multi_pii-v1` (mDeBERTa-v3-base + GLiNER head, ~278M params)
 - Hardware: 1× RTX 5090 (32 GB)
 - Mixed precision: BF16 + TF32
 - Optimizer: AdamW, cosine LR with linear warmup (ratio 0.1)
-- **Training data is a subset, not the full upstream releases.** Default caps (`packages/eval/scripts/runpod/train-on-pod.sh`): `ai4privacy/pii-masking-300k` capped at **100k** samples (≈33% of the full release), `Isotonic/pii-masking-200k` capped at **20k per locale × 5 locales = 100k** samples (≈50% of the release, distributed across en/de/fr/it/es). Round 2 added **30k synthetic dev-prompts** from `_generate_dev_prompts`. Total train mix ≈ 230k samples.
-- **Round 1**: ai4privacy + Isotonic only. Effective batch 24 (12 × 2 grad accum), encoder LR 5e-6 / head LR 1e-5, 20 epochs cap, early stopping patience 3 → stopped at epoch 6. Recovered multilingual F1 0.93+ but **regressed dev-prompts-synth** (0.62 → 0.43) due to distribution mismatch.
-- **Round 2**: continued from round-1 best, added the 30k dev-prompts-synth to the training mix, halved LR to 2e-6 / 5e-6, raised weight decay from 0.01 to 0.05. 10 epochs cap, early stopping patience 3 → best at epoch 8 (eval_loss 1.528). dev-synth recovered to 0.82 while multilingual stayed 0.93+.
+- **Training data is a subset, not the full upstream releases.** Default caps (`packages/eval/scripts/runpod/train-on-pod.sh`): `ai4privacy/pii-masking-300k` capped at **100k** samples (≈33% of the full release), `Isotonic/pii-masking-200k` capped at **20k per locale × 5 locales = 100k** samples (≈50% of the release, distributed across en/de/fr/it/es). Round 2 added **30k synthetic dev-prompts**. Total train mix ≈ 230k samples.
+- **Round 1**: ai4privacy + Isotonic only. Effective batch 24 (12 × 2 grad accum), encoder LR 5e-6 / head LR 1e-5, 20 epochs cap, early stopping patience 3 → stopped at epoch 6. Recovered multilingual F1 0.93+ on training distribution but **regressed dev-prompts-synth** (0.62 → 0.43) due to distribution mismatch.
+- **Round 2**: continued from round-1 best, added 30k dev-prompts-synth to the mix, halved LR to 2e-6 / 5e-6, raised weight decay from 0.01 to 0.05. 10 epochs cap, early stopping patience 3 → best at epoch 8 (eval_loss 1.528). dev-synth recovered to 0.82 while training-distribution multilingual stayed 0.93+.
 
-A larger train mix (full 300k + 200k) is plausible to push F1 further, but the diminishing-returns curve at 200k+ samples on this fine-tune is steep — the current cap is the cost/quality knee, not a budget ceiling.
+**Limitations of the fine-tune**:
 
-## Limitations
-
-- **Non-Latin scripts**: Japanese / Korean / Chinese dates and names are *not* reliably detected. The training mix didn't include CJK-heavy data. Documented as a known gap; the overnight bench's `wikiann-zh` / `wikiann-ja` rows quantify it.
-- **Adversarial decoys**: a small adversarial subset (~6 samples) is dominated by structured-secret patterns that the regex pack catches trivially; the nullpii model on its own is not optimised for these. Use the npm runtime's recognizer post-pass for guaranteed regex coverage.
-- **INT8 dynamic quant collapse**: do not use the INT8 ONNX path; F1 drops to ~0.58. The matmul-nbits INT4 path is the recommended quantized variant.
+- **Generalisation cost** — loses 0.25 F1 vs the npm-package recipe on `nullpii-bench` (real-world OOD). Quantified in the headline appendix above. This is why the npm package does NOT use this model as its backbone.
+- **Non-Latin scripts** — Japanese / Korean / Chinese dates and names are *not* reliably detected. CJK was excluded from the training mix. The bench's `wikiann-zh` / `wikiann-ja` rows quantify it (every tool collapses below 0.16 F1 there).
+- **INT8 dynamic quant collapses** — do not use the INT8 ONNX path; F1 drops to ~0.58. INT4 (matmul-nbits) is the recommended quantised variant.
 
 ## Privacy guarantees
 

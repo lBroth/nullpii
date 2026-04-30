@@ -38,7 +38,9 @@ datasets:
 >
 > **Headline finding (validated, useful)**: HF `transformers.pipeline()` with the default `aggregation_strategy="simple"` *does not implement* the constrained Viterbi BIOES decoder that `openai/privacy-filter`'s model card prescribes. Naive HF usage produces fragmented spans. Calling the official [`opf` CLI](https://github.com/openai/privacy-filter) (via `opf._api.OPF`) recovers **+0.10–0.25 F1** across every benchmark row — see "Headline comparison" below for the table. **This is the most reproducible useful result in this repo.**
 >
-> **Headline finding (negative, more important)**: A 2-round fine-tune of GLiNER on a subset of `ai4privacy/pii-masking-300k` + `Isotonic/pii-masking-200k` **loses 0.22 F1 on the only true out-of-distribution dataset** (`nullpii-bench`: baseline GLiNER 0.69 → fine-tune 0.47). The fine-tune wins by 0.30+ F1 on held-out rows of the *same* training datasets, but held-out vs train-dist numbers are identical to within 0.005 — that's memorization at the format/style level, not generalization. The earlier preview "0.93–0.97 multilingual F1" was measured on the training distribution and is misleading. **Default to baseline GLiNER + the runtime decoder, not the fine-tune, until a generalisation-aware training mix is built.**
+> **Headline finding (positive, end-to-end)**: The npm runtime (`openai/privacy-filter` ONNX INT4 + constrained Viterbi BIOES + chunking + regex recognizer post-pass) **is the best tool on the only true-OOD dataset**: `nullpii-bench` F1 = **0.7669**, beating baseline GLiNER (0.6947), `openai-official` (0.6764), and the fine-tune (0.4737). The runtime stack on top of the bare model with proper Viterbi adds +0.09 F1 on this row. The npm package is the recommended deployment.
+>
+> **Headline finding (negative, equally important)**: A 2-round fine-tune of GLiNER on a subset of `ai4privacy/pii-masking-300k` + `Isotonic/pii-masking-200k` **loses 0.22 F1 on the OOD row** (`nullpii-bench`: baseline GLiNER 0.69 → fine-tune 0.47). The fine-tune wins by 0.30+ F1 on held-out rows of the *same* training datasets, but held-out vs train-dist numbers are identical within 0.005 — that's memorization at the format/style level, not generalization. The earlier preview "0.93–0.97 multilingual F1" was measured on the training distribution and is misleading. **Default to the npm runtime, not the fine-tune, until a generalization-aware training mix is built.**
 
 ## What's in this repo
 
@@ -67,20 +69,25 @@ F1, IoU ≥ 0.5. Mac M-series CPU bench, n=2000 per dataset (n=264 for `nullpii-
 
 The headline row is **`nullpii-bench`** — the only true out-of-distribution dataset (264 project-bundled prompts, never used in training). The `*-heldout` rows below it are slices of the *training* datasets that the fine-tune never saw, but same distribution → numbers cluster with `*-traindist` (see appendix).
 
-| Dataset                  | baseline GLiNER | nullpii PT FP32 | nullpii ONNX INT4 | openai (official Viterbi) | openai (HF naive) |
-| ------------------------ | --------------: | --------------: | ----------------: | ------------------------: | ----------------: |
-| **nullpii-bench (OOD)**  |      **0.6947** |          0.4737 |            0.3966 |                    0.6764 |            0.4264 |
-| ai4privacy-heldout       |          0.1267 |          0.3285 |        **0.3855** |                    0.2303 |            0.1451 |
-| isotonic-en-heldout      |          0.6016 |          0.9277 |        **0.9339** |                    0.5631 |            0.3822 |
-| isotonic-de-heldout      |          0.5912 |          0.9371 |        **0.9495** |                    0.5734 |            0.3809 |
-| isotonic-fr-heldout      |          0.5953 |          0.9387 |        **0.9480** |                    0.5766 |            0.3771 |
-| isotonic-it-heldout      |          0.5818 |          0.9372 |        **0.9384** |                    0.6053 |            0.3894 |
+| Dataset                  | baseline GLiNER | nullpii PT FP32 | nullpii ONNX INT4 | openai (official Viterbi) | openai (HF naive) | **nullpii npm runtime** |
+| ------------------------ | --------------: | --------------: | ----------------: | ------------------------: | ----------------: | ----------------------: |
+| **nullpii-bench (OOD)**  |          0.6947 |          0.4737 |            0.3966 |                    0.6764 |            0.4264 |              **0.7669** |
+| ai4privacy-heldout       |          0.1267 |          0.3285 |        **0.3855** |                    0.2303 |            0.1451 |                     N/D |
+| isotonic-en-heldout      |          0.6016 |          0.9277 |        **0.9339** |                    0.5631 |            0.3822 |                     N/D |
+| isotonic-de-heldout      |          0.5912 |          0.9371 |        **0.9495** |                    0.5734 |            0.3809 |                     N/D |
+| isotonic-fr-heldout      |          0.5953 |          0.9387 |        **0.9480** |                    0.5766 |            0.3771 |                     N/D |
+| isotonic-it-heldout      |          0.5818 |          0.9372 |        **0.9384** |                    0.6053 |            0.3894 |                     N/D |
+
+**nullpii npm runtime** = `openai/privacy-filter` ONNX INT4 + constrained Viterbi BIOES + chunking + regex recognizer post-pass + reversible vault. Same model as the `openai (...)` columns, different decode + post-processing stack.
 
 **Reading the table:**
 
-- The fine-tune (`nullpii PT FP32` / `ONNX INT4`) **loses 0.22 F1 on the only true-OOD row** (`nullpii-bench`: baseline 0.69 → fine-tune 0.47). It wins on `*-heldout` rows by 0.30+ F1, but those are same-distribution-different-rows — the appendix shows `traindist` and `heldout` numbers are within 0.005 of each other, confirming "held-out" is not a generalization test.
-- `openai-official` (the real Viterbi via `opf._api.OPF`) is competitive with the **baseline** GLiNER on OOD (0.68 vs 0.69) and beats `openai-naive` on every row by 0.10–0.18 F1 — that delta quantifies what the constrained Viterbi BIOES decoder buys you over `transformers.pipeline()` defaults. **This is the most reproducible useful finding in the repo.**
+- **nullpii npm runtime is the best tool overall on the only true-OOD row** (`nullpii-bench`: 0.7669 — beats every other tool, including baseline GLiNER 0.6947 and `openai-official` 0.6764). The runtime stack (Viterbi + chunking + regex post-pass) adds value over the bare model with proper Viterbi alone. **This is the strongest end-to-end result the repo has on real-world data.** Other-dataset cells are N/D — the bench harness deadlocked on long-input chunking-Viterbi inputs (sample 1700 of `ai4privacy-heldout` triggered an infinite loop on the runtime side, killed manually); needs a per-call timeout fix before re-running. The OOD row is the headline number; the `*-heldout` cells of the runtime can be filled in once the harness is fixed.
+- The fine-tune (`nullpii PT FP32` / `ONNX INT4`) **loses 0.22 F1 on the OOD row** (`nullpii-bench`: baseline 0.69 → fine-tune 0.47). It wins on `*-heldout` rows by 0.30+ F1, but those are same-distribution-different-rows — the appendix shows `traindist` and `heldout` numbers are within 0.005 of each other, confirming "held-out" within the same dataset is not a generalization test.
+- `openai-official` (the real Viterbi via `opf._api.OPF`) is competitive with the **baseline** GLiNER on OOD (0.68 vs 0.69) and beats `openai-naive` on every row by 0.10–0.18 F1 — that delta quantifies what the constrained Viterbi BIOES decoder buys you over `transformers.pipeline()` defaults.
 - `openai-naive` (HF default `aggregation_strategy='simple'`) is the worst tool across the board on real tasks. Do not use the model that way.
+
+**`gliner-v2.1` (generic-NER backbone, NOT PII-fine-tuned)**: tested on `nullpii-bench` (F1=0.156) and `ai4privacy-heldout` (F1=0.006). Useless for PII labels — a generic-NER backbone does not transfer to the 8-category PII schema without supervision. Dropped from the headline.
 
 ### Appendix — training-distribution rows (regression sentinel)
 

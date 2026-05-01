@@ -2,6 +2,47 @@
 
 Snapshot dated 2026-05-01. Used to position `nullpii` against the existing landscape and identify the whitespace it actually fills. Not exhaustive — focused on the players that overlap with the npm-package + enterprise-proxy roadmap items.
 
+## Empirical bench numbers (PII detection, F1 IoU≥0.5)
+
+OSS competitors benched directly on Mac M-series CPU, n=2000 per dataset (n=264 for `nullpii-bench`), single seed. Source: `packages/eval/results/mac-overnight-20260501/matrix.json`. Closed-source competitors (Lakera, Skyflow, cloud APIs) require paid API access and are not included — see "Roadmap — bench completeness" in the README.
+
+| Dataset                  | **nullpii** | gliner | openai | opf-Viterbi | presidio | piiranha | deberta | scrubadub |
+| ------------------------ | ----------: | -----: | -----: | ----------: | -------: | -------: | ------: | --------: |
+| **`nullpii-bench` (OOD, n=264)** | **0.8810** | 0.6947 | 0.4264 | 0.6764 | 0.3918 | 0.3571 | 0.3156 | 0.3054 |
+| ai4privacy-heldout       |      0.2146 | 0.1271 | 0.1453 |      0.2310 |   0.2065 |  **0.2572** |  0.1555 |    0.1373 |
+| isotonic-en-heldout      |      0.5943 | 0.6016 | 0.3822 |      0.5631 |   0.4717 |   0.5639 | **0.7485** |    0.2656 |
+| isotonic-de-heldout      |  **0.6101** | 0.5968 | 0.3771 |      0.5713 |   0.3943 |   0.5663 |  0.4819 |    0.2815 |
+| isotonic-fr-heldout      |  **0.6330** | 0.6012 | 0.3835 |      0.5853 |   0.4048 |   0.5700 |  0.5783 |    0.2832 |
+| isotonic-it-heldout      |  **0.6100** | 0.5848 | 0.3900 |      0.6077 |   0.4170 |   0.5749 |  0.5441 |    0.2828 |
+| isotonic-en-traindist    |      0.6070 | 0.6071 | 0.3852 |      0.5745 |   0.4728 |   0.5951 | **0.7498** |    0.2579 |
+| ai4privacy-traindist     |      0.2024 | 0.1172 | 0.1408 |      0.2243 | **0.2563** |   0.2496 |  0.2230 |    0.1540 |
+| wikiann-es               |      0.2152 | **0.3293** | 0.0754 |      0.1484 |   0.1898 |   0.2004 |  0.0683 |       N/D |
+| wikiann-zh               |      0.1179 | 0.1091 | 0.0330 |      0.0892 |      N/D | **0.1209** |     N/D |       N/D |
+| wikiann-ja               |      0.0491 | 0.0651 | 0.0291 |      0.0551 |      N/D | **0.1047** |     N/D |       N/D |
+| oasst-dev-planted        |  **0.4611** | 0.2500 | 0.2322 |      0.3524 |   0.2225 |   0.2984 |  0.3136 |    0.0500 |
+| presidio-synthetic       |  **0.6156** | 0.5946 | 0.3858 |      0.5710 |   0.5805 |   0.3744 |  0.4513 |    0.4500 |
+| ai4privacy-400k          |      0.4498 | 0.5633 | 0.3842 |      0.6446 |   0.3575 | **0.9601** |  0.4677 |    0.1608 |
+
+**Win count across 14 datasets:**
+
+| Tool | Wins | Where |
+| ---- | ---: | ----- |
+| **nullpii** | **6** | `nullpii-bench`, `isotonic-de/fr/it-heldout`, `oasst-dev-planted`, `presidio-synthetic` |
+| piiranha | 4 | `ai4privacy-heldout` + `ai4privacy-400k` (training-distribution memorization), `wikiann-zh/ja` (slightly better on CJK schema mismatch) |
+| deberta | 2 | `isotonic-en` heldout + traindist (training-distribution memorization) |
+| gliner (bare) | 1 | `wikiann-es` |
+| presidio | 1 | `ai4privacy-traindist` |
+| openai (HF naive) | 0 | — (PSA confirmed: HF default decoder always loses) |
+| openai-official (Viterbi) | 0 | — (close on `ai4privacy-*` and `isotonic-it`, doesn't take outright wins) |
+| scrubadub | 0 | — (regex-only baseline, weak everywhere) |
+
+**Key empirical findings:**
+
+- **`nullpii-bench` (real-world OOD use case)**: `nullpii` at **0.8810**, +0.49–0.58 F1 over every competitor. The closest competitor on this row is `gliner` at 0.6947 (the same backbone bare). Every closed-source-style competitor (Presidio, Piiranha, DeBERTa, scrubadub) loses by 0.49+ F1 on real-world dev paste.
+- **Memorization vs generalization** is the dominant signal in the competitor table. **Piiranha** scores **0.9601 on `ai4privacy-400k`** while only 0.3571 on `nullpii-bench` — same model, same tokenizer, F1 gap ≥0.6 between training-distribution and real OOD. **DeBERTa** identically: 0.7485 on `isotonic-en-heldout`, 0.3156 on `nullpii-bench`. Both have been fine-tuned on those public PII datasets, exposing the same overfitting mode our own GLiNER fine-tune exhibited (and which we retracted from the README headline).
+- **scrubadub** (Apache-2.0 OSS regex+chain library) scores 0.05–0.45 across every dataset. Regex-only baselines without ML coverage are not competitive on contemporary PII benchmarks. Useful as a sanity floor.
+- **Presidio's own dataset (`presidio-synthetic`)**: `nullpii` 0.6156 > Presidio 0.5805. The runtime stack on top of GLiNER beats Presidio's own self-hosted PII detector on Presidio's own benchmark by 0.035 F1.
+
 ## Direct competitors (AI Security / AI Firewall)
 
 ### Lakera

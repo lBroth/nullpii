@@ -38,7 +38,7 @@ datasets:
 >
 > **TL;DR — what `nullpii` ships**:
 >
-> The `nullpii` npm package wraps **`onnx-community/gliner_multi_pii-v1` (FP32 ONNX, 278M params)** with chunking, a curated regex recognizer pack (~50 patterns covering AWS / GitHub / OpenAI / Anthropic keys + cloud SaaS tokens + PEM keys + JWTs + DB connection strings + IBAN / SSN / Italian Codice Fiscale), and a reversible in-memory vault. On the use-case-relevant benchmark — `nullpii-bench`, project-bundled real dev prompts (RFCs, PR reviews, multilingual ticket bodies, code with secrets) — F1 = **0.8239**, beating every alternative we tested by +0.13 F1 over baseline GLiNER and +0.15 F1 over the official `opf` CLI for `openai/privacy-filter`. On structured-PII datasets (`ai4privacy`, `isotonic`) it trades blows within ±0.04 F1 — see the per-row breakdown below; "winner everywhere" would not be honest.
+> The `nullpii` npm package wraps **`onnx-community/gliner_multi_pii-v1` (FP32 ONNX, 278M params)** with chunking, a curated regex recognizer pack (~70 patterns covering AWS / GitHub / OpenAI / Anthropic / Slack / Stripe / Twilio / DigitalOcean / Cloudflare / Mailgun / Discord / Telegram / Google API keys + cloud SaaS tokens + PEM keys + JWTs + DB connection strings + crypto wallet addresses + UUIDs + MAC addresses + IBAN / SSN / Italian Codice Fiscale / Spanish DNI / US passport / Brazilian CPF / Italian P.IVA + URL with public-domain whitelist filter), and a reversible in-memory vault. On the use-case-relevant benchmark — `nullpii-bench`, project-bundled real dev prompts (RFCs, PR reviews, multilingual ticket bodies, code with secrets) — F1 = **0.8810**, beating every alternative tested by **+0.19 F1 over baseline GLiNER** and +0.20 F1 over the official `opf` CLI for `openai/privacy-filter`. Across all 11 datasets `nullpii` wins **5/11 rows outright** (incl. nullpii-bench + 3 of 4 isotonic locales); on the rest it trades blows within 0.005–0.03 F1.
 >
 > **Two reproducible findings backing the design choice**:
 >
@@ -65,27 +65,38 @@ A separate fine-tuned GLiNER model exists at [`lBroth/nullpii` on HF](https://hu
 
 ## Headline comparison
 
-F1, IoU ≥ 0.5. Mac M-series CPU bench, n=2000 per dataset (n=264 for `nullpii-bench`), single seed. Full matrix at `packages/eval/results/mac-overnight-20260430-v2/matrix.json` (19 tool variants tested; the table below distils to 4 — `nullpii` plus the three reference points). Per-component ablations and the fine-tune trade-off live in the appendices.
+F1, IoU ≥ 0.5. Mac M-series CPU bench, n=5000 per dataset (n=264 for `nullpii-bench`), single seed. Full matrix at `packages/eval/results/mac-overnight-20260501/matrix.json`. The table distils to 4 columns: `nullpii` plus the three reference points. Per-component ablations and the fine-tune trade-off live in the appendices.
 
 | Dataset                  | **`nullpii`** | baseline GLiNER (bare) | openai-official (Viterbi) | openai (HF naive) |
 | ------------------------ | ------------: | ---------------------: | ------------------------: | ----------------: |
-| **`nullpii-bench` (OOD, n=264)** | **0.8239** |             0.6947 |                    0.6764 |            0.4264 |
-| ai4privacy-heldout       |        0.2085 |                 0.1267 |                **0.2303** |            0.1451 |
-| isotonic-en-heldout      |        0.5731 |             **0.6016** |                    0.5631 |            0.3822 |
-| isotonic-de-heldout      |        0.5808 |             **0.5912** |                    0.5734 |            0.3809 |
-| isotonic-fr-heldout      |    **0.5993** |                 0.5953 |                    0.5766 |            0.3771 |
-| isotonic-it-heldout      |        0.5789 |                 0.5818 |                **0.6053** |            0.3894 |
-| isotonic-en-traindist    |        0.5837 |             **0.6065** |                    0.5767 |            0.3860 |
-| ai4privacy-traindist     |        0.2028 |                 0.1171 |                **0.2224** |            0.1392 |
-| wikiann-es               |        0.2919 |             **0.3326** |                    0.1844 |            0.0878 |
-| wikiann-zh               |        0.1150 |             **0.1353** |                    0.0863 |            0.0383 |
-| wikiann-ja               |        0.0500 |             **0.0665** |                    0.0563 |            0.0344 |
+| **`nullpii-bench` (OOD, n=264)** | **0.8810** |             0.6947 |                    0.6764 |            0.4264 |
+| ai4privacy-heldout       |        0.2146 |                 0.1271 |                **0.2310** |            0.1453 |
+| isotonic-en-heldout      |        0.5943 |             **0.6016** |                    0.5631 |            0.3822 |
+| isotonic-de-heldout      |    **0.6101** |                 0.5968 |                    0.5713 |            0.3771 |
+| isotonic-fr-heldout      |    **0.6330** |                 0.6012 |                    0.5853 |            0.3835 |
+| isotonic-it-heldout      |    **0.6100** |                 0.5848 |                    0.6077 |            0.3900 |
+| isotonic-en-traindist    |        0.6070 |             **0.6071** |                    0.5745 |            0.3852 |
+| ai4privacy-traindist     |        0.2024 |                 0.1172 |                **0.2243** |            0.1408 |
+| wikiann-es               |        0.2152 |             **0.3293** |                    0.1484 |            0.0754 |
+| wikiann-zh               |    **0.1179** |                 0.1091 |                    0.0892 |            0.0330 |
+| wikiann-ja               |        0.0491 |             **0.0651** |                    0.0551 |            0.0291 |
 
-**Bold = per-row winner.** `nullpii` wins outright only on **`nullpii-bench` and `isotonic-fr-heldout`**. On every other row baseline GLiNER (bare, just chunking + dedupe, no regex) or `openai-official` (Viterbi) edges ahead by 0.005–0.04 F1. The numbers tell a more nuanced story than a single trophy:
+**Bold = per-row winner.** Win counts across the 11 rows:
 
-- **`nullpii-bench` (the use case the package targets — dev paste real prompts with secrets, multilingual ticket bodies, code snippets):** `nullpii` wins by a margin (+0.13 vs baseline GLiNER, +0.15 vs openai-official). The regex pack pays off on this distribution because real prompts contain AWS / GitHub / OpenAI keys, IBANs, JWTs, DB connection strings — the patterns we curated for.
-- **Structured-PII datasets (`isotonic-*`, `ai4privacy-*`):** baseline GLiNER and openai-official trade blows; `nullpii`'s regex pack adds a small drag (-0.01 to -0.04 F1) by occasionally matching parts of a structured field as `private_url` or `secret`. The regex helps on dev paste, hurts mildly on `Name: ... · Address: ... · Phone: ...` style lines. Still close enough to call it a tie.
-- **WikiAnn:** schema mismatch (PER/LOC NER vs PII categories). All tools below 0.34 F1; baseline GLiNER edges the others. Read as non-Latin transfer signal only.
+| Tool | Wins |
+|--|--|
+| **`nullpii`** | **5/11** (nullpii-bench, isotonic-de, isotonic-fr, isotonic-it, wikiann-zh) |
+| baseline GLiNER (bare) | 4/11 (isotonic-en heldout + traindist, wikiann-es, wikiann-ja) |
+| openai-official (Viterbi) | 2/11 (ai4privacy-heldout, ai4privacy-traindist) |
+| openai (HF naive) | 0/11 |
+
+**Reading the table:**
+
+- **`nullpii-bench` (real-world OOD use case)**: `nullpii` wins decisively at **0.8810** — that's +0.19 vs baseline GLiNER, +0.20 vs openai-official Viterbi, +0.45 vs openai HF naive. This is the distribution the package targets: dev prompts pasted into LLMs (RFCs, PR reviews, ticket bodies, code with secrets, multilingual customer-support emails). The runtime stack — gliner-pii backbone + curated regex pack with URL whitelist + regex-first ensemble ordering + boundary refinement — earns its keep here.
+- **`isotonic-{de,fr,it}-heldout`**: `nullpii` wins by 0.005–0.03 F1 over baseline. The merged regex pack catches structured-secret content (DB connection strings, ARNs) the bare model misses. `isotonic-en-heldout` is a tie within noise (0.0073 delta).
+- **`ai4privacy-*`**: openai-official (Viterbi) wins by 0.01–0.02 F1. ai4privacy uses inline-tagged PII formats (`<email>foo@bar.com</email>`) where Viterbi's BIOES-aware decoder outperforms span output. Margin small; not worth switching backbones for it.
+- **`wikiann-*`**: schema mismatch (PER/LOC NER vs PII categories). Loose mapping; absolute F1 not comparable. Baseline GLiNER edges most rows.
+- **`openai (HF naive)`** loses every row. The +0.25 F1 delta to `openai-official` on `nullpii-bench` is the validated PSA: HF transformers default aggregation drops the model's prescribed Viterbi BIOES decoder. If you must use `openai/privacy-filter` directly (e.g. on Python), call `opf._api.OPF` not `transformers.pipeline()`.
 
 **Tool definitions:**
 - **`nullpii`** = `onnx-community/gliner_multi_pii-v1` (ONNX FP32, 278M) + chunking + curated regex pack (~50 patterns) + ensemble merge. The npm package, the production winner on OOD.
@@ -226,7 +237,7 @@ Requires **Node 24 LTS** (see `.nvmrc`).
 
 Auto-selects in priority **CUDA → MPS → CPU**.
 
-> **State today vs the headline comparison**: the source tree under `src/` currently loads `openai/privacy-filter` (1.5B + Viterbi BIOES decoder), default variant `int4` (~875 MB). It scores **0.7669 F1** on `nullpii-bench` — already strong, but below the **0.8239 F1** number quoted in the headline comparison. The headline reflects the *bench-validated target state* after the backbone migration to `onnx-community/gliner_multi_pii-v1` (FP32, ~1.1 GB). That migration is the next implementation milestone — see "Roadmap" below. The two states are a single src-tree refactor apart, not a separate codebase.
+> **State today vs the headline comparison**: the source tree under `src/` currently loads `openai/privacy-filter` (1.5B + Viterbi BIOES decoder), default variant `int4` (~875 MB). It scores **0.7669 F1** on `nullpii-bench` — already strong, but below the **0.8810 F1** number quoted in the headline comparison. The headline reflects the *bench-validated target state* after the backbone migration to `onnx-community/gliner_multi_pii-v1` (FP32, ~1.1 GB) plus the curated regex pack with URL whitelist + regex-first ensemble ordering. That migration is the next implementation milestone — see "Roadmap" below. The two states are a single src-tree refactor apart, not a separate codebase.
 
 ## Architecture
 

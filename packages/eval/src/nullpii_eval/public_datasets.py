@@ -33,6 +33,8 @@ DatasetName = Literal[
     "enron-planted",
     "stackoverflow-planted",
     "thestack-planted",
+    "lmsys-dev-planted",
+    "oasst-dev-planted",
 ]
 
 
@@ -81,6 +83,10 @@ def load(
         return _load_stackoverflow_planted(max_samples)
     if name == "thestack-planted":
         return _load_thestack_planted(max_samples)
+    if name == "lmsys-dev-planted":
+        return _load_lmsys_dev_planted(max_samples)
+    if name == "oasst-dev-planted":
+        return _load_oasst_dev_planted(max_samples)
     raise ValueError(f"unknown public dataset: {name}")
 
 
@@ -674,30 +680,30 @@ def _plant_pii(text: str, n_spans: int, rng) -> tuple[str, list[Span]]:
             candidates.append(i + 1)
     if len(candidates) < 2:
         return text, []
-    # Pick distinct insertion offsets (sorted descending so insertions
-    # don't shift earlier positions).
+    # Pick distinct insertion offsets sorted ASCENDING. We track a
+    # cumulative `shift` for each insertion: the previous insertions
+    # (at lower offsets) push later target offsets forward in the
+    # growing `new_text`. Recorded span coordinates are in `new_text`,
+    # not the original.
     n_spans = min(n_spans, len(candidates) - 1, 5)
-    insert_at = sorted(rng.sample(candidates, n_spans), reverse=True)
+    insert_at = sorted(rng.sample(candidates, n_spans))
     spans: list[Span] = []
     new_text = text
+    shift = 0
     for off in insert_at:
         placeholder, label = rng.choice(_PLANT_CHOICES)
         synth = _DEV_PROMPT_SYNTH[placeholder](rng)
+        real_off = off + shift
         # Surround with spaces if neighbours aren't whitespace, so the
         # PII reads naturally and gold positions are clean.
-        prefix = "" if off == 0 or new_text[off - 1].isspace() else " "
-        suffix = "" if off >= len(new_text) or new_text[off].isspace() else " "
+        prefix = "" if real_off == 0 or new_text[real_off - 1].isspace() else " "
+        suffix = "" if real_off >= len(new_text) or new_text[real_off].isspace() else " "
         injected = prefix + synth + suffix
-        new_text = new_text[:off] + injected + new_text[off:]
-        span_start = off + len(prefix)
+        new_text = new_text[:real_off] + injected + new_text[real_off:]
+        span_start = real_off + len(prefix)
         span_end = span_start + len(synth)
         spans.append(Span(label, span_start, span_end))
-    # Re-sort + re-base spans against the final new_text (insertions
-    # were descending, so earlier-offset spans are shifted by later
-    # insertions' deltas — but since we reverse-iterated, insertions
-    # at higher offsets DON'T affect lower-offset spans we've recorded).
-    # Lower-offset span start positions are still valid in new_text.
-    spans.sort(key=lambda s: s.start)
+        shift += len(injected)
     # Sanity check: each span text matches actually-injected synth.
     return new_text, spans
 
@@ -841,5 +847,138 @@ def _load_thestack_planted(max_samples: int | None) -> PublicDataset:
     return PublicDataset(
         name="thestack-planted",
         citation="BigCode The Stack v1.2 (smol) + nullpii planted secrets.",
+        samples=tuple(samples),
+    )
+
+
+# ─── LMSYS dev-filtered + planted loader ─────────────────────────
+#
+# Filters `lmsys/lmsys-chat-1m` (1M real LLM conversations) for dev-
+# style prompts (code blocks, stack traces, env vars, shell commands)
+# then plants PII at known positions via `_plant_pii`. Real LLM
+# prompt distribution + ground truth — closest thing to "what users
+# actually paste into LLMs" with annotated PII.
+
+import re as _re_lmsys
+
+_DEV_HEURISTICS: tuple[_re_lmsys.Pattern, ...] = (
+    _re_lmsys.compile(r"```[\w+-]*\n"),                 # fenced code block
+    _re_lmsys.compile(r"^\s*(?:File|at)\s+[\w./]+:\d+", _re_lmsys.MULTILINE),  # stack trace
+    _re_lmsys.compile(r"^\s*[A-Z_]{3,}=[\w\-./:]+", _re_lmsys.MULTILINE),       # env var
+    _re_lmsys.compile(r"\b(?:npm install|pip install|cargo build|go run|docker run)\b"),
+    _re_lmsys.compile(r"\b(?:Traceback|Error|Exception|panic|undefined reference)\b"),
+    _re_lmsys.compile(r"^\s*(?:#|//|--|<!--)\s+\w+", _re_lmsys.MULTILINE),  # code comment
+    _re_lmsys.compile(r"\b(?:SELECT|INSERT|UPDATE|DELETE|CREATE TABLE)\b"),  # SQL
+    _re_lmsys.compile(r"\b(?:GET|POST|PUT|DELETE)\s+/[\w/-]+\s+HTTP/"),      # HTTP
+    _re_lmsys.compile(r"\b(?:function|def|class|impl|interface|struct)\s+\w+"),  # code def
+)
+
+
+def _is_dev_content(text: str) -> bool:
+    """Returns True if text matches at least 2 dev-content heuristics."""
+    if len(text) < 200:
+        return False
+    hits = sum(1 for pat in _DEV_HEURISTICS if pat.search(text))
+    return hits >= 2
+
+
+def _load_lmsys_dev_planted(max_samples: int | None) -> PublicDataset:
+    """LMSYS-1M filtered for dev content + planted PII at known offsets.
+
+    Source: `lmsys/lmsys-chat-1m` (CC-BY-4.0, 1M conversations). Extracts
+    each conversation's first user-turn `content`, filters via
+    `_is_dev_content` (≥2 dev-heuristic matches), truncates to 4000 chars,
+    plants 1-3 PII spans per sample at random word boundaries.
+
+    `max_samples=None` → 5000 default.
+    """
+    import random
+
+    from datasets import load_dataset
+
+    n = 5000 if max_samples is None else max_samples
+    # LMSYS is large — pull 50× to compensate for filter rejection rate
+    # (estimated 5-15% pass `_is_dev_content`).
+    prefetch = max(n * 50, 5000)
+    ds = load_dataset(
+        "lmsys/lmsys-chat-1m", split=f"train[:{prefetch}]",
+    )
+    rng = random.Random(2026)
+    samples: list[Sample] = []
+    for row in ds:
+        if len(samples) >= n:
+            break
+        conversation = row.get("conversation") or []
+        if not conversation:
+            continue
+        first_user = next(
+            (m.get("content") for m in conversation if m.get("role") == "user"),
+            None,
+        )
+        if not first_user or not isinstance(first_user, str):
+            continue
+        if not _is_dev_content(first_user):
+            continue
+        text = first_user[:4000]
+        n_plant = rng.randint(1, 3)
+        new_text, spans = _plant_pii(text, n_plant, rng)
+        if not spans:
+            continue
+        samples.append(Sample(text=new_text, spans=tuple(spans)))
+    if not samples:
+        raise RuntimeError(
+            "lmsys-dev-planted: 0 samples after filter. Either prefetch "
+            "too small, dev-heuristic too strict, or LMSYS schema changed.",
+        )
+    return PublicDataset(
+        name="lmsys-dev-planted",
+        citation="LMSYS-Chat-1M (CC-BY-4.0) filtered for dev content + nullpii planted PII.",
+        samples=tuple(samples),
+    )
+
+
+def _load_oasst_dev_planted(max_samples: int | None) -> PublicDataset:
+    """OpenAssistant oasst1 filtered for dev content + planted PII.
+
+    Source: `OpenAssistant/oasst1` (Apache-2.0, 88k messages). Filters
+    root prompter messages (`role=='prompter'`, `parent_id is None`)
+    where `_is_dev_content` matches; plants 1-3 PII spans per sample.
+
+    `max_samples=None` → 5000 default. Open alternative to
+    `_load_lmsys_dev_planted` (which is gated, requires HF_TOKEN).
+    """
+    import random
+
+    from datasets import load_dataset
+
+    n = 5000 if max_samples is None else max_samples
+    ds = load_dataset("OpenAssistant/oasst1", split="train")
+    rng = random.Random(2026)
+    samples: list[Sample] = []
+    for row in ds:
+        if len(samples) >= n:
+            break
+        if row.get("role") != "prompter":
+            continue
+        if row.get("parent_id"):
+            continue  # only top-level prompts
+        text = str(row.get("text") or "")
+        if not text or not _is_dev_content(text):
+            continue
+        text = text[:4000]
+        n_plant = rng.randint(1, 3)
+        new_text, spans = _plant_pii(text, n_plant, rng)
+        if not spans:
+            continue
+        samples.append(Sample(text=new_text, spans=tuple(spans)))
+    if not samples:
+        raise RuntimeError(
+            "oasst-dev-planted: 0 samples after filter. dev-heuristic may "
+            "be too strict for oasst1 distribution (mostly creative-writing "
+            "Q&A); consider relaxing or adding more code-flavored sources.",
+        )
+    return PublicDataset(
+        name="oasst-dev-planted",
+        citation="OpenAssistant oasst1 (Apache-2.0) filtered for dev content + nullpii planted PII.",
         samples=tuple(samples),
     )

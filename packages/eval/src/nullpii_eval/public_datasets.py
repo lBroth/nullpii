@@ -254,8 +254,14 @@ def _load_presidio_synthetic(max_samples: int | None) -> PublicDataset:
 
     # Faker is generative — there is no "full" split. For `None`,
     # default to 5000 (release benchmark size); cap honored otherwise.
+    # Pin the random seed so resumed benches re-evaluate cached
+    # predictions against the same gold output. Without this the
+    # generator produces a different sample set on each call → F1
+    # collapses on re-run.
     n = max_samples if max_samples is not None else 5000
-    faker = PresidioSentenceFaker(locale="en_US", lower_case_ratio=0.05)
+    faker = PresidioSentenceFaker(
+        locale="en_US", lower_case_ratio=0.05, random_seed=2026,
+    )
     rows = faker.generate_new_fake_sentences(num_samples=n)
     samples: list[Sample] = []
     for r in rows[:n]:

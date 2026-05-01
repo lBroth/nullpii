@@ -164,22 +164,78 @@ def _load_ai4privacy(
 
 
 _AI4PRIVACY_LABELS = {
+    # ─── Person names (300k uses FIRST/LAST/FULLNAME, 400k uses
+    #     GIVENNAME/SURNAME, both releases include USERNAME, ai4privacy
+    #     also exposes display/middle/prefix/suffix in some splits) ──
     "FIRSTNAME": "private_person",
     "LASTNAME": "private_person",
     "FULLNAME": "private_person",
+    "GIVENNAME": "private_person",
+    "SURNAME": "private_person",
+    "MIDDLENAME": "private_person",
+    "DISPLAYNAME": "private_person",
+    "NAMEPREFIX": "private_person",
+    "NAMESUFFIX": "private_person",
+    "USERNAME": "private_person",
+    # ─── Email / phone ────────────────────────────────────────────
     "EMAIL": "private_email",
     "PHONE_NUMBER": "private_phone",
+    "PHONENUMBER": "private_phone",
+    "TELEPHONENUM": "private_phone",
+    "FAX": "private_phone",
+    # ─── Address ──────────────────────────────────────────────────
     "STREET_ADDRESS": "private_address",
+    "STREETADDRESS": "private_address",
+    "STREET": "private_address",
+    "BUILDINGNUM": "private_address",
+    "BUILDINGNUMBER": "private_address",
+    "SECONDARYADDRESS": "private_address",
     "CITY": "private_address",
+    "STATE": "private_address",
+    "COUNTY": "private_address",
+    "COUNTRY": "private_address",
+    "ZIPCODE": "private_address",
+    "POSTCODE": "private_address",
+    # ─── Date / time ──────────────────────────────────────────────
     "DOB": "private_date",
+    "DATEOFBIRTH": "private_date",
     "DATE": "private_date",
+    "TIME": "private_date",
+    # ─── URL ──────────────────────────────────────────────────────
     "URL": "private_url",
+    # ─── Account / financial / national ID numbers ────────────────
     "IBAN": "account_number",
+    "BIC": "account_number",
     "CREDIT_CARD": "account_number",
+    "CREDITCARD": "account_number",
+    "CREDITCARDNUMBER": "account_number",
     "ACCOUNT_NUMBER": "account_number",
+    "ACCOUNTNUMBER": "account_number",
+    "ACCOUNTNUM": "account_number",
     "SSN": "account_number",
+    "SOCIALNUM": "account_number",
+    "TAXNUM": "account_number",
+    "IDCARDNUM": "account_number",
+    "DRIVERLICENSENUM": "account_number",
+    "PASSPORTNUM": "account_number",
+    "MASKEDNUMBER": "account_number",
+    "BTC_ADDRESS": "account_number",
+    "BITCOINADDRESS": "account_number",
+    "ETHEREUM_ADDRESS": "account_number",
+    "ETHEREUMADDRESS": "account_number",
+    "LITECOINADDRESS": "account_number",
+    "IPV4": "account_number",
+    "IPV6": "account_number",
+    "IP": "account_number",
+    "MAC": "account_number",
+    "MACADDRESS": "account_number",
+    "VEHICLEVIN": "account_number",
+    "VEHICLEVRM": "account_number",
+    # ─── Secret ───────────────────────────────────────────────────
     "API_KEY": "secret",
+    "APIKEY": "secret",
     "PASSWORD": "secret",
+    "PIN": "secret",
 }
 
 

@@ -272,6 +272,13 @@ attention_mask                          │ logits [seq × 33]
   - Prior work: `src/proxy.ts` (deleted in the research pivot, recoverable from `bench-runpod-on-demand` branch) had a working `ANTHROPIC_BASE_URL` proxy with SSE streaming. The same module is the starting point for this productisation.
   - Positioning: open-source enterprise PII firewall for LLM traffic. Compete with Zscaler/Netskope DLP modules (closed, generic) and Skyflow / Privatemode AI (closed, hosted). The OSS path + local-only deployment is the moat.
 
+- **IDE / coding-assistant integration** — companion to (or alternative to) the proxy: ship `nullpii` as a plugin/extension for Claude Code, GitHub Copilot, Cursor, Zed, JetBrains, VS Code, Neovim. Sanitises prompts on send (Cmd-K, chat panel, autocomplete request); on response, auto-restores spans inline if the user has the right authorisation policy, otherwise leaves the placeholders visible. Live decode during streaming responses (token-by-token restore). Works without a corporate proxy — single-machine, per-user — so engineers on personal devices can opt in without IT involvement.
+  - Architecture: language-agnostic core via the npm package; thin per-IDE shim (≈ 200–500 LoC) that hooks the IDE's pre-LLM-send / post-LLM-receive callbacks. Vault stays local to the IDE process.
+  - Auth model: per-user policy file (sops-encrypted or local keychain) that lists which placeholder categories auto-decode (`secret` → never, `private_email` → always for owner, etc.). Without policy, all placeholders stay visible.
+  - Live-changes flow: IDE intercepts streaming SSE chunks, runs `restore()` incrementally (single `nullpii` instance, multiple sessions). Render restored text in the chat panel as it arrives.
+  - Distribution: VS Code Marketplace / JetBrains Plugin Repository / nvim plugin manager / native Claude Code skill (per Claude Code's plugin SDK).
+  - Complements the proxy path: enterprise = proxy + audit. Personal / SMB = IDE plugin, no infra.
+
 ## nullpii-bench (eval dataset)
 
 `packages/eval/datasets/nullpii-bench.jsonl`:

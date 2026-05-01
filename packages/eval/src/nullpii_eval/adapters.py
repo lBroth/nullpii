@@ -1397,6 +1397,47 @@ def _strip_bioes(entity: str) -> str:
     return entity
 
 
+_SCRUBADUB_LABEL_MAP = {
+    "credential": "secret",
+    "credit_card": "account_number",
+    "email": "private_email",
+    "phone": "private_phone",
+    "twitter": "private_person",  # username
+    "url": "private_url",
+    "social_security_number": "account_number",
+}
+
+
+def scrubadub_predictor() -> Predictor:
+    """Wrap scrubadub (Apache-2.0, regex+detector chain) as a PII predictor.
+
+    Uses the default Scrubber detector set (credential, credit_card,
+    email, phone, twitter handle, url, SSN). NameDetector is not
+    enabled by default — would require spaCy install and adds noise.
+    """
+    try:
+        import scrubadub
+    except ImportError as e:
+        raise ImportError(
+            "scrubadub not installed; run `pip install scrubadub`",
+        ) from e
+
+    scrubber = scrubadub.Scrubber()
+
+    def _predict(text: str) -> ToolResult:
+        t0 = time.perf_counter()
+        spans: list[Span] = []
+        for f in scrubber.iter_filth(text):
+            label = _SCRUBADUB_LABEL_MAP.get(f.type)
+            if label is None:
+                continue
+            spans.append(Span(label, int(f.beg), int(f.end)))
+        elapsed = (time.perf_counter() - t0) * 1000
+        return ToolResult(spans, elapsed)
+
+    return _predict
+
+
 def presidio_predictor(*, language: str = "en") -> Predictor:
     """In-process Presidio analyzer. Maps Presidio entities → our 8 categories."""
     try:

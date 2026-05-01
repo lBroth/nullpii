@@ -293,6 +293,11 @@ attention_mask                          │ logits [seq × 33]
 - **Specialized-scenarios benchmark suite** — exercise edge cases the headline matrix misses: SSE-streaming chunk-level restore latency (proxy use case), long-document handling (>10k-token prompts that exceed gliner's 512-token context after chunking), single prompts mixing 3+ languages, code with PII inside comments / docstrings, adversarial prompts (decoy lookalikes, prompt injection attempts that try to confuse the detector). Each scenario gets its own small dataset (~50-100 samples) with explicit pass/fail criteria, not aggregate F1.
 - **Ablation table** — quantify the F1 contribution of each pipeline component on `nullpii-bench`: nullpii w/o regex pack, w/o URL whitelist filter, w/o boundary refinement, with default-only regex (~10 patterns) vs extended (~70). Defends the design choices made in the runtime stack rather than asserting them.
 
+### Roadmap — competitive positioning
+
+- **OSS PII firewall for LLM traffic** — see [COMPETITIVE_ANALYSIS.md](COMPETITIVE_ANALYSIS.md). Strategic gap nullpii fills: open-source, reversible-vault, local-first, latency-zero, backbone-agnostic. No competitor combines all four. Closest commercial peer is Skyflow (cloud-only) which charges per-call SaaS pricing. Positioning: pair with Portkey (gateway) + Rebuff (injection) for the full stack rather than competing head-to-head with Lakera (injection detection) or Portkey (gateway).
+- **OSS-license enterprise tier between "library" and "Zscaler-tier closed product"** — gap in the market: Guardrails AI is library-only, Zscaler is closed enterprise SaaS, nothing in the middle. The enterprise HTTPS-proxy item below + the per-vertical profile bucket above are the concrete steps into that gap.
+
 ### Roadmap — under evaluation
 
 - **Enterprise HTTPS-proxy deployment** — instead of (or in addition to) shipping `nullpii` as a per-process npm library, deploy it as a corporate HTTPS proxy that intercepts traffic to `api.openai.com` / `api.anthropic.com` / Mistral / Cohere / Google / local LLM gateways, sanitizes the request body, forwards to the upstream LLM, then `restore()`s on the response (incl. SSE streaming) before returning to the client. Same runtime stack, different deployment shape.

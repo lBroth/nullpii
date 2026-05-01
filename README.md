@@ -263,6 +263,15 @@ attention_mask                          │ logits [seq × 33]
 - **Statistical significance** — bootstrap CI over per-sample F1, multi-seed runs, paired comparisons. Current numbers are point estimates; differences <0.02 should not be over-interpreted.
 - **Failure analysis loop** — `packages/eval/scripts/failure_analysis.py` already extracts top FN/FP per label per tool. Use periodically to identify regex patterns worth adding to the recognizer pack (criterion: distinctive boundary-anchored prefix, low FP risk).
 
+### Roadmap — under evaluation
+
+- **Enterprise HTTPS-proxy deployment** — instead of (or in addition to) shipping `nullpii` as a per-process npm library, deploy it as a corporate HTTPS proxy that intercepts traffic to `api.openai.com` / `api.anthropic.com` / Mistral / Cohere / Google / local LLM gateways, sanitizes the request body, forwards to the upstream LLM, then `restore()`s on the response (incl. SSE streaming) before returning to the client. Same runtime stack, different deployment shape.
+  - Architecture: TLS interception with a corporate CA cert (standard CASB / Zscaler / Netskope pattern); system-wide `HTTPS_PROXY` env-var or PAC file or VPN routing on managed devices; per-session vault (Redis/Postgres for multi-instance); zero-log mode for trust.
+  - Pros: LLM-agnostic, zero client-side code change, central audit log of LLM exfiltration risk, GDPR/HIPAA-visible compliance posture.
+  - Cons: requires CA cert install on managed devices (standard for enterprise security stacks); MITM trust paradox mitigated by full open-source code path; +50–200ms latency vs direct call (acceptable for chat, marginal for autocomplete); vault state management non-trivial across instances.
+  - Prior work: `src/proxy.ts` (deleted in the research pivot, recoverable from `bench-runpod-on-demand` branch) had a working `ANTHROPIC_BASE_URL` proxy with SSE streaming. The same module is the starting point for this productisation.
+  - Positioning: open-source enterprise PII firewall for LLM traffic. Compete with Zscaler/Netskope DLP modules (closed, generic) and Skyflow / Privatemode AI (closed, hosted). The OSS path + local-only deployment is the moat.
+
 ## nullpii-bench (eval dataset)
 
 `packages/eval/datasets/nullpii-bench.jsonl`:

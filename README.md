@@ -38,7 +38,7 @@ datasets:
 >
 > **TL;DR — what `nullpii` ships**:
 >
-> The `nullpii` npm package wraps **`onnx-community/gliner_multi_pii-v1` (FP32 ONNX, 278M params)** with chunking, a curated regex recognizer pack (~50 patterns covering AWS / GitHub / OpenAI / Anthropic keys + cloud SaaS tokens + PEM keys + JWTs + DB connection strings + IBAN / SSN / Italian Codice Fiscale), and a reversible in-memory vault. F1 = **0.8239** on `nullpii-bench` (the only true out-of-distribution dataset), beating every other configuration we tested — including the official `opf` CLI for `openai/privacy-filter` (0.6764) and a from-scratch fine-tune of GLiNER on training-distribution datasets (0.4737 on OOD).
+> The `nullpii` npm package wraps **`onnx-community/gliner_multi_pii-v1` (FP32 ONNX, 278M params)** with chunking, a curated regex recognizer pack (~50 patterns covering AWS / GitHub / OpenAI / Anthropic keys + cloud SaaS tokens + PEM keys + JWTs + DB connection strings + IBAN / SSN / Italian Codice Fiscale), and a reversible in-memory vault. On the use-case-relevant benchmark — `nullpii-bench`, project-bundled real dev prompts (RFCs, PR reviews, multilingual ticket bodies, code with secrets) — F1 = **0.8239**, beating every alternative we tested by +0.13 F1 over baseline GLiNER and +0.15 F1 over the official `opf` CLI for `openai/privacy-filter`. On structured-PII datasets (`ai4privacy`, `isotonic`) it trades blows within ±0.04 F1 — see the per-row breakdown below; "winner everywhere" would not be honest.
 >
 > **Two reproducible findings backing the design choice**:
 >
@@ -69,17 +69,23 @@ F1, IoU ≥ 0.5. Mac M-series CPU bench, n=2000 per dataset (n=264 for `nullpii-
 
 | Dataset                  | **`nullpii`** | baseline GLiNER (bare) | openai-official (Viterbi) | openai (HF naive) |
 | ------------------------ | ------------: | ---------------------: | ------------------------: | ----------------: |
-| **`nullpii-bench` (OOD, n=264)** | **0.8239** | 0.6947 | 0.6764 | 0.4264 |
-| ai4privacy-heldout       |        0.2085 |                 0.1267 |                    0.2303 |            0.1451 |
-| isotonic-en-heldout      |        0.5731 |                 0.6016 |                    0.5631 |            0.3822 |
-| isotonic-de-heldout      |        0.5808 |                 0.5912 |                    0.5734 |            0.3809 |
-| isotonic-fr-heldout      |        0.5993 |                 0.5953 |                    0.5766 |            0.3771 |
-| isotonic-it-heldout      |        0.5789 |                 0.5818 |                    0.6053 |            0.3894 |
-| isotonic-en-traindist    |        0.5837 |                 0.6065 |                    0.5767 |            0.3860 |
-| ai4privacy-traindist     |        0.2028 |                 0.1171 |                    0.2224 |            0.1392 |
-| wikiann-es               |        0.2919 |                 0.3326 |                    0.1844 |            0.0878 |
-| wikiann-zh               |        0.1150 |                 0.1353 |                    0.0863 |            0.0383 |
-| wikiann-ja               |        0.0500 |                 0.0665 |                    0.0563 |            0.0344 |
+| **`nullpii-bench` (OOD, n=264)** | **0.8239** |             0.6947 |                    0.6764 |            0.4264 |
+| ai4privacy-heldout       |        0.2085 |                 0.1267 |                **0.2303** |            0.1451 |
+| isotonic-en-heldout      |        0.5731 |             **0.6016** |                    0.5631 |            0.3822 |
+| isotonic-de-heldout      |        0.5808 |             **0.5912** |                    0.5734 |            0.3809 |
+| isotonic-fr-heldout      |    **0.5993** |                 0.5953 |                    0.5766 |            0.3771 |
+| isotonic-it-heldout      |        0.5789 |                 0.5818 |                **0.6053** |            0.3894 |
+| isotonic-en-traindist    |        0.5837 |             **0.6065** |                    0.5767 |            0.3860 |
+| ai4privacy-traindist     |        0.2028 |                 0.1171 |                **0.2224** |            0.1392 |
+| wikiann-es               |        0.2919 |             **0.3326** |                    0.1844 |            0.0878 |
+| wikiann-zh               |        0.1150 |             **0.1353** |                    0.0863 |            0.0383 |
+| wikiann-ja               |        0.0500 |             **0.0665** |                    0.0563 |            0.0344 |
+
+**Bold = per-row winner.** `nullpii` wins outright only on **`nullpii-bench` and `isotonic-fr-heldout`**. On every other row baseline GLiNER (bare, just chunking + dedupe, no regex) or `openai-official` (Viterbi) edges ahead by 0.005–0.04 F1. The numbers tell a more nuanced story than a single trophy:
+
+- **`nullpii-bench` (the use case the package targets — dev paste real prompts with secrets, multilingual ticket bodies, code snippets):** `nullpii` wins by a margin (+0.13 vs baseline GLiNER, +0.15 vs openai-official). The regex pack pays off on this distribution because real prompts contain AWS / GitHub / OpenAI keys, IBANs, JWTs, DB connection strings — the patterns we curated for.
+- **Structured-PII datasets (`isotonic-*`, `ai4privacy-*`):** baseline GLiNER and openai-official trade blows; `nullpii`'s regex pack adds a small drag (-0.01 to -0.04 F1) by occasionally matching parts of a structured field as `private_url` or `secret`. The regex helps on dev paste, hurts mildly on `Name: ... · Address: ... · Phone: ...` style lines. Still close enough to call it a tie.
+- **WikiAnn:** schema mismatch (PER/LOC NER vs PII categories). All tools below 0.34 F1; baseline GLiNER edges the others. Read as non-Latin transfer signal only.
 
 **Tool definitions:**
 - **`nullpii`** = `onnx-community/gliner_multi_pii-v1` (ONNX FP32, 278M) + chunking + curated regex pack (~50 patterns) + ensemble merge. The npm package, the production winner on OOD.
@@ -87,13 +93,7 @@ F1, IoU ≥ 0.5. Mac M-series CPU bench, n=2000 per dataset (n=264 for `nullpii-
 - **openai-official (Viterbi)** = `openai/privacy-filter` (1.5B) via the official [`opf` CLI](https://github.com/openai/privacy-filter) Python API (`opf._api.OPF`). Reference for the model's intended-quality output.
 - **openai (HF naive)** = same `openai/privacy-filter` model via `transformers.pipeline()` defaults (`aggregation_strategy="simple"`). Reference for what *not* to do — produces fragmented spans because the integration drops the model's prescribed Viterbi BIOES decoder.
 
-**Reading the table:**
-
-- `nullpii` **wins by +0.13 F1 on `nullpii-bench`** — the only true-OOD dataset. This is the use case the npm package targets: developer prompts pasted into LLMs (RFCs, PR reviews, ticket bodies, code with secrets, multilingual customer-support emails). The runtime stack on top of the right backbone outperforms a 5×-larger model with proper Viterbi.
-- `nullpii` **trails by 0.01–0.03 F1 on `isotonic-{en,de,fr,it}-heldout`** vs baseline GLiNER. The regex pack adds a few false-positives on Isotonic's structured-PII format (mostly spurious `private_url` matches inside addresses). Net minor; fine-tune-style training would win these rows but at the OOD cost shown above.
-- `nullpii` **wins by +0.08 F1 on `ai4privacy-heldout/traindist`** vs baseline — ai4privacy carries some structured-secret-style content the regex pack catches.
-- `nullpii` **trails on `wikiann-*`** because WikiAnn labels are PER/LOC NER, not native PII categories — the schema mismatch hurts every tool. Read as non-Latin transfer signals only.
-- The **`openai (HF naive)` → `openai-official (Viterbi)` delta** (+0.25 F1 on OOD) is the validated PSA: HF transformers default aggregation drops the model's prescribed Viterbi BIOES decoder. If you must use `openai/privacy-filter` directly (e.g. on Python), call `opf._api.OPF` not `transformers.pipeline()`.
+**The PSA layer of the table** — the `openai (HF naive)` → `openai-official (Viterbi)` delta (+0.25 F1 on `nullpii-bench`) is the most reproducible useful finding in the repo: HF transformers default aggregation drops the model's prescribed Viterbi BIOES decoder, producing fragmented spans. If you must use `openai/privacy-filter` directly (e.g. on Python), call `opf._api.OPF` not `transformers.pipeline()`.
 
 ### Appendix — fine-tune trade-off (memorisation vs generalisation)
 

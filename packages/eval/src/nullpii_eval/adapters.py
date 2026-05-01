@@ -925,7 +925,11 @@ def regex_recognizer_predictor(
 # Italian Codice Fiscale — each consistently missed by the ML detector.
 DEFAULT_REGEX_PATTERNS: list[tuple[str, str]] = [
     # ─── URL / Email ────────────────────────────────────────────────
-    # URL: only http(s):// + www. (bare domain.tld dropped — many FPs).
+    # URL — broad match. Public-domain whitelist filtering happens in
+    # `regex_recognizer_predictor_with_url_filter` which wraps this
+    # pack. Keep the broad regex here so the recognizer pack stays
+    # composable; the filter step prunes whitelisted matches without
+    # regex-engine acrobatics.
     ("private_url", r"\b(?:https?://|www\.)[^\s<>\"]+"),
     # Email
     ("private_email", r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),
@@ -996,10 +1000,129 @@ DEFAULT_REGEX_PATTERNS: list[tuple[str, str]] = [
     ("account_number", r"\b[A-Z]{2}\d{2}[A-Z0-9]{1,4}(?:[ \t]?\d{4}){2,5}(?:[ \t]?\d{1,4})?\b"),
     # SSN US
     ("account_number", r"\b\d{3}-\d{2}-\d{4}\b"),
-    # Italian Codice Fiscale (16-char structured, missed by ML on
-    # nullpii-bench per failure_analysis.py)
+    # Italian Codice Fiscale (16-char structured)
     ("account_number", r"\b[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]\b"),
+    # Bitcoin Legacy P2PKH (starts with 1, base58, 25-34 chars)
+    ("account_number", r"\b1[A-HJ-NP-Za-km-z1-9]{25,34}\b"),
+    # Bitcoin P2SH (starts with 3, base58)
+    ("account_number", r"\b3[A-HJ-NP-Za-km-z1-9]{25,34}\b"),
+    # Bitcoin Bech32 (segwit, bc1...)
+    ("account_number", r"\bbc1[a-z0-9]{39,59}\b"),
+    # Ethereum address (0x prefix + 40 hex)
+    ("account_number", r"\b0x[a-fA-F0-9]{40}\b"),
+    # UUID v4 (often used as account/customer id)
+    ("account_number", r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}\b"),
+    # MAC address (hardware identifier)
+    ("account_number", r"\b[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}\b"),
+    # ─── Additional secret patterns (non-hacky, distinct prefix) ───
+    # Google API key
+    ("secret", r"\bAIza[0-9A-Za-z_\-]{35}\b"),
+    # Discord webhook URL
+    ("secret", r"https://discord(?:app)?\.com/api/webhooks/\d+/[A-Za-z0-9_\-]+"),
+    # Discord bot token
+    ("secret", r"\b[MN][A-Za-z\d]{23}\.[\w-]{6}\.[\w-]{27,}\b"),
+    # Telegram bot token (8-10 digit id : 35-char secret)
+    ("secret", r"\b\d{8,10}:[A-Za-z0-9_\-]{35}\b"),
+    # Mailgun API key
+    ("secret", r"\bkey-[a-f0-9]{32}\b"),
+    # Mapbox token
+    ("secret", r"\bpk\.eyJ1Ijoi[A-Za-z0-9_\-]+\.eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\b"),
+    # Square access token
+    ("secret", r"\bEAA[A-Za-z0-9_\-]{200,}\b"),
+    # PayPal Braintree access token
+    ("secret", r"\baccess_token\$production\$[a-z0-9]{16}\$[a-f0-9]{32}\b"),
+    # Heroku API key (UUID-shaped — labelled secret due to context)
+    ("secret", r"\bheroku_api_key=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b"),
+    # ─── Country-specific national IDs (Presidio-derived, MIT) ────
+    # Spanish DNI (8 digits + 1 control letter, no spaces)
+    ("account_number", r"\b\d{8}[A-HJ-NP-TV-Z]\b"),
+    # Brazilian CPF (XXX.XXX.XXX-XX)
+    ("account_number", r"\b\d{3}\.\d{3}\.\d{3}-\d{2}\b"),
+    # US Passport (1 letter + 8 digits, no separator)
+    ("account_number", r"\b[A-CEFGHJ-NPR-Z]\d{8}\b"),
+    # US EIN (XX-XXXXXXX)
+    ("account_number", r"\b\d{2}-\d{7}\b"),
+    # ─── Phone — international format anchored on `+` ──────────────
+    # `+CC NNN NNN NNNN` / `+CC-NNN-NNN-NNNN` / `+CC NNNNNNNNNN` etc.
+    # Anchored on the leading `+` to avoid matching version strings,
+    # IDs, etc. that have similar digit groupings.
+    ("private_phone", r"\+\d{1,3}[\s\-.]?\(?\d{1,4}\)?[\s\-.]?\d{2,4}[\s\-.]?\d{3,8}"),
 ]
+
+
+# Public-domain whitelist for URL filtering. Matches against the
+# *host* of a detected URL. URLs whose host ends in any of these
+# suffixes are dropped — they are public references (search engines,
+# code hosts, package registries, OS vendors, social platforms,
+# canonical docs sites), not PII. The filter is conservative: only
+# adds 30-50 well-known suffixes; anything else still gets flagged.
+PUBLIC_URL_HOSTS: tuple[str, ...] = (
+    "google.com", "google.de", "google.fr", "google.it", "google.co.uk",
+    "youtube.com", "youtu.be",
+    "github.com", "github.io", "githubusercontent.com",
+    "gitlab.com", "bitbucket.org",
+    "stackoverflow.com", "stackexchange.com", "askubuntu.com",
+    "microsoft.com", "msdn.microsoft.com", "docs.microsoft.com", "learn.microsoft.com",
+    "apple.com", "developer.apple.com", "support.apple.com",
+    "mozilla.org", "developer.mozilla.org", "mdn.io",
+    "wikipedia.org", "wikimedia.org",
+    "npmjs.com", "npmjs.org", "yarnpkg.com",
+    "pypi.org", "pypi.python.org", "readthedocs.io",
+    "crates.io", "rust-lang.org", "docs.rs",
+    "go.dev", "golang.org", "pkg.go.dev",
+    "nodejs.org", "deno.land",
+    "redhat.com", "ubuntu.com", "debian.org", "archlinux.org",
+    "amazon.com", "aws.amazon.com", "docs.aws.amazon.com",
+    "cloudflare.com", "developers.cloudflare.com",
+    "twitter.com", "x.com", "facebook.com", "linkedin.com",
+    "reddit.com", "medium.com", "dev.to",
+    "huggingface.co", "openai.com", "anthropic.com",
+    "stripe.com", "twilio.com",
+)
+
+
+def url_filter_predictor(*, patterns: list[tuple[str, str]]) -> Predictor:
+    """Wraps a regex pack with a host-based public-URL whitelist.
+
+    Same semantics as `regex_recognizer_predictor`, but for any matched
+    span labelled `private_url`, parses the URL host and drops the span
+    if the host ends in one of `PUBLIC_URL_HOSTS`. Spans with other
+    labels pass through unchanged.
+
+    Used in the production ensemble so the URL regex can stay broad
+    (catches `https://admin.dev/`, `http://10.0.0.5/`, `https://internal-
+    api.example.test/`) while still dropping the obvious-not-PII case
+    of public docs / package registries / search engines etc.
+    """
+    import re as _re
+    from urllib.parse import urlparse
+
+    compiled = [(label, _re.compile(pat)) for label, pat in patterns]
+
+    def _is_public(span_text: str) -> bool:
+        try:
+            host = urlparse(
+                span_text if "://" in span_text else f"http://{span_text}",
+            ).hostname
+        except (ValueError, TypeError):
+            return False
+        if not host:
+            return False
+        host = host.lower()
+        return any(host == h or host.endswith("." + h) for h in PUBLIC_URL_HOSTS)
+
+    def _predict(text: str) -> ToolResult:
+        t0 = time.perf_counter()
+        spans: list[Span] = []
+        for label, regex in compiled:
+            for m in regex.finditer(text):
+                if label == "private_url" and _is_public(m.group()):
+                    continue
+                spans.append(Span(label, m.start(), m.end()))
+        elapsed = (time.perf_counter() - t0) * 1000
+        return ToolResult(spans, elapsed)
+
+    return _predict
 
 
 # Backwards-compat alias — `EXTENDED_REGEX_PATTERNS` was the merged

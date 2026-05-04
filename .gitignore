@@ -45,11 +45,13 @@ npm-debug.log*
 # tmp
 tmp/
 
-# eval results — large and regenerable; numbers ship in EVAL_RESULTS.md
+# eval — internal-only state. `private/` holds training scripts +
+# runpod orchestration (not published — recipe lives in
+# docs/v10/V10_JOURNAL.md). `results/` holds bench artifacts (large,
+# regenerable). Bench scripts under `packages/eval/scripts/` ARE
+# tracked for reproducibility.
 packages/eval/results/
-
-# eval scripts + tests — internal research kit, not part of npm publish
-packages/eval/scripts/
+packages/eval/private/
 packages/eval/tests/
 
 # sub-package lockfiles leak dev registry URLs; root lockfile is canonical

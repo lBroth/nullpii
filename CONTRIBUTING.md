@@ -29,16 +29,15 @@ The eval / training kit (Python 3.12, gitignored) lives under
 
 These are non-negotiable; PRs that violate them will not be merged.
 
-- **No regex for PII detection.** ML model only.
+- **ML-first detection, regex as post-pass.** GLiNER (or `openai/privacy-filter`) is the primary detector. Regex recognizers (`src/recognizers.ts`, `packages/recognizers-*`) run as a post-pass for known formats with low ML coverage (cloud keys, IBAN, Italian CF/PIVA). They never replace the ML pass.
 - **No cloud calls** for the detection step. Everything must be offline.
-- **No `console.log` in library code.** Use `debug` namespaced loggers.
+- **No `console.log` in library code.** Use `debug` namespaced loggers; logs carry counts and short ids, never PII values.
 - **No `any`.** TypeScript strict mode + `exactOptionalPropertyTypes`.
 - **No global mutable state.** Encapsulate state in classes.
 - **Short functions, short files.** Split if a function does more than one thing.
-- **No circular imports.** `npm run circular-check` runs in CI and in the
-  pre-commit hook.
-- **Apache-2.0 / MIT / BSD / ISC / CC0** dependencies only.
-  `npm run license-check` runs in CI.
+- **No circular imports.** `npm run circular-check` runs in CI and in the pre-commit hook.
+- **Apache-2.0 / MIT / BSD / ISC / CC0** dependencies only. `npm run license-check` runs in CI.
+- **Defaults centralized in `src/defaults.ts`.** Import typed helpers from `src/config.ts` for env access (`hasCudaPath`, `huggingFaceToken`); other modules never touch `process.env` directly.
 
 ## Adding a backend
 
@@ -63,7 +62,7 @@ Then:
 1. Add a subpath in `package.json` `exports`.
 2. Add a `loadBackend` case in `src/router.ts`.
 3. Write unit tests under `test/backend/` (lifecycle + platform check).
-4. Document in `README.md` and `EVAL_RESULTS.md` (Backend latency section).
+4. Document in `README.md` (Backends section).
 
 ## Tests
 

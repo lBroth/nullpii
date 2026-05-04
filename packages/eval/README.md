@@ -71,4 +71,4 @@ External datasets (loaded on demand by `nullpii_eval.public_datasets`): `ai4priv
 
 ## v10 LoRA training
 
-Per-domain adapters (~3.4 MB each) trained on `urchade/gliner_multi_pii-v1` with `peft` LoRA targeting `q_proj`/`k_proj`/`v_proj` of the inner mDeBERTa encoder. See [`docs/v10/V10_JOURNAL.md`](../../docs/v10/V10_JOURNAL.md) for the full training recipe and lessons learned.
+Per-domain adapters (~3.4 MB each) trained on `urchade/gliner_multi_pii-v1` with `peft` LoRA targeting `q_proj`/`k_proj`/`v_proj` of the inner mDeBERTa encoder. See [`docs/v10/TRAINING.md`](../../docs/v10/TRAINING.md) for the public training-procedure summary (Art. 53). Training scripts live under `packages/eval/private/train/` (internal).

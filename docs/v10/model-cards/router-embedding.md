@@ -84,7 +84,7 @@ Each LoRA adapter:
 - Epochs: 2–4 with early stopping on eval loss (per-domain corpus-dependent).
 - Hardware: single 5090, ~50 minutes per adapter (fastest) to ~150 minutes (largest, devops).
 
-See [`../V10_JOURNAL.md`](../V10_JOURNAL.md) for full step-by-step training trace + decision rationale.
+See [`../TRAINING.md`](../TRAINING.md) for full step-by-step training trace + decision rationale.
 
 ## Evaluation (TBD-BENCH)
 
@@ -95,11 +95,11 @@ Numerical cells filled after the unified release bench completes. Methodology:
 - Single bench harness, single code revision, both Mac CPU (canonical for reproducibility) and 5090 GPU (for capped throughput) runs published.
 - Bare-mode comparison vs Presidio, GLiNER-base, Piiranha, DeBERTa-PII, scrubadub, Nemotron-PII raw, openai/privacy-filter (HF naive / BIOES / opf-Viterbi).
 
-Result tables will live alongside this card and in the [`../V10_JOURNAL.md`](../V10_JOURNAL.md) post-bench entry.
+Result tables will live alongside this card post-bench (in the matrix.json / matrix.csv artifacts shipped with the release).
 
 ## Limitations
 
-- **Test-set tuning sensitivity**: the enterprise-route gate value (0.10) was tuned on `nullpii-bench` AUDIT_A. Routing quality on novel domains may regress. A held-out routing-eval corpus (`docs/compliance/HELDOUT_ROUTING_EVAL_PLAN.md`) is in scope for v11.
+- **Test-set tuning sensitivity**: the enterprise-route gate value (0.10) was tuned on `nullpii-bench` AUDIT_A. Routing quality on novel domains may regress. A held-out routing-eval corpus is in scope for v11 (internal plan).
 - **Article 9 invisibility**: see Out-of-scope use.
 - **Long-input chunking**: at 512-token boundaries via `chunk_chars=1400`, `overlap_chars=200`. Spans crossing chunk boundaries are merged via IoU dedupe — boundary-touching low-confidence spans may be dropped.
 - **Nemotron contamination on `enterprise` route**: see Train-vs-eval overlap matrix. Treat `nemotron-pii-test` numbers as in-distribution.

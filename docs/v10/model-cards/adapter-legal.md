@@ -49,7 +49,7 @@ Total: ~18k records.
 
 ## Training procedure
 
-LoRA r=16, alpha=32. BF16, AdamW, 2 epochs early-stopped. Common training recipe for v10 adapters; see [`../V10_JOURNAL.md`](../V10_JOURNAL.md).
+LoRA r=16, alpha=32. BF16, AdamW, 2 epochs early-stopped. Common training recipe for v10 adapters; see [`../TRAINING.md`](../TRAINING.md).
 
 ## Evaluation (TBD-BENCH)
 

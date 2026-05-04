@@ -50,7 +50,7 @@ Total: ~37k records.
 
 LoRA r=16, alpha=32, target_modules `q_proj` `k_proj` `v_proj` (mDeBERTa inner encoder). 0.3% trainable (~884k params). BF16 cosine LR, AdamW, weight decay 0.01, 2 epochs early-stopped on eval loss. Trained on a 5090 in ~150 minutes (largest of the 5 corpora).
 
-See [`../V10_JOURNAL.md`](../V10_JOURNAL.md) for the full training trace.
+See [`../TRAINING.md`](../TRAINING.md) for the full training trace.
 
 ## Evaluation (TBD-BENCH)
 

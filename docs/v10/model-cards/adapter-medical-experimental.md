@@ -68,7 +68,7 @@ Total: ~16k records.
 
 ## Training procedure
 
-Same recipe as other v10 LoRA adapters. See [`../V10_JOURNAL.md`](../V10_JOURNAL.md).
+Same recipe as other v10 LoRA adapters. See [`../TRAINING.md`](../TRAINING.md).
 
 ## Evaluation (TBD-BENCH)
 

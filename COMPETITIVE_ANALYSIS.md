@@ -2,11 +2,11 @@
 
 Snapshot 2026-05-04. Used to position `nullpii` against the existing landscape and identify the whitespace it fills. Not exhaustive — focused on players that overlap with the npm-package + adapter / managed-cloud roadmap.
 
-**Related**: [`README.md`](README.md) (TL;DR + install + bench table) · [`docs/v10/V10_PLAN.md`](docs/v10/V10_PLAN.md) (release gating) · [`docs/v10/V10_JOURNAL.md`](docs/v10/V10_JOURNAL.md) (engineering journal) · [`docs/v10/model-cards/`](docs/v10/model-cards/) (HF model cards) · [`docs/compliance/`](docs/compliance/) (DPIA + SOC2 + held-out eval plan).
+**Related**: [`README.md`](README.md) (TL;DR + install + bench table) · [`docs/v10/V10_PLAN.md`](docs/v10/V10_PLAN.md) (release gating) · [`docs/v10/TRAINING.md`](docs/v10/TRAINING.md) (training procedure, Art. 53) · [`docs/v10/model-cards/`](docs/v10/model-cards/) (HF model cards) · [`docs/compliance/DPIA_TEMPLATE.md`](docs/compliance/DPIA_TEMPLATE.md) (GDPR Art. 35 template).
 
 ## Empirical bench numbers
 
-> **Status**: v10 release-candidate. Unified release bench is **pending** (overnight Mac CPU run). Current numbers and head-to-head tables live in [`docs/v10/V10_JOURNAL.md`](docs/v10/V10_JOURNAL.md). Methodology + bench surface below.
+> **Status**: v10 release-candidate. Unified release bench is **pending** (overnight Mac CPU run). Methodology + bench surface below; numerical results land in `packages/eval/results/bench-v10-release-local/matrix.{json,csv}` once the run completes.
 
 ### Bench surface (`packages/eval/scripts/bench_full.py`)
 

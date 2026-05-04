@@ -59,7 +59,7 @@ The defensible enterprise OOD signal is `argilla-pii` (third-party, no overlap) 
 
 ## Training procedure
 
-LoRA r=16, alpha=32. BF16, AdamW. Trained with `use_expanded_prompts=True` at inference time — input prompt set is the 40+ semantic Nemotron labels rather than the 8 nullpii labels, with output remap to 8-class. See [`../V10_JOURNAL.md`](../V10_JOURNAL.md) for the full recipe.
+LoRA r=16, alpha=32. BF16, AdamW. Trained with `use_expanded_prompts=True` at inference time — input prompt set is the 40+ semantic Nemotron labels rather than the 8 nullpii labels, with output remap to 8-class. See [`../TRAINING.md`](../TRAINING.md) for the full recipe.
 
 Train loss: 10.06 → eval loss: 4.31 → 3.91 over 2 epochs.
 

@@ -1044,3 +1044,138 @@ def _load_oasst_dev_planted(max_samples: int | None) -> PublicDataset:
         citation="OpenAssistant oasst1 (Apache-2.0) filtered for dev content + nullpii planted PII.",
         samples=tuple(samples),
     )
+
+
+# ─── Argilla PII (29 categories) → nullpii 8-class mapping ───────
+_ARGILLA_LABEL_MAP: dict[str, str | None] = {
+    "FIRSTNAME": "private_person",
+    "LASTNAME": "private_person",
+    "MIDDLENAME": "private_person",
+    "PREFIX": "private_person",
+    "EMAIL": "private_email",
+    "PHONEIMEI": "account_number",
+    "VEHICLEVIN": "account_number",
+    "AGE": "private_date",
+    "DOB": "private_date",
+    "DATE": "private_date",
+    "TIME": "private_date",
+    "BUILDINGNUMBER": "private_address",
+    "STREET": "private_address",
+    "COUNTY": "private_address",
+    "NEARBYGPSCOORDINATE": "private_address",
+    "MASKEDNUMBER": "account_number",
+    "ACCOUNTNUMBER": "account_number",
+    "CREDITCARDNUMBER": "account_number",
+    "IPV4": "account_number",
+    "IPV6": "account_number",
+    "PASSWORD": "secret",
+    "PIN": "secret",
+    # Skip — not in nullpii 8-class
+    "GENDER": None,
+    "HEIGHT": None,
+    "EYECOLOR": None,
+    "JOBAREA": None,
+    "JOBTITLE": None,
+    "USERAGENT": None,
+    "CREDITCARDISSUER": None,
+}
+
+
+def _load_argilla_pii(max_samples: int | None) -> PublicDataset:
+    """`argilla/textcat-tokencat-pii-per-domain` — 2096 EN records,
+    26 domain categories, 29 PII span types. Argilla feedback format
+    stores PII span annotations under the `pii` field as a list of
+    `{start, end, label}` dicts.
+
+    Maps 29 Argilla labels → nullpii 8-class via `_ARGILLA_LABEL_MAP`.
+    Records whose ALL spans map to `None` (e.g. only contains GENDER /
+    HEIGHT) still count as samples with empty gold.
+    """
+    from datasets import load_dataset
+
+    n_cap = 5_000 if max_samples is None else max_samples
+    ds = load_dataset(
+        "argilla/textcat-tokencat-pii-per-domain", split="train",
+    )
+    samples: list[Sample] = []
+    for row in ds:
+        text = str(row.get("source-text") or "")
+        if not text:
+            continue
+        # Argilla feedback dataset stores model-suggested PII spans
+        # under `pii.suggestion` as a list of `{start, end, label}`
+        # dicts. (Human responses would be in `pii.responses`; this
+        # split has only suggestions.)
+        items = row.get("pii.suggestion") or []
+        spans: list[Span] = []
+        for s in items:
+            if not isinstance(s, dict):
+                continue
+            label_raw = str(s.get("label", "")).upper()
+            mapped = _ARGILLA_LABEL_MAP.get(label_raw)
+            if mapped is None:
+                continue
+            try:
+                start = int(s["start"])
+                end = int(s["end"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            spans.append(Span(mapped, start, end))
+        samples.append(Sample(text=text, spans=tuple(spans)))
+        if len(samples) >= n_cap:
+            break
+    return PublicDataset(
+        name="argilla-pii-per-domain",
+        citation="argilla/textcat-tokencat-pii-per-domain (Apache-2.0).",
+        samples=tuple(samples),
+    )
+
+
+# ─── Nemotron-PII (Nvidia, 55+ categories, 100k test split) ──────
+# Reuse the same _NEMOTRON_TO_NULLPII8 mapping from adapters.py.
+def _load_nemotron_pii_test(max_samples: int | None) -> PublicDataset:
+    """`nvidia/Nemotron-PII` test split. 100k synthetic records spanning
+    50+ industries. Schema: text + spans (Python-repr string of dict
+    list — needs `ast.literal_eval`, not `json.loads`). Maps 55+
+    Nemotron labels → nullpii 8-class.
+    """
+    import ast as _ast
+
+    from datasets import load_dataset
+
+    from .adapters import _NEMOTRON_TO_NULLPII8  # late import to break cycle
+
+    n_cap = 5_000 if max_samples is None else max_samples
+    ds = load_dataset("nvidia/Nemotron-PII", split=f"test[:{n_cap}]")
+    samples: list[Sample] = []
+    for row in ds:
+        text = str(row.get("text") or "")
+        raw_spans_field = row.get("spans")
+        # Field is a Python-repr string — single-quoted dicts.
+        if isinstance(raw_spans_field, str):
+            try:
+                raw_spans = _ast.literal_eval(raw_spans_field)
+            except (ValueError, SyntaxError):
+                continue
+        else:
+            raw_spans = raw_spans_field or []
+        spans: list[Span] = []
+        for s in raw_spans:
+            if not isinstance(s, dict):
+                continue
+            label_raw = str(s.get("label", ""))
+            mapped = _NEMOTRON_TO_NULLPII8.get(label_raw)
+            if mapped is None:
+                continue
+            try:
+                spans.append(Span(mapped, int(s["start"]), int(s["end"])))
+            except (KeyError, TypeError, ValueError):
+                continue
+        samples.append(Sample(text=text, spans=tuple(spans)))
+        if len(samples) >= n_cap:
+            break
+    return PublicDataset(
+        name="nemotron-pii-test",
+        citation="nvidia/Nemotron-PII test split (CC-BY-4.0).",
+        samples=tuple(samples),
+    )

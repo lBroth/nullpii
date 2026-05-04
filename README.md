@@ -38,7 +38,7 @@ datasets:
 >
 > **TL;DR — what `nullpii` ships**:
 >
-> The `nullpii` npm package wraps **`onnx-community/gliner_multi_pii-v1` (FP32 ONNX, 278M params)** with chunking, a curated regex recognizer pack (~70 patterns covering AWS / GitHub / OpenAI / Anthropic / Slack / Stripe / Twilio / DigitalOcean / Cloudflare / Mailgun / Discord / Telegram / Google API keys + cloud SaaS tokens + PEM keys + JWTs + DB connection strings + crypto wallet addresses + UUIDs + MAC addresses + IBAN / SSN / Italian Codice Fiscale / Spanish DNI / US passport / Brazilian CPF / Italian P.IVA + URL with public-domain whitelist filter), and a reversible in-memory vault. On the use-case-relevant benchmark — `nullpii-bench`, project-bundled real dev prompts (RFCs, PR reviews, multilingual ticket bodies, code with secrets) — F1 = **0.8810**, beating every alternative tested by **+0.19 F1 over baseline GLiNER** and +0.20 F1 over the official `opf` CLI for `openai/privacy-filter`. Across all 11 datasets `nullpii` wins **5/11 rows outright** (incl. nullpii-bench + 3 of 4 isotonic locales); on the rest it trades blows within 0.005–0.03 F1.
+> The `nullpii` npm package wraps **`onnx-community/gliner_multi_pii-v1` (FP32 ONNX, 278M params)** with chunking, a curated regex recognizer pack (~65 patterns covering AWS / GitHub / OpenAI / Anthropic / Slack / Stripe / Twilio / DigitalOcean / Cloudflare / Mailgun / Discord / Telegram / Google API keys + cloud SaaS tokens + PEM keys + JWTs + crypto wallet addresses + UUIDs + MAC addresses + IBAN / SSN / Spanish DNI / US passport / Brazilian CPF / Italian P.IVA + URL with public-domain whitelist filter), and a reversible in-memory vault. On the use-case-relevant benchmark — `nullpii-bench`, project-bundled real dev prompts (RFCs, PR reviews, multilingual ticket bodies, code with secrets) — F1 = **0.8638** (clean baseline, no test-set tuning), beating every alternative tested by **+0.17 F1 over baseline GLiNER** and +0.19 F1 over the official `opf` CLI for `openai/privacy-filter`. On `oasst-dev-planted` (real chat text + planted PII): F1 = **0.6250** vs 0.3524 next-best (+0.27). Across the 9-dataset matrix `nullpii` wins **4/9 rows outright** (nullpii-bench, ai4privacy-300k, isotonic-fr, oasst-dev-planted); on isotonic-en/de/it + presidio-synthetic bare GLiNER edges by 0.008–0.010 F1.
 >
 > **Two reproducible findings backing the design choice**:
 >
@@ -56,6 +56,10 @@ A separate fine-tuned GLiNER model exists at [`lBroth/nullpii` on HF](https://hu
 
 ## Honest limitations (read before quoting any number)
 
+- **GDPR Art. 9 special-category data is structurally invisible.** The 8-class schema (`private_person` / `private_email` / `private_phone` / `private_address` / `private_date` / `private_url` / `account_number` / `secret`) has **no class for health / biometric / political / religion / sexual-orientation / trade-union / ethnic-origin / criminal data**. A Slack thread discussing an employee's sick leave, an HR file flagging political affiliation, or a DM about a medical condition will pass through with the *names* and *dates* redacted but the *categorical fact itself* unmodified. **nullpii is not an Art. 9 control.** Use a downstream classifier or rule-based filter for Art. 9 categories.
+- **Offset-disjoint ≠ distribution-disjoint on Faker-templated datasets.** The fine-tuned models score 0.88+ on `isotonic-{en,de,fr,it}` and 0.56+ on `ai4privacy-300k`, but those datasets are template-generated — different row indices share the same surface patterns. Treat the v8/v9 numbers on those rows as **template-distribution generalisation, not OOD evidence**. The OOD signal lives only in `nullpii-bench` (real, hand-built, 264 samples) and `oasst-dev-planted` (real chat + planted PII).
+- **`medical-experimental` profile is NOT a HIPAA control.** The profile name carries an `-experimental` suffix on purpose. It has no medical-specific recognizers (MRN, NPI, prescription IDs are not implemented) and has not been validated on i2b2 / MEDDOCAN / MIMIC. Coverage is estimated at ~10/18 Safe Harbor identifiers. Use as a research-grade pre-filter with a human reviewer; do not cite as a de-identification control.
+- **Adversarial section is a transparency probe, not a robustness claim.** nullpii currently scores second to opf-Viterbi on the third-party-framework adversarial run (TextAttack, n=1670). The corpus is also team-curated. Do not cite the adversarial section as a feature claim.
 - **Single-seed benches.** No bootstrap CI, no multi-seed runs. Numbers below are point estimates; treat differences smaller than ~0.02 F1 as noise.
 - **`nullpii-bench` (n=264) is the only true-OOD dataset working right now.** The other planned plant-and-detect datasets (`enron-planted`, `stackoverflow-planted`, `thestack-planted`, `conll2003`) have broken loaders on the open-data path (mirrors removed/renamed/gated, deprecated `trust_remote_code=True`). The OOD generalisation evidence rests entirely on those 264 prompts.
 - **Same-dataset heldout ≠ generalisation.** `*-heldout` cells are drawn from rows the fine-tune was not trained on, but from the same dataset distribution it *was* trained on. Heldout vs traindist numbers cluster within 0.005 F1 — slicing the row index isn't a real generalisation test.
@@ -65,38 +69,40 @@ A separate fine-tuned GLiNER model exists at [`lBroth/nullpii` on HF](https://hu
 
 ## Headline comparison
 
-F1, IoU ≥ 0.5. Mac M-series CPU bench, n=5000 per dataset (n=264 for `nullpii-bench`), single seed. Full matrix at `packages/eval/results/mac-overnight-20260501/matrix.json`. The table distils to 4 columns: `nullpii` plus the three reference points. Per-component ablations and the fine-tune trade-off live in the appendices.
+F1, IoU ≥ 0.5. Mac M-series CPU bench, n=2000 per dataset (n=264 for `nullpii-bench`), single seed. Full matrix at `packages/eval/results/iter-v7-final-clean/matrix.json` (clean baseline — no test-set tuning, see [COMPETITIVE_ANALYSIS.md](COMPETITIVE_ANALYSIS.md) for the cheat-stripping audit and ablation details).
+
+`wikiann-{es,zh,ja}` rows dropped from the headline matrix: schema mismatch (PER/LOC/ORG NER, not PII) — all tools score 0.05–0.32. Documented as "NER-subset coverage gap", not a meaningful PII signal.
 
 | Dataset                  | **`nullpii`** | baseline GLiNER (bare) | openai-official (Viterbi) | openai (HF naive) |
 | ------------------------ | ------------: | ---------------------: | ------------------------: | ----------------: |
-| **`nullpii-bench` (OOD, n=264)** | **0.8810** |             0.6947 |                    0.6764 |            0.4264 |
-| ai4privacy-heldout       |        0.2146 |                 0.1271 |                **0.2310** |            0.1453 |
-| isotonic-en-heldout      |        0.5943 |             **0.6016** |                    0.5631 |            0.3822 |
-| isotonic-de-heldout      |    **0.6101** |                 0.5968 |                    0.5713 |            0.3771 |
-| isotonic-fr-heldout      |    **0.6330** |                 0.6012 |                    0.5853 |            0.3835 |
-| isotonic-it-heldout      |    **0.6100** |                 0.5848 |                    0.6077 |            0.3900 |
-| isotonic-en-traindist    |        0.6070 |             **0.6071** |                    0.5745 |            0.3852 |
-| ai4privacy-traindist     |        0.2024 |                 0.1172 |                **0.2243** |            0.1408 |
-| wikiann-es               |        0.2152 |             **0.3293** |                    0.1484 |            0.0754 |
-| wikiann-zh               |    **0.1179** |                 0.1091 |                    0.0892 |            0.0330 |
-| wikiann-ja               |        0.0491 |             **0.0651** |                    0.0551 |            0.0291 |
+| **`nullpii-bench` (OOD, n=264)** | **0.8638** |             0.6947 |                    0.6764 |            0.4264 |
+| ai4privacy-300k          |    **0.3112** |                 0.1481 |                    0.2882 |            0.1931 |
+| ai4privacy-400k          |        0.5238 |                 0.5988 |                **0.6750** |            0.4390 |
+| isotonic-en              |        0.5908 |             **0.6065** |                    0.5767 |            0.3860 |
+| isotonic-de              |        0.5948 |             **0.6028** |                    0.5823 |            0.3850 |
+| isotonic-fr              |    **0.5879** |                 0.5810 |                    0.5857 |            0.3831 |
+| isotonic-it              |        0.5885 |             **0.5971** |                    0.5900 |            0.3841 |
+| oasst-dev-planted        |    **0.6250** |                 0.2500 |                    0.3524 |            0.2322 |
+| presidio-synthetic       |        0.5854 |             **0.5952** |                    0.5769 |            0.3899 |
 
-**Bold = per-row winner.** Win counts across the 11 rows:
+**Bold = per-row winner.** Win counts across the 9 rows:
 
 | Tool | Wins |
 |--|--|
-| **`nullpii`** | **5/11** (nullpii-bench, isotonic-de, isotonic-fr, isotonic-it, wikiann-zh) |
-| baseline GLiNER (bare) | 4/11 (isotonic-en heldout + traindist, wikiann-es, wikiann-ja) |
-| openai-official (Viterbi) | 2/11 (ai4privacy-heldout, ai4privacy-traindist) |
-| openai (HF naive) | 0/11 |
+| **`nullpii`** | **4/9** (nullpii-bench, ai4privacy-300k, isotonic-fr, oasst-dev-planted) |
+| baseline GLiNER (bare) | 4/9 (isotonic-en, isotonic-de, isotonic-it, presidio-synthetic) |
+| openai-official (Viterbi) | 1/9 (ai4privacy-400k) |
+| openai (HF naive) | 0/9 |
 
 **Reading the table:**
 
-- **`nullpii-bench` (real-world OOD use case)**: `nullpii` wins decisively at **0.8810** — that's +0.19 vs baseline GLiNER, +0.20 vs openai-official Viterbi, +0.45 vs openai HF naive. This is the distribution the package targets: dev prompts pasted into LLMs (RFCs, PR reviews, ticket bodies, code with secrets, multilingual customer-support emails). The runtime stack — gliner-pii backbone + curated regex pack with URL whitelist + regex-first ensemble ordering + boundary refinement — earns its keep here.
-- **`isotonic-{de,fr,it}-heldout`**: `nullpii` wins by 0.005–0.03 F1 over baseline. The merged regex pack catches structured-secret content (DB connection strings, ARNs) the bare model misses. `isotonic-en-heldout` is a tie within noise (0.0073 delta).
-- **`ai4privacy-*`**: openai-official (Viterbi) wins by 0.01–0.02 F1. ai4privacy uses inline-tagged PII formats (`<email>foo@bar.com</email>`) where Viterbi's BIOES-aware decoder outperforms span output. Margin small; not worth switching backbones for it.
-- **`wikiann-*`**: schema mismatch (PER/LOC NER vs PII categories). Loose mapping; absolute F1 not comparable. Baseline GLiNER edges most rows.
+- **`nullpii-bench` (real-world OOD use case)**: `nullpii` wins decisively at **0.8638** — that's +0.17 vs baseline GLiNER, +0.19 vs openai-official Viterbi, +0.44 vs openai HF naive. This is the distribution the package targets: dev prompts pasted into LLMs (RFCs, PR reviews, ticket bodies, code with secrets, multilingual customer-support emails). The runtime stack — gliner-pii backbone + curated regex pack with URL whitelist + ensemble merge + boundary refinement — earns its keep here.
+- **`oasst-dev-planted` (real conversational text + planted PII)**: `nullpii` wins decisively at **0.6250** — that's +0.27 over openai-official Viterbi (the closest competitor) and +0.38 over baseline GLiNER. Real chat text is exactly the use case the runtime stack targets after the dev-paste workload.
+- **`isotonic-{en,de,it}` and `presidio-synthetic`**: bare GLiNER edges `nullpii` by 0.008–0.010 F1. The runtime stack adds nothing on these structured-PII templates — plain GLiNER is competitive without the wrapper. Worth flagging honestly: the wrapper helps on real-world text and dev paste, not on synthetic structured templates.
+- **`ai4privacy-*`**: openai-official (Viterbi) wins ai4privacy-400k by 0.15. ai4privacy uses inline-tagged PII formats (`<email>foo@bar.com</email>`) where Viterbi's BIOES-aware decoder outperforms span output. Worth flagging; not worth switching backbones for it given the OOD trade-off.
 - **`openai (HF naive)`** loses every row. The +0.25 F1 delta to `openai-official` on `nullpii-bench` is the validated PSA: HF transformers default aggregation drops the model's prescribed Viterbi BIOES decoder. If you must use `openai/privacy-filter` directly (e.g. on Python), call `opf._api.OPF` not `transformers.pipeline()`.
+
+**Honesty note (test-set leakage strip):** an earlier production pipeline included three regex patterns derived from `failure_analysis.py` runs on `nullpii-bench` itself + IPv4 lookahead/lookbehind tuned on 6 specific bench FPs + a `gliner_threshold=0.8` value picked by sweeping on the bench. All four were forms of test-set tuning. They are stripped from the numbers above. Prior cheat-laden `nullpii-bench` F1 was 0.8810; clean is 0.8638. The cheat magnitude across all 9 datasets averages to **+0.005 in favour of the clean baseline** — bench-tuning narrowed wins on `nullpii-bench` and isotonic Romance but actively hurt cross-distribution F1 on `oasst-dev-planted` (+0.097 clean) and `ai4privacy-400k` (+0.057 clean). See COMPETITIVE_ANALYSIS.md for the full audit + iter-v7 ablation lessons (stoplist / score-ranked / zero-shot semantic / trained tiny verifier — none generalised).
 
 **Tool definitions:**
 - **`nullpii`** = `onnx-community/gliner_multi_pii-v1` (ONNX FP32, 278M) + chunking + curated regex pack (~50 patterns) + ensemble merge. The npm package, the production winner on OOD.
@@ -237,7 +243,7 @@ Requires **Node 24 LTS** (see `.nvmrc`).
 
 Auto-selects in priority **CUDA → MPS → CPU**.
 
-> **State today vs the headline comparison**: the source tree under `src/` currently loads `openai/privacy-filter` (1.5B + Viterbi BIOES decoder), default variant `int4` (~875 MB). It scores **0.7669 F1** on `nullpii-bench` — already strong, but below the **0.8810 F1** number quoted in the headline comparison. The headline reflects the *bench-validated target state* after the backbone migration to `onnx-community/gliner_multi_pii-v1` (FP32, ~1.1 GB) plus the curated regex pack with URL whitelist + regex-first ensemble ordering. That migration is the next implementation milestone — see "Roadmap" below. The two states are a single src-tree refactor apart, not a separate codebase.
+> **State today vs the headline comparison**: the source tree under `src/` currently loads `openai/privacy-filter` (1.5B + Viterbi BIOES decoder), default variant `int4` (~875 MB). It scores **0.7669 F1** on `nullpii-bench` — already strong, but below the **0.8638 F1** number quoted in the headline comparison. The headline reflects the *bench-validated target state* after the backbone migration to `onnx-community/gliner_multi_pii-v1` (FP32, ~1.1 GB) plus the curated regex pack with URL whitelist + ensemble merge + boundary refinement (clean baseline, no test-set tuning). That migration is the next implementation milestone — see "Roadmap" below. The two states are a single src-tree refactor apart, not a separate codebase.
 
 ## Architecture
 
@@ -268,53 +274,141 @@ attention_mask                          │ logits [seq × 33]
 
 ## Roadmap
 
-- **Backbone migration** — replace the in-tree `openai/privacy-filter` (1.5B, custom BIOES Viterbi decoder) with `onnx-community/gliner_multi_pii-v1` (278M, span output). Drops `src/viterbi.ts` + `src/labels-bioes.ts`, swaps tokenizer, simplifies the runtime. Shipping recipe: ONNX FP32 + chunking + the curated regex pack documented above. Bench-validated: 0.8239 F1 on `nullpii-bench` vs 0.7669 today.
+- **Backbone migration** — replace the in-tree `openai/privacy-filter` (1.5B, custom BIOES Viterbi decoder) with `onnx-community/gliner_multi_pii-v1` (278M, span output). Drops `src/viterbi.ts` + `src/labels-bioes.ts`, swaps tokenizer, simplifies the runtime. Shipping recipe: ONNX FP32 + chunking + the curated regex pack documented above. Bench-validated (clean baseline): 0.8638 F1 on `nullpii-bench` vs 0.7669 today.
 - **Per-call timeout in the runtime** — the openai backbone deadlocks on certain long inputs in chunking + Viterbi (sample 1700 of `ai4privacy-heldout` triggered an infinite loop during the bench harness run). Add a per-sample timeout with a clean fallback to the unchunked single-pass result. Becomes moot once the gliner backbone migration lands (gliner doesn't run Viterbi).
 - **Plant-and-detect dataset loaders** — `enron-planted`, `stackoverflow-planted`, `thestack-planted`, `conll2003` all have broken HF mirrors. Replace with currently-accessible mirrors (or vendor the corpora) so the OOD evidence base is more than `nullpii-bench`'s 264 samples.
 - **Statistical significance** — bootstrap CI over per-sample F1, multi-seed runs, paired comparisons. Current numbers are point estimates; differences <0.02 should not be over-interpreted.
 - **Failure analysis loop** — `packages/eval/scripts/failure_analysis.py` already extracts top FN/FP per label per tool. Use periodically to identify regex patterns worth adding to the recognizer pack (criterion: distinctive boundary-anchored prefix, low FP risk).
-
-### Roadmap — per-vertical profiles
-
-- **Per-vertical configuration profiles** — same runtime, different regex / threshold defaults tuned for the workload class:
-  - `profile: 'devops'` (current default) — full ~70-pattern regex pack covering AWS / GitHub / OpenAI / cloud-SaaS tokens / DB connection strings / JWT / PEM / crypto wallets. Optimised for "dev pastes prod data into LLM".
-  - `profile: 'healthcare'` — regex pack stripped of cloud-secret patterns (false positives in medical records), augmented with insurance / national-health-ID patterns (US Medicare/Medicaid, UK NHS number, Italian SSN sanitario, French Carte Vitale), prescription number formats, medical record number prefixes (`MRN-...`), drug NDC codes. Per `nullpii-bench` numbers, regex-on-structured-PII degrades F1 by ~0.10–0.15 versus bare model on this distribution; the medical profile drops the dev-paste regex layer entirely except for a small high-precision medical pack.
-  - `profile: 'general'` (minimal) — only universally-safe patterns (URL with public-domain whitelist, email, IBAN, SSN US). For uncertain workloads where over-detection is worse than under-detection.
-  - `profile: 'all'` — full pack regardless of workload, opt-in for users who want maximum recall and accept FPs.
-- **Healthcare-specific bench coverage** — i2b2 2014 deid challenge (gated DUA, real medical record PII), MIMIC-III/IV physician-note PII (gated DUA), MTSamples (open, medical transcription samples). Validates the `healthcare` profile on real distribution, not synthetic templates. ai4privacy-400k stays as a *synthetic structured-PII* signal for the same vertical until DUA-gated datasets are wired in.
-- **Medical-PII regex pack** — distinct from the `secret`-heavy default pack: insurance numbers (per country), national health IDs (US SSN/MBI, UK NHS, IT SSN sanitario, FR Carte Vitale, DE GKV-Nummer), DOB in multiple formats (`DD/MM/YYYY`, `MM/DD/YYYY`, `YYYY-MM-DD`, `DD MMM YYYY`), medical record number prefixes, prescription identifiers (`Rx#`, NDC codes), curated drug-name list as last-resort fallback. Each entry must clear the same FP-risk bar as the existing pack (boundary-anchored, distinctive prefix or structure).
-- **Score-based ensemble ranking** — replace the binary `primary` / `union` / `intersection` ensemble strategies with a confidence-weighted overlap resolver. Each predictor produces (label, span, score); on overlap, keep the higher-score span; for non-overlap regex spans, drop those below a per-category confidence threshold. Removes the ai4privacy-style FP cascade where regex spans fire on workloads they weren't designed for.
+- **Score-based ensemble ranking (generalist FP-cascade fix)** — replace the binary `primary` / `union` / `intersection` ensemble strategies with a confidence-weighted overlap resolver. Each predictor produces (label, span, score); on overlap, keep the higher-score span; for non-overlap regex spans, drop those below a per-category confidence threshold. Removes the ai4privacy-style FP cascade where regex spans fire on workloads they weren't designed for — generalist single-recipe alternative to per-workload profiles.
 - **Span-boundary Viterbi refinement on top of GLiNER** — GLiNER outputs span lists (start/end/label/score) but with looser token-level boundaries than constrained Viterbi BIOES decoders. On structured-PII templates (`ai4privacy-*`, medical record formats), opf-Viterbi beats GLiNER-based recipes by 0.02–0.20 F1 on tight boundary detection. Add a post-pass that re-decodes GLiNER's per-token logits with a constrained Viterbi over the span set, refining left/right edges. Expected lift: +0.05 F1 on ai4-heldout / ai4-400k without affecting nullpii-bench. Implementation: ~2 days (decoder + integration test).
 - **Note on piiranha + deberta benchmark scores** — the empirical bench shows piiranha hitting **F1 0.96 on `ai4privacy-400k`** while scoring 0.36 on `nullpii-bench`; deberta hits **0.75 on `isotonic-en-heldout`** while scoring 0.32 on `nullpii-bench`. Both numbers reflect model fine-tuning on the target dataset (memorization), not generalization. They're documented in the competitor table for completeness but should not drive design decisions — the same fine-tune-on-distribution failure mode that nullpii's own GLiNER fine-tune exhibited. Real-world OOD numbers (`nullpii-bench`, `oasst-dev-planted`) are the ones that matter.
 
+### Profile-based deployment
+
+`nullpii` ships with 4 detection profiles, selectable via `--profile` flag:
+
+- **`devops` (default)**: dev-paste workload (PR reviews, deploy logs, code with secrets, multilingual customer support). Uses `gliner_multi_pii-v1` (ONNX, 278M) + full ~65-pattern regex pack covering AWS / GitHub / Stripe / OpenAI / Anthropic / Slack / Discord / Telegram / Google API keys + DB connection strings + crypto wallets + IBAN / SSN / EU codes. Fits GDPR-aligned developer-workflow compliance.
+
+- **`legal`**: legal text, court rulings, contracts. Uses the v8 multi-domain fine-tune (trained on TAB ECHR + ai4privacy + isotonic) + minimal regex pack (URL / email / IBAN / SSN / phone only). Optimised for PERSON / DATETIME / LOC heavy distributions. F1 +0.39 over `devops` on TAB ECHR.
+
+- **`medical-experimental`** (EXPERIMENTAL ONLY): medical-narrative pre-filter. Uses v8 multi-domain backbone + minimal regex (currently identical to `legal`). Medical-specific recognizers (MRN, prescription IDs, insurance numbers, NPI) are **NOT YET implemented**; the profile is **NOT validated** against i2b2 / MEDDOCAN / MIMIC. Coverage estimated at ~10/18 HIPAA Safe Harbor identifiers. **Do NOT cite this profile as a HIPAA de-identification control.** Use only as a research-grade pre-filter with a human reviewer in the loop. The `-experimental` suffix is intentional and stays until a MEDDOCAN-validated medical recognizer pack ships.
+
+- **`general`**: unknown / mixed-domain workload. Runs both v6 and v8 backbones in ensemble (union merge); 2× inference latency but broadest coverage. Recommended for high-stakes cases where false negatives are unacceptable.
+
+Profile selection trade-offs documented in `packages/eval/results/profile-bench-20260502/decision_matrix.md` (after bench).
+
+### Roadmap — v10 LoRA-per-domain (8–10 weeks)
+
+The compliance review (`packages/eval/results/compliance-expert-review-20260502.md`) recommends LoRA adapters per domain over the frozen v6 backbone, instead of single-model rebalancing. The single-model path (v8 / v9) proved fundamentally tension-bound: a fixed-capacity GLiNER backbone cannot fit ~74% structured + ~5% narrative training data without sacrificing one side.
+
+**v10 corpus mix (target ~150k):**
+
+| Source | Records | Rationale |
+|---|---:|---|
+| TAB ECHR train (un-collapsed schema, all 8 entity types) | 15k | full Art. 4 surface, preserve ORG/DEM/CODE |
+| MEDDOCAN train | 10k | medical narrative + Spanish, DUA-free |
+| i2b2 2014 (DUA gated) | 15k | HIPAA-grounded narrative |
+| OASST + planted PII (handcrafted) | 20k | real conversational distribution |
+| ai4privacy 0–20k | 20k | structured floor |
+| isotonic 0–7.5k × 4 locales | 30k | multilingual structured |
+| dev-paste-synth (capped) | 15k | dev-paste anchor |
+| Common Crawl prose (negative class) | 25k | learn to NOT fire on prose |
+
+Structured ≈ 33%, narrative ≈ 67% — inverts v9's ratio.
+
+**Architecture:** LoRA adapters over frozen v6 backbone (one adapter per domain: devops / legal / medical / general). Switchable inference (adapter on/off). Multi-task training: shared encoder + `pii_span_head` + auxiliary `domain_head` (4-way) used only at training to encourage domain-invariant span representations.
+
+**Training plan:** class-balanced sampling, curriculum (epoch 1 structured → epoch 2 narrative → epoch 3 mixed). Held-out routing-eval corpus: 500 hand-annotated documents covering 8 PII classes × 5 locales × 4 domains, used **only** for v10 go/no-go.
+
+**Effort estimate:** ~8–10 weeks calendar (corpus prep 3–4 weeks gated by i2b2 DUA, LoRA fine-tune 1 week 4090 GPU, held-out annotation 2 weeks with 2 annotators + adjudicator, writeup 1 week). Without i2b2: ~6–7 weeks MEDDOCAN-only.
+
 ### Roadmap — bench completeness
 
-- **Bench Presidio + Piiranha + DeBERTa-PII as competitor baselines** — adapters already wired (`presidio_predictor`, `piiranha_predictor`, `deberta_pii_predictor`). Run as additional columns next to `nullpii` / `gliner` / `openai-*` so the headline table shows nullpii vs the open-source SOTA Microsoft Presidio (gold-standard self-host PII lib) and the two well-known PII fine-tunes (Piiranha multilingual, DeBERTa English-only). Provides the comparison story past `gliner_multi_pii-v1` baseline.
-- **Latency benchmark suite** — F1 vs throughput Pareto curve. Per-tool latency p50/p95/p99 across prompt sizes (100 / 1k / 10k chars), throughput in samples/s per backend (CPU / MPS / CUDA on Linux x86 + Apple Silicon). Strong material for performance positioning (the bench-validated nullpii is 4× faster than its PT counterpart on Mac CPU; want the full curve documented).
-- **Cloud-API competitor comparison** — bench against Google DLP API, AWS Comprehend PII, Azure Language PII Recognition. ~$50-100 API budget for n=2000 samples per provider. Highest-credibility "we beat closed SaaS" story, but the only datapoint that matters is `nullpii-bench`-style real-world OOD (which the cloud APIs aren't tuned for). Worth doing once for the README headline; not part of the recurring eval.
-- **Specialized-scenarios benchmark suite** — exercise edge cases the headline matrix misses: SSE-streaming chunk-level restore latency (proxy use case), long-document handling (>10k-token prompts that exceed gliner's 512-token context after chunking), single prompts mixing 3+ languages, code with PII inside comments / docstrings, adversarial prompts (decoy lookalikes, prompt injection attempts that try to confuse the detector). Each scenario gets its own small dataset (~50-100 samples) with explicit pass/fail criteria, not aggregate F1.
-- **Ablation table** — quantify the F1 contribution of each pipeline component on `nullpii-bench`: nullpii w/o regex pack, w/o URL whitelist filter, w/o boundary refinement, with default-only regex (~10 patterns) vs extended (~70). Defends the design choices made in the runtime stack rather than asserting them.
+> **Headline gating rule**: until at least one third-party PII bench (i2b2 / TAB / MEDDOCAN) validates the OOD claim, `nullpii-bench` numbers are positioned as "best on dev-paste workload, self-built bench, schema public" — not as raw "SOTA". The self-built-bench critique is real; third-party validation removes it.
+
+**Done (`packages/eval/results/mac-overnight-20260501/`):**
+- ✅ Presidio + Piiranha + DeBERTa-PII + scrubadub competitor matrix on 9 PII datasets (`nullpii-bench`, `ai4privacy-300k/400k`, `isotonic-en/de/fr/it`, `oasst-dev-planted`, `presidio-synthetic`). Empirical numbers in [COMPETITIVE_ANALYSIS.md](COMPETITIVE_ANALYSIS.md). Competitor numbers frozen as immutable baseline — future iterations re-run only `--tools nullpii` and merge against this baseline (~12× faster iteration).
+
+**Drop from headline matrix:**
+- ❌ `wikiann-es/zh/ja` — NER schema (PER/LOC/ORG), not PII. All tools score 0.05–0.32 due to schema mismatch, not detection failure. Misleads readers. Keep as appendix-only "NER coverage signal", not main matrix row. CJK PII coverage gap acknowledged separately.
+
+**Third-party validation (highest priority — removes self-built-bench critique):**
+- **TAB (Text Anonymization Benchmark)** — ECHR court rulings annotated for legal PII, ACL 2022, public. Real third-party gold standard. No DUA gating. Top priority for headline credibility.
+- **i2b2 2014 deid challenge** — real medical record PII, gated DUA but legit. Highest-cred medical bench, paired with future `healthcare` profile work.
+- **MEDDOCAN** — Spanish medical PII shared task, real records, public. Adds Romance-language medical coverage.
+- **WikiPII** — Wikipedia bio extracts annotated PII, multilingual real samples.
+- **MIMIC-III/IV physician notes** — gated DUA painful, lowest priority of the medical set.
+
+**Adversarial edge-case suite (build ourselves, ~50–100 samples per category):**
+- **Typo PII** — `gianluca@gmial.com`, `+1 (555 555 1234`, transposed digits, off-by-one ZIP. Tests model robustness to user input noise.
+- **Unicode obfuscation** — homoglyph substitution (`gianluca@gmaiI.com` cap-i for lowercase-l, Cyrillic `а`/`о` for Latin), zero-width chars (`gian​luca@gmail.com`), full-width Latin (`ｇｉａｎｌｕｃａ`).
+- **Whitespace obfuscation** — `g 1 a n l u c a @ g m a i l . c o m`, `gianluca @ gmail . com`, line breaks mid-token.
+- **Encoding obfuscation** — base64 / URL-encoded / HTML entity (`g%69anluca`, `&#103;ianluca`) PII embedded in text. Tests if model catches obvious leak attempts.
+- **Adversarial decoys** — non-PII patterns that look like PII (`localhost:5432`, `x@y.z`, `0.0.0.0`, MAC addresses, UUID tokens). Tests FP rate under deliberate confusion.
+- **Code with PII** — credentials in comments / docstrings / config files (`# api_key=sk-ant-...`, `password = 'P@ssw0rd!'`). Already partial coverage in `nullpii-bench`, formalise as standalone suite.
+
+**Secondary (NER-subset coverage, not PII validation):**
+- **CoNLL2003 / OntoNotes / MultiNERD** — NER schema (PER/LOC/ORG), not PII. Useful only as `person_name` subset signal across multiple languages. Document the schema mismatch explicitly. Don't headline.
+
+**Performance + cloud-API comparisons:**
+- **Latency benchmark suite** — F1 vs throughput Pareto curve. Per-tool latency p50/p95/p99 across prompt sizes (100 / 1k / 10k chars), throughput in samples/s per backend (CPU / MPS / CUDA on Linux x86 + Apple Silicon).
+- **Cloud-API + closed-source competitor matrix (tiered)** — extend headline bench to closed competitors. Tiering by direct comparability:
+  - **Tier 1 — direct PII API, benchable**: AWS Comprehend PII (`detect_pii_entities`, $1.20/1M chars), Google Cloud DLP (`InspectContent` with `infoTypes`, ~$3/1M chars), Azure AI Language PII Recognition ($1/1k req). All three offer official API + `n=2000` per dataset across 9 PII benches feasible at ~$50–100 total. Highest-cred "we beat closed SaaS" datapoint when paired with `nullpii-bench` real-world OOD.
+  - **Tier 2 — closed enterprise, contact-sales (best-effort)**: Protect AI Guardian (PII is one feature of runtime, no public API endpoint, requires demo / trial), Lakera Guard PII module (primary product is injection detection — PII coverage uncertain, requires sales contact). Bench only if trial access granted.
+  - **Tier 3 — not directly benchable, positioning notes only**: Portkey (gateway — guardrails plugins wrap external PII libs, benching Portkey = benching the plugin, redundant), OpenAI moderation API (content safety, NOT PII detection — incomparable schema), Helicone (observability only, zero PII), Robust Intelligence (closed Cisco enterprise, no public API), OpenRouter (LLM proxy aggregator, zero PII detection — architecture reference for `nullpii.cloud` proxy design only).
+  - One-shot bench run for Tier 1 → headline numbers in COMPETITIVE_ANALYSIS.md. Not part of recurring eval (cost + rate limits). Tier 2 opportunistic. Tier 3 documented as "not applicable" with reason.
+- **Ablation table** — quantify the F1 contribution of each pipeline component on `nullpii-bench`: nullpii w/o regex pack, w/o URL whitelist filter, w/o boundary refinement, with default-only regex (~10 patterns) vs extended (~70). Defends design choices.
+
+**Iteration loop (post-bench):**
+- Branch `research-iter-v7` opens with frozen competitor baseline. Each pipeline change re-runs `bench_full.py --tools nullpii --datasets <9-non-wikiann>` (~15 min Mac CPU) and merges against the immutable competitor matrix. Iteration cost drops from 3 h → 15 min.
 
 ### Roadmap — competitive positioning
 
 - **OSS PII firewall for LLM traffic** — see [COMPETITIVE_ANALYSIS.md](COMPETITIVE_ANALYSIS.md). Strategic gap nullpii fills: open-source, reversible-vault, local-first, latency-zero, backbone-agnostic. No competitor combines all four. Closest commercial peer is Skyflow (cloud-only) which charges per-call SaaS pricing. Positioning: pair with Portkey (gateway) + Rebuff (injection) for the full stack rather than competing head-to-head with Lakera (injection detection) or Portkey (gateway).
-- **OSS-license enterprise tier between "library" and "Zscaler-tier closed product"** — gap in the market: Guardrails AI is library-only, Zscaler is closed enterprise SaaS, nothing in the middle. The enterprise HTTPS-proxy item below + the per-vertical profile bucket above are the concrete steps into that gap.
+- **OSS-license enterprise tier between "library" and "Zscaler-tier closed product"** — gap in the market: Guardrails AI is library-only, Zscaler is closed enterprise SaaS, nothing in the middle. The SDK-adapter pattern + managed cloud (`nullpii.cloud`) items below are the concrete steps into that gap.
 
 ### Roadmap — under evaluation
 
-- **Enterprise HTTPS-proxy deployment** — instead of (or in addition to) shipping `nullpii` as a per-process npm library, deploy it as a corporate HTTPS proxy that intercepts traffic to `api.openai.com` / `api.anthropic.com` / Mistral / Cohere / Google / local LLM gateways, sanitizes the request body, forwards to the upstream LLM, then `restore()`s on the response (incl. SSE streaming) before returning to the client. Same runtime stack, different deployment shape.
-  - Architecture: TLS interception with a corporate CA cert (standard CASB / Zscaler / Netskope pattern); system-wide `HTTPS_PROXY` env-var or PAC file or VPN routing on managed devices; per-session vault (Redis/Postgres for multi-instance); zero-log mode for trust.
-  - Pros: LLM-agnostic, zero client-side code change, central audit log of LLM exfiltration risk, GDPR/HIPAA-visible compliance posture.
-  - Cons: requires CA cert install on managed devices (standard for enterprise security stacks); MITM trust paradox mitigated by full open-source code path; +50–200ms latency vs direct call (acceptable for chat, marginal for autocomplete); vault state management non-trivial across instances.
-  - Prior work: `src/proxy.ts` (deleted in the research pivot, recoverable from `bench-runpod-on-demand` branch) had a working `ANTHROPIC_BASE_URL` proxy with SSE streaming. The same module is the starting point for this productisation.
-  - Positioning: open-source enterprise PII firewall for LLM traffic. Compete with Zscaler/Netskope DLP modules (closed, generic) and Skyflow / Privatemode AI (closed, hosted). The OSS path + local-only deployment is the moat.
+- **SDK adapter pattern (multi-provider wrappers)** — wrap each LLM SDK so users get sanitize+restore transparently while keeping native ergonomics. Targets: `nullpii/adapter/openai`, `nullpii/adapter/anthropic`, `nullpii/adapter/gemini`, `nullpii/adapter/mistral`, `nullpii/adapter/cohere`. Pattern: `wrapOpenAI(new OpenAI())` returns a drop-in proxy with vault wired into request/response paths. Streaming SSE support via stream-restore primitive (chunk-buffer until span boundary safe). Tool-call vault scope: `tool_use.input` JSON + `tool_result.content` blocks (already solved in prior `src/proxy.ts` on `bench-runpod-on-demand` branch — port logic into `nullpii/stream` reusable primitive).
 
-- **IDE / coding-assistant integration** — companion to (or alternative to) the proxy: ship `nullpii` as a plugin/extension for Claude Code, GitHub Copilot, Cursor, Zed, JetBrains, VS Code, Neovim. Sanitises prompts on send (Cmd-K, chat panel, autocomplete request); on response, auto-restores spans inline if the user has the right authorisation policy, otherwise leaves the placeholders visible. Live decode during streaming responses (token-by-token restore). Works without a corporate proxy — single-machine, per-user — so engineers on personal devices can opt in without IT involvement.
-  - Architecture: language-agnostic core via the npm package; thin per-IDE shim (≈ 200–500 LoC) that hooks the IDE's pre-LLM-send / post-LLM-receive callbacks. Vault stays local to the IDE process.
-  - Auth model: per-user policy file (sops-encrypted or local keychain) that lists which placeholder categories auto-decode (`secret` → never, `private_email` → always for owner, etc.). Without policy, all placeholders stay visible.
-  - Live-changes flow: IDE intercepts streaming SSE chunks, runs `restore()` incrementally (single `nullpii` instance, multiple sessions). Render restored text in the chat panel as it arrives.
-  - Distribution: VS Code Marketplace / JetBrains Plugin Repository / nvim plugin manager / native Claude Code skill (per Claude Code's plugin SDK).
-  - Complements the proxy path: enterprise = proxy + audit. Personal / SMB = IDE plugin, no infra.
+- **Web framework middleware** — `nullpii/middleware/express`, `/fastify`, `/nestjs`, `/hono`. Single primitive on top of stream-restore. Hono variant covers Cloudflare Workers / Bun / long-lived Node containers under one handler. AWS Lambda dropped from v1 — cold-start tax (1–2s GLiNER load) kills DX. Use Fly Machines / Cloud Run / Fargate for serverless instead (scale-to-zero with sub-second wake).
+
+- **`nullpii.cloud` — managed wrapper proxy (paid SaaS)** — for users who can't or won't self-host. Architecture:
+  - Always-warm dispatcher (Hono on Cloudflare Workers) → routes to per-tenant pod.
+  - Per-tenant pods on Fly Machines / Cloud Run, scale-to-zero, ~1–3s cold wake.
+  - Provider API key passthrough — **never stored**. User envs key in proxy header; dispatcher forwards to OpenAI / Anthropic / Gemini.
+  - Vault scoped per-request, in-memory only, evict on response complete. No payload logging.
+  - Auth: per-tenant nullpii API key.
+  - Pricing: per-request micro-fee + optional warm-pool subscription per power user.
+  - Compliance path: SOC2 Type 1 → Type 2 → HIPAA BAA (enterprise unlock).
+  - Onboarding: swap `BASE_URL` env var (Claude Code / Codex CLI / Cursor) — 30-second setup.
+  - Tradeoff: breaks "PII never leaves device" claim → positioned as second-tier convenience product. OSS local stays as paranoia tier. Standard SaaS+OSS dual play (Skyflow, Lakera same logic).
+
+- **Tool-support matrix for `BASE_URL` swap** —
+  - Claude Code: `ANTHROPIC_BASE_URL` ✓
+  - Codex CLI (OpenAI): `OPENAI_BASE_URL` ✓
+  - Cursor: Settings → "Override OpenAI Base URL" ✓
+  - Continue / Aider / Cline / aider-style tools: ✓ (custom endpoint config)
+  - GitHub Copilot: ✗ (endpoint locked; enterprise tier has separate proxy mechanism, not user-config)
+  - ChatGPT desktop / web: ✗ (closed product, no override; out of scope)
+
+- **Audit pass + out-of-band signals** — safety net for users worried "did nullpii catch my API key?". Two-pass design:
+  1. Sanitize: model + regex → vault populated.
+  2. Audit shadow-scan: high-recall regex over original input cross-checked against vault. Patterns: AWS (`AKIA[0-9A-Z]{16}`), Stripe (`sk_live_`, `sk_test_`, `rk_live_`), GitHub (`ghp_`, `gho_`, `ghs_`), OpenAI (`sk-proj-`, `sk-`), Anthropic (`sk-ant-`), Google API (`AIza[0-9A-Za-z_-]{35}`), Slack (`xox[baprs]-`), JWT pattern. If audit hit not in vault → leak suspected.
+  - Signal channel: HTTP response headers (out-of-band, non-invasive — no inline comments in payload):
+    - `X-Nullpii-Status: verified | warned | leaked`
+    - `X-Nullpii-Spans: <count>`
+    - `X-Nullpii-Confidence: <min span score>`
+    - `X-Nullpii-Audit: clean | suspect`
+  - IDE / CLI extension reads headers → status badge (🟢 verified / 🟡 warned / 🔴 leaked).
+  - Configurable behaviour on `leaked`: `onAudit: 'block'` (throws, drops request) or `onAudit: 'warn'` (forwards with header). Express/Nest middleware example: `throw new ForbiddenException('secret leak detected')`.
+  - Reassurance UX: user sees green badge after each call → trust signal that vault caught everything. Red badge = pre-flight abort before token leaves device/proxy.
+
+- **Browser WebGPU runtime** — `nullpii/web` running ONNX via `onnxruntime-web` + WebGPU EP. INT4 GLiNER (~110 MB) cached in IndexedDB after first download. **Killer privacy story**: PII never leaves browser, only sanitized text goes to LLM, vault stays client-side. Differentiator no closed-cloud competitor can match (Skyflow / Lakera architectural lock-in to server-side processing). Use case: ChatGPT-style web UIs that proxy through a WebGPU-detect-enabled extension or first-party deployment.
+
+- **React Native runtime** — `nullpii/react-native` via `onnxruntime-react-native`, CoreML EP on iOS / NNAPI on Android. Bundle bloat constraint: ship INT4 ONNX over CodePush / Expo Updates rather than baked into the IPA/APK. Use case: mobile chat apps, voice transcription privacy filter.
+
+- **IDE / coding-assistant integration** — VS Code / JetBrains / Cursor / Zed extensions. Hooks pre-LLM-send and post-LLM-receive in the IDE's chat / autocomplete path. Live SSE restore on streaming responses (token-by-token incremental restore). Per-user policy file (sops-encrypted or local keychain) for category auto-decode rules (`secret` → never, `private_email` → always for owner, etc.). Distribution: VS Code Marketplace / JetBrains Plugin Repository / nvim plugin manager. Complements OSS local + cloud SaaS: enterprise = managed cloud + IDE extension; personal = OSS local + IDE extension.
 
 ## nullpii-bench (eval dataset)
 

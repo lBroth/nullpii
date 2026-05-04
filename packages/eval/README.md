@@ -1,84 +1,74 @@
 # nullpii eval
 
-Reproducible accuracy + benchmark suite. Two outputs:
+Internal research kit. Python 3.12, gitignored — not part of the npm publish surface. Powers the v10 release bench (see [`docs/v10/V10_PLAN.md`](../../docs/v10/V10_PLAN.md)) and per-domain LoRA training.
 
-1. `accuracy.json` — per-category precision/recall/F1 vs ground truth
-2. `benchmark.json` — head-to-head latency / throughput vs Microsoft Presidio
-
-## Datasets
-
-Bundled, version-controlled, and synthetic-only — no real PII, no
-gated downloads, no flaky CI.
-
-| File                              | Locale | Size   | Notes                                              |
-| --------------------------------- | ------ | -----: | -------------------------------------------------- |
-| `datasets/en-baseline.jsonl`      | en     |    100 | English baseline. 8 categories, balanced.          |
-| `datasets/it-baseline.jsonl`      | it     |    100 | Italian — names, indirizzi, codice fiscale.        |
-| `datasets/de-baseline.jsonl`      | de     |     50 | German — Umlaut + compounds.                       |
-| `datasets/fr-baseline.jsonl`      | fr     |     50 | French — accents.                                  |
-| `datasets/es-baseline.jsonl`      | es     |     50 | Spanish.                                           |
-| `datasets/adversarial.jsonl`      | en     |     30 | Decoy strings that look like PII but aren't.       |
-
-Each line is `{ "text": "...", "spans": [{ "label": "...", "start": ..., "end": ... }] }`.
-
-## Run
+## Setup
 
 ```bash
 cd packages/eval
-python3.12 -m venv .venv && source .venv/bin/activate
+python3.12 -m venv .venv
+source .venv/bin/activate
 pip install -e ".[presidio]" presidio-evaluator datasets
-for m in en_core_web_lg it_core_news_lg de_core_news_lg fr_core_news_lg es_core_news_lg; do
-  python -m spacy download "$m"
-done
 ```
 
-### Smoke vs full
+## Bench
 
-Two convenience scripts under `scripts/`:
-
-| Script             | Caps                                              | Time (Apple M, single-thread) | Use                          |
-| ------------------ | ------------------------------------------------- | ----------------------------- | ---------------------------- |
-| `eval_smoke.sh`    | 200 isotonic, 200 wikiann, 500 presidio-synthetic | ~5 min                        | CI / dev iteration           |
-| `eval_full.sh`     | no caps — full dataset splits                     | ~3-4h                         | release benchmark, published |
+`scripts/bench_full.py` runs a `tool × dataset` matrix with checkpoint resume. Output: `matrix.json` (per-cell F1 / wall / throughput) + `matrix.csv` (pivot).
 
 ```bash
-# Smoke (fast, numbers NOT for publication)
-./scripts/eval_smoke.sh
-# → out/smoke/{bundled,isotonic,presidio-syn,wikiann}-*.json
-
-# Full (publishable numbers)
-./scripts/eval_full.sh
-# → out/full/...
+# Release-candidate routers across 19 PII-native datasets (default caps).
+python -u scripts/bench_full.py \
+  --tools nullpii-v10-router-embedding,nullpii-v10-router-xlmr \
+  --datasets all \
+  --backend cpu \
+  --out-dir results/bench-v10-release-local
 ```
 
-Both scripts honor `OUT_DIR=...` to redirect output.
+Override caps with `--max-per-dataset N` (global cap) or `--no-cap` (full).
 
-### Individual runs
+### Tool surface
 
-```bash
-# Accuracy on bundled datasets
-python -m nullpii_eval.run_accuracy --out accuracy.json
+Two nullpii routers + nine bare baselines + three opt-in cloud rows. None of the bare rows wrap nullpii post-processing. See [`COMPETITIVE_ANALYSIS.md`](../../COMPETITIVE_ANALYSIS.md) for the full list and methodology.
 
-# Head-to-head — omit --max-samples for full split
-python -m nullpii_eval.run_compare \
-  --out compare.json --dataset isotonic/pii-masking-200k --locale en
+### Dataset surface
 
-# Smoke (cap)
-python -m nullpii_eval.run_compare \
-  --out compare.json --dataset isotonic/pii-masking-200k --locale en --max-samples 200
+19 PII-native canonical datasets. Listed in [`docs/v10/V10_PLAN.md`](../../docs/v10/V10_PLAN.md) "Release gating" with rationale for the 5 excluded rows (wikiann × 3, adversarial-decoys, composite nullpii-adversarial).
 
-# Latency benchmark
-python -m nullpii_eval.run_benchmark --out benchmark.json
-```
+## Other scripts
 
-## Reports
+| Script | Purpose |
+|---|---|
+| `scripts/bench_latency.py` | Per-tool latency p50/p95 measurements |
+| `scripts/bench_openai_decoders.py` | naive HF / BIOES / Viterbi delta on `openai/privacy-filter` |
+| `scripts/failure_analysis.py` | Top-K FN/FP per label per tool |
+| `scripts/report_per_class.py` | Per-label precision/recall breakdown |
+| `scripts/generate_adversarial_bench.py` | Synthesize `nullpii-adversarial.jsonl` |
+| `scripts/generate_textattack_adversarial.py` | TextAttack-perturbed corpus from ai4privacy 0–500 |
+| `scripts/generate_dev_paste_synth.py` | Faker-based dev-paste synthetic train data |
+| `scripts/sample_cc_negative.py` | Common Crawl negative-class sampler |
+| `scripts/meddocan_loader.py` | MEDDOCAN loader (medical Spanish) |
+| `scripts/train/prepare_v10_corpora.py` | Build per-domain training corpora |
+| `scripts/train/build_router_embeddings.py` | Build distiluse prototype vectors |
+| `scripts/train/build_nemotron_corpus.py` | Convert `nvidia/Nemotron-PII` train → GLiNER format |
+| `scripts/train/build_us_formats_corpus.py` | Faker-based US-format synthetic corpus |
+| `scripts/train/qualitative_compare.py` | Side-by-side span comparison across tools |
 
-Numbers feed `BENCHMARK.md` and `docs/guide/vs-presidio.md`. Update via:
+## Bundled datasets
 
-```bash
-python -m nullpii_eval.render_tables \
-  --accuracy accuracy.json \
-  --compare compare.json \
-  --benchmark benchmark.json \
-  --out ../../docs/guide/eval-results.md
-```
+`datasets/` (Apache 2.0, project-internal):
+
+| File | n | Notes |
+|---|--:|---|
+| `nullpii-bench.jsonl` | 264 | Project-bundled OOD bench (curated + long real-world prompts) |
+| `tab-echr-test.jsonl` | 127 | TAB ECHR test split (legal, EU court rulings) |
+| `nullpii-adversarial.jsonl` | 480 | 6 subsets: typo / unicode / whitespace / encoding / decoys / code |
+| `nullpii-adversarial-textattack.jsonl` | 1670 | TextAttack-perturbed ai4privacy 0–500 |
+| `dev-paste-synth-train.jsonl` | ~30k | Synthetic dev-paste training corpus (Faker) |
+| `cc-negative-25k.jsonl` | 25k | Common Crawl negative-class samples |
+| `cc-negative-200-test.jsonl` | 200 | CC-neg validation slice |
+
+External datasets (loaded on demand by `nullpii_eval.public_datasets`): `ai4privacy/pii-masking-300k`, `ai4privacy/pii-masking-400k`, `Isotonic/pii-masking-200k`, `argilla/textcat-tokencat-pii-per-domain`, `nvidia/Nemotron-PII`, `presidio-research/presidio-synthetic`.
+
+## v10 LoRA training
+
+Per-domain adapters (~3.4 MB each) trained on `urchade/gliner_multi_pii-v1` with `peft` LoRA targeting `q_proj`/`k_proj`/`v_proj` of the inner mDeBERTa encoder. See [`docs/v10/V10_JOURNAL.md`](../../docs/v10/V10_JOURNAL.md) for the full training recipe and lessons learned.

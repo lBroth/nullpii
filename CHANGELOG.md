@@ -3,26 +3,47 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [Unreleased] — v10 release-candidate (2026-05-04)
 
-### Added
+> Pre-release work in progress. Numbers and HuggingFace artifacts will land after the unified release bench completes. See [`docs/v10/V10_PLAN.md`](docs/v10/V10_PLAN.md) for gating criteria.
 
-- TypeScript ESM library (`nullpii` on npm) with `sanitize` / `restore`
-  + reversible in-memory vault.
-- Constrained Viterbi BIOES decoder over `openai/privacy-filter` ONNX,
-  pinned by SHA in `src/defaults.ts` (`DEFAULT_MODEL_REVISION`).
-- Backends: `cpu`, `mps`, `cuda` (subpath exports, tree-shakable).
-  Variants: `fp32`, `int4`, `auto` (default `int4`).
+### Architecture
+
+- **v10 LoRA-per-domain adapters** on `urchade/gliner_multi_pii-v1` (~278M base + 5 LoRA, ~3.4 MB each). Domains: `devops`, `legal`, `medical-experimental`, `narrative` (general), `enterprise` (Nemotron-aug).
+- **Two release-candidate routers**:
+  - `nullpii-v10-router-embedding`: distiluse multilingual sentence-transformer + 5 prototype vectors with cosine routing + enterprise gate (margin 0.10). ~430 MB total.
+  - `nullpii-v10-router-xlmr`: xlm-roberta classifier head over 4 domains. ~1.4 GB total.
+- **Adversarial preprocessor** at adapter input (`_normalize_for_detection`): NFKC + unidecode + zero-width strip + HTML entity decode + URL `%XX` decode + spaced-PII despace. Span offsets remap back to original text.
+- 8-class output retained (`private_person`, `private_email`, `private_phone`, `private_address`, `private_date`, `private_url`, `account_number`, `secret`). LoRA training on 55-class Nemotron labels remapped 37→8 at inference.
+
+### Eval
+
+- `packages/eval/scripts/bench_full.py` purged to release surface: 2 nullpii routers + 9 bare baselines (`presidio`, `gliner-onnx-pii-fp32`, `piiranha`, `deberta`, `scrubadub`, `nemotron-pii-raw`, `openai`, `openai-bioes`, `openai-official`) + 3 opt-in cloud rows.
+- Strict bare-mode contract: no competitor row wraps nullpii post-processing (`boundary_refined`, `never_pii_filter`, `url_filter`, `regex_pack`, chunking).
+- 19-dataset PII-native canonical bench surface (see `docs/v10/V10_PLAN.md` "Release gating"). Excluded: wikiann (PER/LOC, not PII), adversarial-decoys (zero gold), composite nullpii-adversarial.
+- New external baselines: `argilla-pii` (29→8 label map), `nemotron-pii-test` (Nvidia's own test split).
+- `DatasetSpec.total_n` + `n / total_n` columns in `matrix.csv` for transparent cap visibility.
+
+### Audit fixes (2026-05-04)
+
+- F09: phone patterns context-anchored (`tel|telefono|phone|cell|cellulare|mobile` prefix) — drops CC/SSN false positives.
+- F20: IDN email pattern reverted to ASCII-only after Unicode `\w` produced 336 FP / 500 matches on `nullpii-bench`.
+- F10–F19: legal / medical / DE / IT recognizers added (Italian tax code MTTSRG41M22H501F → `account_number`, German legal vocab in router, Italian medical terms in router).
+- See `docs/v10/AUDIT_2026-05-04.md` for the full report.
+
+### Pending (release gating)
+
+- 🔴 Unified release bench across 19 datasets × 11 tools.
+- 🔴 README rewrite with v10 numbers post-bench.
+- 🔴 HuggingFace push: `lBroth/nullpii-v10-{devops,legal,medical-experimental,narrative,enterprise}-lora`.
+- 🔴 Merged-LoRA ONNX export for npm shipping.
+
+### Library (npm package)
+
+- TypeScript ESM library (`nullpii` on npm) with `sanitize` / `restore` + reversible in-memory vault.
+- Backends: `cpu`, `mps`, `cuda` (subpath exports, tree-shakable). Variants: `fp32`, `int4`, `auto` (default `int4`).
 - CLI: `nullpii scan|sanitize|restore|models|prefetch|doctor|benchmark`.
-- Recognizer packs (`packages/recognizers-{cloud,finance,id-it}`) for
-  AWS / GitHub / Stripe keys, IBAN/Luhn, Italian CF + PIVA.
-- Research kit (`packages/eval/`, gitignored): bench harness, dataset
-  loaders (ai4privacy, Isotonic, project-bundled `nullpii-bench`),
-  GLiNER fine-tune scripts.
-- Fine-tuned model `lBroth/nullpii` on HuggingFace Hub: PT FP32 +
-  ONNX FP32 + ONNX INT4 (`MatMulNBitsQuantizer`). Multilingual F1
-  0.93–0.97 on isotonic-en/de/fr/it (preview, n=100).
-- Tests: 145 pass / 8 skipped (artifact-gated). Coverage thresholds
-  85% lines / 80% branches in CI.
+- Recognizer packs (`packages/recognizers-{cloud,finance,id-it}`) for AWS / GitHub / Stripe keys, IBAN/Luhn, Italian CF + PIVA.
+- Note: npm currently ships the openai/privacy-filter ONNX runtime path; v10 LoRA shipping requires merged-LoRA ONNX export (pending, see release gating).
 
 [Unreleased]: https://github.com/lBroth/nullpii/compare/HEAD...HEAD

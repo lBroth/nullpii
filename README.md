@@ -94,6 +94,8 @@ Auto-selects in priority **CUDA → MPS → CPU**.
 - Engineering journal: [`docs/v10/V10_JOURNAL.md`](docs/v10/V10_JOURNAL.md)
 - Plan + release gating: [`docs/v10/V10_PLAN.md`](docs/v10/V10_PLAN.md)
 - Security audit (2026-05-04): [`docs/v10/AUDIT_2026-05-04.md`](docs/v10/AUDIT_2026-05-04.md)
+- Model card drafts (HF push pending): [`docs/v10/model-cards/`](docs/v10/model-cards/)
+- Compliance (DPIA template + held-out eval plan + SOC2 readiness): [`docs/compliance/`](docs/compliance/)
 - Eval kit (datasets, scripts, LoRA training): `packages/eval/`
 
 The unified release bench (head-to-head vs Presidio, GLiNER-base, Nemotron-PII, piiranha, deberta, scrubadub, openai/privacy-filter naive/BIOES/Viterbi) will publish after the overnight run. README will refresh with v10 numbers at that point.

@@ -35,7 +35,7 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
 - 🔴 Unified release bench across 19 datasets × 11 tools.
 - 🔴 README rewrite with v10 numbers post-bench.
-- 🔴 HuggingFace push: `lBroth/nullpii-v10-{devops,legal,medical-experimental,narrative,enterprise}-lora`.
+- 🟡 HuggingFace push: `lBroth/nullpii-v10-router-{embedding,xlmr}` + `lBroth/nullpii-v10-{devops,legal,medical-experimental,narrative,enterprise}-lora`. Model card drafts in [`docs/v10/model-cards/`](docs/v10/model-cards/) (pre-bench placeholders).
 - 🔴 Merged-LoRA ONNX export for npm shipping.
 
 ### Library (npm package)

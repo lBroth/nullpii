@@ -10,6 +10,50 @@
 
 For the public training procedure summary (Art. 53 transparency), see `docs/v10/TRAINING.md`. The full step-by-step engineering journal is internal (`packages/eval/private/v10/V10_JOURNAL.md`).
 
+## Strategic assessment — current state (2026-05-04)
+
+Independent strategist review (general-purpose subagent) ranks nullpii at **C+** as of 2026-05-04. Above Presidio on UX + modern ML; below Skyflow on production-readiness; orthogonal to Lakera (different problem). Three reasons grade is below B-tier:
+
+1. **Shipping path incoherent**. npm currently downloads `openai/privacy-filter` (`src/defaults.ts:52`), NOT the v10 LoRA stack. Audit F25: TS library lacks Python pipeline's adversarial defenses + never-PII filter + full regex pack. Production npm users get materially weaker detection than the bench claims advertise.
+2. **Canonical bench is a placeholder**. README, COMPETITIVE_ANALYSIS, all 8 model cards say `TBD-BENCH`. Without numbers, claims are not claims.
+3. **Active critical audit findings** unresolved on this branch: F10 off-by-one truncates trailing chars in chunked path (PII leak); F13 single embedded secret reroutes legal docs (0.922 → 0.10); F22 ReDoS-adjacent regexes; F25 TS/Python divergence.
+
+**Load-bearing differentiator**: the reversible in-memory vault primitive (sanitize → placeholder → LLM → restore). Skyflow has it but cloud-only; Presidio has weak de-anonymisation; HF GLiNER models have detection but no vault. nullpii uniquely contributes OSS + reversible vault + multilingual local detection in a single npm install.
+
+LoRA-per-domain routing is research artifact pending held-out validation — the 0.10 enterprise gate is currently tuned on `nullpii-bench` itself (test-set leakage per audit F13). Honest framing: if a held-out routing eval shows the LoRAs don't beat a chunked `urchade/gliner_multi_pii-v1` baseline by ≥0.03 F1, ship the embedding-router + single best adapter and drop the per-domain story.
+
+Full report (with priority list, A/B paths to grade A, publishability assessment per venue): `packages/eval/private/v10/STRATEGIC_ASSESSMENT_2026-05-04.md` (internal-only — contains critical audit references not safe for public publication until closed).
+
+## Top compound-leverage moves (path to A)
+
+Three deliverables that unlock multiple downstream wins. Execute in this order.
+
+| # | Deliverable | Date | Unlocks |
+|---|---|---|---|
+| 1 | **Run unified release bench, publish `matrix.json` + `confusion.json`** | **2026-05-12** | HN launch, blog post, all 8 model cards, README rewrite, HF push |
+| 2 | **Close audit F10, F13, F22, F25** (cherry-pick to main, tag 0.0.10) | **2026-05-10** | Removes the 4 critical/high blockers; safe to publish numbers |
+| 3 | **Held-out routing-eval corpus** (500 docs hand-annotated, 5 domains × 100) | **2026-05-25** | Honest router F1 (no test-set tuning) + academic paper + DPIA buyer-facing numbers + v11 train-or-don't decision |
+| 4 | **Merged-LoRA ONNX export → ship in npm 0.1.0** | **2026-06-15** | v10 work becomes consumable; closes audit F25 TS/Python divergence; makes the README claim true for the first time |
+
+Steps 1-2 are the prerequisites for step 3. Step 4 is the work that makes v10 "exist" on the npm side.
+
+After top 4 land:
+
+5. Multi-seed (3) bench runs with bootstrap 95% CIs on canonical matrix. Required for any paper. By 2026-06-30.
+6. Latency p50/p95 on 5090 + Mac M-series + Linux x86 → CSV alongside matrix.json. Required for procurement.
+7. Portkey + LiteLLM integration (PR to each repo: nullpii as a guardrail provider). Distribution multiplier.
+8. HN "Show HN: nullpii — local, reversible PII vault for LLM apps" with a 90s demo video. Lead with the vault, not the LoRAs.
+9. Workshop paper for PrivateNLP / EMNLP industry track: "Domain-routed LoRA adapters for multilingual PII detection: a held-out evaluation."
+10. SOC 2 Type II readiness — only when revenue justifies the 9-14 month calendar.
+
+Publishability today (per strategist agent):
+
+| venue | ready? | strongest framing |
+|---|---|---|
+| HN / Lobsters / r/ML | ❌ NO (TBD-BENCH everywhere — top reply would be "your benches are placeholders") | After unified bench: "OSS, local, reversible PII vault for npm — beats Presidio +X F1, beats Nemotron-PII +0.16 multilingually" |
+| Technical blog | ⚠ partial | **Adversarial preprocessor lift** as standalone finding (adv-unicode 0.466→0.936; adv-whitespace 0.106→0.393). Travels furthest as isolated insight |
+| Academic paper / arxiv | ❌ NO | Missing for NeurIPS / ACL: held-out routing eval, multi-seed runs, statistical significance, full ablations, ethics statement covering Art. 9 invisibility. Workshop track realistic in 2-3 months focused work |
+
 ## Release gating (2026-05-04, top priority)
 
 Before any HF push / README rewrite / npm publish, ALL of these must complete in order:

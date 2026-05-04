@@ -427,6 +427,62 @@ def build_tools(args) -> dict[str, Callable]:
             device=backend if backend == "cpu" else "cuda",
             threshold=0.3,
         ),
+        # ─── 2025 GLiNER-family additions (knowledgator) ──────────────
+        # Bare GLiNER models loaded via the standard `gliner` library —
+        # `gliner_v2_predictor` handles loading + span output cleanly.
+        # All Apache 2.0. None wrap nullpii post-processing (chunking
+        # only, same contract as `gliner-onnx-pii-fp32`).
+        # `gliner-x-large`: MT5-large encoder (~580M), 20 langs incl.
+        # CJK / Arabic / Hindi / Ukrainian. The only true-multilingual
+        # GLiNER candidate — closes our documented CJK / RTL / Indic
+        # blind spot.
+        "gliner-x-large": lambda: gliner_v2_predictor(
+            "knowledgator/gliner-x-large",
+            device=backend if backend == "cpu" else "cuda",
+            threshold=args.gliner_threshold,
+            local_files_only=False,
+        ),
+        # `gliner-x-base`: MT5-base sibling, lighter for CPU bench.
+        "gliner-x-base": lambda: gliner_v2_predictor(
+            "knowledgator/gliner-x-base",
+            device=backend if backend == "cpu" else "cuda",
+            threshold=args.gliner_threshold,
+            local_files_only=False,
+        ),
+        # `gliner-pii-large-v1.0`: PII-specialised Apache fine-tune,
+        # gliner-large backbone. EN-only despite "60+ categories"
+        # framing. Reported F1 83.25 on synthetic-multi-pii-ner-v1.
+        "gliner-pii-large-v1": lambda: gliner_v2_predictor(
+            "knowledgator/gliner-pii-large-v1.0",
+            device=backend if backend == "cpu" else "cuda",
+            threshold=args.gliner_threshold,
+            local_files_only=False,
+        ),
+        # `gliner-pii-base-v1.0`: size-matched competitor to v10 base.
+        "gliner-pii-base-v1": lambda: gliner_v2_predictor(
+            "knowledgator/gliner-pii-base-v1.0",
+            device=backend if backend == "cpu" else "cuda",
+            threshold=args.gliner_threshold,
+            local_files_only=False,
+        ),
+        # `modern-gliner-bi-large-v1.0`: ModernBERT-large + BGE bi-encoder.
+        # 8k context, ~4× faster than DeBERTa per upstream claim.
+        # Long-doc speed test (TAB ECHR, dev pastes).
+        "modern-gliner-bi-large-v1": lambda: gliner_v2_predictor(
+            "knowledgator/modern-gliner-bi-large-v1.0",
+            device=backend if backend == "cpu" else "cuda",
+            threshold=args.gliner_threshold,
+            local_files_only=False,
+        ),
+        # `gliner-multi-pii-domains-v1`: E3-JSI fine-tune of
+        # urchade/gliner_multi_pii-v1. Adds Slovenian / Greek / Dutch
+        # to the v10 base. F1 76.36 on synthetic-multi-pii-ner-v1.
+        "gliner-multi-pii-domains-v1": lambda: gliner_v2_predictor(
+            "E3-JSI/gliner-multi-pii-domains-v1",
+            device=backend if backend == "cpu" else "cuda",
+            threshold=args.gliner_threshold,
+            local_files_only=False,
+        ),
         # ─── openai/privacy-filter — three usage modes ────────────────
         # `openai`: HF transformers `pipeline()` naive aggregation. The
         # majority-default usage path; misses the model card's

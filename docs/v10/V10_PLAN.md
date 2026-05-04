@@ -112,6 +112,69 @@ v10 bench (mDeBERTa-v3-base ~278M + 5 LoRA, total ~430 MB) lands.
         languages (already at saturation with v10 base).
 ```
 
+### Path C — unified single model (collapses router + 5 LoRA → 1 fine-tune)
+
+Alternative to Path A / Path B. Triggered by the SAME held-out routing-eval gate: if the routing layer doesn't beat a chunked single-model baseline by ≥0.03 F1 on the held-out routing corpus, the per-domain LoRA architecture isn't load-bearing — collapse it.
+
+**Architecture**:
+
+```
+input
+  ↓
+preprocessor (NFKC + unidecode + zero-width strip + HTML/URL decode + spaced-PII despace)
+  ↓
+unified_gliner (1 fine-tune on union of 5 domain corpora, ~280 MB base)
+  ↓
+regex_post_pass + url_filter + never_pii_filter (compliance hard rules)
+  ↓
+vault.sanitize → placeholder text
+```
+
+4 stages instead of 8. Drops: router (single model handles all domains), `boundary_refined` (model learns boundaries directly), 5 LoRA adapters.
+
+**Training recipe**:
+
+- Single GLiNER fine-tune on union of 5 domain training corpora (~103k records: 37k devops + 18k legal + 16k medical + 17k narrative + 15k enterprise).
+- **Adversarial training-time augmentation**: inject homoglyph / charswap / unicode-zero-width perturbations on a 30% sample of training records → model learns invariance, replaces part of `_normalize_for_detection` runtime cost.
+- LoRA r=16 alpha=32 on `urchade/gliner_multi_pii-v1` (same backbone as v10 base) OR full fine-tune (~6 MB vs ~280 MB depending on storage budget).
+- Class-balanced sampling, BF16 cosine LR, 3-5 epochs early-stopped.
+- Train cost: ~10-15 GPU-h on 5090 (single longer run vs 5 short LoRA runs).
+
+**npm shipping**:
+
+- 1 ONNX export (~280 MB FP32, ~150 MB INT4) — drop-in replacement for the current `openai/privacy-filter` runtime path.
+- No router model to ship → drops the 135 MB distiluse / 1.1 GB xlm-roberta classifier weight from the bundle.
+- TS library wrapping: preprocessor (already in npm scope, just needs spec), 1 ONNX inference call, regex pack (already in npm scope), vault. Audit F25 (TS / Python divergence) closes naturally because the surface is smaller.
+
+**Trade-offs vs current router pipeline**:
+
+| Property | v10 router (current) | Path C unified |
+|---|---|---|
+| Storage (npm bundle) | ~430 MB (base + 5 LoRA + embedder) | **~280 MB** (single model) |
+| Inference passes | 2 (embedder + adapter) | **1** (single forward) |
+| Per-domain F1 ceiling | adapter-specialised (potentially higher) | **uniform** (no specialisation) |
+| Out-of-domain failure mode | graceful (fallback to narrative) | **uniform fail** (no fallback) |
+| Routing test-set tuning risk | present (enterprise gate 0.10 tuned on nullpii-bench) | **eliminated** (no router) |
+| Training pipeline | 5 sequential LoRA runs | **1 longer run** |
+| Adversarial robustness | preprocessor + LoRA (defense in depth) | **augmentation-trained** (single layer) |
+| Estimated F1 vs v10 router | baseline | **−0.02 to −0.05** (lose specialisation, gain simplicity) |
+
+**Decision gate**:
+
+Same held-out routing-eval corpus used for v10 routing validation. If routing layer F1 lift over a single-model baseline is:
+
+- ≥ 0.03 → **router architecture is load-bearing**. Stay on v10 router. Proceed to Path A / Path B if a large-class competitor justifies a backbone upgrade.
+- < 0.03 → **router architecture is NOT load-bearing**. Switch to Path C unified single model. Per-domain story drops; ship simpler pipeline. (Honest move per strategic assessment 2026-05-04: drop the per-domain narrative, lead with the vault + unified detector + bench harness.)
+
+**When NOT to pick Path C**:
+
+- If multilingual coverage (CJK / Arabic / Hindi) is the v10 gap that needs closing → Path B (`nullpii-xl` MT5-large) is strictly better. Path C uses the same base mdeberta backbone, same multilingual ceiling.
+- If a regulated-vertical buyer specifically asks for separable medical / legal / devops profiles for compliance audit traceability → Path C breaks that story.
+
+**Why Path C is on the menu**:
+
+The strategic assessment (2026-05-04, internal) identified the reversible vault — not the per-domain LoRA routing — as nullpii's load-bearing differentiator. Path C is the "honest fallback" if the routing thesis doesn't validate empirically. It still delivers the vault + multilingual detection + bench-harness contributions without the unfalsifiable test-set-tuned routing claim.
+
 ### Pipeline robustness (conditional on v11 train)
 
 If v11 ships, also harden:

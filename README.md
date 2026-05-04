@@ -89,14 +89,63 @@ Auto-selects in priority **CUDA → MPS → CPU**.
 - Logs never contain PII (counts and short ids only).
 - See [SECURITY.md](SECURITY.md) for the threat model and how to report a vulnerability.
 
-## Research / benchmarks
+## Benchmarks
 
-- Engineering journal: [`docs/v10/V10_JOURNAL.md`](docs/v10/V10_JOURNAL.md)
-- Plan + release gating: [`docs/v10/V10_PLAN.md`](docs/v10/V10_PLAN.md)
-- Security audit (2026-05-04): [`docs/v10/AUDIT_2026-05-04.md`](docs/v10/AUDIT_2026-05-04.md)
-- Model card drafts (HF push pending): [`docs/v10/model-cards/`](docs/v10/model-cards/)
-- Compliance (DPIA template + held-out eval plan + SOC2 readiness): [`docs/compliance/`](docs/compliance/)
-- Eval kit (datasets, scripts, LoRA training): `packages/eval/`
+> **Status**: v10 unified release bench **pending**. Numbers fill once `bench_full.py` produces the canonical `matrix.json` (overnight Mac CPU run + 5090 GPU verification — see [`docs/v10/V10_PLAN.md`](docs/v10/V10_PLAN.md) §"Release gating").
+
+11 tools × 19 PII-native datasets, single bench harness, single code revision, macro F1 at IoU ≥ 0.5. Bare-mode contract: no competitor row wraps nullpii post-processing.
+
+| Tool | Wrapping | F1 (macro avg) |
+|---|---|:---:|
+| `nullpii-v10-router-embedding` | distiluse + 5 LoRA on `urchade/gliner_multi_pii-v1` | TBD-BENCH |
+| `nullpii-v10-router-xlmr` | xlm-roberta classifier + 4 LoRA | TBD-BENCH |
+| `presidio` | bare upstream | TBD-BENCH |
+| `gliner-onnx-pii-fp32` | bare HF (`urchade/gliner_multi_pii-v1`) | TBD-BENCH |
+| `piiranha` | bare (`iiiorg/piiranha-v1-detect-personal-information`) | TBD-BENCH |
+| `deberta` | bare (`lakshyakh93/deberta_finetuned_pii`) | TBD-BENCH |
+| `scrubadub` | bare upstream | TBD-BENCH |
+| `nemotron-pii-raw` | bare (`nvidia/gliner-pii`) | TBD-BENCH |
+| `openai` | HF naive `pipeline()` (misuse) | TBD-BENCH |
+| `openai-bioes` | Python BIOES decoder | TBD-BENCH |
+| `openai-official` | opf CLI Viterbi (model-card-correct) | TBD-BENCH |
+
+Per-dataset breakdown lands in [`docs/v10/V10_JOURNAL.md`](docs/v10/V10_JOURNAL.md) post-bench.
+
+## Documentation
+
+### Top-level
+
+- [`COMPETITIVE_ANALYSIS.md`](COMPETITIVE_ANALYSIS.md) — bench methodology + competitor landscape
+- [`CHANGELOG.md`](CHANGELOG.md) — release notes
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — dev setup + architecture rules
+- [`SECURITY.md`](SECURITY.md) — threat model + vuln reporting
+
+### v10 release docs (`docs/v10/`)
+
+- [`V10_PLAN.md`](docs/v10/V10_PLAN.md) — release gating + status + decision tree
+- [`V10_JOURNAL.md`](docs/v10/V10_JOURNAL.md) — engineering journal (training trace + decisions)
+- [`AUDIT_2026-05-04.md`](docs/v10/AUDIT_2026-05-04.md) — security audit (25 findings, 17 closed)
+- Model card drafts — [`docs/v10/model-cards/`](docs/v10/model-cards/):
+  - [`README.md`](docs/v10/model-cards/README.md) — index + train-vs-eval overlap matrix
+  - [`router-embedding.md`](docs/v10/model-cards/router-embedding.md) — release-candidate A
+  - [`router-xlmr.md`](docs/v10/model-cards/router-xlmr.md) — release-candidate B
+  - [`adapter-devops.md`](docs/v10/model-cards/adapter-devops.md)
+  - [`adapter-legal.md`](docs/v10/model-cards/adapter-legal.md)
+  - [`adapter-medical-experimental.md`](docs/v10/model-cards/adapter-medical-experimental.md) — ⚠ non-HIPAA
+  - [`adapter-narrative.md`](docs/v10/model-cards/adapter-narrative.md)
+  - [`adapter-enterprise.md`](docs/v10/model-cards/adapter-enterprise.md) — Nemotron-aug
+
+### Compliance (`docs/compliance/`)
+
+- [`DPIA_TEMPLATE.md`](docs/compliance/DPIA_TEMPLATE.md) — GDPR Art. 35 template
+- [`HELDOUT_ROUTING_EVAL_PLAN.md`](docs/compliance/HELDOUT_ROUTING_EVAL_PLAN.md) — routing-eval corpus plan
+- [`SOC2_READINESS.md`](docs/compliance/SOC2_READINESS.md) — SOC2 Type II readiness gap analysis
+
+### Eval kit
+
+- [`packages/eval/README.md`](packages/eval/README.md) — bench harness + scripts inventory
+- [`packages/eval/datasets/README.md`](packages/eval/datasets/README.md) — dataset cards + licenses
+- [`examples/README.md`](examples/README.md) — TS usage examples
 
 The unified release bench (head-to-head vs Presidio, GLiNER-base, Nemotron-PII, piiranha, deberta, scrubadub, openai/privacy-filter naive/BIOES/Viterbi) will publish after the overnight run. README will refresh with v10 numbers at that point.
 

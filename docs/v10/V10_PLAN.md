@@ -2,13 +2,13 @@
 
 ## Status (2026-05-03)
 
-- ✅ **Phase 1**: LoRA POC on GLiNER backbone — **VERIFIED PASS**. Pure-LoRA architecture (0.3% trainable, ~3.4MB adapter), MEDDOCAN-trained adapter learned new detection (NHC patient ID at 0.647 vs base "missed"), no regression on English dev-paste. See `V10_JOURNAL.md` 14:20.
+- ✅ **Phase 1**: LoRA POC on GLiNER backbone — **VERIFIED PASS**. Pure-LoRA architecture (0.3% trainable, ~3.4MB adapter), MEDDOCAN-trained adapter learned new detection (NHC patient ID at 0.647 vs base "missed"), no regression on English dev-paste.
 - 🟡 **Phase 2**: per-domain corpus mix — IN PROGRESS. CC neg 25k sampling running with model filter. MEDDOCAN loader validated (21/21 entity types explicit handling). Corpus overlap fix landed (disjoint partition). Bug fix in `filter_token_len` for cc-negative kept (verification pending end-to-end run).
 - 🔴 Phase 3: train 4 adapters — queued (after Phase 2 corpus complete).
 - 🔴 Phase 4: integrated bench + ship — queued.
 - 🟡 Long-term: i2b2 DUA approval (gating final medical adapter) — application pending.
 
-For detailed step-by-step findings + fixes, see `docs/v10/V10_JOURNAL.md`.
+For the public training procedure summary (Art. 53 transparency), see `docs/v10/TRAINING.md`. The full step-by-step engineering journal is internal (`packages/eval/private/v10/V10_JOURNAL.md`).
 
 ## Release gating (2026-05-04, top priority)
 
@@ -118,7 +118,7 @@ Curriculum: epoch 1 mixed, epoch 2 with negative-class injection (Common Crawl p
 ## Phase 5+: deferred (waiting on external)
 
 - 🔴 **i2b2 2014 deid DUA approval** — application required at portal.dbmi.hms.harvard.edu. Gates upgrading `medical-experimental` to `medical`.
-- 🔴 **Held-out routing-eval corpus** (500 docs hand-annotated). See `docs/compliance/HELDOUT_ROUTING_EVAL_PLAN.md`. Gates v10 release-candidate go/no-go.
+- 🔴 **Held-out routing-eval corpus** (500 docs hand-annotated). See `packages/eval/private/compliance/HELDOUT_ROUTING_EVAL_PLAN.md`. Gates v10 release-candidate go/no-go.
 - 🔴 **HF model card update** — publish `lBroth/nullpii-v10-{devops,legal,medical-experimental,general}-lora` adapters to HuggingFace.
 - 🔴 **HUDOC, EDGAR-redacted bench** — additional legal corpora to disprove TAB-only memorisation.
 - 🔴 **MEDDOCAN bench integration** — needed for `medical-experimental` validation.
@@ -127,7 +127,7 @@ Curriculum: epoch 1 mixed, epoch 2 with negative-class injection (Common Crawl p
 ## Phase 6: optimisation backlog (post-router)
 
 - 🔴 **Shared-base PEFT `add_adapter`**. Currently each `gliner_lora_predictor` instantiation calls `GLiNER.from_pretrained` and re-loads the 278M backbone. The router pre-loads 4 adapter predictors → 4× backbone in RAM (~1.1GB PT). Refactor to a single-base GLiNER with `peft_model.add_adapter(name)` + `set_adapter(name)` per request. Memory savings: ~840MB. Latency per request: unchanged (set_adapter is O(active LoRA layer count)). Skipped during initial v10 build to reduce scope; the 4× duplication is acceptable for bench but not for production deployment.
-- 🔴 **Hybrid ML router** ✅ (in flight; see V10_JOURNAL.md 17:30). Replace pure regex `detect_domain` with regex-first + sklearn TF-IDF + LogReg fallback for ambiguous text. See `train_router.py`. Goal: lift `unknown` fraction (currently ~52% on `nullpii-bench`, ~23% on ai4) closer to its true domain → higher router F1.
+- 🔴 **Hybrid ML router** ✅ (in flight; see TRAINING.md 17:30). Replace pure regex `detect_domain` with regex-first + sklearn TF-IDF + LogReg fallback for ambiguous text. See `train_router.py`. Goal: lift `unknown` fraction (currently ~52% on `nullpii-bench`, ~23% on ai4) closer to its true domain → higher router F1.
 - 🔴 **Adapter merge + ONNX export** for npm shipment. Once the router design stabilises, merge each LoRA into its base + export to ONNX FP32/INT4 for the npm runtime. The npm lib runs onnxruntime-node, not PT — current adapter format ships only via the Python eval pipeline.
 
 ### Adversarial robustness (post-preprocessor backlog)

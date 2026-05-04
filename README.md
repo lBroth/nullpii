@@ -109,7 +109,7 @@ Auto-selects in priority **CUDA → MPS → CPU**.
 | `openai-bioes` | Python BIOES decoder | TBD-BENCH |
 | `openai-official` | opf CLI Viterbi (model-card-correct) | TBD-BENCH |
 
-Per-dataset breakdown lands in [`docs/v10/V10_JOURNAL.md`](docs/v10/V10_JOURNAL.md) post-bench.
+Per-dataset breakdown lands alongside the `matrix.json` artifact post-bench.
 
 ## Documentation
 
@@ -123,7 +123,7 @@ Per-dataset breakdown lands in [`docs/v10/V10_JOURNAL.md`](docs/v10/V10_JOURNAL.
 ### v10 release docs (`docs/v10/`)
 
 - [`V10_PLAN.md`](docs/v10/V10_PLAN.md) — release gating + status + decision tree
-- [`V10_JOURNAL.md`](docs/v10/V10_JOURNAL.md) — engineering journal (training trace + decisions)
+- [`TRAINING.md`](docs/v10/TRAINING.md) — training procedure summary (Art. 53 transparency)
 - [`AUDIT_2026-05-04.md`](docs/v10/AUDIT_2026-05-04.md) — security audit (25 findings, 17 closed)
 - Model card drafts — [`docs/v10/model-cards/`](docs/v10/model-cards/):
   - [`README.md`](docs/v10/model-cards/README.md) — index + train-vs-eval overlap matrix
@@ -137,9 +137,9 @@ Per-dataset breakdown lands in [`docs/v10/V10_JOURNAL.md`](docs/v10/V10_JOURNAL.
 
 ### Compliance (`docs/compliance/`)
 
-- [`DPIA_TEMPLATE.md`](docs/compliance/DPIA_TEMPLATE.md) — GDPR Art. 35 template
-- [`HELDOUT_ROUTING_EVAL_PLAN.md`](docs/compliance/HELDOUT_ROUTING_EVAL_PLAN.md) — routing-eval corpus plan
-- [`SOC2_READINESS.md`](docs/compliance/SOC2_READINESS.md) — SOC2 Type II readiness gap analysis
+- [`DPIA_TEMPLATE.md`](docs/compliance/DPIA_TEMPLATE.md) — GDPR Art. 35 template (buyer-facing)
+
+> Internal-only compliance docs (held-out routing-eval plan, SOC2 Type II readiness gap analysis) live under `packages/eval/private/compliance/` and are not part of the public release surface.
 
 ### Eval kit
 

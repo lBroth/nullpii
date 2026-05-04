@@ -51,7 +51,7 @@ Total: ~17k records.
 
 ## Training procedure
 
-Same recipe as other v10 LoRA adapters. Train loss 4.72 → eval loss 3.49 → 3.12. See [`../V10_JOURNAL.md`](../V10_JOURNAL.md) (23:30 entry).
+Same recipe as other v10 LoRA adapters. Train loss 4.72 → eval loss 3.49 → 3.12. See [`../TRAINING.md`](../TRAINING.md).
 
 ## Evaluation (TBD-BENCH)
 

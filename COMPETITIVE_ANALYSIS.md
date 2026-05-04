@@ -2,6 +2,8 @@
 
 Snapshot 2026-05-04. Used to position `nullpii` against the existing landscape and identify the whitespace it fills. Not exhaustive — focused on players that overlap with the npm-package + adapter / managed-cloud roadmap.
 
+**Related**: [`README.md`](README.md) (TL;DR + install + bench table) · [`docs/v10/V10_PLAN.md`](docs/v10/V10_PLAN.md) (release gating) · [`docs/v10/V10_JOURNAL.md`](docs/v10/V10_JOURNAL.md) (engineering journal) · [`docs/v10/model-cards/`](docs/v10/model-cards/) (HF model cards) · [`docs/compliance/`](docs/compliance/) (DPIA + SOC2 + held-out eval plan).
+
 ## Empirical bench numbers
 
 > **Status**: v10 release-candidate. Unified release bench is **pending** (overnight Mac CPU run). Current numbers and head-to-head tables live in [`docs/v10/V10_JOURNAL.md`](docs/v10/V10_JOURNAL.md). Methodology + bench surface below.

@@ -2937,6 +2937,122 @@ def gliner_nemotron_pii_predictor(
     return _predict
 
 
+def gliner2_predictor(
+    *,
+    model_path: str = "fastino/gliner2-large-v1",
+    device: str = "cpu",
+    threshold: float = 0.3,
+    chunk_chars: int = 1400,
+    overlap_chars: int = 200,
+) -> Predictor:
+    """Wrapper for `fastino/gliner2-{base,large,multi}-v1` (GLiNER2,
+    fastino-ai). Schema-agnostic information-extraction model;
+    backbone `microsoft/deberta-v3-{base,large}` per variant.
+    Output is span-level (`include_spans=True` returns `{text, start,
+    end, confidence}` per entity), so it slots into the bench's
+    IoU-based F1 metric directly.
+
+    Bare-mode usage: no nullpii post-processing (no boundary refine,
+    never_pii filter, or regex pack). Chunking is preserved at the
+    standard 1400/200 stride to handle long inputs (TAB ECHR, dev
+    pastes); same chunking that wraps `nemotron-pii-raw` and
+    `gliner-onnx-pii-fp32`.
+
+    Predicts directly on the 8-class nullpii schema (`_NULLPII_8`);
+    GLiNER2 is schema-agnostic, so the labels become the prompt at
+    inference time. No re-mapping required.
+    """
+    try:
+        from gliner2 import GLiNER2  # type: ignore
+    except ImportError as e:
+        raise ImportError("gliner2 required (pip install gliner2)") from e
+
+    model = GLiNER2.from_pretrained(model_path)
+    if hasattr(model, "to") and device != "cpu":
+        try:
+            model = model.to(device)
+        except Exception:
+            pass
+
+    def _dedupe(spans: list[Span]) -> list[Span]:
+        if len(spans) <= 1:
+            return spans
+        sorted_spans = sorted(spans, key=lambda s: (s.start, -s.end))
+        out: list[Span] = []
+        for s in sorted_spans:
+            merged = False
+            for i in range(len(out) - 1, -1, -1):
+                prev = out[i]
+                if prev.end <= s.start:
+                    break
+                if prev.label != s.label:
+                    continue
+                if (s.end - s.start) > (prev.end - prev.start):
+                    out[i] = s
+                merged = True
+                break
+            if not merged:
+                out.append(s)
+        return sorted(out, key=lambda s: s.start)
+
+    def _flatten(result: dict) -> list[tuple[str, dict]]:
+        ents = result.get("entities", {}) if isinstance(result, dict) else {}
+        out: list[tuple[str, dict]] = []
+        for label, items in ents.items():
+            if not isinstance(items, list):
+                continue
+            for it in items:
+                if isinstance(it, dict) and "start" in it and "end" in it:
+                    out.append((label, it))
+        return out
+
+    def _predict(text: str) -> ToolResult:
+        t0 = time.perf_counter()
+        spans: list[Span] = []
+        scores: list[float] = []
+        text_len = len(text)
+        if text_len <= chunk_chars:
+            r = model.extract_entities(
+                text, list(_NULLPII_8),
+                threshold=threshold,
+                include_spans=True,
+                include_confidence=True,
+            )
+            for label, e in _flatten(r):
+                spans.append(Span(label, int(e["start"]), int(e["end"])))
+                scores.append(float(e.get("confidence", threshold)))
+        else:
+            stride = chunk_chars - overlap_chars
+            spans_with_scores: list[tuple[Span, float]] = []
+            for offset in range(0, text_len, stride):
+                chunk = text[offset:offset + chunk_chars]
+                if not chunk:
+                    break
+                r = model.extract_entities(
+                    chunk, list(_NULLPII_8),
+                    threshold=threshold,
+                    include_spans=True,
+                    include_confidence=True,
+                )
+                for label, e in _flatten(r):
+                    s, en = int(e["start"]) + offset, int(e["end"]) + offset
+                    spans_with_scores.append((
+                        Span(label, s, en),
+                        float(e.get("confidence", threshold)),
+                    ))
+                if offset + chunk_chars >= text_len:
+                    break
+            kept = _dedupe([sp for sp, _ in spans_with_scores])
+            score_by_id = {id(sp): sc for sp, sc in spans_with_scores}
+            for sp in kept:
+                spans.append(sp)
+                scores.append(score_by_id.get(id(sp), threshold))
+        elapsed = (time.perf_counter() - t0) * 1000
+        return ToolResult(spans, elapsed, scores=tuple(scores))
+
+    return _predict
+
+
 def gliner_lora_predictor(
     base_model_path: str,
     adapter_dir: str | Path,

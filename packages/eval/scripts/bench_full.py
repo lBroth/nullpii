@@ -61,6 +61,7 @@ from nullpii_eval.adapters import (
     gliner_lora_predictor,
     gliner_nemotron_pii_predictor,
     gliner_v2_predictor,
+    gliner2_predictor,
     multi_ensemble_predictor,
     never_pii_filter_predictor,
     openai_bioes_predictor,
@@ -403,6 +404,26 @@ def build_tools(args) -> dict[str, Callable]:
         # remap is the only adapter glue (`gliner_nemotron_pii_predictor`).
         "nemotron-pii-raw": lambda: gliner_nemotron_pii_predictor(
             model_path="nvidia/gliner-pii",
+            device=backend if backend == "cpu" else "cuda",
+            threshold=0.3,
+        ),
+        # GLiNER2 (fastino-ai). Schema-agnostic IE model; backbone
+        # `microsoft/deberta-v3-{base,large}` per variant. Predicts
+        # directly on nullpii's 8-class schema (no remap). Bare — same
+        # chunking-only contract as `nemotron-pii-raw` and
+        # `gliner-onnx-pii-fp32`. Library: `gliner2` (Apache 2.0).
+        "gliner2-large-v1": lambda: gliner2_predictor(
+            model_path="fastino/gliner2-large-v1",
+            device=backend if backend == "cpu" else "cuda",
+            threshold=0.3,
+        ),
+        "gliner2-base-v1": lambda: gliner2_predictor(
+            model_path="fastino/gliner2-base-v1",
+            device=backend if backend == "cpu" else "cuda",
+            threshold=0.3,
+        ),
+        "gliner2-multi-v1": lambda: gliner2_predictor(
+            model_path="fastino/gliner2-multi-v1",
             device=backend if backend == "cpu" else "cuda",
             threshold=0.3,
         ),

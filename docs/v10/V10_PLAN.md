@@ -37,6 +37,70 @@ Before any HF push / README rewrite / npm publish, ALL of these must complete in
 - Per-domain adapter rows — internal building blocks for the routers, not a user-facing tool. Only `nullpii-v10-router-embedding` and `nullpii-v10-router-xlmr` ship.
 - Older nullpii variants (`nullpii`, `nullpii-v8`, `nullpii-v9`, `nullpii-ensemble-*`, `nullpii-ablation-*`, `nullpii-runtime`, `nullpii-v10-router-{hybrid,hybrid-v2,embedding-expanded}`, `regex`-only, wrapped `gliner+regex` etc.) — purged from `bench_full.py` on 2026-05-04. Not part of the release surface.
 
+## v11 backbone-upgrade roadmap (post-v10 release, conditional)
+
+After the v10 unified release bench completes, decide whether to retrain on a larger backbone. Decision tree:
+
+```
+v10 bench (mDeBERTa-v3-base ~278M + 5 LoRA, total ~430 MB) lands.
+│
+├─ vs gliner2-large-v1 (deberta-v3-large 340M, fastino-ai)
+├─ vs gliner-x-large (MT5-large 580M, knowledgator) ← multilingual incl. CJK/Arabic/Hindi
+├─ vs gliner-pii-large-v1 (gliner-large, knowledgator, EN)
+├─ vs nemotron-pii-raw (gliner-large-v2.1 600M, NVIDIA)
+│
+├─ if v10 base wins or ties (≤0.02 F1 below the strongest large) → ship base. Done.
+│
+└─ if a large-class competitor wins by ≥0.03 F1 → train v11 on a larger backbone.
+   │
+   ├─ Path A — `nullpii-large` (deberta-v3-large or gliner_large-v2.1 base):
+   │  • 5 LoRA, target 0.3% trainable, ~7 MB per adapter (2× v10).
+   │  • Train cost: ~12-15 GPU-h on 5090 (vs v10 ~7h).
+   │  • npm shipping: ONNX FP32 ~700 MB (2.5× v10), INT4 quant ~480 MB.
+   │  • F1 lift target: +0.03-0.05 vs v10 base on multilingual + adversarial.
+   │
+   └─ Path B — `nullpii-xl` (MT5-large 580M, knowledgator's gliner-x backbone):
+      • Adds CJK / Arabic / Hindi coverage — closes the documented v10 dead zone.
+      • Train cost: ~20-25 GPU-h on 5090 (MT5 attention is heavier).
+      • npm shipping: ~1.2 GB ONNX FP32. INT4 path uncertain (mdeberta INT4
+        works; MT5 INT4 needs validation).
+      • F1 lift target: +0.05-0.10 on non-Latin scripts; ~+0.02 on Latin
+        languages (already at saturation with v10 base).
+```
+
+### Pipeline robustness (conditional on v11 train)
+
+If v11 ships, also harden:
+
+- **Test-set tuning audit**: re-tune the enterprise-route gate (margin 0.10) on a held-out routing-eval corpus, NOT on `nullpii-bench`. See internal heldout-routing-eval plan.
+- **Per-class confusion publication**: ship `confusion.json` alongside `matrix.json` in the release matrix; document how to read it per profile.
+- **IoU=0.9 strict F1 column**: add a second metric column for privacy-critical workloads where loose-boundary spans are unacceptable.
+- **Latency p50 / p95 on canonical hardware**: bench on 5090 + Mac M-series + Linux x86 CPU, publish p50/p95 alongside F1.
+- **DPIA template regeneration**: replace stale v6/v8 placeholder numbers with v11 unified-bench output; add per-class FN/FP rates for high-risk categories (Art. 9 invisibility quantified).
+- **Article 9 categorical filter**: pair the v11 router with a sensitive-category content classifier (health / political / religious / etc.) — publishes an explicit "Art. 9 disclaimer dropped if classifier agrees" pipeline. Until v11, document this as user responsibility.
+
+### Bench candidates added 2026-05-04 for v10/v11 comparison
+
+Already wired into `bench_full.py`:
+
+- `fastino/gliner2-{base,large,multi}-v1` — schema-agnostic GLiNER2 (Apache 2.0, span output via `include_spans=True`).
+- `knowledgator/gliner-x-{large,base}` — MT5-encoder GLiNER (Apache 2.0, multilingual incl. CJK / Arabic / Hindi).
+- `knowledgator/gliner-pii-{large,base}-v1.0` — PII-specialised GLiNER fine-tunes (Apache 2.0, EN-only).
+- `knowledgator/modern-gliner-bi-large-v1.0` — ModernBERT bi-encoder (Apache 2.0, 8k context, ~4× faster on long inputs per upstream claim).
+- `E3-JSI/gliner-multi-pii-domains-v1` — fine-tune of v10 base, adds Slovenian / Greek / Dutch.
+
+Not yet wired (queued for v11):
+
+- `ai4privacy/llama-ai4privacy-multilingual-categorical-anonymiser-openpii` — ModernBERT-base (~100M), Hindi + Telugu native. Different code path (transformers `AutoModelForTokenClassification`, not GLiNER) — needs a new adapter wrapper.
+- `betterdataai/PII_DETECTION_MODEL` — Qwen2-0.5B decoder. Generative output, no native span offsets — would require fuzzy span re-alignment, not Apple-to-apple.
+
+Negative signals (skip):
+
+- `Roblox/roblox-pii-classifier` — binary classifier (`asking_for_pii` / `giving_pii`), no spans, F1 not comparable.
+- `Mayank6255/GLiNER-MoE-MultiLingual` — F1 inconsistent (75 WikiNeural, 3.7 HarveyNER), low adoption.
+- `numind/NuNER_Zero-span` — pre-2025 cutoff, 12-token entity cap breaks long PII.
+- GLiNER v3 / `urchade/gliner_multi_pii-v2` — do NOT exist as of 2026-05-04. The v10 backbone is still the latest from urchade.
+
 ## Decision tree
 
 ```

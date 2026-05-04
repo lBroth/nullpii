@@ -2594,6 +2594,7 @@ def gliner_v2_predictor(
     onnx_file: str | None = None,
     device: str = "cuda",
     threshold: float = 0.5,
+    local_files_only: bool = True,
     chunk_chars: int = 1400,
     overlap_chars: int = 200,
     normalize_input: bool = False,
@@ -2611,7 +2612,7 @@ def gliner_v2_predictor(
     except ImportError as e:
         raise ImportError("gliner required") from e
 
-    kwargs: dict = {"local_files_only": True}
+    kwargs: dict = {"local_files_only": local_files_only}
     if onnx_file:
         kwargs["load_onnx_model"] = True
         kwargs["onnx_model_file"] = onnx_file

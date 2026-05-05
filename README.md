@@ -201,12 +201,6 @@ Honest read: nullpii sits in the GLiNER-family ballpark on the held-out non-adve
   - [`adapter-narrative.md`](docs/v10/model-cards/adapter-narrative.md)
   - [`adapter-enterprise.md`](docs/v10/model-cards/adapter-enterprise.md) — Nemotron-aug, Nemotron-test in-distribution disclosed
 
-### Compliance (`docs/compliance/`)
-
-- [`DPIA_TEMPLATE.md`](docs/compliance/DPIA_TEMPLATE.md) — GDPR Art. 35 template (buyer-facing)
-
-> Internal-only compliance docs (held-out routing-eval plan, SOC2 Type II readiness gap analysis) live under `packages/eval/private/compliance/` and are not part of the public release surface.
-
 ### Eval kit
 
 - [`packages/eval/README.md`](packages/eval/README.md) — bench harness + scripts inventory

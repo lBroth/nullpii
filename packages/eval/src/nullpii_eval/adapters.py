@@ -2776,6 +2776,24 @@ _SPACED_PII_RE = re.compile(r"(?<!\w)(?:[\w@.+\-:/]\s+){3,}[\w@.+\-:/]")
 _NORMALIZE_INPUT_MAX_BYTES = 1_000_000  # AUDIT F23 cap
 
 
+def _is_pure_ascii_no_decode_needed(text: str) -> bool:
+    """Fast-path test for `_normalize_for_detection`. AUDIT F24.
+
+    Returns True iff the input is pure ASCII AND has no triggers for
+    the despace / URL %XX / HTML entity decode paths. The narrower-
+    than-Python-proposal check matches the TS port — despace and
+    decode legitimately apply to ASCII input, so an unconditional
+    "ASCII → identity passthrough" would lose correctness.
+    """
+    if "&#" in text or "%" in text:
+        return False
+    if any(ord(c) > 127 for c in text):
+        return False
+    if _SPACED_PII_RE.search(text):
+        return False
+    return True
+
+
 def _normalize_for_detection(text: str) -> tuple[str, list[int]]:
     """Adversarial-resistant input normalisation with offset map.
 
@@ -2801,6 +2819,14 @@ def _normalize_for_detection(text: str) -> tuple[str, list[int]]:
     passthrough. Any realistic LLM prompt is far below this cap.
     """
     if len(text) > _NORMALIZE_INPUT_MAX_BYTES:
+        return text, list(range(len(text) + 1))
+    # AUDIT F24: ASCII fast-path. Per-char NFKC + Python loop costs
+    # ~100 ms on a 50 KB ASCII input (no work to do). Skip entirely
+    # if the text has no non-ASCII bytes, no `&#` (HTML entity
+    # candidate), no `%` (URL %XX candidate), and no whitespace run
+    # of length ≥ 4 single chars (despace candidate). Mirrors the TS
+    # port's `isPureAsciiNoDecodeNeeded` check.
+    if _is_pure_ascii_no_decode_needed(text):
         return text, list(range(len(text) + 1))
     try:
         from unidecode import unidecode

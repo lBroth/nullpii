@@ -162,7 +162,7 @@ The bare-mode third-party baselines — **Microsoft Presidio**, GLiNER (`urchade
 
 - [`V10_PLAN.md`](docs/v10/V10_PLAN.md) — release gating + status + decision tree
 - [`TRAINING.md`](docs/v10/TRAINING.md) — training procedure summary (Art. 53 transparency)
-- [`AUDIT_2026-05-04.md`](docs/v10/AUDIT_2026-05-04.md) — security audit (25 findings, 17 closed)
+- [`AUDIT_2026-05-04.md`](docs/v10/AUDIT_2026-05-04.md) — security audit (25 findings, all closed)
 - Model cards — [`docs/v10/model-cards/`](docs/v10/model-cards/):
   - [`README.md`](docs/v10/model-cards/README.md) — index + train-vs-eval overlap matrix
   - [`router-embedding.md`](docs/v10/model-cards/router-embedding.md) — shipping pipeline (distiluse + 5 LoRA)

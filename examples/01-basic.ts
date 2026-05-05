@@ -1,6 +1,6 @@
 import { NullPii } from '../src/index.js';
 
-const np = new NullPii({ backend: 'cpu', variant: 'int8' });
+const np = new NullPii({ backend: 'cpu' });
 
 const text = 'Hi, my name is John Smith and my email is john@example.com.';
 const out = await np.sanitize(text);

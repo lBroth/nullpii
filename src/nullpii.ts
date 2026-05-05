@@ -12,6 +12,7 @@ import {
 import { ModelNotInitializedError, TextTooLongError } from './errors.js';
 import { LABEL_MAP, NUM_LABELS } from './labels-bioes.js';
 import { ModelManager } from './model-manager.js';
+import { normalizeForDetection, remapSpan } from './normalize.js';
 import { runRecognizers } from './recognizers.js';
 import { selectBackend } from './router.js';
 import { decodeSpans } from './span-decoder.js';
@@ -93,7 +94,14 @@ export class NullPii {
     if (tokenizer === null || backend === null) throw new ModelNotInitializedError();
 
     const escaped = escapePlaceholders(text);
-    const enc = await tokenizer.encode(escaped);
+    // AUDIT F25: adversarial-resistant input normalisation. The model
+    // sees `normalized` (NFKC + unidecode + zero-width strip + HTML
+    // entity / URL %XX decode + spaced-PII despace); ML span offsets
+    // are remapped back to `escaped` offsets before downstream
+    // post-processing. Regex pack runs on `escaped` (unnormalised) so
+    // its anchors line up with the original character forms.
+    const { normalized, normToOrig } = normalizeForDetection(escaped);
+    const enc = await tokenizer.encode(normalized);
 
     const chunkSize = this.config.maxSequenceLength ?? MAX_SEQUENCE_LENGTH;
     const overlap = this.config.chunkOverlap ?? CHUNK_OVERLAP_TOKENS;
@@ -104,10 +112,17 @@ export class NullPii {
     const chunks = partitionTokens(enc, chunkSize, overlap);
     const allSpans: PiiSpan[] = [];
     for (const chunk of chunks) {
-      const spans = await this.inferChunk(backend, chunk, escaped);
+      const spans = await this.inferChunk(backend, chunk, normalized);
       allSpans.push(...spans);
     }
-    const mlSpans = chunks.length === 1 ? allSpans : dedupeSpans(allSpans);
+    const remapped: PiiSpan[] =
+      normalized === escaped
+        ? allSpans
+        : allSpans.map((s) => {
+            const [origStart, origEnd] = remapSpan(s.start, s.end, normToOrig);
+            return { ...s, start: origStart, end: origEnd };
+          });
+    const mlSpans = chunks.length === 1 ? remapped : dedupeSpans(remapped);
     const recoSpans = dedupeSpans(runRecognizers(escaped, this.recognizers, mlSpans));
     const merged = applyThresholds(
       [...mlSpans, ...recoSpans],

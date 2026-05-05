@@ -66,29 +66,40 @@ export const TARGET_HF_REPO = 'nullpii/privacy-filter-onnx';
  * Order is irrelevant — the runtime dedupes overlapping spans by
  * confidence (ML wins, then highest-confidence recognizer). */
 export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
+  // ─── URL / Email ──────────────────────────────────────────────
   // URL: only http(s) + www. — bare-domain.tld dropped (FP-prone).
+  // The optional URL whitelist filter (PUBLIC_URL_HOSTS) lives in
+  // `src/url-filter.ts` and is opt-in.
   {
     id: 'core:url',
     pattern: /\b(?:https?:\/\/|www\.)[^\s<>"]+/g,
     label: 'private_url',
     confidence: 0.95,
   },
-  // Email — straightforward.
   {
     id: 'core:email',
     pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
     label: 'private_email',
     confidence: 0.95,
   },
-  // AWS access key (IAM `AKIA…`, STS `ASIA…`).
+
+  // ─── AWS ──────────────────────────────────────────────────────
+  // All access-token prefixes (A3T*, AKIA, ASIA, ABIA, ACCA).
   {
     id: 'core:aws-access-key',
-    pattern: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g,
+    pattern: /\b(?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z2-7]{16}\b/g,
     label: 'secret',
     confidence: 0.99,
   },
-  // GitHub PAT (classic + fine-grained).
-  // AUDIT F22 (F25 TS port): bounded `{N,255}` upper to prevent ReDoS.
+  // AWS Bedrock long-lived. AUDIT F22: bounded.
+  {
+    id: 'core:aws-bedrock',
+    pattern: /\bABSK[A-Za-z0-9+/]{109,269}={0,2}/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+
+  // ─── GitHub ───────────────────────────────────────────────────
   {
     id: 'core:github-pat-classic',
     pattern: /\bghp_[A-Za-z0-9]{36,255}\b/g,
@@ -102,19 +113,31 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     confidence: 0.99,
   },
   {
+    id: 'core:github-oauth',
+    pattern: /\bgho_[A-Za-z0-9]{36,255}\b/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+  {
+    id: 'core:github-user-token',
+    pattern: /\bghu_[A-Za-z0-9]{36,255}\b/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+  {
+    id: 'core:github-refresh',
+    pattern: /\bghr_[A-Za-z0-9]{36,255}\b/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+  {
     id: 'core:github-pat-fine-grained',
     pattern: /\bgithub_pat_[A-Za-z0-9_]{82,255}\b/g,
     label: 'secret',
     confidence: 0.99,
   },
-  // Stripe live/test keys.
-  {
-    id: 'core:stripe-key',
-    pattern: /\bsk_(?:live|test)_[A-Za-z0-9]{24,255}\b/g,
-    label: 'secret',
-    confidence: 0.99,
-  },
-  // OpenAI generic + Anthropic.
+
+  // ─── OpenAI / Anthropic ───────────────────────────────────────
   {
     id: 'core:openai-key',
     pattern: /\bsk-[A-Za-z0-9]{32,255}\b/g,
@@ -127,19 +150,360 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     label: 'secret',
     confidence: 0.99,
   },
-  // IBAN (rough — IT, GB, DE, FR, ES; trims at non-alphanum).
+  {
+    id: 'core:anthropic-admin',
+    pattern: /\bsk-ant-admin01-[A-Za-z0-9_\-]{93}AA\b/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+  {
+    id: 'core:anthropic-api03',
+    pattern: /\bsk-ant-api03-[A-Za-z0-9_\-]{93}AA\b/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+
+  // ─── Stripe ───────────────────────────────────────────────────
+  {
+    id: 'core:stripe-key',
+    pattern: /\bsk_(?:live|test)_[A-Za-z0-9]{24,255}\b/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+
+  // ─── 1Password / Adobe / Age / Airtable / Alibaba ─────────────
+  {
+    id: 'core:adobe-pwd',
+    pattern:
+      /\bA3-[A-Z0-9]{6}-(?:[A-Z0-9]{11}|[A-Z0-9]{6}-[A-Z0-9]{5})-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}\b/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+  {
+    id: 'core:1password-vault',
+    pattern: /\bops_eyJ[a-zA-Z0-9+/]{250,2048}={0,3}/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+  { id: 'core:airtable', pattern: /\bp8e-[a-zA-Z0-9]{32}\b/g, label: 'secret', confidence: 0.99 },
+  {
+    id: 'core:age-key',
+    pattern: /AGE-SECRET-KEY-1[QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L]{58}/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+  {
+    id: 'core:airtable-pat',
+    pattern: /\bpat[a-zA-Z0-9]{14}\.[a-f0-9]{64}\b/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+  { id: 'core:alibaba', pattern: /\bLTAI[a-zA-Z0-9]{20}\b/g, label: 'secret', confidence: 0.99 },
+
+  // ─── Artifactory / Atlassian ──────────────────────────────────
+  {
+    id: 'core:artifactory-api',
+    pattern: /\bAKCp[A-Za-z0-9]{69}\b/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+  {
+    id: 'core:artifactory-ref',
+    pattern: /\bcmVmd[A-Za-z0-9]{59}\b/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+  {
+    id: 'core:atlassian-pat',
+    pattern: /\bATATT3[A-Za-z0-9_\-=]{186}\b/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+
+  // ─── Misc cloud / SaaS ────────────────────────────────────────
+  { id: 'core:beamer', pattern: /\b4b1d[A-Za-z0-9]{38}\b/g, label: 'secret', confidence: 0.95 },
+  { id: 'core:clojars', pattern: /\bCLOJARS_[a-z0-9]{60}\b/gi, label: 'secret', confidence: 0.99 },
+  {
+    id: 'core:codeship',
+    pattern: /\bv1\.0-[a-f0-9]{24}-[a-f0-9]{146}\b/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+  {
+    id: 'core:databricks',
+    pattern: /\bdapi[a-f0-9]{32}(?:-\d)?\b/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+  {
+    id: 'core:digitalocean-personal',
+    pattern: /\bdoo_v1_[a-f0-9]{64}\b/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+  {
+    id: 'core:digitalocean-oauth',
+    pattern: /\bdop_v1_[a-f0-9]{64}\b/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+  {
+    id: 'core:digitalocean-refresh',
+    pattern: /\bdor_v1_[a-f0-9]{64}\b/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+
+  // ─── Slack ────────────────────────────────────────────────────
+  {
+    id: 'core:slack-token',
+    pattern: /\bxox[baprs]-[A-Za-z0-9-]{10,255}\b/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+  {
+    id: 'core:slack-user-refresh',
+    pattern: /\bxoxe\.xoxp-[0-9]+-[A-Za-z0-9]+\b/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+
+  // ─── GitLab / SendGrid / Twilio / NPM / PyPI / HF / Mailchimp / Notion / Linear ──
+  {
+    id: 'core:gitlab-pat',
+    pattern: /\bglpat-[A-Za-z0-9_\-]{20,255}\b/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+  {
+    id: 'core:sendgrid',
+    pattern: /\bSG\.[A-Za-z0-9_\-]{22}\.[A-Za-z0-9_\-]{43}\b/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+  { id: 'core:twilio-account', pattern: /\bAC[a-f0-9]{32}\b/g, label: 'secret', confidence: 0.95 },
+  { id: 'core:twilio-secret', pattern: /\bSK[a-f0-9]{32}\b/g, label: 'secret', confidence: 0.95 },
+  {
+    id: 'core:npm-token',
+    pattern: /\bnpm_[A-Za-z0-9]{36,255}\b/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+  {
+    id: 'core:pypi-token',
+    pattern: /\bpypi-AgEIcHlwaS5vcmc[A-Za-z0-9_\-]{50,255}\b/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+  {
+    id: 'core:huggingface',
+    pattern: /\bhf_[A-Za-z0-9]{34,255}\b/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+  {
+    id: 'core:mailchimp',
+    pattern: /\b[a-f0-9]{32}-us[0-9]{1,2}\b/g,
+    label: 'secret',
+    confidence: 0.95,
+  },
+  { id: 'core:notion', pattern: /\bsecret_[A-Za-z0-9]{43}\b/g, label: 'secret', confidence: 0.95 },
+  {
+    id: 'core:linear',
+    pattern: /\blin_api_[A-Za-z0-9]{40,255}\b/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+
+  // ─── PEM / JWT ────────────────────────────────────────────────
+  {
+    id: 'core:pem-private-key',
+    pattern: /-----BEGIN (?:RSA|DSA|EC|OPENSSH|PGP) PRIVATE KEY-----/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+  {
+    id: 'core:jwt',
+    pattern: /\beyJ[A-Za-z0-9_\-]{8,2048}\.[A-Za-z0-9_\-]{8,2048}\.[A-Za-z0-9_\-]{8,2048}\b/g,
+    label: 'secret',
+    confidence: 0.95,
+  },
+
+  // ─── Google / Discord / Telegram / Mailgun / Mapbox / Square / PayPal / Heroku ──
+  {
+    id: 'core:google-api',
+    pattern: /\bAIza[0-9A-Za-z_\-]{35}\b/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+  {
+    id: 'core:discord-webhook',
+    pattern: /https:\/\/discord(?:app)?\.com\/api\/webhooks\/\d+\/[A-Za-z0-9_\-]+/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+  {
+    id: 'core:discord-bot',
+    pattern: /\b[MN][A-Za-z\d]{23}\.[\w-]{6}\.[\w-]{27,255}\b/g,
+    label: 'secret',
+    confidence: 0.95,
+  },
+  {
+    id: 'core:telegram-bot',
+    pattern: /\b\d{8,10}:[A-Za-z0-9_\-]{35}\b/g,
+    label: 'secret',
+    confidence: 0.95,
+  },
+  { id: 'core:mailgun', pattern: /\bkey-[a-f0-9]{32}\b/g, label: 'secret', confidence: 0.95 },
+  {
+    id: 'core:mapbox',
+    pattern: /\bpk\.eyJ1Ijoi[A-Za-z0-9_\-]+\.eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\b/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+  {
+    id: 'core:square-access',
+    pattern: /\bEAA[A-Za-z0-9_\-]{200,400}\b/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+  {
+    id: 'core:paypal-braintree',
+    pattern: /\baccess_token\$production\$[a-z0-9]{16}\$[a-f0-9]{32}\b/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+  {
+    id: 'core:heroku-api',
+    pattern: /\bheroku_api_key=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g,
+    label: 'secret',
+    confidence: 0.95,
+  },
+
+  // ─── Account-number patterns ──────────────────────────────────
+  // IBAN — AUDIT F05: `\s?` (any whitespace) so PDF NBSP/U+202F separators match.
   {
     id: 'core:iban',
-    pattern: /\b[A-Z]{2}\d{2}[A-Z0-9]{1,4}(?:[ \t]?\d{4}){2,5}(?:[ \t]?\d{1,4})?\b/g,
+    pattern: /\b[A-Z]{2}\d{2}[A-Z0-9]{1,4}(?:\s?\d{4}){2,5}(?:\s?\d{1,4})?\b/g,
     label: 'account_number',
     confidence: 0.9,
   },
-  // SSN (US).
+  { id: 'core:ssn', pattern: /\b\d{3}-\d{2}-\d{4}\b/g, label: 'account_number', confidence: 0.9 },
   {
-    id: 'core:ssn',
-    pattern: /\b\d{3}-\d{2}-\d{4}\b/g,
+    id: 'core:btc-legacy-1',
+    pattern: /\b1[A-HJ-NP-Za-km-z1-9]{25,34}\b/g,
+    label: 'account_number',
+    confidence: 0.85,
+  },
+  {
+    id: 'core:btc-p2sh',
+    pattern: /\b3[A-HJ-NP-Za-km-z1-9]{25,34}\b/g,
+    label: 'account_number',
+    confidence: 0.85,
+  },
+  {
+    id: 'core:btc-bech32',
+    pattern: /\bbc1[a-z0-9]{39,59}\b/g,
+    label: 'account_number',
+    confidence: 0.95,
+  },
+  {
+    id: 'core:eth-address',
+    pattern: /\b0x[a-fA-F0-9]{40}\b/g,
+    label: 'account_number',
+    confidence: 0.95,
+  },
+  {
+    id: 'core:uuid-v4',
+    pattern:
+      /\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}\b/g,
+    label: 'account_number',
+    confidence: 0.85,
+  },
+  // MAC — AUDIT F06: lookbehind/lookahead bound to single-octet boundary.
+  {
+    id: 'core:mac',
+    pattern: /(?<![:0-9A-Fa-f])[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}(?![:0-9A-Fa-f])/g,
+    label: 'account_number',
+    confidence: 0.85,
+  },
+  // IPv4 — AUDIT F06: octet-bounded to reject version strings.
+  {
+    id: 'core:ipv4',
+    pattern: /\b(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}\b/g,
+    label: 'account_number',
+    confidence: 0.85,
+  },
+  {
+    id: 'core:ipv6-full',
+    pattern: /\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b/g,
+    label: 'account_number',
+    confidence: 0.85,
+  },
+  {
+    id: 'core:ipv6-compressed',
+    pattern:
+      /\b(?:[0-9a-fA-F]{1,4}:){1,7}:|:(?::[0-9a-fA-F]{1,4}){1,7}|(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}\b/g,
+    label: 'account_number',
+    confidence: 0.85,
+  },
+
+  // ─── National IDs ─────────────────────────────────────────────
+  {
+    id: 'core:dni-spain',
+    pattern: /\b\d{8}[A-HJ-NP-TV-Z]\b/g,
     label: 'account_number',
     confidence: 0.9,
+  },
+  {
+    id: 'core:cpf-brazil',
+    pattern: /\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/g,
+    label: 'account_number',
+    confidence: 0.95,
+  },
+  {
+    id: 'core:passport-us',
+    pattern: /\b[A-CEFGHJ-NPR-Z]\d{8}\b/g,
+    label: 'account_number',
+    confidence: 0.85,
+  },
+  { id: 'core:ein-us', pattern: /\b\d{2}-\d{7}\b/g, label: 'account_number', confidence: 0.85 },
+  // Italian Codice Fiscale — AUDIT F19.
+  {
+    id: 'core:cf-italy',
+    pattern: /\b[A-Z]{6}\d{2}[A-EHLMPRST]\d{2}[A-Z]\d{3}[A-Z]\b/g,
+    label: 'account_number',
+    confidence: 0.95,
+  },
+
+  // ─── Phone — anchored on `+` for international, context-anchored for domestic ──
+  {
+    id: 'core:phone-international',
+    pattern: /\+\d{1,3}[\s\-.]?\(?\d{1,4}\)?[\s\-.]?\d{2,4}[\s\-.]?\d{3,8}/g,
+    label: 'private_phone',
+    confidence: 0.85,
+  },
+  // Domestic IT (Tel: 02 3456789). AUDIT F09: REQUIRED leading context.
+  {
+    id: 'core:phone-it-domestic',
+    pattern: /\b(?:tel|telefono|phone|cell|cellulare|mobile)[\s:.]+(0\d{1,2}[\s\-.]?\d{6,9})\b/gi,
+    label: 'private_phone',
+    confidence: 0.85,
+  },
+  // Domestic FR.
+  {
+    id: 'core:phone-fr-domestic',
+    pattern: /\b(?:tel|t[eé]l[eé]phone|portable|mobile|gsm)[\s:.]+(0[1-9](?:[\s\-.]?\d{2}){4})\b/gi,
+    label: 'private_phone',
+    confidence: 0.85,
+  },
+  // Domestic ES.
+  {
+    id: 'core:phone-es-domestic',
+    pattern:
+      /\b(?:tel|tel[eé]fono|m[oó]vil|cell|cellular|phone)[\s:.]+([6-9]\d{2}[\s\-.]?\d{3}[\s\-.]?\d{2}[\s\-.]?\d{2})\b/gi,
+    label: 'private_phone',
+    confidence: 0.85,
   },
 ];
 

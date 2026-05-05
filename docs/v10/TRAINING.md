@@ -98,4 +98,4 @@ Total time-to-reproduce on a 5090: ~7 GPU-hours for the 5-adapter set plus ~5 mi
 
 - **2026-05-03 / 04** — initial v10 LoRA training (5 adapters) on 5090.
 - **2026-05-04** — `enterprise` adapter added (Nemotron-aug, 10k rows + Faker US-formats 5k); router-embedding gate added (margin 0.10 on `enterprise`).
-- **2026-05-04** — F09 phone-pattern context anchor + F20 IDN email pattern revert (audit fixes; do not affect adapter weights — apply at inference-time regex post-pass only). See [`AUDIT_2026-05-04.md`](AUDIT_2026-05-04.md).
+- **2026-05-04** — phone-pattern context anchor + IDN email pattern revert to ASCII-only (recognizer fixes; do not affect adapter weights — apply at inference-time regex post-pass only).

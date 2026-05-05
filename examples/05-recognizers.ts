@@ -3,7 +3,7 @@ import { FINANCE } from '../packages/recognizers-finance/src/index.js';
 import { ITALIAN_IDS } from '../packages/recognizers-id-it/src/index.js';
 import { NullPii } from '../src/index.js';
 
-const np = new NullPii({ backend: 'cpu', variant: 'int8' });
+const np = new NullPii({ backend: 'cpu' });
 
 // Bundled packs
 for (const r of CLOUD_KEYS) np.addRecognizer(r);

@@ -10,7 +10,7 @@ const corpus: Doc[] = [
   { id: 'd2', text: 'Internal AWS key AKIAIOSFODNN7EXAMPLE was leaked in commit abc.' },
 ];
 
-const np = new NullPii({ backend: 'cpu', variant: 'int8' });
+const np = new NullPii({ backend: 'cpu' });
 
 for (const doc of corpus) {
   const { sanitized, sessionId, spans } = await np.sanitize(doc.text);

@@ -4,9 +4,17 @@
 
 # nullpii
 
-Local PII sanitization for LLM prompts. ML-based span detection + reversible in-memory vault — pass placeholders to your LLM, restore original values from the response.
+Local PII sanitization for LLM prompts. ML span detection + reversible in-memory vault — pass placeholders to your LLM, restore original values from the response.
 
-> **Status (2026-05-05)** — first release. Local PII detection built on [`urchade/gliner_multi_pii-v1`](https://huggingface.co/urchade/gliner_multi_pii-v1) (multilingual GLiNER, **Microsoft mDeBERTa-v3** base + GLiNER head, ~278M params). Shipping pipeline: `router-embedding` (~430 MB, **Google distiluse** + 5 LoRA adapters per domain). The npm runtime ships the full router stack via HF Hub on first call. Bench: see [`packages/eval/published-bench/matrix.csv`](packages/eval/published-bench/matrix.csv).
+## Why this exists
+
+Honest framing: this is a **night-hobby project**, not a production-ready PII tool, not a research paper, not a commercial product.
+
+Since I started using Claude Code I stopped playing video games — it became my night toy / passatempo notturno. nullpii is what fell out of those nights: a chance to learn the GLiNER + LoRA + router stack end-to-end, run it under a strict bench harness, write the honest audit on what works and what doesn't, and ship something that does the round-trip cleanly.
+
+For real GDPR-grade PII redaction in production, use [Microsoft Presidio](https://microsoft.github.io/presidio/). What's interesting here is the engineering rigor + adversarial preprocessor + audit transparency, not state-of-the-art F1.
+
+> **Status (2026-05-05)** — first release `v0.1.0`. Built on [`urchade/gliner_multi_pii-v1`](https://huggingface.co/urchade/gliner_multi_pii-v1) (multilingual GLiNER, **Microsoft mDeBERTa-v3** base + GLiNER head, ~278M params). Shipping pipeline: `router-embedding` (~430 MB, **Google distiluse** + 5 per-domain LoRA adapters). The npm runtime downloads the full router stack from HF on first call. Bench: see [`packages/eval/published-bench/matrix.csv`](packages/eval/published-bench/matrix.csv).
 
 ## Install
 
@@ -168,7 +176,7 @@ The bare-mode third-party baselines — **Microsoft Presidio**, GLiNER (`urchade
   - [`router-embedding.md`](docs/v10/model-cards/router-embedding.md) — shipping pipeline (distiluse + 5 LoRA)
   - [`adapter-devops.md`](docs/v10/model-cards/adapter-devops.md)
   - [`adapter-legal.md`](docs/v10/model-cards/adapter-legal.md)
-  - [`adapter-medical-experimental.md`](docs/v10/model-cards/adapter-medical-experimental.md) — ⚠ non-HIPAA
+  - [`adapter-medical.md`](docs/v10/model-cards/adapter-medical.md) — ⚠ non-HIPAA
   - [`adapter-narrative.md`](docs/v10/model-cards/adapter-narrative.md)
   - [`adapter-enterprise.md`](docs/v10/model-cards/adapter-enterprise.md) — Nemotron-aug, Nemotron-test in-distribution disclosed
 

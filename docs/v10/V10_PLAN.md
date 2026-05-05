@@ -1,200 +1,161 @@
-# v10 LoRA-per-domain training plan
+# v10 LoRA-per-domain release plan
 
-## Status (2026-05-03)
+Branch: `bench-full-2026-05-05`. Last refreshed 2026-05-05.
 
-- ✅ **Phase 1**: LoRA POC on GLiNER backbone — **VERIFIED PASS**. Pure-LoRA architecture (0.3% trainable, ~3.4MB adapter), MEDDOCAN-trained adapter learned new detection (NHC patient ID at 0.647 vs base "missed"), no regression on English dev-paste.
-- 🟡 **Phase 2**: per-domain corpus mix — IN PROGRESS. CC neg 25k sampling running with model filter. MEDDOCAN loader validated (21/21 entity types explicit handling). Corpus overlap fix landed (disjoint partition). Bug fix in `filter_token_len` for cc-negative kept (verification pending end-to-end run).
-- 🔴 Phase 3: train 4 adapters — queued (after Phase 2 corpus complete).
-- 🔴 Phase 4: integrated bench + ship — queued.
-- 🟡 Long-term: i2b2 DUA approval (gating final medical adapter) — application pending.
+## Status snapshot (2026-05-05)
 
-For the public training procedure summary (Art. 53 transparency), see `docs/v10/TRAINING.md`. The full step-by-step engineering journal is internal (`packages/eval/private/v10/V10_JOURNAL.md`).
+**Completed**:
+- v10 LoRA training (5 adapters: devops, legal, medical-experimental, narrative, enterprise) on `urchade/gliner_multi_pii-v1`.
+- Unified release bench on Mac CPU: 27 datasets × 2 nullpii routers. nullpii-v10-router-embedding macro F1 **0.7172**, router-xlmr **0.7076**. Output `packages/eval/results/bench-v10-release-local/matrix.{json,csv}` + `confusion.json`.
+- 25/25 audit findings closed (F01–F25). Test suite 191 pass / 8 skipped.
+- Pipeline decision: ship `nullpii-v10-router-embedding` (distiluse, ~430 MB).
+- 8 HF model card drafts, README + COMPETITIVE_ANALYSIS + CHANGELOG refreshed for v10.
+- Per-class confusion publisher (`packages/eval/scripts/confusion_report.py`) + `per_class.md`.
+- TS validators (Luhn, IBAN-97, CPF, Italian CF, BTC base58check) wired into recognizers.
+- Latency p50/p95 Mac M-series for both routers (`latency-bench-2026-05-05`).
+- Phase A doc cleanup: `openai/privacy-filter` framing dropped; nullpii positioned on `urchade/gliner_multi_pii-v1`.
+- Red-team audit: 20 inflation mechanisms documented at `packages/eval/private/v10/RED_TEAM_AUDIT_2026-05-05.md`.
 
-## Strategic assessment — current state (2026-05-04)
+**Currently in flight**: clean baseline re-bench post-audit-fixes at `bench-v10-baseline-2026-05-05` (2 routers × 27 datasets, ~5-6 h Mac CPU). Validates that F07/F23/F24 fixes are F1-stable before Phase B starts.
 
-Independent strategist review (general-purpose subagent) ranks nullpii at **C+** as of 2026-05-04. Above Presidio on UX + modern ML; below Skyflow on production-readiness; orthogonal to Lakera (different problem). Three reasons grade is below B-tier:
+For the public training-procedure summary (Art. 53 transparency), see [`TRAINING.md`](TRAINING.md). The full step-by-step engineering journal is internal at `packages/eval/private/v10/V10_JOURNAL.md`. The strategic assessment (rank C+ with 3 reasons since-closed) is internal at `packages/eval/private/v10/STRATEGIC_ASSESSMENT_2026-05-04.md`.
 
-1. **Shipping path incoherent** (in transition 2026-05-05): the TS runtime is being migrated from a stale `openai/privacy-filter` ONNX backbone (Viterbi BIOES decoder) to `onnx-community/gliner_multi_pii-v1` (GLiNER span output) — the same backbone the bench measures. Phase A (doc cleanup, framing as GLiNER-based) lands 2026-05-05. Phase B (TS code refactor: drop `viterbi.ts` + `labels-bioes.ts`, new GLiNER span decoder, swap tokenizer, flip `DEFAULT_MODEL_REPO`) is in flight. Until Phase B completes, the npm runtime still loads the legacy `openai/privacy-filter` ONNX. Audit F25 (TS preprocessor + never-PII + 74-pattern regex pack) ALREADY landed 2026-05-05 — only the model-loading path remains.
-2. **Canonical bench was a placeholder** (closed 2026-05-05): unified release bench landed at `packages/eval/results/bench-v10-release-local/matrix.{json,csv}`. nullpii router-embedding 0.7172 / router-xlmr 0.7076 across 27 datasets. README + 8 model cards refreshed with concrete numbers. Bare-mode competitor matrix still pending 5090 GPU pass.
-3. **Active critical audit findings** — ALL CLOSED 2026-05-05: F10 (`_remap_span` strict min/max clamp), F13 (`_has_high_precision_signal` legal/medical hit count override), F22 (all secret patterns bounded `{N,255}` or `{N,2048}` + 1 MB input length cap on `regex_recognizer_predictor`), F25 (TS port complete: `src/normalize.ts` mirrors Python `_normalize_for_detection` end-to-end via `any-ascii`; `DEFAULT_RECOGNIZERS` expanded 10 → 74 patterns at parity with Python `DEFAULT_REGEX_PATTERNS`; `filterNeverPii` post-pass).
+## Path to grade A (top compound-leverage moves)
 
-**Load-bearing differentiator**: the reversible in-memory vault primitive (sanitize → placeholder → LLM → restore). Skyflow has it but cloud-only; Presidio has weak de-anonymisation; HF GLiNER models have detection but no vault. nullpii uniquely contributes OSS + reversible vault + multilingual local detection in a single npm install.
+Two deliverables remain on the path-to-A list. Both unblock multiple downstream wins.
 
-LoRA-per-domain routing is research artifact pending held-out validation — the 0.10 enterprise gate is currently tuned on `nullpii-bench` itself (test-set leakage per audit F13). Honest framing: if a held-out routing eval shows the LoRAs don't beat a chunked `urchade/gliner_multi_pii-v1` baseline by ≥0.03 F1, ship the embedding-router + single best adapter and drop the per-domain story.
-
-Full report (with priority list, A/B paths to grade A, publishability assessment per venue): `packages/eval/private/v10/STRATEGIC_ASSESSMENT_2026-05-04.md` (internal-only — contains critical audit references not safe for public publication until closed).
-
-## Top compound-leverage moves (path to A)
-
-Three deliverables that unlock multiple downstream wins. Execute in this order.
-
-| # | Deliverable | Date | Unlocks |
+| # | Deliverable | Status | Unlocks |
 |---|---|---|---|
-| 1 | **Unified release bench**, `matrix.json` + `confusion.json` | ✅ done 2026-05-05 | nullpii-v10-router-embedding 0.7172 / xlmr 0.7076 across 27 datasets; bare-mode competitor matrix pending 5090 GPU pass |
-| 2 | **Close all 25 audit findings** (Critical + High + Medium) | ✅ done 2026-05-05 | F01–F25 all closed in code on this branch (`bench-full-2026-05-05`). 171 tests pass |
-| 3 | **Held-out routing-eval corpus** (500 docs hand-annotated, 5 domains × 100) | 🔴 OPEN | Honest router F1 (no test-set tuning) + DPIA buyer-facing numbers + Path A/B/C decision gate |
-| 4 | **Merged-LoRA ONNX export** → makes npm runtime consume v10 LoRA stack | 🔴 OPEN | Closes the README-claim-vs-shipping-runtime gap. ~1-2 days |
+| 1 | **Held-out routing-eval corpus** (500 docs hand-annotated, 5 domains × 100) | 🔴 OPEN | Honest router F1 (no test-set tuning of the 0.10 enterprise gate) + DPIA buyer-facing per-class numbers + Path A/B/C v11 decision gate |
+| 2 | **Merged-LoRA ONNX export** → npm runtime consumes v10 LoRA stack | 🔴 OPEN | Closes CONFIG-SHIPPED-01's "different pipeline" half. ~1-2 days work |
 
-Steps 1-2 are the prerequisites for step 3. Step 4 is the work that makes v10 "exist" on the npm side.
-
-After top 4 land:
-
-5. Multi-seed (3) bench runs with bootstrap 95% CIs on canonical matrix. Required for any paper. By 2026-06-30.
-6. Latency p50/p95 on 5090 + Mac M-series + Linux x86 → CSV alongside matrix.json. Required for procurement.
-7. Portkey + LiteLLM integration (PR to each repo: nullpii as a guardrail provider). Distribution multiplier.
-8. HN "Show HN: nullpii — local, reversible PII vault for LLM apps" with a 90s demo video. Lead with the vault, not the LoRAs.
-9. Workshop paper for PrivateNLP / EMNLP industry track: "Domain-routed LoRA adapters for multilingual PII detection: a held-out evaluation."
-10. SOC 2 Type II readiness — only when revenue justifies the 9-14 month calendar.
-
-Publishability today (per strategist agent):
+Publishability today (per strategist + red-team review):
 
 | venue | ready? | strongest framing |
 |---|---|---|
-| HN / Lobsters / r/ML | ❌ NO (need bare-mode competitor head-to-head numbers + npm runtime running v10) | "OSS, local, reversible PII vault for npm — beats Presidio +X F1, beats Nemotron-PII +0.16 multilingually" |
-| Technical blog | ⚠ partial | **Adversarial preprocessor lift** as standalone finding (adv-unicode 0.466→0.936; adv-whitespace 0.106→0.393). Travels furthest as isolated insight |
+| HN / Lobsters / r/ML | ❌ NO (need bare-mode competitor head-to-head + npm runtime running v10) | After fixes: "OSS local reversible PII vault for npm — beats Presidio +X F1, beats Nemotron-PII +0.16 multilingually" |
+| Technical blog | ⚠ partial | Adversarial preprocessor lift as standalone finding (adv-unicode 0.466→0.936; adv-whitespace 0.106→0.393) — travels furthest as isolated insight |
 | Academic paper / arxiv | ❌ NO | Missing for NeurIPS / ACL: held-out routing eval, multi-seed runs, statistical significance, full ablations, ethics statement covering Art. 9 invisibility. Workshop track realistic in 2-3 months focused work |
 
-## v10 work plan — current state on `bench-full-2026-05-05`
+## Phase B — npm runtime refactor: drop `openai/privacy-filter`, ship GLiNER (1-2 days)
 
-No release tag, no main merge, no npm publish on the table. Work continues on this branch and decisions land later. The list below tracks code work only.
+User direction (2026-05-05): `openai/privacy-filter` does NOT belong in core nullpii. It stays as a competitor row in `bench_full.py` for the bare-mode reference, but the npm runtime base must match the bench (`urchade/gliner_multi_pii-v1`). Phase A landed the doc cleanup; Phase B is the code refactor.
 
-### Sprint outcomes (2026-05-04 → 2026-05-05)
+**Why non-trivial**: GLiNER ONNX has a 6-input contract incompatible with the current 2-input pipeline. No JS library supports GLiNER natively (`transformers.js` doesn't include the architecture; no `gliner-js` package exists). Custom TS port required.
 
-1. ✅ **Unified bench complete** (2026-05-05) — `packages/eval/results/bench-v10-release-local/matrix.{json,csv}`. nullpii-v10-router-embedding **0.7172** / xlmr **0.7076** macro F1 across 27 datasets. distiluse wins `nullpii-bench` OOD (+0.118) and adversarial subset (+0.062). Datasets: nullpii-bench + adversarial-{typo,unicode,whitespace,encoding,code} + textattack-{homoglyph,charswap,chardelete,charinsert,charsub} + tab-echr + presidio-synthetic + ai4privacy-{300k,400k,300k-heldout-v10} + isotonic-{en,de,fr,it} + isotonic-{en,de,fr}-heldout-v10 + oasst-dev-planted + argilla-pii + nemotron-pii-test. Excluded: `wikiann-{es,zh,ja}` (PER/LOC NER), `adversarial-decoys` (no gold spans), `nullpii-adversarial` (composite). Bare-mode third-party competitor matrix (Presidio, GLiNER-base, piiranha, deberta, scrubadub, nemotron-pii-raw, openai naive/BIOES/Viterbi) pending 5090 GPU pass — out of local-Mac-CPU scope.
-2. ✅ **Pipeline decision** — ship `nullpii-v10-router-embedding` (distiluse, ~430 MB). Storage tiebreaker per ≤0.02 delta band; xlmr alt path documented for users that want max F1 on structured PII (1.4 GB cost not justified for default).
-3. ✅ **README rewrite** — v10 numbers in place; iter-v7 placeholders removed; adversarial preprocessor lift documented.
-4. ✅ **HF model cards** — 8 cards in [`model-cards/`](model-cards/) covering 2 routers + 5 LoRA adapters + index, with concrete F1 numbers from the unified bench. Cards satisfy EU AI Act Art. 53 transparency + NIST AI RMF Govern 4.1 / Map 5.2 documentation requirements (training data composition, train-vs-eval overlap matrix, intended use, out-of-scope use, evaluation methodology, limitations, ethical considerations including Art. 9 invisibility disclosure). HuggingFace push itself is not on the work list right now.
-5. ✅ **All 25 audit findings closed** — F01–F25 (Critical + High + Medium). Test suite 171 pass / 8 skipped. Highlights:
-   - F07 BTC base58check validator (Python `_base58check_valid` + TS `base58CheckValid`)
-   - F11 ensemble strategy investigated, recommendation rejected — `score_ranked` regressed adversarial-typo by 0.30 F1 vs `primary` (kept primary)
-   - F21 TS placeholder escape PUA sentinel pair (was `[\\[`, corrupted `[\[abc]` round-trip)
-   - F22 secret-pattern bounds + 1MB regex pack input cap
-   - F23 / F24 Python normalize 1MB cap + ASCII fast-path (mirrors TS port)
-   - F25 TS port complete (`src/normalize.ts`, 74-pattern recognizer pack at parity with Python, `filterNeverPii` post-pass)
-   All audit fixes verified F1-stable on the canonical bench (nullpii-bench 0.7280, adversarial-typo 0.9400, etc.). See [`AUDIT_2026-05-04.md`](AUDIT_2026-05-04.md) for the per-finding closure log.
+**GLiNER ONNX inference contract** (verified against `onnx-community/gliner_multi_pii-v1/onnx/model_q4.onnx`):
+- Inputs (6): `input_ids`, `attention_mask`, `words_mask` (subtoken → word index map), `text_lengths`, `span_idx` (candidate start/end word pairs), `span_mask` (bool valid).
+- Output: `logits` shape `[B, seq_len, num_spans, num_classes]` — argmax over classes per span > threshold = predicted span.
+- Tokenization: SentencePiece + special tokens `<<ENT>>` (between labels), `<<SEP>>` (between label list and text). Prompt: `<<ENT>>private_email<<ENT>>private_person<<ENT>>… <<SEP>> {text}`.
 
-### Open work (focused: complete core + final bench data)
+**Step-by-step**:
 
-User direction (2026-05-05): focus on what's needed to have final benchmark data + a complete core. HF push, merged-LoRA ONNX export, held-out routing-eval corpus, and Portkey/LiteLLM shims are explicitly deferred — see "What is NOT on the work list right now" below.
+1. **Drop**: `src/labels-bioes.ts`, `src/viterbi.ts`, BIOES decode path in `src/nullpii.ts:158-176`.
+2. **Add** (~450 lines TS):
+   - `src/gliner-tokenizer.ts` (~150) — SentencePiece + prompt-formatting + words_mask tracking.
+   - `src/gliner-spans.ts` (~80) — `span_idx` candidate pairs (max_span_length default 12) + `span_mask`.
+   - `src/gliner-decoder.ts` (~100) — argmax + threshold filter, map (start_word, end_word) → char offsets.
+   - `src/backend/gliner-ort-backend.ts` (~120) — wraps OrtBackend with the 6-input call signature; subclass for cpu/mps/cuda.
+3. **Modify** `src/nullpii.ts` `sanitize()`: tokenizer call returns 6-tuple + offset map; `inferChunk` calls `gliner-decoder.decodeSpans`. Output spans flow through unchanged `runRecognizers + filterNeverPii + boundary refine + vault.sanitize`.
+4. **`src/defaults.ts`**: `DEFAULT_MODEL_REPO` `'openai/privacy-filter'` → `'onnx-community/gliner_multi_pii-v1'`. Pin revision `2e0397a7e8a250d76c37122232b3cbde42c8d629`. `MANAGER_DEFAULT_VARIANT 'int4'` → `onnx/model_q4.onnx` (894 MB working per Python bench).
+5. **Tests**: drop `viterbi`/`labels-bioes` tests; add `gliner-tokenizer.test.ts` (round-trip vs Python reference) + `gliner-decoder.test.ts` (synthetic logits → spans). F1-parity threshold ±0.005 vs Python `gliner-onnx-pii-fp32` baseline (~0.34-0.40 nullpii-bench).
+6. **Bench integration**: add new tool def `nullpii-runtime-default` in `bench_full.py` mirroring TS pipeline (bare GLiNER + recognizer pack + normalize + never-PII filter + vault). Re-bench just that tool × 27 datasets (~2-3 h Mac CPU). Publish as "default-config F1" column in README.
+
+**Risk**: F1 mismatch from tokenizer / words_mask edge cases. Mitigation: side-by-side test against Python `gliner_v2_predictor` outputs on a fixed 10-sample subset; iterate until token-level identical.
+
+**Out of scope of Phase B**: shipping the LoRA router stack (merged-LoRA ONNX export — separate roadmap item, see Path-to-A #2). Phase B alone closes CONFIG-SHIPPED-01's "different model" half; LoRA-shipping closes the "different pipeline" half.
+
+## Open work tables
+
+### Bench / harness improvements (local)
 
 | # | Item | Local? | Effort | Status |
 |---|---|---|---|---|
-| 1 | **TS validators** (Luhn, IBAN-97, CPF, CF) wired into recognizers | ✅ local | 3-4 h | ✅ done 2026-05-05 (commit `d2dc4e6`) |
-| 2 | **Per-class confusion publisher** (`packages/eval/scripts/confusion_report.py`) | ✅ local | 2 h | ✅ done 2026-05-05 (commit `6e48f3e`) |
-| 3 | ~~Multi-seed bench wrapper~~ | — | — | **DROPPED** — single-version shipping; CIs not load-bearing for product positioning. Re-evaluate if a workshop paper is in scope |
-| 4 | **Latency p50/p95** Mac M-series via updated `bench_latency.py` (v10 router profiles) | ✅ local | 4 h | ✅ done 2026-05-05 (commit `8eaaa9f`) |
-| 4b | **Latency Linux x86 + 5090 GPU** rows | ☁ cloud GPU | 30 min GPU | 🔴 cloud sprint |
-| 5 | **DPIA template regen** (`docs/compliance/DPIA_TEMPLATE.md`) — gated on cloud sprint output (needs competitor F1 + GPU latency) | ✅ local once 4b+6 land | 2 h | 🔴 post-cloud |
-| 6 | **Bare-mode competitor matrix** on 5090 GPU (Presidio + GLiNER-base + piiranha + deberta + scrubadub + nemotron-pii-raw + openai naive/BIOES/Viterbi) | ☁ cloud GPU | 6-8 h GPU + setup | 🔴 cloud sprint |
-| 7 | **Real-world side-by-side use-case showcase** (post final-version pick) — generate concrete `nullpii vs competitor` examples on real prompts, customer-facing. Use existing `packages/eval/private/train/qualitative_compare.py` as the harness, run on a 30-50 sample curated set covering: dev-paste with cloud keys, multilingual chat (it/de/fr), legal/contract paragraph, medical-flavoured note, adversarial unicode/whitespace, base64-wrapped credentials. Output: markdown table per scenario with `input → nullpii spans → presidio spans → gliner-base spans → ...`, plus prose annotation of where competitors miss / over-redact. | ✅ local | 4-6 h | 🔴 **post-final-version** (gated on: cloud sprint #6 producing fair bare-mode competitor numbers; user picks shipping version distiluse vs xlmr; honest-numbers patches landed). Output target: new section in `README.md` ("When nullpii wins / loses — concrete examples") + companion `docs/showcase/USE_CASES.md`. |
+| B1 | **Latency Linux x86 + 5090 GPU** rows (cold-start incluso) — extend `bench_latency.py` per cold-start measurement (model load + first inference) | ☁ cloud GPU | 30 min GPU + 2 h code | 🔴 cloud sprint |
+| B2 | **Bare-mode competitor matrix** on 5090 GPU (Presidio + GLiNER-base + piiranha + deberta + scrubadub + nemotron-pii-raw + openai naive/BIOES/Viterbi) | ☁ cloud GPU | 6-8 h GPU + setup | 🔴 cloud sprint |
+| B3 | **DPIA template regen** (`docs/compliance/DPIA_TEMPLATE.md`) — gated on B1 + B2 output (needs competitor F1 + GPU latency) | ✅ local once B1+B2 land | 2 h | 🔴 post-cloud |
+| B4 | **Real-world side-by-side use-case showcase** (post final-version pick) — extend `packages/eval/private/train/qualitative_compare.py` for a 30-50 sample curated set; output `docs/showcase/USE_CASES.md` + new section in README ("When nullpii wins / loses — concrete examples"). Honest-framing constraint: include both wins AND losses, no cherry-pick | ✅ local | 4-6 h | 🔴 post-final-version (gated on B2 + version pick) |
 
-### Pre-release red-team audit findings (2026-05-05) — must address before publishing
+### Honest-numbers patches (red-team — must address before publishing)
 
-Independent red-team auditor review (general-purpose subagent, 2026-05-05) surfaced 20 mechanisms by which the published numbers could be artificially inflated. Full report stored privately at `packages/eval/private/v10/RED_TEAM_AUDIT_2026-05-05.md`. Top 5 are **not publishable** until fixed:
+Independent red-team auditor review (general-purpose subagent, 2026-05-05) surfaced 20 inflation mechanisms. Full report at `packages/eval/private/v10/RED_TEAM_AUDIT_2026-05-05.md`. The 5 critical blockers:
 
 | ID | Finding | Severity | Fix path |
 |---|---|---|---|
 | **LEAK-TAB-LEGAL-01** | TAB ECHR test docs share 50-char shingles with **127/127** legal training chunks (60/127 verbatim 200-char windows). `tab-echr` row is in-distribution generalisation, not OOD. F1 0.886 likely 0.55-0.70 OOD | **Critical** | Strip `tab-echr` from headline 27-row macro → mark `tab-echr-INDIST`. OR retrain `legal` adapter on non-TAB corpus (HUDOC/EDGAR-redacted) |
-| **LEAK-NEMO-ENTERPRISE-01** | `enterprise` adapter trained on `nvidia/Nemotron-PII` train; benched on `nvidia/Nemotron-PII` test. Already disclosed in model card but still in headline macro F1 | **Critical** | Strip `nemotron-pii-test` from headline macro → mark `*-INDIST`, keep as in-distribution diagnostic |
-| **TUNE-ENTGATE-01** | `router.py:517-531` source comment admits 0.10 enterprise-gate margin chosen to maximise `nullpii-bench` F1. At margin=0.05, F1 drops 0.11. Entire +0.118 distiluse-vs-xlmr advantage on `nullpii-bench` is largely test-set-tuning artifact | **Critical** | Re-run with `gated_routes={"enterprise": x}` for `x ∈ {0.0, 0.05, 0.10, 0.15}`; publish range. Tune for real on a held-out routing-eval corpus when built |
-| **CONFIG-SHIPPED-01** | `src/defaults.ts:59` `DEFAULT_MODEL_REPO = 'openai/privacy-filter'`. The bench measures the v10 LoRA stack with router + LoRA adapters + regex pack. Users running `npm i nullpii` get a different system | **Critical** | Add a "default-config" column to README headline (run `bench_full.py --tools openai-bioes`) so users see what they actually get; OR ship merged-LoRA ONNX + flip `DEFAULT_MODEL_REPO` |
-| **LEAK-DEVPASTE-TEMPL-01** | `nullpii-bench` and `dev-paste-synth-train` share template family by construction (`*-templates.txt` source). Bench is in-template-family, not OOD | **Critical** | Reclassify `nullpii-bench` from "OOD gold standard" to "in-template-family but disjoint instances". Build a hand-curated OOD set from real LLM logs (with consent) for true OOD claims |
+| **LEAK-NEMO-ENTERPRISE-01** | `enterprise` adapter trained on Nemotron train; benched on Nemotron test. Disclosed in model card but still in headline macro F1 | **Critical** | Strip `nemotron-pii-test` from headline → `*-INDIST` diagnostic |
+| **TUNE-ENTGATE-01** | `router.py:517-531` source admits 0.10 enterprise-gate margin chosen to maximise `nullpii-bench` F1. At margin=0.05, F1 drops 0.11. Entire +0.118 distiluse-vs-xlmr advantage on `nullpii-bench` is largely test-set-tuning artifact | **Critical** | Re-bench with `gated_routes={"enterprise": x}` for `x ∈ {0.0, 0.05, 0.10, 0.15}`; publish range. Tune for real on a held-out routing-eval corpus when built |
+| **CONFIG-SHIPPED-01** | npm runs different system from bench. Phase A doc fix landed; full code fix = Phase B refactor (see above) | **Critical** | Phase B + add `default-config` column in README |
+| **LEAK-DEVPASTE-TEMPL-01** | `nullpii-bench` and `dev-paste-synth-train` share template family by construction. Bench is in-template-family, not OOD | **Critical** | Reclassify `nullpii-bench` from "OOD gold standard" to "in-template-family but disjoint instances". Build a hand-curated OOD set from real LLM logs (with consent) for true OOD claims |
 
-High-severity findings (10 more — see private red-team report):
+High-severity (10): see `RED_TEAM_AUDIT_2026-05-05.md`. Summary: LEAK-AI4-OFFSET-01, LEAK-TAB-GENERAL-01, LEAK-ISO-OFFSET0-01, ASYM-NORM-01, HARNESS-PARTIAL-IOU-01, LANG-MACRO-MISLABEL-01, LANG-CJK-OMITTED-01, RECALL-HEADLINE-01, TUNE-F11-NULLPII-BENCH, REPRO-RUNTIME-01.
 
-- **LEAK-AI4-OFFSET-01** — `ai4privacy-300k` (offset 0) bench rows in train pool → drop, keep only heldout-v10 row.
-- **LEAK-TAB-GENERAL-01** — TAB train chunks also feed `general/` adapter (fallback); same leakage applies to all routes.
-- **LEAK-ISO-OFFSET0-01** — `isotonic-{en,de,fr,it}` offset-0 overlaps train pool (small Δ but disclose).
-- **ASYM-NORM-01** — `_normalize_for_detection` wrapped on v10 routers but NOT on bare baselines. Adversarial subset lift (~+0.47 on adv-unicode) is preprocessor, not model. Add `gliner-onnx-pii-fp32+norm` parallel rows so the lift is attributable.
-- **HARNESS-PARTIAL-IOU-01** — IoU ≥ 0.5 partial-match default; no strict-equality column. Macro 0.7172 → ~0.65 strict. Publish both columns.
-- **LANG-MACRO-MISLABEL-01** — `nullpii-bench` mixes en/it/de/fr/es into a single F1; per-locale gap hidden. Emit per-locale rows.
-- **LANG-CJK-OMITTED-01** — wikiann-{es,zh,ja} dropped without precision-only diagnostic surfaced in README.
-- **RECALL-HEADLINE-01** — macro F1 hides `private_address` recall 0.30, `secret` recall 0.07 (xlmr/nemotron). Add "worst-class recall" alongside macro F1 in README.
-- **TUNE-F11-NULLPII-BENCH** — F11 decision matrix in `AUDIT_2026-05-04.md:264-275` used `nullpii-bench` itself as one of 9 datasets; redo on a held-out set when the 500-doc routing-eval corpus exists.
-- **REPRO-RUNTIME-01 / SEED-VARIANCE-01** — no env-lock, no seed in `matrix.json`, no hardware fingerprint. Ship `pip freeze` + Python version + run 3 seeds for variance bound.
+Medium / Low (4): HARNESS-EMPTYDOC-01, LATENCY-COLDSTART-01, LATENCY-WALLS-01, LMSYS-ENRON-OMIT-01.
 
-Medium / Low (4):
-- **HARNESS-EMPTYDOC-01** — empty-gold docs + `adversarial-decoys` exclusion compound to hide FP rate; re-include decoys as precision-only diagnostic.
-- **LATENCY-COLDSTART-01** — `bench_latency.py:255-261` warm-only after one warmup pass; cold-start (~3-10 s) excluded. Add `cold_start_ms` field including adapter load.
-- **LATENCY-WALLS-01** — `bench_full.py:604-635` writes bogus `wall_s` / `samples_per_s` on full-resume cells (timer overhead only). Set to None when `done_idx + 1 == len(samples)` at start.
-- **LMSYS-ENRON-OMIT-01** — 4/31 datasets dropped silently (gated HF). The dropped 4 are the real-world long-text ones (Enron, lmsys, stackoverflow, thestack); replacement or HF-token CI required.
+#### Honest-numbers patch order (post cloud-sprint)
 
-#### Honest-numbers patch order (after cloud sprint produces competitor + GPU latency)
+| # | Patch | Files |
+|---|---|---|
+| H1 | Re-bench with `gated_routes={"enterprise": 0.0}` — publish margin sensitivity range | `bench_full.py` (no code change, just multiple runs) + `router.py:517-531` (externalise gate constant to config) |
+| H2 | Strip `tab-echr` and `nemotron-pii-test` from headline 27-row macro; emit `*-INDIST` diagnostic columns | `bench_full.py` matrix aggregation + `metrics.py` |
+| H3 | Add `--policy {partial,exact}` flag; emit both columns in `matrix.csv` | `bench_full.py:441` + `metrics.py:80-94` |
+| H4 | Per-locale split for `nullpii-bench` (en/it/de/fr/es) | `bench_full.py` loader + matrix.csv columns |
+| H5 | Add `cold_start_ms` column to `bench_latency.py` — measures from `build_predictor()` start to first prediction completion | `bench_latency.py:255-261` |
+| H6 | Fix bogus `wall_s` / `samples_per_s` on full-resume cells | `bench_full.py:604-635` |
+| H7 | Add `gliner-onnx-pii-fp32+norm` parallel rows to attribute preprocessor lift | `bench_full.py` tool defs |
+| H8 | Add `default-config` column (`openai-bioes` today, `nullpii-runtime-default` post-Phase-B) for what `npm i nullpii` ships | `bench_full.py` tool defs + README |
+| H9 | README: "worst-class recall" + "default-config F1" + "strict-match F1" columns alongside macro F1 | `README.md` |
+| H10 | Ship `pip freeze` + Python version + hardware fingerprint in bench output dir | `bench_full.py` startup |
+| H11 | Reclassify `nullpii-bench` from "OOD gold standard" to "in-template-family but disjoint instances" | `README.md` + dataset README |
 
-1. Re-bench with `gated_routes={"enterprise": 0.0}` — publish margin sensitivity range.
-2. Strip `tab-echr` and `nemotron-pii-test` from headline 27-row macro; recompute `*-INDIST` columns.
-3. Add `--policy {partial,exact}` flag to `bench_full.py`; emit both columns in `matrix.csv`.
-4. Add per-locale split for `nullpii-bench` (en/it/de/fr/es).
-5. Add `cold_start_ms` to `bench_latency.py`.
-6. Fix `wall_s` / `samples_per_s` on resume in `bench_full.py:604-635`.
-7. Add `gliner-onnx-pii-fp32+norm` row so preprocessor lift is attributable.
-8. Add `default-config` row (`openai-bioes`) for what `npm i nullpii` ships today.
-9. README: add "worst-class recall" + "default-config F1" + "strict-match F1" columns alongside macro F1.
-10. Ship `pip freeze` + Python version + hardware fingerprint in the bench output dir.
-11. README: reclassify `nullpii-bench` as "in-template-family", not "OOD gold standard".
+Order of remaining work: **cloud sprint (B1 + B2)** → **honest-numbers patches (H1–H11)** → **DPIA regen (B3)** → **Phase B TS refactor** → **use-case showcase (B4)** → **README + COMPETITIVE_ANALYSIS final refresh**. Phase B can run in parallel with cloud sprint since it touches only `src/` and is decoupled from Python eval.
 
-Order of remaining work: **cloud sprint (4b + 6)** → **honest-numbers patch (above 11 steps)** → **DPIA regen (#5)** → **README + COMPETITIVE_ANALYSIS final refresh**.
+### Operational / shipping (newly added)
 
-### Phase B — npm runtime refactor: drop `openai/privacy-filter`, ship GLiNER (1-2 days)
+| # | Item | Effort | Notes |
+|---|---|---|---|
+| O1 | **Cloud GPU sprint logistics** — concrete cmd + cost estimate. Pick provider (RunPod / Lambda / Vast). Setup script (`packages/eval/private/runpod/launch.sh` already exists — verify still works). Estimated cost $3-5 for one-shot bench | 1-2 h prep + 6-8 h compute | One-time, gated by user availability |
+| O2 | **Phase B test plan** — F1 parity threshold ±0.005 TS-vs-Python on a 10-sample fixed subset; specific test fixtures (chosen from `nullpii-bench` covering en + it + de + secret + multi-span) | 2 h | Pre-Phase-B |
+| O3 | **Release version cycle** — semver path. Currently `package.json` 0.0.7. Phase B = breaking (drops `viterbiBioesDecode` exports) → 0.1.0 minimum. Define: v0.1.0 = post-Phase-B (npm GLiNER); v0.2.0 = post-merged-LoRA ONNX (npm v10 router); v1.0.0 = post-held-out-routing-eval validated | 30 min | Documentation |
+| O4 | **Migration / breaking changes** doc — when Phase B lands, what npm users see. Removed exports list, NullPiiConfig changes (if any), upgrade recipe | 1 h | Pre-Phase-B-publish |
+| O5 | **Compatibility matrix** — Node 22 + 24 testing. Browser/WebGPU support deferred (Node-only library, document explicitly) | 2 h | Pre-publish |
+| O6 | **CI regression bench** — add a `ci-bench-smoke.yml` GitHub Action that runs `bench_full.py --tools nullpii-v10-router-embedding --datasets nullpii-bench --max-per-dataset 100` on every PR; fail if F1 drops > 0.02 from the canonical | 3-4 h | Pre-publish |
+| O7 | **Performance regression budget** — define "block release" thresholds. Current state: p50 router-embedding 226 ms on 1 KB Mac CPU. Budget: p95 ≤ 500 ms on 1 KB Mac CPU; cold-start ≤ 10 s. Document explicitly | 30 min | Pre-publish |
+| O8 | **Security disclosure timeline** — extend `SECURITY.md` with explicit "90-day coordinated disclosure" policy + safe-harbor wording for researchers | 1 h | Pre-publish |
+| O9 | **License audit / third-party attribution** — re-distributing LoRA weights derived from TAB ECHR (CC BY 4.0) + Nemotron (CC BY 4.0) requires attribution. Centralise in `LICENSES_THIRD_PARTY.md` (referenced from each model card) | 2-3 h | Pre-HF-push |
 
-User direction (2026-05-05): openai/privacy-filter does NOT belong in core nullpii. It stays as a competitor row in `bench_full.py` for the bare-mode reference comparison, but the npm runtime base must match the bench (`urchade/gliner_multi_pii-v1`). Phase A landed the doc cleanup; Phase B is the code refactor.
+### Customer-facing (post-release)
 
-**Why this is non-trivial**: GLiNER ONNX has a 6-input contract incompatible with the current `openai/privacy-filter` 2-input pipeline. No JS library supports GLiNER natively (`transformers.js` doesn't include the architecture; no `gliner-js` package exists). Custom TS port required.
+| # | Item | Effort | Notes |
+|---|---|---|---|
+| C1 | **Getting started tutorial** beyond README — step-by-step "your first sanitize call" + restore round-trip + custom recognizer | 3-4 h | Post-Phase-B |
+| C2 | **Integration recipes** — extend `examples/` with: Express middleware, LangChain wrapper, Anthropic SDK pre-pass, Vercel AI SDK pre-pass. Currently `examples/` has 4 files | 1-2 days | Post-publish |
+| C3 | **Bug report + feature request** GitHub issue templates (`.github/ISSUE_TEMPLATE/`) | 1 h | Pre-publish |
+| C4 | **FAQ** — common questions: is it offline? GPU required? cold-start latency? supported languages? | 2 h | Post-publish |
 
-**GLiNER ONNX inference contract** (verified against `onnx-community/gliner_multi_pii-v1/onnx/model_q4.onnx`):
-- Inputs (6): `input_ids`, `attention_mask`, `words_mask` (subtoken → word index map), `text_lengths` (n words in text), `span_idx` (candidate start/end word pairs, shape `[B, num_spans, 2]`), `span_mask` (bool valid).
-- Output: `logits` shape `[B, seq_len, num_spans, num_classes]`. Argmax over classes per span > threshold = predicted span.
-- Tokenization: SentencePiece + special tokens `<<ENT>>` (between labels), `<<SEP>>` (between label list and text). Prompt format: `<<ENT>>private_email<<ENT>>private_person<<ENT>>… <<SEP>> {text}`.
+### Review-grade compliance (deeper)
 
-**Step-by-step**:
-
-1. **Remove from `src/`** — files/code to delete:
-   - `src/labels-bioes.ts` (openai/privacy-filter BIOES label set, 33 labels)
-   - `src/viterbi.ts` (constrained Viterbi BIOES decoder + forward-backward marginals)
-   - `src/nullpii.ts:158-176` (`viterbiBioesDecode` call + posterior scoring path)
-2. **Add to `src/`** — new files/code:
-   - `src/gliner-tokenizer.ts` (~150 lines) — SentencePiece via existing `tokenizer.ts` infra; add prompt-formatting helper `formatPrompt(labels, text) → { tokens, words_mask, word_count }` that produces `<<ENT>>label<<ENT>>…<<SEP>>text` with subtoken→word index tracking
-   - `src/gliner-spans.ts` (~80 lines) — generate `span_idx` candidate pairs `(start_word, end_word)` for `end_word - start_word < max_span_length` (default 12) plus `span_mask` bool tensor
-   - `src/gliner-decoder.ts` (~100 lines) — read `logits` `[B, seq, num_spans, num_classes]`, argmax + threshold filter, map (start_word, end_word) → char offsets via the words_mask retained from tokenizer
-   - `src/backend/gliner-ort-backend.ts` (~120 lines) — wraps existing `OrtBackend` with the 6-input call signature; subclasses `CpuBackend` / `MpsBackend` / `CudaBackend` for parity with current backend triad
-3. **Modify `src/nullpii.ts`** (`sanitize()` flow):
-   - Replace `tokenizer.encode(normalized)` → `glinerTokenizer.encode(normalized, PII_LABELS)` returning the 6-tuple plus offset map back to char positions
-   - Replace `inferChunk` body — drop Viterbi decode, use `gliner-decoder.decodeSpans(logits, span_idx, words_mask, threshold, scoreFloor)`
-   - Output spans go through the existing `runRecognizers + filterNeverPii + boundary refine + vault.sanitize` pipeline (no change)
-4. **`src/defaults.ts`**:
-   - `DEFAULT_MODEL_REPO` `'openai/privacy-filter'` → `'onnx-community/gliner_multi_pii-v1'`
-   - `DEFAULT_MODEL_REVISION` → pinned snapshot SHA of `onnx-community/gliner_multi_pii-v1` (currently `2e0397a7e8a250d76c37122232b3cbde42c8d629`)
-   - `MANAGER_DEFAULT_VARIANT` `'int4'` — points to `onnx/model_q4.onnx` (894 MB, INT4 working per Python bench), file mapping table needs update
-5. **`src/types/labels.ts`** — drop the BIOES-derived `PII_LABELS` extension; emit only the 8 user-facing categories (already there).
-6. **Tests**:
-   - Drop `test/viterbi.test.ts`, `test/labels-bioes.test.ts` (whatever exists for the BIOES path)
-   - Add `test/gliner-tokenizer.test.ts` (round-trip a known input → known token IDs against a Python reference)
-   - Add `test/gliner-decoder.test.ts` (synthetic logits → expected spans)
-   - Update `test/nullpii.test.ts` for the new sanitize/restore round-trip — output spans should match Python `gliner-onnx-pii-fp32` baseline within ±0.005 F1 on `nullpii-bench`
-7. **F1 parity check**: TS runtime should match Python `gliner-onnx-pii-fp32` baseline (bare GLiNER, no LoRA). Expected: macro F1 ~0.34-0.40 on `nullpii-bench` (the team's published bare-GLiNER number per `bench_full.py` smoke). Until merged-LoRA ONNX export ships (separate roadmap item), npm users do NOT get the v10 router stack — they get bare GLiNER + recognizer pack + preprocessor + never-PII filter + vault.
-8. **F1 disclosure** in README: post-Phase-B, add a "default-config F1" column showing the bare-GLiNER number alongside the v10 router-embedding number. The user-facing claim must reflect what `npm i nullpii` actually does, not what the eval harness does.
-
-**Effort estimate**: 1-2 days serious work. Mostly the tokenizer prompt-formatting + words_mask tracking. The decode side is straightforward argmax. ORT backend wrapping is mostly mechanical.
-
-**Risk**: F1 mismatch with Python at parity test. Likely sources: tokenizer differences (whitespace handling, unknown subtokens, special-token positions) or words_mask off-by-one. Mitigation: side-by-side test against the Python `gliner_v2_predictor` outputs on the same 10 nullpii-bench samples; iterate until token-level identical.
-
-**Out of scope of Phase B**: shipping the LoRA router stack (merged-LoRA ONNX export — separate roadmap item that compose with this work). Phase B alone closes CONFIG-SHIPPED-01's "different model" half; LoRA-shipping closes the "different pipeline" half.
+| # | Item | Effort | Notes |
+|---|---|---|---|
+| R1 | **Threat model** doc — beyond `SECURITY.md`. Adversarial prompts, compromised LLM exfiltration, side channels, vault timing attacks | 4 h | Pre-regulated-buyer engagement |
+| R2 | **Data residency claim** — explicit "no data leaves machine after model download" + audit-trail capability for regulated buyers | 2 h | Pre-DPIA-final |
+| R3 | **Backwards compat policy** — when 8-class schema changes (e.g. Art. 9 categories added in v11), old vault sessions remain restorable. Document the schema-version field on `SanitizeResult` | 2 h | Pre-v11 |
 
 ### What is NOT on the work list right now
 
-- **HuggingFace push** of model artifacts (`lBroth/nullpii-v10-router-{embedding,xlmr}` + 5 LoRA adapters). Cards exist in [`model-cards/`](model-cards/); the push itself is deferred. Re-add when the user chooses.
-- **Merged-LoRA ONNX export** for the npm shipping path. Closes the README-claim-vs-runtime gap but is not required for completing the bench data + core. ~1-2 days when it lands.
-- **Held-out routing-eval corpus** (500 docs hand-annotated, 5 domains × 100). Required to honestly close the 0.10 enterprise-gate test-set-tuning issue and to gate the v11 Path A/B/C decision; not required for the v10 bench/core completion.
-- **Portkey + LiteLLM integration shims**. Distribution multiplier — work for after the npm runtime consumes v10.
-- **npm publish** / version bump / release tag.
+- **HuggingFace push** of model artifacts (`lBroth/nullpii-v10-router-{embedding,xlmr}` + 5 LoRA adapters). Cards exist; push deferred. Re-add when user chooses.
+- **Held-out routing-eval corpus** (500 docs hand-annotated). Required to honestly close TUNE-ENTGATE-01 and gate v11 Path A/B/C decision; deferred.
+- **Merged-LoRA ONNX export** (path-to-A #2). Closes CONFIG-SHIPPED-01 fully. ~1-2 days when scheduled.
+- **Portkey + LiteLLM integration shims**. Distribution multiplier — work after npm runtime consumes v10 + after v0.2.0 published.
+- **npm publish** / version bump / release tag. Pending Phase B + O3-O8.
 - **Branch merge to `main`**. We work on `bench-full-2026-05-05` and decide later.
 
 ### Permanent exclusions
 
-- Cloud-API rows (`aws-comprehend`, `gcp-dlp`, `azure-pii`) — paid + lock-in. Available in `bench_full.py` via opt-in `--tools` but excluded from the canonical bench matrix.
+- Cloud-API rows (`aws-comprehend`, `gcp-dlp`, `azure-pii`) — paid + lock-in. Available in `bench_full.py` via opt-in `--tools` but excluded from canonical bench matrix.
 - Per-domain adapter rows as user-facing tools — internal building blocks for the routers only. Only `nullpii-v10-router-embedding` and `nullpii-v10-router-xlmr` are surfaced.
 - Older nullpii variants (`nullpii`, `nullpii-v8`, `nullpii-v9`, `nullpii-ensemble-*`, `nullpii-ablation-*`, `nullpii-runtime`, `nullpii-v10-router-{hybrid,hybrid-v2,embedding-expanded}`, `regex`-only, wrapped `gliner+regex` etc.) — purged from `bench_full.py` on 2026-05-04.
-- **Feature flags / runtime toggle service** (LaunchDarkly / GrowthBook / Unleash etc.). nullpii is a local library — no central toggle service makes sense, no outbound network call (would violate privacy guarantee), determinism is required for compliance audit (GDPR Art. 35). Behaviour is configured per-instance via the typed `NullPiiConfig` constructor argument; rollback = `npm install nullpii@<prev>`. Re-evaluate only if a SaaS / multi-tenant product layer is built on top.
+- **Feature flags / runtime toggle service** (LaunchDarkly / GrowthBook / Unleash etc.). nullpii is a local library — no central toggle service makes sense, no outbound network call (would violate privacy guarantee), determinism required for compliance audit (GDPR Art. 35). Behaviour is configured per-instance via the typed `NullPiiConfig` constructor argument; rollback = `npm install nullpii@<prev>`. Re-evaluate only if a SaaS / multi-tenant product layer is built on top.
 - **Multi-tenant / per-tenant config** runtime layer. Same reasoning: nullpii is a library, not a service. If a buyer needs per-tenant policy (different recognizers per customer, different thresholds), they construct multiple `NullPii` instances with different `NullPiiConfig` and route at the application layer. We do not bake tenant awareness into the library.
 
 ## v11 backbone-upgrade roadmap (post-v10 release, conditional)

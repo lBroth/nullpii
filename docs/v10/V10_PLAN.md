@@ -75,6 +75,54 @@ Before any HF push / README rewrite / npm publish, ALL of these must complete in
 4. 🟢 **HF model cards** — 7 cards in [`model-cards/`](model-cards/) (2 routers + 5 LoRA adapters) regenerated post-bench (2026-05-05) with concrete F1 numbers from `packages/eval/results/bench-v10-release-local/matrix.{json,csv}`. Per-dataset breakdown on the router cards. Bare-mode third-party baselines (Presidio, GLiNER-base, Piiranha, DeBERTa-PII, scrubadub, Nemotron-PII raw, openai naive/BIOES/Viterbi) pending 5090 GPU pass for defensible head-to-head numbers. Push targets: `lBroth/nullpii-v10-router-{embedding,xlmr}` and `lBroth/nullpii-v10-{devops,legal,medical-experimental,narrative,enterprise}-lora`. Cards satisfy EU AI Act Art. 53 transparency obligations + NIST AI RMF Govern 4.1 / Map 5.2 documentation requirements (training data composition, train-vs-eval overlap matrix, intended use, out-of-scope use, evaluation methodology, limitations, ethical considerations including Art. 9 invisibility disclosure).
 5. 🔴 **npm shipping path** — merged-LoRA ONNX export. Each adapter: merge into base copy → ONNX FP32 → bundle for `onnxruntime-node`. Without this, npm cannot consume the v10 routers. Estimated 1-2 days. See Phase 6 backlog.
 
+### Code-residual TODO (open work on `bench-full-2026-05-05` branch)
+
+What's left to modify in code before the 0.0.10 tag — explicit list, none release-blocker but all path-to-A items.
+
+**Audit residue (2 OPEN, 3 partial)** — full grid in [`AUDIT_2026-05-04.md`](AUDIT_2026-05-04.md):
+
+| ID | Sev | Where | Effort | Notes |
+|---|---|---|---|---|
+| F11 | High | `adapters.py:862` | 30 min code + 1 GPU-h re-bench | switch ensemble strategy `primary` → `score_ranked`. Need bench to confirm no regression vs current 0.7172 |
+| F21 | High | `src/nullpii.ts:277` | 1-2 h | `[[` escape can corrupt user `[\[`. Fix: PUA-sentinel placeholder (e.g. ``). Add round-trip test |
+| F07 | High partial | `adapters.py:1056` | 2-3 h | BTC base58check validator post-match. Drops false-positive `Order ID: 1A2B3C4D5E6F...` matches |
+| F23 | High partial | `adapters.py:2715` | 1 h | add 1 MB cap directly inside `_normalize_for_detection` (mirrors TS port). Currently relies on upstream regex predictor cap |
+| F24 | Medium partial | `adapters.py:2487` | 1 h | Python ASCII fast-path matching the TS port. Eval-only impact since npm runs TS path |
+
+**Validators not yet implemented** (regex pack high-precision boost):
+
+| validator | Where | Effort | Lift |
+|---|---|---|---|
+| Italian CF checksum | TS `src/recognizers.ts` post-pass | 1 h | drops FP on coincidental 16-char tokens matching shape |
+| Luhn (credit card) | TS post-pass | 30 min | drops FP on 16-digit non-CC numbers |
+| IBAN mod-97 | TS post-pass | 1 h | drops FP on country-prefix-shaped tokens |
+| BTC base58check | TS + Python (F07) | 2-3 h | see F07 above |
+| Brazilian CPF mod-11 | TS + Python | 1 h | drops FP on coincidental `XXX.XXX.XXX-XX` |
+
+**Pipeline robustness scripts** (path-to-A leverage):
+
+| Script | Path | Effort | Unblocks |
+|---|---|---|---|
+| Merged-LoRA ONNX export | `packages/eval/private/scripts/export_lora_to_onnx.py` (new) | 1-2 days | npm 0.1.0 — ships v10 stack instead of legacy openai/privacy-filter |
+| Held-out routing-eval corpus loader | `packages/eval/scripts/load_routing_eval.py` (new) + 500 hand-annotated docs | 2-3 days | router F1 honest measurement → Path A/B/C decision + paper + DPIA |
+| Multi-seed bench wrapper | `packages/eval/scripts/bench_multiseed.py` (new) | 4-6 h | bootstrap 95% CIs → workshop paper |
+| Latency p50/p95 collector | extend `bench_latency.py` | 4 h | procurement-required SLA numbers |
+| Per-class confusion publisher | `packages/eval/scripts/confusion_report.py` (new) | 2 h | DPIA per-class FN/FP rate buyer-facing table |
+| Portkey integration shim | new package `packages/portkey-adapter/` | 1 day | distribution multiplier (PR to Portkey) |
+| LiteLLM integration shim | new package `packages/litellm-adapter/` | 1 day | distribution multiplier (PR to LiteLLM) |
+
+**Bumps + housekeeping** (cherry-pick to main, blocked by user choice):
+
+- `package.json` version `0.0.7` → `0.0.10` when ready
+- `src/defaults.ts` `DEFAULT_MODEL_REPO` still `openai/privacy-filter` — keep until merged-LoRA ONNX export lands, then flip to `lBroth/nullpii-v10-router-embedding`
+- `bin/nullpii.mjs` CLI: prune subcommands referencing dropped daemon/proxy code if any remain
+- DPIA template (`docs/compliance/DPIA_TEMPLATE.md`) regenerate with v10 unified-bench numbers (currently has stale v6/v8 placeholders per strategic assessment finding)
+
+**Deferred to npm 0.1.0 release sprint** (NOT on this branch):
+
+- HuggingFace push: `lBroth/nullpii-v10-router-{embedding,xlmr}` + 5 LoRA adapters. Manual via `huggingface-cli`. Model cards already drafted in [`model-cards/`](model-cards/).
+- Branch merge to `main` + tag `v0.0.10`. Currently `main` is a 2-commit stub; bench-full-2026-05-05 carries the entire project. PR or fast-forward decision deferred until release sprint.
+
 ### What is NOT in scope for v10 release
 
 - Cloud-API rows (`aws-comprehend`, `gcp-dlp`, `azure-pii`) — paid + lock-in. Available in `bench_full.py` via opt-in `--tools` but excluded from the canonical release matrix.

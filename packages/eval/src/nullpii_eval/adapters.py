@@ -904,6 +904,60 @@ def boundary_refined_predictor(
 
 _REGEX_INPUT_MAX_BYTES = 1_000_000  # 1 MB ReDoS guard, AUDIT F22
 
+_BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+_BASE58_INDEX = {c: i for i, c in enumerate(_BASE58_ALPHABET)}
+
+
+def _base58check_valid(addr: str) -> bool:
+    """Validate a base58check-encoded string (BIP-0013).
+
+    Decodes base58 → bytes; payload + 4-byte checksum;
+    SHA256(SHA256(payload))[:4] must equal checksum.
+
+    AUDIT F07: drops false-positive matches on prose tokens that share
+    the base58 charset shape (e.g. `Order ID: 1A2B3C4D5E6F7G8H9J1K2L3M4N`)
+    but fail the cryptographic checksum.
+    """
+    if not (25 <= len(addr) <= 35):
+        return False
+    n = 0
+    for ch in addr:
+        idx = _BASE58_INDEX.get(ch)
+        if idx is None:
+            return False
+        n = n * 58 + idx
+    body = n.to_bytes((n.bit_length() + 7) // 8, "big") if n else b""
+    # Re-attach leading-zero bytes encoded as leading `1`s in base58.
+    leading_ones = 0
+    for ch in addr:
+        if ch == "1":
+            leading_ones += 1
+        else:
+            break
+    decoded = b"\x00" * leading_ones + body
+    if len(decoded) < 5:
+        return False
+    payload, checksum = decoded[:-4], decoded[-4:]
+    import hashlib
+    expected = hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4]
+    return checksum == expected
+
+
+def _label_validator(label: str, value: str) -> bool:
+    """Per-label post-match validators that drop FPs the regex shape
+    cannot reject by itself. Currently:
+
+    - account_number: BTC Legacy/P2SH addresses (start with `1` or `3`,
+      base58 charset, 26-34 chars) require base58check checksum match.
+      Bech32 (`bc1...`) is left alone — its strict regex already
+      rejects most non-addresses.
+    """
+    if label == "account_number" and len(value) >= 26 and len(value) <= 35:
+        first = value[0]
+        if first in ("1", "3") and all(c in _BASE58_ALPHABET for c in value):
+            return _base58check_valid(value)
+    return True
+
 
 def regex_recognizer_predictor(
     *,
@@ -913,7 +967,9 @@ def regex_recognizer_predictor(
 
     `patterns` is a list of `(label, regex)` tuples; matches yield Spans
     with that label. Useful as a Tier-2 ensemble member to fill gaps
-    where ML detectors miss structured formats (URLs, IBANs, etc.)."""
+    where ML detectors miss structured formats (URLs, IBANs, etc.).
+    Per-label validators (e.g. base58check on BTC addresses) drop
+    false-positive matches before emission."""
     import re as _re
 
     compiled = [(label, _re.compile(pat)) for label, pat in patterns]
@@ -931,6 +987,8 @@ def regex_recognizer_predictor(
         for label, regex in compiled:
             prior = REGEX_LABEL_PRIORS.get(label, 0.9)
             for m in regex.finditer(text):
+                if not _label_validator(label, m.group(0)):
+                    continue
                 spans.append(Span(label, m.start(), m.end()))
                 scores.append(prior)
         elapsed = (time.perf_counter() - t0) * 1000

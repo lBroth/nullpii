@@ -8,6 +8,7 @@
 
 import type { BackendName, ModelVariant } from './types/index.js';
 import type { Recognizer } from './types/recognizer.js';
+import { base58CheckValid } from './validators.js';
 
 /** Backend chosen when the user passes nothing (or `'auto'`) — the router
  * then walks `BACKEND_AUTO_PRIORITY`. */
@@ -389,17 +390,22 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     confidence: 0.9,
   },
   { id: 'core:ssn', pattern: /\b\d{3}-\d{2}-\d{4}\b/g, label: 'account_number', confidence: 0.9 },
+  // AUDIT F07: BTC Legacy/P2SH addresses validated via base58check
+  // checksum. Drops prose-token false positives that share the
+  // base58 shape (e.g. `Order ID: 1A2B3C4D5E6F...`).
   {
     id: 'core:btc-legacy-1',
     pattern: /\b1[A-HJ-NP-Za-km-z1-9]{25,34}\b/g,
     label: 'account_number',
-    confidence: 0.85,
+    confidence: 0.95,
+    validate: base58CheckValid,
   },
   {
     id: 'core:btc-p2sh',
     pattern: /\b3[A-HJ-NP-Za-km-z1-9]{25,34}\b/g,
     label: 'account_number',
-    confidence: 0.85,
+    confidence: 0.95,
+    validate: base58CheckValid,
   },
   {
     id: 'core:btc-bech32',

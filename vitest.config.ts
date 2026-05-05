@@ -25,7 +25,6 @@ export default defineConfig({
         'src/hf-hub.ts',
         // Hardware-gated backends — covered by gated runners (Linux+GPU)
         'src/backend/cuda-backend.ts',
-        'src/backend/rocm-backend.ts',
         // CLI — thin layer over public API; exercised by CLI smoke tests
         'src/cli/**',
         'bin/**',

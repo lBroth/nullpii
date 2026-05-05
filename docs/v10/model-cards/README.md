@@ -21,7 +21,7 @@ Cards are also the customer-facing source of truth for procurement / DPIA review
 
 🟢 **Bench complete (2026-05-05)**. Unified release bench output at `packages/eval/published-bench/matrix.{json,csv}`. Mac M-series CPU, single seed, macro F1 IoU ≥ 0.5, 27 of 31 datasets benched (4 require gated HuggingFace access).
 
-**Shipping pipeline**: `nullpii-v10-router-embedding` (distiluse + 5 LoRA, ~430 MB). Mixed F1 0.7172 across 27 datasets; honest held-out F1 0.7008 (non-adversarial). xlmr alt classifier router moved to `packages/eval/private/v10/large-candidate/` for eventual v0.2 "large" variant.
+**Shipping pipeline**: `nullpii-v10-router-embedding` (distiluse + 5 LoRA, ~430 MB). Mixed F1 0.7172 across 27 datasets; honest held-out F1 0.7008 (non-adversarial).
 
 **Bench framing**: Mac CPU local bench is the source of F1 numbers. Held-out vs in-distribution split documented per dataset (see overlap matrix below + `RED_TEAM_AUDIT_2026-05-05.md`).
 

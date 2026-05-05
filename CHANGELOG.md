@@ -47,9 +47,7 @@ This is a night-hobby experiment, not a production-ready PII tool, not a researc
 ### Architecture
 
 - **v10 LoRA-per-domain adapters** on `urchade/gliner_multi_pii-v1` (~278M base + 5 LoRA, ~3.4 MB each). Domains: `devops`, `legal`, `medical-experimental`, `narrative` (general), `enterprise` (Nemotron-aug).
-- **Two release-candidate routers**:
-  - `nullpii-v10-router-embedding`: distiluse multilingual sentence-transformer + 5 prototype vectors with cosine routing + enterprise gate (margin 0.10). ~430 MB total.
-  - `nullpii-v10-router-xlmr`: xlm-roberta classifier head over 4 domains. ~1.4 GB total.
+- **Shipping router**: `nullpii-v10-router-embedding` — distiluse multilingual sentence-transformer + 5 prototype vectors with cosine routing + enterprise gate (margin 0.10). ~430 MB total.
 - **Adversarial preprocessor** at adapter input (`_normalize_for_detection`): NFKC + unidecode + zero-width strip + HTML entity decode + URL `%XX` decode + spaced-PII despace. Span offsets remap back to original text.
 - 8-class output retained (`private_person`, `private_email`, `private_phone`, `private_address`, `private_date`, `private_url`, `account_number`, `secret`). LoRA training on 55-class Nemotron labels remapped 37→8 at inference.
 
@@ -72,7 +70,7 @@ This is a night-hobby experiment, not a production-ready PII tool, not a researc
 
 - 🔴 Unified release bench across 19 datasets × 11 tools.
 - 🔴 README rewrite with v10 numbers post-bench.
-- 🟡 HuggingFace push: `lBroth/nullpii-v10-router-{embedding,xlmr}` + `lBroth/nullpii-v10-{devops,legal,medical-experimental,narrative,enterprise}-lora`. Model card drafts in [`docs/v10/model-cards/`](docs/v10/model-cards/) (pre-bench placeholders).
+- 🟡 HuggingFace push: `lBroth/nullpii-v10-router-embedding` + `lBroth/nullpii-v10-{devops,legal,medical,narrative,enterprise}-lora`. Model card drafts in [`docs/v10/model-cards/`](docs/v10/model-cards/) (pre-bench placeholders).
 - 🔴 Merged-LoRA ONNX export for npm shipping.
 
 ### Library (npm package)
@@ -82,6 +80,6 @@ This is a night-hobby experiment, not a production-ready PII tool, not a researc
 - Backends: `cpu`, `mps`, `cuda` (subpath exports, tree-shakable). Variants: `fp32`, `int4`, `auto` (default `int4`).
 - CLI: `nullpii scan|sanitize|restore|models|prefetch|doctor|benchmark`.
 - Recognizer packs: 74 patterns bundled in `src/defaults.ts` `DEFAULT_RECOGNIZERS` (parity with Python `DEFAULT_REGEX_PATTERNS`) plus per-recognizer validators (Luhn, IBAN-97, CPF mod-11, Italian Codice Fiscale, BTC base58check) wired via `Recognizer.validate`.
-- npm runtime SHIPS the GLiNER base + recognizer pack + `_normalize_for_detection` preprocessor + `filterNeverPii` post-pass + reversible vault. The full v10 router stack (5 LoRA adapters + embedding/xlmr router) currently runs in the Python eval kit only; merged-LoRA ONNX export to wire the routers into the npm runtime is on the roadmap.
+- npm runtime SHIPS the GLiNER base + recognizer pack + `_normalize_for_detection` preprocessor + `filterNeverPii` post-pass + reversible vault. The full v10 router stack (5 LoRA adapters + embedding router) currently runs in the Python eval kit only; merged-LoRA ONNX export to wire the routers into the npm runtime is on the roadmap.
 
 [Unreleased]: https://github.com/lBroth/nullpii/compare/HEAD...HEAD

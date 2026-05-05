@@ -536,118 +536,12 @@ def make_embedding_detector(
     )
 
 
-# ─── xlm-roberta classifier router ───────────────────────────────
-
-
-_XLMR_CLASSIFIER_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "results" / "train" / "v10" / "router" / "xlmr-classifier"
-)
-
-
-class XlmrDomainRouter:
-    """Fine-tuned `xlm-roberta-base` 4-way classifier router.
-
-    Loads the saved model + tokenizer from `xlmr-classifier/` (see
-    `train_router_xlmr.py`). Forward pass over the input text returns
-    a softmax distribution over `{devops, legal, medical, narrative}`;
-    we route to the argmax label unless its confidence drops below
-    `min_confidence`, in which case we fall back to `narrative` (safe
-    default — the v10-narrative adapter is the best-on-average single
-    backbone in the v10 routing table).
-
-    Tradeoffs vs `EmbeddingDomainRouter`:
-    - PRO: a discriminative head, not similarity vs prototypes — can
-      separate classes that share lexical surface (legal-flavoured
-      medical narratives, dev-paste with prose).
-    - PRO: native multilingual via xlm-roberta backbone (100 langs).
-    - CON: ~280 MB on disk; ~50–100 ms / sample on CPU (faster on MPS).
-    """
-
-    def __init__(
-        self,
-        model_path: str | Path = _XLMR_CLASSIFIER_PATH,
-        *,
-        min_confidence: float = 0.40,
-        max_length: int = 256,
-        device: str = "cpu",
-    ) -> None:
-        try:
-            import torch
-            from transformers import (
-                AutoModelForSequenceClassification,
-                AutoTokenizer,
-            )
-        except ImportError as e:
-            raise ImportError(
-                "torch + transformers required for XlmrDomainRouter; "
-                "run `pip install torch transformers`",
-            ) from e
-        path = Path(model_path)
-        if not path.exists():
-            raise FileNotFoundError(
-                f"xlmr classifier not found at {path}. "
-                f"Train it first: "
-                f"`python packages/eval/scripts/train/train_router_xlmr.py`",
-            )
-        self._tokenizer = AutoTokenizer.from_pretrained(str(path))
-        self._model = AutoModelForSequenceClassification.from_pretrained(str(path))
-        self._device = device
-        self._model.to(device)
-        self._model.eval()
-        # Read label list from model config to stay in sync with training.
-        id2label = self._model.config.id2label
-        self._labels: list[str] = [id2label[i] for i in sorted(id2label.keys())]
-        self._min_confidence = min_confidence
-        self._max_length = max_length
-        self._torch = torch
-
-    def __call__(self, text: str) -> str:
-        torch = self._torch
-        # Same routing-only normalization as `EmbeddingDomainRouter`.
-        # Adapter receives the original text via the routes dict.
-        normalized = normalize_for_routing(text)
-        enc = self._tokenizer(
-            normalized,
-            truncation=True,
-            max_length=self._max_length,
-            padding=True,
-            return_tensors="pt",
-        )
-        enc = {k: v.to(self._device) for k, v in enc.items()}
-        with torch.no_grad():
-            logits = self._model(**enc).logits
-        probs = torch.softmax(logits, dim=-1)[0]
-        idx = int(probs.argmax().item())
-        conf = float(probs[idx].item())
-        if conf < self._min_confidence:
-            return "narrative"
-        return self._labels[idx]
-
-
-def make_xlmr_detector(
-    model_path: str | Path = _XLMR_CLASSIFIER_PATH,
-    min_confidence: float = 0.40,
-    max_length: int = 256,
-    device: str = "cpu",
-) -> Callable[[str], str]:
-    """Convenience factory for `domain_routed_predictor` callers."""
-    return XlmrDomainRouter(
-        model_path,
-        min_confidence=min_confidence,
-        max_length=max_length,
-        device=device,
-    )
-
-
 __all__ = [
     "EmbeddingDomainRouter",
     "HybridDomainRouter",
-    "XlmrDomainRouter",
     "detect_domain",
     "make_embedding_detector",
     "make_hybrid_detector",
     "make_hybrid_detector_v2",
-    "make_xlmr_detector",
     "routing_summary",
 ]

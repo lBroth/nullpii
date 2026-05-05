@@ -2773,6 +2773,9 @@ _ZERO_WIDTH_CHARS = frozenset("​‌‍﻿⁠­")
 _SPACED_PII_RE = re.compile(r"(?<!\w)(?:[\w@.+\-:/]\s+){3,}[\w@.+\-:/]")
 
 
+_NORMALIZE_INPUT_MAX_BYTES = 1_000_000  # AUDIT F23 cap
+
+
 def _normalize_for_detection(text: str) -> tuple[str, list[int]]:
     """Adversarial-resistant input normalisation with offset map.
 
@@ -2790,7 +2793,15 @@ def _normalize_for_detection(text: str) -> tuple[str, list[int]]:
     back to original-text offsets via the index map. Original gold
     spans use original offsets, so this preserves bench correctness
     while letting the model see a cleaner input.
+
+    AUDIT F23: input length cap. `_SPACED_PII_RE.match(text, i)` per
+    position is O(N²) on whitespace-rich adversarial input (100 KB
+    of `a a a a` → ~5 s in CPython). 1 MB cap matches the regex pack
+    upstream guard; oversized input falls through as identity
+    passthrough. Any realistic LLM prompt is far below this cap.
     """
+    if len(text) > _NORMALIZE_INPUT_MAX_BYTES:
+        return text, list(range(len(text) + 1))
     try:
         from unidecode import unidecode
     except ImportError:

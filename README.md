@@ -91,25 +91,54 @@ Auto-selects in priority **CUDA → MPS → CPU**.
 
 ## Benchmarks
 
-> **Status**: v10 unified release bench **pending**. Numbers fill once `bench_full.py` produces the canonical `matrix.json` (overnight Mac CPU run + 5090 GPU verification — see [`docs/v10/V10_PLAN.md`](docs/v10/V10_PLAN.md) §"Release gating").
+> **Status (2026-05-05)**: v10 release-candidate. nullpii numbers below come from the unified release bench (`packages/eval/results/bench-v10-release-local/matrix.{json,csv}`). The bare third-party baselines (presidio, gliner-onnx-pii-fp32, piiranha, deberta, scrubadub, nemotron-pii-raw, openai naive/BIOES/Viterbi) ship a published `matrix.json` row in the next bench iteration on a 5090 GPU host.
 
-11 tools × 19 PII-native datasets, single bench harness, single code revision, macro F1 at IoU ≥ 0.5. Bare-mode contract: no competitor row wraps nullpii post-processing.
+Mac M-series CPU, single seed, macro F1 at IoU ≥ 0.5. Bare-mode contract: no competitor row wraps nullpii post-processing. 27 of 31 datasets benched (4 require gated HuggingFace access: lmsys / enron / stackoverflow / thestack).
 
-| Tool | Wrapping | F1 (macro avg) |
-|---|---|:---:|
-| `nullpii-v10-router-embedding` | distiluse + 5 LoRA on `urchade/gliner_multi_pii-v1` | TBD-BENCH |
-| `nullpii-v10-router-xlmr` | xlm-roberta classifier + 4 LoRA | TBD-BENCH |
-| `presidio` | bare upstream | TBD-BENCH |
-| `gliner-onnx-pii-fp32` | bare HF (`urchade/gliner_multi_pii-v1`) | TBD-BENCH |
-| `piiranha` | bare (`iiiorg/piiranha-v1-detect-personal-information`) | TBD-BENCH |
-| `deberta` | bare (`lakshyakh93/deberta_finetuned_pii`) | TBD-BENCH |
-| `scrubadub` | bare upstream | TBD-BENCH |
-| `nemotron-pii-raw` | bare (`nvidia/gliner-pii`) | TBD-BENCH |
-| `openai` | HF naive `pipeline()` (misuse) | TBD-BENCH |
-| `openai-bioes` | Python BIOES decoder | TBD-BENCH |
-| `openai-official` | opf CLI Viterbi (model-card-correct) | TBD-BENCH |
+### Release pipeline decision
 
-Per-dataset breakdown lands alongside the `matrix.json` artifact post-bench.
+**Ship `nullpii-v10-router-embedding`** (distiluse + 5 LoRA, ~430 MB).
+
+Per release gating step 2 in [`docs/v10/V10_PLAN.md`](docs/v10/V10_PLAN.md): F1 delta ≤ 0.02 → storage tiebreaker wins → distiluse.
+
+| Pipeline | macro F1 (27 datasets) | Storage | Wins (head-to-head) |
+|---|:---:|:---:|:---:|
+| **`nullpii-v10-router-embedding`** (default) | **0.7172** | **~430 MB** | 4 |
+| `nullpii-v10-router-xlmr` (alt) | 0.7076 | ~1.4 GB | 21 |
+| Ties | — | — | 2 |
+
+The xlm-roberta router wins more datasets but by smaller margins (typically +0.01–0.02). distiluse wins `nullpii-bench` OOD (the project-bundled gold standard) by **+0.118 F1** (0.7280 vs 0.6096) and the adversarial subset by **+0.062**. Aggregate delta is within the storage-tiebreaker band.
+
+### Per-dataset F1 (`nullpii-v10-router-embedding`, the shipping pipeline)
+
+| Dataset | n | F1 | Notes |
+|---|---:|:---:|---|
+| `nullpii-bench` | 264 | **0.7280** | Project-bundled OOD gold standard (real-world dev paste, RFCs, multilingual tickets) |
+| `tab-echr` | 127 | **0.8862** | EU legal (TAB ECHR test split) |
+| `oasst-dev-planted` | 15 | 0.4921 | Real chat text + planted PII |
+| `presidio-synthetic` | 5k | 0.6907 | Faker-driven synthetic |
+| `argilla-pii` | 2k | 0.6002 | Third-party held-out (model-suggested labels — see model card) |
+| `nemotron-pii-test` | 5k | **0.7602** | ⚠ in-distribution (enterprise adapter trained on Nemotron train split) |
+| `ai4privacy-300k-heldout-v10` | 5k | 0.5283 | Held-out (offset 100k+) |
+| `ai4privacy-300k` | 5k | 0.5336 | In-distribution-adjacent |
+| `ai4privacy-400k` | 5k | 0.5554 | In-distribution-adjacent |
+| `isotonic-en-heldout-v10` | 5k | 0.8671 | Held-out (offset 200k+) |
+| `isotonic-de-heldout-v10` | 5k | 0.8746 | Held-out |
+| `isotonic-fr-heldout-v10` | 5k | 0.8619 | Held-out |
+| `isotonic-en` / `de` / `fr` / `it` | 5k each | 0.8783 / 0.8743 / 0.8600 / 0.8647 | Multilingual structured PII |
+| `adversarial-typo` | 80 | **0.9400** | Single-char neighbour swap |
+| `adversarial-unicode` | 80 | **0.9358** | Cyrillic homoglyph + zero-width insertion |
+| `adversarial-whitespace` | 80 | 0.3932 | `g i a n l u c a @ g m a i l . c o m` style |
+| `adversarial-encoding` | 80 | 0.1216 | Base64 / URL / HTML-entity wrapping |
+| `adversarial-code` | 80 | **1.0000** | Credentials in comments / docstrings |
+| `adversarial-textattack` | 1.7k | 0.6900 | TextAttack mixed perturbations |
+| `textattack-{homoglyph,charswap,chardelete,charinsert,charsub}` | 334 each | 0.66 / 0.72 / 0.72 / 0.66 / 0.66 | Per-perturbation breakdown |
+
+`adversarial-encoding` is the documented gap — base64 / URL / HTML-entity wrapping require a deobfuscation layer not in the runtime defaults.
+
+### Competitor comparison (pending 5090 run)
+
+The bare-mode third-party baselines (presidio, gliner-onnx-pii-fp32, piiranha, deberta, scrubadub, nemotron-pii-raw, openai naive/BIOES/Viterbi) are wired in `bench_full.py` but require a longer-running GPU pass to publish defensible numbers. The bench surface and methodology are documented in [`COMPETITIVE_ANALYSIS.md`](COMPETITIVE_ANALYSIS.md). This README will refresh with the head-to-head matrix once the GPU bench completes.
 
 ## Documentation
 

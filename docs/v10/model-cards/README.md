@@ -20,7 +20,11 @@ Cards are also the customer-facing source of truth for procurement / DPIA review
 
 ## Status
 
-🟡 **Draft, pre-bench**. Numerical eval cells are placeholders (`TBD-BENCH`) pending the unified release benchmark (see [`../V10_PLAN.md`](../V10_PLAN.md) §"Release gating" step 1). Once `bench_full.py` produces the final `matrix.json`, cards will be regenerated with concrete F1 / latency numbers and pushed to HuggingFace.
+🟢 **Bench complete (2026-05-05)**. Unified release bench output at `packages/eval/results/bench-v10-release-local/matrix.{json,csv}`. Mac M-series CPU, single seed, macro F1 IoU ≥ 0.5, 27 of 31 datasets benched (4 require gated HuggingFace access).
+
+**Release decision**: `nullpii-v10-router-embedding` is the **shipping pipeline** (per release gating step 2). Aggregate F1 0.7172 (vs xlmr 0.7076, delta within ±0.02 → storage tiebreaker → ship distiluse 430 MB over xlmr 1.4 GB). distiluse wins `nullpii-bench` OOD gold standard +0.118 F1 and the adversarial subset +0.062.
+
+**Pending**: bare-mode third-party baselines (Presidio, GLiNER-base, Piiranha, DeBERTa-PII, scrubadub, Nemotron-PII raw, openai naive/BIOES/Viterbi) require a longer 5090 GPU pass to publish defensible head-to-head numbers. Cards will refresh with delta-vs-competitor tables on that pass.
 
 ## Train-vs-eval dataset overlap
 

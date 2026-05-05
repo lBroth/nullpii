@@ -39,7 +39,7 @@ Two nullpii routers + nine bare baselines + three opt-in cloud rows. None of the
 | Script | Purpose |
 |---|---|
 | `scripts/bench_latency.py` | Per-tool latency p50/p95 measurements |
-| `scripts/bench_openai_decoders.py` | naive HF / BIOES / Viterbi delta on `openai/privacy-filter` |
+| `scripts/bench_openai_decoders.py` | reference comparison only — naive HF / BIOES / Viterbi delta on `openai/privacy-filter` (a competitor model, not nullpii's base). nullpii's base model is `urchade/gliner_multi_pii-v1` |
 | `scripts/failure_analysis.py` | Top-K FN/FP per label per tool |
 | `scripts/report_per_class.py` | Per-label precision/recall breakdown |
 | `scripts/generate_adversarial_bench.py` | Synthesize `nullpii-adversarial.jsonl` |

@@ -2,7 +2,7 @@
 
 Local PII sanitization for LLM prompts. ML-based span detection + reversible in-memory vault — pass placeholders to your LLM, restore original values from the response.
 
-> **Status (2026-05-04)** — v10 release-candidate. Two routers under evaluation: `router-embedding` (~430 MB, distiluse + 5 LoRA adapters) and `router-xlmr` (~1.4 GB, xlm-roberta + 4 LoRA adapters). The unified release benchmark is pending; release numbers, HuggingFace model cards, and the merged-LoRA ONNX export for npm will land after the overnight bench completes. See [`docs/v10/V10_PLAN.md`](docs/v10/V10_PLAN.md) for current state and gating criteria.
+> **Status (2026-05-05)** — v10 release-candidate. Local PII detection built on [`urchade/gliner_multi_pii-v1`](https://huggingface.co/urchade/gliner_multi_pii-v1) (multilingual GLiNER, mDeBERTa-v3-base + GLiNER head, ~278M params). Two router pipelines under evaluation: `router-embedding` (~430 MB, distiluse + 5 LoRA adapters) and `router-xlmr` (~1.4 GB, xlm-roberta + 4 LoRA adapters). The npm runtime ships the GLiNER backbone via the `onnx-community/gliner_multi_pii-v1` ONNX. Bench: see [`packages/eval/results/bench-v10-release-local/matrix.csv`](packages/eval/results/bench-v10-release-local/matrix.csv). Plan: [`docs/v10/V10_PLAN.md`](docs/v10/V10_PLAN.md).
 
 ## Install
 
@@ -176,7 +176,7 @@ The bare-mode third-party baselines (presidio, gliner-onnx-pii-fp32, piiranha, d
 - [`packages/eval/datasets/README.md`](packages/eval/datasets/README.md) — dataset cards + licenses
 - [`examples/README.md`](examples/README.md) — TS usage examples
 
-The unified release bench (head-to-head vs Presidio, GLiNER-base, Nemotron-PII, piiranha, deberta, scrubadub, openai/privacy-filter naive/BIOES/Viterbi) will publish after the overnight run. README will refresh with v10 numbers at that point.
+The unified release bench (head-to-head vs Presidio, GLiNER-base, Nemotron-PII, piiranha, deberta, scrubadub, and `openai/privacy-filter` as a competitor reference in three usage modes — naive HF / BIOES / opf-Viterbi) will publish after the overnight run. README will refresh with v10 numbers at that point.
 
 ## License
 

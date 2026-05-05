@@ -41,9 +41,10 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 ### Library (npm package)
 
 - TypeScript ESM library (`nullpii` on npm) with `sanitize` / `restore` + reversible in-memory vault.
+- Base model: [`urchade/gliner_multi_pii-v1`](https://huggingface.co/urchade/gliner_multi_pii-v1) (multilingual GLiNER, mDeBERTa-v3-base + GLiNER head, ~278M params). The npm runtime ships the GLiNER backbone via the `onnx-community/gliner_multi_pii-v1` ONNX export.
 - Backends: `cpu`, `mps`, `cuda` (subpath exports, tree-shakable). Variants: `fp32`, `int4`, `auto` (default `int4`).
 - CLI: `nullpii scan|sanitize|restore|models|prefetch|doctor|benchmark`.
-- Recognizer packs (`packages/recognizers-{cloud,finance,id-it}`) for AWS / GitHub / Stripe keys, IBAN/Luhn, Italian CF + PIVA.
-- Note: npm currently ships the openai/privacy-filter ONNX runtime path; v10 LoRA shipping requires merged-LoRA ONNX export (pending, see release gating).
+- Recognizer packs: 74 patterns bundled in `src/defaults.ts` `DEFAULT_RECOGNIZERS` (parity with Python `DEFAULT_REGEX_PATTERNS`) plus per-recognizer validators (Luhn, IBAN-97, CPF mod-11, Italian Codice Fiscale, BTC base58check) wired via `Recognizer.validate`.
+- npm runtime SHIPS the GLiNER base + recognizer pack + `_normalize_for_detection` preprocessor + `filterNeverPii` post-pass + reversible vault. The full v10 router stack (5 LoRA adapters + embedding/xlmr router) currently runs in the Python eval kit only; merged-LoRA ONNX export to wire the routers into the npm runtime is on the roadmap.
 
 [Unreleased]: https://github.com/lBroth/nullpii/compare/HEAD...HEAD

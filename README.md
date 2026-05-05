@@ -12,7 +12,7 @@ Honest framing: this is a **night-hobby project**, not a production-ready PII to
 
 Since I started using Claude Code I stopped playing video games — it became my night toy. nullpii is what fell out of those nights: a chance to learn the GLiNER + LoRA + router stack end-to-end, run it under a strict bench harness, write the honest audit on what works and what doesn't, and ship something that does the round-trip cleanly.
 
-For real GDPR-grade PII redaction in production, use [Microsoft Presidio](https://microsoft.github.io/presidio/). What's interesting here is the engineering rigor + adversarial preprocessor, not state-of-the-art F1.
+What's interesting here is the engineering rigor + adversarial preprocessor, not state-of-the-art F1.
 
 > **Status (2026-05-05)** — first release `v0.1.0`. Built on [`urchade/gliner_multi_pii-v1`](https://huggingface.co/urchade/gliner_multi_pii-v1) (multilingual GLiNER, **Microsoft mDeBERTa-v3** base + GLiNER head, ~278M params). Shipping pipeline: `router-embedding` (~430 MB, **Google distiluse** + 5 per-domain LoRA adapters). The npm runtime downloads the full router stack from HF on first call. Bench: see [`packages/eval/published-bench/matrix.csv`](packages/eval/published-bench/matrix.csv).
 
@@ -164,7 +164,7 @@ Bare-mode third-party baselines benched on the same 10-dataset Mac CPU pass alon
 
 Head-to-head matrix — per-dataset F1, every tool × every dataset: [`packages/eval/published-bench/matrix.csv`](packages/eval/published-bench/matrix.csv). Methodology, schema-bridge mechanics, and the `CLAIM-VERIFIER-01` finding (Presidio 0.85+ / piiranha 0.99 not reproducible with span IoU ≥ 0.5) are documented in [`COMPETITIVE_ANALYSIS.md`](COMPETITIVE_ANALYSIS.md).
 
-Honest read: nullpii sits in the GLiNER-family ballpark on the held-out non-adversarial subset (F1 0.7378) and wins the adversarial bucket because of `_normalize_for_detection` (typo 0.94 / unicode 0.94 / code 1.00), not because of model strength. For production GDPR-grade redaction, **Microsoft Presidio** remains the right tool — read the matrix for the per-dataset trade-offs.
+Honest read: nullpii sits in the GLiNER-family ballpark on the held-out non-adversarial subset (F1 0.7378) and wins the adversarial bucket because of `_normalize_for_detection` (typo 0.94 / unicode 0.94 / code 1.00), not because of model strength. Read the matrix for the per-dataset trade-offs.
 
 ## Documentation
 

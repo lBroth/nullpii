@@ -37,4 +37,4 @@ First public release. Local PII sanitization with reversible vault.
 
 ### Honest framing
 
-This is a night-hobby experiment, not a production-ready PII tool, not a research paper, not a commercial product. For real GDPR-grade PII redaction use **Microsoft Presidio**. nullpii is interesting for the engineering rigor + adversarial preprocessor, not for being state-of-the-art on F1.
+Night-hobby experiment, not a production-ready PII tool, not a research paper, not a commercial product. Interesting for the engineering rigor + adversarial preprocessor, not for being state-of-the-art on F1.

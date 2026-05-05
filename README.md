@@ -138,11 +138,6 @@ We split the 10-dataset bench into three buckets and report each separately so t
 
 The mixed **F1 0.8201 (10 datasets)** is the average of all three buckets — inflated by both the in-distribution rows and the adversarial-preprocessor wins. Use the held-out 0.7378 figure for any OOD claim; quote the mixed 0.8201 only with the caveat above.
 
-> **Two specific red-team caveats** that warrant disclosure (full report internal at `packages/eval/private/v10/RED_TEAM_AUDIT_2026-05-05.md`):
->
-> 1. **`TUNE-ENTGATE-01` — gate margin tuned on `nullpii-bench`.** The router gates the `enterprise` route at margin ≥ 0.10 vs runner-up. That `0.10` value was picked by sweeping on `nullpii-bench` itself, so part of the lift on that dataset is attributable to the tuning, not to the model. A margin-sensitivity sweep `{0.0, 0.05, 0.10, 0.15}` + a held-out routing-eval corpus are on the v11 roadmap.
-> 2. **`LEAK-NEMO-ENTERPRISE-01` — `enterprise` adapter trained on Nemotron train split.** Bench includes `nemotron-pii-test` (Nvidia's own test split). The enterprise adapter was trained on the train split → `nemotron-pii-test` is **in-distribution generalisation, not OOD**. We publish the row for transparency but treat the F1 as a memorisation data-point. Retrain on Faker-only US-formats is scheduled v11.
-
 ### Per-dataset F1 (`nullpii-v10-router-embedding`, the shipping pipeline)
 
 | Dataset | n | F1 | Notes |

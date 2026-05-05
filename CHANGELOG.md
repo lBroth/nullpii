@@ -32,7 +32,7 @@ First public release. Local PII sanitization with reversible vault.
 
 ### Red-team disclosures
 
-- `TUNE-ENTGATE-01` (enterprise gate margin tuned on `nullpii-bench`) + `LEAK-NEMO-ENTERPRISE-01` (enterprise adapter trained on Nemotron train split, `nemotron-pii-test` is in-distribution generalisation, not OOD) — disclosed in README + COMPETITIVE_ANALYSIS.
+- 3 in-distribution bench rows disclosed (`nullpii-bench`, `tab-echr`, `nemotron-pii-test`) — adapters trained on slices of those datasets, F1 reported with ⚠ memorisation flag in the per-row table.
 - `CLAIM-VERIFIER-01` documents that competitor F1 claims (Presidio 0.85+, piiranha 0.99) are not reproducible with standard methodology — see `packages/eval/scripts/verify_claims.py`.
 
 ### Honest framing

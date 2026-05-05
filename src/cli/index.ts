@@ -11,13 +11,10 @@ import { registerSanitize } from './commands/sanitize.js';
 import { registerScan } from './commands/scan.js';
 
 function readPackageVersion(): string {
-  try {
-    const pkgPath = join(new URL('../..', import.meta.url).pathname, 'package.json');
-    const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8')) as { version?: string };
-    return pkg.version ?? '0.0.0';
-  } catch {
-    return '0.0.0';
-  }
+  const pkgPath = join(new URL('../..', import.meta.url).pathname, 'package.json');
+  const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8')) as { version?: string };
+  if (!pkg.version) throw new Error(`package.json at ${pkgPath} missing 'version' field`);
+  return pkg.version;
 }
 
 export function buildProgram(): Command {

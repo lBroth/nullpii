@@ -10,8 +10,8 @@ presidio-synthetic, argilla-pii) these drive `bench_full.py`.
 | File | Rows | Purpose | Used in canonical 10 bench? |
 |---|---:|---|:---:|
 | `nullpii-bench.jsonl` | 271 | Project gold standard — multilingual dev-style prompts + adversarial decoys + long-prompts | ✅ |
-| `nullpii-adversarial.jsonl` | 480 | 6 synthetic perturbation subsets (80 each): `typo_pii`, `unicode_obf`, `whitespace_obf`, `encoding_obf`, `decoys`, `code_pii` | ✅ (typo / unicode / code only) |
-| `nullpii-adversarial-textattack.jsonl` | 1670 | TextAttack perturbation variants × 334: homoglyph / charswap / chardelete / charinsert / charsub | ❌ (private extended-bench) |
+| `nullpii-adversarial.jsonl` | 480 | Synthetic perturbation subsets (80 each): `typo_pii`, `unicode_obf`, `code_pii` (canonical) + extras | ✅ (typo / unicode / code) |
+| `nullpii-adversarial-textattack.jsonl` | 1670 | TextAttack perturbation variants × 334: homoglyph / charswap / chardelete / charinsert / charsub | ❌ |
 | `tab-echr-test.jsonl` | 127 | EU jurisprudence test split (TAB ECHR, Pilán et al. ACL 2022) — legal-domain eval | ✅ |
 | `adversarial.jsonl` | 7 | Hand-curated decoy strings (already merged into `nullpii-bench` `adversarial` subset) | source-only |
 | `long-prompts-en-baseline.jsonl` | 62 | English long-form (~3k chars) source for chunking stress test (already merged into `nullpii-bench`) | source-only |
@@ -82,22 +82,16 @@ treated as **in-distribution memorisation diagnostic**, not OOD.
 Documented in the train-vs-eval overlap matrix on the HF model card
 ([`lBroth/nullpii-v10-router-embedding`](https://huggingface.co/lBroth/nullpii-v10-router-embedding)).
 
-## `nullpii-adversarial` subsets
+## `nullpii-adversarial` subsets (canonical)
 
-6 × 80 rows, each subset stresses a different perturbation:
+| Subset | Perturbation |
+|---|---|
+| `typo_pii` | Single-char neighbour swap |
+| `unicode_obf` | Cyrillic homoglyph + zero-width insertion |
+| `code_pii` | Credentials in comments / docstrings |
 
-| Subset | Perturbation | In canonical 10? |
-|---|---|:---:|
-| `typo_pii` | Single-char neighbour swap | ✅ |
-| `unicode_obf` | Cyrillic homoglyph + zero-width insertion | ✅ |
-| `code_pii` | Credentials in comments / docstrings | ✅ |
-| `whitespace_obf` | `g i a n l u c a @ g m a i l . c o m` style | ❌ private |
-| `encoding_obf` | Base64 / URL / HTML-entity wrapping (preprocessor gap) | ❌ private |
-| `decoys` | Look-alike strings that are not PII (FP stress) | ❌ private |
-
-The 3 wins (typo / unicode / code) are preprocessor-driven, not
-model-driven — see `_normalize_for_detection` mirrored in
-[`src/normalize.ts`](../../../src/normalize.ts).
+Preprocessor-driven, not model-driven — see `_normalize_for_detection`
+mirrored in [`src/normalize.ts`](../../../src/normalize.ts).
 
 ## `tab-echr-test`
 

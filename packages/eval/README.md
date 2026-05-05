@@ -72,7 +72,7 @@ methodology.
 | `adversarial-code` | bundled | adversarial preprocessor |
 
 See [`datasets/README.md`](datasets/README.md) for the full bundled
-inventory (also includes private extended-bench rows).
+inventory.
 
 ## Other scripts
 
@@ -96,7 +96,7 @@ inventory (also includes private extended-bench rows).
 | `nullpii-bench.jsonl` | 271 | ✅ |
 | `tab-echr-test.jsonl` | 127 | ✅ |
 | `nullpii-adversarial.jsonl` | 480 | ✅ (typo/unicode/code subsets) |
-| `nullpii-adversarial-textattack.jsonl` | 1670 | ❌ private extended-bench |
+| `nullpii-adversarial-textattack.jsonl` | 1670 | ❌ |
 | `dev-paste-synth-train.jsonl` | ~20k | training-only |
 | `cc-negative-25k.jsonl` | 25k | training-only |
 | `cc-negative-200-test.jsonl` | 200 | diagnostics-only |

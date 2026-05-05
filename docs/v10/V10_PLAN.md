@@ -30,10 +30,10 @@ Three deliverables that unlock multiple downstream wins. Execute in this order.
 
 | # | Deliverable | Date | Unlocks |
 |---|---|---|---|
-| 1 | **Run unified release bench, publish `matrix.json` + `confusion.json`** | **2026-05-12** | HN launch, blog post, all 8 model cards, README rewrite, HF push |
-| 2 | **Close audit F10, F13, F22, F25** (cherry-pick to main, tag 0.0.10) | **2026-05-10** | F10 ✅ F13 ✅ F22 ✅ F25 ✅ — TS preprocessor + 74-pattern regex pack at parity with Python. 157 tests pass. Cherry-pick to main pending |
-| 3 | **Held-out routing-eval corpus** (500 docs hand-annotated, 5 domains × 100) | **2026-05-25** | Honest router F1 (no test-set tuning) + academic paper + DPIA buyer-facing numbers + v11 train-or-don't decision |
-| 4 | **Merged-LoRA ONNX export → ship in npm 0.1.0** | **2026-06-15** | v10 work becomes consumable; closes audit F25 TS/Python divergence; makes the README claim true for the first time |
+| 1 | **Unified release bench**, `matrix.json` + `confusion.json` | ✅ done 2026-05-05 | nullpii-v10-router-embedding 0.7172 / xlmr 0.7076 across 27 datasets; bare-mode competitor matrix pending 5090 GPU pass |
+| 2 | **Close all 25 audit findings** (Critical + High + Medium) | ✅ done 2026-05-05 | F01–F25 all closed in code on this branch (`bench-full-2026-05-05`). 171 tests pass |
+| 3 | **Held-out routing-eval corpus** (500 docs hand-annotated, 5 domains × 100) | 🔴 OPEN | Honest router F1 (no test-set tuning) + DPIA buyer-facing numbers + Path A/B/C decision gate |
+| 4 | **Merged-LoRA ONNX export** → makes npm runtime consume v10 LoRA stack | 🔴 OPEN | Closes the README-claim-vs-shipping-runtime gap. ~1-2 days |
 
 Steps 1-2 are the prerequisites for step 3. Step 4 is the work that makes v10 "exist" on the npm side.
 
@@ -50,84 +50,54 @@ Publishability today (per strategist agent):
 
 | venue | ready? | strongest framing |
 |---|---|---|
-| HN / Lobsters / r/ML | ❌ NO (TBD-BENCH everywhere — top reply would be "your benches are placeholders") | After unified bench: "OSS, local, reversible PII vault for npm — beats Presidio +X F1, beats Nemotron-PII +0.16 multilingually" |
+| HN / Lobsters / r/ML | ❌ NO (need bare-mode competitor head-to-head numbers + npm runtime running v10) | "OSS, local, reversible PII vault for npm — beats Presidio +X F1, beats Nemotron-PII +0.16 multilingually" |
 | Technical blog | ⚠ partial | **Adversarial preprocessor lift** as standalone finding (adv-unicode 0.466→0.936; adv-whitespace 0.106→0.393). Travels furthest as isolated insight |
 | Academic paper / arxiv | ❌ NO | Missing for NeurIPS / ACL: held-out routing eval, multi-seed runs, statistical significance, full ablations, ethics statement covering Art. 9 invisibility. Workshop track realistic in 2-3 months focused work |
 
-## Release gating (2026-05-04, top priority)
+## v10 work plan — current state on `bench-full-2026-05-05`
 
-Before any HF push / README rewrite / npm publish, ALL of these must complete in order:
+No release tag, no main merge, no npm publish on the table. Work continues on this branch and decisions land later. The list below tracks code work only.
 
-1. 🔴 **Final unified release bench** (single matrix, single code rev, single dataset spec). Tools: `nullpii-v10-router-embedding`, `nullpii-v10-router-xlmr`, plus the bare baselines `presidio`, `gliner-onnx-pii-fp32`, `piiranha`, `deberta`, `scrubadub`, `nemotron-pii-raw`, `openai`, `openai-bioes`, `openai-official`. Datasets (PII-native only, 19 canonical): nullpii-bench + adversarial-{typo,unicode,whitespace,encoding,code} + textattack-{homoglyph,charswap,chardelete,charinsert,charsub} + tab-echr + presidio-synthetic + ai4privacy-{300k,400k,300k-heldout-v10} + isotonic-{en,de,fr,it} + isotonic-{en,de,fr}-heldout-v10 + oasst-dev-planted + argilla-pii + nemotron-pii-test. **Excluded**: `wikiann-{es,zh,ja}` (PER/LOC NER, not native PII — loose mapping breaks F1 comparability), `adversarial-decoys` (zero gold spans → F1 structurally meaningless), `nullpii-adversarial` (composite — already covered by per-subset rows). One `bench_full.py` invocation. Estimated 8-10h GPU on 5090. Output is the SOLE source of truth for release tables.
-   - **🌙 Run-overnight reminder**: launch this bench locally on Mac CPU **right before going to sleep** (avoids competing with foreground work). 2-tool nullpii-only run on the 19 datasets at default caps takes ~5-6h on M-series CPU — comfortable overnight slot. Resume via `--out-dir` checkpoints if interrupted. When the user signals they're heading to bed, propose the launch command before they leave the terminal. Command:
-     ```
-     nohup packages/eval/.venv/bin/python -u packages/eval/scripts/bench_full.py \
-       --tools nullpii-v10-router-embedding,nullpii-v10-router-xlmr \
-       --datasets all \
-       --backend cpu \
-       --out-dir packages/eval/results/bench-v10-release-local \
-       > /tmp/bench-v10-release-local.log 2>&1 &
-     ```
-   - **Rule**: no per-tool patching of competitor code. `bench_full.py` already enforces bare-mode for non-nullpii rows after the 2026-05-04 purge — every tool runs as its upstream project intends, with no `boundary_refined`, `never_pii_filter`, `url_filter`, `regex_pack`, or chunking glue from nullpii.
-   - **Audit gate**: confirm F09 (anchored phone patterns) + F20 revert (ASCII-only email) are present in `adapters.py` BEFORE launching. Current nullpii-bench cell is the canary — must recover ≥0.72 (vs the 0.726 pre-audit baseline) before the run is considered valid.
-2. 🔴 **Decide release pipeline** from the unified matrix. Criteria: F1 mean across 21 datasets, latency, storage. distiluse-router (430 MB) vs xlmr-router (1.4 GB). If F1 delta ≤ 0.02 → ship distiluse (storage wins). If xlmr ≥ 0.05 better on real-PII subset → ship xlmr.
-3. 🔴 **README rewrite** — replace iter-v7 numbers (`0.8638`, `iter-v7-final-clean/matrix.json`) with v10 unified-bench numbers. Keep "honest limitations" section + cheat-strip note + opf Viterbi PSA. Add adversarial preprocessor row.
-4. 🟢 **HF model cards** — 7 cards in [`model-cards/`](model-cards/) (2 routers + 5 LoRA adapters) regenerated post-bench (2026-05-05) with concrete F1 numbers from `packages/eval/results/bench-v10-release-local/matrix.{json,csv}`. Per-dataset breakdown on the router cards. Bare-mode third-party baselines (Presidio, GLiNER-base, Piiranha, DeBERTa-PII, scrubadub, Nemotron-PII raw, openai naive/BIOES/Viterbi) pending 5090 GPU pass for defensible head-to-head numbers. Push targets: `lBroth/nullpii-v10-router-{embedding,xlmr}` and `lBroth/nullpii-v10-{devops,legal,medical-experimental,narrative,enterprise}-lora`. Cards satisfy EU AI Act Art. 53 transparency obligations + NIST AI RMF Govern 4.1 / Map 5.2 documentation requirements (training data composition, train-vs-eval overlap matrix, intended use, out-of-scope use, evaluation methodology, limitations, ethical considerations including Art. 9 invisibility disclosure).
-5. 🔴 **npm shipping path** — merged-LoRA ONNX export. Each adapter: merge into base copy → ONNX FP32 → bundle for `onnxruntime-node`. Without this, npm cannot consume the v10 routers. Estimated 1-2 days. See Phase 6 backlog.
+### Sprint outcomes (2026-05-04 → 2026-05-05)
 
-### Code-residual TODO (open work on `bench-full-2026-05-05` branch)
+1. ✅ **Unified bench complete** (2026-05-05) — `packages/eval/results/bench-v10-release-local/matrix.{json,csv}`. nullpii-v10-router-embedding **0.7172** / xlmr **0.7076** macro F1 across 27 datasets. distiluse wins `nullpii-bench` OOD (+0.118) and adversarial subset (+0.062). Datasets: nullpii-bench + adversarial-{typo,unicode,whitespace,encoding,code} + textattack-{homoglyph,charswap,chardelete,charinsert,charsub} + tab-echr + presidio-synthetic + ai4privacy-{300k,400k,300k-heldout-v10} + isotonic-{en,de,fr,it} + isotonic-{en,de,fr}-heldout-v10 + oasst-dev-planted + argilla-pii + nemotron-pii-test. Excluded: `wikiann-{es,zh,ja}` (PER/LOC NER), `adversarial-decoys` (no gold spans), `nullpii-adversarial` (composite). Bare-mode third-party competitor matrix (Presidio, GLiNER-base, piiranha, deberta, scrubadub, nemotron-pii-raw, openai naive/BIOES/Viterbi) pending 5090 GPU pass — out of local-Mac-CPU scope.
+2. ✅ **Pipeline decision** — ship `nullpii-v10-router-embedding` (distiluse, ~430 MB). Storage tiebreaker per ≤0.02 delta band; xlmr alt path documented for users that want max F1 on structured PII (1.4 GB cost not justified for default).
+3. ✅ **README rewrite** — v10 numbers in place; iter-v7 placeholders removed; adversarial preprocessor lift documented.
+4. ✅ **HF model cards** — 8 cards in [`model-cards/`](model-cards/) covering 2 routers + 5 LoRA adapters + index, with concrete F1 numbers from the unified bench. Cards satisfy EU AI Act Art. 53 transparency + NIST AI RMF Govern 4.1 / Map 5.2 documentation requirements (training data composition, train-vs-eval overlap matrix, intended use, out-of-scope use, evaluation methodology, limitations, ethical considerations including Art. 9 invisibility disclosure). HuggingFace push itself is not on the work list right now.
+5. ✅ **All 25 audit findings closed** — F01–F25 (Critical + High + Medium). Test suite 171 pass / 8 skipped. Highlights:
+   - F07 BTC base58check validator (Python `_base58check_valid` + TS `base58CheckValid`)
+   - F11 ensemble strategy investigated, recommendation rejected — `score_ranked` regressed adversarial-typo by 0.30 F1 vs `primary` (kept primary)
+   - F21 TS placeholder escape PUA sentinel pair (was `[\\[`, corrupted `[\[abc]` round-trip)
+   - F22 secret-pattern bounds + 1MB regex pack input cap
+   - F23 / F24 Python normalize 1MB cap + ASCII fast-path (mirrors TS port)
+   - F25 TS port complete (`src/normalize.ts`, 74-pattern recognizer pack at parity with Python, `filterNeverPii` post-pass)
+   All audit fixes verified F1-stable on the canonical bench (nullpii-bench 0.7280, adversarial-typo 0.9400, etc.). See [`AUDIT_2026-05-04.md`](AUDIT_2026-05-04.md) for the per-finding closure log.
 
-What's left to modify in code before the 0.0.10 tag — explicit list, none release-blocker but all path-to-A items.
+### Open work (no due dates — ordered by leverage)
 
-**Audit residue (2 OPEN, 3 partial)** — full grid in [`AUDIT_2026-05-04.md`](AUDIT_2026-05-04.md):
-
-| ID | Sev | Where | Effort | Notes |
-|---|---|---|---|---|
-| F11 | High | `adapters.py:862` | 30 min code + 1 GPU-h re-bench | switch ensemble strategy `primary` → `score_ranked`. Need bench to confirm no regression vs current 0.7172 |
-| F21 | High | `src/nullpii.ts:277` | 1-2 h | `[[` escape can corrupt user `[\[`. Fix: PUA-sentinel placeholder (e.g. ``). Add round-trip test |
-| F07 | High partial | `adapters.py:1056` | 2-3 h | BTC base58check validator post-match. Drops false-positive `Order ID: 1A2B3C4D5E6F...` matches |
-| F23 | High partial | `adapters.py:2715` | 1 h | add 1 MB cap directly inside `_normalize_for_detection` (mirrors TS port). Currently relies on upstream regex predictor cap |
-| F24 | Medium partial | `adapters.py:2487` | 1 h | Python ASCII fast-path matching the TS port. Eval-only impact since npm runs TS path |
-
-**Validators not yet implemented** (regex pack high-precision boost):
-
-| validator | Where | Effort | Lift |
+| # | Item | Effort | Unblocks |
 |---|---|---|---|
-| Italian CF checksum | TS `src/recognizers.ts` post-pass | 1 h | drops FP on coincidental 16-char tokens matching shape |
-| Luhn (credit card) | TS post-pass | 30 min | drops FP on 16-digit non-CC numbers |
-| IBAN mod-97 | TS post-pass | 1 h | drops FP on country-prefix-shaped tokens |
-| BTC base58check | TS + Python (F07) | 2-3 h | see F07 above |
-| Brazilian CPF mod-11 | TS + Python | 1 h | drops FP on coincidental `XXX.XXX.XXX-XX` |
+| 1 | **Merged-LoRA ONNX export** — new script `packages/eval/private/scripts/export_lora_to_onnx.py`. Each adapter merged into a base copy → ONNX FP32 → bundle for `onnxruntime-node`. Then flip `src/defaults.ts` `DEFAULT_MODEL_REPO` from `openai/privacy-filter` to the merged artifact. | 1-2 days | npm runtime can consume the v10 LoRA stack. Closes the README-claim-vs-shipping-runtime gap |
+| 2 | **Held-out routing-eval corpus** — 500 docs hand-annotated, 5 domains × 100. New loader `packages/eval/scripts/load_routing_eval.py` + JSONL data. | 2-3 days | Honest router F1 measurement (no test-set tuning of the 0.10 enterprise gate) + DPIA buyer-facing per-class numbers + Path A / Path B / Path C decision gate (see v11 roadmap below) |
+| 3 | **Bare-mode competitor matrix** on 5090 GPU (Presidio + GLiNER-base + piiranha + deberta + scrubadub + nemotron-pii-raw + openai naive/BIOES/Viterbi) | 6-8 h GPU + setup | Defensible head-to-head F1 in `COMPETITIVE_ANALYSIS.md`; the model-card "competitor pending" notes go away |
+| 4 | **Multi-seed bench wrapper** + bootstrap 95% CIs (`packages/eval/scripts/bench_multiseed.py`, new) | 4-6 h | Statistical significance for any future paper / blog claim |
+| 5 | **Latency p50/p95** on 5090 + Mac M-series + Linux x86 (extend `bench_latency.py`) | 4 h | Procurement-required SLA numbers for DPIA + buyer review |
+| 6 | **Per-class confusion publisher** (`packages/eval/scripts/confusion_report.py`, new) | 2 h | DPIA per-class FN/FP rate buyer-facing table |
+| 7 | **Validators** still missing in TS: Italian CF checksum, Luhn, IBAN mod-97, Brazilian CPF mod-11 | 3-4 h total | Drops FP on coincidental shape matches (mirrors the F07 base58check pattern) |
+| 8 | **DPIA template regen** (`docs/compliance/DPIA_TEMPLATE.md`) with v10 unified-bench numbers (currently has stale v6/v8 placeholders) | 2 h | Removes the strategic-assessment "DPIA tables stale" critical-blocker note |
+| 9 | **Portkey + LiteLLM integration shims** (`packages/portkey-adapter/`, `packages/litellm-adapter/`, new) | 1 day each | Distribution multiplier — PR to upstream gateways once npm runtime ships v10 |
 
-**Pipeline robustness scripts** (path-to-A leverage):
+### What is NOT on the work list right now
 
-| Script | Path | Effort | Unblocks |
-|---|---|---|---|
-| Merged-LoRA ONNX export | `packages/eval/private/scripts/export_lora_to_onnx.py` (new) | 1-2 days | npm 0.1.0 — ships v10 stack instead of legacy openai/privacy-filter |
-| Held-out routing-eval corpus loader | `packages/eval/scripts/load_routing_eval.py` (new) + 500 hand-annotated docs | 2-3 days | router F1 honest measurement → Path A/B/C decision + paper + DPIA |
-| Multi-seed bench wrapper | `packages/eval/scripts/bench_multiseed.py` (new) | 4-6 h | bootstrap 95% CIs → workshop paper |
-| Latency p50/p95 collector | extend `bench_latency.py` | 4 h | procurement-required SLA numbers |
-| Per-class confusion publisher | `packages/eval/scripts/confusion_report.py` (new) | 2 h | DPIA per-class FN/FP rate buyer-facing table |
-| Portkey integration shim | new package `packages/portkey-adapter/` | 1 day | distribution multiplier (PR to Portkey) |
-| LiteLLM integration shim | new package `packages/litellm-adapter/` | 1 day | distribution multiplier (PR to LiteLLM) |
+- **HuggingFace push** of model artifacts (`lBroth/nullpii-v10-router-{embedding,xlmr}` + 5 LoRA adapters). Cards exist in [`model-cards/`](model-cards/); the push itself is deferred. Re-add when the user chooses.
+- **npm publish** / version bump / release tag.
+- **Branch merge to `main`**. We work on `bench-full-2026-05-05` and decide later.
 
-**Bumps + housekeeping** (cherry-pick to main, blocked by user choice):
+### Permanent exclusions
 
-- `package.json` version `0.0.7` → `0.0.10` when ready
-- `src/defaults.ts` `DEFAULT_MODEL_REPO` still `openai/privacy-filter` — keep until merged-LoRA ONNX export lands, then flip to `lBroth/nullpii-v10-router-embedding`
-- `bin/nullpii.mjs` CLI: prune subcommands referencing dropped daemon/proxy code if any remain
-- DPIA template (`docs/compliance/DPIA_TEMPLATE.md`) regenerate with v10 unified-bench numbers (currently has stale v6/v8 placeholders per strategic assessment finding)
-
-**Deferred to npm 0.1.0 release sprint** (NOT on this branch):
-
-- HuggingFace push: `lBroth/nullpii-v10-router-{embedding,xlmr}` + 5 LoRA adapters. Manual via `huggingface-cli`. Model cards already drafted in [`model-cards/`](model-cards/).
-- Branch merge to `main` + tag `v0.0.10`. Currently `main` is a 2-commit stub; bench-full-2026-05-05 carries the entire project. PR or fast-forward decision deferred until release sprint.
-
-### What is NOT in scope for v10 release
-
-- Cloud-API rows (`aws-comprehend`, `gcp-dlp`, `azure-pii`) — paid + lock-in. Available in `bench_full.py` via opt-in `--tools` but excluded from the canonical release matrix.
-- Per-domain adapter rows — internal building blocks for the routers, not a user-facing tool. Only `nullpii-v10-router-embedding` and `nullpii-v10-router-xlmr` ship.
-- Older nullpii variants (`nullpii`, `nullpii-v8`, `nullpii-v9`, `nullpii-ensemble-*`, `nullpii-ablation-*`, `nullpii-runtime`, `nullpii-v10-router-{hybrid,hybrid-v2,embedding-expanded}`, `regex`-only, wrapped `gliner+regex` etc.) — purged from `bench_full.py` on 2026-05-04. Not part of the release surface.
+- Cloud-API rows (`aws-comprehend`, `gcp-dlp`, `azure-pii`) — paid + lock-in. Available in `bench_full.py` via opt-in `--tools` but excluded from the canonical bench matrix.
+- Per-domain adapter rows as user-facing tools — internal building blocks for the routers only. Only `nullpii-v10-router-embedding` and `nullpii-v10-router-xlmr` are surfaced.
+- Older nullpii variants (`nullpii`, `nullpii-v8`, `nullpii-v9`, `nullpii-ensemble-*`, `nullpii-ablation-*`, `nullpii-runtime`, `nullpii-v10-router-{hybrid,hybrid-v2,embedding-expanded}`, `regex`-only, wrapped `gliner+regex` etc.) — purged from `bench_full.py` on 2026-05-04.
 
 ## v11 backbone-upgrade roadmap (post-v10 release, conditional)
 

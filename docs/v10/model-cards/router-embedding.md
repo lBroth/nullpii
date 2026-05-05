@@ -153,7 +153,7 @@ from gliner import GLiNER
 # tool def `nullpii-v10-router-embedding`.)
 ```
 
-The npm library currently ships the openai/privacy-filter ONNX runtime path; v10 LoRA shipping requires merged-LoRA ONNX export (in scope for v10 release gating, see `../V10_PLAN.md`).
+The npm library is migrating to the `onnx-community/gliner_multi_pii-v1` ONNX backbone (the same base the bench measures). Once the merged-LoRA ONNX export ships, the npm runtime will consume the full v10 router stack as well; until then the npm runtime ships the GLiNER base + recognizer pack + preprocessor without the per-domain LoRA layer.
 
 ## Citation
 

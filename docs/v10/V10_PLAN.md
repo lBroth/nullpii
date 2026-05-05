@@ -14,7 +14,7 @@ For the public training procedure summary (Art. 53 transparency), see `docs/v10/
 
 Independent strategist review (general-purpose subagent) ranks nullpii at **C+** as of 2026-05-04. Above Presidio on UX + modern ML; below Skyflow on production-readiness; orthogonal to Lakera (different problem). Three reasons grade is below B-tier:
 
-1. **Shipping path incoherent**. npm currently downloads `openai/privacy-filter` (`src/defaults.ts:52`), NOT the v10 LoRA stack. Audit F25: TS library lacks Python pipeline's adversarial defenses + never-PII filter + full regex pack. Production npm users get materially weaker detection than the bench claims advertise.
+1. **Shipping path incoherent** (in transition 2026-05-05): the TS runtime is being migrated from a stale `openai/privacy-filter` ONNX backbone (Viterbi BIOES decoder) to `onnx-community/gliner_multi_pii-v1` (GLiNER span output) — the same backbone the bench measures. Phase A (doc cleanup, framing as GLiNER-based) lands 2026-05-05. Phase B (TS code refactor: drop `viterbi.ts` + `labels-bioes.ts`, new GLiNER span decoder, swap tokenizer, flip `DEFAULT_MODEL_REPO`) is in flight. Until Phase B completes, the npm runtime still loads the legacy `openai/privacy-filter` ONNX. Audit F25 (TS preprocessor + never-PII + 74-pattern regex pack) ALREADY landed 2026-05-05 — only the model-loading path remains.
 2. **Canonical bench was a placeholder** (closed 2026-05-05): unified release bench landed at `packages/eval/results/bench-v10-release-local/matrix.{json,csv}`. nullpii router-embedding 0.7172 / router-xlmr 0.7076 across 27 datasets. README + 8 model cards refreshed with concrete numbers. Bare-mode competitor matrix still pending 5090 GPU pass.
 3. **Active critical audit findings** — ALL CLOSED 2026-05-05: F10 (`_remap_span` strict min/max clamp), F13 (`_has_high_precision_signal` legal/medical hit count override), F22 (all secret patterns bounded `{N,255}` or `{N,2048}` + 1 MB input length cap on `regex_recognizer_predictor`), F25 (TS port complete: `src/normalize.ts` mirrors Python `_normalize_for_detection` end-to-end via `any-ascii`; `DEFAULT_RECOGNIZERS` expanded 10 → 74 patterns at parity with Python `DEFAULT_REGEX_PATTERNS`; `filterNeverPii` post-pass).
 
@@ -133,6 +133,51 @@ Medium / Low (4):
 11. README: reclassify `nullpii-bench` as "in-template-family", not "OOD gold standard".
 
 Order of remaining work: **cloud sprint (4b + 6)** → **honest-numbers patch (above 11 steps)** → **DPIA regen (#5)** → **README + COMPETITIVE_ANALYSIS final refresh**.
+
+### Phase B — npm runtime refactor: drop `openai/privacy-filter`, ship GLiNER (1-2 days)
+
+User direction (2026-05-05): openai/privacy-filter does NOT belong in core nullpii. It stays as a competitor row in `bench_full.py` for the bare-mode reference comparison, but the npm runtime base must match the bench (`urchade/gliner_multi_pii-v1`). Phase A landed the doc cleanup; Phase B is the code refactor.
+
+**Why this is non-trivial**: GLiNER ONNX has a 6-input contract incompatible with the current `openai/privacy-filter` 2-input pipeline. No JS library supports GLiNER natively (`transformers.js` doesn't include the architecture; no `gliner-js` package exists). Custom TS port required.
+
+**GLiNER ONNX inference contract** (verified against `onnx-community/gliner_multi_pii-v1/onnx/model_q4.onnx`):
+- Inputs (6): `input_ids`, `attention_mask`, `words_mask` (subtoken → word index map), `text_lengths` (n words in text), `span_idx` (candidate start/end word pairs, shape `[B, num_spans, 2]`), `span_mask` (bool valid).
+- Output: `logits` shape `[B, seq_len, num_spans, num_classes]`. Argmax over classes per span > threshold = predicted span.
+- Tokenization: SentencePiece + special tokens `<<ENT>>` (between labels), `<<SEP>>` (between label list and text). Prompt format: `<<ENT>>private_email<<ENT>>private_person<<ENT>>… <<SEP>> {text}`.
+
+**Step-by-step**:
+
+1. **Remove from `src/`** — files/code to delete:
+   - `src/labels-bioes.ts` (openai/privacy-filter BIOES label set, 33 labels)
+   - `src/viterbi.ts` (constrained Viterbi BIOES decoder + forward-backward marginals)
+   - `src/nullpii.ts:158-176` (`viterbiBioesDecode` call + posterior scoring path)
+2. **Add to `src/`** — new files/code:
+   - `src/gliner-tokenizer.ts` (~150 lines) — SentencePiece via existing `tokenizer.ts` infra; add prompt-formatting helper `formatPrompt(labels, text) → { tokens, words_mask, word_count }` that produces `<<ENT>>label<<ENT>>…<<SEP>>text` with subtoken→word index tracking
+   - `src/gliner-spans.ts` (~80 lines) — generate `span_idx` candidate pairs `(start_word, end_word)` for `end_word - start_word < max_span_length` (default 12) plus `span_mask` bool tensor
+   - `src/gliner-decoder.ts` (~100 lines) — read `logits` `[B, seq, num_spans, num_classes]`, argmax + threshold filter, map (start_word, end_word) → char offsets via the words_mask retained from tokenizer
+   - `src/backend/gliner-ort-backend.ts` (~120 lines) — wraps existing `OrtBackend` with the 6-input call signature; subclasses `CpuBackend` / `MpsBackend` / `CudaBackend` for parity with current backend triad
+3. **Modify `src/nullpii.ts`** (`sanitize()` flow):
+   - Replace `tokenizer.encode(normalized)` → `glinerTokenizer.encode(normalized, PII_LABELS)` returning the 6-tuple plus offset map back to char positions
+   - Replace `inferChunk` body — drop Viterbi decode, use `gliner-decoder.decodeSpans(logits, span_idx, words_mask, threshold, scoreFloor)`
+   - Output spans go through the existing `runRecognizers + filterNeverPii + boundary refine + vault.sanitize` pipeline (no change)
+4. **`src/defaults.ts`**:
+   - `DEFAULT_MODEL_REPO` `'openai/privacy-filter'` → `'onnx-community/gliner_multi_pii-v1'`
+   - `DEFAULT_MODEL_REVISION` → pinned snapshot SHA of `onnx-community/gliner_multi_pii-v1` (currently `2e0397a7e8a250d76c37122232b3cbde42c8d629`)
+   - `MANAGER_DEFAULT_VARIANT` `'int4'` — points to `onnx/model_q4.onnx` (894 MB, INT4 working per Python bench), file mapping table needs update
+5. **`src/types/labels.ts`** — drop the BIOES-derived `PII_LABELS` extension; emit only the 8 user-facing categories (already there).
+6. **Tests**:
+   - Drop `test/viterbi.test.ts`, `test/labels-bioes.test.ts` (whatever exists for the BIOES path)
+   - Add `test/gliner-tokenizer.test.ts` (round-trip a known input → known token IDs against a Python reference)
+   - Add `test/gliner-decoder.test.ts` (synthetic logits → expected spans)
+   - Update `test/nullpii.test.ts` for the new sanitize/restore round-trip — output spans should match Python `gliner-onnx-pii-fp32` baseline within ±0.005 F1 on `nullpii-bench`
+7. **F1 parity check**: TS runtime should match Python `gliner-onnx-pii-fp32` baseline (bare GLiNER, no LoRA). Expected: macro F1 ~0.34-0.40 on `nullpii-bench` (the team's published bare-GLiNER number per `bench_full.py` smoke). Until merged-LoRA ONNX export ships (separate roadmap item), npm users do NOT get the v10 router stack — they get bare GLiNER + recognizer pack + preprocessor + never-PII filter + vault.
+8. **F1 disclosure** in README: post-Phase-B, add a "default-config F1" column showing the bare-GLiNER number alongside the v10 router-embedding number. The user-facing claim must reflect what `npm i nullpii` actually does, not what the eval harness does.
+
+**Effort estimate**: 1-2 days serious work. Mostly the tokenizer prompt-formatting + words_mask tracking. The decode side is straightforward argmax. ORT backend wrapping is mostly mechanical.
+
+**Risk**: F1 mismatch with Python at parity test. Likely sources: tokenizer differences (whitespace handling, unknown subtokens, special-token positions) or words_mask off-by-one. Mitigation: side-by-side test against the Python `gliner_v2_predictor` outputs on the same 10 nullpii-bench samples; iterate until token-level identical.
+
+**Out of scope of Phase B**: shipping the LoRA router stack (merged-LoRA ONNX export — separate roadmap item that compose with this work). Phase B alone closes CONFIG-SHIPPED-01's "different model" half; LoRA-shipping closes the "different pipeline" half.
 
 ### What is NOT on the work list right now
 

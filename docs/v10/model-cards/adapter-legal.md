@@ -49,7 +49,7 @@ Total: ~18k records.
 
 ## Training procedure
 
-LoRA r=16, alpha=32. BF16, AdamW, 2 epochs early-stopped. Common training recipe for v10 adapters; see [`../TRAINING.md`](../TRAINING.md).
+LoRA r=16, alpha=32, target `q_proj`/`k_proj`/`v_proj` of the inner mDeBERTa encoder. AdamW, BF16, 1e-4 cosine schedule, 100-step warmup, batch 8 (effective ×2 via grad accumulation), max-len 384, 2 epochs early-stopped. Single 5090 (32 GB).
 
 ## Evaluation
 

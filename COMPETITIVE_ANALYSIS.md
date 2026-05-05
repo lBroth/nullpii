@@ -2,7 +2,7 @@
 
 Snapshot 2026-05-04. Used to position `nullpii` against the existing landscape and identify the whitespace it fills. Not exhaustive — focused on players that overlap with the npm-package + adapter / managed-cloud roadmap.
 
-**Related**: [`README.md`](README.md) (TL;DR + install + bench table) · [`docs/v10/V10_PLAN.md`](docs/v10/V10_PLAN.md) (release gating) · [`docs/v10/TRAINING.md`](docs/v10/TRAINING.md) (training procedure, Art. 53) · [`docs/v10/model-cards/`](docs/v10/model-cards/) (HF model cards) · [`docs/compliance/DPIA_TEMPLATE.md`](docs/compliance/DPIA_TEMPLATE.md) (GDPR Art. 35 template).
+**Related**: [`README.md`](README.md) (TL;DR + install + bench table) · [`docs/v10/model-cards/`](docs/v10/model-cards/) (HF model cards).
 
 ## Empirical bench numbers
 

@@ -79,7 +79,8 @@ Each line:
 (the `devops` adapter training corpus): same `{{label|text}}` markup
 patterns, overlapping prompt skeletons. F1 on `nullpii-bench` is
 treated as **in-distribution memorisation diagnostic**, not OOD.
-Documented in [`docs/v10/model-cards/README.md`](../../../docs/v10/model-cards/README.md#train-vs-eval-dataset-overlap).
+Documented in the train-vs-eval overlap matrix at
+[`docs/v10/model-cards/README.md`](../../../docs/v10/model-cards/README.md#train-vs-eval-dataset-overlap).
 
 ## `nullpii-adversarial` subsets
 
@@ -146,8 +147,8 @@ or filtered Common Crawl no-PII.
 ```
 
 External datasets (ai4privacy, isotonic, Nemotron-PII, TAB ECHR upstream,
-presidio-synthetic, argilla-pii) retain their own licenses — see
-[`docs/v10/TRAINING.md`](../../../docs/v10/TRAINING.md#training-data-composition).
+presidio-synthetic, argilla-pii) retain their own licenses — see each
+HF dataset card.
 
 ## Contributing
 

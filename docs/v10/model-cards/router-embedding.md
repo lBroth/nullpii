@@ -85,8 +85,6 @@ Each LoRA adapter:
 - Epochs: 2–4 with early stopping on eval loss (per-domain corpus-dependent).
 - Hardware: single 5090, ~50 minutes per adapter (fastest) to ~150 minutes (largest, devops).
 
-See [`../TRAINING.md`](../TRAINING.md) for full step-by-step training trace + decision rationale.
-
 ## Evaluation
 
 Mac M-series CPU, single seed, macro F1 at IoU ≥ 0.5, partial-match span scoring. 27 of 31 datasets benched — 4 require gated HuggingFace access (lmsys / enron / stackoverflow / thestack).

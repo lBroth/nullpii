@@ -175,10 +175,8 @@ Honest read: nullpii sits in the GLiNER-family ballpark on the held-out non-adve
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — dev setup + architecture rules
 - [`SECURITY.md`](SECURITY.md) — threat model + vuln reporting
 
-### v10 release docs (`docs/v10/`)
+### Model cards (`docs/v10/model-cards/`)
 
-- [`V10_PLAN.md`](docs/v10/V10_PLAN.md) — release gating + status + decision tree
-- [`TRAINING.md`](docs/v10/TRAINING.md) — training procedure summary
 - Model cards — [`docs/v10/model-cards/`](docs/v10/model-cards/):
   - [`README.md`](docs/v10/model-cards/README.md) — index + train-vs-eval overlap matrix
   - [`router-embedding.md`](docs/v10/model-cards/router-embedding.md) — shipping pipeline (distiluse + 5 LoRA)

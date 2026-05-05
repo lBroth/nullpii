@@ -51,7 +51,7 @@ Total: ~17k records.
 
 ## Training procedure
 
-Same recipe as other v10 LoRA adapters. Train loss 4.72 → eval loss 3.49 → 3.12. See [`../TRAINING.md`](../TRAINING.md).
+LoRA r=16, alpha=32, target `q_proj`/`k_proj`/`v_proj` of the inner mDeBERTa encoder. AdamW, BF16, 1e-4 cosine schedule, 100-step warmup, batch 8 (effective ×2 via grad accumulation), max-len 384, 2-4 epochs early-stopped. Train loss 4.72 → eval loss 3.49 → 3.12.
 
 ## Evaluation
 

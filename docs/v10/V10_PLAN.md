@@ -73,23 +73,27 @@ No release tag, no main merge, no npm publish on the table. Work continues on th
    - F25 TS port complete (`src/normalize.ts`, 74-pattern recognizer pack at parity with Python, `filterNeverPii` post-pass)
    All audit fixes verified F1-stable on the canonical bench (nullpii-bench 0.7280, adversarial-typo 0.9400, etc.). See [`AUDIT_2026-05-04.md`](AUDIT_2026-05-04.md) for the per-finding closure log.
 
-### Open work (no due dates — ordered by leverage)
+### Open work (focused: complete core + final bench data)
 
-| # | Item | Effort | Unblocks |
-|---|---|---|---|
-| 1 | **Merged-LoRA ONNX export** — new script `packages/eval/private/scripts/export_lora_to_onnx.py`. Each adapter merged into a base copy → ONNX FP32 → bundle for `onnxruntime-node`. Then flip `src/defaults.ts` `DEFAULT_MODEL_REPO` from `openai/privacy-filter` to the merged artifact. | 1-2 days | npm runtime can consume the v10 LoRA stack. Closes the README-claim-vs-shipping-runtime gap |
-| 2 | **Held-out routing-eval corpus** — 500 docs hand-annotated, 5 domains × 100. New loader `packages/eval/scripts/load_routing_eval.py` + JSONL data. | 2-3 days | Honest router F1 measurement (no test-set tuning of the 0.10 enterprise gate) + DPIA buyer-facing per-class numbers + Path A / Path B / Path C decision gate (see v11 roadmap below) |
-| 3 | **Bare-mode competitor matrix** on 5090 GPU (Presidio + GLiNER-base + piiranha + deberta + scrubadub + nemotron-pii-raw + openai naive/BIOES/Viterbi) | 6-8 h GPU + setup | Defensible head-to-head F1 in `COMPETITIVE_ANALYSIS.md`; the model-card "competitor pending" notes go away |
-| 4 | **Multi-seed bench wrapper** + bootstrap 95% CIs (`packages/eval/scripts/bench_multiseed.py`, new) | 4-6 h | Statistical significance for any future paper / blog claim |
-| 5 | **Latency p50/p95** on 5090 + Mac M-series + Linux x86 (extend `bench_latency.py`) | 4 h | Procurement-required SLA numbers for DPIA + buyer review |
-| 6 | **Per-class confusion publisher** (`packages/eval/scripts/confusion_report.py`, new) | 2 h | DPIA per-class FN/FP rate buyer-facing table |
-| 7 | **Validators** still missing in TS: Italian CF checksum, Luhn, IBAN mod-97, Brazilian CPF mod-11 | 3-4 h total | Drops FP on coincidental shape matches (mirrors the F07 base58check pattern) |
-| 8 | **DPIA template regen** (`docs/compliance/DPIA_TEMPLATE.md`) with v10 unified-bench numbers (currently has stale v6/v8 placeholders) | 2 h | Removes the strategic-assessment "DPIA tables stale" critical-blocker note |
-| 9 | **Portkey + LiteLLM integration shims** (`packages/portkey-adapter/`, `packages/litellm-adapter/`, new) | 1 day each | Distribution multiplier — PR to upstream gateways once npm runtime ships v10 |
+User direction (2026-05-05): focus on what's needed to have final benchmark data + a complete core. HF push, merged-LoRA ONNX export, held-out routing-eval corpus, and Portkey/LiteLLM shims are explicitly deferred — see "What is NOT on the work list right now" below.
+
+| # | Item | Local? | Effort | Unblocks |
+|---|---|---|---|---|
+| 1 | **TS validators** still missing — Italian CF checksum, Luhn (CC), IBAN mod-97, Brazilian CPF mod-11 (mirrors the F07 base58check pattern) | ✅ local | 3-4 h | Drops FP on coincidental shape matches → core precision boost in npm runtime |
+| 2 | **Per-class confusion publisher** (`packages/eval/scripts/confusion_report.py`, new) — reads `matrix.json` + `confusion.json`, emits per-label TP/FP/FN tables in markdown | ✅ local | 2 h | DPIA per-class FN/FP rate buyer-facing table; also feeds the model cards' "known failure modes" sections |
+| 3 | **Multi-seed bench wrapper** + bootstrap 95% CIs (`packages/eval/scripts/bench_multiseed.py`, new) — runs 3 seeds, computes per-cell CIs, emits `matrix_ci.json` | ✅ local | 4-6 h code + ~5-6 h Mac CPU compute | Statistical significance — turns single-seed point estimates into defensible numbers (claims of ±0.005 F1 mean nothing without CIs) |
+| 4 | **Latency p50/p95 collector** (extend `packages/eval/scripts/bench_latency.py`) — Mac M-series locally now; Linux x86 + 5090 in a later cloud-GPU sprint | 🟡 partial local (Mac M only) | 4 h | Procurement SLA numbers; closes the DPIA "latency table placeholder" gap; also feeds the model cards' Latency line |
+| 5 | **DPIA template regen** (`docs/compliance/DPIA_TEMPLATE.md`) with v10 unified-bench numbers (currently has stale v6/v8 placeholders flagged by the strategic assessment) | ✅ local | 2 h | Removes the "DPIA tables stale" critical-blocker note from the strategic assessment |
+| 6 | **Bare-mode competitor matrix** on 5090 GPU (Presidio + GLiNER-base + piiranha + deberta + scrubadub + nemotron-pii-raw + openai naive/BIOES/Viterbi) | ☁ cloud GPU | 6-8 h GPU + setup | Final head-to-head F1 numbers in `COMPETITIVE_ANALYSIS.md`; model-card "competitor pending" notes go away |
+
+Order of attack: items 1-2-5 first (local, fast, all under 4 h each); then 3-4 (local but compute-bound); finally 6 (separate cloud-GPU sprint).
 
 ### What is NOT on the work list right now
 
 - **HuggingFace push** of model artifacts (`lBroth/nullpii-v10-router-{embedding,xlmr}` + 5 LoRA adapters). Cards exist in [`model-cards/`](model-cards/); the push itself is deferred. Re-add when the user chooses.
+- **Merged-LoRA ONNX export** for the npm shipping path. Closes the README-claim-vs-runtime gap but is not required for completing the bench data + core. ~1-2 days when it lands.
+- **Held-out routing-eval corpus** (500 docs hand-annotated, 5 domains × 100). Required to honestly close the 0.10 enterprise-gate test-set-tuning issue and to gate the v11 Path A/B/C decision; not required for the v10 bench/core completion.
+- **Portkey + LiteLLM integration shims**. Distribution multiplier — work for after the npm runtime consumes v10.
 - **npm publish** / version bump / release tag.
 - **Branch merge to `main`**. We work on `bench-full-2026-05-05` and decide later.
 

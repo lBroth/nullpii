@@ -8,7 +8,13 @@
 
 import type { BackendName, ModelVariant } from './types/index.js';
 import type { Recognizer } from './types/recognizer.js';
-import { base58CheckValid } from './validators.js';
+import {
+  base58CheckValid,
+  codiceFiscaleValid,
+  cpfValid,
+  iban97Valid,
+  luhnValid,
+} from './validators.js';
 
 /** Backend chosen when the user passes nothing (or `'auto'`) — the router
  * then walks `BACKEND_AUTO_PRIORITY`. */
@@ -382,12 +388,23 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
   },
 
   // ─── Account-number patterns ──────────────────────────────────
-  // IBAN — AUDIT F05: `\s?` (any whitespace) so PDF NBSP/U+202F separators match.
+  // IBAN — AUDIT F05: `\s?` (any whitespace) so PDF NBSP/U+202F separators
+  // match. Validated via mod-97 checksum to drop coincidental country-prefix
+  // shapes.
   {
     id: 'core:iban',
     pattern: /\b[A-Z]{2}\d{2}[A-Z0-9]{1,4}(?:\s?\d{4}){2,5}(?:\s?\d{1,4})?\b/g,
     label: 'account_number',
-    confidence: 0.9,
+    confidence: 0.95,
+    validate: iban97Valid,
+  },
+  // Credit card (12-19 digits, optional `-`/`.`/space). Validated via Luhn.
+  {
+    id: 'core:credit-card',
+    pattern: /\b(?:\d[ \-.]?){12,19}\b/g,
+    label: 'account_number',
+    confidence: 0.95,
+    validate: luhnValid,
   },
   { id: 'core:ssn', pattern: /\b\d{3}-\d{2}-\d{4}\b/g, label: 'account_number', confidence: 0.9 },
   // AUDIT F07: BTC Legacy/P2SH addresses validated via base58check
@@ -465,7 +482,8 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     id: 'core:cpf-brazil',
     pattern: /\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/g,
     label: 'account_number',
-    confidence: 0.95,
+    confidence: 0.99,
+    validate: cpfValid,
   },
   {
     id: 'core:passport-us',
@@ -474,12 +492,15 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     confidence: 0.85,
   },
   { id: 'core:ein-us', pattern: /\b\d{2}-\d{7}\b/g, label: 'account_number', confidence: 0.85 },
-  // Italian Codice Fiscale — AUDIT F19.
+  // Italian Codice Fiscale — AUDIT F19. Validated via per-character
+  // odd/even position weights + final-letter check (drops shape
+  // matches that don't satisfy the official checksum).
   {
     id: 'core:cf-italy',
     pattern: /\b[A-Z]{6}\d{2}[A-EHLMPRST]\d{2}[A-Z]\d{3}[A-Z]\b/g,
     label: 'account_number',
-    confidence: 0.95,
+    confidence: 0.99,
+    validate: codiceFiscaleValid,
   },
 
   // ─── Phone — anchored on `+` for international, context-anchored for domestic ──

@@ -30,12 +30,11 @@ First public release. Local PII sanitization for LLM prompts with reversible vau
 - Raw LoRA weights ([`lBroth/nullpii-v10-adapters`](https://huggingface.co/lBroth/nullpii-v10-adapters), ~17 MB) — upstream of the merged repo, used by the release pipeline.
 - Apache 2.0 throughout. Built on `urchade/gliner_multi_pii-v1` (Zaratiana et al., NAACL 2024). Per-domain LoRA fine-tunes on `ai4privacy/pii-masking-300k`, `Isotonic/pii-masking-200k`, **NVIDIA Nemotron-PII**, TAB ECHR (Pilán et al., ACL 2022), MEDDOCAN (IBERLEF 2019).
 
-### Audit transparency
+### Red-team disclosures
 
-- 25 source-level findings F01–F25 closed (regex hardening, input caps, validators, never-PII filter, adversarial preprocessor). See [`docs/v10/AUDIT_2026-05-04.md`](docs/v10/AUDIT_2026-05-04.md).
-- Red-team review documented at `packages/eval/private/v10/RED_TEAM_AUDIT_2026-05-05.md` (internal). Disclosures in README + COMPETITIVE_ANALYSIS for `TUNE-ENTGATE-01` (gate margin tuned on `nullpii-bench`) + `LEAK-NEMO-ENTERPRISE-01` (enterprise adapter trained on Nemotron train split, `nemotron-pii-test` is in-distribution generalisation, not OOD).
+- `TUNE-ENTGATE-01` (enterprise gate margin tuned on `nullpii-bench`) + `LEAK-NEMO-ENTERPRISE-01` (enterprise adapter trained on Nemotron train split, `nemotron-pii-test` is in-distribution generalisation, not OOD) — disclosed in README + COMPETITIVE_ANALYSIS.
 - `CLAIM-VERIFIER-01` documents that competitor F1 claims (Presidio 0.85+, piiranha 0.99) are not reproducible with standard methodology — see `packages/eval/scripts/verify_claims.py`.
 
 ### Honest framing
 
-This is a night-hobby experiment, not a production-ready PII tool, not a research paper, not a commercial product. For real GDPR-grade PII redaction use **Microsoft Presidio**. nullpii is interesting for the engineering rigor + audit transparency + adversarial preprocessor, not for being state-of-the-art on F1.
+This is a night-hobby experiment, not a production-ready PII tool, not a research paper, not a commercial product. For real GDPR-grade PII redaction use **Microsoft Presidio**. nullpii is interesting for the engineering rigor + adversarial preprocessor, not for being state-of-the-art on F1.

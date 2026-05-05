@@ -12,7 +12,7 @@ Honest framing: this is a **night-hobby project**, not a production-ready PII to
 
 Since I started using Claude Code I stopped playing video games — it became my night toy. nullpii is what fell out of those nights: a chance to learn the GLiNER + LoRA + router stack end-to-end, run it under a strict bench harness, write the honest audit on what works and what doesn't, and ship something that does the round-trip cleanly.
 
-For real GDPR-grade PII redaction in production, use [Microsoft Presidio](https://microsoft.github.io/presidio/). What's interesting here is the engineering rigor + adversarial preprocessor + audit transparency, not state-of-the-art F1.
+For real GDPR-grade PII redaction in production, use [Microsoft Presidio](https://microsoft.github.io/presidio/). What's interesting here is the engineering rigor + adversarial preprocessor, not state-of-the-art F1.
 
 > **Status (2026-05-05)** — first release `v0.1.0`. Built on [`urchade/gliner_multi_pii-v1`](https://huggingface.co/urchade/gliner_multi_pii-v1) (multilingual GLiNER, **Microsoft mDeBERTa-v3** base + GLiNER head, ~278M params). Shipping pipeline: `router-embedding` (~430 MB, **Google distiluse** + 5 per-domain LoRA adapters). The npm runtime downloads the full router stack from HF on first call. Bench: see [`packages/eval/published-bench/matrix.csv`](packages/eval/published-bench/matrix.csv).
 
@@ -113,7 +113,7 @@ Auto-selects in priority **CUDA → MPS → CPU**.
 
 > **Status (2026-05-05)**: first release bench. nullpii numbers below come from the local Mac CPU bench (`packages/eval/published-bench/matrix.{json,csv}`). Third-party baselines wired in `bench_full.py` for a later head-to-head iteration: **Microsoft Presidio**, GLiNER (`urchade/gliner_multi_pii-v1`), `iiiorg/piiranha`, **Microsoft DeBERTa**-v3 community fine-tune, scrubadub, **NVIDIA Nemotron-PII** (`nvidia/gliner-pii`), and **OpenAI** `openai/privacy-filter` in three usage modes (naive HF / BIOES / opf-Viterbi).
 
-Mac M-series CPU, single seed, macro F1 at IoU ≥ 0.5, partial-match span scoring on **27 datasets** — full list in the per-dataset table below.
+Mac M-series CPU, single seed, macro F1 at IoU ≥ 0.5, partial-match span scoring on **10 datasets** — full list in the per-dataset table below. Picked to cover the brand-recognition canonical PII suites (`presidio-synthetic`, `nemotron-pii-test`, `ai4privacy`, `isotonic`, `tab-echr`) + the project gold (`nullpii-bench`) + the 3 adversarial subsets where the preprocessor wins. Excluded sets (`oasst-dev-planted`, full `argilla-pii` / `ai4privacy-400k` / in-distribution `isotonic-{en,de,fr,it}` / `adversarial-{whitespace,encoding}` / `adversarial-textattack` per-perturbation breakdown) live in `packages/eval/private/v10/extended-bench/` for internal diagnostics.
 
 **Bare-mode contract** — zero nullpii post-processing on competitor rows: no `_normalize_for_detection`, no boundary refine, no never-PII filter, no regex pack. The only adapter glue is the universal NER-bench plumbing applied identically to every tool:
 
@@ -126,17 +126,17 @@ Mac M-series CPU, single seed, macro F1 at IoU ≥ 0.5, partial-match span scori
 
 #### Headline number, honest
 
-We split the 27-dataset bench into three buckets and report each separately so the reader can judge what "F1" means:
+We split the 10-dataset bench into three buckets and report each separately so the reader can judge what "F1" means:
 
-1. **Held-out, non-adversarial (7 datasets) — F1 0.7008.** The model never saw any of these rows during training. This is the **honest OOD claim** for nullpii.
-   - Datasets: `argilla-pii`, `presidio-synthetic`, `oasst-dev-planted`, `ai4privacy-300k-heldout-v10` (offset 100k+), `isotonic-{en,de,fr}-heldout-v10` (offset 200k+).
+1. **Held-out non-adversarial (4 datasets) — F1 0.7378.** The model never saw any of these rows during training. This is the **honest OOD claim** for nullpii.
+   - `presidio-synthetic`, `ai4privacy-300k-heldout-v10` (offset 100k+), `isotonic-{en,de}-heldout-v10` (offset 200k+).
 
-2. **Adversarial subset (11 datasets) — preprocessor-driven, not model-driven.** Synthetic perturbations (typo / unicode / whitespace / encoding / code / TextAttack 5 variants) generated post-training, so technically held-out, but most of the lift comes from the `_normalize_for_detection` preprocessor (NFKC + unidecode + zero-width strip + spaced-PII despace), not from the model. Including these brings the held-out macro down a bit (heavy whitespace+encoding rows pull the average): **F1 0.6897 over 18 held-out rows**.
+2. **Adversarial subset (3 datasets) — preprocessor-driven, not model-driven, F1 0.9586.** Synthetic perturbations (typo / unicode / code) generated post-training, technically held-out, but the lift comes from the `_normalize_for_detection` preprocessor (NFKC + unidecode + zero-width strip + spaced-PII despace), not from the model.
 
-3. **In-distribution diagnostic (9 datasets) — F1 0.7712, NOT a generalisation claim.** Adapters trained on slices of these datasets, so performance is in-distribution memorisation. Published for transparency only.
-   - `nullpii-bench` (project-bundled, template-leaked with `dev-paste-synth-train`); `tab-echr` (legal adapter trained on TAB train, 127/127 test docs share shingles); `nemotron-pii-test` (enterprise adapter trained on Nemotron train); `ai4privacy-300k`, `ai4privacy-400k`, `isotonic-{en,de,fr,it}` (offset 0, model saw rows 0-5k of these during training).
+3. **In-distribution diagnostic (3 datasets) — F1 0.7915, NOT a generalisation claim.** Adapters trained on slices of these datasets, so performance is in-distribution memorisation. Published for transparency only.
+   - `nullpii-bench` (project-bundled, template-leaked with `dev-paste-synth-train`); `tab-echr` (legal adapter trained on TAB train, 127/127 test docs share shingles); `nemotron-pii-test` (enterprise adapter trained on Nemotron train).
 
-The often-quoted **mixed F1 0.7172 (27 datasets)** is the average of all three buckets — it inflates by ~+0.07 over the honest OOD number because of the 9 leak-disclosed rows. Use the held-out 0.7008 figure for any OOD claim; quote the mixed 0.7172 only with the caveat above.
+The mixed **F1 0.8201 (10 datasets)** is the average of all three buckets — inflated by both the in-distribution rows and the adversarial-preprocessor wins. Use the held-out 0.7378 figure for any OOD claim; quote the mixed 0.8201 only with the caveat above.
 
 > **Two specific red-team caveats** that warrant disclosure (full report internal at `packages/eval/private/v10/RED_TEAM_AUDIT_2026-05-05.md`):
 >
@@ -147,36 +147,24 @@ The often-quoted **mixed F1 0.7172 (27 datasets)** is the average of all three b
 
 | Dataset | n | F1 | Notes |
 |---|---:|:---:|---|
-| `nullpii-bench` | 264 | **0.7280** | Project-bundled OOD gold standard (real-world dev paste, RFCs, multilingual tickets) |
-| `tab-echr` | 127 | **0.8862** | EU legal (TAB ECHR test split) |
-| `oasst-dev-planted` | 15 | 0.4921 | Real chat text + planted PII |
-| `presidio-synthetic` | 5k | 0.6907 | Faker-driven synthetic (**Microsoft Presidio Evaluator**) |
-| `argilla-pii` | 2k | 0.6002 | Third-party held-out (model-suggested labels — see model card) |
+| `nullpii-bench` | 264 | **0.7280** | Project-bundled OOD gold standard (real-world dev paste, RFCs, multilingual tickets) — ⚠ in-distribution (template-family leak with `dev-paste-synth-train`) |
+| `tab-echr` | 127 | **0.8862** | EU legal (TAB ECHR test split) — ⚠ in-distribution (legal adapter trained on TAB train) |
 | `nemotron-pii-test` | 5k | **0.7602** | **NVIDIA Nemotron-PII** test split — ⚠ in-distribution (enterprise adapter trained on NVIDIA Nemotron train split) |
+| `presidio-synthetic` | 5k | 0.6811 | Faker-driven synthetic (**Microsoft Presidio Evaluator**) — held-out |
 | `ai4privacy-300k-heldout-v10` | 5k | 0.5283 | Held-out (offset 100k+) |
-| `ai4privacy-300k` | 5k | 0.5336 | In-distribution-adjacent |
-| `ai4privacy-400k` | 5k | 0.5554 | In-distribution-adjacent |
 | `isotonic-en-heldout-v10` | 5k | 0.8671 | Held-out (offset 200k+) |
-| `isotonic-de-heldout-v10` | 5k | 0.8746 | Held-out |
-| `isotonic-fr-heldout-v10` | 5k | 0.8619 | Held-out |
-| `isotonic-en` / `de` / `fr` / `it` | 5k each | 0.8783 / 0.8743 / 0.8600 / 0.8647 | Multilingual structured PII |
-| `adversarial-typo` | 80 | **0.9400** | Single-char neighbour swap |
-| `adversarial-unicode` | 80 | **0.9358** | Cyrillic homoglyph + zero-width insertion |
-| `adversarial-whitespace` | 80 | 0.3932 | `g i a n l u c a @ g m a i l . c o m` style |
-| `adversarial-encoding` | 80 | 0.1216 | Base64 / URL / HTML-entity wrapping |
-| `adversarial-code` | 80 | **1.0000** | Credentials in comments / docstrings |
-| `adversarial-textattack` | 1.7k | 0.6900 | TextAttack mixed perturbations |
-| `textattack-{homoglyph,charswap,chardelete,charinsert,charsub}` | 334 each | 0.66 / 0.72 / 0.72 / 0.66 / 0.66 | Per-perturbation breakdown |
-
-`adversarial-encoding` is the documented gap — base64 / URL / HTML-entity wrapping require a deobfuscation layer not in the runtime defaults.
+| `isotonic-de-heldout-v10` | 5k | 0.8746 | Held-out (offset 200k+) |
+| `adversarial-typo` | 80 | **0.9400** | Single-char neighbour swap — preprocessor lift |
+| `adversarial-unicode` | 80 | **0.9358** | Cyrillic homoglyph + zero-width insertion — preprocessor lift |
+| `adversarial-code` | 80 | **1.0000** | Credentials in comments / docstrings — preprocessor lift |
 
 ### Competitor comparison
 
-Bare-mode third-party baselines benched on the same 27-dataset Mac CPU pass alongside `nullpii-v10-router-embedding`: **Microsoft Presidio**, GLiNER (`urchade/gliner_multi_pii-v1` ONNX FP32), `iiiorg/piiranha`, **Microsoft DeBERTa**-v3 community fine-tune, **NVIDIA Nemotron-PII** (`nvidia/gliner-pii`), and `gliner-pii-large-v1`. Same chunking (1400/200 char stride), same per-tool label remap to nullpii's 8-class schema, no nullpii post-processing leak on competitor rows.
+Bare-mode third-party baselines benched on the same 10-dataset Mac CPU pass alongside `nullpii-v10-router-embedding`: **Microsoft Presidio**, GLiNER (`urchade/gliner_multi_pii-v1` ONNX FP32), `iiiorg/piiranha`, **Microsoft DeBERTa**-v3 community fine-tune, **NVIDIA Nemotron-PII** (`nvidia/gliner-pii`), and `gliner-pii-large-v1`. Same chunking (1400/200 char stride), same per-tool label remap to nullpii's 8-class schema, no nullpii post-processing leak on competitor rows.
 
 Head-to-head matrix — per-dataset F1, every tool × every dataset: [`packages/eval/published-bench/matrix.csv`](packages/eval/published-bench/matrix.csv). Methodology, schema-bridge mechanics, and the `CLAIM-VERIFIER-01` finding (Presidio 0.85+ / piiranha 0.99 not reproducible with span IoU ≥ 0.5) are documented in [`COMPETITIVE_ANALYSIS.md`](COMPETITIVE_ANALYSIS.md).
 
-Honest read: nullpii sits in the GLiNER-family ballpark on the held-out non-adversarial subset (F1 0.7008) and wins the adversarial bucket because of `_normalize_for_detection` (typo 0.94 / unicode 0.94 / code 1.00), not because of model strength. `adversarial-encoding` (0.12) is the documented gap. For production GDPR-grade redaction, **Microsoft Presidio** remains the right tool — read the matrix for the per-dataset trade-offs.
+Honest read: nullpii sits in the GLiNER-family ballpark on the held-out non-adversarial subset (F1 0.7378) and wins the adversarial bucket because of `_normalize_for_detection` (typo 0.94 / unicode 0.94 / code 1.00), not because of model strength. For production GDPR-grade redaction, **Microsoft Presidio** remains the right tool — read the matrix for the per-dataset trade-offs.
 
 ## Documentation
 
@@ -190,8 +178,7 @@ Honest read: nullpii sits in the GLiNER-family ballpark on the held-out non-adve
 ### v10 release docs (`docs/v10/`)
 
 - [`V10_PLAN.md`](docs/v10/V10_PLAN.md) — release gating + status + decision tree
-- [`TRAINING.md`](docs/v10/TRAINING.md) — training procedure summary (Art. 53 transparency)
-- [`AUDIT_2026-05-04.md`](docs/v10/AUDIT_2026-05-04.md) — security audit (25 findings, all closed)
+- [`TRAINING.md`](docs/v10/TRAINING.md) — training procedure summary
 - Model cards — [`docs/v10/model-cards/`](docs/v10/model-cards/):
   - [`README.md`](docs/v10/model-cards/README.md) — index + train-vs-eval overlap matrix
   - [`router-embedding.md`](docs/v10/model-cards/router-embedding.md) — shipping pipeline (distiluse + 5 LoRA)

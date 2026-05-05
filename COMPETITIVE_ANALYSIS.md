@@ -2,14 +2,14 @@
 
 Snapshot 2026-05-04. Used to position `nullpii` against the existing landscape and identify the whitespace it fills. Not exhaustive — focused on players that overlap with the npm-package + adapter / managed-cloud roadmap.
 
-**Related**: [`README.md`](README.md) (TL;DR + install + bench table) · [`docs/v10/model-cards/`](docs/v10/model-cards/) (HF model cards).
+**Related**: [`README.md`](README.md) (TL;DR + install + bench table) · HF model card: [`lBroth/nullpii-v10-router-embedding`](https://huggingface.co/lBroth/nullpii-v10-router-embedding).
 
 ## Empirical bench numbers
 
 > **Status**: first release. Local Mac CPU bench complete; numerical results at `packages/eval/published-bench/matrix.{json,csv}`. Methodology + bench surface documented below.
 
 > **Active caveats on the published bench cells**:
-> - `TUNE-ENTGATE-01` — enterprise-route gate margin (`0.10`) was tuned on `nullpii-bench`. Margin sweep + held-out routing-eval pending v11. See [`docs/v10/model-cards/router-embedding.md`](docs/v10/model-cards/router-embedding.md) § Limitations.
+> - `TUNE-ENTGATE-01` — enterprise-route gate margin (`0.10`) was tuned on `nullpii-bench`. Margin sweep + held-out routing-eval pending v11.
 > - `LEAK-NEMO-ENTERPRISE-01` — the `enterprise` LoRA was trained on **NVIDIA Nemotron-PII** (`nvidia/Nemotron-PII`) train split. `nemotron-pii-test` is in-distribution generalisation, not OOD. Retrain on Faker-only US-formats scheduled for v11.
 
 ### Bench surface (`packages/eval/scripts/bench_full.py`)

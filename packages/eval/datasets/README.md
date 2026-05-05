@@ -79,8 +79,8 @@ Each line:
 (the `devops` adapter training corpus): same `{{label|text}}` markup
 patterns, overlapping prompt skeletons. F1 on `nullpii-bench` is
 treated as **in-distribution memorisation diagnostic**, not OOD.
-Documented in the train-vs-eval overlap matrix at
-[`docs/v10/model-cards/README.md`](../../../docs/v10/model-cards/README.md#train-vs-eval-dataset-overlap).
+Documented in the train-vs-eval overlap matrix on the HF model card
+([`lBroth/nullpii-v10-router-embedding`](https://huggingface.co/lBroth/nullpii-v10-router-embedding)).
 
 ## `nullpii-adversarial` subsets
 

@@ -22,13 +22,13 @@ First public release. Local PII sanitization with reversible vault.
 - 27-dataset macro F1: **0.7172** (`packages/eval/published-bench/matrix.{json,csv}`).
 - Honest held-out (non-adversarial) F1: **0.7008** — strips 9 leak-disclosed in-distribution rows.
 - Adversarial preprocessor lift: typo 0.94 / unicode 0.94 / code 1.00 / encoding 0.12 (documented gap).
-- Tool surface — third-party baselines wired but pending GPU pass: **Microsoft Presidio**, **NVIDIA Nemotron-PII**, `iiiorg/piiranha`, **Microsoft DeBERTa**-v3 community fine-tune, scrubadub, GLiNER family (`gliner-onnx-pii-fp32`, `gliner-x-*`, `gliner-pii-*`, `gliner2-*`, `modern-gliner-bi`, `gliner-multi-pii-domains`), **OpenAI** `openai/privacy-filter` in three usage modes (naive HF / BIOES / opf-Viterbi).
+- Tool surface — bare-mode third-party baselines (no nullpii post-processing leak): **Microsoft Presidio**, **NVIDIA Nemotron-PII**, `iiiorg/piiranha`, **Microsoft DeBERTa**-v3 community fine-tune, GLiNER ONNX FP32 (`gliner-onnx-pii-fp32`), `gliner-pii-large-v1`. Per-tool numbers in `packages/eval/published-bench/matrix.csv`.
 
 ### Model artifacts
 
 - HuggingFace Hub: [`lBroth/nullpii-v10-router-embedding`](https://huggingface.co/lBroth/nullpii-v10-router-embedding) (~6 GB FP32 — 5 merged-LoRA ONNX shards + distiluse encoder + tokenizer + prototypes JSON). First call to `sanitize()` downloads everything to `~/.cache/nullpii/`.
 - Raw LoRA weights ([`lBroth/nullpii-v10-adapters`](https://huggingface.co/lBroth/nullpii-v10-adapters), ~17 MB) — upstream of the merged repo, used by the release pipeline.
-- Apache 2.0 throughout. Built on `urchade/gliner_multi_pii-v1` (Zaratiana et al., NAACL 2024). Per-domain LoRA fine-tunes on `ai4privacy/pii-masking-300k`, `Isotonic/pii-masking-200k`, **NVIDIA Nemotron-PII**, TAB ECHR (Pilán et al., ACL 2022), MEDDOCAN (IBERLEF 2019).
+- Apache 2.0 throughout. Built on `urchade/gliner_multi_pii-v1` (Zaratiana et al., NAACL 2024). Per-domain LoRA training data composition + recipe documented on the HF model card.
 
 ### Red-team disclosures
 

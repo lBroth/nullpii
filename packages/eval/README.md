@@ -106,9 +106,6 @@ External datasets (loaded on demand by `nullpii_eval.public_datasets`):
 `nvidia/Nemotron-PII`, `presidio-research/presidio-synthetic`,
 `argilla/textcat-tokencat-pii-per-domain`.
 
-## Model cards
+## Model card
 
-[`docs/v10/model-cards/`](../../docs/v10/model-cards/) — published
-alongside the HF artifacts (`lBroth/nullpii-v10-router-embedding`).
-Per-adapter cards include training data composition + train-vs-eval
-overlap matrix for in-distribution disclosure.
+HF Hub: [`lBroth/nullpii-v10-router-embedding`](https://huggingface.co/lBroth/nullpii-v10-router-embedding) — training data composition, intended use, limitations, in-distribution disclosures.

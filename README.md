@@ -175,16 +175,9 @@ Honest read: nullpii sits in the GLiNER-family ballpark on the held-out non-adve
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — dev setup + architecture rules
 - [`SECURITY.md`](SECURITY.md) — threat model + vuln reporting
 
-### Model cards (`docs/v10/model-cards/`)
+### Model card
 
-- Model cards — [`docs/v10/model-cards/`](docs/v10/model-cards/):
-  - [`README.md`](docs/v10/model-cards/README.md) — index + train-vs-eval overlap matrix
-  - [`router-embedding.md`](docs/v10/model-cards/router-embedding.md) — shipping pipeline (distiluse + 5 LoRA)
-  - [`adapter-devops.md`](docs/v10/model-cards/adapter-devops.md)
-  - [`adapter-legal.md`](docs/v10/model-cards/adapter-legal.md)
-  - [`adapter-medical.md`](docs/v10/model-cards/adapter-medical.md) — ⚠ non-HIPAA
-  - [`adapter-narrative.md`](docs/v10/model-cards/adapter-narrative.md)
-  - [`adapter-enterprise.md`](docs/v10/model-cards/adapter-enterprise.md) — Nemotron-aug, Nemotron-test in-distribution disclosed
+Lives on HuggingFace Hub: [`lBroth/nullpii-v10-router-embedding`](https://huggingface.co/lBroth/nullpii-v10-router-embedding) — training data composition, intended use, limitations, in-distribution disclosures.
 
 ### Eval kit
 
@@ -199,4 +192,4 @@ Apache 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE). Runtime tree is 100%
 
 > nullpii contributors (2026). *nullpii: local PII sanitization with reversible vault.* https://github.com/lBroth/nullpii
 
-Built on [`urchade/gliner_multi_pii-v1`](https://huggingface.co/urchade/gliner_multi_pii-v1) (GLiNER, **Microsoft mDeBERTa-v3** base + GLiNER head, Zaratiana et al. NAACL 2024). Per-domain LoRA adapters trained on `ai4privacy/pii-masking-300k`, `Isotonic/pii-masking-200k`, **NVIDIA Nemotron-PII** (`nvidia/Nemotron-PII`), TAB ECHR (Pilán et al. ACL 2022), MEDDOCAN (IBERLEF 2019), plus internal synth + adversarial subsets.
+Built on [`urchade/gliner_multi_pii-v1`](https://huggingface.co/urchade/gliner_multi_pii-v1) (GLiNER, **Microsoft mDeBERTa-v3** base + GLiNER head, Zaratiana et al. NAACL 2024). Per-domain LoRA adapter training data composition + recipe: see the HF model card.

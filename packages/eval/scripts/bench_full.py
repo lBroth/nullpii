@@ -356,7 +356,7 @@ def build_tools(args) -> dict[str, Callable]:
         routes = {
             "devops":    _v10_adapter("devops",               regex_pack=DEFAULT_REGEX_PATTERNS, drop_rfc1918=args.drop_rfc1918),
             "legal":     _v10_adapter("legal",                regex_pack=MINIMAL_REGEX_PATTERNS, drop_rfc1918=False),
-            "medical":   _v10_adapter("medical-experimental", regex_pack=MINIMAL_REGEX_PATTERNS, drop_rfc1918=False),
+            "medical":   _v10_adapter("medical", regex_pack=MINIMAL_REGEX_PATTERNS, drop_rfc1918=False),
             "narrative": _v10_adapter("narrative",            regex_pack=MINIMAL_REGEX_PATTERNS, drop_rfc1918=False),
         }
         if with_enterprise:

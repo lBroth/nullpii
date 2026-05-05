@@ -65,14 +65,20 @@ npx nullpii sanitize --stdin --format json < customer-email.txt | jq .sanitized
 
 | Label             | Examples                                          |
 | ----------------- | ------------------------------------------------- |
-| `private_person`  | personal names                                    |
+| `private_person`  | personal names (first / last / middle, prefixes)  |
 | `private_email`   | email addresses                                   |
 | `private_phone`   | phone / fax numbers                               |
-| `private_address` | street addresses                                  |
+| `private_address` | street addresses, cities, GPE, ZIP                |
 | `private_date`    | birth / hire dates                                |
 | `private_url`     | private URLs (admin panels, internal wikis)       |
-| `account_number`  | bank accounts, IBAN, SSN, customer IDs            |
+| `account_number`  | bank accounts, IBAN, SSN, credit cards, MRN, customer IDs |
 | `secret`          | API keys, tokens, passwords, JWT, PEM private keys |
+
+> **Why only 8 categories?** Microsoft Presidio ships ~20 entity types (and 30+ optional recognizers). NVIDIA Nemotron-PII trains on 55 fine-grained classes (`first_name` vs `last_name`, `mrn` vs `health_plan_beneficiary_number`, etc.). nullpii inherits the 8-class schema of its [`urchade/gliner_multi_pii-v1`](https://huggingface.co/urchade/gliner_multi_pii-v1) backbone and keeps it.
+>
+> Rationale: distinguishing `first_name` vs `last_name` doesn't matter when **redacting** — both end up as `[[NULLPII:private_person:0]]`. SSN / IBAN / credit-card all collapse to `account_number` because you mask them the same way. Granular schemas are useful as training signal (Nemotron's 55-class fine-tune learns finer distinctions); broad schemas are easier downstream (one placeholder type per category, simpler restore mapping). Different targets.
+>
+> Bench-side: Presidio / Nemotron / DeBERTa native predictions are remapped to nullpii's 8-class **before** the F1 comparison so cross-tool bench is fair (see "Benchmarks" below). Symmetric — every cross-schema NER bench needs the bridge.
 
 Add custom regex recognizers as a post-pass for known formats with low ML coverage:
 

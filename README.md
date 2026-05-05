@@ -10,7 +10,7 @@ Local PII sanitization for LLM prompts. ML span detection + reversible in-memory
 
 Honest framing: this is a **night-hobby project**, not a production-ready PII tool, not a research paper, not a commercial product.
 
-Since I started using Claude Code I stopped playing video games — it became my night toy / passatempo notturno. nullpii is what fell out of those nights: a chance to learn the GLiNER + LoRA + router stack end-to-end, run it under a strict bench harness, write the honest audit on what works and what doesn't, and ship something that does the round-trip cleanly.
+Since I started using Claude Code I stopped playing video games — it became my night toy. nullpii is what fell out of those nights: a chance to learn the GLiNER + LoRA + router stack end-to-end, run it under a strict bench harness, write the honest audit on what works and what doesn't, and ship something that does the round-trip cleanly.
 
 For real GDPR-grade PII redaction in production, use [Microsoft Presidio](https://microsoft.github.io/presidio/). What's interesting here is the engineering rigor + adversarial preprocessor + audit transparency, not state-of-the-art F1.
 

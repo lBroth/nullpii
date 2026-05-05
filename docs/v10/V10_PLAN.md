@@ -116,7 +116,25 @@ Drop comprehensive 27-dataset × 19-tool matrix. Keep targeted hobby-bench:
 | Move `private/v10/V10_JOURNAL.md` → public `docs/JOURNAL.md` | move + diff polish | 30 min | 🔴 |
 | Write `docs/BENCH_RUNBOOK.md` (Mac CPU reproducer steps) | new | 30 min | 🔴 |
 
-### 🔴 BLOCKER before tag v0.1.0 — fix nullpii subprocess crash
+### 🔴 BLOCKERS before tag v0.1.0
+
+#### 1. Strip dead predictors from `adapters.py`
+
+After dropping unused tool builders from `bench_full.py` (commit `526dfa0`), the matching predictor function bodies in `packages/eval/src/nullpii_eval/adapters.py` are uncalled but still bulk up the file (~3580 LOC). Drop:
+
+- `gliner2_predictor`
+- `openai_pipeline_batch_predictor` / `openai_pipeline_predictor` / `openai_bioes_predictor` / `openai_official_predictor`
+- `scrubadub_predictor`
+- `aws_comprehend_predictor` / `gcp_dlp_predictor` / `azure_pii_predictor`
+- `nullpii_pool_predictor` / `nullpii_predictor` (legacy daemon variants)
+- `gliner_pii_predictor`, `make_best_ensemble`, `gliner_chunked_predictor`, `complementary_v6_v8_predictor` (legacy)
+- `encoding_deobf_predictor` / `whitespace_deobf_predictor` / `stopword_filter_predictor` / `semantic_verifier_predictor` / `tiny_verifier_predictor` (ablations)
+
+Plus owning helper constants (`_OPENAI_LABELS`, etc.).
+
+Approach: grep for callers per function (confirm none), delete body + owned helpers, smoke `python -c "from nullpii_eval.adapters import *"`, run pytest in `packages/eval/tests/`, smoke bench (1 dataset × 8 tools × 10 samples). Estimated 30-45 min. Tracked as task #24.
+
+#### 2. Fix nullpii subprocess crash
 
 Overnight bench 2026-05-05 23:10 revealed: the canonical `nullpii` row (`node bin/nullpii.mjs scan --ndjson` subprocess) crashes on EVERY dataset. First failure: `RuntimeError: nullpii subprocess closed stdout unexpectedly` at idx=53 on `nullpii-bench`. Subsequent: `BrokenPipeError: [Errno 32] Broken pipe` at idx=0 of every later dataset — pool poisoned. Net: 10/10 nullpii cells fail (zero data points for the user-facing row).
 

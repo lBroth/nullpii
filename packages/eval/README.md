@@ -16,19 +16,23 @@ pip install -e ".[presidio]" presidio-evaluator datasets
 `scripts/bench_full.py` runs a `tool × dataset` matrix with checkpoint resume. Output: `matrix.json` (per-cell F1 / wall / throughput) + `matrix.csv` (pivot).
 
 ```bash
-# Release-candidate routers across 19 PII-native datasets (default caps).
+# Canonical release row (`nullpii` = subprocess of the local npm build)
+# plus selected baselines, default caps. NULLPII_MODEL_DIR points the
+# subprocess at a staged model dir (defaults to ~/.cache/nullpii on
+# first run if unset).
+NULLPII_MODEL_DIR=/tmp/nullpii-stack-test \
 python -u scripts/bench_full.py \
-  --tools nullpii-v10-router-embedding,nullpii-v10-router-xlmr \
+  --tools nullpii,presidio,nemotron-pii-raw,piiranha,deberta,gliner-onnx-pii-fp32,openai-bioes \
   --datasets all \
   --backend cpu \
-  --out-dir results/bench-v10-release-local
+  --out-dir results/$(date +%Y%m%d)-bench
 ```
 
 Override caps with `--max-per-dataset N` (global cap) or `--no-cap` (full).
 
 ### Tool surface
 
-Two nullpii routers + nine bare baselines + three opt-in cloud rows. None of the bare rows wrap nullpii post-processing. See [`COMPETITIVE_ANALYSIS.md`](../../COMPETITIVE_ANALYSIS.md) for the full list and methodology.
+`nullpii` (subprocess of the local npm build) + bare third-party baselines: **Microsoft Presidio**, GLiNER family (`urchade/gliner_multi_pii-v1`, `gliner-x-*`, `gliner-pii-*`, `gliner2-*`, `modern-gliner-bi`, `gliner-multi-pii-domains`), `iiiorg/piiranha`, **Microsoft DeBERTa**-v3 community fine-tune, scrubadub, **NVIDIA Nemotron-PII** (`nvidia/gliner-pii`), **OpenAI** `openai/privacy-filter` in three usage modes (naive HF / BIOES / opf-Viterbi). Optional cloud rows (AWS Comprehend / GCP DLP / Azure PII) opt-in via `--tools`. None of the bare rows wrap nullpii post-processing. See [`COMPETITIVE_ANALYSIS.md`](../../COMPETITIVE_ANALYSIS.md) for the full methodology.
 
 ### Dataset surface
 

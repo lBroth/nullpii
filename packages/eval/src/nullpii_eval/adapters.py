@@ -902,6 +902,9 @@ def boundary_refined_predictor(
     return _predict
 
 
+_REGEX_INPUT_MAX_BYTES = 1_000_000  # 1 MB ReDoS guard, AUDIT F22
+
+
 def regex_recognizer_predictor(
     *,
     patterns: list[tuple[str, str]],
@@ -919,6 +922,12 @@ def regex_recognizer_predictor(
         t0 = time.perf_counter()
         spans: list[Span] = []
         scores: list[float] = []
+        # AUDIT F22: refuse to scan inputs > 1 MB. Unbounded `{N,}` quantifiers
+        # in upstream secret patterns are quadratic on adversarial padding.
+        # 1 MB is well above any realistic LLM prompt size.
+        if len(text) > _REGEX_INPUT_MAX_BYTES:
+            elapsed = (time.perf_counter() - t0) * 1000
+            return ToolResult(spans, elapsed, scores=tuple(scores))
         for label, regex in compiled:
             prior = REGEX_LABEL_PRIORS.get(label, 0.9)
             for m in regex.finditer(text):
@@ -981,22 +990,22 @@ DEFAULT_REGEX_PATTERNS: list[tuple[str, str]] = [
     # AWS Bedrock long-lived
     ("secret", r"\bABSK[A-Za-z0-9+/]{109,269}={0,2}"),
     # ─── GitHub ─────────────────────────────────────────────────────
-    ("secret", r"\bghp_[A-Za-z0-9]{36,}\b"),
-    ("secret", r"\bghs_[A-Za-z0-9]{36,}\b"),
-    ("secret", r"\bgho_[A-Za-z0-9]{36,}\b"),
-    ("secret", r"\bghu_[A-Za-z0-9]{36,}\b"),
-    ("secret", r"\bghr_[A-Za-z0-9]{36,}\b"),
-    ("secret", r"\bgithub_pat_[A-Za-z0-9_]{82,}\b"),
+    ("secret", r"\bghp_[A-Za-z0-9]{36,255}\b"),
+    ("secret", r"\bghs_[A-Za-z0-9]{36,255}\b"),
+    ("secret", r"\bgho_[A-Za-z0-9]{36,255}\b"),
+    ("secret", r"\bghu_[A-Za-z0-9]{36,255}\b"),
+    ("secret", r"\bghr_[A-Za-z0-9]{36,255}\b"),
+    ("secret", r"\bgithub_pat_[A-Za-z0-9_]{82,255}\b"),
     # ─── OpenAI / Anthropic ─────────────────────────────────────────
-    ("secret", r"\bsk-[A-Za-z0-9]{32,}\b"),
-    ("secret", r"\bsk-ant-[A-Za-z0-9_-]{50,}\b"),
+    ("secret", r"\bsk-[A-Za-z0-9]{32,255}\b"),
+    ("secret", r"\bsk-ant-[A-Za-z0-9_-]{50,255}\b"),
     ("secret", r"\bsk-ant-admin01-[a-zA-Z0-9_\-]{93}AA\b"),
     ("secret", r"\bsk-ant-api03-[a-zA-Z0-9_\-]{93}AA\b"),
     # ─── Stripe ─────────────────────────────────────────────────────
-    ("secret", r"\bsk_(?:live|test)_[A-Za-z0-9]{24,}\b"),
+    ("secret", r"\bsk_(?:live|test)_[A-Za-z0-9]{24,255}\b"),
     # ─── 1Password / Adobe / Age / Airtable / Alibaba ──────────────
     ("secret", r"\bA3-[A-Z0-9]{6}-(?:[A-Z0-9]{11}|[A-Z0-9]{6}-[A-Z0-9]{5})-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}\b"),
-    ("secret", r"\bops_eyJ[a-zA-Z0-9+/]{250,}={0,3}"),
+    ("secret", r"\bops_eyJ[a-zA-Z0-9+/]{250,2048}={0,3}"),
     ("secret", r"\bp8e-[a-zA-Z0-9]{32}\b"),
     ("secret", r"AGE-SECRET-KEY-1[QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L]{58}"),
     ("secret", r"\bpat[a-zA-Z0-9]{14}\.[a-f0-9]{64}\b"),
@@ -1014,22 +1023,22 @@ DEFAULT_REGEX_PATTERNS: list[tuple[str, str]] = [
     ("secret", r"\bdop_v1_[a-f0-9]{64}\b"),
     ("secret", r"\bdor_v1_[a-f0-9]{64}\b"),
     # ─── Slack ──────────────────────────────────────────────────────
-    ("secret", r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"),
+    ("secret", r"\bxox[baprs]-[A-Za-z0-9-]{10,255}\b"),
     ("secret", r"\bxoxe\.xoxp-[0-9]+-[A-Za-z0-9]+\b"),
     # ─── GitLab / SendGrid / Twilio / NPM / PyPI / HF / GitLab ──
-    ("secret", r"\bglpat-[A-Za-z0-9_\-]{20,}\b"),
+    ("secret", r"\bglpat-[A-Za-z0-9_\-]{20,255}\b"),
     ("secret", r"\bSG\.[A-Za-z0-9_\-]{22}\.[A-Za-z0-9_\-]{43}\b"),
     ("secret", r"\bAC[a-f0-9]{32}\b"),
     ("secret", r"\bSK[a-f0-9]{32}\b"),
-    ("secret", r"\bnpm_[A-Za-z0-9]{36,}\b"),
-    ("secret", r"\bpypi-AgEIcHlwaS5vcmc[A-Za-z0-9_\-]{50,}\b"),
-    ("secret", r"\bhf_[A-Za-z0-9]{34,}\b"),
+    ("secret", r"\bnpm_[A-Za-z0-9]{36,255}\b"),
+    ("secret", r"\bpypi-AgEIcHlwaS5vcmc[A-Za-z0-9_\-]{50,255}\b"),
+    ("secret", r"\bhf_[A-Za-z0-9]{34,255}\b"),
     ("secret", r"\b[a-f0-9]{32}-us[0-9]{1,2}\b"),  # Mailchimp
     ("secret", r"\bsecret_[A-Za-z0-9]{43}\b"),  # Notion
-    ("secret", r"\blin_api_[A-Za-z0-9]{40,}\b"),
+    ("secret", r"\blin_api_[A-Za-z0-9]{40,255}\b"),
     # ─── PEM private keys / JWT ─────────────────────────────────────
     ("secret", r"-----BEGIN (?:RSA|DSA|EC|OPENSSH|PGP) PRIVATE KEY-----"),
-    ("secret", r"\beyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\b"),
+    ("secret", r"\beyJ[A-Za-z0-9_\-]{8,2048}\.[A-Za-z0-9_\-]{8,2048}\.[A-Za-z0-9_\-]{8,2048}\b"),
     # ─── Account-number patterns ────────────────────────────────────
     # IBAN (rough — IT, GB, DE, FR, ES)
     # AUDIT F05: was `[ \t]?` — only ASCII space/tab. PDF / online-banking
@@ -1072,7 +1081,7 @@ DEFAULT_REGEX_PATTERNS: list[tuple[str, str]] = [
     # Discord webhook URL
     ("secret", r"https://discord(?:app)?\.com/api/webhooks/\d+/[A-Za-z0-9_\-]+"),
     # Discord bot token
-    ("secret", r"\b[MN][A-Za-z\d]{23}\.[\w-]{6}\.[\w-]{27,}\b"),
+    ("secret", r"\b[MN][A-Za-z\d]{23}\.[\w-]{6}\.[\w-]{27,255}\b"),
     # Telegram bot token (8-10 digit id : 35-char secret)
     ("secret", r"\b\d{8,10}:[A-Za-z0-9_\-]{35}\b"),
     # Mailgun API key

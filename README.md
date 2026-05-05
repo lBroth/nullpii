@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./assets/logo.png" alt="nullpii" width="128" height="128" />
+</p>
+
 # nullpii
 
 Local PII sanitization for LLM prompts. ML-based span detection + reversible in-memory vault — pass placeholders to your LLM, restore original values from the response.

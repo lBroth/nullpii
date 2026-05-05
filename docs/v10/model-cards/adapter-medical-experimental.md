@@ -70,9 +70,14 @@ Total: ~16k records.
 
 Same recipe as other v10 LoRA adapters. See [`../TRAINING.md`](../TRAINING.md).
 
-## Evaluation (TBD-BENCH)
+## Evaluation
 
-The unified release bench does NOT include i2b2 / MEDDOCAN test (gating on validation completion). Numbers reported on `tab-echr` / `presidio-synthetic` / `nullpii-bench` reflect general-purpose performance, not clinical-domain performance.
+This LoRA adapter is loaded by the [`nullpii-v10-router-embedding`](router-embedding.md) and (where applicable) [`nullpii-v10-router-xlmr`](router-xlmr.md) routers — it is not intended to be used standalone. End-to-end F1 numbers are reported per-router on those cards. Aggregate macro F1 of the shipping pipeline (router-embedding) across 27 datasets: **0.7172**.
+
+Per-domain isolated benchmarks (LoRA adapter alone, bypassing the router) are out-of-scope for the v10 release; they would require separate tool defs in `bench_full.py` and a re-run. Routing-aware evaluation (which dataset routes to which adapter) is the production-relevant signal and is what the router cards report.
+
+Full bench artifacts: `packages/eval/results/bench-v10-release-local/matrix.{json,csv}`.
+
 
 ## Limitations
 

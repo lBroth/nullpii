@@ -63,11 +63,14 @@ LoRA r=16, alpha=32. BF16, AdamW. Trained with `use_expanded_prompts=True` at in
 
 Train loss: 10.06 → eval loss: 4.31 → 3.91 over 2 epochs.
 
-## Evaluation (TBD-BENCH)
+## Evaluation
 
-Numerical cells fill post-unified-bench. Expected strong performance on `argilla-pii` and `nemotron-pii-test`; expected weak performance on `nullpii-bench` dev-paste (use router fallback).
+This LoRA adapter is loaded by the [`nullpii-v10-router-embedding`](router-embedding.md) and (where applicable) [`nullpii-v10-router-xlmr`](router-xlmr.md) routers — it is not intended to be used standalone. End-to-end F1 numbers are reported per-router on those cards. Aggregate macro F1 of the shipping pipeline (router-embedding) across 27 datasets: **0.7172**.
 
-Key comparison: Nvidia's `nvidia/gliner-pii` (`gliner_large-v2.1` ~600 MB backbone) reports 0.87 on Nemotron test, 0.70 on Argilla. With ~430 MB total + 8-class output, our Nemotron-aug enterprise route targets parity on Argilla and trails on Nemotron-own (in-distribution memorisation gap closes with model size).
+Per-domain isolated benchmarks (LoRA adapter alone, bypassing the router) are out-of-scope for the v10 release; they would require separate tool defs in `bench_full.py` and a re-run. Routing-aware evaluation (which dataset routes to which adapter) is the production-relevant signal and is what the router cards report.
+
+Full bench artifacts: `packages/eval/results/bench-v10-release-local/matrix.{json,csv}`.
+
 
 ## Limitations
 

@@ -26,7 +26,7 @@ pipeline_tag: token-classification
 
 # nullpii v10 — Router (embedding-based, default release-candidate)
 
-> **Status**: release-candidate (RC). Numerical evaluation cells are placeholders (`TBD-BENCH`) pending the unified release bench. See [draft index](README.md) for context.
+> **Status (2026-05-05)**: **release-recommended**. Unified release bench complete on Mac CPU (`packages/eval/results/bench-v10-release-local/`). Per release gating step 2, this is the **shipping pipeline**: F1 aggregate within storage-tiebreaker band vs `router-xlmr`, with the distiluse router winning `nullpii-bench` OOD gold standard by +0.118 F1 and the adversarial subset by +0.062.
 
 ## TL;DR
 
@@ -39,7 +39,8 @@ Multilingual PII detection pipeline. A multilingual sentence-transformer (`disti
 | Adapters | 5 LoRA (devops, legal, medical-experimental, narrative, enterprise), ~3.4 MB each |
 | Output schema | 8-class span: `private_person`, `private_email`, `private_phone`, `private_address`, `private_date`, `private_url`, `account_number`, `secret` |
 | Languages (training) | en, de, fr, es, it (LoRA fine-tunes); 50+ via embedder routing |
-| Latency (CPU) | TBD-BENCH (overnight Mac CPU + 5090 GPU runs pending) |
+| Latency (CPU) | Mac M-series, default caps, 27 datasets benched in ~1.5h wall total. Per-dataset throughput ranges 4–18 samp/s; 5090 GPU pass pending for p50/p95 publication |
+| Macro F1 aggregate | **0.7172** across 27 head-to-head datasets |
 
 ## Intended use
 
@@ -86,16 +87,46 @@ Each LoRA adapter:
 
 See [`../TRAINING.md`](../TRAINING.md) for full step-by-step training trace + decision rationale.
 
-## Evaluation (TBD-BENCH)
+## Evaluation
 
-Numerical cells filled after the unified release bench completes. Methodology:
+Mac M-series CPU, single seed, macro F1 at IoU ≥ 0.5, partial-match span scoring. 27 of 31 datasets benched — 4 require gated HuggingFace access (lmsys / enron / stackoverflow / thestack).
 
-- 19 PII-native datasets (see [`../V10_PLAN.md`](../V10_PLAN.md) § Release gating) — `nullpii-bench` (OOD), adversarial subsets, TextAttack subsets, ai4privacy variants, isotonic + heldout, TAB ECHR, presidio-synthetic, oasst-dev-planted, argilla-pii, nemotron-pii-test.
-- Macro F1 at IoU ≥ 0.5, partial-match span scoring.
-- Single bench harness, single code revision, both Mac CPU (canonical for reproducibility) and 5090 GPU (for capped throughput) runs published.
-- Bare-mode comparison vs Presidio, GLiNER-base, Piiranha, DeBERTa-PII, scrubadub, Nemotron-PII raw, openai/privacy-filter (HF naive / BIOES / opf-Viterbi).
+### Per-dataset F1
 
-Result tables will live alongside this card post-bench (in the matrix.json / matrix.csv artifacts shipped with the release).
+| Dataset | n | F1 | Notes |
+|---|---:|:---:|---|
+| `nullpii-bench` | 264 | **0.7280** | Project-bundled OOD gold standard |
+| `tab-echr` | 127 | **0.8862** | EU legal (TAB ECHR test split, in-distribution-generalisation) |
+| `oasst-dev-planted` | 15 | 0.4921 | Real chat text + planted PII |
+| `presidio-synthetic` | 5k | 0.6907 | Faker synthetic |
+| `argilla-pii` | 2k | 0.6002 | Third-party held-out (model-suggested labels — see Limitations) |
+| `nemotron-pii-test` | 5k | **0.7602** | ⚠ enterprise route trained on Nemotron — in-distribution |
+| `ai4privacy-300k-heldout-v10` | 5k | 0.5283 | Held-out (offset 100k+) |
+| `ai4privacy-300k` | 5k | 0.5336 | In-distribution-adjacent |
+| `ai4privacy-400k` | 5k | 0.5554 | In-distribution-adjacent |
+| `isotonic-en-heldout-v10` | 5k | 0.8671 | Held-out (offset 200k+) |
+| `isotonic-de-heldout-v10` | 5k | 0.8746 | Held-out |
+| `isotonic-fr-heldout-v10` | 5k | 0.8619 | Held-out |
+| `isotonic-en` / `de` / `fr` / `it` | 5k each | 0.8783 / 0.8743 / 0.8600 / 0.8647 | Multilingual structured PII |
+| `adversarial-typo` | 80 | **0.9400** | Char-swap |
+| `adversarial-unicode` | 80 | **0.9358** | Cyrillic homoglyph + ZW |
+| `adversarial-whitespace` | 80 | 0.3932 | Spaced PII |
+| `adversarial-encoding` | 80 | 0.1216 | Base64 / URL / HTML-entity wrap |
+| `adversarial-code` | 80 | **1.0000** | Credentials in comments |
+| `adversarial-textattack` | 1.7k | 0.6900 | TextAttack mixed |
+| `textattack-{homoglyph,charswap,chardelete,charinsert,charsub}` | 334 each | 0.66 / 0.72 / 0.72 / 0.66 / 0.66 | |
+
+**Aggregate**: macro F1 across 27 datasets = **0.7172**.
+
+### vs `nullpii-v10-router-xlmr` (alternative, ~1.4 GB)
+
+distiluse 0.7172 / xlmr 0.7076 / delta −0.010 (within ±0.02 storage-tiebreaker band per release gating). xlmr wins 21/27 datasets but with smaller margins (typically +0.01–0.02). distiluse wins `nullpii-bench` +0.118, `nemotron-pii-test` +0.167, adversarial-typo +0.224, adversarial-unicode +0.220.
+
+### Bare third-party baselines (pending GPU bench)
+
+The bare-mode third-party baselines (presidio, gliner-onnx-pii-fp32, piiranha, deberta, scrubadub, nemotron-pii-raw, openai naive/BIOES/Viterbi) are wired in `bench_full.py` and will publish a head-to-head matrix on the next 5090 GPU pass. Card will refresh with delta-vs-competitor numbers at that point.
+
+Full bench artifacts: `packages/eval/results/bench-v10-release-local/matrix.{json,csv}`.
 
 ## Limitations
 

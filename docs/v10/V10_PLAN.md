@@ -76,6 +76,24 @@ User direction (2026-05-05): `openai/privacy-filter` does NOT belong in core nul
 | B3 | **DPIA template regen** (`docs/compliance/DPIA_TEMPLATE.md`) — gated on B1 + B2 output (needs competitor F1 + GPU latency) | ✅ local once B1+B2 land | 2 h | 🔴 post-cloud |
 | B4 | **Real-world side-by-side use-case showcase** (post final-version pick) — extend `packages/eval/private/train/qualitative_compare.py` for a 30-50 sample curated set; output `docs/showcase/USE_CASES.md` + new section in README ("When nullpii wins / loses — concrete examples"). Honest-framing constraint: include both wins AND losses, no cherry-pick | ✅ local | 4-6 h | 🔴 post-final-version (gated on B2 + version pick) |
 
+### Adapter retrain — honest enterprise route (sprint dedicato)
+
+Closes **LEAK-NEMO-ENTERPRISE-01** (red-team Critical) at the source: drop the `nvidia/Nemotron-PII` train data from the `enterprise` LoRA adapter so the bench's `nemotron-pii-test` row becomes truly held-out, not in-distribution memorisation. This is the long-term fix; the short-term mitigation (strip `nemotron-pii-test` from headline macro, mark as `*-INDIST`) is on the honest-numbers patch list.
+
+| # | Item | Local? | Effort | Notes |
+|---|---|---|---|---|
+| A1 | **Re-train `enterprise` adapter without Nemotron-PII** — keep only Faker `us-formats` synth (`packages/eval/private/train/build_us_formats_corpus.py`, 5k records). Drop the Nemotron-PII train slice (`build_nemotron_corpus.py`, 10k records) entirely from the enterprise corpus. Total training corpus shrinks ~15k → ~5k records | ☁ GPU sprint | 1-2 h GPU train + ~2 h prep | Same LoRA recipe (r=16, alpha=32, 2 epochs early-stopped); save to `packages/eval/results/train/v10/adapters/enterprise-honest/adapter` |
+| A2 | **Re-bench** new enterprise adapter on full 27-dataset matrix using `nullpii-v10-router-embedding` with the swapped adapter checkpoint | ✅ local Mac CPU | ~5-6 h | Compare delta: F1 on `nemotron-pii-test` should drop substantially (in-distribution lift gone, ~0.50-0.55 expected vs current 0.7602); F1 on `argilla-pii` + `nullpii-bench` should be roughly flat |
+| A3 | **Decide ship / no-ship** based on A2 numbers. Three outcomes:<br>• If overall macro F1 within ±0.005 of current → **ship the honest enterprise** (LEAK-NEMO-ENTERPRISE-01 closed at source; small loss on Nemotron-test row but no longer claimed as OOD).<br>• If overall F1 drops > 0.005 → either accept the honesty cost OR re-train with a different non-Nemotron US-business corpus (option B: real loan-app / employment record / public sources, 2-3 days hand-curation).<br>• If overall F1 drops > 0.02 → consider the **nuclear path**: drop the enterprise route entirely (4 LoRA, no enterprise adapter, no gate). Lose ~5% recall on enterprise-shaped inputs but eliminates the leakage AND the test-set-tuned gate (TUNE-ENTGATE-01) in one move. distiluse becomes 4-route, F1 ~0.696 macro vs xlmr 0.7076 → xlmr wins on aggregate, possibly flips the shipping decision. | ✅ local decision | 1 h analysis | Depends on A2 numbers |
+| A4 | **Update model card `adapter-enterprise.md`** — drop "Nemotron train split" from the training-data table (was the in-distribution claim); update F1 cells; remove the "in-distribution memorisation" disclosure (no longer applies). Also update heading to reflect the Faker-only variant | ✅ local | 30 min | Post A2 |
+| A5 | **Re-run honest-numbers patch H2** (strip `nemotron-pii-test-INDIST`) — with the honest enterprise adapter, the `INDIST` flag may no longer be needed; `nemotron-pii-test` becomes a normal third-party held-out bench row | ✅ local | 30 min | Post A2 |
+
+**Effort total**: ~1 day GPU + ~6 h local re-bench + ~1 h docs.
+
+**Prerequisite**: GPU access (5090 RunPod or equivalent). Same hardware as the cloud sprint B1 + B2 — combinable into a single GPU session.
+
+**Out of scope for this item**: rebuilding the held-out routing-eval corpus (separate Path-to-A item). TUNE-ENTGATE-01 is only partly addressed here, and only if A3 lands the "drop enterprise route" outcome; otherwise the gate-tuning issue remains and needs the held-out corpus.
+
 ### Honest-numbers patches (red-team — must address before publishing)
 
 Independent red-team auditor review (general-purpose subagent, 2026-05-05) surfaced 20 inflation mechanisms. Full report at `packages/eval/private/v10/RED_TEAM_AUDIT_2026-05-05.md`. The 5 critical blockers:

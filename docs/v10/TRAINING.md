@@ -60,8 +60,6 @@ Two routers are trained on top of the 5 LoRA adapters:
 - **Routing**: cosine similarity between input embedding and each prototype; argmax wins. The `enterprise` route is **gated** at margin ≥ 0.10 vs runner-up.
 - Total training cost: ~5 minutes (embedder inference over 5 corpora).
 
-An xlm-roberta classifier router was also trained as an alternative architecture; it is held in `packages/eval/private/v10/large-candidate/` and may be revived for a v0.2 "large" variant. Not part of the v10 public release surface.
-
 ## Training data composition
 
 | Adapter | Datasets (train rows) | Licenses |

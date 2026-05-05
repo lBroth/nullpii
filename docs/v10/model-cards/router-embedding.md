@@ -26,7 +26,7 @@ pipeline_tag: token-classification
 
 # nullpii v10 — Router (embedding-based, default release-candidate)
 
-> **Status (2026-05-05)**: **shipping pipeline**. Unified release bench complete on Mac CPU (`packages/eval/published-bench/`). Mixed F1 0.7172 across 27 datasets; honest held-out (non-adversarial) F1 0.7008. The xlmr alt router has been moved out of public scope to `packages/eval/private/v10/large-candidate/` for a possible v0.2 "large" variant.
+> **Status (2026-05-05)**: **shipping pipeline**. Unified release bench complete on Mac CPU (`packages/eval/published-bench/`). Mixed F1 0.7172 across 27 datasets; honest held-out (non-adversarial) F1 0.7008.
 
 ## TL;DR
 

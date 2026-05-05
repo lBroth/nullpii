@@ -301,7 +301,7 @@ def build_tools(args) -> dict[str, Callable]:
     openai_backend = args.openai_backend or backend
 
     # ─── v10 LoRA per-domain adapter helper ──────────────────────────
-    # Loaded internally by router-embedding / router-xlmr only. The
+    # Loaded internally by router-embedding only. The
     # individual per-domain adapters are NOT exposed as user-facing
     # tools — release scope is the two routers.
     def _v10_adapter(

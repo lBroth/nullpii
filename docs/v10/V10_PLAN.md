@@ -16,7 +16,7 @@ Two deliverables:
 
 **Done**:
 - v10 LoRA training (5 adapters: devops, legal, medical, narrative, enterprise) on `urchade/gliner_multi_pii-v1`.
-- Local Mac CPU bench `bench-v10-release-local`: 27 datasets × 1 shipping router. router-embedding mixed F1 0.7172, held-out non-adversarial F1 0.7008 (honest OOD). Output `packages/eval/published-bench/matrix.{json,csv}` + `confusion.json`. xlmr alt router moved to `packages/eval/private/v10/large-candidate/` for eventual v0.2 "large" variant.
+- Local Mac CPU bench `bench-v10-release-local`: 27 datasets × 1 shipping router. router-embedding mixed F1 0.7172, held-out non-adversarial F1 0.7008 (honest OOD). Output `packages/eval/published-bench/matrix.{json,csv}` + `confusion.json`.
 - 25/25 audit findings F01–F25 closed. Test suite 191 pass / 8 skipped.
 - Pipeline decision: ship `nullpii-v10-router-embedding` (distiluse, ~430 MB). distiluse wins `nullpii-bench` +0.118 (gate-tuning caveat disclosed) and adversarial-typo/unicode (preprocessor effect, also disclosed).
 - TS validators (Luhn, IBAN-97, CPF, Italian CF, BTC base58check) wired into recognizers.

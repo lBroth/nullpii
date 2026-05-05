@@ -43,9 +43,6 @@ from nullpii_eval.adapters import (  # noqa: E402
 from nullpii_eval.router import (  # noqa: E402
     make_embedding_detector as _make_embedding_detector,
 )
-from nullpii_eval.router import (
-    make_xlmr_detector as _make_xlmr_detector,
-)
 
 
 def _v10_adapter(
@@ -124,18 +121,6 @@ def build_predictor(profile: str, backend: str = "cpu", gliner_threshold: float 
             routes=routes,
             fallback=routes["narrative"],
         )
-    if profile == "nullpii-v10-router-xlmr":
-        routes = _v10_routes(
-            with_enterprise=False, backend=backend, gliner_threshold=gliner_threshold,
-        )
-        return domain_routed_predictor(
-            detector=_make_xlmr_detector(
-                device="cpu" if backend == "cpu" else "cuda",
-            ),
-            routes=routes,
-            fallback=routes["narrative"],
-        )
-
     # ─── Legacy v6/v8 profiles (kept for back-compat) ───────────────
     v6 = lambda: gliner_v2_predictor(  # noqa: E731
         "onnx-community/gliner_multi_pii-v1",
@@ -229,7 +214,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "--profiles", nargs="+",
-        default=["nullpii-v10-router-embedding", "nullpii-v10-router-xlmr"],
+        default=["nullpii-v10-router-embedding"],
         help="profile names; v10 routers (default) or legacy "
              "{devops,legal,medical-experimental,general}",
     )

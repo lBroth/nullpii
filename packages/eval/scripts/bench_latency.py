@@ -6,11 +6,11 @@ representative prompt sizes (100 / 1k / 10k chars), using the bundled
 `nullpii-bench.jsonl` and synthetic-padded variants when needed.
 
 Output: `packages/eval/results/latency-bench-<DATE>/latency.json` +
-`latency.md` table for direct paste into `docs/compliance/DPIA_TEMPLATE.md`.
+`latency.md` table for direct paste into the internal compliance plan.
 
 CLI:
   python bench_latency.py \\
-    --profiles devops legal medical-experimental general \\
+    --profiles nullpii-router-embedding \\
     --sizes 100 1000 10000 \\
     --n-per-size 100 \\
     --backend cpu \\
@@ -35,7 +35,6 @@ from nullpii_eval.adapters import (  # noqa: E402
     boundary_refined_predictor,
     domain_routed_predictor,
     gliner_lora_predictor,
-    gliner_v2_predictor,
     multi_ensemble_predictor,
     never_pii_filter_predictor,
     url_filter_predictor,
@@ -121,58 +120,6 @@ def build_predictor(profile: str, backend: str = "cpu", gliner_threshold: float 
             routes=routes,
             fallback=routes["narrative"],
         )
-    # ─── Legacy v6/v8 profiles (kept for back-compat) ───────────────
-    v6 = lambda: gliner_v2_predictor(  # noqa: E731
-        "onnx-community/gliner_multi_pii-v1",
-        onnx_file="onnx/model.onnx",
-        threshold=gliner_threshold,
-    )
-    v8 = lambda: gliner_v2_predictor(  # noqa: E731
-        "packages/eval/results/train/gliner-v8-multidomain/final",
-        device=backend if backend == "cpu" else "cuda",
-        threshold=gliner_threshold,
-    )
-
-    if profile == "devops":
-        return never_pii_filter_predictor(
-            inner=boundary_refined_predictor(
-                inner=multi_ensemble_predictor(
-                    predictors=[
-                        url_filter_predictor(patterns=DEFAULT_REGEX_PATTERNS),
-                        v6(),
-                    ],
-                    strategy="primary",
-                ),
-            ),
-            drop_rfc1918=True,
-        )
-    if profile in ("legal", "medical-experimental"):
-        return never_pii_filter_predictor(
-            inner=boundary_refined_predictor(
-                inner=multi_ensemble_predictor(
-                    predictors=[
-                        url_filter_predictor(patterns=MINIMAL_REGEX_PATTERNS),
-                        v8(),
-                    ],
-                    strategy="primary",
-                ),
-            ),
-            drop_rfc1918=False,
-        )
-    if profile == "general":
-        return never_pii_filter_predictor(
-            inner=boundary_refined_predictor(
-                inner=multi_ensemble_predictor(
-                    predictors=[
-                        url_filter_predictor(patterns=DEFAULT_REGEX_PATTERNS),
-                        v6(),
-                        v8(),
-                    ],
-                    strategy="union",
-                ),
-            ),
-            drop_rfc1918=True,
-        )
     raise ValueError(f"unknown profile: {profile}")
 
 
@@ -215,8 +162,7 @@ def main() -> None:
     ap.add_argument(
         "--profiles", nargs="+",
         default=["nullpii-router-embedding"],
-        help="profile names; routers (default) or legacy "
-             "{devops,legal,medical-experimental,general}",
+        help="profile names",
     )
     ap.add_argument("--sizes", nargs="+", type=int, default=[100, 1000, 10000])
     ap.add_argument("--n-per-size", type=int, default=50)

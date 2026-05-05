@@ -25,9 +25,7 @@ CLI:
   --backend    cpu | cuda
   --datasets   all | <comma list>  — pick a subset by key
   --confusion  emit per-label TP/FP/FN breakdown for each cell
-  --pool-size N         nullpii daemon pool (default 4)
-  --threads-each N      ORT thread count per daemon (default 4)
-  --gliner-threshold F  default 0.8
+  --gliner-threshold F  default 0.5
 
 Single-dataset run example:
   python bench_full.py --datasets bench-bundled --tools nullpii,gliner \\
@@ -298,7 +296,6 @@ def _wrap_batch(batch_pred):
 
 def build_tools(args) -> dict[str, Callable]:
     backend = args.backend
-    openai_backend = args.openai_backend or backend
 
     # ─── LoRA per-domain adapter helper ──────────────────────────
     # Loaded internally by router-embedding only. The
@@ -311,7 +308,7 @@ def build_tools(args) -> dict[str, Callable]:
         drop_rfc1918: bool,
         use_expanded_prompts: bool = False,
     ):
-        # AUDIT F11 — KEEP `primary`, do NOT switch to `score_ranked`.
+        # KEEP `primary`, do NOT switch to `score_ranked`.
         # The audit (2026-05-04) recommended `score_ranked` to prevent
         # CF/IBAN regex matches overlapping with model `private_person`
         # spans from being dropped. Empirically tested 2026-05-05 on
@@ -375,12 +372,11 @@ def build_tools(args) -> dict[str, Callable]:
             backend="cpu" if backend == "cpu" else "cuda",
             model_dir=os.environ.get("NULLPII_MODEL_DIR"),
         ),
-        # ─── Python re-impl (legacy / dev-only — DEPRECATED) ───────────
+        # ─── Python re-impl (sanity check vs the npm subprocess) ────
         # Composes the router stack from individual library calls
-        # (gliner + peft for LoRA + custom Python ports of boundary
-        # refine / never-PII / URL filter / regex pack). Kept for
-        # ablations and legacy comparisons — DOES NOT match the npm
-        # runtime byte-for-byte. Prefer the `nullpii` row above.
+        # (gliner + peft for LoRA + Python ports of boundary refine /
+        # never-PII / URL filter / regex pack). Not byte-for-byte
+        # identical to the `nullpii` row.
         "nullpii-router-embedding": lambda: (lambda r: domain_routed_predictor(
             detector=_make_embedding_detector(
                 device="cpu" if backend == "cpu" else "cuda",
@@ -544,13 +540,6 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--tools", default="nullpii,gliner,presidio,deberta,piiranha,regex,ensemble")
     parser.add_argument("--backend", default="cuda", choices=["cpu", "cuda"])
-    parser.add_argument("--nullpii-backend", default="",
-                        help="override backend just for nullpii (e.g. cpu when ORT MoE "
-                             "kernels lack Blackwell SM_120 support). Defaults to --backend.")
-    parser.add_argument("--openai-backend", default="",
-                        help="override backend just for the bare openai/privacy-filter "
-                             "HF pipeline (1.3B params; CPU inference is too slow). "
-                             "Defaults to --backend.")
     parser.add_argument("--datasets", default="all")
     parser.add_argument("--max-per-dataset", type=int, default=0,
                         help="0 = use per-dataset defaults; >0 = cap every dataset to N")
@@ -560,20 +549,12 @@ def main() -> None:
                         help="emit per-label TP/FP/FN to confusion.json")
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--checkpoint-dir", default="")
-    parser.add_argument("--pool-size", type=int, default=4)
-    parser.add_argument("--threads-each", type=int, default=4)
     parser.add_argument("--gliner-threshold", type=float, default=0.5)
     parser.add_argument(
         "--drop-rfc1918", action="store_true",
         help="Enable nullpii's never_pii_filter to drop RFC1918 + link-local IPs. "
              "Off by default — those ranges can carry internal-network PII.",
     )
-    parser.add_argument("--gliner-v2-pt-dir", default="",
-                        help="path to fine-tuned GLiNER v2 PT checkpoint (required if "
-                             "--tools includes gliner-v2-pt)")
-    parser.add_argument("--gliner-v2-onnx-dir", default="",
-                        help="path to ONNX export dir of v2 (required if --tools "
-                             "includes gliner-v2-int4)")
     parser.add_argument("--parallel-tools", type=int, default=1,
                         help="run N tools concurrently within each dataset (1=serial). "
                              "32GB 5090 fits 4-6 ML tools simultaneously.")

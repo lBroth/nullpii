@@ -48,7 +48,7 @@ def normalize_for_routing(text: str) -> str:
     embedding/classification. Adapter inference still sees the
     original `text`. See `EmbeddingDomainRouter.__call__`.
 
-    AUDIT F17: NFKC does NOT fold typographic apostrophes (`’` U+2019)
+    NFKC does NOT fold typographic apostrophes (`’` U+2019)
     to ASCII; modern French copy uses U+2019 throughout, so router
     patterns like `Cour d'appel` would miss `Cour d’appel`. Translate
     typographic single quotes to ASCII before pattern matching.
@@ -70,7 +70,7 @@ _SECRET_PATTERNS = re.compile(
     r"xox[baprs]-[A-Za-z0-9-]+|AIza[0-9A-Za-z_-]{35}|"
     r"-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----)",
 )
-# AUDIT F15: was uppercase-only with `=` separator. Now also matches:
+# was uppercase-only with `=` separator. Now also matches:
 # - lowercase `api_key=` / `auth_token=` (common in YAML/JSON dumps)
 # - `KEY:` colon separator (YAML/INI)
 # Captures the value through end-of-line so the count helper can drop
@@ -132,7 +132,7 @@ _LEGAL_TERMS = re.compile(
     r"demandante|demandado|"
     # French (ASCII; `normalize_for_routing` maps `’` → `'`)
     r"Cour\s+(d'appel|de cassation|européenne)|"
-    # AUDIT F14: German legal vocabulary
+    # German legal vocabulary
     r"der Gerichtshof|das Gericht|Artikel\s+\d+|"
     r"Beschwerdef[üu]hrer|Antragsteller|Beklagte|"
     r"Konvention|Urteil|Absatz\s+\d+|"
@@ -167,7 +167,7 @@ _MEDICAL_TERMS = re.compile(
     r"dolor\s+(?:abdominal|torácico|de cabeza)|"
     r"tratamiento\s+con|antecedentes\s+(?:personales|familiares)|"
     r"informe\s+(?:clínico|médico)|episodio\s+clínico|"
-    # AUDIT F16: Italian medical vocabulary (was missing entirely)
+    # Italian medical vocabulary (was missing entirely)
     r"diagnosi|prescrizione|anamnesi|referto|"
     r"dolore\s+(?:addominale|toracico|alla\s+testa)"
     r")\b",
@@ -182,8 +182,7 @@ def _has_devops_signal(text: str) -> bool:
         return True
     if _CODE_FENCE.search(text):
         return True
-    # Multiple env-var lines = strong devops signal. AUDIT F15:
-    # `_count_env_var_dump` skips lines whose value is a date/email/
+    # Multiple env-var lines = strong devops signal.     # `_count_env_var_dump` skips lines whose value is a date/email/
     # phone — those are PII fields, not config dumps (e.g. a YAML
     # block listing personal records would otherwise mis-route to
     # devops).
@@ -281,7 +280,7 @@ def _has_high_precision_signal(text: str) -> str | None:
     when a high-precision regex signal fires; `None` otherwise (ML
     fallback handles those).
 
-    AUDIT F13: when a legal/medical doc embeds a single secret (e.g. a
+    when a legal/medical doc embeds a single secret (e.g. a
     judgment that quotes a leaked credential as evidence), preserve
     the domain routing — the regex pack still catches the secret
     regardless of which adapter handles span detection. Without this
@@ -298,7 +297,7 @@ def _has_high_precision_signal(text: str) -> str | None:
         return "devops"
     if _CODE_FENCE.search(text):
         return "devops"
-    # AUDIT F15: see `_count_env_var_dump` for the PII-value filter.
+    # see `_count_env_var_dump` for the PII-value filter.
     if _count_env_var_dump(text) >= 2:
         return "devops"
     if _PYTHON_KEYWORD.search(text):
@@ -354,7 +353,7 @@ class HybridDomainRouter:
         self._min_confidence = min_confidence
 
     def __call__(self, text: str) -> str:
-        # AUDIT F17: normalise BEFORE both stages so typographic
+        # normalise BEFORE both stages so typographic
         # apostrophes / fullwidth digits / zero-width chars don't
         # defeat pattern anchors.
         normalized = normalize_for_routing(text)

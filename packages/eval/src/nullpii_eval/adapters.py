@@ -42,142 +42,6 @@ class ToolResult:
 Predictor = Callable[[str], ToolResult]
 
 
-class _NullpiiServer:
-    def __init__(
-        self,
-        *,
-        model_dir: Path,
-        backend: str,
-        variant: str,
-        enter_bias: float | None = None,
-        background_bias: float | None = None,
-        continue_bias: float | None = None,
-        threshold: float | None = None,
-        threads: int | None = None,
-    ) -> None:
-        argv = [
-            "node",
-            str(NULLPII_BIN),
-            "serve",
-            "--model-dir", str(model_dir),
-            "--backend", backend,
-            "--variant", variant,
-        ]
-        if enter_bias is not None:
-            argv += ["--enter-bias", str(enter_bias)]
-        if background_bias is not None:
-            argv += ["--background-bias", str(background_bias)]
-        if continue_bias is not None:
-            argv += ["--continue-bias", str(continue_bias)]
-        if threshold is not None:
-            argv += ["--threshold", str(threshold)]
-        if threads is not None:
-            argv += ["--threads", str(threads)]
-        self.proc = subprocess.Popen(
-            argv,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
-            cwd=str(REPO_ROOT),
-        )
-        if self.proc.stderr is None:
-            raise RuntimeError("nullpii serve: failed to capture stderr")
-        # Some backends (e.g. CoreML) log warnings to stderr before our
-        # ready signal. Drain lines until we see ready or the process exits.
-        seen: list[str] = []
-        while True:
-            line = self.proc.stderr.readline()
-            if line == "":
-                self.proc.kill()
-                raise RuntimeError(
-                    "nullpii serve did not become ready: " + " | ".join(s.strip() for s in seen)
-                )
-            seen.append(line)
-            if "ready" in line:
-                break
-        # stdin/stdout are a single full-duplex pipe pair to one daemon.
-        # Multiple threads writing/reading concurrently would interleave
-        # request and response lines. Serialize via a per-server lock.
-        self._lock = threading.Lock()
-        atexit.register(self.close)
-
-    def request(self, text: str) -> tuple[list[Span], float]:
-        if self.proc.stdin is None or self.proc.stdout is None:
-            raise RuntimeError("nullpii serve: pipes closed")
-        t0 = time.perf_counter()
-        with self._lock:
-            self.proc.stdin.write(f"{json.dumps({'text': text})}\n")
-            self.proc.stdin.flush()
-            line = self.proc.stdout.readline()
-        elapsed = (time.perf_counter() - t0) * 1000
-        if line == "":
-            raise RuntimeError(f"nullpii serve died: {self._stderr_tail()}")
-        resp = json.loads(line)
-        if "error" in resp and resp["error"]:
-            raise RuntimeError(f"nullpii serve error: {resp['error']}")
-        spans = [Span(s["label"], int(s["start"]), int(s["end"])) for s in resp.get("spans", [])]
-        return spans, elapsed
-
-    def _stderr_tail(self) -> str:
-        # Used inside an already-failing path (e.g. "daemon died" message
-        # construction). MUST return a string — raising here replaces the
-        # original error with this one and erases the actual cause.
-        # Read errors are surfaced as the returned diagnostic string.
-        if self.proc.stderr is None:
-            return "<no stderr captured>"
-        try:
-            data = self.proc.stderr.read()
-        except (OSError, ValueError) as e:
-            return f"<could not read stderr: {type(e).__name__}: {e}>"
-        return data if data else "<empty stderr>"
-
-    def close(self) -> None:
-        # `atexit`-registered cleanup. We MUST not crash interpreter
-        # shutdown for unrelated daemons; but any unexpected error here
-        # gets re-raised so test harnesses see it. BrokenPipe on a
-        # daemon that already exited is the only routine condition.
-        if self.proc.poll() is None:
-            if self.proc.stdin is not None:
-                try:
-                    self.proc.stdin.close()
-                except BrokenPipeError as e:
-                    print(f"[nullpii-pool] stdin already closed: {e}",
-                          file=sys.stderr, flush=True)
-            self.proc.terminate()
-            try:
-                self.proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.proc.kill()
-
-
-class _NullpiiServerPool:
-    """A pool of N independent `nullpii serve` daemons.
-
-    Each daemon owns its own ORT session and stdin/stdout pipe, so
-    `request()` calls dispatched to different daemons execute in true
-    parallel (no shared lock). Round-robin assignment via an index lock.
-    """
-
-    def __init__(self, *, size: int, **server_kwargs) -> None:
-        if size < 1:
-            raise ValueError("pool size must be >= 1")
-        self.servers = [_NullpiiServer(**server_kwargs) for _ in range(size)]
-        self._next = 0
-        self._next_lock = threading.Lock()
-
-    def request(self, text: str) -> tuple[list[Span], float]:
-        with self._next_lock:
-            srv = self.servers[self._next % len(self.servers)]
-            self._next += 1
-        return srv.request(text)
-
-    def close(self) -> None:
-        for s in self.servers:
-            s.close()
-
-
 def nullpii_runtime_predictor(
     *,
     backend: str = "cpu",
@@ -242,341 +106,7 @@ def nullpii_runtime_predictor(
     return _predict
 
 
-def nullpii_pool_predictor(
-    *,
-    pool_size: int = 4,
-    threads_each: int = 2,
-    model_dir: Path = DEFAULT_MODEL_DIR,
-    backend: str = "cpu",
-    variant: str = "int4",
-    enter_bias: float | None = None,
-    background_bias: float | None = None,
-    continue_bias: float | None = None,
-    threshold: float | None = None,
-) -> Predictor:
-    """Pool-backed predictor — N nullpii daemons with capped per-daemon
-    threads. Total threads = pool_size × threads_each. Round-robin
-    dispatch lets multiple eval threads run truly concurrently."""
-    if not NULLPII_BIN.is_file():
-        raise FileNotFoundError(f"nullpii CLI not found at {NULLPII_BIN}")
-    pool = _NullpiiServerPool(
-        size=pool_size,
-        model_dir=model_dir,
-        backend=backend,
-        variant=variant,
-        threads=threads_each,
-        enter_bias=enter_bias,
-        background_bias=background_bias,
-        continue_bias=continue_bias,
-        threshold=threshold,
-    )
-
-    def _predict(text: str) -> ToolResult:
-        spans, elapsed = pool.request(text)
-        return ToolResult(spans, elapsed)
-
-    return _predict
-
-
-def nullpii_predictor(
-    *,
-    model_dir: Path = DEFAULT_MODEL_DIR,
-    backend: str = "cpu",
-    variant: str = "int4",
-    enter_bias: float | None = None,
-    background_bias: float | None = None,
-    continue_bias: float | None = None,
-    threshold: float | None = None,
-    threads: int | None = None,
-) -> Predictor:
-    if not NULLPII_BIN.is_file():
-        raise FileNotFoundError(f"nullpii CLI not found at {NULLPII_BIN}")
-    server = _NullpiiServer(
-        model_dir=model_dir,
-        backend=backend,
-        variant=variant,
-        enter_bias=enter_bias,
-        background_bias=background_bias,
-        continue_bias=continue_bias,
-        threshold=threshold,
-        threads=threads,
-    )
-
-    def _predict(text: str) -> ToolResult:
-        spans, elapsed = server.request(text)
-        return ToolResult(spans, elapsed)
-
-    return _predict
-
-
 BatchPredictor = Callable[[list[str]], list[ToolResult]]
-
-
-def openai_pipeline_batch_predictor(
-    *,
-    device: str | None = None,
-    batch_size: int = 32,
-) -> BatchPredictor:
-    """Batched HF predictor — runs the pipeline on a list of texts in
-    one call, vastly faster than one-at-a-time on MPS where the
-    per-call dispatch overhead dominates."""
-    try:
-        import torch  # noqa: I001
-        from transformers import pipeline
-    except ImportError as e:
-        raise ImportError("transformers + torch required") from e
-
-    if device is None:
-        if torch.backends.mps.is_available():
-            device = "mps"
-        elif torch.cuda.is_available():
-            device = "cuda"
-        else:
-            device = "cpu"
-
-    # Force torch to actually use multiple cores on Apple Silicon.
-    # Default is often 1 — leaves 13 idle on M5 Pro.
-    if device == "cpu":
-        threads = max(1, (os.cpu_count() or 8) // 2)
-        torch.set_num_threads(threads)
-        try:
-            torch.set_num_interop_threads(max(1, threads // 4))
-        except RuntimeError:
-            pass  # already set, ignore
-
-    pipe = pipeline(
-        task="token-classification",
-        model="openai/privacy-filter",
-        aggregation_strategy="simple",
-        device=device,
-        batch_size=batch_size,
-        trust_remote_code=True,
-    )
-
-    def _predict_batch(texts: list[str]) -> list[ToolResult]:
-        t0 = time.perf_counter()
-        results_list = pipe(texts)
-        elapsed = (time.perf_counter() - t0) * 1000
-        per_call = elapsed / max(1, len(texts))
-        out: list[ToolResult] = []
-        # Pipeline returns either a list of lists (batch) or a single list
-        # (single text). Normalize.
-        if results_list and isinstance(results_list[0], dict):
-            results_list = [results_list]  # type: ignore[list-item]
-        for results in results_list:
-            spans: list[Span] = []
-            for r in results:
-                entity = str(r.get("entity_group") or r.get("entity") or "")
-                label = _strip_bioes(entity)
-                if label not in _OPENAI_LABELS:
-                    continue
-                spans.append(Span(label, int(r["start"]), int(r["end"])))
-            out.append(ToolResult(spans, per_call))
-        return out
-
-    return _predict_batch
-
-
-def openai_pipeline_predictor(
-    *,
-    device: str | None = None,
-    batch_size: int = 1,
-) -> Predictor:
-    """Upstream-reference predictor: `transformers.pipeline` on the bare HF
-    weights. No chunking, no Viterbi biases — just HF's default token
-    classification decoder. Used to verify that nullpii's runtime adds
-    value beyond what the model alone would produce.
-
-    `device='mps'` on Apple Silicon offloads to the GPU via MPS, ~3-5×
-    faster than CPU for transformer inference. `batch_size>1` lets the
-    pipeline parallelize when called via `pipe(list_of_texts)`.
-    """
-    try:
-        import torch  # noqa: I001
-        from transformers import pipeline
-    except ImportError as e:
-        raise ImportError(
-            "transformers not installed; run `pip install transformers torch` to use this adapter",
-        ) from e
-
-    if device is None:
-        if torch.backends.mps.is_available():
-            device = "mps"
-        elif torch.cuda.is_available():
-            device = "cuda"
-        else:
-            device = "cpu"
-
-    pipe = pipeline(
-        task="token-classification",
-        model="openai/privacy-filter",
-        aggregation_strategy="simple",
-        device=device,
-        batch_size=batch_size,
-        trust_remote_code=True,
-    )
-
-    def _predict(text: str) -> ToolResult:
-        t0 = time.perf_counter()
-        results = pipe(text)
-        elapsed = (time.perf_counter() - t0) * 1000
-        spans: list[Span] = []
-        for r in results:
-            entity = str(r.get("entity_group") or r.get("entity") or "")
-            label = _strip_bioes(entity)
-            if label not in _OPENAI_LABELS:
-                continue
-            spans.append(Span(label, int(r["start"]), int(r["end"])))
-        return ToolResult(spans, elapsed)
-
-    return _predict
-
-
-def openai_official_predictor(*, device: str = "cpu") -> Predictor:
-    """Official `opf` CLI Python API — full constrained Viterbi BIOES decoder.
-
-    Uses `opf` (`github.com/openai/privacy-filter`, Apache-2.0). This is
-    the **reference predictor** for `openai/privacy-filter` quality:
-    the model card prescribes constrained Viterbi over BIOES, and this
-    adapter calls the actual implementation rather than a re-derived
-    approximation. Replaces the strawman comparison against our own
-    Python BIOES decoder (`openai_bioes_predictor`) with the upstream
-    truth.
-    """
-    try:
-        from opf._api import OPF
-    except ImportError as e:
-        raise ImportError(
-            "opf not installed; clone github.com/openai/privacy-filter "
-            "and run `pip install -e .` to use this adapter",
-        ) from e
-
-    if device not in ("cpu", "cuda"):
-        device = "cpu"
-    opf_runtime = OPF(device=device, output_mode="typed", decode_mode="viterbi")  # type: ignore[arg-type]
-
-    def _predict(text: str) -> ToolResult:
-        t0 = time.perf_counter()
-        res = opf_runtime.redact(text)
-        elapsed = (time.perf_counter() - t0) * 1000
-        spans: list[Span] = []
-        # Returned type is RedactionResult when output_mode='typed'.
-        for sp in getattr(res, "detected_spans", ()) or ():
-            label = str(getattr(sp, "label", "")).lower()
-            if label not in _OPENAI_LABELS:
-                continue
-            spans.append(Span(label, int(sp.start), int(sp.end)))
-        return ToolResult(spans, elapsed)
-
-    return _predict
-
-
-def openai_bioes_predictor(
-    *,
-    device: str | None = None,
-    max_length: int = 4096,
-) -> Predictor:
-    """`openai/privacy-filter` with a Python BIOES decoder.
-
-    The model card prescribes a constrained Viterbi BIOES decoder, but the
-    HF `transformers` integration only exposes per-token logits via
-    `pipeline()` with `aggregation_strategy="simple"`, which produces
-    fragmented spans. This predictor closes most of that gap by running
-    the raw model and decoding tags greedily (BIOES adjacency, no Viterbi
-    transition cost). Reference for the model's actual quality without
-    the official `opf` CLI.
-    """
-    try:
-        import torch  # noqa: I001
-        from transformers import AutoModelForTokenClassification, AutoTokenizer
-    except ImportError as e:
-        raise ImportError("transformers + torch required") from e
-
-    if device is None:
-        if torch.backends.mps.is_available():
-            device = "mps"
-        elif torch.cuda.is_available():
-            device = "cuda"
-        else:
-            device = "cpu"
-
-    if device == "cpu":
-        threads = max(1, (os.cpu_count() or 8) // 2)
-        torch.set_num_threads(threads)
-        try:
-            torch.set_num_interop_threads(max(1, threads // 4))
-        except RuntimeError:
-            pass
-
-    tok = AutoTokenizer.from_pretrained("openai/privacy-filter", trust_remote_code=True)
-    model = (
-        AutoModelForTokenClassification.from_pretrained(
-            "openai/privacy-filter", trust_remote_code=True,
-        )
-        .to(device)
-        .eval()
-    )
-    id2lab = model.config.id2label
-
-    def _predict(text: str) -> ToolResult:
-        t0 = time.perf_counter()
-        enc = tok(
-            text, return_tensors="pt", return_offsets_mapping=True,
-            truncation=True, max_length=max_length,
-        )
-        offsets = enc.pop("offset_mapping").squeeze(0).tolist()
-        enc = {k: v.to(device) for k, v in enc.items()}
-        with torch.no_grad():
-            logits = model(**enc).logits.argmax(dim=-1).squeeze(0).tolist()
-
-        spans: list[Span] = []
-        cur_label: str | None = None
-        cur_start: int | None = None
-        cur_end: int | None = None
-
-        def _close() -> None:
-            nonlocal cur_label, cur_start, cur_end
-            if (
-                cur_label is not None
-                and cur_start is not None
-                and cur_end is not None
-                and cur_end > cur_start
-            ):
-                lab = cur_label.lower()
-                if lab in _OPENAI_LABELS:
-                    spans.append(Span(lab, cur_start, cur_end))
-            cur_label = cur_start = cur_end = None
-
-        for tok_id, (st, en) in zip(logits, offsets):
-            if st == en == 0:
-                _close()
-                continue
-            lab = id2lab[tok_id]
-            if lab == "O":
-                _close()
-                continue
-            prefix, _, cat = lab.partition("-")
-            if prefix == "S":
-                _close()
-                low = cat.lower()
-                if low in _OPENAI_LABELS:
-                    spans.append(Span(low, st, en))
-            elif prefix == "B":
-                _close()
-                cur_label, cur_start, cur_end = cat, st, en
-            elif prefix in ("I", "E"):
-                if cur_label == cat:
-                    cur_end = en
-                    if prefix == "E":
-                        _close()
-                else:
-                    _close()
-        _close()
-
-        elapsed = (time.perf_counter() - t0) * 1000
-        return ToolResult(spans, elapsed)
-
-    return _predict
 
 
 _PIIRANHA_LABEL_MAP = {
@@ -604,10 +134,8 @@ def piiranha_predictor(
     device: str | None = None,
     batch_size: int = 32,
 ) -> BatchPredictor:
-    """`iiiorg/piiranha-v1-detect-personal-information` — DeBERTa-v3-based
-    multilingual PII detector (en/es/fr/de/it/nl, 17 PII labels, 256-tok
-    max). Smaller than openai/privacy-filter (~278M params vs 1.3B), no
-    chunking, no Viterbi — bare HF token-classification pipeline."""
+    """`iiiorg/piiranha-v1-detect-personal-information` — multilingual
+    DeBERTa-v3-based PII detector (en/es/fr/de/it/nl, 17 labels, 256 tok)."""
     try:
         import torch  # noqa: I001
         from transformers import pipeline
@@ -802,72 +330,10 @@ _GLINER_LABEL_MAP = {
 }
 
 
-def gliner_pii_predictor(
-    *,
-    threshold: float = 0.5,
-) -> Predictor:
-    """`urchade/gliner_multi_pii-v1` — GLiNER zero-shot NER. Supports
-    arbitrary label sets at inference; we pass a curated PII list and
-    map to nullpii's 8 categories."""
-    try:
-        from gliner import GLiNER  # noqa: I001
-    except ImportError as e:
-        raise ImportError(
-            "gliner not installed; run `pip install gliner` to use this adapter",
-        ) from e
-
-    model = GLiNER.from_pretrained("urchade/gliner_multi_pii-v1")
-
-    def _predict(text: str) -> ToolResult:
-        t0 = time.perf_counter()
-        entities = model.predict_entities(text, _GLINER_LABELS, threshold=threshold)
-        elapsed = (time.perf_counter() - t0) * 1000
-        spans: list[Span] = []
-        for e in entities:
-            label = _GLINER_LABEL_MAP.get(e.get("label"))
-            if label is None:
-                continue
-            spans.append(Span(label, int(e["start"]), int(e["end"])))
-        return ToolResult(spans, elapsed)
-
-    return _predict
-
-
-def make_best_ensemble(
-    *,
-    pool_size: int = 4,
-    threads_each: int = 4,
-    gliner_threshold: float = 0.8,
-) -> Predictor:
-    """Production-default ensemble derived from the iter-22 sweep.
-
-    Stack:
-      - **nullpii** pool (4 daemons × 4 ORT threads, cpu+fp16)
-      - **GLiNER** (urchade/gliner_multi_pii-v1, threshold 0.8, chunked)
-      - **regex pack** (URL http(s)/www, email, AWS/GitHub/Stripe/OpenAI keys,
-        IBAN, SSN, phone)
-      - **boundary refinement** (trim trailing whitespace + punctuation)
-
-    Strategy: nullpii primary, GLiNER + regex fill non-overlapping gaps.
-    Best measured F1: 0.6712 across 4271 samples (bundled multi-locale,
-    long-prompts-en, isotonic 4 locales). Latency p50 207 ms / p95 278 ms
-    single-call on Apple M5 Pro 48 GB."""
-    np_pred = nullpii_pool_predictor(
-        pool_size=pool_size, threads_each=threads_each,
-        backend="cpu", variant="fp16",
-    )
-    gl_pred = gliner_chunked_predictor(threshold=gliner_threshold)
-    rg_pred = regex_recognizer_predictor(patterns=DEFAULT_REGEX_PATTERNS)
-    ens = multi_ensemble_predictor(
-        predictors=[np_pred, gl_pred, rg_pred], strategy="primary",
-    )
-    return boundary_refined_predictor(inner=ens)
-
-
 def boundary_refined_predictor(
     *,
     inner: Predictor,
-    # AUDIT F12: extended with typographic apostrophes, guillemets,
+    # extended with typographic apostrophes, guillemets,
     # smart-quotes, low-9 quote — common in modern French / Italian /
     # German prose. ASCII-only set previously left these as boundary
     # noise on PII spans.
@@ -902,7 +368,7 @@ def boundary_refined_predictor(
     return _predict
 
 
-_REGEX_INPUT_MAX_BYTES = 1_000_000  # 1 MB ReDoS guard, AUDIT F22
+_REGEX_INPUT_MAX_BYTES = 1_000_000  # 1 MB ReDoS guard
 
 _BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 _BASE58_INDEX = {c: i for i, c in enumerate(_BASE58_ALPHABET)}
@@ -914,7 +380,7 @@ def _base58check_valid(addr: str) -> bool:
     Decodes base58 → bytes; payload + 4-byte checksum;
     SHA256(SHA256(payload))[:4] must equal checksum.
 
-    AUDIT F07: drops false-positive matches on prose tokens that share
+    drops false-positive matches on prose tokens that share
     the base58 charset shape (e.g. `Order ID: 1A2B3C4D5E6F7G8H9J1K2L3M4N`)
     but fail the cryptographic checksum.
     """
@@ -978,7 +444,7 @@ def regex_recognizer_predictor(
         t0 = time.perf_counter()
         spans: list[Span] = []
         scores: list[float] = []
-        # AUDIT F22: refuse to scan inputs > 1 MB. Unbounded `{N,}` quantifiers
+        # refuse to scan inputs > 1 MB. Unbounded `{N,}` quantifiers
         # in upstream secret patterns are quadratic on adversarial padding.
         # 1 MB is well above any realistic LLM prompt size.
         if len(text) > _REGEX_INPUT_MAX_BYTES:
@@ -1034,7 +500,7 @@ DEFAULT_REGEX_PATTERNS: list[tuple[str, str]] = [
     ("private_url", r"\b(?:https?://|www\.)[^\s<>\"]+"),
     # Email
     ("private_email", r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),
-    # AUDIT F20 REVERTED: IDN-aware pattern `(?<!\w)[\w.%+\-]+@[\w.\-]
+    # IDN-aware pattern `(?<!\w)[\w.%+\-]+@[\w.\-]
     # +\.[\w]{2,24}(?!\w)` produced 336 FP / 500 matches on
     # nullpii-bench (Unicode `\w` matched arbitrary identifier-like
     # strings as email local parts). IDN coverage is now handled by
@@ -1099,7 +565,7 @@ DEFAULT_REGEX_PATTERNS: list[tuple[str, str]] = [
     ("secret", r"\beyJ[A-Za-z0-9_\-]{8,2048}\.[A-Za-z0-9_\-]{8,2048}\.[A-Za-z0-9_\-]{8,2048}\b"),
     # ─── Account-number patterns ────────────────────────────────────
     # IBAN (rough — IT, GB, DE, FR, ES)
-    # AUDIT F05: was `[ \t]?` — only ASCII space/tab. PDF / online-banking
+    # was `[ \t]?` — only ASCII space/tab. PDF / online-banking
     # copy-paste injects U+00A0 NBSP / U+202F narrow no-break / U+2009 thin
     # space between IBAN groups; widened to `\s?` to catch them.
     ("account_number", r"\b[A-Z]{2}\d{2}[A-Z0-9]{1,4}(?:\s?\d{4}){2,5}(?:\s?\d{1,4})?\b"),
@@ -1111,7 +577,7 @@ DEFAULT_REGEX_PATTERNS: list[tuple[str, str]] = [
     ("account_number", r"\b3[A-HJ-NP-Za-km-z1-9]{25,34}\b"),
     # Bitcoin Bech32 (segwit, bc1...)
     ("account_number", r"\bbc1[a-z0-9]{39,59}\b"),
-    # AUDIT F07: Bitcoin Legacy address — same regex shape as before
+    # Bitcoin Legacy address — same regex shape as before
     # (kept for backwards compat) but the `regex_recognizer_predictor`
     # post-filter will validate the base58check checksum. Without
     # validation, any 26-34 char base58-charset prose token (`Order
@@ -1121,10 +587,10 @@ DEFAULT_REGEX_PATTERNS: list[tuple[str, str]] = [
     # UUID v4 (often used as account/customer id)
     ("account_number", r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}\b"),
     # MAC address (hardware identifier).
-    # AUDIT F06: lookbehind/lookahead added so `00:11:22:33:44:55:66`
+    # lookbehind/lookahead added so `00:11:22:33:44:55:66`
     # (7-octet bus address) is not mis-matched as a 6-octet MAC.
     ("account_number", r"(?<![:0-9A-Fa-f])[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}(?![:0-9A-Fa-f])"),
-    # IPv4 address — AUDIT F06: octet-bounded so `version 3.14.15.92`
+    # IPv4 address — octet-bounded so `version 3.14.15.92`
     # and `package 2.16.840.1.113883` no longer match.
     ("account_number", r"\b(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}\b"),
     # IPv6 standard (8 hex groups separated by colons)
@@ -1147,7 +613,7 @@ DEFAULT_REGEX_PATTERNS: list[tuple[str, str]] = [
     # Mapbox token
     ("secret", r"\bpk\.eyJ1Ijoi[A-Za-z0-9_\-]+\.eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\b"),
     # Square access token
-    # AUDIT F22: bound to {200,400} — Square access tokens are 218 chars;
+    # bound to {200,400} — Square access tokens are 218 chars;
     # unbounded `{200,}` enabled quadratic backtrack on adversarial pad input.
     ("secret", r"\bEAA[A-Za-z0-9_\-]{200,400}\b"),
     # PayPal Braintree access token
@@ -1163,7 +629,7 @@ DEFAULT_REGEX_PATTERNS: list[tuple[str, str]] = [
     ("account_number", r"\b[A-CEFGHJ-NPR-Z]\d{8}\b"),
     # US EIN (XX-XXXXXXX)
     ("account_number", r"\b\d{2}-\d{7}\b"),
-    # AUDIT F19: Italian Codice Fiscale — 6 alpha + 2 digit + month-letter
+    # Italian Codice Fiscale — 6 alpha + 2 digit + month-letter
     # (one of A-EHLMPRST) + 2 digit day + alpha + 3 digit + control letter.
     # Comment claimed it was added; the pattern was missing.
     ("account_number", r"\b[A-Z]{6}\d{2}[A-EHLMPRST]\d{2}[A-Z]\d{3}[A-Z]\b"),
@@ -1172,7 +638,7 @@ DEFAULT_REGEX_PATTERNS: list[tuple[str, str]] = [
     # Anchored on the leading `+` to avoid matching version strings,
     # IDs, etc. that have similar digit groupings.
     ("private_phone", r"\+\d{1,3}[\s\-.]?\(?\d{1,4}\)?[\s\-.]?\d{2,4}[\s\-.]?\d{3,8}"),
-    # AUDIT F09: domestic formats with REQUIRED context anchor.
+    # domestic formats with REQUIRED context anchor.
     # Initial unanchored variants (`\b0\d{1,2}...`, `\b[6-9]\d{2}...`)
     # had massive false-positive rate on nullpii-bench (17 + 6 FP, 0
     # in gold) because they overlap with credit-card / SSN digit
@@ -1222,7 +688,7 @@ PUBLIC_URL_HOSTS: tuple[str, ...] = (
 )
 
 
-# AUDIT F08: re-finditer over `https?://` inside an outer URL match,
+# re-finditer over `https?://` inside an outer URL match,
 # so that `https://outer.com/?next=https://inner.private/...` returns
 # both URLs and the whitelist filter checks each independently.
 _NESTED_URL_RE = re.compile(r"https?://[^\s<>\"]+")
@@ -1259,7 +725,7 @@ def url_filter_predictor(*, patterns: list[tuple[str, str]]) -> Predictor:
         return any(host == h or host.endswith("." + h) for h in PUBLIC_URL_HOSTS)
 
     def _all_urls_public(span_text: str) -> bool:
-        """AUDIT F08: when a single URL match contains query-param URLs
+        """when a single URL match contains query-param URLs
         (e.g. OAuth/redirect chains), require ALL embedded URLs to be
         public for the whole match to be dropped. A greedy `https?://…`
         match like `https://github.com/?next=https://victim.private/...`
@@ -1309,7 +775,7 @@ MINIMAL_REGEX_PATTERNS: list[tuple[str, str]] = [
     ("private_url", r"\b(?:https?://|www\.)[^\s<>\"]+"),
     # Email
     ("private_email", r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),
-    # AUDIT F20 REVERTED: IDN-aware pattern `(?<!\w)[\w.%+\-]+@[\w.\-]
+    # IDN-aware pattern `(?<!\w)[\w.%+\-]+@[\w.\-]
     # +\.[\w]{2,24}(?!\w)` produced 336 FP / 500 matches on
     # nullpii-bench (Unicode `\w` matched arbitrary identifier-like
     # strings as email local parts). IDN coverage is now handled by
@@ -1318,7 +784,7 @@ MINIMAL_REGEX_PATTERNS: list[tuple[str, str]] = [
     # pattern to match. True non-Latin emails (`用户@例え.jp`) remain
     # uncovered until a more restrictive Unicode pattern is designed.
     # IBAN (rough — IT, GB, DE, FR, ES)
-    # AUDIT F05: was `[ \t]?` — only ASCII space/tab. PDF / online-banking
+    # was `[ \t]?` — only ASCII space/tab. PDF / online-banking
     # copy-paste injects U+00A0 NBSP / U+202F narrow no-break / U+2009 thin
     # space between IBAN groups; widened to `\s?` to catch them.
     ("account_number", r"\b[A-Z]{2}\d{2}[A-Z0-9]{1,4}(?:\s?\d{4}){2,5}(?:\s?\d{1,4})?\b"),
@@ -1332,7 +798,7 @@ MINIMAL_REGEX_PATTERNS: list[tuple[str, str]] = [
     ("account_number", r"\b(?:[0-9a-fA-F]{1,4}:){1,7}:|:(?::[0-9a-fA-F]{1,4}){1,7}|(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}\b"),
     # Phone — international format anchored on `+`
     ("private_phone", r"\+\d{1,3}[\s\-.]?\(?\d{1,4}\)?[\s\-.]?\d{2,4}[\s\-.]?\d{3,8}"),
-    # AUDIT F09: domestic formats with REQUIRED context anchor.
+    # domestic formats with REQUIRED context anchor.
     # Initial unanchored variants (`\b0\d{1,2}...`, `\b[6-9]\d{2}...`)
     # had massive false-positive rate on nullpii-bench (17 + 6 FP, 0
     # in gold) because they overlap with credit-card / SSN digit
@@ -1397,7 +863,7 @@ NEVER_PII_DOMAIN_SUFFIXES: tuple[str, ...] = (
 
 # NANP fictional phone prefix (ITU-T E.164 / NANP-reserved). Only the
 # subscriber range 555-0100 through 555-0199 is universally fictional.
-# AUDIT F18: previous regex matched ANY 555-prefixed number with a
+# previous regex matched ANY 555-prefixed number with a
 # 7-digit subscriber, dropping legitimate `1-555-XXX-XXXX` calls in
 # any region. Restricted to the reserved 0100-0199 block (subscriber
 # starts with `01` followed by two digits).
@@ -1543,173 +1009,6 @@ def never_pii_filter_predictor(
     return _predict
 
 
-def encoding_deobf_predictor(*, inner: Predictor) -> Predictor:
-    """De-obfuscate base64 / URL-encoded / HTML-entity wrapped PII.
-
-    Detects encoded substrings and tries to decode them; if the decoded
-    text contains PII per the inner predictor, flags the *encoded*
-    substring (in the original text) with the union of detected labels.
-
-    Detectors:
-      - base64 candidate: `[A-Za-z0-9+/]{16,}={0,2}`, length divisible
-        by 4, decoded bytes valid UTF-8
-      - URL-encoded: substring containing `%[0-9A-Fa-f]{2}` patterns
-      - HTML entity: substring containing `&#\\d+;` patterns
-
-    Strict: only flags the encoded span if the decoded text passes a
-    PII check via the inner predictor. False-positive risk on legit
-    base64 / URL-encoded data (cert bytes, JSON tokens, encoded files)
-    is mitigated by requiring the decoded result to actually pass PII
-    detection — random base64 won't decode to email/phone/secret-shape
-    text.
-
-    Off by default. Enable via `--enable-deobf-encoding` for workloads
-    where evasion via encoding is likely (chat platforms with active
-    blocking, content moderation pipelines)."""
-    import base64 as _base64
-    import html as _html
-    import re as _re
-    import urllib.parse as _urlparse
-
-    _BASE64_RE = _re.compile(r"[A-Za-z0-9+/]{16,}={0,2}")
-    _URL_ENC_RE = _re.compile(r"(?:%[0-9A-Fa-f]{2}){2,}[A-Za-z0-9._%+\-@/:]*")
-    _HTML_ENT_RE = _re.compile(r"(?:&#\d+;)+[A-Za-z0-9._@\-+]*")
-
-    def _try_b64(s: str) -> str | None:
-        if len(s) % 4 != 0:
-            return None
-        try:
-            decoded = _base64.b64decode(s, validate=True)
-            return decoded.decode("utf-8")
-        except (ValueError, UnicodeDecodeError):
-            return None
-
-    def _try_url(s: str) -> str | None:
-        try:
-            decoded = _urlparse.unquote(s)
-            if decoded == s:
-                return None
-            return decoded
-        except (ValueError, UnicodeDecodeError):
-            return None
-
-    def _try_html(s: str) -> str | None:
-        try:
-            decoded = _html.unescape(s)
-            if decoded == s:
-                return None
-            return decoded
-        except (ValueError, UnicodeDecodeError):
-            return None
-
-    def _predict(text: str) -> ToolResult:
-        original = inner(text)
-        spans: list[Span] = list(original.spans)
-        for regex, decoder in (
-            (_BASE64_RE, _try_b64),
-            (_URL_ENC_RE, _try_url),
-            (_HTML_ENT_RE, _try_html),
-        ):
-            for m in regex.finditer(text):
-                encoded = m.group()
-                decoded = decoder(encoded)
-                if not decoded or len(decoded) < 4:
-                    continue
-                sub = inner(decoded)
-                if not sub.spans:
-                    continue
-                # Flag the encoded substring with each detected label.
-                seen_labels: set[str] = set()
-                for sp in sub.spans:
-                    if sp.label in seen_labels:
-                        continue
-                    seen_labels.add(sp.label)
-                    spans.append(Span(sp.label, m.start(), m.end()))
-        # Dedupe identical spans.
-        unique: list[Span] = []
-        seen: set[tuple[str, int, int]] = set()
-        for sp in spans:
-            key = (sp.label, sp.start, sp.end)
-            if key in seen:
-                continue
-            seen.add(key)
-            unique.append(sp)
-        unique.sort(key=lambda s: s.start)
-        return ToolResult(unique, original.elapsed_ms)
-
-    return _predict
-
-
-def whitespace_deobf_predictor(*, inner: Predictor) -> Predictor:
-    """De-obfuscate whitespace-separated PII before detection.
-
-    Marketplace / chat / e-commerce vendors often face users trying to
-    evade contact-info detection by inserting spaces between letters
-    (`g i a n l u c a @ g m a i l . c o m`, `+ 3 9 3 3 3 1 2 3 4 5 6 7`).
-    This wrapper:
-
-      1. Runs `inner` on the original text → first-pass spans.
-      2. Detects runs of 5+ consecutive single-char tokens separated
-         by single spaces (`(?:[\\w@.+\\-]\\s){4,}[\\w@.+\\-]\\b`).
-      3. Collapses each run (removes spaces), runs `inner` on the
-         collapsed text, maps detected spans back to the original
-         positions.
-      4. Returns the union (de-duplicated by label + overlap).
-
-    Off by default in the production pipeline. Enable via
-    `--enable-deobf-whitespace` for marketplace / dating / chat
-    workloads where users actively try to share contact info despite
-    a vendor-side block.
-    """
-    import re as _re
-
-    _SPACED_RUN = _re.compile(r"(?:[\w@.+\-]\s){4,}[\w@.+\-]\b")
-
-    def _collapse(text: str, start: int, end: int) -> tuple[str, list[int]]:
-        out_chars: list[str] = []
-        pos_map: list[int] = []
-        for i in range(start, end):
-            ch = text[i]
-            if ch != " ":
-                out_chars.append(ch)
-                pos_map.append(i)
-        return "".join(out_chars), pos_map
-
-    def _overlaps(a: Span, b: Span) -> bool:
-        return a.start < b.end and b.start < a.end
-
-    def _predict(text: str) -> ToolResult:
-        original = inner(text)
-        spans: list[Span] = list(original.spans)
-        for m in _SPACED_RUN.finditer(text):
-            run_start, run_end = m.start(), m.end()
-            collapsed, pos_map = _collapse(text, run_start, run_end)
-            if len(collapsed) < 5:
-                continue
-            sub = inner(collapsed)
-            for sp in sub.spans:
-                if sp.end <= 0 or sp.end > len(pos_map):
-                    continue
-                orig_start = pos_map[sp.start]
-                orig_end = pos_map[sp.end - 1] + 1
-                spans.append(Span(sp.label, orig_start, orig_end))
-        # Dedupe: drop spans fully contained by another span with same label.
-        spans.sort(key=lambda s: (s.start, -s.end))
-        kept: list[Span] = []
-        for sp in spans:
-            redundant = False
-            for k in kept:
-                if k.label == sp.label and _overlaps(sp, k):
-                    if k.start <= sp.start and k.end >= sp.end:
-                        redundant = True
-                        break
-            if not redundant:
-                kept.append(sp)
-        return ToolResult(kept, original.elapsed_ms)
-
-    return _predict
-
-
 # Per-label stopword filter — drops spans whose surface form matches a
 # known universally-non-PII word. Conservative: only entries that are
 # never PII regardless of schema or context.
@@ -1728,36 +1027,6 @@ STOPWORD_BY_LABEL: dict[str, frozenset[str]] = {
     }),  # nouns, never numbers
     "secret": frozenset({"confidentiality", "assets"}),  # abstract nouns
 }
-
-
-def stopword_filter_predictor(
-    *,
-    inner: Predictor,
-    stopwords: dict[str, frozenset[str]] = STOPWORD_BY_LABEL,
-) -> Predictor:
-    """Wraps a predictor and drops predicted spans whose surface form
-    (case-insensitive, stripped) matches the per-label stopword set.
-
-    Used to suppress generic-noun FPs the model emits as named entities
-    (e.g. `Male`/`Female`/`I` flagged as `private_person`, `email` as
-    `private_email`, `phone` as `private_phone`).
-    """
-
-    def _predict(text: str) -> ToolResult:
-        result = inner(text)
-        kept: list[Span] = []
-        for sp in result.spans:
-            pool = stopwords.get(sp.label)
-            if pool is None:
-                kept.append(sp)
-                continue
-            surface = text[sp.start:sp.end].strip().lower()
-            if surface in pool:
-                continue
-            kept.append(sp)
-        return ToolResult(kept, result.elapsed_ms)
-
-    return _predict
 
 
 # Anchor texts per PII label, used by the zero-shot semantic verifier.
@@ -1810,233 +1079,6 @@ PII_ANCHOR_TEXTS: dict[str, list[str]] = {
         "a personal first name and surname",
     ],
 }
-
-
-def semantic_verifier_predictor(
-    *,
-    inner: Predictor,
-    model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
-    context_chars: int = 30,
-    anchors: dict[str, list[str]] = PII_ANCHOR_TEXTS,
-    threshold: float | None = None,
-    calibration_samples: list | None = None,
-    calibration_percentile: float = 5.0,
-    threshold_cache_path: Path | None = None,
-) -> Predictor:
-    """Zero-shot semantic verifier — drops predicted spans whose local
-    context is semantically far from their predicted label.
-
-    Pipeline per call:
-      1. Run `inner` predictor → raw spans + scores.
-      2. For each span, embed `text[start - context_chars : end + context_chars]`.
-      3. Compute cosine sim to all anchors of the predicted label, take max.
-      4. Drop the span if max sim < threshold.
-
-    Threshold derivation (no bench leakage):
-      If `threshold` is None, calibrate on `calibration_samples` (a list
-      of `Sample` objects with gold spans). For each gold span: embed
-      its local context, compute max cosine similarity to its label's
-      anchors. Threshold is set at the `calibration_percentile`-th
-      percentile of these similarities (default 5th — keep ~95% of
-      true-positive contexts above the bar). The calibration corpus
-      MUST be disjoint from any bench evaluation set; ai4privacy rows
-      0–50k are recommended as the default disjoint slice (bench eval
-      uses rows 300k+).
-    """
-    try:
-        from sentence_transformers import SentenceTransformer
-    except ImportError as e:
-        raise ImportError("sentence-transformers required") from e
-
-    import numpy as np  # noqa: I001
-
-    model = SentenceTransformer(model_name)
-    label_to_emb: dict[str, np.ndarray] = {}
-    for label, texts in anchors.items():
-        embs = model.encode(texts, normalize_embeddings=True, show_progress_bar=False)
-        label_to_emb[label] = np.asarray(embs)
-
-    if threshold is None:
-        # Try cached threshold first.
-        cache_key = f"{model_name}|p{calibration_percentile}|c{context_chars}"
-        if threshold_cache_path and threshold_cache_path.is_file():
-            try:
-                cached = json.loads(threshold_cache_path.read_text())
-                if cached.get("key") == cache_key:
-                    threshold = float(cached["threshold"])
-            except (json.JSONDecodeError, ValueError, KeyError):
-                pass
-        if threshold is None:
-            if not calibration_samples:
-                raise ValueError(
-                    "threshold is None and no calibration_samples / cache "
-                    "provided — pass either an explicit threshold or a "
-                    "disjoint calibration corpus.",
-                )
-            sims_list: list[float] = []
-            for sample in calibration_samples:
-                if not sample.spans:
-                    continue
-                contexts = []
-                labels = []
-                for sp in sample.spans:
-                    if sp.label not in label_to_emb:
-                        continue
-                    ctx_start = max(0, sp.start - context_chars)
-                    ctx_end = min(len(sample.text), sp.end + context_chars)
-                    contexts.append(sample.text[ctx_start:ctx_end])
-                    labels.append(sp.label)
-                if not contexts:
-                    continue
-                ctx_embs = np.asarray(
-                    model.encode(
-                        contexts,
-                        normalize_embeddings=True,
-                        show_progress_bar=False,
-                    ),
-                )
-                for k, lab in enumerate(labels):
-                    sims = ctx_embs[k] @ label_to_emb[lab].T
-                    sims_list.append(float(sims.max()))
-            if not sims_list:
-                raise ValueError(
-                    "calibration produced no similarities — calibration "
-                    "corpus may be missing labels in the anchor map.",
-                )
-            threshold = float(np.percentile(sims_list, calibration_percentile))
-            if threshold_cache_path:
-                threshold_cache_path.parent.mkdir(parents=True, exist_ok=True)
-                threshold_cache_path.write_text(json.dumps({
-                    "key": cache_key,
-                    "threshold": threshold,
-                    "n_samples": len(sims_list),
-                    "percentile": calibration_percentile,
-                }, indent=2))
-
-    def _predict(text: str) -> ToolResult:
-        result = inner(text)
-        if not result.spans:
-            return result
-        # Build parallel arrays: span index -> (context, label) for spans
-        # whose label has anchors. Spans with unknown label pass through.
-        verifiable: list[tuple[int, str, str]] = []  # (span_idx, ctx, label)
-        kept: list[Span] = []
-        for i, sp in enumerate(result.spans):
-            if sp.label not in label_to_emb:
-                kept.append(sp)
-                continue
-            ctx_start = max(0, sp.start - context_chars)
-            ctx_end = min(len(text), sp.end + context_chars)
-            verifiable.append((i, text[ctx_start:ctx_end], sp.label))
-        if not verifiable:
-            kept.sort(key=lambda s: s.start)
-            return ToolResult(kept, result.elapsed_ms)
-        ctx_embs = np.asarray(
-            model.encode(
-                [v[1] for v in verifiable],
-                normalize_embeddings=True,
-                show_progress_bar=False,
-            ),
-        )
-        for j, (span_idx, _ctx, label) in enumerate(verifiable):
-            sims = ctx_embs[j] @ label_to_emb[label].T
-            if float(sims.max()) >= threshold:
-                kept.append(result.spans[span_idx])
-        kept.sort(key=lambda s: s.start)
-        return ToolResult(kept, result.elapsed_ms)
-
-    return _predict
-
-
-def tiny_verifier_predictor(
-    *,
-    inner: Predictor,
-    model_dir: Path,
-    context_chars: int = 50,
-    threshold: float = 0.5,
-    batch_size: int = 32,
-    max_length: int = 192,
-    device: str | None = None,
-) -> Predictor:
-    """Trained binary verifier — drops predicted spans whose
-    `(span, context, label)` triple is classified as non-PII by a
-    fine-tuned MiniLM/DistilBERT classifier.
-
-    Pipeline per call:
-      1. Run `inner` predictor → raw spans.
-      2. For each span, build `(span_text, context_string, label)`.
-      3. Batched forward pass through verifier model → P(is_pii).
-      4. Drop spans with P < `threshold`.
-
-    Training (off-bench):
-      Verifier is trained on disjoint corpus (e.g. ai4privacy rows
-      0–N where N < bench eval offset). Bench eval distributions
-      (nullpii-bench, isotonic, oasst, presidio-synthetic, ai4privacy
-      300k+) are NOT seen during training — clean held-out evaluation.
-
-    Format must match the training script's input format:
-      `[CLS] {span_text} [SEP] {context}<span>{span}</span>... [LABEL] {label} [SEP]`
-    """
-    try:
-        import torch  # noqa: I001
-        from transformers import (
-            AutoModelForSequenceClassification,
-            AutoTokenizer,
-        )
-    except ImportError as e:
-        raise ImportError("torch + transformers required") from e
-
-    if device is None:
-        device = (
-            "mps" if torch.backends.mps.is_available()
-            else "cuda" if torch.cuda.is_available()
-            else "cpu"
-        )
-
-    tokenizer = AutoTokenizer.from_pretrained(str(model_dir))
-    model = AutoModelForSequenceClassification.from_pretrained(str(model_dir))
-    model = model.to(device)
-    model.eval()
-
-    def _build_context(text: str, start: int, end: int) -> str:
-        left = text[max(0, start - context_chars):start]
-        span = text[start:end]
-        right = text[end:min(len(text), end + context_chars)]
-        return f"{left}<span>{span}</span>{right}"
-
-    def _predict(text: str) -> ToolResult:
-        result = inner(text)
-        if not result.spans:
-            return result
-        # Build (span_text, second_text) pairs matching training format.
-        pairs: list[tuple[str, str]] = []
-        for sp in result.spans:
-            ctx = _build_context(text, sp.start, sp.end)
-            second = f"{ctx} [LABEL] {sp.label}"
-            pairs.append((text[sp.start:sp.end], second))
-
-        kept: list[Span] = []
-        with torch.no_grad():
-            for i in range(0, len(pairs), batch_size):
-                batch = pairs[i:i + batch_size]
-                texts_a = [p[0] for p in batch]
-                texts_b = [p[1] for p in batch]
-                enc = tokenizer(
-                    texts_a, texts_b,
-                    truncation=True,
-                    max_length=max_length,
-                    padding=True,
-                    return_tensors="pt",
-                ).to(device)
-                logits = model(**enc).logits
-                probs = torch.softmax(logits, dim=-1)[:, 1]
-                for j, p in enumerate(probs.cpu().tolist()):
-                    if p >= threshold:
-                        kept.append(result.spans[i + j])
-        kept.sort(key=lambda s: s.start)
-        return ToolResult(kept, result.elapsed_ms)
-
-    return _predict
 
 
 def multi_ensemble_predictor(
@@ -2364,159 +1406,6 @@ def _is_dev_paste_like(text: str) -> bool:
     return dev_hits >= legal_hits
 
 
-def complementary_v6_v8_predictor(
-    *,
-    v6_predictor: Predictor,
-    v8_predictor: Predictor,
-    extra_predictors: list[Predictor] | None = None,
-) -> Predictor:
-    """Domain-routing ensemble: pick v6 OR v8 per-input based on a fixed
-    a-priori heuristic (`_is_dev_paste_like`). On dev-paste-style text
-    v6 wins; on structured/legal text v8 wins. `extra_predictors` (e.g.
-    a regex/url-filter pass) always run and their spans are unioned in
-    via longest-wins overlap resolution (same as `union` strategy).
-
-    Heuristic is NOT tuned on bench eval datasets — see
-    `_is_dev_paste_like` docstring."""
-    extras = list(extra_predictors or [])
-
-    def _overlaps(a: Span, b: Span) -> bool:
-        return a.start < b.end and b.start < a.end
-
-    def _dedupe_longest(spans: list[Span]) -> list[Span]:
-        if len(spans) <= 1:
-            return spans
-        sorted_spans = sorted(spans, key=lambda s: (s.start, -s.end))
-        out: list[Span] = []
-        for s in sorted_spans:
-            replaced = False
-            for i in range(len(out) - 1, -1, -1):
-                prev = out[i]
-                if prev.end <= s.start:
-                    break
-                if not _overlaps(prev, s):
-                    continue
-                if (s.end - s.start) > (prev.end - prev.start):
-                    out[i] = s
-                replaced = True
-                break
-            if not replaced:
-                out.append(s)
-        return sorted(out, key=lambda s: s.start)
-
-    def _predict(text: str) -> ToolResult:
-        t0 = time.perf_counter()
-        chosen = v6_predictor if _is_dev_paste_like(text) else v8_predictor
-        primary_result = chosen(text)
-        all_spans: list[Span] = list(primary_result.spans)
-        for extra in extras:
-            r = extra(text)
-            for s in r.spans:
-                if not any(_overlaps(s, p) for p in all_spans):
-                    all_spans.append(s)
-        merged = _dedupe_longest(all_spans)
-        elapsed = (time.perf_counter() - t0) * 1000
-        return ToolResult(merged, elapsed)
-
-    return _predict
-
-
-def gliner_chunked_predictor(
-    *,
-    model_path: str = "urchade/gliner_multi_pii-v1",
-    threshold: float = 0.5,
-    chunk_chars: int = 1400,
-    overlap_chars: int = 200,
-) -> Predictor:
-    """nullpii-style pipeline (chunking + span dedupe) on top of GLiNER's
-    zero-shot NER. Tests whether nullpii's runtime ideas transfer to a
-    different backbone — bare GLiNER hits 0.000 on long-prompts-en
-    because of max-sequence-length truncation; chunked GLiNER should
-    recover the spans past that boundary the same way nullpii does
-    over openai/privacy-filter.
-
-    `model_path` defaults to the PII-specialised v1 baseline. Pass
-    `urchade/gliner_multi-v2.1` to compare a generic-NER GLiNER v2.1
-    backbone (no PII fine-tuning) on the same chunking + dedupe path.
-
-    Char-level chunking (4 chars/token approximation): 1400 chars ≈ 350
-    tokens, well under GLiNER's mBERT-base 512-tok cap. 200 char overlap
-    keeps any short span fully visible in at least one chunk."""
-    try:
-        from gliner import GLiNER  # noqa: I001
-    except ImportError as e:
-        raise ImportError("gliner required") from e
-
-    model = GLiNER.from_pretrained(model_path)
-
-    def _dedupe(spans: list[Span]) -> list[Span]:
-        if len(spans) <= 1:
-            return spans
-        sorted_spans = sorted(spans, key=lambda s: (s.start, -s.end))
-        out: list[Span] = []
-        for s in sorted_spans:
-            merged = False
-            for i in range(len(out) - 1, -1, -1):
-                prev = out[i]
-                if prev.end <= s.start:
-                    break
-                if prev.label != s.label:
-                    continue
-                prev_len = prev.end - prev.start
-                s_len = s.end - s.start
-                if s_len > prev_len:
-                    out[i] = s
-                merged = True
-                break
-            if not merged:
-                out.append(s)
-        return sorted(out, key=lambda s: s.start)
-
-    def _predict(text: str) -> ToolResult:
-        t0 = time.perf_counter()
-        spans: list[Span] = []
-        if len(text) <= chunk_chars:
-            entities = model.predict_entities(text, _GLINER_LABELS, threshold=threshold)
-            for e in entities:
-                label = _GLINER_LABEL_MAP.get(e.get("label"))
-                if label is None:
-                    continue
-                spans.append(Span(label, int(e["start"]), int(e["end"])))
-        else:
-            stride = chunk_chars - overlap_chars
-            for offset in range(0, len(text), stride):
-                chunk = text[offset : offset + chunk_chars]
-                if not chunk:
-                    break
-                entities = model.predict_entities(chunk, _GLINER_LABELS, threshold=threshold)
-                for e in entities:
-                    label = _GLINER_LABEL_MAP.get(e.get("label"))
-                    if label is None:
-                        continue
-                    spans.append(
-                        Span(label, int(e["start"]) + offset, int(e["end"]) + offset),
-                    )
-                if offset + chunk_chars >= len(text):
-                    break
-            spans = _dedupe(spans)
-        elapsed = (time.perf_counter() - t0) * 1000
-        return ToolResult(spans, elapsed)
-
-    return _predict
-
-
-_OPENAI_LABELS = {
-    "account_number",
-    "private_address",
-    "private_date",
-    "private_email",
-    "private_person",
-    "private_phone",
-    "private_url",
-    "secret",
-}
-
-
 _NULLPII_8 = [
     "account_number",
     "private_address",
@@ -2755,7 +1644,7 @@ _HTML_ENTITY_RE = re.compile(r"&#(\d+);|&#x([0-9a-fA-F]+);")
 _URL_PERCENT_RE = re.compile(r"%([0-9a-fA-F]{2})")
 _ZERO_WIDTH_CHARS = frozenset("​‌‍﻿⁠­")
 # Detect whitespace-obfuscated PII (e.g. `+ 4 9   3 0   1 2 3 4 5 6 7 8`).
-# AUDIT F01/F02: tightened from `{5,}` to `{3,}` (catches `+ 4 9 3 0`)
+# tightened from `{5,}` to `{3,}` (catches `+ 4 9 3 0`)
 # AND anchored at non-word boundary `(?<!\w)` (does not start mid-word —
 # avoids mangling "Mary J. Doe age 4 7" by chopping the suffix `y J . D
 # e 4 7`). Char class adds `:` and `/` (catches spaced URLs / IPs).
@@ -2764,11 +1653,11 @@ _ZERO_WIDTH_CHARS = frozenset("​‌‍﻿⁠­")
 _SPACED_PII_RE = re.compile(r"(?<!\w)(?:[\w@.+\-:/]\s+){3,}[\w@.+\-:/]")
 
 
-_NORMALIZE_INPUT_MAX_BYTES = 1_000_000  # AUDIT F23 cap
+_NORMALIZE_INPUT_MAX_BYTES = 1_000_000  # -cap
 
 
 def _is_pure_ascii_no_decode_needed(text: str) -> bool:
-    """Fast-path test for `_normalize_for_detection`. AUDIT F24.
+    """Fast-path test for `_normalize_for_detection`.
 
     Returns True iff the input is pure ASCII AND has no triggers for
     the despace / URL %XX / HTML entity decode paths. The narrower-
@@ -2803,7 +1692,7 @@ def _normalize_for_detection(text: str) -> tuple[str, list[int]]:
     spans use original offsets, so this preserves bench correctness
     while letting the model see a cleaner input.
 
-    AUDIT F23: input length cap. `_SPACED_PII_RE.match(text, i)` per
+    input length cap. `_SPACED_PII_RE.match(text, i)` per
     position is O(N²) on whitespace-rich adversarial input (100 KB
     of `a a a a` → ~5 s in CPython). 1 MB cap matches the regex pack
     upstream guard; oversized input falls through as identity
@@ -2811,7 +1700,7 @@ def _normalize_for_detection(text: str) -> tuple[str, list[int]]:
     """
     if len(text) > _NORMALIZE_INPUT_MAX_BYTES:
         return text, list(range(len(text) + 1))
-    # AUDIT F24: ASCII fast-path. Per-char NFKC + Python loop costs
+    # ASCII fast-path. Per-char NFKC + Python loop costs
     # ~100 ms on a 50 KB ASCII input (no work to do). Skip entirely
     # if the text has no non-ASCII bytes, no `&#` (HTML entity
     # candidate), no `%` (URL %XX candidate), and no whitespace run
@@ -2829,7 +1718,7 @@ def _normalize_for_detection(text: str) -> tuple[str, list[int]]:
     n = len(text)
     while i < n:
         # Whitespace-obfuscated PII collapse (e.g. "1 2 3 4 5" → "12345").
-        # AUDIT F01/F02: gated by stricter post-check — require ≥4 digits OR
+        # gated by stricter post-check — require ≥4 digits OR
         # (≥1 `@` + ≥1 letter). Without this guard, a sentence with sparse
         # digits could despace into a phone-shaped string (`Mary J. Doe age
         # 4 7` → `yJ.De47`).
@@ -2854,12 +1743,12 @@ def _normalize_for_detection(text: str) -> tuple[str, list[int]]:
                 decoded_char = chr(int(m_url.group(1), 16))
             except (ValueError, OverflowError):
                 decoded_char = ""
-            # AUDIT F03 (mirror): preserve email-anchor chars in original
+            # -(mirror): preserve email-anchor chars in original
             # form so the email regex can still match.
             if decoded_char in ("@", ".", "+", "-"):
                 decoded_char = ""
             if decoded_char:
-                # AUDIT F04: map decoded char to the END of the triplet
+                # map decoded char to the END of the triplet
                 # (last byte of `%XX`) so a span that ends at this
                 # decoded char remaps to the original-text END of the
                 # triplet, not its start. Previously every decoded char
@@ -2879,7 +1768,7 @@ def _normalize_for_detection(text: str) -> tuple[str, list[int]]:
                     decoded = chr(int(m.group(2), 16))
             except (ValueError, OverflowError):
                 decoded = ""
-            # AUDIT F03: do NOT decode `@` / `.` / `+` / `-` because the
+            # do NOT decode `@` / `.` / `+` / `-` because the
             # downstream email regex anchors on those literals; an
             # unconditional decode of `j&#x40;ohn@example.com` produces
             # `j@ohn@example.com` (two `@`) which the email regex
@@ -2916,7 +1805,7 @@ def _normalize_for_detection(text: str) -> tuple[str, list[int]]:
 def _remap_span(norm_start: int, norm_end: int, norm_to_orig: list[int]) -> tuple[int, int]:
     """Map a normalized [start, end) span to the original text.
 
-    AUDIT F10: previous `>=` clamp truncated by one character when the
+    previous `>=` clamp truncated by one character when the
     model predicted `end == len(normalised)`. The sentinel at index
     `len(norm_to_orig) - 1` is exactly the valid end-exclusive
     position, not out-of-bounds. Use strict `min(..., max_idx)` clamp.
@@ -3023,122 +1912,6 @@ def gliner_nemotron_pii_predictor(
     return _predict
 
 
-def gliner2_predictor(
-    *,
-    model_path: str = "fastino/gliner2-large-v1",
-    device: str = "cpu",
-    threshold: float = 0.3,
-    chunk_chars: int = 1400,
-    overlap_chars: int = 200,
-) -> Predictor:
-    """Wrapper for `fastino/gliner2-{base,large,multi}-v1` (GLiNER2,
-    fastino-ai). Schema-agnostic information-extraction model;
-    backbone `microsoft/deberta-v3-{base,large}` per variant.
-    Output is span-level (`include_spans=True` returns `{text, start,
-    end, confidence}` per entity), so it slots into the bench's
-    IoU-based F1 metric directly.
-
-    Bare-mode usage: no nullpii post-processing (no boundary refine,
-    never_pii filter, or regex pack). Chunking is preserved at the
-    standard 1400/200 stride to handle long inputs (TAB ECHR, dev
-    pastes); same chunking that wraps `nemotron-pii-raw` and
-    `gliner-onnx-pii-fp32`.
-
-    Predicts directly on the 8-class nullpii schema (`_NULLPII_8`);
-    GLiNER2 is schema-agnostic, so the labels become the prompt at
-    inference time. No re-mapping required.
-    """
-    try:
-        from gliner2 import GLiNER2  # type: ignore
-    except ImportError as e:
-        raise ImportError("gliner2 required (pip install gliner2)") from e
-
-    model = GLiNER2.from_pretrained(model_path)
-    if hasattr(model, "to") and device != "cpu":
-        try:
-            model = model.to(device)
-        except Exception:
-            pass
-
-    def _dedupe(spans: list[Span]) -> list[Span]:
-        if len(spans) <= 1:
-            return spans
-        sorted_spans = sorted(spans, key=lambda s: (s.start, -s.end))
-        out: list[Span] = []
-        for s in sorted_spans:
-            merged = False
-            for i in range(len(out) - 1, -1, -1):
-                prev = out[i]
-                if prev.end <= s.start:
-                    break
-                if prev.label != s.label:
-                    continue
-                if (s.end - s.start) > (prev.end - prev.start):
-                    out[i] = s
-                merged = True
-                break
-            if not merged:
-                out.append(s)
-        return sorted(out, key=lambda s: s.start)
-
-    def _flatten(result: dict) -> list[tuple[str, dict]]:
-        ents = result.get("entities", {}) if isinstance(result, dict) else {}
-        out: list[tuple[str, dict]] = []
-        for label, items in ents.items():
-            if not isinstance(items, list):
-                continue
-            for it in items:
-                if isinstance(it, dict) and "start" in it and "end" in it:
-                    out.append((label, it))
-        return out
-
-    def _predict(text: str) -> ToolResult:
-        t0 = time.perf_counter()
-        spans: list[Span] = []
-        scores: list[float] = []
-        text_len = len(text)
-        if text_len <= chunk_chars:
-            r = model.extract_entities(
-                text, list(_NULLPII_8),
-                threshold=threshold,
-                include_spans=True,
-                include_confidence=True,
-            )
-            for label, e in _flatten(r):
-                spans.append(Span(label, int(e["start"]), int(e["end"])))
-                scores.append(float(e.get("confidence", threshold)))
-        else:
-            stride = chunk_chars - overlap_chars
-            spans_with_scores: list[tuple[Span, float]] = []
-            for offset in range(0, text_len, stride):
-                chunk = text[offset:offset + chunk_chars]
-                if not chunk:
-                    break
-                r = model.extract_entities(
-                    chunk, list(_NULLPII_8),
-                    threshold=threshold,
-                    include_spans=True,
-                    include_confidence=True,
-                )
-                for label, e in _flatten(r):
-                    s, en = int(e["start"]) + offset, int(e["end"]) + offset
-                    spans_with_scores.append((
-                        Span(label, s, en),
-                        float(e.get("confidence", threshold)),
-                    ))
-                if offset + chunk_chars >= text_len:
-                    break
-            kept = _dedupe([sp for sp, _ in spans_with_scores])
-            score_by_id = {id(sp): sc for sp, sc in spans_with_scores}
-            for sp in kept:
-                spans.append(sp)
-                scores.append(score_by_id.get(id(sp), threshold))
-        elapsed = (time.perf_counter() - t0) * 1000
-        return ToolResult(spans, elapsed, scores=tuple(scores))
-
-    return _predict
-
-
 def gliner_lora_predictor(
     base_model_path: str,
     adapter_dir: str | Path,
@@ -3194,7 +1967,7 @@ def gliner_lora_predictor(
                 out.append(s)
         return sorted(out, key=lambda s: s.start)
 
-    # AUDIT_B: optionally use the expanded prompt set (`_NULLPII_EXPANDED_
+    # optionally use the expanded prompt set (`_NULLPII_EXPANDED_
     # PROMPTS`) and remap finer-grained predictions back to the 8-class
     # schema via `_EXPANDED_PROMPT_TO_NULLPII8`. Goal: lift recall on
     # Nemotron-style US-business records (`cvv`, `swift_bic`, `gps`,
@@ -3301,36 +2074,6 @@ _SCRUBADUB_LABEL_MAP = {
 }
 
 
-def scrubadub_predictor() -> Predictor:
-    """Wrap scrubadub (Apache-2.0, regex+detector chain) as a PII predictor.
-
-    Uses the default Scrubber detector set (credential, credit_card,
-    email, phone, twitter handle, url, SSN). NameDetector is not
-    enabled by default — would require spaCy install and adds noise.
-    """
-    try:
-        import scrubadub
-    except ImportError as e:
-        raise ImportError(
-            "scrubadub not installed; run `pip install scrubadub`",
-        ) from e
-
-    scrubber = scrubadub.Scrubber()
-
-    def _predict(text: str) -> ToolResult:
-        t0 = time.perf_counter()
-        spans: list[Span] = []
-        for f in scrubber.iter_filth(text):
-            label = _SCRUBADUB_LABEL_MAP.get(f.type)
-            if label is None:
-                continue
-            spans.append(Span(label, int(f.beg), int(f.end)))
-        elapsed = (time.perf_counter() - t0) * 1000
-        return ToolResult(spans, elapsed)
-
-    return _predict
-
-
 def presidio_predictor(*, language: str = "en") -> Predictor:
     """In-process Presidio analyzer. Maps Presidio entities → our 8 categories."""
     try:
@@ -3410,39 +2153,6 @@ _AWS_COMPREHEND_TO_NULLPII: dict[str, str] = {
 }
 
 
-def aws_comprehend_predictor(*, language: str = "en", region: str = "us-east-1") -> Predictor:
-    """AWS Comprehend `detect_pii_entities` predictor. Requires AWS
-    credentials + boto3. Cost: $1.20 per 1M chars (50–100 USD for full
-    bench). Bench-only — not for production."""
-    try:
-        import boto3
-    except ImportError as e:
-        raise ImportError("boto3 required; run `pip install boto3`") from e
-    client = boto3.client("comprehend", region_name=region)
-
-    def _predict(text: str) -> ToolResult:
-        t0 = time.perf_counter()
-        spans: list[Span] = []
-        # Comprehend has 5kb (5000 char) limit per request; chunk & merge
-        chunk_chars = 4500
-        for offset in range(0, len(text), chunk_chars):
-            chunk = text[offset:offset + chunk_chars]
-            try:
-                resp = client.detect_pii_entities(Text=chunk, LanguageCode=language)
-            except Exception:  # noqa: BLE001
-                continue
-            for ent in resp.get("Entities", []):
-                label = _AWS_COMPREHEND_TO_NULLPII.get(ent["Type"])
-                if label is None:
-                    continue
-                spans.append(Span(
-                    label, int(ent["BeginOffset"]) + offset, int(ent["EndOffset"]) + offset,
-                ))
-        return ToolResult(spans, (time.perf_counter() - t0) * 1000)
-
-    return _predict
-
-
 _GCP_DLP_TO_NULLPII: dict[str, str] = {
     "PERSON_NAME": "private_person",
     "EMAIL_ADDRESS": "private_email",
@@ -3467,44 +2177,6 @@ _GCP_DLP_TO_NULLPII: dict[str, str] = {
 }
 
 
-def gcp_dlp_predictor(*, project: str | None = None) -> Predictor:
-    """Google Cloud DLP `inspect_content` predictor. Requires
-    `google-cloud-dlp` SDK + GCP credentials. Cost: ~$3 per 1M chars."""
-    try:
-        from google.cloud import dlp_v2  # noqa: I001
-    except ImportError as e:
-        raise ImportError("google-cloud-dlp required") from e
-    client = dlp_v2.DlpServiceClient()
-    project_id = project or os.environ.get("GOOGLE_CLOUD_PROJECT")
-    if not project_id:
-        raise ValueError("set GOOGLE_CLOUD_PROJECT or pass project=")
-    parent = f"projects/{project_id}"
-    info_types = [{"name": k} for k in _GCP_DLP_TO_NULLPII]
-    inspect_config = {"info_types": info_types, "include_quote": True,
-                      "min_likelihood": dlp_v2.Likelihood.POSSIBLE}
-
-    def _predict(text: str) -> ToolResult:
-        t0 = time.perf_counter()
-        spans: list[Span] = []
-        try:
-            resp = client.inspect_content(
-                request={"parent": parent, "inspect_config": inspect_config,
-                         "item": {"value": text}},
-            )
-        except Exception:  # noqa: BLE001
-            return ToolResult(spans, (time.perf_counter() - t0) * 1000)
-        for f in resp.result.findings:
-            label = _GCP_DLP_TO_NULLPII.get(f.info_type.name)
-            if label is None:
-                continue
-            spans.append(Span(
-                label, int(f.location.byte_range.start), int(f.location.byte_range.end),
-            ))
-        return ToolResult(spans, (time.perf_counter() - t0) * 1000)
-
-    return _predict
-
-
 _AZURE_PII_TO_NULLPII: dict[str, str] = {
     "Person": "private_person",
     "Email": "private_email",
@@ -3519,40 +2191,6 @@ _AZURE_PII_TO_NULLPII: dict[str, str] = {
     "IPAddress": "account_number",
     "Password": "secret",
 }
-
-
-def azure_pii_predictor(*, language: str = "en") -> Predictor:
-    """Azure AI Language PII Recognition predictor. Requires
-    AZURE_LANGUAGE_KEY + AZURE_LANGUAGE_ENDPOINT env vars."""
-    try:
-        from azure.ai.textanalytics import TextAnalyticsClient
-        from azure.core.credentials import AzureKeyCredential
-    except ImportError as e:
-        raise ImportError("azure-ai-textanalytics required") from e
-    key = os.environ.get("AZURE_LANGUAGE_KEY")
-    endpoint = os.environ.get("AZURE_LANGUAGE_ENDPOINT")
-    if not key or not endpoint:
-        raise ValueError("set AZURE_LANGUAGE_KEY + AZURE_LANGUAGE_ENDPOINT")
-    client = TextAnalyticsClient(endpoint=endpoint, credential=AzureKeyCredential(key))
-
-    def _predict(text: str) -> ToolResult:
-        t0 = time.perf_counter()
-        spans: list[Span] = []
-        try:
-            resp = client.recognize_pii_entities([text], language=language)
-        except Exception:  # noqa: BLE001
-            return ToolResult(spans, (time.perf_counter() - t0) * 1000)
-        for doc in resp:
-            if doc.is_error:
-                continue
-            for ent in doc.entities:
-                label = _AZURE_PII_TO_NULLPII.get(ent.category)
-                if label is None:
-                    continue
-                spans.append(Span(label, int(ent.offset), int(ent.offset) + int(ent.length)))
-        return ToolResult(spans, (time.perf_counter() - t0) * 1000)
-
-    return _predict
 
 
 # ─── TAB (Text Anonymization Benchmark) loader stub ────────────────

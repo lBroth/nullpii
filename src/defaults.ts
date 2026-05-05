@@ -88,41 +88,42 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     confidence: 0.99,
   },
   // GitHub PAT (classic + fine-grained).
+  // AUDIT F22 (F25 TS port): bounded `{N,255}` upper to prevent ReDoS.
   {
     id: 'core:github-pat-classic',
-    pattern: /\bghp_[A-Za-z0-9]{36,}\b/g,
+    pattern: /\bghp_[A-Za-z0-9]{36,255}\b/g,
     label: 'secret',
     confidence: 0.99,
   },
   {
     id: 'core:github-server-token',
-    pattern: /\bghs_[A-Za-z0-9]{36,}\b/g,
+    pattern: /\bghs_[A-Za-z0-9]{36,255}\b/g,
     label: 'secret',
     confidence: 0.99,
   },
   {
     id: 'core:github-pat-fine-grained',
-    pattern: /\bgithub_pat_[A-Za-z0-9_]{82,}\b/g,
+    pattern: /\bgithub_pat_[A-Za-z0-9_]{82,255}\b/g,
     label: 'secret',
     confidence: 0.99,
   },
   // Stripe live/test keys.
   {
     id: 'core:stripe-key',
-    pattern: /\bsk_(?:live|test)_[A-Za-z0-9]{24,}\b/g,
+    pattern: /\bsk_(?:live|test)_[A-Za-z0-9]{24,255}\b/g,
     label: 'secret',
     confidence: 0.99,
   },
   // OpenAI generic + Anthropic.
   {
     id: 'core:openai-key',
-    pattern: /\bsk-[A-Za-z0-9]{32,}\b/g,
+    pattern: /\bsk-[A-Za-z0-9]{32,255}\b/g,
     label: 'secret',
     confidence: 0.95,
   },
   {
     id: 'core:anthropic-key',
-    pattern: /\bsk-ant-[A-Za-z0-9_-]{50,}\b/g,
+    pattern: /\bsk-ant-[A-Za-z0-9_-]{50,255}\b/g,
     label: 'secret',
     confidence: 0.99,
   },

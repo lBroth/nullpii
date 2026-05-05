@@ -75,9 +75,9 @@ export class NullPii {
     return this;
   }
 
-  /** Lazy-init: download artifacts, load encoder/router/backend.
-   * Idempotent and concurrency-safe (singleton promise). */
-  init(): Promise<void> {
+  /** Singleton-promise init, triggered automatically on the first
+   * `sanitize()` call. Internal — users don't need to call this directly. */
+  private ensureInit(): Promise<void> {
     if (this.disposed) return Promise.reject(new ModelNotInitializedError());
     if (this.initPromise === null) {
       this.initPromise = this.runInit().catch((err) => {
@@ -104,7 +104,7 @@ export class NullPii {
    * truncated; pass `strictLength: true` to throw instead.
    */
   async sanitize(text: string, sessionId?: string): Promise<SanitizeResult> {
-    await this.init();
+    await this.ensureInit();
     const tokenizer = this.tokenizer;
     const backend = this.backend;
     const encoder = this.encoder;
@@ -219,15 +219,18 @@ export class NullPii {
       this.modelDir = ensured.modelDir;
     }
 
+    // Constructor work (no I/O): MultiOrtBackend lazy-loads per-domain
+    // ONNX shards on first inference; GlinerTokenizer lazy-loads
+    // tokenizer.json on first encode; DistiluseEncoder + EmbeddingRouter
+    // do their disk reads inside init() and run in parallel below.
     this.backend = new MultiOrtBackend(this.modelDir);
     this.encoder = new DistiluseEncoder(this.modelDir);
-    await this.encoder.init();
     this.router = new EmbeddingRouter(this.modelDir);
-    await this.router.init();
     this.tokenizer = new GlinerTokenizer(
       this.modelDir,
       this.config.maxSequenceLength ?? DEFAULT_MAX_SEQUENCE_LENGTH,
     );
+    await Promise.all([this.encoder.init(), this.router.init()]);
     log(
       'init complete: modelDir=%s domains=%s',
       this.modelDir,

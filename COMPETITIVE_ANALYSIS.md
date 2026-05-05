@@ -2,7 +2,7 @@
 
 Snapshot 2026-05-04. Used to position `nullpii` against the existing landscape and identify the whitespace it fills. Not exhaustive — focused on players that overlap with the npm-package + adapter / managed-cloud roadmap.
 
-**Related**: [`README.md`](README.md) (TL;DR + install + bench table) · HF model card: [`lBroth/nullpii-v10-router-embedding`](https://huggingface.co/lBroth/nullpii-v10-router-embedding).
+**Related**: [`README.md`](README.md) (TL;DR + install + bench table) · HF model card: [`lBroth/nullpii`](https://huggingface.co/lBroth/nullpii).
 
 ## Empirical bench numbers
 
@@ -17,7 +17,7 @@ Snapshot 2026-05-04. Used to position `nullpii` against the existing landscape a
 | Tool | Wrapping |
 |---|---|
 | `nullpii` | local npm CLI (`node bin/nullpii.mjs scan --ndjson`) — canonical user-facing row, full router stack |
-| `nullpii-v10-router-embedding` | Python re-impl of the same pipeline — distiluse + 5 LoRA adapters over `urchade/gliner_multi_pii-v1`. Used for delta-vs-subprocess sanity check |
+| `nullpii-router-embedding` | Python re-impl of the same pipeline — distiluse + 5 LoRA adapters over `urchade/gliner_multi_pii-v1`. Used for delta-vs-subprocess sanity check |
 | `presidio` | **Microsoft Presidio Analyzer** — bare upstream defaults |
 | `gliner-onnx-pii-fp32` | bare HF inference of `urchade/gliner_multi_pii-v1` (GLiNER, Zaratiana et al., NAACL 2024) |
 | `piiranha` | `iiiorg/piiranha-v1-detect-personal-information` — bare upstream defaults |
@@ -29,7 +29,7 @@ Snapshot 2026-05-04. Used to position `nullpii` against the existing landscape a
 
 ### Datasets in scope (10 PII-native)
 
-`nullpii-bench` (project-bundled), `tab-echr`, `nemotron-pii-test`, `presidio-synthetic`, `ai4privacy-300k-heldout-v10` (offset 100k+), `isotonic-{en,de}-heldout-v10` (offset 200k+), `adversarial-{typo,unicode,code}` (synthetic perturbations).
+`nullpii-bench` (project-bundled), `tab-echr`, `nemotron-pii-test`, `presidio-synthetic`, `ai4privacy-300k-heldout` (offset 100k+), `isotonic-{en,de}-heldout` (offset 200k+), `adversarial-{typo,unicode,code}` (synthetic perturbations).
 
 **Why not the previous broader 27-dataset surface?** Cleaned to the canonical hobby-bench surface — kept the rows where nullpii has either an adversarial-preprocessor signal (typo/unicode/code) or a strong baseline reference (Presidio/Nemotron own data), plus held-out evaluation rows. Whitespace + encoding adversarial rows (where preprocessor regresses) and TextAttack 5-perturbation breakdowns dropped — covered conceptually by `adversarial-typo` + `adversarial-unicode`. Wikiann (PER/LOC NER, loose mapping) and adversarial-decoys (zero gold spans) permanently excluded.
 

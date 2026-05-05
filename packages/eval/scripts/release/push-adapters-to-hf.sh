@@ -13,7 +13,7 @@
 #
 # Requirements:
 #   - HF_TOKEN env or `huggingface-cli login`
-#   - LoRA adapter weights at packages/eval/results/train/v10/adapters/<profile>/adapter/
+#   - LoRA adapter weights at packages/eval/results/train/adapters/<profile>/adapter/
 #
 # Usage:
 #   bash packages/eval/scripts/release/push-adapters-to-hf.sh [--dry-run]
@@ -30,10 +30,10 @@ for arg in "$@"; do
     esac
 done
 
-HF_REPO="lBroth/nullpii-v10-adapters"
-ADAPTERS_LOCAL="packages/eval/results/train/v10/adapters"
-ROUTER_LOCAL="packages/eval/results/train/v10/router"
-STAGING="$REPO_ROOT/packages/eval/results/release/v10-adapters-staging"
+HF_REPO="lBroth/nullpii-adapters"
+ADAPTERS_LOCAL="packages/eval/results/train/adapters"
+ROUTER_LOCAL="packages/eval/results/train/router"
+STAGING="$REPO_ROOT/packages/eval/results/release/adapters-staging"
 
 log() { printf '\n[push-adapters] %s\n' "$*"; }
 

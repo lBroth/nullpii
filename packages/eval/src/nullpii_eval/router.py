@@ -1,4 +1,4 @@
-"""v10 domain router for nullpii.
+"""domain router for nullpii.
 
 Lexical heuristic that classifies an input text into one of:
   - "devops"    — code, secrets, env vars, JSON/YAML configs
@@ -7,15 +7,15 @@ Lexical heuristic that classifies an input text into one of:
   - "narrative" — prose, ≥40 chars, no domain signals
   - "unknown"   — short / ambiguous inputs (default fallback)
 
-Routing decisions are calibrated against the v10 bench matrix
-(see `docs/v10/V10_JOURNAL.md` 2026-05-04). Selected per-domain
+Routing decisions are calibrated against the bench matrix
+(see `the internal journal` 2026-05-04). Selected per-domain
 specialists:
 
-  devops    → v10-devops    (best v10 on nullpii-bench: 0.729)
-  legal     → v10-legal     (0.922 on tab-echr — biggest LoRA win)
-  medical   → v10-medical   (0.611 on ai4privacy-300k)
-  narrative → v10-general   (0.85 on isotonic-{en,de,fr})
-  unknown   → v10-general   (0.756 average, safest fallback)
+  devops    → devops    (best on nullpii-bench: 0.729)
+  legal     → legal     (0.922 on tab-echr — biggest LoRA win)
+  medical   → medical   (0.611 on ai4privacy-300k)
+  narrative → general   (0.85 on isotonic-{en,de,fr})
+  unknown   → general   (0.756 average, safest fallback)
 
 The router is intentionally signal-precision-first: order matters.
 Devops signals (high-precision: regex matches on secret patterns)
@@ -229,7 +229,7 @@ def detect_domain(text: str) -> str:
     A devops signal trumps legal/medical because a code block with
     embedded secrets must route to the devops adapter regardless of
     surrounding prose. A legal signal trumps medical because TAB ECHR
-    chunks occasionally name medical conditions (the v10-legal adapter
+    chunks occasionally name medical conditions (the legal adapter
     handled those well at 0.922 F1).
     """
     if _has_devops_signal(text):
@@ -264,7 +264,7 @@ def routing_summary(text: str) -> dict:
 
 
 _DEFAULT_ROUTER_PATH = (
-    Path(__file__).resolve().parents[2] / "results" / "train" / "v10" / "router" / "router.joblib"
+    Path(__file__).resolve().parents[2] / "results" / "train" / "router" / "router.joblib"
 )
 
 # Empirical-best-adapter labeling (router-v2). Same architecture as
@@ -272,7 +272,7 @@ _DEFAULT_ROUTER_PATH = (
 # corpus origin (e.g. ai4 → legal, dev-paste → devops) rather than
 # the corpus-assignment label v1 used.
 _ROUTER_V2_PATH = (
-    Path(__file__).resolve().parents[2] / "results" / "train" / "v10" / "router" / "router-v2.joblib"
+    Path(__file__).resolve().parents[2] / "results" / "train" / "router" / "router-v2.joblib"
 )
 
 
@@ -285,7 +285,7 @@ def _has_high_precision_signal(text: str) -> str | None:
     judgment that quotes a leaked credential as evidence), preserve
     the domain routing — the regex pack still catches the secret
     regardless of which adapter handles span detection. Without this
-    guard, one embedded secret rerouted a 4 KB ECHR judgment to v10-
+    guard, one embedded secret rerouted a 4 KB ECHR judgment to 
     devops, dropping the legal adapter (0.922 → ~0.10 F1).
     """
     has_secret = bool(_SECRET_PATTERNS.search(text))
@@ -324,7 +324,7 @@ class HybridDomainRouter:
     domain markers. The classifier returns one of the four trained
     labels {`devops`, `legal`, `medical`, `narrative`}; if its
     `predict_proba` max is below `min_confidence`, falls back to
-    `narrative` (safe default — narrative records map to v10-general
+    `narrative` (safe default — narrative records map to general
     in the routing table, which is the best-on-average single
     adapter).
     """
@@ -396,7 +396,7 @@ def make_hybrid_detector_v2(
 
 _EMBEDDING_PROTOTYPES_PATH = (
     Path(__file__).resolve().parents[2]
-    / "results" / "train" / "v10" / "router" / "router-embeddings.npz"
+    / "results" / "train" / "router" / "router-embeddings.npz"
 )
 
 
@@ -526,7 +526,7 @@ def make_embedding_detector(
         #   (-0.11 F1) but ~56% nemotron correctly routed
         # - 0.10 → 0 misroutes on nullpii-bench, ~31% nemotron correct
         # 0.10 chosen to preserve dev-paste F1; nemotron lift via the
-        # `nullpii-v10-router-embedding-expanded` variant (option B —
+        # `nullpii-router-embedding-expanded` variant (option B —
         # inference-time finer-grained prompts, no enterprise routing).
         gated_routes = {"enterprise": 0.10}
     return EmbeddingDomainRouter(

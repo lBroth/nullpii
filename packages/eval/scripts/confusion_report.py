@@ -21,7 +21,7 @@ Writes:
 
 Example:
     python packages/eval/scripts/confusion_report.py \\
-      --in-dir packages/eval/results/bench-v10-release-local
+      --in-dir packages/eval/results/bench-release-local
 """
 from __future__ import annotations
 

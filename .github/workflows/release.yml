@@ -88,7 +88,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: hf
-      url: https://huggingface.co/lBroth/nullpii-v10-router-embedding
+      url: https://huggingface.co/lBroth/nullpii
     steps:
       - uses: actions/checkout@v4
       - name: Free disk space for staging (~6 GB merged ONNX)
@@ -108,9 +108,9 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         # Raw adapter weights (~17 MB total) live in the upstream
-        # `lBroth/nullpii-v10-adapters` HF repo. push-to-hf.sh detects
+        # `lBroth/nullpii-adapters` HF repo. push-to-hf.sh detects
         # they're missing locally and pulls them before the merge step.
-        # Output goes to `lBroth/nullpii-v10-router-embedding`.
+        # Output goes to `lBroth/nullpii`.
         run: bash packages/eval/scripts/release/push-to-hf.sh
 
   github-release:

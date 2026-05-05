@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 """Merge each per-domain LoRA adapter into base GLiNER and export to ONNX.
 
-For each adapter under `packages/eval/v10-weights/adapters/<profile>/`:
+For each adapter under `packages/eval/weights/adapters/<profile>/`:
   1. Load base `urchade/gliner_multi_pii-v1` (PyTorch)
   2. Apply LoRA via peft
   3. `model.merge_and_unload()` → merged weights in base
   4. `model.export_to_onnx()` → `model.onnx` in output dir
 
-Outputs to `packages/eval/results/release/v10-onnx-merged/<profile>/`.
+Outputs to `packages/eval/results/release/onnx-merged/<profile>/`.
 
 Run:
     python packages/eval/scripts/release/export_merged_lora_onnx.py
@@ -78,9 +78,9 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawTextHelpFormatter)
     ap.add_argument("--adapters-root", type=Path,
-                    default=Path("packages/eval/v10-weights/adapters"))
+                    default=Path("packages/eval/weights/adapters"))
     ap.add_argument("--out-root", type=Path,
-                    default=Path("packages/eval/results/release/v10-onnx-merged"))
+                    default=Path("packages/eval/results/release/onnx-merged"))
     ap.add_argument("--profiles", nargs="+", default=DEFAULT_PROFILES,
                     help="Adapter profiles to merge (default: all 5)")
     ap.add_argument("--opset", type=int, default=19)

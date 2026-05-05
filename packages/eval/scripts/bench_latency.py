@@ -45,7 +45,7 @@ from nullpii_eval.router import (  # noqa: E402
 )
 
 
-def _v10_adapter(
+def _adapter(
     profile: str,
     *,
     backend: str,
@@ -54,8 +54,8 @@ def _v10_adapter(
     drop_rfc1918: bool = False,
     use_expanded_prompts: bool = False,
 ):
-    """Internal helper mirroring `_v10_adapter` in `bench_full.py`.
-    Builds a per-domain LoRA pipeline for the v10 routers.
+    """Internal helper mirroring `_adapter` in `bench_full.py`.
+    Builds a per-domain LoRA pipeline for the routers.
     """
     if regex_pack is None:
         regex_pack = DEFAULT_REGEX_PATTERNS
@@ -66,7 +66,7 @@ def _v10_adapter(
                     url_filter_predictor(patterns=regex_pack),
                     gliner_lora_predictor(
                         "urchade/gliner_multi_pii-v1",
-                        f"packages/eval/results/train/v10/adapters/{profile}/adapter",
+                        f"packages/eval/results/train/adapters/{profile}/adapter",
                         device=backend if backend == "cpu" else "cuda",
                         threshold=gliner_threshold,
                         normalize_input=True,
@@ -80,27 +80,27 @@ def _v10_adapter(
     )
 
 
-def _v10_routes(*, with_enterprise: bool, backend: str, gliner_threshold: float) -> dict:
+def _routes(*, with_enterprise: bool, backend: str, gliner_threshold: float) -> dict:
     routes = {
-        "devops": _v10_adapter(
+        "devops": _adapter(
             "devops", backend=backend, gliner_threshold=gliner_threshold,
             regex_pack=DEFAULT_REGEX_PATTERNS, drop_rfc1918=True,
         ),
-        "legal": _v10_adapter(
+        "legal": _adapter(
             "legal", backend=backend, gliner_threshold=gliner_threshold,
             regex_pack=MINIMAL_REGEX_PATTERNS,
         ),
-        "medical": _v10_adapter(
+        "medical": _adapter(
             "medical-experimental", backend=backend, gliner_threshold=gliner_threshold,
             regex_pack=MINIMAL_REGEX_PATTERNS,
         ),
-        "narrative": _v10_adapter(
+        "narrative": _adapter(
             "narrative", backend=backend, gliner_threshold=gliner_threshold,
             regex_pack=MINIMAL_REGEX_PATTERNS,
         ),
     }
     if with_enterprise:
-        routes["enterprise"] = _v10_adapter(
+        routes["enterprise"] = _adapter(
             "enterprise", backend=backend, gliner_threshold=gliner_threshold,
             regex_pack=DEFAULT_REGEX_PATTERNS, drop_rfc1918=True,
             use_expanded_prompts=True,
@@ -109,9 +109,9 @@ def _v10_routes(*, with_enterprise: bool, backend: str, gliner_threshold: float)
 
 
 def build_predictor(profile: str, backend: str = "cpu", gliner_threshold: float = 0.5):
-    # ─── v10 release-candidate routers ──────────────────────────────
-    if profile == "nullpii-v10-router-embedding":
-        routes = _v10_routes(
+    # ─── release routers ─────────────────────────────────────────────
+    if profile == "nullpii-router-embedding":
+        routes = _routes(
             with_enterprise=True, backend=backend, gliner_threshold=gliner_threshold,
         )
         return domain_routed_predictor(
@@ -214,8 +214,8 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "--profiles", nargs="+",
-        default=["nullpii-v10-router-embedding"],
-        help="profile names; v10 routers (default) or legacy "
+        default=["nullpii-router-embedding"],
+        help="profile names; routers (default) or legacy "
              "{devops,legal,medical-experimental,general}",
     )
     ap.add_argument("--sizes", nargs="+", type=int, default=[100, 1000, 10000])

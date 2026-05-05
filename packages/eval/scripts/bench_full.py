@@ -67,7 +67,7 @@ from nullpii_eval.adapters import (
 )
 from nullpii_eval.datasets import Sample, Span, load
 from nullpii_eval.metrics import evaluate, macro_f1
-from nullpii_eval.router import make_embedding_detector as _v10_make_embedding_detector
+from nullpii_eval.router import make_embedding_detector as _make_embedding_detector
 
 
 # ─── Dataset registry ────────────────────────────────────────────
@@ -267,19 +267,19 @@ DATASET_CONFIGS: list[DatasetSpec] = [
     DatasetSpec("isotonic-de",               _isotonic("de"),                                                     5_000, total_n=209000),
     DatasetSpec("isotonic-fr",               _isotonic("fr"),                                                     5_000, total_n=209000),
     DatasetSpec("isotonic-it",               _isotonic("it"),                                                     5_000, total_n=209000),
-    # ─ v10 held-out splits (explicit row offsets past training slice) ─
-    # v10 adapters trained on ai4 rows 0-15k and isotonic rows 0-5k
+    # ─ held-out splits (explicit row offsets past training slice) ─
+    # adapters trained on ai4 rows 0-15k and isotonic rows 0-5k
     # per-lang. These specs carve from offset 100k+, well past any
-    # training row, to validate v10 generalisation rather than
+    # training row, to validate generalisation rather than
     # train-set memorisation. ai4 dataset size 177k → 77k available
     # past offset 100k. Isotonic dataset size 209k → ~109k past 100k.
-    DatasetSpec("ai4privacy-300k-heldout-v10",   lambda n: list(public_datasets._load_ai4privacy(n, offset=_AI4_HELDOUT_OFFSET).samples), 5_000, total_n=109000),
-    # External baselines (not in v10 training corpora — held-out).
+    DatasetSpec("ai4privacy-300k-heldout",   lambda n: list(public_datasets._load_ai4privacy(n, offset=_AI4_HELDOUT_OFFSET).samples), 5_000, total_n=109000),
+    # External baselines (not in training corpora — held-out).
     DatasetSpec("argilla-pii",                   lambda n: list(public_datasets._load_argilla_pii(n).samples),                          2_000, total_n=2096),
     DatasetSpec("nemotron-pii-test",             lambda n: list(public_datasets._load_nemotron_pii_test(n).samples),                    5_000, total_n=100000),
-    DatasetSpec("isotonic-en-heldout-v10",       _isotonic("en", row_offset=_ISOTONIC_HELDOUT_ROW_OFFSET // 2),  5_000, total_n=109000),
-    DatasetSpec("isotonic-de-heldout-v10",       _isotonic("de", row_offset=_ISOTONIC_HELDOUT_ROW_OFFSET // 2),  5_000, total_n=109000),
-    DatasetSpec("isotonic-fr-heldout-v10",       _isotonic("fr", row_offset=_ISOTONIC_HELDOUT_ROW_OFFSET // 2),  5_000, total_n=109000),
+    DatasetSpec("isotonic-en-heldout",       _isotonic("en", row_offset=_ISOTONIC_HELDOUT_ROW_OFFSET // 2),  5_000, total_n=109000),
+    DatasetSpec("isotonic-de-heldout",       _isotonic("de", row_offset=_ISOTONIC_HELDOUT_ROW_OFFSET // 2),  5_000, total_n=109000),
+    DatasetSpec("isotonic-fr-heldout",       _isotonic("fr", row_offset=_ISOTONIC_HELDOUT_ROW_OFFSET // 2),  5_000, total_n=109000),
     # Dropped 2026-05-04: `wikiann-{es,zh,ja}` are PER/LOC NER, not
     # native PII labels. Loose mapping (PER → private_person, LOC →
     # private_address) makes absolute F1 incomparable to PII-native
@@ -300,11 +300,11 @@ def build_tools(args) -> dict[str, Callable]:
     backend = args.backend
     openai_backend = args.openai_backend or backend
 
-    # ─── v10 LoRA per-domain adapter helper ──────────────────────────
+    # ─── LoRA per-domain adapter helper ──────────────────────────
     # Loaded internally by router-embedding only. The
     # individual per-domain adapters are NOT exposed as user-facing
     # tools — release scope is the two routers.
-    def _v10_adapter(
+    def _adapter(
         profile: str,
         *,
         regex_pack=DEFAULT_REGEX_PATTERNS,
@@ -317,7 +317,7 @@ def build_tools(args) -> dict[str, Callable]:
         # spans from being dropped. Empirically tested 2026-05-05 on
         # 9-dataset subset; `score_ranked` regressed adversarial-typo
         # 0.940 → 0.635 (−0.30), argilla-pii 0.600 → 0.572 (−0.029),
-        # nullpii-bench 0.728 → 0.725 (−0.003). v10 regex pack is
+        # nullpii-bench 0.728 → 0.725 (−0.003). regex pack is
         # already high-precision (BTC validated, IDN reverted, F09
         # context-anchored phones); letting ML scores override correct
         # regex matches lowered F1 net. Audit-F11 closed as
@@ -330,7 +330,7 @@ def build_tools(args) -> dict[str, Callable]:
                         url_filter_predictor(patterns=regex_pack),
                         gliner_lora_predictor(
                             "urchade/gliner_multi_pii-v1",
-                            f"packages/eval/results/train/v10/adapters/{profile}/adapter",
+                            f"packages/eval/results/train/adapters/{profile}/adapter",
                             device=backend if backend == "cpu" else "cuda",
                             threshold=args.gliner_threshold,
                             normalize_input=True,
@@ -343,17 +343,17 @@ def build_tools(args) -> dict[str, Callable]:
             drop_rfc1918=drop_rfc1918,
         )
 
-    def _v10_routes(*, with_enterprise: bool) -> dict[str, Callable]:
+    def _routes(*, with_enterprise: bool) -> dict[str, Callable]:
         routes = {
-            "devops":    _v10_adapter("devops",               regex_pack=DEFAULT_REGEX_PATTERNS, drop_rfc1918=args.drop_rfc1918),
-            "legal":     _v10_adapter("legal",                regex_pack=MINIMAL_REGEX_PATTERNS, drop_rfc1918=False),
-            "medical":   _v10_adapter("medical", regex_pack=MINIMAL_REGEX_PATTERNS, drop_rfc1918=False),
-            "narrative": _v10_adapter("narrative",            regex_pack=MINIMAL_REGEX_PATTERNS, drop_rfc1918=False),
+            "devops":    _adapter("devops",               regex_pack=DEFAULT_REGEX_PATTERNS, drop_rfc1918=args.drop_rfc1918),
+            "legal":     _adapter("legal",                regex_pack=MINIMAL_REGEX_PATTERNS, drop_rfc1918=False),
+            "medical":   _adapter("medical", regex_pack=MINIMAL_REGEX_PATTERNS, drop_rfc1918=False),
+            "narrative": _adapter("narrative",            regex_pack=MINIMAL_REGEX_PATTERNS, drop_rfc1918=False),
         }
         if with_enterprise:
             # 5th route — Nemotron-aug-trained enterprise adapter,
             # gated at margin=0.10 in the embedding detector.
-            routes["enterprise"] = _v10_adapter(
+            routes["enterprise"] = _adapter(
                 "enterprise",
                 regex_pack=DEFAULT_REGEX_PATTERNS,
                 drop_rfc1918=args.drop_rfc1918,
@@ -376,18 +376,18 @@ def build_tools(args) -> dict[str, Callable]:
             model_dir=os.environ.get("NULLPII_MODEL_DIR"),
         ),
         # ─── Python re-impl (legacy / dev-only — DEPRECATED) ───────────
-        # Composes the v10 router stack from individual library calls
+        # Composes the router stack from individual library calls
         # (gliner + peft for LoRA + custom Python ports of boundary
         # refine / never-PII / URL filter / regex pack). Kept for
         # ablations and legacy comparisons — DOES NOT match the npm
         # runtime byte-for-byte. Prefer the `nullpii` row above.
-        "nullpii-v10-router-embedding": lambda: (lambda r: domain_routed_predictor(
-            detector=_v10_make_embedding_detector(
+        "nullpii-router-embedding": lambda: (lambda r: domain_routed_predictor(
+            detector=_make_embedding_detector(
                 device="cpu" if backend == "cpu" else "cuda",
             ),
             routes=r,
             fallback=r["narrative"],
-        ))(_v10_routes(with_enterprise=True)),
+        ))(_routes(with_enterprise=True)),
         # ─── Bare third-party baselines (no nullpii pipeline overlay) ─
         # Each runs upstream library directly. NONE wraps nullpii post-
         # processing (boundary refine / never-PII filter / regex pack /

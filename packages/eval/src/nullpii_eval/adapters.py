@@ -2947,7 +2947,7 @@ def gliner_nemotron_pii_predictor(
 
     Default threshold 0.3 follows Nvidia's evaluation recipe (model card).
     Backbone is `urchade/gliner_large-v2.1` (~600M params, 2× the size
-    of our v6/v10 backbone `urchade/gliner_multi_pii-v1` ~280M).
+    of our backbone `urchade/gliner_multi_pii-v1` ~280M).
     """
     try:
         from gliner import GLiNER
@@ -3159,7 +3159,7 @@ def gliner_lora_predictor(
     (typically ~3.4 MB; contains `adapter_model.safetensors` +
     `adapter_config.json`).
 
-    Used by the v10 per-domain profile tool defs in `bench_full.py`.
+    Used by the per-domain profile tool defs in `bench_full.py`.
     """
     try:
         from gliner import GLiNER
@@ -3271,7 +3271,7 @@ def domain_routed_predictor(
     so timing and span output stay compatible. The router itself adds
     only the regex-based detect call (~µs) on top.
 
-    Used by the v10 router tool def in `bench_full.py`. Underlying
+    Used by the router tool def in `bench_full.py`. Underlying
     predictors are constructed up-front by the caller (lazy
     instantiation is the caller's responsibility — typically via
     `bench_full.py`'s lambda dict).

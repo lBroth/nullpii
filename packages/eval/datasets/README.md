@@ -80,7 +80,7 @@ Each line:
 patterns, overlapping prompt skeletons. F1 on `nullpii-bench` is
 treated as **in-distribution memorisation diagnostic**, not OOD.
 Documented in the train-vs-eval overlap matrix on the HF model card
-([`lBroth/nullpii-v10-router-embedding`](https://huggingface.co/lBroth/nullpii-v10-router-embedding)).
+([`lBroth/nullpii`](https://huggingface.co/lBroth/nullpii)).
 
 ## `nullpii-adversarial` subsets (canonical)
 

@@ -40,4 +40,4 @@ describe('NullPii lifecycle', () => {
 // End-to-end ML pipeline (real ONNX + tokenizer) is exercised by the
 // scratch script `test-full-stack.mjs` against a staged model dir; not
 // part of the CI suite because we don't ship multi-GB models in tests.
-// See `docs/v10/V10_PLAN.md` for the e2e smoke command.
+// See the internal plan for the e2e smoke command.

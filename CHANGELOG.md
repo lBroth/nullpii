@@ -26,8 +26,8 @@ First public release. Local PII sanitization with reversible vault.
 
 ### Model artifacts
 
-- HuggingFace Hub: [`lBroth/nullpii-v10-router-embedding`](https://huggingface.co/lBroth/nullpii-v10-router-embedding) (~6 GB FP32 — 5 merged-LoRA ONNX shards + distiluse encoder + tokenizer + prototypes JSON). First call to `sanitize()` downloads everything to `~/.cache/nullpii/`.
-- Raw LoRA weights ([`lBroth/nullpii-v10-adapters`](https://huggingface.co/lBroth/nullpii-v10-adapters), ~17 MB) — upstream of the merged repo, used by the release pipeline.
+- HuggingFace Hub: [`lBroth/nullpii`](https://huggingface.co/lBroth/nullpii) (~6 GB FP32 — 5 merged-LoRA ONNX shards + distiluse encoder + tokenizer + prototypes JSON). First call to `sanitize()` downloads everything to `~/.cache/nullpii/`.
+- Raw LoRA weights ([`lBroth/nullpii-adapters`](https://huggingface.co/lBroth/nullpii-adapters), ~17 MB) — upstream of the merged repo, used by the release pipeline.
 - Apache 2.0 throughout. Built on `urchade/gliner_multi_pii-v1` (Zaratiana et al., NAACL 2024). Per-domain LoRA training data composition + recipe documented on the HF model card.
 
 ### Red-team disclosures

@@ -12,7 +12,7 @@ describe('ModelManager', () => {
     const cache = mkdtempSync(join(tmpdir(), 'nullpii-cache-'));
     const m = new ModelManager(cache);
     expect(m.modelDir.startsWith(cache)).toBe(true);
-    expect(m.modelDir).toContain('lBroth/nullpii-v10-router-embedding');
+    expect(m.modelDir).toContain('lBroth/nullpii');
   });
 
   it('refuses to escape its cache root if asked', () => {

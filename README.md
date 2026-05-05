@@ -211,7 +211,6 @@ Honest read: nullpii sits in the GLiNER-family ballpark on the held-out non-adve
 
 - [`packages/eval/README.md`](packages/eval/README.md) — bench harness + scripts inventory
 - [`packages/eval/datasets/README.md`](packages/eval/datasets/README.md) — dataset cards + licenses
-- [`examples/README.md`](examples/README.md) — TS usage examples
 
 ## License
 

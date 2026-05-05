@@ -1,9 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildProgram } from '../src/cli/index.js';
-import { HAS_TEST_ARTIFACTS, TEST_MODEL_DIR } from './_env.js';
-
-const ARTIFACT_MODEL_DIR = TEST_MODEL_DIR;
-const itIfArtifacts = HAS_TEST_ARTIFACTS ? it : it.skip;
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -22,75 +18,24 @@ describe('CLI: buildProgram', () => {
     const program = buildProgram();
     expect(program.version()).toMatch(/\d+\.\d+\.\d+/);
   });
+
+  it('--help does not throw on the top-level program', () => {
+    const program = buildProgram();
+    program.exitOverride();
+    expect(() => {
+      try {
+        program.parse(['node', 'nullpii', '--help']);
+      } catch (e) {
+        // commander throws CommanderError on --help — that's expected.
+        if (e instanceof Error && 'exitCode' in e && (e as { exitCode?: number }).exitCode === 0) {
+          return;
+        }
+        throw e;
+      }
+    }).not.toThrow();
+  });
 });
 
-function captureStdout<T>(fn: () => Promise<T>): Promise<{ result: T; output: string }> {
-  const chunks: string[] = [];
-  const original = process.stdout.write.bind(process.stdout);
-  process.stdout.write = ((data: string | Uint8Array) => {
-    chunks.push(typeof data === 'string' ? data : Buffer.from(data).toString('utf-8'));
-    return true;
-  }) as typeof process.stdout.write;
-  return fn()
-    .then((result) => ({ result, output: chunks.join('') }))
-    .finally(() => {
-      process.stdout.write = original;
-    });
-}
-
-describe('CLI end-to-end (gated on artifacts/model)', () => {
-  itIfArtifacts(
-    'scan --format json emits valid JSON',
-    async () => {
-      const program = buildProgram();
-      program.exitOverride();
-      const { output } = await captureStdout(async () => {
-        await program.parseAsync([
-          'node',
-          'nullpii',
-          'scan',
-          'My name is John Smith',
-          '--format',
-          'json',
-          '--model-dir',
-          ARTIFACT_MODEL_DIR,
-          '--backend',
-          'cpu',
-          '--variant',
-          'int4',
-        ]);
-      });
-      const parsed = JSON.parse(output) as { spans: ReadonlyArray<unknown> };
-      expect(Array.isArray(parsed.spans)).toBe(true);
-    },
-    180_000,
-  );
-
-  itIfArtifacts(
-    'sanitize prints text without the original PII value (--format json)',
-    async () => {
-      const program = buildProgram();
-      program.exitOverride();
-      const { output } = await captureStdout(async () => {
-        await program.parseAsync([
-          'node',
-          'nullpii',
-          'sanitize',
-          'Hi, my name is John Smith and my email is john@example.com.',
-          '--format',
-          'json',
-          '--model-dir',
-          ARTIFACT_MODEL_DIR,
-          '--backend',
-          'cpu',
-          '--variant',
-          'int4',
-        ]);
-      });
-      const parsed = JSON.parse(output) as { sanitized: string; spans: ReadonlyArray<unknown> };
-      expect(parsed.spans.length).toBeGreaterThan(0);
-      expect(parsed.sanitized).not.toContain('John Smith');
-    },
-    180_000,
-  );
-});
+// Integration tests against a real model are exercised by the scratch
+// script `test-full-stack.mjs` — see `docs/v10/V10_PLAN.md` for the
+// command. The CI suite stays mock-free + ONNX-free.

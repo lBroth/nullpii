@@ -33,14 +33,12 @@ LoRA adapter (~3.4 MB safetensors) on `urchade/gliner_multi_pii-v1`. Specialised
 ## Out-of-scope
 
 - **Non-US locale**: trained on US-only Nemotron-PII + Faker `en_US`. EU / UK / Asia format coverage handled by other adapters.
-- **HIPAA Protected Health Information** as the sole control: see `medical-experimental` adapter card.
+- **HIPAA Protected Health Information** as the sole control: see `medical` adapter card.
 - **Conversational / dev-paste**: routing should select `narrative` or `devops`; this adapter under-performs on prose.
 
 ## Routing gate
 
 The router (`nullpii-v10-router-embedding`) **gates** the enterprise route at margin ≥ 0.10 vs the runner-up. The enterprise prototype proved over-attractive on dev-paste in pre-bench validation (15% misroute rate without gate). The gate trades ~5% recall on enterprise-shaped inputs for routing stability across mixed workloads.
-
-The xlm-roberta router does NOT include the enterprise route.
 
 ## Training data
 
@@ -65,11 +63,11 @@ Train loss: 10.06 → eval loss: 4.31 → 3.91 over 2 epochs.
 
 ## Evaluation
 
-This LoRA adapter is loaded by the [`nullpii-v10-router-embedding`](router-embedding.md) and (where applicable) [`nullpii-v10-router-xlmr`](router-xlmr.md) routers — it is not intended to be used standalone. End-to-end F1 numbers are reported per-router on those cards. Aggregate macro F1 of the shipping pipeline (router-embedding) across 27 datasets: **0.7172**.
+This LoRA adapter is loaded by the [`nullpii-v10-router-embedding`](router-embedding.md) shipping router — it is not intended to be used standalone. End-to-end F1 numbers are reported on that card. Aggregate macro F1 of the shipping pipeline (router-embedding) across 27 datasets: **0.7172**.
 
 Per-domain isolated benchmarks (LoRA adapter alone, bypassing the router) are out-of-scope for the v10 release; they would require separate tool defs in `bench_full.py` and a re-run. Routing-aware evaluation (which dataset routes to which adapter) is the production-relevant signal and is what the router cards report.
 
-Full bench artifacts: `packages/eval/results/bench-v10-release-local/matrix.{json,csv}`.
+Full bench artifacts: `packages/eval/published-bench/matrix.{json,csv}`.
 
 
 ## Limitations

@@ -53,6 +53,11 @@ tmp/
 packages/eval/results/
 packages/eval/private/
 packages/eval/tests/
+packages/eval/v10-weights/  # raw LoRA adapters live on HF, not git
+
+# Note: the canonical published bench result lives at
+# `packages/eval/published-bench/` (NOT under `results/`) so it
+# survives the gitignore above. README + model cards link there.
 
 # sub-package lockfiles leak dev registry URLs; root lockfile is canonical
 packages/*/package-lock.json

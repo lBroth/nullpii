@@ -75,7 +75,7 @@ export function normalizeForDetection(text: string): NormalizeResult {
   }
   // Strict ASCII fast-path: only short-circuit when there's no
   // possibility of despace, URL %XX, or HTML entity decode work.
-  // AUDIT F24 mirror — narrower than the Python proposal because
+  // mirror — narrower than the Python proposal because
   // despace + decode legitimately apply to ASCII input.
   if (isPureAsciiNoDecodeNeeded(text)) {
     const passthrough: number[] = [];
@@ -121,7 +121,7 @@ export function normalizeForDetection(text: string): NormalizeResult {
       // the email regex still matches. Same behaviour as Python F03.
       if (decoded && !EMAIL_ANCHOR_CHARS.has(decoded)) {
         out.push(decoded);
-        // F04 mirror: map decoded char to END of the triplet.
+        // map decoded char to END of the triplet.
         normToOrig.push(i + 2);
         i += 3;
         continue;
@@ -137,7 +137,7 @@ export function normalizeForDetection(text: string): NormalizeResult {
       if (dec !== undefined) decodedCode = Number.parseInt(dec, 10);
       else if (hex !== undefined) decodedCode = Number.parseInt(hex, 16);
       const decoded = Number.isFinite(decodedCode) ? String.fromCodePoint(decodedCode) : '';
-      // F03 mirror: skip email-anchor chars to preserve email regex.
+      // skip email-anchor chars to preserve email regex.
       if (decoded && !EMAIL_ANCHOR_CHARS.has(decoded)) {
         for (const ch of decoded) {
           out.push(ch);
@@ -183,7 +183,7 @@ export function normalizeForDetection(text: string): NormalizeResult {
  * Map a span `[start, end)` from normalised-text offsets back to
  * original-text offsets.
  *
- * Mirrors `_remap_span` in the Python adapter (AUDIT F10: strict
+ * Mirrors `_remap_span` in the Python adapter (strict
  * `min(idx, max_idx)` clamp — never use `>=` because the sentinel
  * at index `len(normToOrig) - 1` is the valid end-exclusive
  * position). Returns `[origStart, origEnd]`.

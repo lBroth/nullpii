@@ -1,0 +1,1919 @@
+{
+  "nullpii-bench": {
+    "nullpii-v10-router-embedding": {
+      "private_email": {
+        "tp": 138,
+        "fp": 6,
+        "fn": 26
+      },
+      "private_url": {
+        "tp": 44,
+        "fp": 4,
+        "fn": 12
+      },
+      "private_person": {
+        "tp": 149,
+        "fp": 34,
+        "fn": 65
+      },
+      "private_phone": {
+        "tp": 47,
+        "fp": 1,
+        "fn": 6
+      },
+      "account_number": {
+        "tp": 29,
+        "fp": 19,
+        "fn": 1
+      },
+      "private_address": {
+        "tp": 7,
+        "fp": 52,
+        "fn": 16
+      },
+      "private_date": {
+        "tp": 55,
+        "fp": 18,
+        "fn": 12
+      },
+      "secret": {
+        "tp": 42,
+        "fp": 6,
+        "fn": 30
+      }
+    },
+    "nullpii-v10-router-xlmr": {
+      "private_email": {
+        "tp": 138,
+        "fp": 6,
+        "fn": 26
+      },
+      "private_url": {
+        "tp": 44,
+        "fp": 4,
+        "fn": 12
+      },
+      "private_person": {
+        "tp": 114,
+        "fp": 91,
+        "fn": 100
+      },
+      "private_phone": {
+        "tp": 47,
+        "fp": 1,
+        "fn": 6
+      },
+      "account_number": {
+        "tp": 24,
+        "fp": 22,
+        "fn": 6
+      },
+      "private_address": {
+        "tp": 3,
+        "fp": 75,
+        "fn": 20
+      },
+      "private_date": {
+        "tp": 61,
+        "fp": 127,
+        "fn": 6
+      },
+      "secret": {
+        "tp": 26,
+        "fp": 8,
+        "fn": 46
+      }
+    }
+  },
+  "adversarial-typo": {
+    "nullpii-v10-router-embedding": {
+      "private_email": {
+        "tp": 15,
+        "fp": 0,
+        "fn": 0
+      },
+      "secret": {
+        "tp": 14,
+        "fp": 0,
+        "fn": 7
+      },
+      "private_phone": {
+        "tp": 20,
+        "fp": 0,
+        "fn": 0
+      },
+      "account_number": {
+        "tp": 24,
+        "fp": 2,
+        "fn": 0
+      }
+    },
+    "nullpii-v10-router-xlmr": {
+      "private_email": {
+        "tp": 15,
+        "fp": 0,
+        "fn": 0
+      },
+      "secret": {
+        "tp": 1,
+        "fp": 0,
+        "fn": 20
+      },
+      "private_phone": {
+        "tp": 20,
+        "fp": 0,
+        "fn": 0
+      },
+      "account_number": {
+        "tp": 24,
+        "fp": 14,
+        "fn": 0
+      }
+    }
+  },
+  "adversarial-unicode": {
+    "nullpii-v10-router-embedding": {
+      "private_email": {
+        "tp": 19,
+        "fp": 0,
+        "fn": 3
+      },
+      "private_person": {
+        "tp": 34,
+        "fp": 2,
+        "fn": 0
+      },
+      "private_address": {
+        "tp": 20,
+        "fp": 0,
+        "fn": 4
+      }
+    },
+    "nullpii-v10-router-xlmr": {
+      "private_email": {
+        "tp": 19,
+        "fp": 0,
+        "fn": 3
+      },
+      "private_person": {
+        "tp": 31,
+        "fp": 20,
+        "fn": 3
+      },
+      "private_address": {
+        "tp": 16,
+        "fp": 25,
+        "fn": 8
+      }
+    }
+  },
+  "adversarial-whitespace": {
+    "nullpii-v10-router-embedding": {
+      "private_email": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 25
+      },
+      "private_phone": {
+        "tp": 17,
+        "fp": 0,
+        "fn": 9
+      },
+      "account_number": {
+        "tp": 7,
+        "fp": 0,
+        "fn": 22
+      }
+    },
+    "nullpii-v10-router-xlmr": {
+      "private_email": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 25
+      },
+      "private_phone": {
+        "tp": 19,
+        "fp": 0,
+        "fn": 7
+      },
+      "account_number": {
+        "tp": 16,
+        "fp": 0,
+        "fn": 13
+      }
+    }
+  },
+  "adversarial-encoding": {
+    "nullpii-v10-router-embedding": {
+      "private_email": {
+        "tp": 2,
+        "fp": 0,
+        "fn": 45
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 6,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 0,
+        "fp": 6,
+        "fn": 0
+      },
+      "secret": {
+        "tp": 15,
+        "fp": 9,
+        "fn": 18
+      },
+      "account_number": {
+        "tp": 0,
+        "fp": 1,
+        "fn": 0
+      }
+    },
+    "nullpii-v10-router-xlmr": {
+      "private_email": {
+        "tp": 2,
+        "fp": 0,
+        "fn": 45
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 6,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 0,
+        "fp": 6,
+        "fn": 0
+      },
+      "secret": {
+        "tp": 15,
+        "fp": 9,
+        "fn": 18
+      },
+      "account_number": {
+        "tp": 0,
+        "fp": 1,
+        "fn": 0
+      }
+    }
+  },
+  "adversarial-code": {
+    "nullpii-v10-router-embedding": {
+      "private_email": {
+        "tp": 22,
+        "fp": 0,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 22,
+        "fp": 0,
+        "fn": 0
+      },
+      "secret": {
+        "tp": 58,
+        "fp": 0,
+        "fn": 0
+      }
+    },
+    "nullpii-v10-router-xlmr": {
+      "private_email": {
+        "tp": 22,
+        "fp": 0,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 22,
+        "fp": 0,
+        "fn": 0
+      },
+      "secret": {
+        "tp": 58,
+        "fp": 0,
+        "fn": 0
+      }
+    }
+  },
+  "adversarial-textattack": {
+    "nullpii-v10-router-embedding": {
+      "private_email": {
+        "tp": 760,
+        "fp": 37,
+        "fn": 10
+      },
+      "private_person": {
+        "tp": 707,
+        "fp": 151,
+        "fn": 368
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 330,
+        "fn": 0
+      },
+      "account_number": {
+        "tp": 367,
+        "fp": 75,
+        "fn": 173
+      },
+      "private_address": {
+        "tp": 2700,
+        "fp": 311,
+        "fn": 325
+      },
+      "private_date": {
+        "tp": 1256,
+        "fp": 338,
+        "fn": 304
+      }
+    },
+    "nullpii-v10-router-xlmr": {
+      "private_email": {
+        "tp": 757,
+        "fp": 36,
+        "fn": 13
+      },
+      "private_person": {
+        "tp": 690,
+        "fp": 142,
+        "fn": 385
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 325,
+        "fn": 0
+      },
+      "account_number": {
+        "tp": 375,
+        "fp": 51,
+        "fn": 165
+      },
+      "private_address": {
+        "tp": 2701,
+        "fp": 317,
+        "fn": 324
+      },
+      "private_date": {
+        "tp": 1256,
+        "fp": 346,
+        "fn": 304
+      }
+    }
+  },
+  "textattack-homoglyph": {
+    "nullpii-v10-router-embedding": {
+      "private_email": {
+        "tp": 148,
+        "fp": 9,
+        "fn": 6
+      },
+      "private_person": {
+        "tp": 146,
+        "fp": 31,
+        "fn": 69
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 66,
+        "fn": 0
+      },
+      "account_number": {
+        "tp": 49,
+        "fp": 14,
+        "fn": 59
+      },
+      "private_address": {
+        "tp": 566,
+        "fp": 66,
+        "fn": 39
+      },
+      "private_date": {
+        "tp": 245,
+        "fp": 64,
+        "fn": 67
+      }
+    },
+    "nullpii-v10-router-xlmr": {
+      "private_email": {
+        "tp": 145,
+        "fp": 12,
+        "fn": 9
+      },
+      "private_person": {
+        "tp": 145,
+        "fp": 28,
+        "fn": 70
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 65,
+        "fn": 0
+      },
+      "account_number": {
+        "tp": 52,
+        "fp": 9,
+        "fn": 56
+      },
+      "private_address": {
+        "tp": 566,
+        "fp": 67,
+        "fn": 39
+      },
+      "private_date": {
+        "tp": 245,
+        "fp": 67,
+        "fn": 67
+      }
+    }
+  },
+  "textattack-charswap": {
+    "nullpii-v10-router-embedding": {
+      "private_email": {
+        "tp": 153,
+        "fp": 7,
+        "fn": 1
+      },
+      "private_person": {
+        "tp": 131,
+        "fp": 31,
+        "fn": 84
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 66,
+        "fn": 0
+      },
+      "account_number": {
+        "tp": 108,
+        "fp": 17,
+        "fn": 0
+      },
+      "private_address": {
+        "tp": 538,
+        "fp": 61,
+        "fn": 67
+      },
+      "private_date": {
+        "tp": 257,
+        "fp": 49,
+        "fn": 55
+      }
+    },
+    "nullpii-v10-router-xlmr": {
+      "private_email": {
+        "tp": 154,
+        "fp": 6,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 128,
+        "fp": 28,
+        "fn": 87
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 65,
+        "fn": 0
+      },
+      "account_number": {
+        "tp": 108,
+        "fp": 12,
+        "fn": 0
+      },
+      "private_address": {
+        "tp": 538,
+        "fp": 62,
+        "fn": 67
+      },
+      "private_date": {
+        "tp": 257,
+        "fp": 49,
+        "fn": 55
+      }
+    }
+  },
+  "textattack-chardelete": {
+    "nullpii-v10-router-embedding": {
+      "private_email": {
+        "tp": 151,
+        "fp": 7,
+        "fn": 3
+      },
+      "private_person": {
+        "tp": 132,
+        "fp": 26,
+        "fn": 83
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 66,
+        "fn": 0
+      },
+      "account_number": {
+        "tp": 108,
+        "fp": 14,
+        "fn": 0
+      },
+      "private_address": {
+        "tp": 505,
+        "fp": 56,
+        "fn": 100
+      },
+      "private_date": {
+        "tp": 267,
+        "fp": 50,
+        "fn": 45
+      }
+    },
+    "nullpii-v10-router-xlmr": {
+      "private_email": {
+        "tp": 151,
+        "fp": 6,
+        "fn": 3
+      },
+      "private_person": {
+        "tp": 127,
+        "fp": 24,
+        "fn": 88
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 65,
+        "fn": 0
+      },
+      "account_number": {
+        "tp": 108,
+        "fp": 10,
+        "fn": 0
+      },
+      "private_address": {
+        "tp": 505,
+        "fp": 57,
+        "fn": 100
+      },
+      "private_date": {
+        "tp": 267,
+        "fp": 51,
+        "fn": 45
+      }
+    }
+  },
+  "textattack-charinsert": {
+    "nullpii-v10-router-embedding": {
+      "private_email": {
+        "tp": 154,
+        "fp": 7,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 151,
+        "fp": 32,
+        "fn": 64
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 66,
+        "fn": 0
+      },
+      "account_number": {
+        "tp": 46,
+        "fp": 15,
+        "fn": 62
+      },
+      "private_address": {
+        "tp": 549,
+        "fp": 65,
+        "fn": 56
+      },
+      "private_date": {
+        "tp": 248,
+        "fp": 76,
+        "fn": 64
+      }
+    },
+    "nullpii-v10-router-xlmr": {
+      "private_email": {
+        "tp": 154,
+        "fp": 6,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 148,
+        "fp": 33,
+        "fn": 67
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 65,
+        "fn": 0
+      },
+      "account_number": {
+        "tp": 48,
+        "fp": 10,
+        "fn": 60
+      },
+      "private_address": {
+        "tp": 551,
+        "fp": 66,
+        "fn": 54
+      },
+      "private_date": {
+        "tp": 248,
+        "fp": 78,
+        "fn": 64
+      }
+    }
+  },
+  "textattack-charsub": {
+    "nullpii-v10-router-embedding": {
+      "private_email": {
+        "tp": 154,
+        "fp": 7,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 147,
+        "fp": 31,
+        "fn": 68
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 66,
+        "fn": 0
+      },
+      "account_number": {
+        "tp": 56,
+        "fp": 15,
+        "fn": 52
+      },
+      "private_address": {
+        "tp": 542,
+        "fp": 63,
+        "fn": 63
+      },
+      "private_date": {
+        "tp": 239,
+        "fp": 99,
+        "fn": 73
+      }
+    },
+    "nullpii-v10-router-xlmr": {
+      "private_email": {
+        "tp": 153,
+        "fp": 6,
+        "fn": 1
+      },
+      "private_person": {
+        "tp": 142,
+        "fp": 29,
+        "fn": 73
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 65,
+        "fn": 0
+      },
+      "account_number": {
+        "tp": 59,
+        "fp": 10,
+        "fn": 49
+      },
+      "private_address": {
+        "tp": 541,
+        "fp": 65,
+        "fn": 64
+      },
+      "private_date": {
+        "tp": 239,
+        "fp": 101,
+        "fn": 73
+      }
+    }
+  },
+  "tab-echr": {
+    "nullpii-v10-router-embedding": {
+      "private_date": {
+        "tp": 2346,
+        "fp": 158,
+        "fn": 269
+      },
+      "private_person": {
+        "tp": 931,
+        "fp": 57,
+        "fn": 132
+      },
+      "private_address": {
+        "tp": 435,
+        "fp": 85,
+        "fn": 88
+      }
+    },
+    "nullpii-v10-router-xlmr": {
+      "private_date": {
+        "tp": 2510,
+        "fp": 165,
+        "fn": 105
+      },
+      "private_person": {
+        "tp": 1026,
+        "fp": 63,
+        "fn": 37
+      },
+      "private_address": {
+        "tp": 477,
+        "fp": 106,
+        "fn": 46
+      }
+    }
+  },
+  "oasst-dev-planted": {
+    "nullpii-v10-router-embedding": {
+      "private_email": {
+        "tp": 1,
+        "fp": 0,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 7,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 2
+      },
+      "private_phone": {
+        "tp": 1,
+        "fp": 0,
+        "fn": 0
+      },
+      "account_number": {
+        "tp": 4,
+        "fp": 3,
+        "fn": 4
+      },
+      "private_address": {
+        "tp": 0,
+        "fp": 9,
+        "fn": 5
+      },
+      "private_date": {
+        "tp": 1,
+        "fp": 0,
+        "fn": 1
+      },
+      "secret": {
+        "tp": 7,
+        "fp": 0,
+        "fn": 5
+      }
+    },
+    "nullpii-v10-router-xlmr": {
+      "private_email": {
+        "tp": 1,
+        "fp": 0,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 7,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 2
+      },
+      "private_phone": {
+        "tp": 1,
+        "fp": 0,
+        "fn": 0
+      },
+      "account_number": {
+        "tp": 4,
+        "fp": 4,
+        "fn": 4
+      },
+      "private_address": {
+        "tp": 3,
+        "fp": 6,
+        "fn": 2
+      },
+      "private_date": {
+        "tp": 2,
+        "fp": 0,
+        "fn": 0
+      },
+      "secret": {
+        "tp": 6,
+        "fp": 0,
+        "fn": 6
+      }
+    }
+  },
+  "presidio-synthetic": {
+    "nullpii-v10-router-embedding": {
+      "private_email": {
+        "tp": 139,
+        "fp": 0,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 80,
+        "fp": 0,
+        "fn": 20
+      },
+      "private_person": {
+        "tp": 1540,
+        "fp": 724,
+        "fn": 1482
+      },
+      "private_phone": {
+        "tp": 196,
+        "fp": 12,
+        "fn": 167
+      },
+      "account_number": {
+        "tp": 551,
+        "fp": 87,
+        "fn": 25
+      },
+      "private_address": {
+        "tp": 657,
+        "fp": 2848,
+        "fn": 1296
+      },
+      "private_date": {
+        "tp": 125,
+        "fp": 79,
+        "fn": 213
+      }
+    },
+    "nullpii-v10-router-xlmr": {
+      "private_email": {
+        "tp": 139,
+        "fp": 0,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 88,
+        "fp": 0,
+        "fn": 12
+      },
+      "private_person": {
+        "tp": 1801,
+        "fp": 1511,
+        "fn": 1221
+      },
+      "private_phone": {
+        "tp": 174,
+        "fp": 12,
+        "fn": 189
+      },
+      "account_number": {
+        "tp": 550,
+        "fp": 77,
+        "fn": 26
+      },
+      "private_address": {
+        "tp": 607,
+        "fp": 3359,
+        "fn": 1346
+      },
+      "private_date": {
+        "tp": 194,
+        "fp": 91,
+        "fn": 144
+      }
+    }
+  },
+  "ai4privacy-400k": {
+    "nullpii-v10-router-embedding": {
+      "private_email": {
+        "tp": 1237,
+        "fp": 16,
+        "fn": 5
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 425,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 2977,
+        "fp": 466,
+        "fn": 2525
+      },
+      "private_phone": {
+        "tp": 862,
+        "fp": 44,
+        "fn": 344
+      },
+      "account_number": {
+        "tp": 1544,
+        "fp": 963,
+        "fn": 1825
+      },
+      "private_address": {
+        "tp": 3880,
+        "fp": 984,
+        "fn": 1305
+      },
+      "private_date": {
+        "tp": 632,
+        "fp": 1338,
+        "fn": 299
+      },
+      "secret": {
+        "tp": 73,
+        "fp": 109,
+        "fn": 364
+      }
+    },
+    "nullpii-v10-router-xlmr": {
+      "private_email": {
+        "tp": 1237,
+        "fp": 20,
+        "fn": 5
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 425,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 2878,
+        "fp": 443,
+        "fn": 2624
+      },
+      "private_phone": {
+        "tp": 862,
+        "fp": 41,
+        "fn": 344
+      },
+      "account_number": {
+        "tp": 1511,
+        "fp": 864,
+        "fn": 1858
+      },
+      "private_address": {
+        "tp": 3942,
+        "fp": 952,
+        "fn": 1243
+      },
+      "private_date": {
+        "tp": 636,
+        "fp": 1340,
+        "fn": 295
+      },
+      "secret": {
+        "tp": 100,
+        "fp": 129,
+        "fn": 337
+      }
+    }
+  },
+  "ai4privacy-300k": {
+    "nullpii-v10-router-embedding": {
+      "private_email": {
+        "tp": 1478,
+        "fp": 97,
+        "fn": 37
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 4,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 1175,
+        "fp": 437,
+        "fn": 835
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 674,
+        "fn": 0
+      },
+      "account_number": {
+        "tp": 1179,
+        "fp": 187,
+        "fn": 6
+      },
+      "private_address": {
+        "tp": 4876,
+        "fp": 595,
+        "fn": 434
+      },
+      "private_date": {
+        "tp": 3180,
+        "fp": 931,
+        "fn": 332
+      },
+      "secret": {
+        "tp": 0,
+        "fp": 8,
+        "fn": 0
+      }
+    },
+    "nullpii-v10-router-xlmr": {
+      "private_email": {
+        "tp": 1478,
+        "fp": 93,
+        "fn": 37
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 4,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 1149,
+        "fp": 383,
+        "fn": 861
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 656,
+        "fn": 0
+      },
+      "account_number": {
+        "tp": 1179,
+        "fp": 126,
+        "fn": 6
+      },
+      "private_address": {
+        "tp": 4879,
+        "fp": 596,
+        "fn": 431
+      },
+      "private_date": {
+        "tp": 3191,
+        "fp": 915,
+        "fn": 321
+      }
+    }
+  },
+  "isotonic-en": {
+    "nullpii-v10-router-embedding": {
+      "private_email": {
+        "tp": 455,
+        "fp": 4,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 340,
+        "fp": 0,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 2344,
+        "fp": 731,
+        "fn": 126
+      },
+      "private_phone": {
+        "tp": 252,
+        "fp": 64,
+        "fn": 24
+      },
+      "account_number": {
+        "tp": 1479,
+        "fp": 1228,
+        "fn": 182
+      },
+      "private_address": {
+        "tp": 1418,
+        "fp": 348,
+        "fn": 183
+      },
+      "private_date": {
+        "tp": 1127,
+        "fp": 63,
+        "fn": 15
+      },
+      "secret": {
+        "tp": 306,
+        "fp": 18,
+        "fn": 92
+      }
+    },
+    "nullpii-v10-router-xlmr": {
+      "private_email": {
+        "tp": 455,
+        "fp": 4,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 340,
+        "fp": 0,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 2400,
+        "fp": 746,
+        "fn": 70
+      },
+      "private_phone": {
+        "tp": 252,
+        "fp": 64,
+        "fn": 24
+      },
+      "account_number": {
+        "tp": 1512,
+        "fp": 1234,
+        "fn": 149
+      },
+      "private_address": {
+        "tp": 1439,
+        "fp": 352,
+        "fn": 162
+      },
+      "private_date": {
+        "tp": 1133,
+        "fp": 52,
+        "fn": 9
+      },
+      "secret": {
+        "tp": 335,
+        "fp": 17,
+        "fn": 63
+      }
+    }
+  },
+  "isotonic-de": {
+    "nullpii-v10-router-embedding": {
+      "private_email": {
+        "tp": 450,
+        "fp": 4,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 286,
+        "fp": 0,
+        "fn": 2
+      },
+      "private_person": {
+        "tp": 2388,
+        "fp": 672,
+        "fn": 148
+      },
+      "private_phone": {
+        "tp": 263,
+        "fp": 77,
+        "fn": 21
+      },
+      "account_number": {
+        "tp": 1508,
+        "fp": 1220,
+        "fn": 161
+      },
+      "private_address": {
+        "tp": 1233,
+        "fp": 409,
+        "fn": 159
+      },
+      "private_date": {
+        "tp": 1171,
+        "fp": 68,
+        "fn": 32
+      },
+      "secret": {
+        "tp": 279,
+        "fp": 23,
+        "fn": 77
+      }
+    },
+    "nullpii-v10-router-xlmr": {
+      "private_email": {
+        "tp": 450,
+        "fp": 4,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 286,
+        "fp": 0,
+        "fn": 2
+      },
+      "private_person": {
+        "tp": 2469,
+        "fp": 693,
+        "fn": 67
+      },
+      "private_phone": {
+        "tp": 265,
+        "fp": 79,
+        "fn": 19
+      },
+      "account_number": {
+        "tp": 1525,
+        "fp": 1224,
+        "fn": 144
+      },
+      "private_address": {
+        "tp": 1253,
+        "fp": 417,
+        "fn": 139
+      },
+      "private_date": {
+        "tp": 1186,
+        "fp": 60,
+        "fn": 17
+      },
+      "secret": {
+        "tp": 312,
+        "fp": 22,
+        "fn": 44
+      }
+    }
+  },
+  "isotonic-fr": {
+    "nullpii-v10-router-embedding": {
+      "private_email": {
+        "tp": 429,
+        "fp": 1,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 266,
+        "fp": 0,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 2257,
+        "fp": 708,
+        "fn": 141
+      },
+      "private_phone": {
+        "tp": 256,
+        "fp": 108,
+        "fn": 16
+      },
+      "account_number": {
+        "tp": 1506,
+        "fp": 1288,
+        "fn": 163
+      },
+      "private_address": {
+        "tp": 1289,
+        "fp": 448,
+        "fn": 175
+      },
+      "private_date": {
+        "tp": 1073,
+        "fp": 73,
+        "fn": 33
+      },
+      "secret": {
+        "tp": 272,
+        "fp": 25,
+        "fn": 110
+      }
+    },
+    "nullpii-v10-router-xlmr": {
+      "private_email": {
+        "tp": 429,
+        "fp": 1,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 266,
+        "fp": 0,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 2318,
+        "fp": 723,
+        "fn": 80
+      },
+      "private_phone": {
+        "tp": 261,
+        "fp": 110,
+        "fn": 11
+      },
+      "account_number": {
+        "tp": 1528,
+        "fp": 1277,
+        "fn": 141
+      },
+      "private_address": {
+        "tp": 1324,
+        "fp": 446,
+        "fn": 140
+      },
+      "private_date": {
+        "tp": 1085,
+        "fp": 39,
+        "fn": 21
+      },
+      "secret": {
+        "tp": 324,
+        "fp": 26,
+        "fn": 58
+      }
+    }
+  },
+  "isotonic-it": {
+    "nullpii-v10-router-embedding": {
+      "private_email": {
+        "tp": 446,
+        "fp": 2,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 275,
+        "fp": 1,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 2192,
+        "fp": 772,
+        "fn": 127
+      },
+      "private_phone": {
+        "tp": 272,
+        "fp": 82,
+        "fn": 20
+      },
+      "account_number": {
+        "tp": 1489,
+        "fp": 1212,
+        "fn": 152
+      },
+      "private_address": {
+        "tp": 1282,
+        "fp": 456,
+        "fn": 194
+      },
+      "private_date": {
+        "tp": 1052,
+        "fp": 71,
+        "fn": 15
+      },
+      "secret": {
+        "tp": 256,
+        "fp": 25,
+        "fn": 99
+      }
+    },
+    "nullpii-v10-router-xlmr": {
+      "private_email": {
+        "tp": 446,
+        "fp": 2,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 275,
+        "fp": 1,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 2248,
+        "fp": 793,
+        "fn": 71
+      },
+      "private_phone": {
+        "tp": 274,
+        "fp": 87,
+        "fn": 18
+      },
+      "account_number": {
+        "tp": 1517,
+        "fp": 1214,
+        "fn": 124
+      },
+      "private_address": {
+        "tp": 1313,
+        "fp": 459,
+        "fn": 163
+      },
+      "private_date": {
+        "tp": 1057,
+        "fp": 51,
+        "fn": 10
+      },
+      "secret": {
+        "tp": 298,
+        "fp": 26,
+        "fn": 57
+      }
+    }
+  },
+  "ai4privacy-300k-heldout-v10": {
+    "nullpii-v10-router-embedding": {
+      "private_email": {
+        "tp": 1610,
+        "fp": 60,
+        "fn": 25
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 7,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 1253,
+        "fp": 578,
+        "fn": 535
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 828,
+        "fn": 0
+      },
+      "account_number": {
+        "tp": 1581,
+        "fp": 675,
+        "fn": 1
+      },
+      "private_address": {
+        "tp": 5237,
+        "fp": 518,
+        "fn": 659
+      },
+      "private_date": {
+        "tp": 3266,
+        "fp": 990,
+        "fn": 287
+      },
+      "secret": {
+        "tp": 0,
+        "fp": 29,
+        "fn": 0
+      }
+    },
+    "nullpii-v10-router-xlmr": {
+      "private_email": {
+        "tp": 1609,
+        "fp": 59,
+        "fn": 26
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 7,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 1219,
+        "fp": 519,
+        "fn": 569
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 812,
+        "fn": 0
+      },
+      "account_number": {
+        "tp": 1581,
+        "fp": 607,
+        "fn": 1
+      },
+      "private_address": {
+        "tp": 5230,
+        "fp": 534,
+        "fn": 666
+      },
+      "private_date": {
+        "tp": 3262,
+        "fp": 993,
+        "fn": 291
+      },
+      "secret": {
+        "tp": 0,
+        "fp": 14,
+        "fn": 0
+      }
+    }
+  },
+  "argilla-pii": {
+    "nullpii-v10-router-embedding": {
+      "private_email": {
+        "tp": 167,
+        "fp": 0,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 131,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 1078,
+        "fp": 167,
+        "fn": 78
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 122,
+        "fn": 0
+      },
+      "account_number": {
+        "tp": 578,
+        "fp": 522,
+        "fn": 152
+      },
+      "private_address": {
+        "tp": 317,
+        "fp": 342,
+        "fn": 120
+      },
+      "private_date": {
+        "tp": 449,
+        "fp": 12,
+        "fn": 105
+      },
+      "secret": {
+        "tp": 112,
+        "fp": 9,
+        "fn": 44
+      }
+    },
+    "nullpii-v10-router-xlmr": {
+      "private_email": {
+        "tp": 167,
+        "fp": 0,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 131,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 1110,
+        "fp": 173,
+        "fn": 46
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 125,
+        "fn": 0
+      },
+      "account_number": {
+        "tp": 578,
+        "fp": 526,
+        "fn": 152
+      },
+      "private_address": {
+        "tp": 320,
+        "fp": 350,
+        "fn": 117
+      },
+      "private_date": {
+        "tp": 454,
+        "fp": 15,
+        "fn": 100
+      },
+      "secret": {
+        "tp": 129,
+        "fp": 9,
+        "fn": 27
+      }
+    }
+  },
+  "nemotron-pii-test": {
+    "nullpii-v10-router-embedding": {
+      "private_email": {
+        "tp": 2132,
+        "fp": 6,
+        "fn": 14
+      },
+      "private_url": {
+        "tp": 1835,
+        "fp": 20,
+        "fn": 191
+      },
+      "private_person": {
+        "tp": 3749,
+        "fp": 252,
+        "fn": 4290
+      },
+      "private_phone": {
+        "tp": 626,
+        "fp": 116,
+        "fn": 496
+      },
+      "account_number": {
+        "tp": 4319,
+        "fp": 808,
+        "fn": 2460
+      },
+      "private_address": {
+        "tp": 4046,
+        "fp": 231,
+        "fn": 1548
+      },
+      "private_date": {
+        "tp": 4813,
+        "fp": 585,
+        "fn": 1646
+      },
+      "secret": {
+        "tp": 433,
+        "fp": 98,
+        "fn": 807
+      }
+    },
+    "nullpii-v10-router-xlmr": {
+      "private_email": {
+        "tp": 2133,
+        "fp": 5,
+        "fn": 13
+      },
+      "private_url": {
+        "tp": 1832,
+        "fp": 19,
+        "fn": 194
+      },
+      "private_person": {
+        "tp": 2357,
+        "fp": 168,
+        "fn": 5682
+      },
+      "private_phone": {
+        "tp": 286,
+        "fp": 24,
+        "fn": 836
+      },
+      "account_number": {
+        "tp": 1821,
+        "fp": 542,
+        "fn": 4958
+      },
+      "private_address": {
+        "tp": 3147,
+        "fp": 188,
+        "fn": 2447
+      },
+      "private_date": {
+        "tp": 4137,
+        "fp": 703,
+        "fn": 2322
+      },
+      "secret": {
+        "tp": 85,
+        "fp": 37,
+        "fn": 1155
+      }
+    }
+  },
+  "isotonic-en-heldout-v10": {
+    "nullpii-v10-router-embedding": {
+      "private_email": {
+        "tp": 483,
+        "fp": 3,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 344,
+        "fp": 0,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 2210,
+        "fp": 737,
+        "fn": 160
+      },
+      "private_phone": {
+        "tp": 262,
+        "fp": 88,
+        "fn": 21
+      },
+      "account_number": {
+        "tp": 1489,
+        "fp": 1258,
+        "fn": 158
+      },
+      "private_address": {
+        "tp": 1235,
+        "fp": 376,
+        "fn": 209
+      },
+      "private_date": {
+        "tp": 1092,
+        "fp": 51,
+        "fn": 27
+      },
+      "secret": {
+        "tp": 283,
+        "fp": 22,
+        "fn": 95
+      }
+    },
+    "nullpii-v10-router-xlmr": {
+      "private_email": {
+        "tp": 483,
+        "fp": 2,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 344,
+        "fp": 0,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 2281,
+        "fp": 754,
+        "fn": 89
+      },
+      "private_phone": {
+        "tp": 264,
+        "fp": 89,
+        "fn": 19
+      },
+      "account_number": {
+        "tp": 1512,
+        "fp": 1265,
+        "fn": 135
+      },
+      "private_address": {
+        "tp": 1265,
+        "fp": 380,
+        "fn": 179
+      },
+      "private_date": {
+        "tp": 1104,
+        "fp": 46,
+        "fn": 15
+      },
+      "secret": {
+        "tp": 329,
+        "fp": 22,
+        "fn": 49
+      }
+    }
+  },
+  "isotonic-de-heldout-v10": {
+    "nullpii-v10-router-embedding": {
+      "private_email": {
+        "tp": 419,
+        "fp": 3,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 283,
+        "fp": 0,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 2240,
+        "fp": 713,
+        "fn": 128
+      },
+      "private_phone": {
+        "tp": 267,
+        "fp": 75,
+        "fn": 23
+      },
+      "account_number": {
+        "tp": 1504,
+        "fp": 1210,
+        "fn": 173
+      },
+      "private_address": {
+        "tp": 1360,
+        "fp": 408,
+        "fn": 191
+      },
+      "private_date": {
+        "tp": 1049,
+        "fp": 58,
+        "fn": 23
+      },
+      "secret": {
+        "tp": 299,
+        "fp": 27,
+        "fn": 82
+      }
+    },
+    "nullpii-v10-router-xlmr": {
+      "private_email": {
+        "tp": 419,
+        "fp": 3,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 283,
+        "fp": 0,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 2293,
+        "fp": 739,
+        "fn": 75
+      },
+      "private_phone": {
+        "tp": 267,
+        "fp": 76,
+        "fn": 23
+      },
+      "account_number": {
+        "tp": 1538,
+        "fp": 1212,
+        "fn": 139
+      },
+      "private_address": {
+        "tp": 1398,
+        "fp": 414,
+        "fn": 153
+      },
+      "private_date": {
+        "tp": 1060,
+        "fp": 51,
+        "fn": 12
+      },
+      "secret": {
+        "tp": 328,
+        "fp": 30,
+        "fn": 53
+      }
+    }
+  },
+  "isotonic-fr-heldout-v10": {
+    "nullpii-v10-router-embedding": {
+      "private_email": {
+        "tp": 430,
+        "fp": 1,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 281,
+        "fp": 0,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 2285,
+        "fp": 683,
+        "fn": 135
+      },
+      "private_phone": {
+        "tp": 261,
+        "fp": 94,
+        "fn": 15
+      },
+      "account_number": {
+        "tp": 1481,
+        "fp": 1313,
+        "fn": 192
+      },
+      "private_address": {
+        "tp": 1360,
+        "fp": 447,
+        "fn": 215
+      },
+      "private_date": {
+        "tp": 1069,
+        "fp": 82,
+        "fn": 28
+      },
+      "secret": {
+        "tp": 288,
+        "fp": 35,
+        "fn": 107
+      }
+    },
+    "nullpii-v10-router-xlmr": {
+      "private_email": {
+        "tp": 430,
+        "fp": 1,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 281,
+        "fp": 0,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 2350,
+        "fp": 693,
+        "fn": 70
+      },
+      "private_phone": {
+        "tp": 264,
+        "fp": 94,
+        "fn": 12
+      },
+      "account_number": {
+        "tp": 1506,
+        "fp": 1304,
+        "fn": 167
+      },
+      "private_address": {
+        "tp": 1385,
+        "fp": 453,
+        "fn": 190
+      },
+      "private_date": {
+        "tp": 1077,
+        "fp": 48,
+        "fn": 20
+      },
+      "secret": {
+        "tp": 330,
+        "fp": 36,
+        "fn": 65
+      }
+    }
+  }
+}

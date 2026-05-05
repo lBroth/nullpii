@@ -1,71 +1,67 @@
 import debug from 'debug';
-import { type TokenChunk, dedupeSpans, partitionTokens } from './chunking.js';
+import { MultiOrtBackend } from './backend/multi-backend.js';
 import {
   BOUNDARY_REFINE_TRIM_CHARS,
   DEFAULT_BOUNDARY_REFINE,
-  DEFAULT_MODEL_REPO,
-  DEFAULT_MODEL_REVISION,
   DEFAULT_RECOGNIZERS,
   DEFAULT_RECOGNIZERS_ENABLED,
   DEFAULT_VARIANT,
 } from './defaults.js';
+import { DistiluseEncoder } from './distiluse-encoder.js';
 import { ModelNotInitializedError, TextTooLongError } from './errors.js';
-import { LABEL_MAP, NUM_LABELS } from './labels-bioes.js';
+import { decodeGlinerLogits } from './gliner-decoder.js';
+import { buildSpanCandidates } from './gliner-spans.js';
+import {
+  DEFAULT_MAX_SEQUENCE_LENGTH,
+  DEFAULT_MAX_SPAN_WIDTH,
+  GlinerTokenizer,
+} from './gliner-tokenizer.js';
 import { ModelManager } from './model-manager.js';
 import { normalizeForDetection, remapSpan } from './normalize.js';
 import { runRecognizers } from './recognizers.js';
-import { selectBackend } from './router.js';
-import { decodeSpans } from './span-decoder.js';
-import { TokenizerWrapper } from './tokenizer.js';
+import { EmbeddingRouter } from './router-embedding.js';
 import {
-  type BackendProvider,
-  CHUNK_OVERLAP_TOKENS,
-  MAX_SEQUENCE_LENGTH,
   type NullPiiConfig,
+  PII_LABELS,
+  type PiiCategory,
   type PiiSpan,
   type Recognizer,
   type RestoreResult,
   type SanitizeResult,
 } from './types/index.js';
 import { PiiVault } from './vault.js';
-import { forwardBackwardMarginals, viterbiBioesDecode } from './viterbi.js';
 
 const log = debug('nullpii');
 
 const PLACEHOLDER_OPEN = '[[';
-// AUDIT F21: PUA (Private Use Area) sentinel pair ``.
-// Previous form `[\\[` (backslash-escaped) collided with user input
-// containing the literal sequence `[\[abc]` — escape was idempotent,
-// but unescape mapped `[\[` → `[[`, corrupting user text on round-trip.
-// PUA codepoints are unallocated to standard glyphs and effectively
-// never appear in natural text or LLM outputs; the collision space is
-// orders of magnitude smaller than the previous backslash form.
-const PLACEHOLDER_OPEN_ESCAPED = '\uE000\uE001';
+// PUA sentinel — round-trip safe and effectively never appears in
+// natural text or LLM output.
+const PLACEHOLDER_OPEN_ESCAPED = '';
+
+/** Label list passed to GLiNER — the 8 PII categories without `'O'`. */
+const GLINER_LABELS: readonly string[] = PII_LABELS.filter((l): l is PiiCategory => l !== 'O');
 
 /**
- * Public entry point for the library.
- *
- * Construct with optional `NullPiiConfig`; call `sanitize` (auto-`init`s)
- * and later `restore` with the returned `sessionId`. Call `dispose` when
- * done to release the backend's native resources.
+ * Public entry point. Construct with optional `NullPiiConfig`; call
+ * `sanitize` (auto-`init`s) and later `restore` with the returned
+ * `sessionId`. Call `dispose` to release native resources.
  */
 export class NullPii {
   private readonly config: NullPiiConfig;
   private readonly vault = new PiiVault();
   private readonly recognizers: Recognizer[] = [];
-  private backend: BackendProvider | null = null;
-  private tokenizer: TokenizerWrapper | null = null;
+  private backend: MultiOrtBackend | null = null;
+  private tokenizer: GlinerTokenizer | null = null;
+  private encoder: DistiluseEncoder | null = null;
+  private router: EmbeddingRouter | null = null;
   private modelDir: string | null = null;
   private initPromise: Promise<void> | null = null;
   private disposed = false;
 
   constructor(config: NullPiiConfig = {}) {
     this.config = config;
-    // Auto-register the built-in regex pack unless the caller opted out
-    // or supplied their own list. They can still call addRecognizer()
-    // afterwards to layer extra patterns on top.
     if (config.recognizers === 'none') {
-      // explicit opt-out, leave empty
+      // explicit opt-out
     } else if (Array.isArray(config.recognizers)) {
       this.recognizers.push(...(config.recognizers as readonly Recognizer[]));
     } else if (DEFAULT_RECOGNIZERS_ENABLED) {
@@ -73,15 +69,14 @@ export class NullPii {
     }
   }
 
-  /** Register a custom regex-based recognizer that runs as a post-pass
-   * after the ML detector. ML matches take priority on overlap. */
+  /** Register a custom regex-based recognizer. ML matches take priority on overlap. */
   addRecognizer(recognizer: Recognizer): this {
     this.recognizers.push(recognizer);
     return this;
   }
 
-  /** Lazy-init: download the model, select & load a backend, build the
-   * tokenizer. Idempotent and concurrency-safe (singleton promise). */
+  /** Lazy-init: download artifacts, load encoder/router/backend.
+   * Idempotent and concurrency-safe (singleton promise). */
   init(): Promise<void> {
     if (this.disposed) return Promise.reject(new ModelNotInitializedError());
     if (this.initPromise === null) {
@@ -93,44 +88,90 @@ export class NullPii {
     return this.initPromise;
   }
 
-  /** Detect PII spans in `text` and replace them with vault placeholders. */
+  /** Detect PII spans in `text` and replace them with vault placeholders.
+   *
+   * Pipeline:
+   *   1. Escape `[[` → PUA sentinel.
+   *   2. Adversarial normalisation (NFKC + unidecode + zero-width strip
+   *      + HTML entity / URL %XX decode + spaced-PII despace).
+   *   3. distiluse encode → cosine sim → domain (with enterprise gate).
+   *   4. GLiNER 6-input ONNX inference on the per-domain merged-LoRA shard.
+   *   5. Sigmoid + threshold + greedy NMS → spans.
+   *   6. Regex recognizer pack on the un-normalised text.
+   *   7. Threshold filter + boundary refine + vault sanitize.
+   *
+   * Inputs longer than GLiNER's `max_len=384` subword tokens are silently
+   * truncated; pass `strictLength: true` to throw instead.
+   */
   async sanitize(text: string, sessionId?: string): Promise<SanitizeResult> {
     await this.init();
     const tokenizer = this.tokenizer;
     const backend = this.backend;
-    if (tokenizer === null || backend === null) throw new ModelNotInitializedError();
+    const encoder = this.encoder;
+    const router = this.router;
+    if (tokenizer === null || backend === null || encoder === null || router === null) {
+      throw new ModelNotInitializedError();
+    }
 
     const escaped = escapePlaceholders(text);
-    // AUDIT F25: adversarial-resistant input normalisation. The model
-    // sees `normalized` (NFKC + unidecode + zero-width strip + HTML
-    // entity / URL %XX decode + spaced-PII despace); ML span offsets
-    // are remapped back to `escaped` offsets before downstream
-    // post-processing. Regex pack runs on `escaped` (unnormalised) so
-    // its anchors line up with the original character forms.
     const { normalized, normToOrig } = normalizeForDetection(escaped);
-    const enc = await tokenizer.encode(normalized);
 
-    const chunkSize = this.config.maxSequenceLength ?? MAX_SEQUENCE_LENGTH;
-    const overlap = this.config.chunkOverlap ?? CHUNK_OVERLAP_TOKENS;
-    if (this.config.strictLength === true && enc.inputIds.length > chunkSize) {
-      throw new TextTooLongError(enc.inputIds.length, chunkSize);
-    }
+    const embedding = await encoder.encode(normalized);
+    const decision = router.route(embedding);
+    log('route: domain=%s score=%f gated=%s', decision.domain, decision.score, decision.gated);
 
-    const chunks = partitionTokens(enc, chunkSize, overlap);
-    const allSpans: PiiSpan[] = [];
-    for (const chunk of chunks) {
-      const spans = await this.inferChunk(backend, chunk, normalized);
-      allSpans.push(...spans);
+    const enc = await tokenizer.encode(normalized, GLINER_LABELS);
+    if (this.config.strictLength === true && enc.truncated) {
+      throw new TextTooLongError(enc.seqLen, DEFAULT_MAX_SEQUENCE_LENGTH);
     }
-    const remapped: PiiSpan[] =
+    const cand = buildSpanCandidates(enc.numWords, DEFAULT_MAX_SPAN_WIDTH);
+    const out = await backend.infer(
+      {
+        inputIds: enc.inputIds,
+        attentionMask: enc.attentionMask,
+        wordsMask: enc.wordsMask,
+        textLength: enc.numWords,
+        spanIdx: cand.spanIdx,
+        spanMask: cand.spanMask,
+        numSpans: cand.numSpans,
+      },
+      decision.domain,
+    );
+
+    const threshold = this.config.threshold ?? 0.5;
+    const decoded = decodeGlinerLogits(
+      out.logits,
+      out.textLength,
+      out.maxWidth,
+      out.numClasses,
+      enc.words,
+      GLINER_LABELS,
+      threshold,
+    );
+
+    // Remap span offsets from the normalised text back to the escaped
+    // text so they align with the regex pack and vault output.
+    const mlSpans: PiiSpan[] =
       normalized === escaped
-        ? allSpans
-        : allSpans.map((s) => {
+        ? decoded.map((s) => ({
+            label: s.label as PiiCategory,
+            start: s.start,
+            end: s.end,
+            score: s.score,
+            text: escaped.slice(s.start, s.end),
+          }))
+        : decoded.map((s) => {
             const [origStart, origEnd] = remapSpan(s.start, s.end, normToOrig);
-            return { ...s, start: origStart, end: origEnd };
+            return {
+              label: s.label as PiiCategory,
+              start: origStart,
+              end: origEnd,
+              score: s.score,
+              text: escaped.slice(origStart, origEnd),
+            };
           });
-    const mlSpans = chunks.length === 1 ? remapped : dedupeSpans(remapped);
-    const recoSpans = dedupeSpans(runRecognizers(escaped, this.recognizers, mlSpans));
+
+    const recoSpans = runRecognizers(escaped, this.recognizers, mlSpans);
     const merged = applyThresholds(
       [...mlSpans, ...recoSpans],
       this.config.threshold ?? 0,
@@ -140,45 +181,12 @@ export class NullPii {
     const spans = refineOn ? refineSpanBoundaries(escaped, merged) : merged;
 
     const session = sessionId ?? this.vault.createSession();
-    log(
-      'sanitize: spans=%d chunks=%d session=%s',
-      spans.length,
-      chunks.length,
-      session.slice(0, 8),
-    );
+    log('sanitize: spans=%d session=%s', spans.length, session.slice(0, 8));
     const result = this.vault.sanitize(escaped, spans, session);
     return mapBackToOriginal(result, text);
   }
 
-  private async inferChunk(
-    backend: BackendProvider,
-    chunk: TokenChunk,
-    escaped: string,
-  ): Promise<PiiSpan[]> {
-    const out = await backend.infer({
-      inputIds: chunk.inputIds,
-      attentionMask: chunk.attentionMask,
-    });
-    if (out.numLabels !== NUM_LABELS) {
-      throw new Error(`sanitize: model emits ${out.numLabels} labels, expected ${NUM_LABELS}`);
-    }
-    const biases = this.config.transitionBiases ?? {};
-    const labels = viterbiBioesDecode(out.logits, out.seqLen, out.numLabels, LABEL_MAP, biases);
-    const marginals = forwardBackwardMarginals(
-      out.logits,
-      out.seqLen,
-      out.numLabels,
-      LABEL_MAP,
-      biases,
-    );
-    const scores = posteriorScores(marginals, out.seqLen, out.numLabels, labels);
-    return decodeSpans(labels, chunk.offsetMapping, scores, escaped);
-  }
-
   restore(text: string, sessionId: string): RestoreResult {
-    // Restore-input may already contain valid `[[NULLPII:..]]` we want to
-    // match — don't escape it. After replacement, unescape `[\[` back to
-    // `[[` so user's original literal `[[` content survives the round-trip.
     const r = this.vault.restore(text, sessionId);
     return { restored: unescapePlaceholders(r.restored), replacements: r.replacements };
   }
@@ -189,8 +197,11 @@ export class NullPii {
 
   async dispose(): Promise<void> {
     if (this.backend !== null) await this.backend.dispose();
+    if (this.encoder !== null) await this.encoder.dispose();
     this.backend = null;
     this.tokenizer = null;
+    this.encoder = null;
+    this.router = null;
     this.disposed = true;
   }
 
@@ -201,49 +212,32 @@ export class NullPii {
     } else {
       const ensured = await manager.ensure({
         variant: this.config.variant ?? DEFAULT_VARIANT,
-        model: {
-          repo: this.config.model?.repo ?? DEFAULT_MODEL_REPO,
-          revision: this.config.model?.revision ?? DEFAULT_MODEL_REVISION,
-        },
         ...(this.config.downloadTimeoutMs !== undefined && {
           timeoutMs: this.config.downloadTimeoutMs,
         }),
       });
       this.modelDir = ensured.modelDir;
     }
-    this.backend = await selectBackend(this.modelDir, this.config);
-    await this.backend.init();
-    this.tokenizer = new TokenizerWrapper(
+
+    this.backend = new MultiOrtBackend(this.modelDir);
+    this.encoder = new DistiluseEncoder(this.modelDir);
+    await this.encoder.init();
+    this.router = new EmbeddingRouter(this.modelDir);
+    await this.router.init();
+    this.tokenizer = new GlinerTokenizer(
       this.modelDir,
-      this.config.maxSequenceLength ?? MAX_SEQUENCE_LENGTH,
+      this.config.maxSequenceLength ?? DEFAULT_MAX_SEQUENCE_LENGTH,
     );
-    log('init complete: backend=%s modelDir=%s', this.backend.name, this.modelDir);
+    log(
+      'init complete: modelDir=%s domains=%s',
+      this.modelDir,
+      this.router.listDomains().join(','),
+    );
   }
 }
 
-/** Per-token posterior probability of the chosen Viterbi label.
- * Uses forward-backward marginals so the score reflects the model's full
- * sequence-level posterior, not just the local-best softmax. */
-function posteriorScores(
-  marginals: Float64Array,
-  seqLen: number,
-  numLabels: number,
-  labels: readonly string[],
-): number[] {
-  const out: number[] = new Array(seqLen);
-  for (let t = 0; t < seqLen; t++) {
-    const labelIdx = LABEL_MAP.indexOf(labels[t] ?? 'O');
-    const logProb = marginals[t * numLabels + labelIdx];
-    out[t] = logProb === undefined || logProb === Number.NEGATIVE_INFINITY ? 0 : Math.exp(logProb);
-  }
-  return out;
-}
-
-/** Trim leading / trailing whitespace + common punctuation from each
- * span's edges. Drops spans that collapse to empty. ML detectors often
- * include a trailing dot or close-bracket that ground-truth annotations
- * exclude — refining boundaries lifts partial-match (IoU≥0.5) F1
- * without changing the underlying detector. */
+/** Trim leading/trailing whitespace + common punctuation from each
+ * span's edges; drop spans that collapse to empty. */
 function refineSpanBoundaries(text: string, spans: readonly PiiSpan[]): PiiSpan[] {
   const trim = BOUNDARY_REFINE_TRIM_CHARS;
   const out: PiiSpan[] = [];
@@ -256,16 +250,14 @@ function refineSpanBoundaries(text: string, spans: readonly PiiSpan[]): PiiSpan[
     if (start === s.start && end === s.end) {
       out.push(s);
     } else {
-      // Recompute the `text` slice — vault uses span.text verbatim,
-      // so leaving stale post-refine text breaks restore.
+      // Recompute the slice — vault uses span.text verbatim.
       out.push({ ...s, start, end, text: text.slice(start, end) });
     }
   }
   return out;
 }
 
-/** Drop spans below the configured score thresholds.
- * Per-category override wins over the global threshold when set. */
+/** Drop spans below threshold. Per-category override wins over the global threshold. */
 function applyThresholds(
   spans: PiiSpan[],
   globalThreshold: number,
@@ -279,8 +271,6 @@ function applyThresholds(
   });
 }
 
-/** Escape literal `[[` in user text so it cannot collide with our placeholder
- * format. Round-trip safe via `unescapePlaceholders`. */
 function escapePlaceholders(text: string): string {
   return text.split(PLACEHOLDER_OPEN).join(PLACEHOLDER_OPEN_ESCAPED);
 }
@@ -289,16 +279,9 @@ function unescapePlaceholders(text: string): string {
   return text.split(PLACEHOLDER_OPEN_ESCAPED).join(PLACEHOLDER_OPEN);
 }
 
-/** After sanitize, the result text has placeholders inserted into the
- * already-escaped string. Unescape so the caller sees their original
- * non-PII characters back. */
 function mapBackToOriginal(result: SanitizeResult, _original: string): SanitizeResult {
   return { ...result, sanitized: unescapePlaceholders(result.sanitized) };
 }
-
-/* ------------------------------------------------------------------ *
- *  Functional convenience wrappers — bounded LRU, dispose on evict
- * ------------------------------------------------------------------ */
 
 const INSTANCE_CACHE_MAX = 8;
 const _instances = new Map<string, NullPii>();

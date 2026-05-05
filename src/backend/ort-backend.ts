@@ -77,11 +77,10 @@ export abstract class OrtBackend implements BackendProvider {
     const session = this.session;
     if (session === null) throw new ModelNotInitializedError();
     const seqLen = inputs.inputIds.length;
-    const feeds = buildFeeds(session.inputNames, inputs, seqLen);
+    const feeds = buildFeeds(inputs, seqLen);
     const out = await session.run(feeds);
-    const logits = readLogits(out, session.outputNames);
-    const numLabels = logits.length / seqLen;
-    return { logits, seqLen, numLabels };
+    const { logits, maxWidth, numClasses } = readLogits(out, session.outputNames, inputs);
+    return { logits, textLength: inputs.textLength, maxWidth, numClasses };
   }
 
   async dispose(): Promise<void> {
@@ -91,28 +90,66 @@ export abstract class OrtBackend implements BackendProvider {
   }
 }
 
-function buildFeeds(
-  inputNames: readonly string[],
-  inputs: InferenceInputs,
-  seqLen: number,
-): Record<string, Tensor> {
-  const dims: readonly number[] = [1, seqLen];
-  const feeds: Record<string, Tensor> = {};
-  if (inputNames.includes('input_ids')) {
-    feeds.input_ids = new Tensor('int64', inputs.inputIds, dims);
-  }
-  if (inputNames.includes('attention_mask')) {
-    feeds.attention_mask = new Tensor('int64', inputs.attentionMask, dims);
-  }
-  return feeds;
+/** Build the 6-input feed dict for `UniEncoderSpanORTModel`. Shapes
+ * (batch dim 1 prepended): input_ids/attention_mask/words_mask `[1, T]`,
+ * text_lengths `[1]`, span_idx `[1, S, 2]`, span_mask `[1, S]`. */
+function buildFeeds(inputs: InferenceInputs, seqLen: number): Record<string, Tensor> {
+  const tDims: readonly number[] = [1, seqLen];
+  return {
+    input_ids: new Tensor('int64', inputs.inputIds, tDims),
+    attention_mask: new Tensor('int64', inputs.attentionMask, tDims),
+    words_mask: new Tensor('int64', inputs.wordsMask, tDims),
+    text_lengths: new Tensor('int64', BigInt64Array.from([BigInt(inputs.textLength)]), [1, 1]),
+    span_idx: new Tensor('int64', inputs.spanIdx, [1, inputs.numSpans, 2]),
+    span_mask: new Tensor('bool', toBoolArray(inputs.spanMask), [1, inputs.numSpans]),
+  };
 }
 
-function readLogits(out: Record<string, Tensor>, outputNames: readonly string[]): Float32Array {
+function toBoolArray(src: BigInt64Array): Uint8Array {
+  const out = new Uint8Array(src.length);
+  for (let i = 0; i < src.length; i++) {
+    out[i] = src[i] === 1n ? 1 : 0;
+  }
+  return out;
+}
+
+interface LogitsResult {
+  readonly logits: Float32Array;
+  readonly maxWidth: number;
+  readonly numClasses: number;
+}
+
+/** Read GLiNER logits — shape `[1, textLength, maxWidth, numClasses]`,
+ * row-major. Inferred dims from `inputs.textLength` and total length. */
+function readLogits(
+  out: Record<string, Tensor>,
+  outputNames: readonly string[],
+  inputs: InferenceInputs,
+): LogitsResult {
   const name = outputNames[0];
   if (name === undefined) throw new Error('readLogits: model has no outputs');
   const tensor = out[name];
   if (tensor === undefined) throw new Error(`readLogits: missing tensor '${name}'`);
-  return tensor.data instanceof Float32Array
-    ? tensor.data
-    : Float32Array.from(tensor.data as ArrayLike<number>);
+  const flat =
+    tensor.data instanceof Float32Array
+      ? tensor.data
+      : Float32Array.from(tensor.data as ArrayLike<number>);
+  const dims = tensor.dims as readonly number[];
+  // Expect [batch, textLength, maxWidth, numClasses]. Use as-is if
+  // present; otherwise reconstruct from inputs (defensive — some
+  // exports drop the batch dim or flatten).
+  let maxWidth: number;
+  let numClasses: number;
+  if (dims.length === 4) {
+    maxWidth = Number(dims[2] ?? 0);
+    numClasses = Number(dims[3] ?? 0);
+  } else if (dims.length === 3) {
+    maxWidth = Number(dims[1] ?? 0);
+    numClasses = Number(dims[2] ?? 0);
+  } else {
+    // Fallback: total / (textLength * maxWidth) → infer numClasses.
+    maxWidth = inputs.numSpans / Math.max(1, inputs.textLength);
+    numClasses = flat.length / Math.max(1, inputs.numSpans);
+  }
+  return { logits: flat, maxWidth, numClasses };
 }

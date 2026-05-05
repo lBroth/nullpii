@@ -16,13 +16,13 @@ tags:
 pipeline_tag: token-classification
 ---
 
-# nullpii v10 — `medical-experimental` adapter (LoRA)
+# nullpii v10 — `medical` adapter (LoRA)
 
 > ⚠️ **EXPERIMENTAL — NOT FOR HIPAA / PRODUCTION HEALTHCARE USE** ⚠️
 >
 > The `-experimental` suffix is intentional and load-bearing. This adapter has NOT been validated against the i2b2 2014 deidentification challenge (DUA application pending at `portal.dbmi.hms.harvard.edu`) or against MEDDOCAN at the levels required for a HIPAA Safe Harbor / GDPR Art. 9 compliance claim. Do not deploy this adapter as the sole control over Protected Health Information (PHI) until those validations land.
 >
-> This restriction is reiterated in the runtime: selecting the `medical-experimental` profile in the nullpii CLI emits a startup warning identifying the non-validation status.
+> This restriction is reiterated in the runtime: selecting the `medical` profile in the nullpii CLI emits a startup warning identifying the non-validation status.
 
 ## TL;DR
 
@@ -72,11 +72,11 @@ Same recipe as other v10 LoRA adapters. See [`../TRAINING.md`](../TRAINING.md).
 
 ## Evaluation
 
-This LoRA adapter is loaded by the [`nullpii-v10-router-embedding`](router-embedding.md) and (where applicable) [`nullpii-v10-router-xlmr`](router-xlmr.md) routers — it is not intended to be used standalone. End-to-end F1 numbers are reported per-router on those cards. Aggregate macro F1 of the shipping pipeline (router-embedding) across 27 datasets: **0.7172**.
+This LoRA adapter is loaded by the [`nullpii-v10-router-embedding`](router-embedding.md) shipping router — it is not intended to be used standalone. End-to-end F1 numbers are reported on that card. Aggregate macro F1 of the shipping pipeline (router-embedding) across 27 datasets: **0.7172**.
 
 Per-domain isolated benchmarks (LoRA adapter alone, bypassing the router) are out-of-scope for the v10 release; they would require separate tool defs in `bench_full.py` and a re-run. Routing-aware evaluation (which dataset routes to which adapter) is the production-relevant signal and is what the router cards report.
 
-Full bench artifacts: `packages/eval/results/bench-v10-release-local/matrix.{json,csv}`.
+Full bench artifacts: `packages/eval/published-bench/matrix.{json,csv}`.
 
 
 ## Limitations

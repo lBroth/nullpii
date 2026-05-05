@@ -82,6 +82,37 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+  hf-push:
+    name: push model artifacts to HuggingFace Hub
+    needs: verify
+    runs-on: ubuntu-latest
+    environment:
+      name: hf
+      url: https://huggingface.co/lBroth/nullpii-v10-router-embedding
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free disk space for staging (~6 GB merged ONNX)
+        run: |
+          # Standard ubuntu-latest has ~14 GB free on /. Strip preinstalled
+          # toolchains we don't need so the merge step has headroom.
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost /usr/local/lib/android
+          df -h /
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Python build deps
+        run: |
+          python -m pip install -q --upgrade pip
+          python -m pip install -q gliner peft onnx onnx-ir onnxruntime sentence-transformers transformers huggingface_hub
+      - name: Build + stage + push artifacts
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        # Raw adapter weights (~17 MB total) live in the upstream
+        # `lBroth/nullpii-v10-adapters` HF repo. push-to-hf.sh detects
+        # they're missing locally and pulls them before the merge step.
+        # Output goes to `lBroth/nullpii-v10-router-embedding`.
+        run: bash packages/eval/scripts/release/push-to-hf.sh
+
   github-release:
     name: create GitHub Release (if tag-only push)
     needs: publish

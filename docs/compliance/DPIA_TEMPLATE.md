@@ -10,7 +10,7 @@
 
 ### 1.1 Nature of the processing
 - **Tool**: `nullpii` v__VERSION__ (npm) / HF model `lBroth/nullpii` (if used)
-- **Profile selected**: `devops` | `legal` | `medical-experimental` | `general`
+- **Profile selected**: `devops` | `legal` | `medical` | `general`
 - **Backend**: CPU | MPS | CUDA | ROCm
 - **Deployment shape**: in-process npm library | CLI batch | HTTPS proxy | edge worker
 - **Data flow**:
@@ -86,7 +86,7 @@ Headline F1 numbers (single-seed, IoU≥0.5, see `COMPETITIVE_ANALYSIS.md`):
 |---|---:|---:|---:|---:|---:|
 | `devops` (v6) | 0.86 | 0.22 | 0.62 | 0.31 | 0.59 |
 | `legal` (v8) | 0.55 | 0.71 | 0.47 | 0.56 | 0.89 |
-| `medical-experimental` | 0.55 | 0.71 | 0.47 | 0.56 | 0.89 |
+| `medical` | 0.55 | 0.71 | 0.47 | 0.56 | 0.89 |
 | `general` (ensemble) | 0.63 | 0.46 | 0.57 | 0.49 | 0.73 |
 
 **Interpretation**: at F1 0.86 on dev-paste, ~14% of personal data items are not redacted. Per-class precision/recall available in `packages/eval/results/<bench-id>/confusion.json` — high-stakes deployments should review per-class numbers, not aggregate F1.

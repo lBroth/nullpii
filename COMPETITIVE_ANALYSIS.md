@@ -8,9 +8,7 @@ Snapshot 2026-05-04. Used to position `nullpii` against the existing landscape a
 
 > **Status**: first release. Local Mac CPU bench complete; numerical results at `packages/eval/published-bench/matrix.{json,csv}`. Methodology + bench surface documented below.
 
-> **Active caveats on the published bench cells**:
-> - `TUNE-ENTGATE-01` — enterprise-route gate margin (`0.10`) was tuned on `nullpii-bench`. Margin sweep + held-out routing-eval pending v11.
-> - `LEAK-NEMO-ENTERPRISE-01` — the `enterprise` LoRA was trained on **NVIDIA Nemotron-PII** (`nvidia/Nemotron-PII`) train split. `nemotron-pii-test` is in-distribution generalisation, not OOD. Retrain on Faker-only US-formats scheduled for v11.
+> **Active caveats on the published bench cells**: 3 of the 10 rows (`nullpii-bench`, `tab-echr`, `nemotron-pii-test`) are in-distribution diagnostic — adapters trained on slices of those datasets, so F1 is memorisation, not OOD generalisation. Per-row ⚠ flags in the per-dataset table; held-out OOD F1 (4 rows) reported separately as 0.7378 in the README headline.
 
 ### Bench surface (`packages/eval/scripts/bench_full.py`)
 

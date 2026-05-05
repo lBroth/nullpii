@@ -33,7 +33,14 @@ import { forwardBackwardMarginals, viterbiBioesDecode } from './viterbi.js';
 const log = debug('nullpii');
 
 const PLACEHOLDER_OPEN = '[[';
-const PLACEHOLDER_OPEN_ESCAPED = '[\\[';
+// AUDIT F21: PUA (Private Use Area) sentinel pair ``.
+// Previous form `[\\[` (backslash-escaped) collided with user input
+// containing the literal sequence `[\[abc]` — escape was idempotent,
+// but unescape mapped `[\[` → `[[`, corrupting user text on round-trip.
+// PUA codepoints are unallocated to standard glyphs and effectively
+// never appear in natural text or LLM outputs; the collision space is
+// orders of magnitude smaller than the previous backslash form.
+const PLACEHOLDER_OPEN_ESCAPED = '\uE000\uE001';
 
 /**
  * Public entry point for the library.

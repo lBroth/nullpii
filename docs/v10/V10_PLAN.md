@@ -193,6 +193,8 @@ User direction (2026-05-05): openai/privacy-filter does NOT belong in core nullp
 - Cloud-API rows (`aws-comprehend`, `gcp-dlp`, `azure-pii`) — paid + lock-in. Available in `bench_full.py` via opt-in `--tools` but excluded from the canonical bench matrix.
 - Per-domain adapter rows as user-facing tools — internal building blocks for the routers only. Only `nullpii-v10-router-embedding` and `nullpii-v10-router-xlmr` are surfaced.
 - Older nullpii variants (`nullpii`, `nullpii-v8`, `nullpii-v9`, `nullpii-ensemble-*`, `nullpii-ablation-*`, `nullpii-runtime`, `nullpii-v10-router-{hybrid,hybrid-v2,embedding-expanded}`, `regex`-only, wrapped `gliner+regex` etc.) — purged from `bench_full.py` on 2026-05-04.
+- **Feature flags / runtime toggle service** (LaunchDarkly / GrowthBook / Unleash etc.). nullpii is a local library — no central toggle service makes sense, no outbound network call (would violate privacy guarantee), determinism is required for compliance audit (GDPR Art. 35). Behaviour is configured per-instance via the typed `NullPiiConfig` constructor argument; rollback = `npm install nullpii@<prev>`. Re-evaluate only if a SaaS / multi-tenant product layer is built on top.
+- **Multi-tenant / per-tenant config** runtime layer. Same reasoning: nullpii is a library, not a service. If a buyer needs per-tenant policy (different recognizers per customer, different thresholds), they construct multiple `NullPii` instances with different `NullPiiConfig` and route at the application layer. We do not bake tenant awareness into the library.
 
 ## v11 backbone-upgrade roadmap (post-v10 release, conditional)
 

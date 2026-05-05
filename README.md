@@ -124,18 +124,24 @@ Mac M-series CPU, single seed, macro F1 at IoU ≥ 0.5, partial-match span scori
 
 **Ship `nullpii-v10-router-embedding`** (distiluse + 5 LoRA adapters, ~430 MB). The npm runtime downloads from HF on first `sanitize()` call; subsequent calls hit the local cache.
 
-| Subset | macro F1 distiluse |
-|---|:---:|
-| **Held-out non-adversarial** (7 datasets — argilla-pii, presidio-synthetic, oasst-dev-planted, ai4privacy heldout, isotonic en/de/fr heldout) | **0.7008** |
-| Held-out incl adversarial (18 datasets — adds 11 typo / unicode / whitespace / encoding / code / textattack-* rows) | 0.6897 |
-| Mixed bench (27 datasets, includes 9 in-distribution rows below) | 0.7172 |
-| In-distribution diagnostic (9 datasets, all leak-disclosed: nullpii-bench, tab-echr, nemotron-pii-test, ai4privacy/isotonic offset-0) | 0.7712 |
+#### Headline number, honest
 
-The honest **OOD F1 is ~0.70 macro** (held-out non-adversarial). Mixed 0.7172 inflates by ~+0.07 from the 9 leak-disclosed rows.
+We split the 27-dataset bench into three buckets and report each separately so the reader can judge what "F1" means:
 
-> **Caveats** (`TUNE-ENTGATE-01` + `LEAK-NEMO-ENTERPRISE-01` from the red-team audit at `packages/eval/private/v10/RED_TEAM_AUDIT_2026-05-05.md`):
-> - The enterprise-route gate margin (`0.10`) was tuned on `nullpii-bench`. Some of the +0.118 nullpii-bench distiluse delta is attributable to that tuning. A margin-sensitivity sweep `{0.0, 0.05, 0.10, 0.15}` is on the v11 roadmap.
-> - The `enterprise` adapter is trained on **NVIDIA Nemotron-PII** (`nvidia/Nemotron-PII`) train split. `nemotron-pii-test` is in-distribution generalisation, not OOD. Retrain on Faker-only US-formats scheduled v11.
+1. **Held-out, non-adversarial (7 datasets) — F1 0.7008.** The model never saw any of these rows during training. This is the **honest OOD claim** for nullpii.
+   - Datasets: `argilla-pii`, `presidio-synthetic`, `oasst-dev-planted`, `ai4privacy-300k-heldout-v10` (offset 100k+), `isotonic-{en,de,fr}-heldout-v10` (offset 200k+).
+
+2. **Adversarial subset (11 datasets) — preprocessor-driven, not model-driven.** Synthetic perturbations (typo / unicode / whitespace / encoding / code / TextAttack 5 variants) generated post-training, so technically held-out, but most of the lift comes from the `_normalize_for_detection` preprocessor (NFKC + unidecode + zero-width strip + spaced-PII despace), not from the model. Including these brings the held-out macro down a bit (heavy whitespace+encoding rows pull the average): **F1 0.6897 over 18 held-out rows**.
+
+3. **In-distribution diagnostic (9 datasets) — F1 0.7712, NOT a generalisation claim.** Adapters trained on slices of these datasets, so performance is in-distribution memorisation. Published for transparency only.
+   - `nullpii-bench` (project-bundled, template-leaked with `dev-paste-synth-train`); `tab-echr` (legal adapter trained on TAB train, 127/127 test docs share shingles); `nemotron-pii-test` (enterprise adapter trained on Nemotron train); `ai4privacy-300k`, `ai4privacy-400k`, `isotonic-{en,de,fr,it}` (offset 0, model saw rows 0-5k of these during training).
+
+The often-quoted **mixed F1 0.7172 (27 datasets)** is the average of all three buckets — it inflates by ~+0.07 over the honest OOD number because of the 9 leak-disclosed rows. Use the held-out 0.7008 figure for any OOD claim; quote the mixed 0.7172 only with the caveat above.
+
+> **Two specific red-team caveats** that warrant disclosure (full report internal at `packages/eval/private/v10/RED_TEAM_AUDIT_2026-05-05.md`):
+>
+> 1. **`TUNE-ENTGATE-01` — gate margin tuned on `nullpii-bench`.** The router gates the `enterprise` route at margin ≥ 0.10 vs runner-up. That `0.10` value was picked by sweeping on `nullpii-bench` itself, so part of the +0.118 distiluse-vs-`router-xlmr` lead on that dataset is attributable to the tuning, not to the model. A margin-sensitivity sweep `{0.0, 0.05, 0.10, 0.15}` + a held-out routing-eval corpus are on the v11 roadmap.
+> 2. **`LEAK-NEMO-ENTERPRISE-01` — `enterprise` adapter trained on Nemotron train split.** Bench includes `nemotron-pii-test` (Nvidia's own test split). The enterprise adapter was trained on the train split → `nemotron-pii-test` is **in-distribution generalisation, not OOD**. We publish the row for transparency but treat the F1 as a memorisation data-point. Retrain on Faker-only US-formats is scheduled v11.
 
 ### Per-dataset F1 (`nullpii-v10-router-embedding`, the shipping pipeline)
 

@@ -52,31 +52,22 @@ from nullpii_eval import public_datasets
 from nullpii_eval.adapters import (
     DEFAULT_REGEX_PATTERNS,
     MINIMAL_REGEX_PATTERNS,
-    aws_comprehend_predictor,
-    azure_pii_predictor,
     boundary_refined_predictor,
     deberta_pii_predictor,
     domain_routed_predictor,
-    gcp_dlp_predictor,
     gliner_lora_predictor,
     gliner_nemotron_pii_predictor,
     gliner_v2_predictor,
-    gliner2_predictor,
     multi_ensemble_predictor,
     never_pii_filter_predictor,
     nullpii_runtime_predictor,
-    openai_bioes_predictor,
-    openai_official_predictor,
-    openai_pipeline_batch_predictor,
     piiranha_predictor,
     presidio_predictor,
-    scrubadub_predictor,
     url_filter_predictor,
 )
 from nullpii_eval.datasets import Sample, Span, load
 from nullpii_eval.metrics import evaluate, macro_f1
 from nullpii_eval.router import make_embedding_detector as _v10_make_embedding_detector
-from nullpii_eval.router import make_xlmr_detector as _v10_make_xlmr_detector
 
 
 # ─── Dataset registry ────────────────────────────────────────────
@@ -397,137 +388,35 @@ def build_tools(args) -> dict[str, Callable]:
             routes=r,
             fallback=r["narrative"],
         ))(_v10_routes(with_enterprise=True)),
-        # xlm-roberta-base classifier router (alt candidate). 4-way
-        # head over {devops, legal, medical, narrative}. Larger
-        # classifier (~1.1 GB) but discriminative — separates classes
-        # that share lexical surface.
-        "nullpii-v10-router-xlmr": lambda: (lambda r: domain_routed_predictor(
-            detector=_v10_make_xlmr_detector(
-                device="cpu" if backend == "cpu" else "cuda",
-            ),
-            routes=r,
-            fallback=r["narrative"],
-        ))(_v10_routes(with_enterprise=False)),
         # ─── Bare third-party baselines (no nullpii pipeline overlay) ─
-        # Strict apple-to-apple comparison rows. NONE of these wrap our
-        # boundary refiner, never-PII filter, regex pack, or chunking
-        # glue. Each tool runs as its upstream project intends.
+        # Each runs upstream library directly. NONE wraps nullpii post-
+        # processing (boundary refine / never-PII filter / regex pack /
+        # `_normalize_for_detection`). Only the per-tool label remap to
+        # nullpii's 8-class schema runs (cross-schema bridge).
         "presidio":  lambda: presidio_predictor(),
         "deberta":   lambda: _wrap_batch(deberta_pii_predictor(device=backend, batch_size=32)),
         "piiranha":  lambda: _wrap_batch(piiranha_predictor(device=backend, batch_size=32)),
-        "scrubadub": lambda: scrubadub_predictor(),
-        # GLiNER multi PII v1 (`urchade/gliner_multi_pii-v1`) bare HF —
-        # no chunking, no regex, no boundary refine. This is the row
-        # for "what does the upstream backbone do on its own". Do not
-        # confuse with our former `gliner` tool, which used our own
-        # chunking glue.
+        # GLiNER multi PII v1 (`urchade/gliner_multi_pii-v1`) bare HF.
         "gliner-onnx-pii-fp32": lambda: gliner_v2_predictor(
             "onnx-community/gliner_multi_pii-v1",
             onnx_file="onnx/model.onnx",
             threshold=args.gliner_threshold,
         ),
-        # Nvidia Nemotron-PII (`nvidia/gliner-pii`, gliner_large-v2.1
-        # backbone, ~600 MB, 55+ PII categories). Bare — 37→8 label
-        # remap is the only adapter glue (`gliner_nemotron_pii_predictor`).
+        # NVIDIA Nemotron-PII (`nvidia/gliner-pii`, gliner_large-v2.1
+        # backbone, ~600 MB, 55+ PII categories). 37→8 label remap.
         "nemotron-pii-raw": lambda: gliner_nemotron_pii_predictor(
             model_path="nvidia/gliner-pii",
             device=backend if backend == "cpu" else "cuda",
             threshold=0.3,
         ),
-        # GLiNER2 (fastino-ai). Schema-agnostic IE model; backbone
-        # `microsoft/deberta-v3-{base,large}` per variant. Predicts
-        # directly on nullpii's 8-class schema (no remap). Bare — same
-        # chunking-only contract as `nemotron-pii-raw` and
-        # `gliner-onnx-pii-fp32`. Library: `gliner2` (Apache 2.0).
-        "gliner2-large-v1": lambda: gliner2_predictor(
-            model_path="fastino/gliner2-large-v1",
-            device=backend if backend == "cpu" else "cuda",
-            threshold=0.3,
-        ),
-        "gliner2-base-v1": lambda: gliner2_predictor(
-            model_path="fastino/gliner2-base-v1",
-            device=backend if backend == "cpu" else "cuda",
-            threshold=0.3,
-        ),
-        "gliner2-multi-v1": lambda: gliner2_predictor(
-            model_path="fastino/gliner2-multi-v1",
-            device=backend if backend == "cpu" else "cuda",
-            threshold=0.3,
-        ),
-        # ─── 2025 GLiNER-family additions (knowledgator) ──────────────
-        # Bare GLiNER models loaded via the standard `gliner` library —
-        # `gliner_v2_predictor` handles loading + span output cleanly.
-        # All Apache 2.0. None wrap nullpii post-processing (chunking
-        # only, same contract as `gliner-onnx-pii-fp32`).
-        # `gliner-x-large`: MT5-large encoder (~580M), 20 langs incl.
-        # CJK / Arabic / Hindi / Ukrainian. The only true-multilingual
-        # GLiNER candidate — closes our documented CJK / RTL / Indic
-        # blind spot.
-        "gliner-x-large": lambda: gliner_v2_predictor(
-            "knowledgator/gliner-x-large",
-            device=backend if backend == "cpu" else "cuda",
-            threshold=args.gliner_threshold,
-            local_files_only=False,
-        ),
-        # `gliner-x-base`: MT5-base sibling, lighter for CPU bench.
-        "gliner-x-base": lambda: gliner_v2_predictor(
-            "knowledgator/gliner-x-base",
-            device=backend if backend == "cpu" else "cuda",
-            threshold=args.gliner_threshold,
-            local_files_only=False,
-        ),
-        # `gliner-pii-large-v1.0`: PII-specialised Apache fine-tune,
-        # gliner-large backbone. EN-only despite "60+ categories"
-        # framing. Reported F1 83.25 on synthetic-multi-pii-ner-v1.
+        # `gliner-pii-large-v1.0` (knowledgator) — PII-specialised
+        # Apache fine-tune, gliner-large backbone. Bare HF.
         "gliner-pii-large-v1": lambda: gliner_v2_predictor(
             "knowledgator/gliner-pii-large-v1.0",
             device=backend if backend == "cpu" else "cuda",
             threshold=args.gliner_threshold,
             local_files_only=False,
         ),
-        # `gliner-pii-base-v1.0`: size-matched competitor to v10 base.
-        "gliner-pii-base-v1": lambda: gliner_v2_predictor(
-            "knowledgator/gliner-pii-base-v1.0",
-            device=backend if backend == "cpu" else "cuda",
-            threshold=args.gliner_threshold,
-            local_files_only=False,
-        ),
-        # `modern-gliner-bi-large-v1.0`: ModernBERT-large + BGE bi-encoder.
-        # 8k context, ~4× faster than DeBERTa per upstream claim.
-        # Long-doc speed test (TAB ECHR, dev pastes).
-        "modern-gliner-bi-large-v1": lambda: gliner_v2_predictor(
-            "knowledgator/modern-gliner-bi-large-v1.0",
-            device=backend if backend == "cpu" else "cuda",
-            threshold=args.gliner_threshold,
-            local_files_only=False,
-        ),
-        # `gliner-multi-pii-domains-v1`: E3-JSI fine-tune of
-        # urchade/gliner_multi_pii-v1. Adds Slovenian / Greek / Dutch
-        # to the v10 base. F1 76.36 on synthetic-multi-pii-ner-v1.
-        "gliner-multi-pii-domains-v1": lambda: gliner_v2_predictor(
-            "E3-JSI/gliner-multi-pii-domains-v1",
-            device=backend if backend == "cpu" else "cuda",
-            threshold=args.gliner_threshold,
-            local_files_only=False,
-        ),
-        # ─── openai/privacy-filter — three usage modes ────────────────
-        # `openai`: HF transformers `pipeline()` naive aggregation. The
-        # majority-default usage path; misses the model card's
-        # prescribed Viterbi BIOES decoder.
-        "openai":          lambda: _wrap_batch(openai_pipeline_batch_predictor(device=openai_backend, batch_size=8)),
-        # `openai-bioes`: Python BIOES decoder, no Viterbi. Closes most
-        # of the naive-HF gap.
-        "openai-bioes":    lambda: openai_bioes_predictor(device=openai_backend),
-        # `openai-official`: full opf CLI Viterbi (the model-card-
-        # correct invocation). Reference for the model's intended
-        # quality.
-        "openai-official": lambda: openai_official_predictor(device=openai_backend),
-        # ─── Cloud-API baselines (paid, lazy-loaded) ──────────────────
-        # Excluded from default release bench — costs $$ + lock-in.
-        # Available for one-off comparisons; require credentials in env.
-        "aws-comprehend": lambda: aws_comprehend_predictor(),
-        "gcp-dlp":        lambda: gcp_dlp_predictor(),
-        "azure-pii":      lambda: azure_pii_predictor(),
     }
     requested = [t.strip() for t in args.tools.split(",") if t.strip()]
     out: dict[str, Callable] = {}

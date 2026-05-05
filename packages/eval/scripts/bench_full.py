@@ -319,6 +319,18 @@ def build_tools(args) -> dict[str, Callable]:
         drop_rfc1918: bool,
         use_expanded_prompts: bool = False,
     ):
+        # AUDIT F11 — KEEP `primary`, do NOT switch to `score_ranked`.
+        # The audit (2026-05-04) recommended `score_ranked` to prevent
+        # CF/IBAN regex matches overlapping with model `private_person`
+        # spans from being dropped. Empirically tested 2026-05-05 on
+        # 9-dataset subset; `score_ranked` regressed adversarial-typo
+        # 0.940 → 0.635 (−0.30), argilla-pii 0.600 → 0.572 (−0.029),
+        # nullpii-bench 0.728 → 0.725 (−0.003). v10 regex pack is
+        # already high-precision (BTC validated, IDN reverted, F09
+        # context-anchored phones); letting ML scores override correct
+        # regex matches lowered F1 net. Audit-F11 closed as
+        # "investigated, recommendation rejected based on bench
+        # evidence".
         return never_pii_filter_predictor(
             inner=boundary_refined_predictor(
                 inner=multi_ensemble_predictor(

@@ -116,13 +116,29 @@ Drop comprehensive 27-dataset × 19-tool matrix. Keep targeted hobby-bench:
 | Move `private/v10/V10_JOURNAL.md` → public `docs/JOURNAL.md` | move + diff polish | 30 min | 🔴 |
 | Write `docs/BENCH_RUNBOOK.md` (Mac CPU reproducer steps) | new | 30 min | 🔴 |
 
+### 🔴 BLOCKER before tag v0.1.0 — fix nullpii subprocess crash
+
+Overnight bench 2026-05-05 23:10 revealed: the canonical `nullpii` row (`node bin/nullpii.mjs scan --ndjson` subprocess) crashes on EVERY dataset. First failure: `RuntimeError: nullpii subprocess closed stdout unexpectedly` at idx=53 on `nullpii-bench`. Subsequent: `BrokenPipeError: [Errno 32] Broken pipe` at idx=0 of every later dataset — pool poisoned. Net: 10/10 nullpii cells fail (zero data points for the user-facing row).
+
+Other 7 tools work; Python re-impl `nullpii-v10-router-embedding` numbers match published bench exactly (sanity passes).
+
+Investigation steps for tomorrow:
+
+1. **Reproduce manually**: `node bin/nullpii.mjs scan --ndjson --model-dir /tmp/nullpii-stack-test --backend cpu`, pipe ~100 sample texts from `nullpii-bench` (or `presidio-synthetic`) on stdin, observe exit and stderr. Find the input that kills the daemon.
+2. **Read** `src/cli/commands/scan.ts:runNdjson` — confirm the for-await loop catches per-sample errors, doesn't break on empty lines / malformed input / sanitize exceptions.
+3. **Add per-sample try/catch** in `runNdjson` so a single failing sample emits `{"error": "..."}` instead of throwing and killing the daemon. SIGPIPE handler for graceful exit on broken stdout.
+4. **Re-test** subprocess with bench harness on a small subset before relaunching overnight.
+
+Estimated: 1-3 h debug + fix + retest. Must land before v0.1.0 tag — shipping a release where the published canonical row crashes on real input is unacceptable.
+
 ### Release commit + tag (user-action)
 
 Pre-flight before tagging:
 
-1. `huggingface-cli login` locally
-2. `bash packages/eval/scripts/release/push-adapters-to-hf.sh` — push raw LoRA + prototypes to `lBroth/nullpii-v10-adapters` (one-shot)
-3. GitHub repo Settings → Secrets: add `NPM_TOKEN` + `HF_TOKEN`
+1. **Subprocess crash fix landed + bench rerun produces valid `nullpii` cells** (see blocker above).
+2. `huggingface-cli login` locally
+3. `bash packages/eval/scripts/release/push-adapters-to-hf.sh` — push raw LoRA + prototypes to `lBroth/nullpii-v10-adapters` (one-shot)
+4. GitHub repo Settings → Secrets: add `NPM_TOKEN` + `HF_TOKEN`
 
 Commit + push:
 

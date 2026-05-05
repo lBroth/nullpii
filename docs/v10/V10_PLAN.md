@@ -16,7 +16,7 @@ Independent strategist review (general-purpose subagent) ranks nullpii at **C+**
 
 1. **Shipping path incoherent**. npm currently downloads `openai/privacy-filter` (`src/defaults.ts:52`), NOT the v10 LoRA stack. Audit F25: TS library lacks Python pipeline's adversarial defenses + never-PII filter + full regex pack. Production npm users get materially weaker detection than the bench claims advertise.
 2. **Canonical bench was a placeholder** (closed 2026-05-05): unified release bench landed at `packages/eval/results/bench-v10-release-local/matrix.{json,csv}`. nullpii router-embedding 0.7172 / router-xlmr 0.7076 across 27 datasets. README + 8 model cards refreshed with concrete numbers. Bare-mode competitor matrix still pending 5090 GPU pass.
-3. **Active critical audit findings** — closed 2026-05-05: F10 (`_remap_span` strict min/max clamp), F13 (`_has_high_precision_signal` legal/medical hit count override), F22 (all secret patterns bounded `{N,255}` or `{N,2048}` + 1 MB input length cap on `regex_recognizer_predictor`). F25 partial: TS bounded patterns + `runRecognizers` input cap + `filterNeverPii` (RFC1918 / NANP fictional 555-01XX / RFC 6761 reserved domains / null UUID / zero MAC) all landed; full `_normalize_for_detection` port + 65-pattern regex pack expansion deferred to npm 0.1.0 sprint.
+3. **Active critical audit findings** — ALL CLOSED 2026-05-05: F10 (`_remap_span` strict min/max clamp), F13 (`_has_high_precision_signal` legal/medical hit count override), F22 (all secret patterns bounded `{N,255}` or `{N,2048}` + 1 MB input length cap on `regex_recognizer_predictor`), F25 (TS port complete: `src/normalize.ts` mirrors Python `_normalize_for_detection` end-to-end via `any-ascii`; `DEFAULT_RECOGNIZERS` expanded 10 → 74 patterns at parity with Python `DEFAULT_REGEX_PATTERNS`; `filterNeverPii` post-pass).
 
 **Load-bearing differentiator**: the reversible in-memory vault primitive (sanitize → placeholder → LLM → restore). Skyflow has it but cloud-only; Presidio has weak de-anonymisation; HF GLiNER models have detection but no vault. nullpii uniquely contributes OSS + reversible vault + multilingual local detection in a single npm install.
 
@@ -31,7 +31,7 @@ Three deliverables that unlock multiple downstream wins. Execute in this order.
 | # | Deliverable | Date | Unlocks |
 |---|---|---|---|
 | 1 | **Run unified release bench, publish `matrix.json` + `confusion.json`** | **2026-05-12** | HN launch, blog post, all 8 model cards, README rewrite, HF push |
-| 2 | **Close audit F10, F13, F22, F25** (cherry-pick to main, tag 0.0.10) | **2026-05-10** | F10 ✅ F13 ✅ F22 ✅ F25 🟡 partial (TS bounded + never_pii + input cap landed; full preprocessor port + regex pack expansion deferred to npm 0.1.0). 145 tests pass. Cherry-pick to main pending |
+| 2 | **Close audit F10, F13, F22, F25** (cherry-pick to main, tag 0.0.10) | **2026-05-10** | F10 ✅ F13 ✅ F22 ✅ F25 ✅ — TS preprocessor + 74-pattern regex pack at parity with Python. 157 tests pass. Cherry-pick to main pending |
 | 3 | **Held-out routing-eval corpus** (500 docs hand-annotated, 5 domains × 100) | **2026-05-25** | Honest router F1 (no test-set tuning) + academic paper + DPIA buyer-facing numbers + v11 train-or-don't decision |
 | 4 | **Merged-LoRA ONNX export → ship in npm 0.1.0** | **2026-06-15** | v10 work becomes consumable; closes audit F25 TS/Python divergence; makes the README claim true for the first time |
 

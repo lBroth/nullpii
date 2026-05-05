@@ -107,7 +107,12 @@ Auto-selects in priority **CUDA → MPS → CPU**.
 
 > **Status (2026-05-05)**: first release bench. nullpii numbers below come from the local Mac CPU bench (`packages/eval/published-bench/matrix.{json,csv}`). Third-party baselines wired in `bench_full.py` for a later head-to-head iteration: **Microsoft Presidio**, GLiNER (`urchade/gliner_multi_pii-v1`), `iiiorg/piiranha`, **Microsoft DeBERTa**-v3 community fine-tune, scrubadub, **NVIDIA Nemotron-PII** (`nvidia/gliner-pii`), and **OpenAI** `openai/privacy-filter` in three usage modes (naive HF / BIOES / opf-Viterbi).
 
-Mac M-series CPU, single seed, macro F1 at IoU ≥ 0.5. Bare-mode contract: no competitor row wraps nullpii post-processing — no `_normalize_for_detection`, no boundary refine, no never-PII filter, no regex pack. Only chunking 1400/200 stride + per-tool label remap (the cross-schema bridge required for F1 comparability) survive on competitor rows. 27 of 31 datasets benched (4 require gated HuggingFace access: lmsys / enron / stackoverflow / thestack).
+Mac M-series CPU, single seed, macro F1 at IoU ≥ 0.5, partial-match span scoring on **27 datasets** — full list in the per-dataset table below.
+
+**Bare-mode contract** — zero nullpii post-processing on competitor rows: no `_normalize_for_detection`, no boundary refine, no never-PII filter, no regex pack. The only adapter glue is the universal NER-bench plumbing applied identically to every tool:
+
+- **Chunking 1400/200 char stride** — every ML tool has a ~512-token context limit, so documents like TAB ECHR (avg 2000+ tokens) must be split + dedupe. Same code path on `gliner-onnx-pii-fp32`, `nemotron-pii-raw`, GLiNER family, and the nullpii rows.
+- **Per-tool label remap** to nullpii's 8-class schema — Microsoft Presidio emits `PERSON` / `EMAIL_ADDRESS` / `LOCATION`, NVIDIA Nemotron emits 55 fine-grained labels (`first_name`, `ssn`, `mrn`, …), Microsoft DeBERTa fine-tune emits `PER` / `LOC` / `ORG`. The bench predictor wrappers (`presidio_predictor`, `gliner_nemotron_pii_predictor`, etc.) translate those native labels to nullpii's 8-class **before** the span is compared to gold — so a Presidio `EMAIL_ADDRESS` at offset `[20:33]` is scored against gold `private_email` at `[20:33]` as a true positive. Without this bridge F1 would be ~0 even on perfectly detected spans (different label spaces). Symmetric — every cross-tool NER bench needs it; not a nullpii advantage.
 
 ### Pipeline
 

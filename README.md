@@ -170,9 +170,13 @@ The often-quoted **mixed F1 0.7172 (27 datasets)** is the average of all three b
 
 `adversarial-encoding` is the documented gap — base64 / URL / HTML-entity wrapping require a deobfuscation layer not in the runtime defaults.
 
-### Competitor comparison (pending 5090 run)
+### Competitor comparison
 
-The bare-mode third-party baselines — **Microsoft Presidio**, GLiNER (`urchade/gliner_multi_pii-v1`), `iiiorg/piiranha`, **Microsoft DeBERTa**-v3 community fine-tune, scrubadub, **NVIDIA Nemotron-PII** (`nvidia/gliner-pii`), **OpenAI** `openai/privacy-filter` (naive HF / BIOES / opf-Viterbi) — are wired in `bench_full.py` but require a longer-running GPU pass to publish defensible numbers. The bench surface and methodology are documented in [`COMPETITIVE_ANALYSIS.md`](COMPETITIVE_ANALYSIS.md). This README will refresh with the head-to-head matrix once the GPU bench completes.
+Bare-mode third-party baselines benched on the same 27-dataset Mac CPU pass alongside `nullpii-v10-router-embedding`: **Microsoft Presidio**, GLiNER (`urchade/gliner_multi_pii-v1` ONNX FP32), `iiiorg/piiranha`, **Microsoft DeBERTa**-v3 community fine-tune, **NVIDIA Nemotron-PII** (`nvidia/gliner-pii`), and `gliner-pii-large-v1`. Same chunking (1400/200 char stride), same per-tool label remap to nullpii's 8-class schema, no nullpii post-processing leak on competitor rows.
+
+Head-to-head matrix — per-dataset F1, every tool × every dataset: [`packages/eval/published-bench/matrix.csv`](packages/eval/published-bench/matrix.csv). Methodology, schema-bridge mechanics, and the `CLAIM-VERIFIER-01` finding (Presidio 0.85+ / piiranha 0.99 not reproducible with span IoU ≥ 0.5) are documented in [`COMPETITIVE_ANALYSIS.md`](COMPETITIVE_ANALYSIS.md).
+
+Honest read: nullpii sits in the GLiNER-family ballpark on the held-out non-adversarial subset (F1 0.7008) and wins the adversarial bucket because of `_normalize_for_detection` (typo 0.94 / unicode 0.94 / code 1.00), not because of model strength. `adversarial-encoding` (0.12) is the documented gap. For production GDPR-grade redaction, **Microsoft Presidio** remains the right tool — read the matrix for the per-dataset trade-offs.
 
 ## Documentation
 
@@ -208,8 +212,6 @@ The bare-mode third-party baselines — **Microsoft Presidio**, GLiNER (`urchade
 - [`packages/eval/README.md`](packages/eval/README.md) — bench harness + scripts inventory
 - [`packages/eval/datasets/README.md`](packages/eval/datasets/README.md) — dataset cards + licenses
 - [`examples/README.md`](examples/README.md) — TS usage examples
-
-The unified release bench (head-to-head vs **Microsoft Presidio**, GLiNER (`urchade/gliner_multi_pii-v1`), **NVIDIA Nemotron-PII**, `iiiorg/piiranha`, **Microsoft DeBERTa**-v3 fine-tune, scrubadub, and **OpenAI** `openai/privacy-filter` in three usage modes — naive HF / BIOES / opf-Viterbi) will publish after the overnight run. README will refresh with v10 numbers at that point.
 
 ## License
 

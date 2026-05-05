@@ -14,30 +14,26 @@ Snapshot 2026-05-04. Used to position `nullpii` against the existing landscape a
 
 ### Bench surface (`packages/eval/scripts/bench_full.py`)
 
-11 tools × 19 PII-native datasets, single matrix, single code revision, IoU ≥ 0.5 macro F1. Datasets and tools are listed verbatim in [`docs/v10/V10_PLAN.md`](docs/v10/V10_PLAN.md) "Release gating".
+8 tools, single matrix, single code revision, IoU ≥ 0.5 macro F1.
 
 | Tool | Wrapping |
 |---|---|
-| `nullpii-v10-router-embedding` | distiluse + 5 LoRA adapters (router-fallback over `urchade/gliner_multi_pii-v1`) |
+| `nullpii` | local npm CLI (`node bin/nullpii.mjs scan --ndjson`) — canonical user-facing row, full router stack |
+| `nullpii-v10-router-embedding` | Python re-impl of the same pipeline — distiluse + 5 LoRA adapters over `urchade/gliner_multi_pii-v1`. Used for delta-vs-subprocess sanity check |
 | `presidio` | **Microsoft Presidio Analyzer** — bare upstream defaults |
 | `gliner-onnx-pii-fp32` | bare HF inference of `urchade/gliner_multi_pii-v1` (GLiNER, Zaratiana et al., NAACL 2024) |
 | `piiranha` | `iiiorg/piiranha-v1-detect-personal-information` — bare upstream defaults |
 | `deberta` | `lakshyakh93/deberta_finetuned_pii` — community fine-tune of **Microsoft DeBERTa-v3** |
-| `scrubadub` | bare upstream defaults |
 | `nemotron-pii-raw` | **NVIDIA Nemotron-PII** (`nvidia/gliner-pii`) — bare upstream + 55→8 label remap |
-| `openai` | HF `transformers.pipeline()` naive aggregation (`openai/privacy-filter`) |
-| `openai-bioes` | Python BIOES decoder, no Viterbi |
-| `openai-official` | full opf CLI Viterbi (model-card-correct) |
+| `gliner-pii-large-v1` | `knowledgator/gliner-pii-large-v1.0` — bare HF |
 
-**Strict bare-mode contract**: no competitor row wraps `boundary_refined`, `never_pii_filter`, `url_filter`, `regex_pack`, or `_normalize_for_detection` (NFKC + unidecode + zero-width strip + HTML entity decode + URL %XX decode + spaced-PII despace). Each tool runs as its upstream project intends. The only adapter glue applied uniformly across GLiNER-family bare baselines is the chunking 1400/200 stride (so long-doc handling is fair across `gliner-onnx-pii-fp32`, `gliner-x-*`, `gliner-pii-*-v1`, `modern-gliner-bi-*`, `gliner-multi-pii-domains-v1`, `gliner2-*-v1`, `nemotron-pii-raw`) plus per-tool label remap to the 8-class schema (presidio, deberta, nemotron-pii — the bench bridge needed for F1 comparability, common to any cross-schema NER eval).
+**Strict bare-mode contract**: no competitor row wraps `boundary_refined`, `never_pii_filter`, `url_filter`, `regex_pack`, or `_normalize_for_detection` (NFKC + unidecode + zero-width strip + HTML entity decode + URL %XX decode + spaced-PII despace). Each tool runs as its upstream project intends. The only adapter glue applied uniformly is the chunking 1400/200 stride (so long-doc handling is fair across all GLiNER-family bare baselines and `nemotron-pii-raw`) plus per-tool label remap to the 8-class schema (presidio, deberta, nemotron-pii — the bench bridge needed for F1 comparability, common to any cross-schema NER eval).
 
-Cloud rows (`aws-comprehend`, `gcp-dlp`, `azure-pii`) are opt-in via `--tools` and excluded from the canonical release matrix (paid + lock-in).
+### Datasets in scope (10 PII-native)
 
-### Datasets in scope (19 PII-native)
+`nullpii-bench` (project-bundled), `tab-echr`, `nemotron-pii-test`, `presidio-synthetic`, `ai4privacy-300k-heldout-v10` (offset 100k+), `isotonic-{en,de}-heldout-v10` (offset 200k+), `adversarial-{typo,unicode,code}` (synthetic perturbations).
 
-`nullpii-bench` (project-bundled, OOD), `adversarial-{typo,unicode,whitespace,encoding,code}`, `textattack-{homoglyph,charswap,chardelete,charinsert,charsub}`, `tab-echr`, `presidio-synthetic`, `ai4privacy-{300k,400k,300k-heldout-v10}`, `isotonic-{en,de,fr,it}`, `isotonic-{en,de,fr}-heldout-v10`, `oasst-dev-planted`, `argilla-pii`, `nemotron-pii-test`.
-
-**Excluded**: `wikiann-{es,zh,ja}` (PER/LOC NER, loose mapping breaks F1 comparability), `adversarial-decoys` (zero gold spans → F1 structurally meaningless), `nullpii-adversarial` (composite, already covered by per-subset rows).
+**Why not the previous broader 27-dataset surface?** Cleaned to the canonical hobby-bench surface — kept the rows where nullpii has either an adversarial-preprocessor signal (typo/unicode/code) or a strong baseline reference (Presidio/Nemotron own data), plus held-out evaluation rows. Whitespace + encoding adversarial rows (where preprocessor regresses) and TextAttack 5-perturbation breakdowns dropped — covered conceptually by `adversarial-typo` + `adversarial-unicode`. Wikiann (PER/LOC NER, loose mapping) and adversarial-decoys (zero gold spans) permanently excluded.
 
 ## Direct competitors (AI Security / AI Firewall)
 

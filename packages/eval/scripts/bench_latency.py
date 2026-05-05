@@ -33,15 +33,110 @@ from nullpii_eval.adapters import (  # noqa: E402
     DEFAULT_REGEX_PATTERNS,
     MINIMAL_REGEX_PATTERNS,
     boundary_refined_predictor,
-    complementary_v6_v8_predictor,
+    domain_routed_predictor,
+    gliner_lora_predictor,
     gliner_v2_predictor,
     multi_ensemble_predictor,
     never_pii_filter_predictor,
     url_filter_predictor,
 )
+from nullpii_eval.router import (  # noqa: E402
+    make_embedding_detector as _make_embedding_detector,
+)
+from nullpii_eval.router import (
+    make_xlmr_detector as _make_xlmr_detector,
+)
+
+
+def _v10_adapter(
+    profile: str,
+    *,
+    backend: str,
+    gliner_threshold: float,
+    regex_pack=None,
+    drop_rfc1918: bool = False,
+    use_expanded_prompts: bool = False,
+):
+    """Internal helper mirroring `_v10_adapter` in `bench_full.py`.
+    Builds a per-domain LoRA pipeline for the v10 routers.
+    """
+    if regex_pack is None:
+        regex_pack = DEFAULT_REGEX_PATTERNS
+    return never_pii_filter_predictor(
+        inner=boundary_refined_predictor(
+            inner=multi_ensemble_predictor(
+                predictors=[
+                    url_filter_predictor(patterns=regex_pack),
+                    gliner_lora_predictor(
+                        "urchade/gliner_multi_pii-v1",
+                        f"packages/eval/results/train/v10/adapters/{profile}/adapter",
+                        device=backend if backend == "cpu" else "cuda",
+                        threshold=gliner_threshold,
+                        normalize_input=True,
+                        use_expanded_prompts=use_expanded_prompts,
+                    ),
+                ],
+                strategy="primary",
+            ),
+        ),
+        drop_rfc1918=drop_rfc1918,
+    )
+
+
+def _v10_routes(*, with_enterprise: bool, backend: str, gliner_threshold: float) -> dict:
+    routes = {
+        "devops": _v10_adapter(
+            "devops", backend=backend, gliner_threshold=gliner_threshold,
+            regex_pack=DEFAULT_REGEX_PATTERNS, drop_rfc1918=True,
+        ),
+        "legal": _v10_adapter(
+            "legal", backend=backend, gliner_threshold=gliner_threshold,
+            regex_pack=MINIMAL_REGEX_PATTERNS,
+        ),
+        "medical": _v10_adapter(
+            "medical-experimental", backend=backend, gliner_threshold=gliner_threshold,
+            regex_pack=MINIMAL_REGEX_PATTERNS,
+        ),
+        "narrative": _v10_adapter(
+            "narrative", backend=backend, gliner_threshold=gliner_threshold,
+            regex_pack=MINIMAL_REGEX_PATTERNS,
+        ),
+    }
+    if with_enterprise:
+        routes["enterprise"] = _v10_adapter(
+            "enterprise", backend=backend, gliner_threshold=gliner_threshold,
+            regex_pack=DEFAULT_REGEX_PATTERNS, drop_rfc1918=True,
+            use_expanded_prompts=True,
+        )
+    return routes
 
 
 def build_predictor(profile: str, backend: str = "cpu", gliner_threshold: float = 0.5):
+    # ─── v10 release-candidate routers ──────────────────────────────
+    if profile == "nullpii-v10-router-embedding":
+        routes = _v10_routes(
+            with_enterprise=True, backend=backend, gliner_threshold=gliner_threshold,
+        )
+        return domain_routed_predictor(
+            detector=_make_embedding_detector(
+                device="cpu" if backend == "cpu" else "cuda",
+            ),
+            routes=routes,
+            fallback=routes["narrative"],
+        )
+    if profile == "nullpii-v10-router-xlmr":
+        routes = _v10_routes(
+            with_enterprise=False, backend=backend, gliner_threshold=gliner_threshold,
+        )
+        return domain_routed_predictor(
+            detector=_make_xlmr_detector(
+                device="cpu" if backend == "cpu" else "cuda",
+            ),
+            routes=routes,
+            fallback=routes["narrative"],
+        )
+
+    # ─── Legacy v6/v8 profiles (kept for back-compat) ───────────────
     v6 = lambda: gliner_v2_predictor(  # noqa: E731
         "onnx-community/gliner_multi_pii-v1",
         onnx_file="onnx/model.onnx",
@@ -132,8 +227,12 @@ def percentile(values: list[float], p: float) -> float:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--profiles", nargs="+",
-                    default=["devops", "legal", "medical-experimental", "general"])
+    ap.add_argument(
+        "--profiles", nargs="+",
+        default=["nullpii-v10-router-embedding", "nullpii-v10-router-xlmr"],
+        help="profile names; v10 routers (default) or legacy "
+             "{devops,legal,medical-experimental,general}",
+    )
     ap.add_argument("--sizes", nargs="+", type=int, default=[100, 1000, 10000])
     ap.add_argument("--n-per-size", type=int, default=50)
     ap.add_argument("--backend", default="cpu")

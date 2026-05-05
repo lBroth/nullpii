@@ -5,7 +5,7 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [0.1.0] — 2026-05-05
 
-First public release. Local PII sanitization for LLM prompts with reversible vault.
+First public release. Local PII sanitization with reversible vault.
 
 ### Added
 

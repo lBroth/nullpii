@@ -1,7 +1,7 @@
 {
   "name": "nullpii",
   "version": "0.1.0",
-  "description": "Sanitize PII from LLM prompts locally. Reversible vault. Zero cloud calls. Multi-backend (CPU/MPS/CUDA).",
+  "description": "Sanitize PII from text locally with a reversible vault. Zero cloud calls. Multi-backend (CPU/MPS/CUDA).",
   "license": "Apache-2.0",
   "type": "module",
   "sideEffects": false,
@@ -91,5 +91,5 @@
   },
   "homepage": "https://github.com/lBroth/nullpii#readme",
   "author": "nullpii contributors",
-  "keywords": ["pii", "redaction", "anonymization", "sanitize", "llm", "privacy", "onnx", "local"]
+  "keywords": ["pii", "redaction", "anonymization", "sanitize", "privacy", "onnx", "local"]
 }

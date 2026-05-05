@@ -4,7 +4,7 @@
 
 # nullpii
 
-Local PII sanitization for LLM prompts. ML span detection + reversible in-memory vault — pass placeholders to your LLM, restore original values from the response.
+Local PII sanitization with reversible in-memory vault. ML span detection swaps PII with placeholders; pass the sanitized text anywhere (LLM, log, third-party API), then restore original values from the response.
 
 ## Why this exists
 
@@ -199,6 +199,6 @@ Apache 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE). Runtime tree is 100%
 
 ## Citation
 
-> nullpii contributors (2026). *nullpii: local PII sanitization for LLM prompts.* https://github.com/lBroth/nullpii
+> nullpii contributors (2026). *nullpii: local PII sanitization with reversible vault.* https://github.com/lBroth/nullpii
 
 Built on [`urchade/gliner_multi_pii-v1`](https://huggingface.co/urchade/gliner_multi_pii-v1) (GLiNER, **Microsoft mDeBERTa-v3** base + GLiNER head, Zaratiana et al. NAACL 2024). Per-domain LoRA adapters trained on `ai4privacy/pii-masking-300k`, `Isotonic/pii-masking-200k`, **NVIDIA Nemotron-PII** (`nvidia/Nemotron-PII`), TAB ECHR (Pilán et al. ACL 2022), MEDDOCAN (IBERLEF 2019), plus internal synth + adversarial subsets.

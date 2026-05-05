@@ -1,6 +1,6 @@
 # NULLPII
 
-Open-source npm library (Apache 2.0) that sanitizes PII from LLM prompts using `openai/privacy-filter` locally, with a reversible vault to restore original values in LLM responses. Backends: CPU, MPS, CUDA.
+Open-source npm library (Apache 2.0) that sanitizes PII from text locally using the `urchade/gliner_multi_pii-v1` GLiNER backbone + 5 per-domain LoRA adapters, with a reversible in-memory vault to restore original values from downstream responses. Backends: CPU, MPS, CUDA.
 
 ## Commands
 

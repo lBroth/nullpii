@@ -24,7 +24,7 @@ export function buildProgram(): Command {
   const program = new Command();
   program
     .name('nullpii')
-    .description('Sanitize PII from LLM prompts locally with a reversible vault.')
+    .description('Sanitize PII from text locally with a reversible vault.')
     .version(readPackageVersion(), '-v, --version', 'print the nullpii version');
 
   registerScan(program);

@@ -64,11 +64,11 @@ The `medical` (non-experimental) variant ships once all five rows turn green.
 
 Total: ~16k records.
 
-**MEDDOCAN test split is held out** from this training and is scoped as a v10 / v11 bench addition (see [`../V10_PLAN.md`](../V10_PLAN.md) Phase 5+).
+**MEDDOCAN test split is held out** from this training and is scoped as a future bench addition.
 
 ## Training procedure
 
-Same recipe as other v10 LoRA adapters. See [`../TRAINING.md`](../TRAINING.md).
+LoRA r=16, alpha=32, target `q_proj`/`k_proj`/`v_proj` of the inner mDeBERTa encoder. AdamW, BF16, 1e-4 cosine schedule, 100-step warmup, batch 8 (effective ×2 via grad accumulation), max-len 384, 2-4 epochs early-stopped. Single 5090 (32 GB), ~50-150 min per adapter.
 
 ## Evaluation
 

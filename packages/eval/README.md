@@ -1,6 +1,11 @@
 # nullpii eval
 
-Internal research kit. Python 3.12, gitignored — not part of the npm publish surface. Powers the v10 release bench (see [`docs/v10/V10_PLAN.md`](../../docs/v10/V10_PLAN.md)) and per-domain LoRA training.
+Bench reproduction kit for `nullpii` v0.1.0. Python 3.12, gitignored —
+not part of the npm publish surface. Powers the canonical 10-dataset
+hobby-bench published at [`packages/eval/published-bench/matrix.csv`](published-bench/matrix.csv).
+
+Training scripts + internal journal live under `packages/eval/private/`
+(local-only, not part of this release surface).
 
 ## Setup
 
@@ -11,68 +16,99 @@ source .venv/bin/activate
 pip install -e ".[presidio]" presidio-evaluator datasets
 ```
 
-## Bench
+## Reproduce the bench
 
-`scripts/bench_full.py` runs a `tool × dataset` matrix with checkpoint resume. Output: `matrix.json` (per-cell F1 / wall / throughput) + `matrix.csv` (pivot).
+`scripts/bench_full.py` runs a `tool × dataset` matrix with checkpoint
+resume. Output: `matrix.json` (per-cell F1 / wall / throughput) +
+`matrix.csv` (pivot).
 
 ```bash
-# Canonical release row (`nullpii` = subprocess of the local npm build)
-# plus selected baselines, default caps. NULLPII_MODEL_DIR points the
-# subprocess at a staged model dir (defaults to ~/.cache/nullpii on
-# first run if unset).
+# Canonical hobby-bench: 8 tools × 10 datasets, Mac CPU.
+# NULLPII_MODEL_DIR points the nullpii subprocess at a staged model dir
+# (defaults to ~/.cache/nullpii on first run if unset).
 NULLPII_MODEL_DIR=/tmp/nullpii-stack-test \
 python -u scripts/bench_full.py \
-  --tools nullpii,presidio,nemotron-pii-raw,piiranha,deberta,gliner-onnx-pii-fp32,openai-bioes \
-  --datasets all \
+  --tools nullpii,nullpii-v10-router-embedding,presidio,nemotron-pii-raw,piiranha,deberta,gliner-onnx-pii-fp32,gliner-pii-large-v1 \
+  --datasets nullpii-bench,tab-echr,nemotron-pii-test,presidio-synthetic,ai4privacy-300k-heldout-v10,isotonic-en-heldout-v10,isotonic-de-heldout-v10,adversarial-typo,adversarial-unicode,adversarial-code \
   --backend cpu \
   --out-dir results/$(date +%Y%m%d)-bench
 ```
 
-Override caps with `--max-per-dataset N` (global cap) or `--no-cap` (full).
+Override caps with `--max-per-dataset N` (global cap) or `--no-cap`
+(full). Single-tool re-run: `--tools nullpii-v10-router-embedding`.
 
-### Tool surface
+### Tool surface (8 rows)
 
-`nullpii` (subprocess of the local npm build) + bare third-party baselines: **Microsoft Presidio**, GLiNER family (`urchade/gliner_multi_pii-v1`, `gliner-x-*`, `gliner-pii-*`, `gliner2-*`, `modern-gliner-bi`, `gliner-multi-pii-domains`), `iiiorg/piiranha`, **Microsoft DeBERTa**-v3 community fine-tune, scrubadub, **NVIDIA Nemotron-PII** (`nvidia/gliner-pii`), **OpenAI** `openai/privacy-filter` in three usage modes (naive HF / BIOES / opf-Viterbi). Optional cloud rows (AWS Comprehend / GCP DLP / Azure PII) opt-in via `--tools`. None of the bare rows wrap nullpii post-processing. See [`COMPETITIVE_ANALYSIS.md`](../../COMPETITIVE_ANALYSIS.md) for the full methodology.
+`nullpii` (subprocess of the local npm build, the canonical user-facing
+row) + `nullpii-v10-router-embedding` (Python re-impl of the same
+pipeline, sanity check) + bare third-party baselines:
 
-### Dataset surface
+- **Microsoft Presidio** (`presidio`)
+- **NVIDIA Nemotron-PII** raw (`nemotron-pii-raw`)
+- `iiiorg/piiranha` (`piiranha`)
+- **Microsoft DeBERTa**-v3 community fine-tune (`deberta`)
+- GLiNER ONNX FP32 (`gliner-onnx-pii-fp32`)
+- `gliner-pii-large-v1` (knowledgator, popular HF)
 
-19 PII-native canonical datasets. Listed in [`docs/v10/V10_PLAN.md`](../../docs/v10/V10_PLAN.md) "Release gating" with rationale for the 5 excluded rows (wikiann × 3, adversarial-decoys, composite nullpii-adversarial).
+Bare-mode contract: no nullpii post-processing leaks into competitor
+rows. Only universal NER-bench plumbing (1400/200 char chunking +
+per-tool label remap to nullpii's 8-class). See
+[`COMPETITIVE_ANALYSIS.md`](../../COMPETITIVE_ANALYSIS.md) for full
+methodology.
+
+### Dataset surface (10 rows)
+
+| Dataset | Source | Bucket |
+|---|---|---|
+| `nullpii-bench` | bundled (`datasets/nullpii-bench.jsonl`) | in-distribution disclosed |
+| `tab-echr` | bundled (`datasets/tab-echr-test.jsonl`) | in-distribution disclosed |
+| `nemotron-pii-test` | HF `nvidia/Nemotron-PII` test split | in-distribution disclosed |
+| `presidio-synthetic` | HF `presidio-research/presidio-synthetic` | held-out non-adversarial |
+| `ai4privacy-300k-heldout-v10` | HF `ai4privacy/pii-masking-300k` offset 100k+ | held-out non-adversarial |
+| `isotonic-en-heldout-v10` | HF `Isotonic/pii-masking-200k` offset 200k+ | held-out non-adversarial |
+| `isotonic-de-heldout-v10` | HF `Isotonic/pii-masking-200k` offset 200k+ | held-out non-adversarial |
+| `adversarial-typo` | bundled (`datasets/nullpii-adversarial.jsonl`) | adversarial preprocessor |
+| `adversarial-unicode` | bundled | adversarial preprocessor |
+| `adversarial-code` | bundled | adversarial preprocessor |
+
+See [`datasets/README.md`](datasets/README.md) for the full bundled
+inventory (also includes private extended-bench rows).
 
 ## Other scripts
 
 | Script | Purpose |
 |---|---|
 | `scripts/bench_latency.py` | Per-tool latency p50/p95 measurements |
-| `scripts/bench_openai_decoders.py` | reference comparison only — naive HF / BIOES / Viterbi delta on `openai/privacy-filter` (a competitor model, not nullpii's base). nullpii's base model is `urchade/gliner_multi_pii-v1` |
+| `scripts/bench_openai_decoders.py` | Reference comparison: naive HF / BIOES / Viterbi delta on `openai/privacy-filter` (competitor, not nullpii's base) |
+| `scripts/confusion_report.py` | Cross-tool confusion matrix from `matrix.json` |
 | `scripts/failure_analysis.py` | Top-K FN/FP per label per tool |
 | `scripts/report_per_class.py` | Per-label precision/recall breakdown |
-| `scripts/generate_adversarial_bench.py` | Synthesize `nullpii-adversarial.jsonl` |
-| `scripts/generate_textattack_adversarial.py` | TextAttack-perturbed corpus from ai4privacy 0–500 |
-| `scripts/generate_dev_paste_synth.py` | Faker-based dev-paste synthetic train data |
-| `scripts/sample_cc_negative.py` | Common Crawl negative-class sampler |
-| `scripts/meddocan_loader.py` | MEDDOCAN loader (medical Spanish) |
-| `scripts/train/prepare_v10_corpora.py` | Build per-domain training corpora |
-| `scripts/train/build_router_embeddings.py` | Build distiluse prototype vectors |
-| `scripts/train/build_nemotron_corpus.py` | Convert `nvidia/Nemotron-PII` train → GLiNER format |
-| `scripts/train/build_us_formats_corpus.py` | Faker-based US-format synthetic corpus |
-| `scripts/train/qualitative_compare.py` | Side-by-side span comparison across tools |
+| `scripts/verify_claims.py` | `CLAIM-VERIFIER-01` — re-run Presidio / piiranha vendor numbers under standard methodology (span IoU ≥ 0.5, label-agnostic, seqeval) |
+| `scripts/release/` | HF push pipeline (CI-only — `push-to-hf.sh` + ONNX export utilities) |
 
 ## Bundled datasets
 
-`datasets/` (Apache 2.0, project-internal):
+`datasets/` (Apache 2.0, project-internal — see
+[`datasets/README.md`](datasets/README.md) for full inventory + schema).
 
-| File | n | Notes |
-|---|--:|---|
-| `nullpii-bench.jsonl` | 264 | Project-bundled OOD bench (curated + long real-world prompts) |
-| `tab-echr-test.jsonl` | 127 | TAB ECHR test split (legal, EU court rulings) |
-| `nullpii-adversarial.jsonl` | 480 | 6 subsets: typo / unicode / whitespace / encoding / decoys / code |
-| `nullpii-adversarial-textattack.jsonl` | 1670 | TextAttack-perturbed ai4privacy 0–500 |
-| `dev-paste-synth-train.jsonl` | ~30k | Synthetic dev-paste training corpus (Faker) |
-| `cc-negative-25k.jsonl` | 25k | Common Crawl negative-class samples |
-| `cc-negative-200-test.jsonl` | 200 | CC-neg validation slice |
+| File | Rows | In canonical 10? |
+|---|--:|:---:|
+| `nullpii-bench.jsonl` | 271 | ✅ |
+| `tab-echr-test.jsonl` | 127 | ✅ |
+| `nullpii-adversarial.jsonl` | 480 | ✅ (typo/unicode/code subsets) |
+| `nullpii-adversarial-textattack.jsonl` | 1670 | ❌ private extended-bench |
+| `dev-paste-synth-train.jsonl` | ~20k | training-only |
+| `cc-negative-25k.jsonl` | 25k | training-only |
+| `cc-negative-200-test.jsonl` | 200 | diagnostics-only |
 
-External datasets (loaded on demand by `nullpii_eval.public_datasets`): `ai4privacy/pii-masking-300k`, `ai4privacy/pii-masking-400k`, `Isotonic/pii-masking-200k`, `argilla/textcat-tokencat-pii-per-domain`, `nvidia/Nemotron-PII`, `presidio-research/presidio-synthetic`.
+External datasets (loaded on demand by `nullpii_eval.public_datasets`):
+`ai4privacy/pii-masking-300k`, `Isotonic/pii-masking-200k`,
+`nvidia/Nemotron-PII`, `presidio-research/presidio-synthetic`,
+`argilla/textcat-tokencat-pii-per-domain`.
 
-## v10 LoRA training
+## Model cards
 
-Per-domain adapters (~3.4 MB each) trained on `urchade/gliner_multi_pii-v1` with `peft` LoRA targeting `q_proj`/`k_proj`/`v_proj` of the inner mDeBERTa encoder. See [`docs/v10/TRAINING.md`](../../docs/v10/TRAINING.md) for the public training-procedure summary (Art. 53). Training scripts live under `packages/eval/private/train/` (internal).
+[`docs/v10/model-cards/`](../../docs/v10/model-cards/) — published
+alongside the HF artifacts (`lBroth/nullpii-v10-router-embedding`).
+Per-adapter cards include training data composition + train-vs-eval
+overlap matrix for in-distribution disclosure.

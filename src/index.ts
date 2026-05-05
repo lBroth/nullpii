@@ -1,6 +1,7 @@
 //
-// Public API surface. Internal modules (`labels-bioes`, `viterbi`,
-// `span-decoder`, `tokenizer`, `hf-hub`) are deliberately not re-exported.
+// Public API surface. Internal modules (`gliner-tokenizer`,
+// `gliner-spans`, `gliner-decoder`, `hf-hub`) are deliberately not
+// re-exported.
 
 // Errors
 export {
@@ -25,7 +26,6 @@ export {
   type BackendProvider,
   type InferenceInputs,
   type InferenceOutputs,
-  type ModelRefConfig,
   type ModelVariant,
   type NullPiiConfig,
   type Recognizer,

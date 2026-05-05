@@ -1,6 +1,6 @@
 {
   "name": "nullpii",
-  "version": "0.0.7",
+  "version": "0.1.0",
   "description": "Sanitize PII from LLM prompts locally. Reversible vault. Zero cloud calls. Multi-backend (CPU/MPS/CUDA).",
   "license": "Apache-2.0",
   "type": "module",

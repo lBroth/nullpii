@@ -1,9 +1,6 @@
-/**
- * Ordered tuple of every PII label produced by `openai/privacy-filter`.
- * The 8 categories are exactly those documented in the upstream model card,
- * plus `'O'` (outside any span). See `packages/convert/artifacts/manifest.json`
- * for the pinned upstream revision.
- */
+/** Ordered tuple of nullpii's 8 PII categories (plus `'O'` for legacy
+ * compatibility — never emitted). Matches the GLiNER prompt vocabulary
+ * and the per-domain LoRA training labels. */
 export const PII_LABELS = [
   'O',
   'account_number',

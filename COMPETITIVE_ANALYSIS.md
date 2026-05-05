@@ -6,7 +6,11 @@ Snapshot 2026-05-04. Used to position `nullpii` against the existing landscape a
 
 ## Empirical bench numbers
 
-> **Status**: v10 release-candidate. Unified release bench is **pending** (overnight Mac CPU run). Methodology + bench surface below; numerical results land in `packages/eval/results/bench-v10-release-local/matrix.{json,csv}` once the run completes.
+> **Status**: first release. Local Mac CPU bench complete; numerical results at `packages/eval/published-bench/matrix.{json,csv}`. Methodology + bench surface documented below.
+
+> **Active caveats on the published bench cells**:
+> - `TUNE-ENTGATE-01` — enterprise-route gate margin (`0.10`) was tuned on `nullpii-bench`. Margin sweep + held-out routing-eval pending v11. See [`docs/v10/model-cards/router-embedding.md`](docs/v10/model-cards/router-embedding.md) § Limitations.
+> - `LEAK-NEMO-ENTERPRISE-01` — the `enterprise` LoRA was trained on **NVIDIA Nemotron-PII** (`nvidia/Nemotron-PII`) train split. `nemotron-pii-test` is in-distribution generalisation, not OOD. Retrain on Faker-only US-formats scheduled for v11.
 
 ### Bench surface (`packages/eval/scripts/bench_full.py`)
 
@@ -15,18 +19,17 @@ Snapshot 2026-05-04. Used to position `nullpii` against the existing landscape a
 | Tool | Wrapping |
 |---|---|
 | `nullpii-v10-router-embedding` | distiluse + 5 LoRA adapters (router-fallback over `urchade/gliner_multi_pii-v1`) |
-| `nullpii-v10-router-xlmr` | xlm-roberta classifier + 4 LoRA adapters (same backbone) |
-| `presidio` | bare upstream defaults |
-| `gliner-onnx-pii-fp32` | bare HF inference (`urchade/gliner_multi_pii-v1`) |
-| `piiranha` | bare upstream defaults (`iiiorg/piiranha-v1-detect-personal-information`) |
-| `deberta` | bare upstream defaults (`lakshyakh93/deberta_finetuned_pii`) |
+| `presidio` | **Microsoft Presidio Analyzer** — bare upstream defaults |
+| `gliner-onnx-pii-fp32` | bare HF inference of `urchade/gliner_multi_pii-v1` (GLiNER, Zaratiana et al., NAACL 2024) |
+| `piiranha` | `iiiorg/piiranha-v1-detect-personal-information` — bare upstream defaults |
+| `deberta` | `lakshyakh93/deberta_finetuned_pii` — community fine-tune of **Microsoft DeBERTa-v3** |
 | `scrubadub` | bare upstream defaults |
-| `nemotron-pii-raw` | bare (`nvidia/gliner-pii`, label remap only) |
+| `nemotron-pii-raw` | **NVIDIA Nemotron-PII** (`nvidia/gliner-pii`) — bare upstream + 55→8 label remap |
 | `openai` | HF `transformers.pipeline()` naive aggregation (`openai/privacy-filter`) |
 | `openai-bioes` | Python BIOES decoder, no Viterbi |
 | `openai-official` | full opf CLI Viterbi (model-card-correct) |
 
-**Strict bare-mode contract**: no competitor row wraps `boundary_refined`, `never_pii_filter`, `url_filter`, `regex_pack`, or chunking glue from nullpii. Each tool runs as its upstream project intends.
+**Strict bare-mode contract**: no competitor row wraps `boundary_refined`, `never_pii_filter`, `url_filter`, `regex_pack`, or `_normalize_for_detection` (NFKC + unidecode + zero-width strip + HTML entity decode + URL %XX decode + spaced-PII despace). Each tool runs as its upstream project intends. The only adapter glue applied uniformly across GLiNER-family bare baselines is the chunking 1400/200 stride (so long-doc handling is fair across `gliner-onnx-pii-fp32`, `gliner-x-*`, `gliner-pii-*-v1`, `modern-gliner-bi-*`, `gliner-multi-pii-domains-v1`, `gliner2-*-v1`, `nemotron-pii-raw`) plus per-tool label remap to the 8-class schema (presidio, deberta, nemotron-pii — the bench bridge needed for F1 comparability, common to any cross-schema NER eval).
 
 Cloud rows (`aws-comprehend`, `gcp-dlp`, `azure-pii`) are opt-in via `--tools` and excluded from the canonical release matrix (paid + lock-in).
 

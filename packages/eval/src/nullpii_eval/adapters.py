@@ -181,28 +181,28 @@ class _NullpiiServerPool:
 def nullpii_runtime_predictor(
     *,
     backend: str = "cpu",
-    variant: str = "int4",
+    model_dir: str | Path | None = None,
     threshold: float | None = None,
 ) -> Predictor:
-    """Predictor backed by the npm package's `scan --ndjson` mode.
+    """Predictor backed by the local nullpii npm package via `scan --ndjson`.
 
-    Spawns `node bin/nullpii.mjs scan --ndjson` once, loads the engine
-    in that subprocess, then streams texts in NDJSON form on stdin and
-    reads JSON-per-line span results from stdout. One model load for
-    the whole bench — no per-call startup cost.
+    Spawns `node bin/nullpii.mjs scan --ndjson` once, loads the full
+    router stack in that subprocess (distiluse encoder + embedding
+    router + 5 merged-LoRA GLiNER ONNX shards + recognizer pack +
+    vault), then streams texts in NDJSON form on stdin and reads
+    JSON-per-line span results from stdout. One model load — no
+    per-call startup cost.
 
-    This is the **npm runtime** path: `openai/privacy-filter` ONNX +
-    constrained Viterbi BIOES + chunking + recognizer post-pass +
-    in-memory vault. Tests whether the runtime adds value beyond the
-    bare model with proper Viterbi (\`openai-official\`).
+    This is the canonical "what the user gets via `npm i nullpii`" row.
+    Built from the local repo (`dist/cli/index.js`), not the npm
+    registry — bench measures the same code that will publish.
     """
     if not NULLPII_BIN.is_file():
         raise FileNotFoundError(f"nullpii CLI not found at {NULLPII_BIN}")
 
-    argv = [
-        "node", str(NULLPII_BIN), "scan", "--ndjson",
-        "--backend", backend, "--variant", variant,
-    ]
+    argv = ["node", str(NULLPII_BIN), "scan", "--ndjson", "--backend", backend]
+    if model_dir is not None:
+        argv += ["--model-dir", str(model_dir)]
     if threshold is not None:
         argv += ["--threshold", str(threshold)]
 
@@ -2664,15 +2664,21 @@ def gliner_v2_predictor(
     local_files_only: bool = True,
     chunk_chars: int = 1400,
     overlap_chars: int = 200,
-    normalize_input: bool = False,
 ) -> Predictor:
-    """Predictor for our fine-tuned GLiNER (v2). Trained directly on the
-    nullpii 8-category schema, so no label remap — labels passed verbatim.
+    """Bare-mode predictor for upstream GLiNER models (Apache 2.0).
+    Trained on the nullpii 8-category schema — labels passed verbatim,
+    no remap.
+
+    Bare-mode contract: NO nullpii post-processing. No `_normalize_for_detection`,
+    no boundary refine, no never-PII filter, no regex pack. The chunking
+    1400/200 stride is the only adapter glue, applied uniformly across all
+    GLiNER-family bare baselines (`gliner-onnx-pii-fp32`, `gliner-x-*`,
+    `gliner-pii-*-v1`, `modern-gliner-bi-*`, `gliner-multi-pii-domains-v1`,
+    `gliner2-*-v1`, `nemotron-pii-raw`) so long-doc handling is fair.
 
     Loads either the PyTorch checkpoint (`onnx_file=None`) on the chosen
     device, or an exported ONNX model (`onnx_file="model_int4.onnx"`,
     forced to CPU since onnxruntime CPUExecutionProvider is what we ship).
-    Chunking + dedupe identical to gliner_chunked_predictor.
     """
     try:
         from gliner import GLiNER
@@ -2713,42 +2719,27 @@ def gliner_v2_predictor(
         t0 = time.perf_counter()
         spans: list[Span] = []
         scores: list[float] = []
-        if normalize_input:
-            inference_text, norm_to_orig = _normalize_for_detection(text)
-        else:
-            inference_text = text
-            norm_to_orig = None
-        text_len = len(inference_text)
+        text_len = len(text)
         if text_len <= chunk_chars:
-            for e in model.predict_entities(inference_text, _NULLPII_8, threshold=threshold):
-                ns, ne = int(e["start"]), int(e["end"])
-                if norm_to_orig is not None:
-                    os_, oe = _remap_span(ns, ne, norm_to_orig)
-                else:
-                    os_, oe = ns, ne
-                spans.append(Span(e["label"], os_, oe))
+            for e in model.predict_entities(text, _NULLPII_8, threshold=threshold):
+                spans.append(Span(e["label"], int(e["start"]), int(e["end"])))
                 scores.append(float(e.get("score", threshold)))
         else:
             stride = chunk_chars - overlap_chars
             spans_with_scores: list[tuple[Span, float]] = []
             for offset in range(0, text_len, stride):
-                chunk = inference_text[offset : offset + chunk_chars]
+                chunk = text[offset : offset + chunk_chars]
                 if not chunk:
                     break
                 for e in model.predict_entities(chunk, _NULLPII_8, threshold=threshold):
-                    ns_chunk, ne_chunk = int(e["start"]), int(e["end"])
-                    ns_full, ne_full = ns_chunk + offset, ne_chunk + offset
-                    if norm_to_orig is not None:
-                        os_, oe = _remap_span(ns_full, ne_full, norm_to_orig)
-                    else:
-                        os_, oe = ns_full, ne_full
+                    ns_full = int(e["start"]) + offset
+                    ne_full = int(e["end"]) + offset
                     spans_with_scores.append((
-                        Span(e["label"], os_, oe),
+                        Span(e["label"], ns_full, ne_full),
                         float(e.get("score", threshold)),
                     ))
                 if offset + chunk_chars >= text_len:
                     break
-            # Dedupe preserving the highest score per kept span.
             kept = _dedupe([sp for sp, _ in spans_with_scores])
             score_by_id = {id(sp): sc for sp, sc in spans_with_scores}
             for sp in kept:
@@ -2943,12 +2934,16 @@ def gliner_nemotron_pii_predictor(
     threshold: float = 0.3,
     chunk_chars: int = 1400,
     overlap_chars: int = 200,
-    normalize_input: bool = False,
 ) -> Predictor:
-    """Wrapper for `nvidia/gliner-PII` (Nemotron PII model). Predicts
-    on the 55+ Nemotron PII labels and maps each result back to nullpii's
-    8-class schema via `_NEMOTRON_TO_NULLPII8` so F1 is computed against
-    the same gold labels as our adapters.
+    """Bare-mode predictor for `nvidia/gliner-PII` (Nemotron PII).
+
+    Bare-mode contract: NO nullpii post-processing. No `_normalize_for_detection`,
+    no boundary refine, no never-PII filter, no regex pack. The 37→8 label
+    remap (`_NEMOTRON_TO_NULLPII8`) is the only adapter glue and is required
+    for F1 schema compatibility with the bench gold labels — every competitor
+    with a non-8-class schema has the same kind of bridge (presidio,
+    deberta, etc.). Chunking 1400/200 is shared across all GLiNER-family
+    bare baselines.
 
     Default threshold 0.3 follows Nvidia's evaluation recipe (model card).
     Backbone is `urchade/gliner_large-v2.1` (~600M params, 2× the size
@@ -2987,46 +2982,32 @@ def gliner_nemotron_pii_predictor(
         t0 = time.perf_counter()
         spans: list[Span] = []
         scores: list[float] = []
-        if normalize_input:
-            inference_text, norm_to_orig = _normalize_for_detection(text)
-        else:
-            inference_text = text
-            norm_to_orig = None
-        text_len = len(inference_text)
+        text_len = len(text)
         if text_len <= chunk_chars:
             entities = model.predict_entities(
-                inference_text, _NEMOTRON_PII_LABELS, threshold=threshold,
+                text, _NEMOTRON_PII_LABELS, threshold=threshold,
             )
             for e in entities:
                 mapped = _NEMOTRON_TO_NULLPII8.get(e["label"])
                 if mapped is None:
                     continue
-                ns, ne = int(e["start"]), int(e["end"])
-                if norm_to_orig is not None:
-                    os_, oe = _remap_span(ns, ne, norm_to_orig)
-                else:
-                    os_, oe = ns, ne
-                spans.append(Span(mapped, os_, oe))
+                spans.append(Span(mapped, int(e["start"]), int(e["end"])))
                 scores.append(float(e.get("score", threshold)))
         else:
             stride = chunk_chars - overlap_chars
             spans_with_scores: list[tuple[Span, float]] = []
             for offset in range(0, text_len, stride):
-                chunk = inference_text[offset:offset + chunk_chars]
+                chunk = text[offset:offset + chunk_chars]
                 if not chunk:
                     break
                 for e in model.predict_entities(chunk, _NEMOTRON_PII_LABELS, threshold=threshold):
                     mapped = _NEMOTRON_TO_NULLPII8.get(e["label"])
                     if mapped is None:
                         continue
-                    ns_chunk, ne_chunk = int(e["start"]), int(e["end"])
-                    ns_full, ne_full = ns_chunk + offset, ne_chunk + offset
-                    if norm_to_orig is not None:
-                        os_, oe = _remap_span(ns_full, ne_full, norm_to_orig)
-                    else:
-                        os_, oe = ns_full, ne_full
+                    ns_full = int(e["start"]) + offset
+                    ne_full = int(e["end"]) + offset
                     spans_with_scores.append((
-                        Span(mapped, os_, oe),
+                        Span(mapped, ns_full, ne_full),
                         float(e.get("score", threshold)),
                     ))
                 if offset + chunk_chars >= text_len:

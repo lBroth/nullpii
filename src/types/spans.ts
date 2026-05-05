@@ -13,7 +13,7 @@ export interface PiiSpan {
   readonly end: number;
   /** Predicted label for the span (never `'O'` — `'O'` spans are not emitted). */
   readonly label: Exclude<PiiLabel, 'O'>;
-  /** Mean softmax score across the span's BIOES tokens, in `[0, 1]`. */
+  /** sigmoid(logit) confidence in `[0, 1]` from the GLiNER span head. */
   readonly score: number;
   /** Verbatim slice of the original input — `text.slice(start, end)`. */
   readonly text: string;

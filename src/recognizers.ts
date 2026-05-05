@@ -1,7 +1,7 @@
 import type { PiiSpan, Recognizer } from './types/index.js';
 
 /**
- * AUDIT F22/F25: refuse to scan inputs > 1 MB. Unbounded `{N,}`
+ * refuse to scan inputs > 1 MB. Unbounded `{N,}`
  * quantifiers in upstream secret patterns are quadratic on
  * adversarial padding. 1 MB is well above any realistic LLM prompt.
  */
@@ -28,7 +28,7 @@ export function runRecognizers(
 }
 
 /**
- * AUDIT F25 partial port: drop spans that match well-known never-PII
+ * partial port: drop spans that match well-known never-PII
  * patterns. Reserved IP ranges, fictional NANP 555-01XX phones, RFC
  * 6761 reserved domains. Mirrors `_is_never_pii` in
  * `packages/eval/src/nullpii_eval/adapters.py`. Full preprocessor port

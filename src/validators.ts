@@ -34,7 +34,7 @@ for (let i = 0; i < BASE58_ALPHABET.length; i++) {
  * Decodes base58 → bytes; payload + 4-byte checksum;
  * SHA256(SHA256(payload))[:4] must equal checksum.
  *
- * AUDIT F07: drops false-positive matches on prose tokens that share
+ * drops false-positive matches on prose tokens that share
  * the base58 charset shape (e.g. `Order ID: 1A2B3C4D5E6F7G8H9J1K2L3M4N`)
  * but fail the cryptographic checksum.
  */

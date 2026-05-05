@@ -7,8 +7,6 @@ import {
   CACHE_MODELS_SUBDIR,
   DEFAULT_MODEL_REPO,
   DEFAULT_MODEL_REVISION,
-  DEFAULT_VARIANT,
-  MANAGER_DEFAULT_VARIANT,
 } from './defaults.js';
 import { InvalidPathError } from './errors.js';
 import { ensureFile } from './hf-hub.js';
@@ -17,23 +15,34 @@ import { MODEL_DOWNLOAD_TIMEOUT_MS, type ModelVariant } from './types/index.js';
 
 const log = debug('nullpii:model-manager');
 
-/** Files required at runtime for any backend. Variant-specific ONNX is added on demand. */
-const COMMON_FILES: readonly string[] = [
-  'config.json',
+/** Files required at runtime — full router stack manifest. The HF repo
+ * (`lBroth/nullpii-v10-router-embedding` by default) bundles:
+ *
+ *   - GLiNER backbone tokenizer + SPM (shared by all 5 adapter shards)
+ *   - distiluse sentence-encoder ONNX + its tokenizer (router input encoder)
+ *   - router prototypes JSON (5 domain centroids + gate margins)
+ *   - 5 merged-LoRA GLiNER ONNX (one per domain), under `v10-onnx-merged/`
+ *
+ * Total artifact size: ~6 GB FP32 (1.1 GB × 5 adapters + 514 MB distiluse).
+ * First-call download is one-shot; subsequent calls hit the local cache.
+ */
+const ROUTER_FILES: readonly string[] = [
+  // Shared GLiNER tokenizer + config (same across all per-domain shards).
   'tokenizer.json',
-  'tokenizer_config.json',
-  'viterbi_calibration.json',
+  'spm.model',
+  'gliner_config.json',
+  // Distiluse encoder + its tokenizer (router input vector).
+  'distiluse.onnx',
+  'distiluse-tokenizer.json',
+  // Prototypes + gate config.
+  'router-embeddings.json',
+  // Per-domain merged-LoRA ONNX shards.
+  'v10-onnx-merged/devops/model.onnx',
+  'v10-onnx-merged/legal/model.onnx',
+  'v10-onnx-merged/medical/model.onnx',
+  'v10-onnx-merged/narrative/model.onnx',
+  'v10-onnx-merged/enterprise/model.onnx',
 ];
-
-const VARIANT_FILES: Readonly<Record<Exclude<ModelVariant, 'auto'>, readonly string[]>> = {
-  fp32: [
-    'onnx/model.onnx',
-    'onnx/model.onnx_data',
-    'onnx/model.onnx_data_1',
-    'onnx/model.onnx_data_2',
-  ],
-  int4: ['onnx/model_q4.onnx', 'onnx/model_q4.onnx_data'],
-};
 
 /** Identifies which model artifact set to fetch. Pluggable so callers can
  * swap to a fork or alternative model without forking the library. */
@@ -87,22 +96,16 @@ export class ModelManager {
     return this.modelDirFor(DEFAULT_MODEL);
   }
 
-  /** Ensure all artifacts needed for `variant` are cached and verified. */
+  /** Ensure all router-stack artifacts are cached. The `variant` field
+   * on `EnsureOptions` is currently unused (all shards are FP32) but
+   * preserved for forward-compat with quantized-shard packs. */
   async ensure(options: EnsureOptions = {}): Promise<{ modelDir: string }> {
-    const variant = options.variant ?? DEFAULT_VARIANT;
-    const concrete = variant === 'auto' ? MANAGER_DEFAULT_VARIANT : variant;
     const model = options.model ?? DEFAULT_MODEL;
     const timeoutMs = options.timeoutMs ?? MODEL_DOWNLOAD_TIMEOUT_MS;
     const target = this.modelDirFor(model);
 
-    const required = [...COMMON_FILES, ...VARIANT_FILES[concrete]];
-    log(
-      'ensuring %d files for %s@%s variant=%s',
-      required.length,
-      model.repo,
-      model.revision.slice(0, 12),
-      concrete,
-    );
+    const required = ROUTER_FILES;
+    log('ensuring %d files for %s@%s', required.length, model.repo, model.revision.slice(0, 12));
 
     let done = 0;
     for (const f of required) {

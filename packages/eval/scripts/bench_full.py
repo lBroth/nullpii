@@ -64,6 +64,7 @@ from nullpii_eval.adapters import (
     gliner2_predictor,
     multi_ensemble_predictor,
     never_pii_filter_predictor,
+    nullpii_runtime_predictor,
     openai_bioes_predictor,
     openai_official_predictor,
     openai_pipeline_batch_predictor,
@@ -370,11 +371,25 @@ def build_tools(args) -> dict[str, Callable]:
         return routes
 
     builders: dict[str, Callable[[], Callable]] = {
-        # ─── nullpii v10 — TWO release-candidate routers ──────────────
-        # Multilingual embedding router (default candidate). distiluse
-        # sentence-transformer + 5 per-domain prototypes + cosine
-        # routing with enterprise gate (margin=0.10). 4 LoRA + embedder
-        # + base ≈ 430 MB.
+        # ─── nullpii — local npm runtime (canonical user-facing row) ──
+        # Spawns `node bin/nullpii.mjs scan --ndjson` from the local
+        # build (`dist/cli/index.js`). One model load, NDJSON streaming.
+        # This is the row that bench-as-published: identical pipeline
+        # to what `npm i nullpii` users get (distiluse encoder +
+        # embedding router + 5 merged-LoRA GLiNER + recognizer pack +
+        # vault). Requires `npm run build` and a populated model dir
+        # (env `NULLPII_MODEL_DIR`, default falls through to npm's
+        # default download cache).
+        "nullpii": lambda: nullpii_runtime_predictor(
+            backend="cpu" if backend == "cpu" else "cuda",
+            model_dir=os.environ.get("NULLPII_MODEL_DIR"),
+        ),
+        # ─── Python re-impl (legacy / dev-only — DEPRECATED) ───────────
+        # Composes the v10 router stack from individual library calls
+        # (gliner + peft for LoRA + custom Python ports of boundary
+        # refine / never-PII / URL filter / regex pack). Kept for
+        # ablations and legacy comparisons — DOES NOT match the npm
+        # runtime byte-for-byte. Prefer the `nullpii` row above.
         "nullpii-v10-router-embedding": lambda: (lambda r: domain_routed_predictor(
             detector=_v10_make_embedding_detector(
                 device="cpu" if backend == "cpu" else "cuda",

@@ -57,13 +57,43 @@ async function printRow(
   backendName: string,
   seqLen: number,
 ): Promise<void> {
+  // Synthetic GLiNER 6-input feed: seqLen tokens, half are "text words"
+  // (numWords = seqLen / 2), max_width = 12. Used purely for a wall-clock
+  // measurement of forward-pass latency — the actual content is dummy.
+  const numWords = Math.max(1, Math.floor(seqLen / 2));
+  const maxWidth = 12;
+  const numSpans = numWords * maxWidth;
   const ids = BigInt64Array.from(new Array(seqLen).fill(1n));
   const mask = BigInt64Array.from(new Array(seqLen).fill(1n));
-  await backend.infer({ inputIds: ids, attentionMask: mask });
+  const wordsMask = BigInt64Array.from(new Array(seqLen).fill(0n));
+  // Walk each "text word" position 1..numWords across the sequence to
+  // give the model some non-zero structure.
+  for (let i = 0; i < numWords && i < seqLen; i++) wordsMask[i] = BigInt(i + 1);
+  const spanIdx = new BigInt64Array(numSpans * 2);
+  const spanMask = new BigInt64Array(numSpans);
+  let p = 0;
+  for (let s = 0; s < numWords; s++) {
+    for (let w = 0; w < maxWidth; w++) {
+      spanIdx[p * 2] = BigInt(s);
+      spanIdx[p * 2 + 1] = BigInt(s + w);
+      spanMask[p] = s + w < numWords ? 1n : 0n;
+      p++;
+    }
+  }
+  const inputs = {
+    inputIds: ids,
+    attentionMask: mask,
+    wordsMask,
+    textLength: numWords,
+    spanIdx,
+    spanMask,
+    numSpans,
+  };
+  await backend.infer(inputs);
   let total = 0;
   for (let r = 0; r < RUNS; r++) {
     const t0 = performance.now();
-    await backend.infer({ inputIds: ids, attentionMask: mask });
+    await backend.infer(inputs);
     total += performance.now() - t0;
   }
   const avg = total / RUNS;

@@ -31,22 +31,14 @@ export const BACKEND_AUTO_PRIORITY: readonly Exclude<BackendName, 'auto'>[] = [
   'cpu',
 ];
 
-/** Variant the `ModelManager` downloads when `variant: 'auto'`.
- * `int4` (~875 MB, ~6% F1 drop) — small first-run footprint. Pin
- * `variant: 'fp32'` (~5 GB) when you need maximum accuracy or a
- * regression baseline. */
-export const MANAGER_DEFAULT_VARIANT: Exclude<ModelVariant, 'auto'> = 'int4';
-
-/** ONNX subdirectory inside a model directory. */
+/** ONNX subdirectory used by legacy single-shard backends (`OrtBackend`).
+ * The shipping `MultiOrtBackend` resolves shards via `v10-onnx-merged/`. */
 export const ONNX_SUBDIR = 'onnx';
 
 /** Tokenizer file name within a model directory. */
 export const TOKENIZER_FILE = 'tokenizer.json';
 
-/** Sigstore signature file name within a model directory (optional artifact). */
-export const SIGNATURE_FILE = 'model.sig';
-
-/** SHA256 sidecar suffix (`<file>.sha256`). */
+/** SHA256 sidecar suffix used by `hf-hub.ts`. */
 export const CHECKSUM_SUFFIX = '.sha256';
 
 /** XDG-style cache layout. Default: `$XDG_CACHE_HOME/nullpii/` if set,
@@ -54,13 +46,11 @@ export const CHECKSUM_SUFFIX = '.sha256';
 export const CACHE_DIR_NAME = 'nullpii';
 export const CACHE_MODELS_SUBDIR = 'models';
 
-/** Pinned default model registry entry. Pluggable: callers can pass
- * `model: { repo, revision }` in `NullPiiConfig` to swap. */
-export const DEFAULT_MODEL_REPO = 'openai/privacy-filter';
-export const DEFAULT_MODEL_REVISION = '7ffa9a043d54d1be65afb281eddf0ffbe629385b';
-
-/** Target HF mirror for the publish step (deferred). */
-export const TARGET_HF_REPO = 'nullpii/privacy-filter-onnx';
+/** Pinned default HF model repo. Hardcoded — full router stack
+ * (5 merged-LoRA ONNX shards + distiluse encoder + prototypes). See
+ * `model-manager.ts` for the file manifest. */
+export const DEFAULT_MODEL_REPO = 'lBroth/nullpii-v10-router-embedding';
+export const DEFAULT_MODEL_REVISION = 'main';
 
 /** Built-in recognizers auto-registered on every `NullPii` instance
  * unless the user passes `recognizers: 'none'` or supplies their own
@@ -98,7 +88,7 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     label: 'secret',
     confidence: 0.99,
   },
-  // AWS Bedrock long-lived. AUDIT F22: bounded.
+  // AWS Bedrock long-lived. bounded.
   {
     id: 'core:aws-bedrock',
     pattern: /\bABSK[A-Za-z0-9+/]{109,269}={0,2}/g,
@@ -388,7 +378,7 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
   },
 
   // ─── Account-number patterns ──────────────────────────────────
-  // IBAN — AUDIT F05: `\s?` (any whitespace) so PDF NBSP/U+202F separators
+  // IBAN — `\s?` (any whitespace) so PDF NBSP/U+202F separators
   // match. Validated via mod-97 checksum to drop coincidental country-prefix
   // shapes.
   {
@@ -407,7 +397,7 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     validate: luhnValid,
   },
   { id: 'core:ssn', pattern: /\b\d{3}-\d{2}-\d{4}\b/g, label: 'account_number', confidence: 0.9 },
-  // AUDIT F07: BTC Legacy/P2SH addresses validated via base58check
+  // BTC Legacy/P2SH addresses validated via base58check
   // checksum. Drops prose-token false positives that share the
   // base58 shape (e.g. `Order ID: 1A2B3C4D5E6F...`).
   {
@@ -443,14 +433,14 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     label: 'account_number',
     confidence: 0.85,
   },
-  // MAC — AUDIT F06: lookbehind/lookahead bound to single-octet boundary.
+  // MAC — lookbehind/lookahead bound to single-octet boundary.
   {
     id: 'core:mac',
     pattern: /(?<![:0-9A-Fa-f])[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}(?![:0-9A-Fa-f])/g,
     label: 'account_number',
     confidence: 0.85,
   },
-  // IPv4 — AUDIT F06: octet-bounded to reject version strings.
+  // IPv4 — octet-bounded to reject version strings.
   {
     id: 'core:ipv4',
     pattern: /\b(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}\b/g,
@@ -492,7 +482,7 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     confidence: 0.85,
   },
   { id: 'core:ein-us', pattern: /\b\d{2}-\d{7}\b/g, label: 'account_number', confidence: 0.85 },
-  // Italian Codice Fiscale — AUDIT F19. Validated via per-character
+  // Italian Codice Fiscale — Validated via per-character
   // odd/even position weights + final-letter check (drops shape
   // matches that don't satisfy the official checksum).
   {
@@ -510,7 +500,7 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     label: 'private_phone',
     confidence: 0.85,
   },
-  // Domestic IT (Tel: 02 3456789). AUDIT F09: REQUIRED leading context.
+  // Domestic IT (Tel: 02 3456789). REQUIRED leading context.
   {
     id: 'core:phone-it-domestic',
     pattern: /\b(?:tel|telefono|phone|cell|cellulare|mobile)[\s:.]+(0\d{1,2}[\s\-.]?\d{6,9})\b/gi,

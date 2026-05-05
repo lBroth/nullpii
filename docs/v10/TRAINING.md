@@ -4,7 +4,7 @@ EU AI Act Art. 53(1)(a) + NIST AI RMF Map 5.2 transparency disclosure for the v1
 
 ## Base model
 
-`urchade/gliner_multi_pii-v1` — GLiNER architecture (Zaratiana et al., NAACL 2024) with mDeBERTa-v3-base inner encoder + GLiNER head (RNN + span-rep + prompt-rep). ~278 M parameters total. Pre-trained on multilingual PII span detection across 50+ languages. Apache 2.0.
+`urchade/gliner_multi_pii-v1` — GLiNER architecture (Zaratiana et al., NAACL 2024) with **Microsoft mDeBERTa-v3** base inner encoder + GLiNER head (RNN + span-rep + prompt-rep). ~278 M parameters total. Pre-trained on multilingual PII span detection across 50+ languages. Apache 2.0.
 
 ## LoRA contract
 
@@ -14,7 +14,7 @@ EU AI Act Art. 53(1)(a) + NIST AI RMF Map 5.2 transparency disclosure for the v1
 |---|---|---:|---|
 | `devops` | dev-paste, code, secrets | ~37k | 5.10 → 2.94 |
 | `legal` | EU jurisprudence | ~18k | 4.85 → 3.21 |
-| `medical-experimental` | Spanish + English clinical | ~16k | 5.42 → 3.05 |
+| `medical` | Spanish + English clinical | ~16k | 5.42 → 3.05 |
 | `narrative` | multilingual prose (router fallback) | ~17k | 4.72 → 3.12 |
 | `enterprise` | US-business structured (Nemotron-aug) | ~15k | 10.06 → 3.91 |
 
@@ -55,17 +55,12 @@ Two routers are trained on top of the 5 LoRA adapters:
 
 ### `nullpii-v10-router-embedding` (default)
 
-- **Embedder**: `sentence-transformers/distiluse-base-multilingual-cased-v2` (~135 MB, frozen, no fine-tuning).
+- **Embedder**: **Google distiluse** `sentence-transformers/distiluse-base-multilingual-cased-v2` (~135 MB, frozen, no fine-tuning).
 - **Prototype vectors**: 5 × 512-dim, computed as the mean training-corpus embedding for each domain. Built once via `build_router_embeddings.py`; stored as `.npz`.
 - **Routing**: cosine similarity between input embedding and each prototype; argmax wins. The `enterprise` route is **gated** at margin ≥ 0.10 vs runner-up.
 - Total training cost: ~5 minutes (embedder inference over 5 corpora).
 
-### `nullpii-v10-router-xlmr`
-
-- **Classifier**: `FacebookAI/xlm-roberta-base` 4-way head fine-tuned over `{devops, legal, medical, narrative}`. Enterprise route NOT included.
-- **Training set**: union of the 4 per-domain corpora, labelled by source.
-- Hyperparameters: AdamW, LR 2e-5 cosine, 3 epochs, batch 16, BF16.
-- Hardware: single 5090, ~30 minutes.
+An xlm-roberta classifier router was also trained as an alternative architecture; it is held in `packages/eval/private/v10/large-candidate/` and may be revived for a v0.2 "large" variant. Not part of the v10 public release surface.
 
 ## Training data composition
 
@@ -73,7 +68,7 @@ Two routers are trained on top of the 5 LoRA adapters:
 |---|---|---|
 | `devops` | dev-paste-synth (Faker, ~20k) + ai4privacy 0–5k + isotonic en/de/fr/it 0–5k + cc-neg | Apache 2.0 / CC BY 4.0 / Apache 2.0 / ODC-BY |
 | `legal` | TAB ECHR train (5k chunks ≤200 tok) + ai4privacy 0–5k + Common Crawl legal-filtered (8k) | CC BY 4.0 / CC BY 4.0 / ODC-BY |
-| `medical-experimental` | MEDDOCAN train (`GuiGel/meddocan`, 10k) + ai4privacy medical filter (5k) + CC medical-filtered | CC BY 4.0 / CC BY 4.0 / ODC-BY |
+| `medical` | MEDDOCAN train (`GuiGel/meddocan`, 10k) + ai4privacy medical filter (5k) + CC medical-filtered | CC BY 4.0 / CC BY 4.0 / ODC-BY |
 | `narrative` | ai4privacy balanced subset (~6k) + isotonic en/de/fr (~7k) + cc-neg | CC BY 4.0 / Apache 2.0 / ODC-BY |
 | `enterprise` | `nvidia/Nemotron-PII` train (10k, 55-class → 8-class remap) + Faker `en_US` US-formats synth (5k) | CC BY 4.0 / Apache 2.0 |
 
@@ -88,7 +83,7 @@ Two routers are trained on top of the 5 LoRA adapters:
 
 Documented in [`model-cards/README.md`](model-cards/README.md#train-vs-eval-dataset-overlap). Key callouts:
 
-- `enterprise` adapter trained on Nemotron train split → bench on `nemotron-pii-test` is **in-distribution memorisation**, not OOD.
+- `enterprise` adapter trained on **NVIDIA Nemotron-PII** train split → bench on `nemotron-pii-test` is **in-distribution memorisation**, not OOD.
 - `legal` adapter trained on TAB ECHR train split → bench on `tab-echr` test split is **in-distribution generalisation** (disjoint rows, same dataset distribution).
 - `ai4privacy-300k-heldout-v10` (offset 100k+) and `isotonic-{en,de,fr}-heldout-v10` (offset 200k+) are the rows none of the v10 adapters saw.
 
@@ -96,10 +91,10 @@ Documented in [`model-cards/README.md`](model-cards/README.md#train-vs-eval-data
 
 - Bench harness (`packages/eval/scripts/bench_full.py`) is published.
 - Synthetic data generators (`generate_*.py`, `build_*.py`) are published with deterministic seeds.
-- LoRA training scripts (`train_lora.py`, `prepare_v10_corpora.py`, `build_router_embeddings.py`, `train_router_xlmr.py`) are internal because they reference pod IDs and local paths; the recipe above is sufficient to re-implement on equivalent hardware.
+- LoRA training scripts (`train_lora.py`, `prepare_v10_corpora.py`, `build_router_embeddings.py`) are internal because they reference pod IDs and local paths; the recipe above is sufficient to re-implement on equivalent hardware.
 - Trained weights are published on HuggingFace Hub (see [`model-cards/`](model-cards/)).
 
-Total time-to-reproduce on a 5090: ~7 GPU-hours for the 5-adapter set plus ~30 minutes for the xlm-roberta classifier router and ~5 minutes for the prototype embedder.
+Total time-to-reproduce on a 5090: ~7 GPU-hours for the 5-adapter set plus ~5 minutes for the prototype embedder.
 
 ## Change log
 

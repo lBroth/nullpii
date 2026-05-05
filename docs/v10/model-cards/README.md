@@ -1,14 +1,13 @@
 # nullpii v10 — model cards (draft, pre-HF push)
 
-Seven artifacts will publish to the HuggingFace Hub under `lBroth/`:
+Six artifacts will publish to the HuggingFace Hub under `lBroth/`:
 
 | Repo | Type | Card |
 |---|---|---|
-| `lBroth/nullpii-v10-router-embedding` | release-candidate router (default) | [`router-embedding.md`](router-embedding.md) |
-| `lBroth/nullpii-v10-router-xlmr` | release-candidate router (high-F1 alt) | [`router-xlmr.md`](router-xlmr.md) |
+| `lBroth/nullpii-v10-router-embedding` | shipping pipeline (distiluse + 5 LoRA, ~430 MB) | [`router-embedding.md`](router-embedding.md) |
 | `lBroth/nullpii-v10-devops-lora` | LoRA adapter | [`adapter-devops.md`](adapter-devops.md) |
 | `lBroth/nullpii-v10-legal-lora` | LoRA adapter | [`adapter-legal.md`](adapter-legal.md) |
-| `lBroth/nullpii-v10-medical-experimental-lora` | LoRA adapter (HIPAA-pending) | [`adapter-medical-experimental.md`](adapter-medical-experimental.md) |
+| `lBroth/nullpii-v10-medical-lora` | LoRA adapter (HIPAA-pending) | [`adapter-medical.md`](adapter-medical.md) |
 | `lBroth/nullpii-v10-narrative-lora` | LoRA adapter | [`adapter-narrative.md`](adapter-narrative.md) |
 | `lBroth/nullpii-v10-enterprise-lora` | LoRA adapter (Nemotron-aug) | [`adapter-enterprise.md`](adapter-enterprise.md) |
 
@@ -20,11 +19,11 @@ Cards are also the customer-facing source of truth for procurement / DPIA review
 
 ## Status
 
-🟢 **Bench complete (2026-05-05)**. Unified release bench output at `packages/eval/results/bench-v10-release-local/matrix.{json,csv}`. Mac M-series CPU, single seed, macro F1 IoU ≥ 0.5, 27 of 31 datasets benched (4 require gated HuggingFace access).
+🟢 **Bench complete (2026-05-05)**. Unified release bench output at `packages/eval/published-bench/matrix.{json,csv}`. Mac M-series CPU, single seed, macro F1 IoU ≥ 0.5, 27 of 31 datasets benched (4 require gated HuggingFace access).
 
-**Release decision**: `nullpii-v10-router-embedding` is the **shipping pipeline** (per release gating step 2). Aggregate F1 0.7172 (vs xlmr 0.7076, delta within ±0.02 → storage tiebreaker → ship distiluse 430 MB over xlmr 1.4 GB). distiluse wins `nullpii-bench` OOD gold standard +0.118 F1 and the adversarial subset +0.062.
+**Shipping pipeline**: `nullpii-v10-router-embedding` (distiluse + 5 LoRA, ~430 MB). Mixed F1 0.7172 across 27 datasets; honest held-out F1 0.7008 (non-adversarial). xlmr alt classifier router moved to `packages/eval/private/v10/large-candidate/` for eventual v0.2 "large" variant.
 
-**Pending**: bare-mode third-party baselines (Presidio, GLiNER-base, Piiranha, DeBERTa-PII, scrubadub, Nemotron-PII raw, openai naive/BIOES/Viterbi) require a longer 5090 GPU pass to publish defensible head-to-head numbers. Cards will refresh with delta-vs-competitor tables on that pass.
+**Bench framing**: Mac CPU local bench is the source of F1 numbers. Held-out vs in-distribution split documented per dataset (see overlap matrix below + `RED_TEAM_AUDIT_2026-05-05.md`).
 
 ## Train-vs-eval dataset overlap
 

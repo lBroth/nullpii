@@ -12,7 +12,7 @@ describe('ModelManager', () => {
     const cache = mkdtempSync(join(tmpdir(), 'nullpii-cache-'));
     const m = new ModelManager(cache);
     expect(m.modelDir.startsWith(cache)).toBe(true);
-    expect(m.modelDir).toContain('openai/privacy-filter');
+    expect(m.modelDir).toContain('lBroth/nullpii-v10-router-embedding');
   });
 
   it('refuses to escape its cache root if asked', () => {

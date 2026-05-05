@@ -77,16 +77,62 @@ No release tag, no main merge, no npm publish on the table. Work continues on th
 
 User direction (2026-05-05): focus on what's needed to have final benchmark data + a complete core. HF push, merged-LoRA ONNX export, held-out routing-eval corpus, and Portkey/LiteLLM shims are explicitly deferred — see "What is NOT on the work list right now" below.
 
-| # | Item | Local? | Effort | Unblocks |
+| # | Item | Local? | Effort | Status |
 |---|---|---|---|---|
-| 1 | **TS validators** still missing — Italian CF checksum, Luhn (CC), IBAN mod-97, Brazilian CPF mod-11 (mirrors the F07 base58check pattern) | ✅ local | 3-4 h | Drops FP on coincidental shape matches → core precision boost in npm runtime |
-| 2 | **Per-class confusion publisher** (`packages/eval/scripts/confusion_report.py`, new) — reads `matrix.json` + `confusion.json`, emits per-label TP/FP/FN tables in markdown | ✅ local | 2 h | DPIA per-class FN/FP rate buyer-facing table; also feeds the model cards' "known failure modes" sections |
-| 3 | **Multi-seed bench wrapper** + bootstrap 95% CIs (`packages/eval/scripts/bench_multiseed.py`, new) — runs 3 seeds, computes per-cell CIs, emits `matrix_ci.json` | ✅ local | 4-6 h code + ~5-6 h Mac CPU compute | Statistical significance — turns single-seed point estimates into defensible numbers (claims of ±0.005 F1 mean nothing without CIs) |
-| 4 | **Latency p50/p95 collector** (extend `packages/eval/scripts/bench_latency.py`) — Mac M-series locally now; Linux x86 + 5090 in a later cloud-GPU sprint | 🟡 partial local (Mac M only) | 4 h | Procurement SLA numbers; closes the DPIA "latency table placeholder" gap; also feeds the model cards' Latency line |
-| 5 | **DPIA template regen** (`docs/compliance/DPIA_TEMPLATE.md`) with v10 unified-bench numbers (currently has stale v6/v8 placeholders flagged by the strategic assessment) | ✅ local | 2 h | Removes the "DPIA tables stale" critical-blocker note from the strategic assessment |
-| 6 | **Bare-mode competitor matrix** on 5090 GPU (Presidio + GLiNER-base + piiranha + deberta + scrubadub + nemotron-pii-raw + openai naive/BIOES/Viterbi) | ☁ cloud GPU | 6-8 h GPU + setup | Final head-to-head F1 numbers in `COMPETITIVE_ANALYSIS.md`; model-card "competitor pending" notes go away |
+| 1 | **TS validators** (Luhn, IBAN-97, CPF, CF) wired into recognizers | ✅ local | 3-4 h | ✅ done 2026-05-05 (commit `d2dc4e6`) |
+| 2 | **Per-class confusion publisher** (`packages/eval/scripts/confusion_report.py`) | ✅ local | 2 h | ✅ done 2026-05-05 (commit `6e48f3e`) |
+| 3 | ~~Multi-seed bench wrapper~~ | — | — | **DROPPED** — single-version shipping; CIs not load-bearing for product positioning. Re-evaluate if a workshop paper is in scope |
+| 4 | **Latency p50/p95** Mac M-series via updated `bench_latency.py` (v10 router profiles) | ✅ local | 4 h | ✅ done 2026-05-05 (commit `8eaaa9f`) |
+| 4b | **Latency Linux x86 + 5090 GPU** rows | ☁ cloud GPU | 30 min GPU | 🔴 cloud sprint |
+| 5 | **DPIA template regen** (`docs/compliance/DPIA_TEMPLATE.md`) — gated on cloud sprint output (needs competitor F1 + GPU latency) | ✅ local once 4b+6 land | 2 h | 🔴 post-cloud |
+| 6 | **Bare-mode competitor matrix** on 5090 GPU (Presidio + GLiNER-base + piiranha + deberta + scrubadub + nemotron-pii-raw + openai naive/BIOES/Viterbi) | ☁ cloud GPU | 6-8 h GPU + setup | 🔴 cloud sprint |
 
-Order of attack: items 1-2-5 first (local, fast, all under 4 h each); then 3-4 (local but compute-bound); finally 6 (separate cloud-GPU sprint).
+### Pre-release red-team audit findings (2026-05-05) — must address before publishing
+
+Independent red-team auditor review (general-purpose subagent, 2026-05-05) surfaced 20 mechanisms by which the published numbers could be artificially inflated. Full report stored privately at `packages/eval/private/v10/RED_TEAM_AUDIT_2026-05-05.md`. Top 5 are **not publishable** until fixed:
+
+| ID | Finding | Severity | Fix path |
+|---|---|---|---|
+| **LEAK-TAB-LEGAL-01** | TAB ECHR test docs share 50-char shingles with **127/127** legal training chunks (60/127 verbatim 200-char windows). `tab-echr` row is in-distribution generalisation, not OOD. F1 0.886 likely 0.55-0.70 OOD | **Critical** | Strip `tab-echr` from headline 27-row macro → mark `tab-echr-INDIST`. OR retrain `legal` adapter on non-TAB corpus (HUDOC/EDGAR-redacted) |
+| **LEAK-NEMO-ENTERPRISE-01** | `enterprise` adapter trained on `nvidia/Nemotron-PII` train; benched on `nvidia/Nemotron-PII` test. Already disclosed in model card but still in headline macro F1 | **Critical** | Strip `nemotron-pii-test` from headline macro → mark `*-INDIST`, keep as in-distribution diagnostic |
+| **TUNE-ENTGATE-01** | `router.py:517-531` source comment admits 0.10 enterprise-gate margin chosen to maximise `nullpii-bench` F1. At margin=0.05, F1 drops 0.11. Entire +0.118 distiluse-vs-xlmr advantage on `nullpii-bench` is largely test-set-tuning artifact | **Critical** | Re-run with `gated_routes={"enterprise": x}` for `x ∈ {0.0, 0.05, 0.10, 0.15}`; publish range. Tune for real on a held-out routing-eval corpus when built |
+| **CONFIG-SHIPPED-01** | `src/defaults.ts:59` `DEFAULT_MODEL_REPO = 'openai/privacy-filter'`. The bench measures the v10 LoRA stack with router + LoRA adapters + regex pack. Users running `npm i nullpii` get a different system | **Critical** | Add a "default-config" column to README headline (run `bench_full.py --tools openai-bioes`) so users see what they actually get; OR ship merged-LoRA ONNX + flip `DEFAULT_MODEL_REPO` |
+| **LEAK-DEVPASTE-TEMPL-01** | `nullpii-bench` and `dev-paste-synth-train` share template family by construction (`*-templates.txt` source). Bench is in-template-family, not OOD | **Critical** | Reclassify `nullpii-bench` from "OOD gold standard" to "in-template-family but disjoint instances". Build a hand-curated OOD set from real LLM logs (with consent) for true OOD claims |
+
+High-severity findings (10 more — see private red-team report):
+
+- **LEAK-AI4-OFFSET-01** — `ai4privacy-300k` (offset 0) bench rows in train pool → drop, keep only heldout-v10 row.
+- **LEAK-TAB-GENERAL-01** — TAB train chunks also feed `general/` adapter (fallback); same leakage applies to all routes.
+- **LEAK-ISO-OFFSET0-01** — `isotonic-{en,de,fr,it}` offset-0 overlaps train pool (small Δ but disclose).
+- **ASYM-NORM-01** — `_normalize_for_detection` wrapped on v10 routers but NOT on bare baselines. Adversarial subset lift (~+0.47 on adv-unicode) is preprocessor, not model. Add `gliner-onnx-pii-fp32+norm` parallel rows so the lift is attributable.
+- **HARNESS-PARTIAL-IOU-01** — IoU ≥ 0.5 partial-match default; no strict-equality column. Macro 0.7172 → ~0.65 strict. Publish both columns.
+- **LANG-MACRO-MISLABEL-01** — `nullpii-bench` mixes en/it/de/fr/es into a single F1; per-locale gap hidden. Emit per-locale rows.
+- **LANG-CJK-OMITTED-01** — wikiann-{es,zh,ja} dropped without precision-only diagnostic surfaced in README.
+- **RECALL-HEADLINE-01** — macro F1 hides `private_address` recall 0.30, `secret` recall 0.07 (xlmr/nemotron). Add "worst-class recall" alongside macro F1 in README.
+- **TUNE-F11-NULLPII-BENCH** — F11 decision matrix in `AUDIT_2026-05-04.md:264-275` used `nullpii-bench` itself as one of 9 datasets; redo on a held-out set when the 500-doc routing-eval corpus exists.
+- **REPRO-RUNTIME-01 / SEED-VARIANCE-01** — no env-lock, no seed in `matrix.json`, no hardware fingerprint. Ship `pip freeze` + Python version + run 3 seeds for variance bound.
+
+Medium / Low (4):
+- **HARNESS-EMPTYDOC-01** — empty-gold docs + `adversarial-decoys` exclusion compound to hide FP rate; re-include decoys as precision-only diagnostic.
+- **LATENCY-COLDSTART-01** — `bench_latency.py:255-261` warm-only after one warmup pass; cold-start (~3-10 s) excluded. Add `cold_start_ms` field including adapter load.
+- **LATENCY-WALLS-01** — `bench_full.py:604-635` writes bogus `wall_s` / `samples_per_s` on full-resume cells (timer overhead only). Set to None when `done_idx + 1 == len(samples)` at start.
+- **LMSYS-ENRON-OMIT-01** — 4/31 datasets dropped silently (gated HF). The dropped 4 are the real-world long-text ones (Enron, lmsys, stackoverflow, thestack); replacement or HF-token CI required.
+
+#### Honest-numbers patch order (after cloud sprint produces competitor + GPU latency)
+
+1. Re-bench with `gated_routes={"enterprise": 0.0}` — publish margin sensitivity range.
+2. Strip `tab-echr` and `nemotron-pii-test` from headline 27-row macro; recompute `*-INDIST` columns.
+3. Add `--policy {partial,exact}` flag to `bench_full.py`; emit both columns in `matrix.csv`.
+4. Add per-locale split for `nullpii-bench` (en/it/de/fr/es).
+5. Add `cold_start_ms` to `bench_latency.py`.
+6. Fix `wall_s` / `samples_per_s` on resume in `bench_full.py:604-635`.
+7. Add `gliner-onnx-pii-fp32+norm` row so preprocessor lift is attributable.
+8. Add `default-config` row (`openai-bioes`) for what `npm i nullpii` ships today.
+9. README: add "worst-class recall" + "default-config F1" + "strict-match F1" columns alongside macro F1.
+10. Ship `pip freeze` + Python version + hardware fingerprint in the bench output dir.
+11. README: reclassify `nullpii-bench` as "in-template-family", not "OOD gold standard".
+
+Order of remaining work: **cloud sprint (4b + 6)** → **honest-numbers patch (above 11 steps)** → **DPIA regen (#5)** → **README + COMPETITIVE_ANALYSIS final refresh**.
 
 ### What is NOT on the work list right now
 

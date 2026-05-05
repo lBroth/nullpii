@@ -2,10 +2,10 @@
 """Export distiluse encoder to ONNX + prototypes npz → JSON.
 
 Outputs:
-  - `release/v10-router/distiluse.onnx` (encoder + tokenizer)
-  - `release/v10-router/distiluse-tokenizer.json`
-  - `release/v10-router/distiluse-spm.model`
-  - `release/v10-router/router-embeddings.json` (prototypes + domain order)
+  - `release/router/distiluse.onnx` (encoder + tokenizer)
+  - `release/router/distiluse-tokenizer.json`
+  - `release/router/distiluse-spm.model`
+  - `release/router/router-embeddings.json` (prototypes + domain order)
 
 Run:
     python packages/eval/scripts/release/export_router_artifacts.py
@@ -119,9 +119,9 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawTextHelpFormatter)
     ap.add_argument("--prototypes", type=Path,
-                    default=Path("packages/eval/v10-weights/router/router-embeddings.npz"))
+                    default=Path("packages/eval/weights/router/router-embeddings.npz"))
     ap.add_argument("--out-dir", type=Path,
-                    default=Path("packages/eval/results/release/v10-router"))
+                    default=Path("packages/eval/results/release/router"))
     args = ap.parse_args()
 
     export_distiluse(args.out_dir)

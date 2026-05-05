@@ -1,4 +1,4 @@
-dataset,n,total_n,nullpii-v10-router-embedding
+dataset,n,total_n,nullpii-router-embedding
 adversarial-code,80,80,1.0000
 adversarial-encoding,80,80,0.1216
 adversarial-textattack,1.7k,1.7k,0.6900
@@ -6,16 +6,16 @@ adversarial-typo,80,80,0.9400
 adversarial-unicode,80,80,0.9358
 adversarial-whitespace,80,80,0.3932
 ai4privacy-300k,5k,209k,0.5336
-ai4privacy-300k-heldout-v10,5k,109k,0.5283
+ai4privacy-300k-heldout,5k,109k,0.5283
 ai4privacy-400k,5k,400k,0.5554
 argilla-pii,2k,2.1k,0.6002
 enron-planted,,,
 isotonic-de,5k,209k,0.8743
-isotonic-de-heldout-v10,5k,109k,0.8746
+isotonic-de-heldout,5k,109k,0.8746
 isotonic-en,5k,209k,0.8783
-isotonic-en-heldout-v10,5k,109k,0.8671
+isotonic-en-heldout,5k,109k,0.8671
 isotonic-fr,5k,209k,0.8600
-isotonic-fr-heldout-v10,5k,109k,0.8619
+isotonic-fr-heldout,5k,109k,0.8619
 isotonic-it,5k,209k,0.8647
 lmsys-dev-planted,,,
 nemotron-pii-test,5k,100k,0.7602

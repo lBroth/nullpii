@@ -1,6 +1,6 @@
 {
   "nullpii-bench": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "private_email": {
         "tp": 138,
         "fp": 6,
@@ -44,7 +44,7 @@
     }
   },
   "adversarial-typo": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "private_email": {
         "tp": 15,
         "fp": 0,
@@ -68,7 +68,7 @@
     }
   },
   "adversarial-unicode": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "private_email": {
         "tp": 19,
         "fp": 0,
@@ -87,7 +87,7 @@
     }
   },
   "adversarial-whitespace": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "private_email": {
         "tp": 0,
         "fp": 0,
@@ -106,7 +106,7 @@
     }
   },
   "adversarial-encoding": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "private_email": {
         "tp": 2,
         "fp": 0,
@@ -135,7 +135,7 @@
     }
   },
   "adversarial-code": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "private_email": {
         "tp": 22,
         "fp": 0,
@@ -154,7 +154,7 @@
     }
   },
   "adversarial-textattack": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "private_email": {
         "tp": 760,
         "fp": 37,
@@ -188,7 +188,7 @@
     }
   },
   "textattack-homoglyph": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "private_email": {
         "tp": 148,
         "fp": 9,
@@ -222,7 +222,7 @@
     }
   },
   "textattack-charswap": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "private_email": {
         "tp": 153,
         "fp": 7,
@@ -256,7 +256,7 @@
     }
   },
   "textattack-chardelete": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "private_email": {
         "tp": 151,
         "fp": 7,
@@ -290,7 +290,7 @@
     }
   },
   "textattack-charinsert": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "private_email": {
         "tp": 154,
         "fp": 7,
@@ -324,7 +324,7 @@
     }
   },
   "textattack-charsub": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "private_email": {
         "tp": 154,
         "fp": 7,
@@ -358,7 +358,7 @@
     }
   },
   "tab-echr": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "private_date": {
         "tp": 2346,
         "fp": 158,
@@ -377,7 +377,7 @@
     }
   },
   "oasst-dev-planted": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "private_email": {
         "tp": 1,
         "fp": 0,
@@ -421,7 +421,7 @@
     }
   },
   "presidio-synthetic": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "private_email": {
         "tp": 139,
         "fp": 0,
@@ -460,7 +460,7 @@
     }
   },
   "ai4privacy-400k": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "private_email": {
         "tp": 1237,
         "fp": 16,
@@ -504,7 +504,7 @@
     }
   },
   "ai4privacy-300k": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "private_email": {
         "tp": 1478,
         "fp": 97,
@@ -548,7 +548,7 @@
     }
   },
   "isotonic-en": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "private_email": {
         "tp": 455,
         "fp": 4,
@@ -592,7 +592,7 @@
     }
   },
   "isotonic-de": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "private_email": {
         "tp": 450,
         "fp": 4,
@@ -636,7 +636,7 @@
     }
   },
   "isotonic-fr": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "private_email": {
         "tp": 429,
         "fp": 1,
@@ -680,7 +680,7 @@
     }
   },
   "isotonic-it": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "private_email": {
         "tp": 446,
         "fp": 2,
@@ -723,8 +723,8 @@
       }
     }
   },
-  "ai4privacy-300k-heldout-v10": {
-    "nullpii-v10-router-embedding": {
+  "ai4privacy-300k-heldout": {
+    "nullpii-router-embedding": {
       "private_email": {
         "tp": 1610,
         "fp": 60,
@@ -768,7 +768,7 @@
     }
   },
   "argilla-pii": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "private_email": {
         "tp": 167,
         "fp": 0,
@@ -812,7 +812,7 @@
     }
   },
   "nemotron-pii-test": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "private_email": {
         "tp": 2132,
         "fp": 6,
@@ -855,8 +855,8 @@
       }
     }
   },
-  "isotonic-en-heldout-v10": {
-    "nullpii-v10-router-embedding": {
+  "isotonic-en-heldout": {
+    "nullpii-router-embedding": {
       "private_email": {
         "tp": 483,
         "fp": 3,
@@ -899,8 +899,8 @@
       }
     }
   },
-  "isotonic-de-heldout-v10": {
-    "nullpii-v10-router-embedding": {
+  "isotonic-de-heldout": {
+    "nullpii-router-embedding": {
       "private_email": {
         "tp": 419,
         "fp": 3,
@@ -943,8 +943,8 @@
       }
     }
   },
-  "isotonic-fr-heldout-v10": {
-    "nullpii-v10-router-embedding": {
+  "isotonic-fr-heldout": {
+    "nullpii-router-embedding": {
       "private_email": {
         "tp": 430,
         "fp": 1,

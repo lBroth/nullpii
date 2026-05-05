@@ -1,6 +1,6 @@
 {
   "nullpii-bench": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.7279520338884612,
       "wall_s": 9.575008880347013e-05,
@@ -10,7 +10,7 @@
     }
   },
   "adversarial-typo": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.9400000000000001,
       "wall_s": 5.420797970145941e-05,
@@ -20,7 +20,7 @@
     }
   },
   "adversarial-unicode": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.9357829162707212,
       "wall_s": 4.9958936870098114e-05,
@@ -30,7 +30,7 @@
     }
   },
   "adversarial-whitespace": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.39319552110249784,
       "wall_s": 7.358402945101261e-05,
@@ -40,7 +40,7 @@
     }
   },
   "adversarial-encoding": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.12158968850698174,
       "wall_s": 5.8041070587933064e-05,
@@ -50,7 +50,7 @@
     }
   },
   "adversarial-code": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "status": "OK",
       "f1": 1.0,
       "wall_s": 5.9416983276605606e-05,
@@ -60,7 +60,7 @@
     }
   },
   "adversarial-textattack": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.690007858202288,
       "wall_s": 8.454208727926016e-05,
@@ -70,7 +70,7 @@
     }
   },
   "textattack-homoglyph": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.662322166949575,
       "wall_s": 7.262500002980232e-05,
@@ -80,7 +80,7 @@
     }
   },
   "textattack-charswap": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.7203206749669745,
       "wall_s": 0.00011641695164144039,
@@ -90,7 +90,7 @@
     }
   },
   "textattack-chardelete": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.7216716379611857,
       "wall_s": 7.254094816744328e-05,
@@ -100,7 +100,7 @@
     }
   },
   "textattack-charinsert": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.6602604949630987,
       "wall_s": 6.224995013326406e-05,
@@ -110,7 +110,7 @@
     }
   },
   "textattack-charsub": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.6638033481388693,
       "wall_s": 6.0875085182487965e-05,
@@ -120,7 +120,7 @@
     }
   },
   "tab-echr": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.8861891368515233,
       "wall_s": 6.458291318267584e-05,
@@ -133,7 +133,7 @@
     "_load_error": "DatasetNotFoundError: Dataset 'lmsys/lmsys-chat-1m' is a gated dataset on the Hub. You must be authenticated to access it."
   },
   "oasst-dev-planted": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.4921052631578947,
       "wall_s": 0.00011404103133827448,
@@ -152,7 +152,7 @@
     "_load_error": "DatasetNotFoundError: Dataset 'bigcode/the-stack-smol' is a gated dataset on the Hub. You must be authenticated to access it."
   },
   "presidio-synthetic": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.6811171599257836,
       "wall_s": 0.00011274998541921377,
@@ -162,7 +162,7 @@
     }
   },
   "ai4privacy-400k": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.5553517662227875,
       "wall_s": 0.00010995904449373484,
@@ -172,7 +172,7 @@
     }
   },
   "ai4privacy-300k": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.5335827520019276,
       "wall_s": 0.0005757920444011688,
@@ -182,7 +182,7 @@
     }
   },
   "isotonic-en": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.8782637151575291,
       "wall_s": 0.00013895798474550247,
@@ -192,7 +192,7 @@
     }
   },
   "isotonic-de": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.8742864092014854,
       "wall_s": 0.00014549994375556707,
@@ -202,7 +202,7 @@
     }
   },
   "isotonic-fr": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.8599906253571724,
       "wall_s": 0.00011695805005729198,
@@ -212,7 +212,7 @@
     }
   },
   "isotonic-it": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.8646582089900519,
       "wall_s": 0.00012195797171443701,
@@ -221,8 +221,8 @@
       "samples_per_s": 5000000.0
     }
   },
-  "ai4privacy-300k-heldout-v10": {
-    "nullpii-v10-router-embedding": {
+  "ai4privacy-300k-heldout": {
+    "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.5282567295052563,
       "wall_s": 0.00018291606102138758,
@@ -232,7 +232,7 @@
     }
   },
   "argilla-pii": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.6001892062495482,
       "wall_s": 0.00012924999464303255,
@@ -242,7 +242,7 @@
     }
   },
   "nemotron-pii-test": {
-    "nullpii-v10-router-embedding": {
+    "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.7601896691051848,
       "wall_s": 0.0001407910604029894,
@@ -251,8 +251,8 @@
       "samples_per_s": 5000000.0
     }
   },
-  "isotonic-en-heldout-v10": {
-    "nullpii-v10-router-embedding": {
+  "isotonic-en-heldout": {
+    "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.867058894585923,
       "wall_s": 0.00012133305426687002,
@@ -261,8 +261,8 @@
       "samples_per_s": 5000000.0
     }
   },
-  "isotonic-de-heldout-v10": {
-    "nullpii-v10-router-embedding": {
+  "isotonic-de-heldout": {
+    "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.8745665604974461,
       "wall_s": 0.0003060000017285347,
@@ -271,8 +271,8 @@
       "samples_per_s": 5000000.0
     }
   },
-  "isotonic-fr-heldout-v10": {
-    "nullpii-v10-router-embedding": {
+  "isotonic-fr-heldout": {
+    "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.8618645913939726,
       "wall_s": 0.00011187500786036253,

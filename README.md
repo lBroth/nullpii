@@ -24,7 +24,7 @@ npm install nullpii onnxruntime-node
 
 `onnxruntime-node` is an optional peer dependency (CPU / MPS / CUDA backend). Requires Node 24 LTS (see `.nvmrc`).
 
-> **First-call download**: the first `sanitize()` invocation downloads ~6 GB of model artifacts from HuggingFace Hub ([`lBroth/nullpii-v10-router-embedding`](https://huggingface.co/lBroth/nullpii-v10-router-embedding) — 5 merged-LoRA ONNX shards + distiluse encoder + tokenizer + prototypes) into `~/.cache/nullpii/` (or `$XDG_CACHE_HOME/nullpii/`). One-shot; subsequent calls hit the local cache. Plan accordingly for air-gapped installs (mirror the HF repo locally and pass `modelDir`).
+> **First-call download**: the first `sanitize()` invocation downloads ~6 GB of model artifacts from HuggingFace Hub ([`lBroth/nullpii`](https://huggingface.co/lBroth/nullpii) — 5 merged-LoRA ONNX shards + distiluse encoder + tokenizer + prototypes) into `~/.cache/nullpii/` (or `$XDG_CACHE_HOME/nullpii/`). One-shot; subsequent calls hit the local cache. Plan accordingly for air-gapped installs (mirror the HF repo locally and pass `modelDir`).
 
 ## Usage
 
@@ -122,14 +122,14 @@ Mac M-series CPU, single seed, macro F1 at IoU ≥ 0.5, partial-match span scori
 
 ### Pipeline
 
-**Ship `nullpii-v10-router-embedding`** (distiluse + 5 LoRA adapters, ~430 MB). The npm runtime downloads from HF on first `sanitize()` call; subsequent calls hit the local cache.
+**Ship `nullpii-router-embedding`** (distiluse + 5 LoRA adapters, ~430 MB). The npm runtime downloads from HF on first `sanitize()` call; subsequent calls hit the local cache.
 
 #### Headline number, honest
 
 We split the 10-dataset bench into three buckets and report each separately so the reader can judge what "F1" means:
 
 1. **Held-out non-adversarial (4 datasets) — F1 0.7378.** The model never saw any of these rows during training. This is the **honest OOD claim** for nullpii.
-   - `presidio-synthetic`, `ai4privacy-300k-heldout-v10` (offset 100k+), `isotonic-{en,de}-heldout-v10` (offset 200k+).
+   - `presidio-synthetic`, `ai4privacy-300k-heldout` (offset 100k+), `isotonic-{en,de}-heldout` (offset 200k+).
 
 2. **Adversarial subset (3 datasets) — preprocessor-driven, not model-driven, F1 0.9586.** Synthetic perturbations (typo / unicode / code) generated post-training, technically held-out, but the lift comes from the `_normalize_for_detection` preprocessor (NFKC + unidecode + zero-width strip + spaced-PII despace), not from the model.
 
@@ -138,7 +138,7 @@ We split the 10-dataset bench into three buckets and report each separately so t
 
 The mixed **F1 0.8201 (10 datasets)** is the average of all three buckets — inflated by both the in-distribution rows and the adversarial-preprocessor wins. Use the held-out 0.7378 figure for any OOD claim; quote the mixed 0.8201 only with the caveat above.
 
-### Per-dataset F1 (`nullpii-v10-router-embedding`, the shipping pipeline)
+### Per-dataset F1 (`nullpii-router-embedding`, the shipping pipeline)
 
 | Dataset | n | F1 | Notes |
 |---|---:|:---:|---|
@@ -146,16 +146,16 @@ The mixed **F1 0.8201 (10 datasets)** is the average of all three buckets — in
 | `tab-echr` | 127 | **0.8862** | EU legal (TAB ECHR test split) — ⚠ in-distribution (legal adapter trained on TAB train) |
 | `nemotron-pii-test` | 5k | **0.7602** | **NVIDIA Nemotron-PII** test split — ⚠ in-distribution (enterprise adapter trained on NVIDIA Nemotron train split) |
 | `presidio-synthetic` | 5k | 0.6811 | Faker-driven synthetic (**Microsoft Presidio Evaluator**) — held-out |
-| `ai4privacy-300k-heldout-v10` | 5k | 0.5283 | Held-out (offset 100k+) |
-| `isotonic-en-heldout-v10` | 5k | 0.8671 | Held-out (offset 200k+) |
-| `isotonic-de-heldout-v10` | 5k | 0.8746 | Held-out (offset 200k+) |
+| `ai4privacy-300k-heldout` | 5k | 0.5283 | Held-out (offset 100k+) |
+| `isotonic-en-heldout` | 5k | 0.8671 | Held-out (offset 200k+) |
+| `isotonic-de-heldout` | 5k | 0.8746 | Held-out (offset 200k+) |
 | `adversarial-typo` | 80 | **0.9400** | Single-char neighbour swap — preprocessor lift |
 | `adversarial-unicode` | 80 | **0.9358** | Cyrillic homoglyph + zero-width insertion — preprocessor lift |
 | `adversarial-code` | 80 | **1.0000** | Credentials in comments / docstrings — preprocessor lift |
 
 ### Competitor comparison
 
-Bare-mode third-party baselines benched on the same 10-dataset Mac CPU pass alongside `nullpii-v10-router-embedding`: **Microsoft Presidio**, GLiNER (`urchade/gliner_multi_pii-v1` ONNX FP32), `iiiorg/piiranha`, **Microsoft DeBERTa**-v3 community fine-tune, **NVIDIA Nemotron-PII** (`nvidia/gliner-pii`), and `gliner-pii-large-v1`. Same chunking (1400/200 char stride), same per-tool label remap to nullpii's 8-class schema, no nullpii post-processing leak on competitor rows.
+Bare-mode third-party baselines benched on the same 10-dataset Mac CPU pass alongside `nullpii-router-embedding`: **Microsoft Presidio**, GLiNER (`urchade/gliner_multi_pii-v1` ONNX FP32), `iiiorg/piiranha`, **Microsoft DeBERTa**-v3 community fine-tune, **NVIDIA Nemotron-PII** (`nvidia/gliner-pii`), and `gliner-pii-large-v1`. Same chunking (1400/200 char stride), same per-tool label remap to nullpii's 8-class schema, no nullpii post-processing leak on competitor rows.
 
 Head-to-head matrix — per-dataset F1, every tool × every dataset: [`packages/eval/published-bench/matrix.csv`](packages/eval/published-bench/matrix.csv). Methodology, schema-bridge mechanics, and the `CLAIM-VERIFIER-01` finding (Presidio 0.85+ / piiranha 0.99 not reproducible with span IoU ≥ 0.5) are documented in [`COMPETITIVE_ANALYSIS.md`](COMPETITIVE_ANALYSIS.md).
 
@@ -172,7 +172,7 @@ Honest read: nullpii sits in the GLiNER-family ballpark on the held-out non-adve
 
 ### Model card
 
-Lives on HuggingFace Hub: [`lBroth/nullpii-v10-router-embedding`](https://huggingface.co/lBroth/nullpii-v10-router-embedding) — training data composition, intended use, limitations, in-distribution disclosures.
+Lives on HuggingFace Hub: [`lBroth/nullpii`](https://huggingface.co/lBroth/nullpii) — training data composition, intended use, limitations, in-distribution disclosures.
 
 ### Eval kit
 

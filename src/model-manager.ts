@@ -16,12 +16,12 @@ import { MODEL_DOWNLOAD_TIMEOUT_MS, type ModelVariant } from './types/index.js';
 const log = debug('nullpii:model-manager');
 
 /** Files required at runtime — full router stack manifest. The HF repo
- * (`lBroth/nullpii-v10-router-embedding` by default) bundles:
+ * (`lBroth/nullpii` by default) bundles:
  *
  *   - GLiNER backbone tokenizer + SPM (shared by all 5 adapter shards)
  *   - distiluse sentence-encoder ONNX + its tokenizer (router input encoder)
  *   - router prototypes JSON (5 domain centroids + gate margins)
- *   - 5 merged-LoRA GLiNER ONNX (one per domain), under `v10-onnx-merged/`
+ *   - 5 merged-LoRA GLiNER ONNX (one per domain), under `onnx-merged/`
  *
  * Total artifact size: ~6 GB FP32 (1.1 GB × 5 adapters + 514 MB distiluse).
  * First-call download is one-shot; subsequent calls hit the local cache.
@@ -37,11 +37,11 @@ const ROUTER_FILES: readonly string[] = [
   // Prototypes + gate config.
   'router-embeddings.json',
   // Per-domain merged-LoRA ONNX shards.
-  'v10-onnx-merged/devops/model.onnx',
-  'v10-onnx-merged/legal/model.onnx',
-  'v10-onnx-merged/medical/model.onnx',
-  'v10-onnx-merged/narrative/model.onnx',
-  'v10-onnx-merged/enterprise/model.onnx',
+  'onnx-merged/devops/model.onnx',
+  'onnx-merged/legal/model.onnx',
+  'onnx-merged/medical/model.onnx',
+  'onnx-merged/narrative/model.onnx',
+  'onnx-merged/enterprise/model.onnx',
 ];
 
 /** Identifies which model artifact set to fetch. Pluggable so callers can

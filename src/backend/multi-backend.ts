@@ -15,7 +15,7 @@ const log = debug('nullpii:multi-backend');
  * lazily on first call to `infer(inputs, domain)`, so a user that only
  * ever hits one route never pays for the others.
  *
- * Layout assumed under `<modelDir>/v10-onnx-merged/<adapterDir>/model.onnx`,
+ * Layout assumed under `<modelDir>/onnx-merged/<adapterDir>/model.onnx`,
  * one merged-LoRA ONNX per per-domain adapter (devops, legal,
  * medical, narrative, enterprise).
  */
@@ -33,7 +33,7 @@ export class MultiOrtBackend {
     const cached = this.sessions.get(domain);
     if (cached !== undefined) return cached;
 
-    const onnxPath = join(this.modelDir, 'v10-onnx-merged', domain, 'model.onnx');
+    const onnxPath = join(this.modelDir, 'onnx-merged', domain, 'model.onnx');
     if (!(await fileExists(onnxPath))) {
       throw new ModelNotFoundError(onnxPath);
     }

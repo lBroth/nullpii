@@ -4,17 +4,17 @@
 #
 # Pipeline:
 #   1. If raw adapter weights aren't present locally, pull them from
-#      `lBroth/nullpii-v10-adapters` (one-shot upstream HF repo).
+#      `lBroth/nullpii-adapters` (one-shot upstream HF repo).
 #   2. Merge each per-domain LoRA adapter into base GLiNER → 5 ONNX shards.
 #   3. Export distiluse encoder to ONNX + dump prototypes to JSON.
-#   4. Stage all artifacts under release/v10-hf-staging/ in the layout the
+#   4. Stage all artifacts under release/hf-staging/ in the layout the
 #      npm runtime expects (matches `src/model-manager.ts:ROUTER_FILES`).
-#   5. `huggingface-cli upload` to `lBroth/nullpii-v10-router-embedding`.
+#   5. `huggingface-cli upload` to `lBroth/nullpii`.
 #
 # Requirements:
 #   - HF_TOKEN env or `huggingface-cli login` already done
 #   - Python venv at packages/eval/.venv with gliner + peft + onnxruntime + sentence-transformers
-#   - The raw adapter weights upstream HF repo `lBroth/nullpii-v10-adapters`
+#   - The raw adapter weights upstream HF repo `lBroth/nullpii-adapters`
 #     must already exist (push it once with `push-adapters-to-hf.sh`).
 #
 # Usage:
@@ -33,10 +33,10 @@ for arg in "$@"; do
     esac
 done
 
-HF_REPO="lBroth/nullpii-v10-router-embedding"
-STAGING="$REPO_ROOT/packages/eval/results/release/v10-hf-staging"
-MERGED="$REPO_ROOT/packages/eval/results/release/v10-onnx-merged"
-ROUTER="$REPO_ROOT/packages/eval/results/release/v10-router"
+HF_REPO="lBroth/nullpii"
+STAGING="$REPO_ROOT/packages/eval/results/release/hf-staging"
+MERGED="$REPO_ROOT/packages/eval/results/release/onnx-merged"
+ROUTER="$REPO_ROOT/packages/eval/results/release/router"
 HF_CACHE_BASE="$HOME/.cache/huggingface/hub/models--onnx-community--gliner_multi_pii-v1/snapshots"
 
 VENV="$REPO_ROOT/packages/eval/.venv/bin/python"
@@ -44,9 +44,9 @@ VENV="$REPO_ROOT/packages/eval/.venv/bin/python"
 
 log() { printf '\n[push-to-hf] %s\n' "$*"; }
 
-ADAPTERS_HF="lBroth/nullpii-v10-adapters"
-ADAPTERS_LOCAL="$REPO_ROOT/packages/eval/results/train/v10/adapters"
-ROUTER_LOCAL="$REPO_ROOT/packages/eval/results/train/v10/router"
+ADAPTERS_HF="lBroth/nullpii-adapters"
+ADAPTERS_LOCAL="$REPO_ROOT/packages/eval/results/train/adapters"
+ROUTER_LOCAL="$REPO_ROOT/packages/eval/results/train/router"
 
 # ─── Step 0: pull raw adapter weights from HF if missing ────────────
 need_pull=0
@@ -59,7 +59,7 @@ if [ "$need_pull" = 1 ]; then
     log "0/4 raw adapter weights not local — pulling $ADAPTERS_HF"
     HF_DL_TOKEN_ARG=""
     [ -n "${HF_TOKEN:-}" ] && HF_DL_TOKEN_ARG="--token $HF_TOKEN"
-    PULL_DIR="$REPO_ROOT/packages/eval/results/train/v10/__hf_pull__"
+    PULL_DIR="$REPO_ROOT/packages/eval/results/train/__hf_pull__"
     rm -rf "$PULL_DIR"
     mkdir -p "$PULL_DIR"
     huggingface-cli download --repo-type=model $HF_DL_TOKEN_ARG "$ADAPTERS_HF" --local-dir "$PULL_DIR"
@@ -73,8 +73,8 @@ if [ "$need_pull" = 1 ]; then
     rm -rf "$PULL_DIR"
 fi
 
-# Sync v10-weights symlink layout used by the merge script default.
-WEIGHTS_LOCAL="$REPO_ROOT/packages/eval/v10-weights"
+# Sync weights symlink layout used by the merge script default.
+WEIGHTS_LOCAL="$REPO_ROOT/packages/eval/weights"
 mkdir -p "$WEIGHTS_LOCAL/adapters" "$WEIGHTS_LOCAL/router"
 for d in devops legal medical narrative enterprise; do
     mkdir -p "$WEIGHTS_LOCAL/adapters/$d"
@@ -94,7 +94,7 @@ log "2/4 export distiluse encoder + prototypes"
 
 # ─── Step 3: stage HF repo layout ───────────────────────────────────
 log "3/4 stage HF repo layout → $STAGING"
-mkdir -p "$STAGING/v10-onnx-merged"
+mkdir -p "$STAGING/onnx-merged"
 
 # Base GLiNER tokenizer + spm + config (from upstream HF cache).
 GLINER_BASE=$(ls -dt "$HF_CACHE_BASE"/* 2>/dev/null | head -1)
@@ -112,15 +112,15 @@ cp -f "$ROUTER/router-embeddings.json" "$STAGING/"
 for d in devops legal medical narrative enterprise; do
     src="$MERGED/$d/model.onnx"
     [ -f "$src" ] || { echo "[push-to-hf] missing merged ONNX: $src" >&2; exit 1; }
-    mkdir -p "$STAGING/v10-onnx-merged/$d"
-    cp -f "$src" "$STAGING/v10-onnx-merged/$d/model.onnx"
+    mkdir -p "$STAGING/onnx-merged/$d"
+    cp -f "$src" "$STAGING/onnx-merged/$d/model.onnx"
 done
 
 # Stage README (model card) at the staging root.
-cp -f docs/v10/model-cards/router-embedding.md "$STAGING/README.md"
+cp -f packages/eval/private/model-cards/router-embedding.md "$STAGING/README.md"
 
 du -sh "$STAGING"
-ls -lh "$STAGING/" "$STAGING/v10-onnx-merged"/*
+ls -lh "$STAGING/" "$STAGING/onnx-merged"/*
 
 # ─── Step 4: upload to HF ───────────────────────────────────────────
 if [ "$DRY_RUN" = 1 ]; then

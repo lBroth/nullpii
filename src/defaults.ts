@@ -32,7 +32,7 @@ export const BACKEND_AUTO_PRIORITY: readonly Exclude<BackendName, 'auto'>[] = [
 ];
 
 /** ONNX subdirectory used by legacy single-shard backends (`OrtBackend`).
- * The shipping `MultiOrtBackend` resolves shards via `v10-onnx-merged/`. */
+ * The shipping `MultiOrtBackend` resolves shards via `onnx-merged/`. */
 export const ONNX_SUBDIR = 'onnx';
 
 /** Tokenizer file name within a model directory. */
@@ -49,7 +49,7 @@ export const CACHE_MODELS_SUBDIR = 'models';
 /** Pinned default HF model repo. Hardcoded — full router stack
  * (5 merged-LoRA ONNX shards + distiluse encoder + prototypes). See
  * `model-manager.ts` for the file manifest. */
-export const DEFAULT_MODEL_REPO = 'lBroth/nullpii-v10-router-embedding';
+export const DEFAULT_MODEL_REPO = 'lBroth/nullpii';
 export const DEFAULT_MODEL_REVISION = 'main';
 
 /** Built-in recognizers auto-registered on every `NullPii` instance

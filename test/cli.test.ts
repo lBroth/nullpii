@@ -37,5 +37,5 @@ describe('CLI: buildProgram', () => {
 });
 
 // Integration tests against a real model are exercised by the scratch
-// script `test-full-stack.mjs` — see `docs/v10/V10_PLAN.md` for the
+// script `test-full-stack.mjs` — see the internal plan for the
 // command. The CI suite stays mock-free + ONNX-free.

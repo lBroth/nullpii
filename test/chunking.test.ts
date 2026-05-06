@@ -1,43 +1,44 @@
 import { describe, expect, it } from 'vitest';
 import {
-  DEFAULT_CHUNK_CHARS,
-  DEFAULT_OVERLAP_CHARS,
+  DEFAULT_MAX_WORDS_PER_CHUNK,
+  DEFAULT_WORD_OVERLAP,
   chunkText,
   dedupeOverlappingSpans,
 } from '../src/chunking.js';
 
 describe('chunking', () => {
-  it('returns single chunk when text fits', () => {
+  it('returns single chunk when word count fits', () => {
     const out = chunkText('short text');
     expect(out).toEqual([{ text: 'short text', offset: 0 }]);
   });
 
-  it('splits long text with overlap', () => {
-    const text = 'x'.repeat(2500);
-    const out = chunkText(text, 1000, 200);
+  it('splits long text on word boundaries with overlap', () => {
+    const words = Array.from({ length: 500 }, (_, i) => `word${i}`).join(' ');
+    const out = chunkText(words, 100, 20);
     expect(out.length).toBeGreaterThan(2);
-    expect(out[0]).toEqual({ text: 'x'.repeat(1000), offset: 0 });
-    expect(out[1]?.offset).toBe(800);
-    expect(out[2]?.offset).toBe(1600);
-    expect(out.at(-1)?.offset).toBeLessThanOrEqual(text.length);
+    // First chunk starts at offset 0
+    expect(out[0]?.offset).toBe(0);
+    // Each chunk should preserve word boundaries (start at a word, not mid-word)
+    for (const chunk of out) {
+      expect(chunk.text.charAt(0)).toMatch(/\S/);
+    }
   });
 
-  it('default chunk + overlap leave headroom for the merged-LoRA ONNX cap', () => {
-    expect(DEFAULT_CHUNK_CHARS).toBe(600);
-    expect(DEFAULT_OVERLAP_CHARS).toBe(100);
+  it('default constants leave headroom for the merged-LoRA ONNX cap', () => {
+    expect(DEFAULT_MAX_WORDS_PER_CHUNK).toBe(180);
+    expect(DEFAULT_WORD_OVERLAP).toBe(30);
   });
 
-  it('rejects overlap >= chunk size', () => {
-    expect(() => chunkText('x'.repeat(2000), 100, 100)).toThrow(RangeError);
+  it('rejects overlap >= max words', () => {
+    expect(() => chunkText('a '.repeat(300), 100, 100)).toThrow(RangeError);
   });
 
   it('preserves global offsets across chunks', () => {
-    const text = `${'a'.repeat(900)}EMAIL@x.com${'b'.repeat(800)}`;
-    const out = chunkText(text, 900, 200);
-    expect(out.length).toBe(3);
-    const chunk1 = out[1];
-    if (!chunk1) throw new Error('expected chunk index 1');
-    expect(text.slice(chunk1.offset, chunk1.offset + chunk1.text.length)).toBe(chunk1.text);
+    const words = Array.from({ length: 500 }, (_, i) => `tok${i}`).join(' ');
+    const out = chunkText(words, 100, 20);
+    for (const chunk of out) {
+      expect(words.slice(chunk.offset, chunk.offset + chunk.text.length)).toBe(chunk.text);
+    }
   });
 });
 

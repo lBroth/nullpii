@@ -8,14 +8,18 @@ describe('gliner-spans / buildSpanCandidates', () => {
     expect(cand.maxWidth).toBe(2);
     // Flat shape: [start0, end0, start1, end1, …]. Width 0 = single-token span;
     // width 1 = two-token span (start, start+1).
+    // Out-of-range slots (end >= numWords) are clamped to (0, 0) so the
+    // ScatterND op in the GLiNER head doesn't read invalid indices even
+    // for masked-out positions; only valid spans carry real (start, end).
     expect(Array.from(cand.spanIdx, (n) => Number(n))).toEqual([
-      0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3,
+      0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 0, 0,
     ]);
   });
 
   it('span_mask zeroes spans that overrun numWords', () => {
     const cand = buildSpanCandidates(3, 2);
-    // Width-1 from start 2 lands at end=3 → out-of-range (numWords = 3).
+    // Width-1 from start 2 lands at end=3 → out-of-range (numWords = 3) and
+    // is both masked and clamped in spanIdx.
     expect(Array.from(cand.spanMask, (n) => Number(n))).toEqual([1, 1, 1, 1, 1, 0]);
   });
 

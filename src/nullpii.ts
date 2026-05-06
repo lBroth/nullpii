@@ -1,5 +1,6 @@
 import debug from 'debug';
 import { MultiOrtBackend } from './backend/multi-backend.js';
+import { chunkText, dedupeOverlappingSpans } from './chunking.js';
 import {
   BOUNDARY_REFINE_TRIM_CHARS,
   DEFAULT_BOUNDARY_REFINE,
@@ -120,34 +121,46 @@ export class NullPii {
     const decision = router.route(embedding);
     log('route: domain=%s score=%f gated=%s', decision.domain, decision.score, decision.gated);
 
-    const enc = await tokenizer.encode(normalized, GLINER_LABELS);
-    if (this.config.strictLength === true && enc.truncated) {
-      throw new TextTooLongError(enc.seqLen, DEFAULT_MAX_SEQUENCE_LENGTH);
-    }
-    const cand = buildSpanCandidates(enc.numWords, DEFAULT_MAX_SPAN_WIDTH);
-    const out = await backend.infer(
-      {
-        inputIds: enc.inputIds,
-        attentionMask: enc.attentionMask,
-        wordsMask: enc.wordsMask,
-        textLength: enc.numWords,
-        spanIdx: cand.spanIdx,
-        spanMask: cand.spanMask,
-        numSpans: cand.numSpans,
-      },
-      decision.domain,
-    );
-
     const threshold = this.config.threshold ?? 0.5;
-    const decoded = decodeGlinerLogits(
-      out.logits,
-      out.textLength,
-      out.maxWidth,
-      out.numClasses,
-      enc.words,
-      GLINER_LABELS,
-      threshold,
-    );
+    const chunks = chunkText(normalized);
+    const decodedRaw: Array<{ label: string; start: number; end: number; score: number }> = [];
+    for (const { text: chunk, offset } of chunks) {
+      const enc = await tokenizer.encode(chunk, GLINER_LABELS);
+      if (this.config.strictLength === true && enc.truncated) {
+        throw new TextTooLongError(enc.seqLen, DEFAULT_MAX_SEQUENCE_LENGTH);
+      }
+      const cand = buildSpanCandidates(enc.numWords, DEFAULT_MAX_SPAN_WIDTH);
+      const out = await backend.infer(
+        {
+          inputIds: enc.inputIds,
+          attentionMask: enc.attentionMask,
+          wordsMask: enc.wordsMask,
+          textLength: enc.numWords,
+          spanIdx: cand.spanIdx,
+          spanMask: cand.spanMask,
+          numSpans: cand.numSpans,
+        },
+        decision.domain,
+      );
+      const chunkSpans = decodeGlinerLogits(
+        out.logits,
+        out.textLength,
+        out.maxWidth,
+        out.numClasses,
+        enc.words,
+        GLINER_LABELS,
+        threshold,
+      );
+      for (const s of chunkSpans) {
+        decodedRaw.push({
+          label: s.label,
+          start: s.start + offset,
+          end: s.end + offset,
+          score: s.score,
+        });
+      }
+    }
+    const decoded = dedupeOverlappingSpans(decodedRaw);
 
     // Remap span offsets from the normalised text back to the escaped
     // text so they align with the regex pack and vault output.

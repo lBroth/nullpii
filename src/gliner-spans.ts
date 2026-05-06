@@ -37,13 +37,19 @@ export function buildSpanCandidates(
   const numSpans = numWords * maxWidth;
   const spanIdx = new BigInt64Array(numSpans * 2);
   const spanMask = new BigInt64Array(numSpans);
+  // ScatterND in the GLiNER head reads span end indices as gather indices
+  // even for masked-out slots, so out-of-range values (`end >= numWords`)
+  // crash ORT before the mask is applied. Clamp end to a safe in-range
+  // value (0) for masked positions and store the real end only for valid
+  // spans. Mirrors the upstream `prepare_span_idx` clamp behavior.
   let p = 0;
   for (let start = 0; start < numWords; start++) {
     for (let offset = 0; offset < maxWidth; offset++) {
       const end = start + offset;
-      spanIdx[p * 2] = BigInt(start);
-      spanIdx[p * 2 + 1] = BigInt(end);
-      spanMask[p] = end < numWords ? 1n : 0n;
+      const valid = end < numWords;
+      spanIdx[p * 2] = valid ? BigInt(start) : 0n;
+      spanIdx[p * 2 + 1] = valid ? BigInt(end) : 0n;
+      spanMask[p] = valid ? 1n : 0n;
       p++;
     }
   }

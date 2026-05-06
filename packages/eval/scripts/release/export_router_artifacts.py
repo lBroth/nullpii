@@ -29,6 +29,7 @@ def export_distiluse(out_dir: Path) -> None:
 
     import torch
     from sentence_transformers import SentenceTransformer
+    from torch import nn
     from transformers import AutoTokenizer
 
     model_id = "sentence-transformers/distiluse-base-multilingual-cased-v2"
@@ -36,7 +37,37 @@ def export_distiluse(out_dir: Path) -> None:
     # Force CPU — torch.export.export tracer fails on MPS device
     # propagation for embedding ops.
     st = SentenceTransformer(model_id, device="cpu")
-    transformer = st[0].auto_model.cpu()
+
+    class FullDistiluseV2(nn.Module):
+        """Full sentence-transformers distiluse-v2 pipeline as a single
+        ONNX module: Transformer → mask-weighted mean pool → Dense
+        (768→512) → Tanh → L2-normalise. Output: `[batch, 512]`
+        sentence embedding ready for cosine routing.
+
+        Earlier exports shipped only the bare `Transformer` and skipped
+        the `Pooling` + `Dense` + `Tanh` modules, leaving the TS
+        encoder to mean-pool 768-dim hidden states and compare against
+        512-dim prototypes (different vector spaces). That bug rolled
+        every input into the same mediocre cosine score and routed
+        most traffic to whichever prototype happened to align with the
+        first 512 hidden dims — typically `legal`.
+        """
+
+        def __init__(self, st_model: SentenceTransformer):
+            super().__init__()
+            self.transformer = st_model[0].auto_model
+            self.dense = st_model[2].linear
+            self.activation = st_model[2].activation_function
+
+        def forward(self, input_ids, attention_mask):
+            out = self.transformer(input_ids=input_ids, attention_mask=attention_mask)
+            last = out.last_hidden_state  # [B, S, 768]
+            mask = attention_mask.unsqueeze(-1).float()
+            pooled = (last * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1e-9)
+            proj = self.activation(self.dense(pooled))  # [B, 512]
+            return proj / proj.norm(dim=-1, keepdim=True).clamp(min=1e-9)
+
+    transformer = FullDistiluseV2(st).cpu()
     transformer.eval()
 
     # Tokenizer (saved to load via @anush008/tokenizers in TS).
@@ -50,10 +81,10 @@ def export_distiluse(out_dir: Path) -> None:
         src.rename(tok_path)
     print(f"[distiluse] tokenizer → {tok_path}", flush=True)
 
-    # ONNX export via legacy torchscript path (`dynamo=False`) — the
-    # newer torch.export-based path fails MPS device propagation on
-    # embedding ops. Inputs: input_ids, attention_mask. Output:
-    # last_hidden_state.
+    # Export the full pipeline (Transformer + Pooling + Dense + Tanh +
+    # L2 norm) as a single ONNX graph so the TS runtime only feeds
+    # `input_ids` + `attention_mask` and reads back a unit-norm
+    # 512-dim sentence embedding.
     print(f"[distiluse] exporting ONNX → {onnx_path}", flush=True)
     dummy_input_ids = torch.zeros(1, 16, dtype=torch.long)
     dummy_attention_mask = torch.ones(1, 16, dtype=torch.long)
@@ -62,15 +93,14 @@ def export_distiluse(out_dir: Path) -> None:
         (dummy_input_ids, dummy_attention_mask),
         str(onnx_path),
         input_names=["input_ids", "attention_mask"],
-        output_names=["last_hidden_state"],
+        output_names=["sentence_embedding"],
         dynamic_axes={
             "input_ids": {0: "batch", 1: "seq"},
             "attention_mask": {0: "batch", 1: "seq"},
-            "last_hidden_state": {0: "batch", 1: "seq"},
+            "sentence_embedding": {0: "batch"},
         },
         opset_version=19,
         do_constant_folding=True,
-        dynamo=False,
     )
     print(f"[distiluse] done — {onnx_path}", flush=True)
 

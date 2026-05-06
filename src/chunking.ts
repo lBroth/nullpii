@@ -65,14 +65,19 @@ export interface SpanLike {
   readonly score: number;
 }
 
-export function dedupeOverlappingSpans<T extends SpanLike>(spans: T[], iouThreshold = 0.5): T[] {
+export function dedupeOverlappingSpans<T extends SpanLike>(
+  spans: T[],
+  iouThreshold = 0.5,
+  options: { acrossLabels?: boolean } = {},
+): T[] {
   if (spans.length <= 1) return [...spans];
+  const acrossLabels = options.acrossLabels === true;
   const sorted = [...spans].sort((a, b) => b.score - a.score);
   const kept: T[] = [];
   for (const s of sorted) {
     let isDup = false;
     for (const k of kept) {
-      if (k.label !== s.label) continue;
+      if (!acrossLabels && k.label !== s.label) continue;
       if (iou(s, k) >= iouThreshold) {
         isDup = true;
         break;

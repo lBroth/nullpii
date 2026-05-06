@@ -70,7 +70,13 @@ function matchOne(text: string, recognizer: Recognizer, existing: readonly PiiSp
   while (m !== null) {
     const start = m.index;
     const end = start + m[0].length;
-    if (!overlaps(start, end, existing) && passesValidate(m[0], recognizer)) {
+    // High-confidence recognizers (≥ 0.9 — secret patterns, IBAN with
+    // mod-97 validator, Luhn-validated CCs) always emit; cross-label
+    // overlaps with ML output are reconciled later by IoU dedupe in
+    // `nullpii.ts`. Lower-confidence recognizers still defer to ML on
+    // overlap to avoid noisy double-counting on prose.
+    const overrides = recognizer.confidence >= 0.9;
+    if ((overrides || !overlaps(start, end, existing)) && passesValidate(m[0], recognizer)) {
       out.push({
         label: recognizer.label,
         start,

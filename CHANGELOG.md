@@ -23,7 +23,7 @@ Macro F1, IoU ≥ 0.5 partial-match span scoring. **`nullpii` wins 9 of 10 datas
 
 - **Mixed F1 0.8054 (10 datasets)** vs next-best baseline `gliner-pii-large-v1` 0.5762 (+0.23).
 - **Held-out OOD (4) — F1 0.7166.** Honest non-adversarial generalisation claim. `presidio-synthetic`, `ai4privacy-300k-heldout`, `isotonic-{en,de}-heldout`.
-- **Adversarial preprocessor (3) — F1 0.9409.** Preprocessor-driven lift (`_normalize_for_detection`), not model-driven. typo 0.89 / unicode 0.94 / code 1.00.
+- **Adversarial preprocessor (3) — F1 0.9409.** ⚠ Self-authored — synthetic perturbations generated internally; lift comes from `_normalize_for_detection` targeting the perturbation classes we generated. Regression test for the preprocessor, not a generalisation claim. typo 0.89 / unicode 0.94 / code 1.00.
 - **In-distribution diagnostic (3) — F1 0.7884.** Memorisation, not generalisation — adapters trained on slices. `nullpii-bench` 0.73 / `tab-echr` 0.92 / `nemotron-pii-test` 0.72.
 
 ### Latency (MacBook Pro · Apple M5 Pro · 48 GB · CPU backend, n=50/size)

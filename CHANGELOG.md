@@ -15,26 +15,24 @@ First public release. Local PII sanitization with reversible vault.
 - TypeScript validators: Luhn (credit cards), IBAN mod-97, CPF mod-11×2, Italian CF check letter, BIP-13 base58check.
 - Per-PUA-codepoint placeholder escape (``) — round-trip safe.
 - 8-class output: `private_person`, `private_email`, `private_phone`, `private_address`, `private_date`, `private_url`, `account_number`, `secret`.
-- CLI: `nullpii sanitize`, `nullpii restore`, `nullpii scan` (interactive + `--ndjson` long-running daemon for benchmarking).
+- CLI: `nullpii sanitize`, `nullpii restore`, `nullpii scan` (`--ndjson` for batch detection).
 
-### Bench (Mac CPU local, 10-dataset canonical surface)
+### Bench (MacBook Pro · Apple M5 Pro · 48 GB · macOS 26.4 · CPU backend, 10-dataset canonical surface)
 
-Macro F1, IoU ≥ 0.5 partial-match span scoring. Two columns published — `nullpii` (npm subprocess, the canonical row that ships) + `nullpii-router-embedding` (Python re-impl as sanity check):
+Macro F1, IoU ≥ 0.5 partial-match span scoring. **`nullpii` wins 9 of 10 datasets** vs 6 bare third-party baselines (Microsoft Presidio, NVIDIA Nemotron-PII, piiranha, Microsoft DeBERTa-v3, GLiNER ONNX FP32, `gliner-pii-large-v1`). Per-tool matrix at `packages/eval/published-bench/matrix.csv`.
 
-- **Mixed F1 0.8054 (10 datasets, npm subprocess)** — average of all three buckets below.
-- **Held-out non-adversarial (4 datasets) — F1 0.7166.** Honest OOD claim. `presidio-synthetic`, `ai4privacy-300k-heldout`, `isotonic-{en,de}-heldout`.
-- **Adversarial preprocessor (3 datasets) — F1 0.9409.** Preprocessor-driven lift, not model-driven. typo 0.89 / unicode 0.94 / code 1.00.
-- **In-distribution diagnostic (3 datasets) — F1 0.7884.** Memorisation, not generalisation. `nullpii-bench` 0.73 / `tab-echr` 0.92 / `nemotron-pii-test` 0.72.
+- **Mixed F1 0.8054 (10 datasets)** vs next-best baseline `gliner-pii-large-v1` 0.5762 (+0.23).
+- **Held-out OOD (4) — F1 0.7166.** Honest non-adversarial generalisation claim. `presidio-synthetic`, `ai4privacy-300k-heldout`, `isotonic-{en,de}-heldout`.
+- **Adversarial preprocessor (3) — F1 0.9409.** Preprocessor-driven lift (`_normalize_for_detection`), not model-driven. typo 0.89 / unicode 0.94 / code 1.00.
+- **In-distribution diagnostic (3) — F1 0.7884.** Memorisation, not generalisation — adapters trained on slices. `nullpii-bench` 0.73 / `tab-echr` 0.92 / `nemotron-pii-test` 0.72.
 
-Per-tool numbers in `packages/eval/published-bench/matrix.csv`. Third-party baselines (Microsoft Presidio, NVIDIA Nemotron-PII, piiranha, Microsoft DeBERTa-v3, GLiNER ONNX FP32, `gliner-pii-large-v1`) wired in `bench_full.py` for a later head-to-head iteration.
+### Latency (MacBook Pro · Apple M5 Pro · 48 GB · CPU backend, n=50/size)
 
-### Latency (Mac M-series CPU, n=50/size)
-
-| Input size | p50 | p95 | p99 | mean |
-|---|---:|---:|---:|---:|
-| 100 chars | 81 ms | 87 ms | 91 ms | 81 ms |
-| 1 000 chars | 230 ms | 251 ms | 259 ms | 231 ms |
-| 10 000 chars | 2 150 ms | 2 248 ms | 2 833 ms | 2 168 ms |
+| Input size | p50 | p95 | p99 |
+|---|---:|---:|---:|
+| 100 chars | 81 ms | 87 ms | 91 ms |
+| 1 000 chars | 230 ms | 251 ms | 259 ms |
+| 10 000 chars | 2.15 s | 2.25 s | 2.83 s |
 
 ### Model artifacts
 

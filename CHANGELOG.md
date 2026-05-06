@@ -3,7 +3,7 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] — 2026-05-05
+## [0.1.0] — 2026-05-06
 
 First public release. Local PII sanitization with reversible vault.
 
@@ -17,12 +17,24 @@ First public release. Local PII sanitization with reversible vault.
 - 8-class output: `private_person`, `private_email`, `private_phone`, `private_address`, `private_date`, `private_url`, `account_number`, `secret`.
 - CLI: `nullpii sanitize`, `nullpii restore`, `nullpii scan` (interactive + `--ndjson` long-running daemon for benchmarking).
 
-### Bench (Mac CPU local)
+### Bench (Mac CPU local, 10-dataset canonical surface)
 
-- 27-dataset macro F1: **0.7172** (`packages/eval/published-bench/matrix.{json,csv}`).
-- Honest held-out (non-adversarial) F1: **0.7008** — strips 9 leak-disclosed in-distribution rows.
-- Adversarial preprocessor lift: typo 0.94 / unicode 0.94 / code 1.00 / encoding 0.12 (documented gap).
-- Tool surface — bare-mode third-party baselines (no nullpii post-processing leak): **Microsoft Presidio**, **NVIDIA Nemotron-PII**, `iiiorg/piiranha`, **Microsoft DeBERTa**-v3 community fine-tune, GLiNER ONNX FP32 (`gliner-onnx-pii-fp32`), `gliner-pii-large-v1`. Per-tool numbers in `packages/eval/published-bench/matrix.csv`.
+Macro F1, IoU ≥ 0.5 partial-match span scoring. Two columns published — `nullpii` (npm subprocess, the canonical row that ships) + `nullpii-router-embedding` (Python re-impl as sanity check):
+
+- **Mixed F1 0.8174 (10 datasets, npm subprocess)** — average of all three buckets below.
+- **Held-out non-adversarial (4 datasets) — F1 0.7166.** Honest OOD claim. `presidio-synthetic`, `ai4privacy-300k-heldout`, `isotonic-{en,de}-heldout`.
+- **Adversarial preprocessor (3 datasets) — F1 0.9409.** Preprocessor-driven lift, not model-driven. typo 0.89 / unicode 0.94 / code 1.00.
+- **In-distribution diagnostic (3 datasets) — F1 0.7884.** Memorisation, not generalisation. `nullpii-bench` 0.73 / `tab-echr` 0.92 / `nemotron-pii-test` 0.72.
+
+Per-tool numbers in `packages/eval/published-bench/matrix.csv`. Third-party baselines (Microsoft Presidio, NVIDIA Nemotron-PII, piiranha, Microsoft DeBERTa-v3, GLiNER ONNX FP32, `gliner-pii-large-v1`) wired in `bench_full.py` for a later head-to-head iteration.
+
+### Latency (Mac M-series CPU, n=50/size)
+
+| Input size | p50 | p95 | p99 | mean |
+|---|---:|---:|---:|---:|
+| 100 chars | 81 ms | 87 ms | 91 ms | 81 ms |
+| 1 000 chars | 230 ms | 251 ms | 259 ms | 231 ms |
+| 10 000 chars | 2 150 ms | 2 248 ms | 2 833 ms | 2 168 ms |
 
 ### Model artifacts
 

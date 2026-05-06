@@ -180,17 +180,30 @@ export class GlinerTokenizer {
       if (w === undefined) continue;
       const wordEnc = await tok.encode(w.text, null, { addSpecialTokens: false });
       const subIds = wordEnc.getIds();
+      // Snapshot lengths so we can roll back this word's partial subwords
+      // if the limit is hit mid-word. Otherwise `words_mask` keeps a
+      // `wi+1` value for a word that `numTextWords` does not count,
+      // which then writes out of range in the GLiNER head's ScatterND.
+      const idsBefore = ids.length;
+      const wmBefore = wordsMaskArr.length;
       let first = true;
+      let hitLimit = false;
       for (const subId of subIds) {
         if (ids.length >= limit) {
-          truncatedSubwords = true;
+          hitLimit = true;
           break;
         }
         ids.push(subId);
         wordsMaskArr.push(first ? wi + 1 : 0);
         first = false;
       }
-      if (truncatedSubwords) break;
+      if (hitLimit) {
+        // Roll back partial subwords for this word.
+        ids.length = idsBefore;
+        wordsMaskArr.length = wmBefore;
+        truncatedSubwords = true;
+        break;
+      }
       truncatedWordCount = wi + 1;
     }
     if (truncatedWordCount === MAX_TEXT_WORDS && words.length > MAX_TEXT_WORDS) {

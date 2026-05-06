@@ -95,12 +95,12 @@ def _wikiann(lang: str) -> Callable[[int | None], list[Sample]]:
 
 
 def _load_nullpii_bench(n: int | None) -> list[Sample]:
-    """Load the bundled `nullpii-bench.jsonl` dataset.
-
-    Merges the `bundled` and `long-prompts` subsets into one set
-    (264 samples total). The legacy `adversarial` subset (7 samples)
-    is excluded — it tested regex behaviour only and gave perfect
-    score for trivial reasons, not a meaningful comparison row.
+    """Load the canonical `nullpii-bench` rows: `bundled` + `long-prompts`
+    subsets of the unified `nullpii-bench.jsonl` (264 samples). The
+    `adversarial` subset (7 hand-curated decoys) is excluded — exercises
+    regex only, perfect F1 for trivial reasons. Other subsets in the
+    same file (typo_pii / unicode_obf / etc., textattack-*) are loaded
+    via `_load_nullpii_subset(subset=...)` for the dedicated bench rows.
     """
     path = Path(__file__).resolve().parent.parent / "datasets" / "nullpii-bench.jsonl"
     out: list[Sample] = []
@@ -143,25 +143,25 @@ def _load_tab_echr_test(n: int | None) -> list[Sample]:
     return out
 
 
-def _load_nullpii_adversarial_textattack(n: int | None, *, subset: str | None = None) -> list[Sample]:
-    """Load the third-party adversarial corpus generated via TextAttack
-    (UVA-NLP, ACL 2020). Perturbations: homoglyph swap, neighboring
-    character swap, random char delete/insert/substitute. Source data
-    is ai4privacy 0–500 (disjoint from bench eval offset 300k+).
+def _load_nullpii_subset(n: int | None, *, subset: str) -> list[Sample]:
+    """Load a single subset from the unified `nullpii-bench.jsonl`.
 
-    Pass `subset` to filter to a single perturbation type:
-      - textattack-homoglyph
-      - textattack-charswap
-      - textattack-chardelete
-      - textattack-charinsert
-      - textattack-charsub
+    All project-authored datasets live in one file with a `subset`
+    field. Subsets:
+      - bundled / long-prompts / adversarial — base nullpii-bench
+        (real-world dev paste, RFCs, multilingual; long-form chunking
+        stress; hand-curated decoy strings)
+      - typo_pii / unicode_obf / whitespace_obf / encoding_obf /
+        decoys / code_pii — preprocessor regression tests, 80 each
+      - textattack-{homoglyph,charswap,chardelete,charinsert,charsub}
+        — TextAttack perturbations over ai4privacy 0–500, 334 each
     """
-    path = Path(__file__).resolve().parent.parent / "datasets" / "nullpii-adversarial-textattack.jsonl"
+    path = Path(__file__).resolve().parent.parent / "datasets" / "nullpii-bench.jsonl"
     out: list[Sample] = []
     with path.open(encoding="utf-8") as f:
         for line in f:
             row = json.loads(line)
-            if subset and row.get("subset") != subset:
+            if row.get("subset") != subset:
                 continue
             spans = tuple(Span(s["label"], int(s["start"]), int(s["end"])) for s in row["spans"])
             out.append(Sample(row["text"], spans))
@@ -170,29 +170,12 @@ def _load_nullpii_adversarial_textattack(n: int | None, *, subset: str | None = 
     return out
 
 
-def _load_nullpii_adversarial(n: int | None, *, subset: str | None = None) -> list[Sample]:
-    """Load the adversarial edge-case bench (`nullpii-adversarial.jsonl`).
+def _load_nullpii_adversarial(n: int | None, *, subset: str) -> list[Sample]:
+    return _load_nullpii_subset(n, subset=subset)
 
-    480 samples across 6 subsets: `typo_pii`, `unicode_obf`,
-    `whitespace_obf`, `encoding_obf`, `decoys`, `code_pii`.
 
-    Pass `subset` to filter to a single category.
-
-    Decoy samples have empty `spans` — they test FP rate (model should
-    NOT flag patterns that look like PII but aren't).
-    """
-    path = Path(__file__).resolve().parent.parent / "datasets" / "nullpii-adversarial.jsonl"
-    out: list[Sample] = []
-    with path.open(encoding="utf-8") as f:
-        for line in f:
-            row = json.loads(line)
-            if subset and row.get("subset") != subset:
-                continue
-            spans = tuple(Span(s["label"], int(s["start"]), int(s["end"])) for s in row["spans"])
-            out.append(Sample(row["text"], spans))
-            if n and len(out) >= n:
-                break
-    return out
+def _load_nullpii_adversarial_textattack(n: int | None, *, subset: str) -> list[Sample]:
+    return _load_nullpii_subset(n, subset=subset)
 
 
 # Dev-focused dataset suite (open licensing only).

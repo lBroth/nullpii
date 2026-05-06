@@ -108,10 +108,10 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         # Raw adapter weights (~17 MB total) live in the upstream
-        # `lBroth/nullpii-adapters` HF repo. push-to-hf.sh detects
+        # `lBroth/nullpii-adapters` HF repo. release.sh detects
         # they're missing locally and pulls them before the merge step.
         # Output goes to `lBroth/nullpii`.
-        run: bash packages/eval/scripts/release/push-to-hf.sh
+        run: bash packages/eval/scripts/release/release.sh
 
   github-release:
     name: create GitHub Release (if tag-only push)

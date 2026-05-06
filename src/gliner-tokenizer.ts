@@ -21,10 +21,12 @@ export const DEFAULT_MAX_SPAN_WIDTH = 12;
 export const DEFAULT_MAX_SEQUENCE_LENGTH = 384;
 
 /** Hard cap on word count fed into the model. The merged-LoRA ONNX export
- * has a static ScatterND_1 limit at ~212 words; inputs that fit
- * subword-wise (384 cap) but exceed this word limit crash ORT with
- * `invalid indice`. 200 leaves headroom for tokenizer variance. */
-export const MAX_TEXT_WORDS = 200;
+ * has a static ScatterND_1 limit; values 212/201/199 observed crashing
+ * on `nullpii-bench` long-prompts. 150 sits comfortably below the
+ * smallest observed crash threshold and absorbs tokenizer-density
+ * variance (punctuation-heavy code/log inputs have ~3x the word count
+ * of equivalent prose). */
+export const MAX_TEXT_WORDS = 150;
 
 /** Whitespace word splitter — port of Python `WhitespaceTokenSplitter`
  * (`gliner/data_processing/tokenizer.py:40`). Pattern `\w+(?:[-_]\w+)*|\S`

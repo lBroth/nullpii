@@ -23,8 +23,8 @@ describe('chunking', () => {
   });
 
   it('default chunk + overlap leave headroom for the merged-LoRA ONNX cap', () => {
-    expect(DEFAULT_CHUNK_CHARS).toBe(900);
-    expect(DEFAULT_OVERLAP_CHARS).toBe(200);
+    expect(DEFAULT_CHUNK_CHARS).toBe(600);
+    expect(DEFAULT_OVERLAP_CHARS).toBe(100);
   });
 
   it('rejects overlap >= chunk size', () => {

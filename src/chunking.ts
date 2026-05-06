@@ -17,13 +17,14 @@ export interface TextChunk {
   readonly offset: number;
 }
 
-// The merged-LoRA ONNX export carries a static `max_text_words ≈ 212`
-// shape in the ScatterND op of the GLiNER head, so inputs that tokenise
-// past that limit crash ORT (`indice = 212` error). Empirically 950
-// chars is the largest safe single-pass length on `nullpii-bench`;
-// 900 leaves headroom for variable subword density (Italian, German).
-export const DEFAULT_CHUNK_CHARS = 900;
-export const DEFAULT_OVERLAP_CHARS = 200;
+// The merged-LoRA ONNX export carries a static ScatterND_1 cap that
+// crashes on inputs ≳200 GLiNER words (where punctuation each counts
+// as one word). 600 chars / 100 overlap keeps prose chunks under that
+// cap and absorbs the ~3× word-density spike on punctuation-heavy
+// content (code, env-var dumps, JSON). The tokenizer applies a
+// secondary `MAX_TEXT_WORDS` truncation as a defence in depth.
+export const DEFAULT_CHUNK_CHARS = 600;
+export const DEFAULT_OVERLAP_CHARS = 100;
 
 export function chunkText(
   text: string,

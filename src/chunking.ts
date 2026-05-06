@@ -21,13 +21,14 @@ export interface TextChunk {
   readonly offset: number;
 }
 
-// Empirically the merged-LoRA ONNX ScatterND_1 op crashes on inputs
-// where words_mask values exceed `text_lengths`, which happens when
-// our tokenizer's subword-level truncation (max_len=384) drops the
-// trailing word mid-token: numWords still counts the partial word but
-// words_mask kept the higher index. 180 sits comfortably under the
-// observed crash thresholds (199–212 across runs) and absorbs noise.
-export const DEFAULT_MAX_WORDS_PER_CHUNK = 180;
+// The merged-LoRA ONNX export carries content-dependent caps in the
+// GLiNER head (ScatterND_1 indice errors observed at 172–212 across
+// inputs; dash-heavy or punctuation-dense content lowers the safe
+// limit). 140 is the empirical floor that holds across the bench
+// surface (nullpii-bench long-prompts + ai4privacy-300k-heldout German
+// dash-banner inputs) — small enough to absorb worst-case input
+// density, large enough to keep span-boundary recall reasonable.
+export const DEFAULT_MAX_WORDS_PER_CHUNK = 140;
 export const DEFAULT_WORD_OVERLAP = 30;
 
 export function chunkText(

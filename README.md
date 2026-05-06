@@ -56,7 +56,7 @@ Legend:
 
 Hardware: **MacBook Pro · Apple M5 Pro · 48 GB · macOS 26.4** · CPU backend (no GPU/MPS).
 
-**`nullpii` per input size** (n=50/size, single inference cycle, model preloaded):
+`nullpii` per input size (n=50/size, single inference cycle, model preloaded):
 
 | Input size | p50 | p95 | p99 |
 |---|---:|---:|---:|
@@ -64,19 +64,7 @@ Hardware: **MacBook Pro · Apple M5 Pro · 48 GB · macOS 26.4** · CPU backend 
 | 1 000 chars | 230 ms | 251 ms | 259 ms |
 | 10 000 chars | 2.15 s | 2.25 s | 2.83 s |
 
-**Per-tool throughput** (avg samples/sec across the 10 canonical datasets, mixed input sizes — derived from `bench_full.py` wall time):
-
-| Tool | samp/s | ~ms/sample |
-|---|---:|---:|
-| `presidio` | 123 | 8 |
-| **`nullpii`** (subprocess) | **28** | **35** |
-| `gliner-onnx-pii-fp32` | 25 | 40 |
-| `deberta` | 15 | 68 |
-| `piiranha` | 8 | 123 |
-| `gliner-pii-large-v1` | 4 | 278 |
-| `nemotron-pii-raw` | 2 | 417 |
-
-`presidio` is regex + spaCy NER (no transformer per-token), so it's the fastest by ~3× — useful as a latency-vs-quality datapoint, not a model-strength one.
+Per-tool throughput is intentionally not published. The available `bench_full.py` wall-time numbers are mixed: the competitor runs used `--parallel-tools 4` (CPU shared across 4 inferencers) while the nullpii rerun ran solo, so the cross-tool comparison is unfair (~4× advantage for nullpii). A clean serial rerun across all 7 tools is on the v0.2 list.
 
 ## Install
 

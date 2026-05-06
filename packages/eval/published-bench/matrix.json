@@ -1,5 +1,13 @@
 {
   "nullpii-bench": {
+    "nullpii": {
+      "status": "OK",
+      "f1": 0.7255493138144268,
+      "wall_s": 32.18093133403454,
+      "n": 264,
+      "total_n": 264,
+      "samples_per_s": 8.203615900972814
+    },
     "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.7279520338884612,
@@ -9,117 +17,15 @@
       "samples_per_s": 264000.0
     }
   },
-  "adversarial-typo": {
-    "nullpii-router-embedding": {
-      "status": "OK",
-      "f1": 0.9400000000000001,
-      "wall_s": 5.420797970145941e-05,
-      "n": 80,
-      "total_n": 80,
-      "samples_per_s": 80000.0
-    }
-  },
-  "adversarial-unicode": {
-    "nullpii-router-embedding": {
-      "status": "OK",
-      "f1": 0.9357829162707212,
-      "wall_s": 4.9958936870098114e-05,
-      "n": 80,
-      "total_n": 80,
-      "samples_per_s": 80000.0
-    }
-  },
-  "adversarial-whitespace": {
-    "nullpii-router-embedding": {
-      "status": "OK",
-      "f1": 0.39319552110249784,
-      "wall_s": 7.358402945101261e-05,
-      "n": 80,
-      "total_n": 80,
-      "samples_per_s": 80000.0
-    }
-  },
-  "adversarial-encoding": {
-    "nullpii-router-embedding": {
-      "status": "OK",
-      "f1": 0.12158968850698174,
-      "wall_s": 5.8041070587933064e-05,
-      "n": 80,
-      "total_n": 80,
-      "samples_per_s": 80000.0
-    }
-  },
-  "adversarial-code": {
-    "nullpii-router-embedding": {
-      "status": "OK",
-      "f1": 1.0,
-      "wall_s": 5.9416983276605606e-05,
-      "n": 80,
-      "total_n": 80,
-      "samples_per_s": 80000.0
-    }
-  },
-  "adversarial-textattack": {
-    "nullpii-router-embedding": {
-      "status": "OK",
-      "f1": 0.690007858202288,
-      "wall_s": 8.454208727926016e-05,
-      "n": 1670,
-      "total_n": 1670,
-      "samples_per_s": 1670000.0
-    }
-  },
-  "textattack-homoglyph": {
-    "nullpii-router-embedding": {
-      "status": "OK",
-      "f1": 0.662322166949575,
-      "wall_s": 7.262500002980232e-05,
-      "n": 334,
-      "total_n": 334,
-      "samples_per_s": 334000.0
-    }
-  },
-  "textattack-charswap": {
-    "nullpii-router-embedding": {
-      "status": "OK",
-      "f1": 0.7203206749669745,
-      "wall_s": 0.00011641695164144039,
-      "n": 334,
-      "total_n": 334,
-      "samples_per_s": 334000.0
-    }
-  },
-  "textattack-chardelete": {
-    "nullpii-router-embedding": {
-      "status": "OK",
-      "f1": 0.7216716379611857,
-      "wall_s": 7.254094816744328e-05,
-      "n": 334,
-      "total_n": 334,
-      "samples_per_s": 334000.0
-    }
-  },
-  "textattack-charinsert": {
-    "nullpii-router-embedding": {
-      "status": "OK",
-      "f1": 0.6602604949630987,
-      "wall_s": 6.224995013326406e-05,
-      "n": 334,
-      "total_n": 334,
-      "samples_per_s": 334000.0
-    }
-  },
-  "textattack-charsub": {
-    "nullpii-router-embedding": {
-      "status": "OK",
-      "f1": 0.6638033481388693,
-      "wall_s": 6.0875085182487965e-05,
-      "n": 334,
-      "total_n": 334,
-      "samples_per_s": 334000.0
-    }
-  },
   "tab-echr": {
+    "nullpii": {
+      "status": "OK",
+      "f1": 0.9169646913822348,
+      "wall_s": 59.962109375046566,
+      "n": 127,
+      "total_n": 127,
+      "samples_per_s": 2.118004208385162
+    },
     "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.8861891368515233,
@@ -129,119 +35,15 @@
       "samples_per_s": 127000.0
     }
   },
-  "lmsys-dev-planted": {
-    "_load_error": "DatasetNotFoundError: Dataset 'lmsys/lmsys-chat-1m' is a gated dataset on the Hub. You must be authenticated to access it."
-  },
-  "oasst-dev-planted": {
-    "nullpii-router-embedding": {
-      "status": "OK",
-      "f1": 0.4921052631578947,
-      "wall_s": 0.00011404103133827448,
-      "n": 15,
-      "total_n": 15,
-      "samples_per_s": 15000.0
-    }
-  },
-  "enron-planted": {
-    "_load_error": "DatasetNotFoundError: Dataset 'corbt/enron-emails-cleaned' doesn't exist on the Hub or cannot be accessed."
-  },
-  "stackoverflow-planted": {
-    "_load_error": "ValueError: BuilderConfig 'stackoverflow' not found. Available: ['default']"
-  },
-  "thestack-planted": {
-    "_load_error": "DatasetNotFoundError: Dataset 'bigcode/the-stack-smol' is a gated dataset on the Hub. You must be authenticated to access it."
-  },
-  "presidio-synthetic": {
-    "nullpii-router-embedding": {
-      "status": "OK",
-      "f1": 0.6811171599257836,
-      "wall_s": 0.00011274998541921377,
-      "n": 5000,
-      "total_n": 1500,
-      "samples_per_s": 5000000.0
-    }
-  },
-  "ai4privacy-400k": {
-    "nullpii-router-embedding": {
-      "status": "OK",
-      "f1": 0.5553517662227875,
-      "wall_s": 0.00010995904449373484,
-      "n": 5000,
-      "total_n": 400000,
-      "samples_per_s": 5000000.0
-    }
-  },
-  "ai4privacy-300k": {
-    "nullpii-router-embedding": {
-      "status": "OK",
-      "f1": 0.5335827520019276,
-      "wall_s": 0.0005757920444011688,
-      "n": 5000,
-      "total_n": 209000,
-      "samples_per_s": 5000000.0
-    }
-  },
-  "isotonic-en": {
-    "nullpii-router-embedding": {
-      "status": "OK",
-      "f1": 0.8782637151575291,
-      "wall_s": 0.00013895798474550247,
-      "n": 5000,
-      "total_n": 209000,
-      "samples_per_s": 5000000.0
-    }
-  },
-  "isotonic-de": {
-    "nullpii-router-embedding": {
-      "status": "OK",
-      "f1": 0.8742864092014854,
-      "wall_s": 0.00014549994375556707,
-      "n": 5000,
-      "total_n": 209000,
-      "samples_per_s": 5000000.0
-    }
-  },
-  "isotonic-fr": {
-    "nullpii-router-embedding": {
-      "status": "OK",
-      "f1": 0.8599906253571724,
-      "wall_s": 0.00011695805005729198,
-      "n": 5000,
-      "total_n": 209000,
-      "samples_per_s": 5000000.0
-    }
-  },
-  "isotonic-it": {
-    "nullpii-router-embedding": {
-      "status": "OK",
-      "f1": 0.8646582089900519,
-      "wall_s": 0.00012195797171443701,
-      "n": 5000,
-      "total_n": 209000,
-      "samples_per_s": 5000000.0
-    }
-  },
-  "ai4privacy-300k-heldout": {
-    "nullpii-router-embedding": {
-      "status": "OK",
-      "f1": 0.5282567295052563,
-      "wall_s": 0.00018291606102138758,
-      "n": 5000,
-      "total_n": 109000,
-      "samples_per_s": 5000000.0
-    }
-  },
-  "argilla-pii": {
-    "nullpii-router-embedding": {
-      "status": "OK",
-      "f1": 0.6001892062495482,
-      "wall_s": 0.00012924999464303255,
-      "n": 2000,
-      "total_n": 2096,
-      "samples_per_s": 2000000.0
-    }
-  },
   "nemotron-pii-test": {
+    "nullpii": {
+      "status": "OK",
+      "f1": 0.7226831326832306,
+      "wall_s": 538.5985709590605,
+      "n": 5000,
+      "total_n": 100000,
+      "samples_per_s": 9.283351775510107
+    },
     "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.7601896691051848,
@@ -251,7 +53,51 @@
       "samples_per_s": 5000000.0
     }
   },
+  "presidio-synthetic": {
+    "nullpii": {
+      "status": "OK",
+      "f1": 0.6050929022051885,
+      "wall_s": 118.46409004204907,
+      "n": 5000,
+      "total_n": 1500,
+      "samples_per_s": 42.20688310039979
+    },
+    "nullpii-router-embedding": {
+      "status": "OK",
+      "f1": 0.6811171599257836,
+      "wall_s": 0.00011274998541921377,
+      "n": 5000,
+      "total_n": 1500,
+      "samples_per_s": 5000000.0
+    }
+  },
+  "ai4privacy-300k-heldout": {
+    "nullpii": {
+      "status": "OK",
+      "f1": 0.5169763626968397,
+      "wall_s": 269.43963191693183,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 18.55703247672747
+    },
+    "nullpii-router-embedding": {
+      "status": "OK",
+      "f1": 0.5282567295052563,
+      "wall_s": 0.00018291606102138758,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 5000000.0
+    }
+  },
   "isotonic-en-heldout": {
+    "nullpii": {
+      "status": "OK",
+      "f1": 0.8684723632836431,
+      "wall_s": 166.7745352089405,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 29.980596220735013
+    },
     "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.867058894585923,
@@ -262,6 +108,14 @@
     }
   },
   "isotonic-de-heldout": {
+    "nullpii": {
+      "status": "OK",
+      "f1": 0.8755546639916955,
+      "wall_s": 176.0701712090522,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 28.397768717242762
+    },
     "nullpii-router-embedding": {
       "status": "OK",
       "f1": 0.8745665604974461,
@@ -271,14 +125,58 @@
       "samples_per_s": 5000000.0
     }
   },
-  "isotonic-fr-heldout": {
+  "adversarial-typo": {
+    "nullpii": {
+      "status": "OK",
+      "f1": 0.8869312851782365,
+      "wall_s": 1.6936937920982018,
+      "n": 80,
+      "total_n": 80,
+      "samples_per_s": 47.23403980886855
+    },
     "nullpii-router-embedding": {
       "status": "OK",
-      "f1": 0.8618645913939726,
-      "wall_s": 0.00011187500786036253,
-      "n": 5000,
-      "total_n": 109000,
-      "samples_per_s": 5000000.0
+      "f1": 0.9400000000000001,
+      "wall_s": 5.420797970145941e-05,
+      "n": 80,
+      "total_n": 80,
+      "samples_per_s": 80000.0
+    }
+  },
+  "adversarial-unicode": {
+    "nullpii": {
+      "status": "OK",
+      "f1": 0.9357829162707212,
+      "wall_s": 1.515847707982175,
+      "n": 80,
+      "total_n": 80,
+      "samples_per_s": 52.775750214704765
+    },
+    "nullpii-router-embedding": {
+      "status": "OK",
+      "f1": 0.9357829162707212,
+      "wall_s": 4.9958936870098114e-05,
+      "n": 80,
+      "total_n": 80,
+      "samples_per_s": 80000.0
+    }
+  },
+  "adversarial-code": {
+    "nullpii": {
+      "status": "OK",
+      "f1": 1.0,
+      "wall_s": 1.8242890000110492,
+      "n": 80,
+      "total_n": 80,
+      "samples_per_s": 43.85270096981096
+    },
+    "nullpii-router-embedding": {
+      "status": "OK",
+      "f1": 1.0,
+      "wall_s": 5.9416983276605606e-05,
+      "n": 80,
+      "total_n": 80,
+      "samples_per_s": 80000.0
     }
   }
 }

@@ -1,14 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
-/** Sliding-window chunker for inputs longer than the GLiNER model's
- * static capacity. Mirrors the bench-side 1400/200 char stride used by
- * `gliner_lora_predictor` in `packages/eval/src/nullpii_eval/adapters.py`,
- * so the npm runtime and the Python re-impl handle long inputs the
- * same way.
+import { splitWords } from './gliner-tokenizer.js';
+
+/** Word-aware sliding-window chunker. Splits on GLiNER word boundaries
+ * so each chunk has a bounded word count regardless of input density
+ * (prose, code, env-var dumps, JSON — all chunk to the same word
+ * budget). Char chunking is unsafe because punctuation each becomes
+ * a word in the GLiNER tokenizer; a 900-char prose chunk has ~150
+ * words, the same length of dense JSON has ~250.
  *
- * Chunks overlap by `overlapChars` so spans straddling a chunk boundary
- * are detectable in at least one chunk. The caller is responsible for
- * deduping overlapping spans across chunks (see `dedupeOverlappingSpans`).
+ * Chunks overlap by `overlapWords` words so spans straddling a chunk
+ * boundary are detectable in at least one chunk. The caller is
+ * responsible for deduping overlapping spans across chunks (see
+ * `dedupeOverlappingSpans`).
  */
 export interface TextChunk {
   /** Chunk text passed to the model. */
@@ -17,32 +21,36 @@ export interface TextChunk {
   readonly offset: number;
 }
 
-// The merged-LoRA ONNX export carries a static ScatterND_1 cap that
-// crashes on inputs ≳200 GLiNER words (where punctuation each counts
-// as one word). 600 chars / 100 overlap keeps prose chunks under that
-// cap and absorbs the ~3× word-density spike on punctuation-heavy
-// content (code, env-var dumps, JSON). The tokenizer applies a
-// secondary `MAX_TEXT_WORDS` truncation as a defence in depth.
-export const DEFAULT_CHUNK_CHARS = 600;
-export const DEFAULT_OVERLAP_CHARS = 100;
+// Empirically the merged-LoRA ONNX ScatterND_1 op crashes on inputs
+// where words_mask values exceed `text_lengths`, which happens when
+// our tokenizer's subword-level truncation (max_len=384) drops the
+// trailing word mid-token: numWords still counts the partial word but
+// words_mask kept the higher index. 180 sits comfortably under the
+// observed crash thresholds (199–212 across runs) and absorbs noise.
+export const DEFAULT_MAX_WORDS_PER_CHUNK = 180;
+export const DEFAULT_WORD_OVERLAP = 30;
 
 export function chunkText(
   text: string,
-  maxChars: number = DEFAULT_CHUNK_CHARS,
-  overlapChars: number = DEFAULT_OVERLAP_CHARS,
+  maxWords: number = DEFAULT_MAX_WORDS_PER_CHUNK,
+  overlapWords: number = DEFAULT_WORD_OVERLAP,
 ): TextChunk[] {
-  if (overlapChars >= maxChars) {
-    throw new RangeError(`overlapChars (${overlapChars}) must be < maxChars (${maxChars})`);
+  if (overlapWords >= maxWords) {
+    throw new RangeError(`overlapWords (${overlapWords}) must be < maxWords (${maxWords})`);
   }
-  if (text.length <= maxChars) return [{ text, offset: 0 }];
+  const words = splitWords(text);
+  if (words.length <= maxWords) return [{ text, offset: 0 }];
+
   const chunks: TextChunk[] = [];
-  let start = 0;
-  const stride = maxChars - overlapChars;
-  while (start < text.length) {
-    const end = Math.min(start + maxChars, text.length);
-    chunks.push({ text: text.slice(start, end), offset: start });
-    if (end >= text.length) break;
-    start += stride;
+  const stride = maxWords - overlapWords;
+  for (let start = 0; start < words.length; start += stride) {
+    const end = Math.min(start + maxWords, words.length);
+    const startWord = words[start];
+    if (!startWord) break;
+    const chunkStart = startWord.charStart;
+    const chunkEnd = end < words.length ? (words[end]?.charStart ?? text.length) : text.length;
+    chunks.push({ text: text.slice(chunkStart, chunkEnd), offset: chunkStart });
+    if (end === words.length) break;
   }
   return chunks;
 }

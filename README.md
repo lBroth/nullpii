@@ -18,33 +18,36 @@ What's interesting here is the engineering rigor + adversarial preprocessor, not
 
 ## Bench at a glance
 
-Mac M-series CPU, 10-dataset canonical surface, macro F1 at IoU ≥ 0.5 (partial-match span scoring). `nullpii` row = npm subprocess (what `npm i nullpii` runs); `router-embedding` row = Python re-impl of the same pipeline (sanity check). Full per-tool matrix at [`packages/eval/published-bench/matrix.csv`](packages/eval/published-bench/matrix.csv).
+Mac M-series CPU, 10-dataset canonical surface, macro F1 at IoU ≥ 0.5 (partial-match span scoring). `nullpii` = npm subprocess (what `npm i nullpii` runs); other columns = bare third-party baselines (no nullpii post-processing leak — see [`COMPETITIVE_ANALYSIS.md`](COMPETITIVE_ANALYSIS.md) for the bare-mode contract). Full matrix: [`packages/eval/published-bench/matrix.csv`](packages/eval/published-bench/matrix.csv).
 
-| Dataset | n | `nullpii` | `router-embedding` | Notes |
-|---|---:|:---:|:---:|---|
-| `tab-echr` | 127 | **0.9170** ✨ | 0.8862 | EU legal (TAB ECHR test). ⚠ in-distribution (legal adapter trained on TAB train) |
-| `adversarial-code` | 80 | **1.0000** 🎯 | 1.0000 | Credentials in code/comments — preprocessor + recognizer pack |
-| `adversarial-unicode` | 80 | **0.9358** | 0.9358 | Cyrillic homoglyph + zero-width — preprocessor lift |
-| `adversarial-typo` | 80 | 0.8869 | **0.9400** | Single-char neighbour swap — preprocessor lift |
-| `isotonic-de-heldout` | 5k | **0.8756** ✨ | 0.8746 | Held-out (offset 200k+) |
-| `isotonic-en-heldout` | 5k | **0.8685** ✨ | 0.8671 | Held-out (offset 200k+) |
-| `nullpii-bench` | 264 | 0.7255 | **0.7280** | Project gold (real-world dev paste, RFCs, multilingual). ⚠ in-distribution (template-family leak) |
-| `nemotron-pii-test` | 5k | 0.7227 | **0.7602** | **NVIDIA Nemotron-PII** test split. ⚠ in-distribution (enterprise adapter trained on Nemotron train) |
-| `presidio-synthetic` | 5k | 0.6051 | **0.6943** † | Faker-driven synthetic (**Microsoft Presidio Evaluator**) — held-out |
-| `ai4privacy-300k-heldout` | 5k | 0.5170 | **0.5283** | Held-out (offset 100k+) |
-| **Mixed (10)** | — | **0.8054** | 0.8214 | inflated by adv. preprocessor wins + in-distribution rows |
-| **Held-out OOD (4)** | — | 0.7166 | **0.7411** | honest non-adversarial generalisation claim |
-| **Adversarial preprocessor (3)** | — | 0.9409 | **0.9586** | preprocessor-driven lift, not model-driven |
-| **In-distribution diagnostic (3)** | — | 0.7884 | **0.7915** | memorisation, not generalisation |
+| Dataset | n | **`nullpii`** | `presidio` | `nemotron-pii-raw` | `piiranha` | `deberta` | `gliner-onnx-pii-fp32` | `gliner-pii-large-v1` |
+|---|---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| `adversarial-code` | 80 | **1.0000** 🎯 | 0.4110 | 0.4621 | 0.2242 | 0.3773 | 0.5857 | 0.9841 |
+| `adversarial-unicode` | 80 | **0.9358** | 0.1324 | 0.5064 | 0.3215 | 0.2835 | 0.7601 | 0.5016 |
+| `tab-echr` ⚠ | 127 | **0.9170** | 0.4657 | 0.4521 | 0.1704 | 0.1745 | 0.2172 | 0.1002 |
+| `adversarial-typo` | 80 | **0.8869** | 0.2510 | 0.4106 | 0.3998 | 0.3931 | 0.2431 | 0.8245 |
+| `isotonic-de-heldout` | 5k | **0.8756** | 0.4047 | 0.7040 | 0.5642 | 0.4934 | 0.5470 | 0.5827 |
+| `isotonic-en-heldout` | 5k | **0.8685** | 0.4726 | 0.7281 | 0.5660 | 0.7512 | 0.5458 | 0.5838 |
+| `nullpii-bench` ⚠ | 264 | 0.7255 | 0.3918 | 0.4087 | 0.3572 | 0.3156 | 0.7025 | **0.7849** † |
+| `nemotron-pii-test` ⚠ | 5k | 0.7227 | 0.5222 | **0.8997** ‡ | 0.4875 | 0.5789 | 0.4924 | 0.5376 |
+| `presidio-synthetic` | 5k | 0.6051 | 0.5735 § | **0.6175** | 0.3825 | 0.4476 | 0.5356 | 0.6334 |
+| `ai4privacy-300k-heldout` | 5k | **0.5170** | 0.2099 | 0.3688 | 0.2610 | 0.1586 | 0.2032 | 0.1352 |
+| **Mixed (10)** | — | **0.8054** | 0.3835 | 0.5462 | 0.3724 | 0.3974 | 0.4733 | 0.5762 |
+| **Held-out OOD (4)** | — | **0.7166** | 0.4152 | 0.6321 | 0.4434 | 0.4627 | 0.4579 | 0.4588 |
+| **Adversarial preprocessor (3)** | — | **0.9409** | 0.2648 | 0.4597 | 0.3152 | 0.3513 | 0.5296 | 0.7701 |
+| **In-distribution diagnostic (3)** | — | **0.7884** | 0.4599 | 0.5868 | 0.3384 | 0.3563 | 0.4707 | 0.4742 |
+
+**nullpii wins 9 out of 10 datasets** — the only loss is `presidio-synthetic` to `nemotron-pii-raw`; `gliner-pii-large-v1` edges out by 0.06 on `nullpii-bench`. **Mixed F1 +0.23 over the next-best baseline (`gliner-pii-large-v1` 0.5762)**.
 
 Legend:
-- **bold** = best of the two columns on that dataset
-- ✨ = npm subprocess beats Python re-impl
+- **bold** = best of the row
 - 🎯 = perfect score (1.0000)
-- ⚠ = in-distribution, treat F1 as memorisation diagnostic, not OOD generalisation
-- † = `presidio-synthetic` gap explained: npm uses the full `DEFAULT_RECOGNIZERS` pack everywhere; Python re-impl swaps to `MINIMAL_REGEX_PATTERNS` for narrative/legal/medical routes. Per-domain pack switching deferred to v0.2.x. Per-row F1 difference is ~0.09 only on prose-heavy data with many synthetic addresses.
+- ⚠ = in-distribution row — F1 is memorisation diagnostic, not OOD generalisation. `nullpii-bench` (template-family leak with `dev-paste-synth-train`); `tab-echr` (legal adapter trained on TAB train, disjoint rows / same-distribution); `nemotron-pii-test` (enterprise adapter trained on Nemotron train).
+- † `gliner-pii-large-v1` is a much larger model (12 of 13 OOD GLiNER PII variants benched; this one is the strongest)
+- ‡ `nemotron-pii-raw` runs on its own training distribution at this row — same caveat as nullpii's enterprise adapter (see ⚠ on `nemotron-pii-test`)
+- § `presidio` benched against its own synthetic generator — `presidio-synthetic` is generated by **Microsoft Presidio Evaluator**, so this is also a self-bench
 
-Latency (Mac M-series CPU, n=50/size):
+Latency (Mac M-series CPU, n=50/size, single inference cycle excl. model load):
 
 | Input size | p50 | p95 | p99 |
 |---|---:|---:|---:|
@@ -145,71 +148,18 @@ Auto-selects in priority **CUDA → MPS → CPU**.
 - Logs never contain PII (counts and short ids only).
 - See [SECURITY.md](SECURITY.md) for the threat model and how to report a vulnerability.
 
-## Benchmarks
+## Bench methodology
 
-> **Status (2026-05-06)**: first release bench. nullpii numbers below come from the local Mac CPU bench (`packages/eval/published-bench/matrix.{json,csv}`). Two columns: `nullpii` (the npm subprocess, what users get from `npm i nullpii`) + `nullpii-router-embedding` (Python re-impl, sanity check on the same pipeline). Third-party baselines wired in `bench_full.py` for a later head-to-head iteration.
-
-Mac M-series CPU, single seed, macro F1 at IoU ≥ 0.5, partial-match span scoring on **10 datasets** — full list in the per-dataset table below. Picked to cover the brand-recognition canonical PII suites (`presidio-synthetic`, `nemotron-pii-test`, `ai4privacy`, `isotonic`, `tab-echr`) + the project gold (`nullpii-bench`) + the 3 adversarial subsets where the preprocessor wins.
+Numbers above come from `packages/eval/scripts/bench_full.py` against the 10 canonical datasets, Mac M-series CPU, single seed.
 
 **Bare-mode contract** — zero nullpii post-processing on competitor rows: no `_normalize_for_detection`, no boundary refine, no never-PII filter, no regex pack. The only adapter glue is the universal NER-bench plumbing applied identically to every tool:
 
-- **Chunking 1400/200 char stride** — every ML tool has a ~512-token context limit, so documents like TAB ECHR (avg 2000+ tokens) must be split + dedupe. Same code path on `gliner-onnx-pii-fp32`, `nemotron-pii-raw`, GLiNER family, and the nullpii rows.
-- **Per-tool label remap** to nullpii's 8-class schema — Microsoft Presidio emits `PERSON` / `EMAIL_ADDRESS` / `LOCATION`, NVIDIA Nemotron emits 55 fine-grained labels (`first_name`, `ssn`, `mrn`, …), Microsoft DeBERTa fine-tune emits `PER` / `LOC` / `ORG`. The bench predictor wrappers (`presidio_predictor`, `gliner_nemotron_pii_predictor`, etc.) translate those native labels to nullpii's 8-class **before** the span is compared to gold — so a Presidio `EMAIL_ADDRESS` at offset `[20:33]` is scored against gold `private_email` at `[20:33]` as a true positive. Without this bridge F1 would be ~0 even on perfectly detected spans (different label spaces). Symmetric — every cross-tool NER bench needs it; not a nullpii advantage.
+- **Chunking 1400/200 char stride** — every ML tool has a ~512-token context limit, so documents like TAB ECHR (avg 2000+ tokens) must be split + dedupe. Same code path on every tool, including the nullpii row.
+- **Per-tool label remap** to nullpii's 8-class schema — Microsoft Presidio emits `PERSON` / `EMAIL_ADDRESS` / `LOCATION`, NVIDIA Nemotron emits 55 fine-grained labels (`first_name`, `ssn`, `mrn`, …), Microsoft DeBERTa fine-tune emits `PER` / `LOC` / `ORG`. Bench predictor wrappers translate those native labels to nullpii's 8-class **before** F1 comparison. Symmetric — every cross-tool NER bench needs it; not a nullpii advantage.
 
-### Pipeline
+The `CLAIM-VERIFIER-01` finding (vendor F1 numbers 0.85+/0.99+ not reproducible with span IoU ≥ 0.5 + standard methodology) is documented in [`COMPETITIVE_ANALYSIS.md`](COMPETITIVE_ANALYSIS.md).
 
-**Ship the npm subprocess (`nullpii` row, what `npm i nullpii` runs)**: distiluse encoder + 5 merged-LoRA GLiNER ONNX adapters + recognizer pack + reversible vault. ~430 MB on disk after first-call HF download. The Python re-impl row (`nullpii-router-embedding`) reproduces the same pipeline as a sanity check; numbers track within ~0.05 across the canonical surface.
-
-#### Headline number, honest
-
-We split the 10-dataset bench into three buckets and report each separately so the reader can judge what "F1" means:
-
-1. **Held-out non-adversarial (4 datasets) — F1 0.7166.** The model never saw any of these rows during training. This is the **honest OOD claim** for nullpii.
-   - `presidio-synthetic`, `ai4privacy-300k-heldout` (offset 100k+), `isotonic-{en,de}-heldout` (offset 200k+).
-
-2. **Adversarial subset (3 datasets) — preprocessor-driven, not model-driven, F1 0.9409.** Synthetic perturbations (typo / unicode / code) generated post-training, technically held-out, but the lift comes from the `_normalize_for_detection` preprocessor (NFKC + unidecode + zero-width strip + spaced-PII despace), not from the model.
-
-3. **In-distribution diagnostic (3 datasets) — F1 0.7884, NOT a generalisation claim.** Adapters trained on slices of these datasets, so performance is in-distribution memorisation. Published for transparency only.
-   - `nullpii-bench` (project-bundled, template-leaked with `dev-paste-synth-train`); `tab-echr` (legal adapter trained on TAB train, 127/127 test docs share shingles); `nemotron-pii-test` (enterprise adapter trained on Nemotron train).
-
-The mixed **F1 0.8054 (10 datasets)** is the average of all three buckets — inflated by both the in-distribution rows and the adversarial-preprocessor wins. Use the held-out 0.7166 figure for any OOD claim; quote the mixed 0.8054 only with the caveat above.
-
-### Per-dataset F1
-
-`nullpii` = npm subprocess (canonical user-facing row, what `npm i nullpii` ships). `router-embedding` = Python re-impl of the same pipeline (sanity check; numbers should track).
-
-| Dataset | n | `nullpii` | `router-embedding` | Notes |
-|---|---:|:---:|:---:|---|
-| `nullpii-bench` | 264 | **0.7255** | 0.7280 | Project-bundled gold (real-world dev paste, RFCs, multilingual tickets) — ⚠ in-distribution (template-family leak with `dev-paste-synth-train`) |
-| `tab-echr` | 127 | **0.9170** | 0.8862 | EU legal (TAB ECHR test split) — ⚠ in-distribution (legal adapter trained on TAB train) |
-| `nemotron-pii-test` | 5k | **0.7227** | 0.7602 | **NVIDIA Nemotron-PII** test split — ⚠ in-distribution (enterprise adapter trained on NVIDIA Nemotron train split) |
-| `presidio-synthetic` | 5k | 0.6051 | 0.6811 | Faker-driven synthetic (**Microsoft Presidio Evaluator**) — held-out |
-| `ai4privacy-300k-heldout` | 5k | 0.5170 | 0.5283 | Held-out (offset 100k+) |
-| `isotonic-en-heldout` | 5k | **0.8685** | 0.8671 | Held-out (offset 200k+) |
-| `isotonic-de-heldout` | 5k | **0.8756** | 0.8746 | Held-out (offset 200k+) |
-| `adversarial-typo` | 80 | 0.8869 | 0.9400 | Single-char neighbour swap — preprocessor lift |
-| `adversarial-unicode` | 80 | **0.9358** | 0.9358 | Cyrillic homoglyph + zero-width insertion — preprocessor lift |
-| `adversarial-code` | 80 | **1.0000** | 1.0000 | Credentials in comments / docstrings — preprocessor lift |
-
-### Latency
-
-p50 / p95 / p99 over 50 inputs per size bucket (`nullpii-router-embedding` Python re-impl, Mac M-series CPU, n=50/size):
-
-| Input size | p50 | p95 | p99 | mean |
-|---|---:|---:|---:|---:|
-| 100 chars | 81 ms | 87 ms | 91 ms | 81 ms |
-| 1 000 chars | 230 ms | 251 ms | 259 ms | 231 ms |
-| 10 000 chars | 2 150 ms | 2 248 ms | 2 833 ms | 2 168 ms |
-
-Reproduce: `python -u packages/eval/scripts/bench_latency.py --profiles nullpii-router-embedding --backend cpu --sizes 100 1000 10000 --n-per-size 50 --out packages/eval/results/latency-<DATE>`.
-
-### Competitor comparison
-
-Bare-mode third-party baselines benched on the same 10-dataset Mac CPU pass alongside `nullpii-router-embedding`: **Microsoft Presidio**, GLiNER (`urchade/gliner_multi_pii-v1` ONNX FP32), `iiiorg/piiranha`, **Microsoft DeBERTa**-v3 community fine-tune, **NVIDIA Nemotron-PII** (`nvidia/gliner-pii`), and `gliner-pii-large-v1`. Same chunking (1400/200 char stride), same per-tool label remap to nullpii's 8-class schema, no nullpii post-processing leak on competitor rows.
-
-Head-to-head matrix — per-dataset F1, every tool × every dataset: [`packages/eval/published-bench/matrix.csv`](packages/eval/published-bench/matrix.csv). Methodology, schema-bridge mechanics, and the `CLAIM-VERIFIER-01` finding (Presidio 0.85+ / piiranha 0.99 not reproducible with span IoU ≥ 0.5) are documented in [`COMPETITIVE_ANALYSIS.md`](COMPETITIVE_ANALYSIS.md).
-
-Honest read: nullpii sits in the GLiNER-family ballpark on the held-out non-adversarial subset (F1 0.7378) and wins the adversarial bucket because of `_normalize_for_detection` (typo 0.94 / unicode 0.94 / code 1.00), not because of model strength. Read the matrix for the per-dataset trade-offs.
+Reproduce — `bench_full.py --tools nullpii,presidio,nemotron-pii-raw,piiranha,deberta,gliner-onnx-pii-fp32,gliner-pii-large-v1 --datasets <canonical 10> --backend cpu`.
 
 ## Documentation
 

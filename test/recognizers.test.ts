@@ -41,12 +41,32 @@ describe('runRecognizers', () => {
     expect(spans[0]?.text).toBe('AKIAIOSFODNN7EXAMPLE');
   });
 
-  it('skips matches that overlap an existing higher-confidence span', () => {
+  it('high-confidence recognizers (≥0.9) emit even when overlapping ML output', () => {
+    // ML mislabels (e.g., narrative adapter classifies an AWS key as
+    // `account_number`); the regex's `secret` label at 0.99 must still
+    // be emitted so cross-label dedupe in `nullpii.ts` can pick the
+    // correct label.
     const text = 'AKIAIOSFODNN7EXAMPLE';
     const existing: PiiSpan[] = [
-      { label: 'secret', start: 0, end: 20, score: 1.0, text: 'AKIAIOSFODNN7EXAMPLE' },
+      { label: 'account_number', start: 0, end: 20, score: 0.6, text: 'AKIAIOSFODNN7EXAMPLE' },
     ];
-    expect(runRecognizers(text, [awsKey], existing)).toHaveLength(0);
+    const spans = runRecognizers(text, [awsKey], existing);
+    expect(spans).toHaveLength(1);
+    expect(spans[0]?.label).toBe('secret');
+  });
+
+  it('low-confidence recognizers still defer to ML on overlap', () => {
+    const text = 'foo bar baz';
+    const lowConf: Recognizer = {
+      id: 'noise',
+      pattern: /bar/g,
+      label: 'private_person',
+      confidence: 0.5,
+    };
+    const existing: PiiSpan[] = [
+      { label: 'private_person', start: 4, end: 7, score: 0.8, text: 'bar' },
+    ];
+    expect(runRecognizers(text, [lowConf], existing)).toHaveLength(0);
   });
 
   it('honours validate() — Luhn rejects an invalid 16-digit string', () => {

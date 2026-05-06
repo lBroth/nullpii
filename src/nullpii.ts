@@ -185,8 +185,17 @@ export class NullPii {
           });
 
     const recoSpans = runRecognizers(escaped, this.recognizers, mlSpans);
+    // High-confidence recognizers (≥ 0.9) emit even when overlapping ML
+    // output, so dedupe by IoU + score: highest score wins regardless
+    // of label. Catches the common case where ML mislabels a known
+    // pattern (e.g., `ghp_…` token classified as `account_number` by
+    // the narrative adapter) — recognizer's `secret` (0.99) overrides
+    // ML's `account_number` (0.5–0.7).
+    const combined = dedupeOverlappingSpans([...mlSpans, ...recoSpans] as PiiSpan[], 0.5, {
+      acrossLabels: true,
+    }) as PiiSpan[];
     const merged = applyThresholds(
-      [...mlSpans, ...recoSpans],
+      combined,
       this.config.threshold ?? 0,
       this.config.categoryThresholds ?? {},
     );

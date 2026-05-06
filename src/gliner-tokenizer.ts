@@ -20,6 +20,12 @@ export const DEFAULT_MAX_SPAN_WIDTH = 12;
 /** Default max sequence length (in subword tokens). 384 matches `max_len`. */
 export const DEFAULT_MAX_SEQUENCE_LENGTH = 384;
 
+/** Hard cap on word count fed into the model. The merged-LoRA ONNX export
+ * has a static ScatterND_1 limit at ~212 words; inputs that fit
+ * subword-wise (384 cap) but exceed this word limit crash ORT with
+ * `invalid indice`. 200 leaves headroom for tokenizer variance. */
+export const MAX_TEXT_WORDS = 200;
+
 /** Whitespace word splitter — port of Python `WhitespaceTokenSplitter`
  * (`gliner/data_processing/tokenizer.py:40`). Pattern `\w+(?:[-_]\w+)*|\S`
  * yields words including hyphenated/underscored compounds plus standalone
@@ -161,9 +167,11 @@ export class GlinerTokenizer {
     // Text words: each word's first subword gets words_mask = wordIdx+1
     // (1-indexed). Continuation subwords get 0.
     let truncatedSubwords = false;
+    let truncatedByWordCap = false;
     const limit = this.maxSequenceLength - 1; // reserve 1 slot for trailing [SEP]
     let truncatedWordCount = 0;
-    for (let wi = 0; wi < words.length; wi++) {
+    const wordCap = Math.min(words.length, MAX_TEXT_WORDS);
+    for (let wi = 0; wi < wordCap; wi++) {
       if (ids.length >= limit) {
         truncatedSubwords = true;
         break;
@@ -185,20 +193,26 @@ export class GlinerTokenizer {
       if (truncatedSubwords) break;
       truncatedWordCount = wi + 1;
     }
-    const numTextWords = truncatedSubwords ? truncatedWordCount : words.length;
+    if (truncatedWordCount === MAX_TEXT_WORDS && words.length > MAX_TEXT_WORDS) {
+      truncatedByWordCap = true;
+    }
+    const numTextWords =
+      truncatedSubwords || truncatedByWordCap ? truncatedWordCount : words.length;
 
     // [SEP] at end.
     ids.push(sepId);
     wordsMaskArr.push(0);
 
     const seqLen = ids.length;
-    if (truncatedSubwords) {
+    if (truncatedSubwords || truncatedByWordCap) {
       log(
-        'input hit max_len=%d — words past index %d dropped (%d/%d words encoded)',
-        this.maxSequenceLength,
-        numTextWords,
+        'input truncated to %d/%d words (subword cap %d hit=%s, word cap %d hit=%s)',
         numTextWords,
         words.length,
+        this.maxSequenceLength,
+        truncatedSubwords,
+        MAX_TEXT_WORDS,
+        truncatedByWordCap,
       );
     }
 

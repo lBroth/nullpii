@@ -42,7 +42,7 @@ python -u scripts/bench_latency.py --profiles nullpii-router-embedding \
 
 ## Bundled datasets
 
-`datasets/` — Apache 2.0, no real PII, see [`datasets/README.md`](datasets/README.md) for schema + per-file detail. Canonical bench files: `nullpii-bench.jsonl`, `tab-echr-test.jsonl`, `nullpii-adversarial.jsonl` (typo/unicode/code subsets). External datasets loaded on demand: `ai4privacy/pii-masking-300k`, `Isotonic/pii-masking-200k`, `nvidia/Nemotron-PII`, `presidio-research/presidio-synthetic`.
+`datasets/` — Apache 2.0, no real PII. See [`datasets/README.md`](datasets/README.md) for schema + subset breakdown. Project-authored bench data is unified under `nullpii-bench.jsonl` (2 421 rows, multiple `subset` filters). External datasets loaded on demand: `ai4privacy/pii-masking-300k`, `Isotonic/pii-masking-200k`, `nvidia/Nemotron-PII`, `presidio-research/presidio-synthetic`.
 
 ## Model card
 

@@ -95,20 +95,21 @@ def _wikiann(lang: str) -> Callable[[int | None], list[Sample]]:
 
 
 def _load_nullpii_bench(n: int | None) -> list[Sample]:
-    """Load the canonical `nullpii-bench` rows: `bundled` + `long-prompts`
-    subsets of the unified `nullpii-bench.jsonl` (264 samples). The
-    `adversarial` subset (7 hand-curated decoys) is excluded — exercises
-    regex only, perfect F1 for trivial reasons. Other subsets in the
-    same file (typo_pii / unicode_obf / etc., textattack-*) are loaded
-    via `_load_nullpii_subset(subset=...)` for the dedicated bench rows.
+    """Load the entire unified `nullpii-bench.jsonl` (2421 samples).
+
+    Single-file bench surface that covers every project-authored row:
+    multilingual dev paste (`bundled` + `long-prompts`), the 6
+    preprocessor-regression subsets (`typo_pii` / `unicode_obf` /
+    `whitespace_obf` / `encoding_obf` / `decoys` / `code_pii`), and the
+    5 TextAttack perturbation slices. Mixed character of the file is
+    intentional: one F1 number summarises the model's behaviour across
+    every adversarial pattern we author.
     """
     path = Path(__file__).resolve().parent.parent / "datasets" / "nullpii-bench.jsonl"
     out: list[Sample] = []
     with path.open(encoding="utf-8") as f:
         for line in f:
             row = json.loads(line)
-            if row["subset"] not in ("bundled", "long-prompts"):
-                continue
             spans = tuple(Span(s["label"], int(s["start"]), int(s["end"])) for s in row["spans"])
             out.append(Sample(row["text"], spans))
             if n and len(out) >= n:

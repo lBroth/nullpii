@@ -9,28 +9,19 @@ import { fileExists } from './paths.js';
 
 const log = debug('nullpii:gliner-tokenizer');
 
-/** GLiNER special tokens (verified against `gliner_config.json` of
- * `onnx-community/gliner_multi_pii-v1`). */
+/** GLiNER special tokens (from `gliner_config.json`). */
 export const ENT_TOKEN = '<<ENT>>';
 export const SEP_TOKEN = '<<SEP>>';
 
-/** Default max span width (in words). 12 matches `gliner_config.json:max_width`. */
+/** From `gliner_config.json`: max_width=12, max_len=384. */
 export const DEFAULT_MAX_SPAN_WIDTH = 12;
-
-/** Default max sequence length (in subword tokens). 384 matches `max_len`. */
 export const DEFAULT_MAX_SEQUENCE_LENGTH = 384;
 
-/** Cap on word count fed into the model. Defence-in-depth alongside the
- * subword cap; the model graph itself is dynamic, but extreme inputs
- * still risk pathological scatter shapes. 500 leaves headroom while
- * staying well above the bench's longest documents. */
+/** Defence-in-depth word cap; chunker is the primary bound. */
 export const MAX_TEXT_WORDS = 500;
 
-/** Whitespace word splitter — port of Python `WhitespaceTokenSplitter`
- * (`gliner/data_processing/tokenizer.py:40`). Pattern `\w+(?:[-_]\w+)*|\S`
- * yields words including hyphenated/underscored compounds plus standalone
- * non-whitespace symbols. Each match carries its character offsets.
- */
+/** Word splitter — `\w+(?:[-_]\w+)*|\S` matches word blobs +
+ * single non-whitespace symbols (port of upstream GLiNER's regex). */
 export interface Word {
   readonly text: string;
   readonly charStart: number;

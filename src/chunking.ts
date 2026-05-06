@@ -3,31 +3,16 @@
 import { splitWords } from './gliner-tokenizer.js';
 
 /** Word-aware sliding-window chunker. Splits on GLiNER word boundaries
- * so each chunk has a bounded word count regardless of input density
- * (prose, code, env-var dumps, JSON — all chunk to the same word
- * budget). Char chunking is unsafe because punctuation each becomes
- * a word in the GLiNER tokenizer; a 900-char prose chunk has ~150
- * words, the same length of dense JSON has ~250.
- *
- * Chunks overlap by `overlapWords` words so spans straddling a chunk
- * boundary are detectable in at least one chunk. The caller is
- * responsible for deduping overlapping spans across chunks (see
- * `dedupeOverlappingSpans`).
- */
+ * so each chunk has a bounded word count regardless of input density.
+ * Chunks overlap by `overlapWords`; caller dedupes via
+ * `dedupeOverlappingSpans`. */
 export interface TextChunk {
-  /** Chunk text passed to the model. */
   readonly text: string;
-  /** Char offset of this chunk within the source string. */
   readonly offset: number;
 }
 
-// The merged-LoRA ONNX export carries content-dependent caps in the
-// GLiNER head (ScatterND_1 indice errors observed at 172–212 across
-// inputs; dash-heavy or punctuation-dense content lowers the safe
-// limit). 140 is the empirical floor that holds across the bench
-// surface (nullpii-bench long-prompts + ai4privacy-300k-heldout German
-// dash-banner inputs) — small enough to absorb worst-case input
-// density, large enough to keep span-boundary recall reasonable.
+// 140 holds across the bench surface — merged-LoRA ONNX ScatterND_1
+// crashes at content-dependent thresholds (~172–212 words observed).
 export const DEFAULT_MAX_WORDS_PER_CHUNK = 140;
 export const DEFAULT_WORD_OVERLAP = 30;
 

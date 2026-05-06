@@ -1,36 +1,11 @@
 import anyAscii from 'any-ascii';
 
-/**
- * Adversarial-resistant input normalisation with offset map.
- *
- * Mirrors `_normalize_for_detection` in
- * `packages/eval/src/nullpii_eval/adapters.py`. The Python-side
- * preprocessor lifts adversarial F1 measurably:
- *   adv-unicode    0.466 → 0.936  (+0.470)
- *   adv-whitespace 0.106 → 0.393  (+0.287)
- *   adv-typo       baseline → 0.940
- *
- * Applies in order:
- *   - Whitespace-obfuscated PII collapse (`g i a n l u c a` → `gianluca`),
- *     gated by post-check (≥4 digits OR (≥1 `@` + ≥1 letter)) to
- *     avoid mangling prose with sparse digits (`Mary J. Doe age 4 7`).
- *   - URL `%XX` decode (`%40` → `@`), with email-anchor guard.
- *   - HTML numeric entity decode (`&#115;` / `&#x73;` → `s`),
- *     with email-anchor guard.
- *   - Zero-width / soft-hyphen / word-joiner strip.
- *   - Per-char NFKC normalisation.
- *   - Per-char ASCII transliteration via `any-ascii` (handles Cyrillic
- *     homoglyphs, fullwidth digits, mathematical fonts → ASCII
- *     equivalent).
- *
- * Returns `{ normalized, normToOrig }`. `normToOrig[i]` is the
- * original-text index of the i-th char in the normalised text;
- * sentinel at the end equals `text.length` so span ends remap cleanly.
- *
- * Span offsets emitted by the detector against the normalised text
- * are remapped back to original-text offsets via `remapSpan` before
- * the vault stores them.
- */
+/** Adversarial-resistant input normalisation with offset map.
+ * Steps in order: whitespace-PII collapse (gated by digit/@ post-check),
+ * URL `%XX` decode, HTML numeric-entity decode, zero-width strip,
+ * NFKC, per-char ASCII transliteration via `any-ascii`.
+ * `normToOrig[i]` = original index of the i-th normalised char;
+ * sentinel at `length` equals `text.length`. Used by `remapSpan`. */
 export interface NormalizeResult {
   readonly normalized: string;
   /** Length = normalized.length + 1; sentinel at end equals original text length. */

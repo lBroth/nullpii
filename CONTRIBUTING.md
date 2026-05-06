@@ -1,108 +1,47 @@
 # Contributing
 
-Thanks for considering a contribution to **nullpii**.
-
-## Local setup
+## Setup
 
 ```bash
-# Node 24 LTS (see .nvmrc)
-nvm use
-
-# Install JS deps
+nvm use            # Node 24 LTS (.nvmrc)
 npm install
-
-# Build
 npm run build
-
-# Run tests
 npm test
-
-# Lint + typecheck (matches CI)
-npm run lint
-npm run typecheck
+npm run lint && npm run typecheck
 ```
 
-The eval / training kit (Python 3.12, gitignored) lives under
-`packages/eval/`. See `packages/eval/README.md` for setup.
+Eval kit (Python 3.12, gitignored from npm publish): `cd packages/eval && python3.12 -m venv .venv && pip install -e ".[presidio]"`. See `packages/eval/README.md`.
 
 ## Architecture rules
 
-These are non-negotiable; PRs that violate them will not be merged.
+Non-negotiable — PRs that violate these will not be merged.
 
-- **ML-first detection, regex as post-pass.** GLiNER (or `openai/privacy-filter`) is the primary detector. Regex recognizers (`src/recognizers.ts`, `packages/recognizers-*`) run as a post-pass for known formats with low ML coverage (cloud keys, IBAN, Italian CF/PIVA). They never replace the ML pass.
-- **No cloud calls** for the detection step. Everything must be offline.
-- **No `console.log` in library code.** Use `debug` namespaced loggers; logs carry counts and short ids, never PII values.
-- **No `any`.** TypeScript strict mode + `exactOptionalPropertyTypes`.
-- **No global mutable state.** Encapsulate state in classes.
-- **Short functions, short files.** Split if a function does more than one thing.
-- **No circular imports.** `npm run circular-check` runs in CI and in the pre-commit hook.
-- **Apache-2.0 / MIT / BSD / ISC / CC0** dependencies only. `npm run license-check` runs in CI.
-- **Defaults centralized in `src/defaults.ts`.** Import typed helpers from `src/config.ts` for env access (`hasCudaPath`, `huggingFaceToken`); other modules never touch `process.env` directly.
-
-## Adding a backend
-
-A new ORT-based backend is typically ~20 lines. Extend `OrtBackend`:
-
-```ts
-// src/backend/<name>-backend.ts
-const MY_CONFIG: BackendConfig = {
-  name: 'mybackend',
-  executionProviders: [{ name: 'myEP' }, 'cpu'],
-  autoVariant: 'fp16',
-};
-export class MyBackend extends OrtBackend {
-  constructor(modelDir: string, variant: ModelVariant = 'auto') {
-    super(MY_CONFIG, modelDir, variant);
-  }
-  async isAvailable(): Promise<boolean> { /* probe driver */ }
-}
-```
-
-Then:
-1. Add a subpath in `package.json` `exports`.
-2. Add a `loadBackend` case in `src/router.ts`.
-3. Write unit tests under `test/backend/` (lifecycle + platform check).
-4. Document in `README.md` (Backends section).
+- **ML-first detection, regex as post-pass.** GLiNER is the primary detector; recognizers run after, never replace.
+- **No cloud calls** for detection.
+- **No `console.log`** in library code — use `debug` namespaced loggers (counts/ids only, never PII values).
+- **No `any`.** TS strict mode + `exactOptionalPropertyTypes`.
+- **No global mutable state.**
+- **No circular imports.** `npm run circular-check` in CI + pre-commit.
+- **Defaults centralised in `src/defaults.ts`.** `process.env` only via typed helpers in `src/config.ts`.
+- **Apache-2.0 / MIT / BSD / ISC / CC0 deps only.** `npm run license-check` in CI.
 
 ## Tests
 
-- TDD: tests before implementation.
-- Every public function needs at least: happy path + edge case + error case.
-- Coverage thresholds (CI-enforced): **85% lines, 80% branches**.
-- No `test.skip` or `test.only` on `main`.
-- Integration tests that need real model artifacts are **gated** on the
-  artifact dir existing; they auto-skip in CI.
+- TDD — tests before implementation.
+- Public function = happy path + edge case + error case.
+- Coverage thresholds (CI-enforced): 85% lines, 80% branches.
+- Hardware-gated tests (CUDA/MPS) auto-skip when probe fails.
 
-## Commits
+## Commits + PR
 
-Use [Conventional Commits](https://www.conventionalcommits.org/):
+Conventional Commits (`feat`, `fix`, `docs`, `chore`, `refactor`, `perf`, `test`).
 
-```
-feat(backend): add Vulkan execution provider
-fix(vault): restore returned wrong replacement count
-docs(readme): clarify peerDeps
-test(viterbi): cover invalid-transition edge case
-chore(deps): bump onnxruntime-node 1.20 → 1.21
-refactor(adapters): extract shared chunking helper
-perf(tokenizer): cache loaded Tokenizer per modelDir
-```
+PR gate: `lint`, `typecheck`, `test`, `build`, `license-check`, `circular-check`, `sbom` — all must pass. New public API needs JSDoc (`@param`, `@returns`, `@throws`, `@example`).
 
-## PR checklist
+## Bug reports
 
-- [ ] `npm run lint && npm run typecheck && npm test && npm run build` all pass
-- [ ] `npm run license-check && npm run circular-check` pass
-- [ ] New / changed public APIs have JSDoc with `@param` / `@returns` / `@throws` / `@example`
-- [ ] Coverage stays above thresholds
-- [ ] `CHANGELOG.md` updated under `[Unreleased]`
-- [ ] No PII (real or synthetic-looking) in test output, logs, or fixtures
+Open an issue with: minimal repro, platform / Node version, nullpii version, redacted input. **Do not** attach raw PII.
 
-## Reporting bugs
+## Security issues
 
-Open an issue with: a minimal reproduction, the platform / Node version,
-the `nullpii` version, and a redacted sample of the input that caused the
-issue. **Do not** attach raw PII.
-
-## Reporting security issues
-
-See [SECURITY.md](SECURITY.md). Do not open a public issue for security
-problems — use a private channel.
+See [SECURITY.md](SECURITY.md). Use the GitHub Security Advisory channel — do not open a public issue.

@@ -85,20 +85,21 @@ export class DistiluseEncoder {
       ),
     };
     const out = await this.session.run(feeds);
-    const firstName = this.session.outputNames[0];
-    if (firstName === undefined) throw new Error('distiluse: model has no outputs');
-    const last = out[firstName];
-    if (last === undefined) throw new Error(`distiluse: missing tensor '${firstName}'`);
+    // The exported ONNX includes the full sentence-transformers pipeline:
+    // transformer → mean-pool (mask-weighted) → Dense (768→512) → Tanh →
+    // L2-normalise. Output: `sentence_embedding` of shape `[batch, 512]`.
+    const tensor = out.sentence_embedding;
+    if (tensor === undefined) {
+      throw new Error('distiluse: missing `sentence_embedding` output tensor');
+    }
     const flat =
-      last.data instanceof Float32Array
-        ? last.data
-        : Float32Array.from(last.data as ArrayLike<number>);
-    // last shape: [1, seqLen, 768] (DistilBERT hidden) or [1, seqLen, 512]
-    // for distiluse-v2 which projects to 512 via dense layer. We handle
-    // both — read hiddenDim from tensor dims.
-    const tensorDims = last.dims as readonly number[];
-    const hiddenDim = Number(tensorDims[2] ?? 512);
-    return meanPoolNormalise(flat, mask, seqLen, hiddenDim);
+      tensor.data instanceof Float32Array
+        ? tensor.data
+        : Float32Array.from(tensor.data as ArrayLike<number>);
+    if (flat.length !== this.dim) {
+      throw new Error(`distiluse: expected ${this.dim}-dim embedding, got ${flat.length}`);
+    }
+    return flat;
   }
 
   async dispose(): Promise<void> {
@@ -108,41 +109,4 @@ export class DistiluseEncoder {
     }
     this.tokenizer = null;
   }
-}
-
-/** Mean-pool last hidden state over real tokens (attention_mask = 1) and
- * L2-normalise. Standard sentence-transformers `mean_tokens` behaviour. */
-function meanPoolNormalise(
-  hidden: Float32Array,
-  mask: number[],
-  seqLen: number,
-  hiddenDim: number,
-): Float32Array {
-  const pooled = new Float32Array(hiddenDim);
-  let denom = 0;
-  for (let t = 0; t < seqLen; t++) {
-    const m = mask[t];
-    if (m === undefined || m === 0) continue;
-    denom += 1;
-    const off = t * hiddenDim;
-    for (let d = 0; d < hiddenDim; d++) {
-      pooled[d] = (pooled[d] ?? 0) + (hidden[off + d] ?? 0);
-    }
-  }
-  if (denom > 0) {
-    for (let d = 0; d < hiddenDim; d++) {
-      pooled[d] = (pooled[d] ?? 0) / denom;
-    }
-  }
-  // L2 normalise
-  let norm = 0;
-  for (let d = 0; d < hiddenDim; d++) {
-    const v = pooled[d] ?? 0;
-    norm += v * v;
-  }
-  norm = Math.sqrt(norm) || 1;
-  for (let d = 0; d < hiddenDim; d++) {
-    pooled[d] = (pooled[d] ?? 0) / norm;
-  }
-  return pooled;
 }

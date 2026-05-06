@@ -90,7 +90,7 @@ def _routes(*, with_enterprise: bool, backend: str, gliner_threshold: float) -> 
             regex_pack=MINIMAL_REGEX_PATTERNS,
         ),
         "medical": _adapter(
-            "medical-experimental", backend=backend, gliner_threshold=gliner_threshold,
+            "medical", backend=backend, gliner_threshold=gliner_threshold,
             regex_pack=MINIMAL_REGEX_PATTERNS,
         ),
         "narrative": _adapter(

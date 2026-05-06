@@ -73,7 +73,17 @@ export function dedupeOverlappingSpans<T extends SpanLike>(
 ): T[] {
   if (spans.length <= 1) return [...spans];
   const acrossLabels = options.acrossLabels === true;
-  const sorted = [...spans].sort((a, b) => b.score - a.score);
+  // Two-pass strategy:
+  //   1. Containment pass — drop any span fully inside another (any
+  //      label combo). The outer span carries the structurally-richer
+  //      pattern (e.g. recognizer email `<local>@<domain>` containing
+  //      ML's partial-token guess). Containment-elimination is
+  //      independent of score.
+  //   2. IoU pass on the survivors — score-weighted dedupe of partial
+  //      overlaps, with `acrossLabels` controlling whether different
+  //      labels at the same offsets collapse.
+  const survivors = removeContainedSpans(spans);
+  const sorted = [...survivors].sort((a, b) => b.score - a.score);
   const kept: T[] = [];
   for (const s of sorted) {
     let isDup = false;
@@ -87,6 +97,28 @@ export function dedupeOverlappingSpans<T extends SpanLike>(
     if (!isDup) kept.push(s);
   }
   return kept.sort((a, b) => a.start - b.start);
+}
+
+function removeContainedSpans<T extends SpanLike>(spans: T[]): T[] {
+  const out: T[] = [];
+  for (let i = 0; i < spans.length; i++) {
+    const a = spans[i];
+    if (!a) continue;
+    let contained = false;
+    for (let j = 0; j < spans.length; j++) {
+      if (i === j) continue;
+      const b = spans[j];
+      if (!b) continue;
+      // a is strictly contained in b (proper subset). Equal-bounds spans
+      // fall through to the IoU pass so highest score wins on ties.
+      if (b.start <= a.start && b.end >= a.end && b.end - b.start > a.end - a.start) {
+        contained = true;
+        break;
+      }
+    }
+    if (!contained) out.push(a);
+  }
+  return out;
 }
 
 function iou(a: SpanLike, b: SpanLike): number {

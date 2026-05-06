@@ -23,32 +23,12 @@ const sigmoid = (x: number): number => {
   return e / (1 + e);
 };
 
-/**
- * Decode GLiNER span logits into character-offset spans.
+/** GLiNER span logits → char-offset spans (sigmoid + threshold + greedy NMS).
  *
- * Mirrors the logits → spans path from
- * `gliner.decoding.decoder.SpanDecoder.decode` (sigmoid + threshold +
- * `torch.where(probs > threshold)` + greedy NMS).
- *
- * Logits layout (from `OrtBackend.infer()` output): row-major flatten
- * of `[textLength, maxWidth, numClasses]`. Each (i, j, k) entry is at
- * index `i * maxWidth * numClasses + j * numClasses + k`.
- *
- * @param logits — flat output of GLiNER ONNX
- * @param textLength — number of TEXT words in the input (matches the
- *   `text_lengths` ONNX feed and the words array passed in)
- * @param maxWidth — span width dimension (default 12)
- * @param numClasses — number of label classes
- * @param words — text words with original char offsets (from
- *   `GlinerTokenizer.encode().words`); used to map (start_word, end_word)
- *   pairs back to the source text
- * @param labels — label vocabulary in the same order as the prompt that
- *   produced these logits. `labels.length` MUST equal `numClasses`.
- * @param threshold — sigmoid score threshold (default 0.5 per
- *   `gliner_config.json`)
- *
- * @returns spans sorted by (start, -end), with overlaps resolved by
- *   keeping the highest-score span (greedy NMS at IoU > 0).
+ * Logits flat layout: `[textLength, maxWidth, numClasses]` row-major,
+ * index `i * maxWidth * numClasses + j * numClasses + k`. `labels.length`
+ * MUST equal `numClasses`. Returns spans sorted by (start, -end), highest
+ * score wins on overlap (NMS at IoU > 0).
  */
 export function decodeGlinerLogits(
   logits: Float32Array,

@@ -1,25 +1,8 @@
 import { createHash } from 'node:crypto';
 
-/**
- * Per-recognizer post-match validators that drop false positives the
- * regex shape cannot reject by itself. Mirrors the Python
- * `_label_validator` in `packages/eval/src/nullpii_eval/adapters.py`.
- *
- * Provides:
- *   - `base58CheckValid` — BTC Legacy/P2SH addresses (start with `1`
- *     or `3`, base58 charset, 26-34 chars). Cryptographic checksum.
- *   - `luhnValid` — credit-card numbers. Mod-10 / Luhn checksum.
- *   - `iban97Valid` — IBAN. Mod-97 == 1 check after country-code +
- *     check-digit rotation and letter→digit substitution.
- *   - `cpfValid` — Brazilian CPF. Two mod-11 digits.
- *   - `codiceFiscaleValid` — Italian Codice Fiscale (16-char personal
- *     tax id). Final letter is a checksum over the preceding 15
- *     using odd/even position weights.
- *
- * Wire a validator into a recognizer via the `validate` field on
- * `Recognizer`. The `runRecognizers` pipeline calls it once per
- * candidate match and discards the span if it returns `false`.
- */
+/** Post-match checksum validators wired via `Recognizer.validate`.
+ * `base58CheckValid` BTC · `luhnValid` cards · `iban97Valid` IBAN
+ * mod-97 · `cpfValid` BR CPF · `codiceFiscaleValid` IT tax id. */
 
 const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 const BASE58_INDEX = new Map<string, bigint>();
@@ -28,16 +11,8 @@ for (let i = 0; i < BASE58_ALPHABET.length; i++) {
   if (ch !== undefined) BASE58_INDEX.set(ch, BigInt(i));
 }
 
-/**
- * Validate a base58check-encoded string (BIP-0013).
- *
- * Decodes base58 → bytes; payload + 4-byte checksum;
- * SHA256(SHA256(payload))[:4] must equal checksum.
- *
- * drops false-positive matches on prose tokens that share
- * the base58 charset shape (e.g. `Order ID: 1A2B3C4D5E6F7G8H9J1K2L3M4N`)
- * but fail the cryptographic checksum.
- */
+/** BIP-0013 base58check: decode → payload + 4-byte checksum;
+ * `SHA256(SHA256(payload))[:4]` must equal checksum. */
 export function base58CheckValid(addr: string): boolean {
   if (addr.length < 25 || addr.length > 35) return false;
   let n = 0n;

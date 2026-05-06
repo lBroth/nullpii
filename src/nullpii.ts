@@ -89,21 +89,15 @@ export class NullPii {
     return this.initPromise;
   }
 
-  /** Detect PII spans in `text` and replace them with vault placeholders.
+  /** Detect PII in `text`, replace with vault placeholders, return
+   * `{ sessionId, sanitized, spans }`.
    *
-   * Pipeline:
-   *   1. Escape `[[` → PUA sentinel.
-   *   2. Adversarial normalisation (NFKC + unidecode + zero-width strip
-   *      + HTML entity / URL %XX decode + spaced-PII despace).
-   *   3. distiluse encode → cosine sim → domain (with enterprise gate).
-   *   4. GLiNER 6-input ONNX inference on the per-domain merged-LoRA shard.
-   *   5. Sigmoid + threshold + greedy NMS → spans.
-   *   6. Regex recognizer pack on the un-normalised text.
-   *   7. Threshold filter + boundary refine + vault sanitize.
+   * Pipeline: escape `[[` → adversarial-normalise → distiluse-encode +
+   * route → chunk + GLiNER infer → recognizer pack → boundary refine →
+   * vault sanitize.
    *
-   * Inputs longer than GLiNER's `max_len=384` subword tokens are silently
-   * truncated; pass `strictLength: true` to throw instead.
-   */
+   * Inputs over `max_len=384` subwords truncate silently. Pass
+   * `strictLength: true` to throw `TextTooLongError` instead. */
   async sanitize(text: string, sessionId?: string): Promise<SanitizeResult> {
     await this.ensureInit();
     const tokenizer = this.tokenizer;

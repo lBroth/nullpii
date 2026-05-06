@@ -98,8 +98,6 @@ def nullpii_runtime_predictor(
         spans: list[Span] = []
         for s in result.get("spans", []):
             label = str(s.get("label", "")).lower()
-            if label not in _OPENAI_LABELS:
-                continue
             spans.append(Span(label, int(s["start"]), int(s["end"])))
         return ToolResult(spans, elapsed)
 

@@ -25,7 +25,7 @@ describe('chunking', () => {
   });
 
   it('default constants leave headroom for the merged-LoRA ONNX cap', () => {
-    expect(DEFAULT_MAX_WORDS_PER_CHUNK).toBe(180);
+    expect(DEFAULT_MAX_WORDS_PER_CHUNK).toBe(140);
     expect(DEFAULT_WORD_OVERLAP).toBe(30);
   });
 

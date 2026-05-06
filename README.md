@@ -14,7 +14,43 @@ Since I started using Claude Code I stopped playing video games — it became my
 
 What's interesting here is the engineering rigor + adversarial preprocessor, not state-of-the-art F1.
 
-> **Status (2026-05-05)** — first release `v0.1.0`. Built on [`urchade/gliner_multi_pii-v1`](https://huggingface.co/urchade/gliner_multi_pii-v1) (multilingual GLiNER, **Microsoft mDeBERTa-v3** base + GLiNER head, ~278M params). Shipping pipeline: `router-embedding` (~430 MB, **Google distiluse** + 5 per-domain LoRA adapters). The npm runtime downloads the full router stack from HF on first call. Bench: see [`packages/eval/published-bench/matrix.csv`](packages/eval/published-bench/matrix.csv).
+> **Status (2026-05-06)** — first release `v0.1.0`. Built on [`urchade/gliner_multi_pii-v1`](https://huggingface.co/urchade/gliner_multi_pii-v1) (multilingual GLiNER, **Microsoft mDeBERTa-v3** base + GLiNER head, ~278M params). Shipping pipeline: `router-embedding` (~430 MB, **Google distiluse** + 5 per-domain LoRA adapters). The npm runtime downloads the full router stack from HF on first call.
+
+## Bench at a glance
+
+Mac M-series CPU, 10-dataset canonical surface, macro F1 at IoU ≥ 0.5 (partial-match span scoring). `nullpii` row = npm subprocess (what `npm i nullpii` runs); `router-embedding` row = Python re-impl of the same pipeline (sanity check). Full per-tool matrix at [`packages/eval/published-bench/matrix.csv`](packages/eval/published-bench/matrix.csv).
+
+| Dataset | n | `nullpii` | `router-embedding` | Notes |
+|---|---:|:---:|:---:|---|
+| `tab-echr` | 127 | **0.9170** ✨ | 0.8862 | EU legal (TAB ECHR test). ⚠ in-distribution (legal adapter trained on TAB train) |
+| `adversarial-code` | 80 | **1.0000** 🎯 | 1.0000 | Credentials in code/comments — preprocessor + recognizer pack |
+| `adversarial-unicode` | 80 | **0.9358** | 0.9358 | Cyrillic homoglyph + zero-width — preprocessor lift |
+| `adversarial-typo` | 80 | 0.8869 | **0.9400** | Single-char neighbour swap — preprocessor lift |
+| `isotonic-de-heldout` | 5k | **0.8756** ✨ | 0.8746 | Held-out (offset 200k+) |
+| `isotonic-en-heldout` | 5k | **0.8685** ✨ | 0.8671 | Held-out (offset 200k+) |
+| `nullpii-bench` | 264 | 0.7255 | **0.7280** | Project gold (real-world dev paste, RFCs, multilingual). ⚠ in-distribution (template-family leak) |
+| `nemotron-pii-test` | 5k | 0.7227 | **0.7602** | **NVIDIA Nemotron-PII** test split. ⚠ in-distribution (enterprise adapter trained on Nemotron train) |
+| `presidio-synthetic` | 5k | 0.6051 | **0.6943** † | Faker-driven synthetic (**Microsoft Presidio Evaluator**) — held-out |
+| `ai4privacy-300k-heldout` | 5k | 0.5170 | **0.5283** | Held-out (offset 100k+) |
+| **Mixed (10)** | — | **0.8054** | 0.8214 | inflated by adv. preprocessor wins + in-distribution rows |
+| **Held-out OOD (4)** | — | 0.7166 | **0.7411** | honest non-adversarial generalisation claim |
+| **Adversarial preprocessor (3)** | — | 0.9409 | **0.9586** | preprocessor-driven lift, not model-driven |
+| **In-distribution diagnostic (3)** | — | 0.7884 | **0.7915** | memorisation, not generalisation |
+
+Legend:
+- **bold** = best of the two columns on that dataset
+- ✨ = npm subprocess beats Python re-impl
+- 🎯 = perfect score (1.0000)
+- ⚠ = in-distribution, treat F1 as memorisation diagnostic, not OOD generalisation
+- † = `presidio-synthetic` gap explained: npm uses the full `DEFAULT_RECOGNIZERS` pack everywhere; Python re-impl swaps to `MINIMAL_REGEX_PATTERNS` for narrative/legal/medical routes. Per-domain pack switching deferred to v0.2.x. Per-row F1 difference is ~0.09 only on prose-heavy data with many synthetic addresses.
+
+Latency (Mac M-series CPU, n=50/size):
+
+| Input size | p50 | p95 | p99 |
+|---|---:|---:|---:|
+| 100 chars | 81 ms | 87 ms | 91 ms |
+| 1 000 chars | 230 ms | 251 ms | 259 ms |
+| 10 000 chars | 2.15 s | 2.25 s | 2.83 s |
 
 ## Install
 
@@ -136,7 +172,7 @@ We split the 10-dataset bench into three buckets and report each separately so t
 3. **In-distribution diagnostic (3 datasets) — F1 0.7884, NOT a generalisation claim.** Adapters trained on slices of these datasets, so performance is in-distribution memorisation. Published for transparency only.
    - `nullpii-bench` (project-bundled, template-leaked with `dev-paste-synth-train`); `tab-echr` (legal adapter trained on TAB train, 127/127 test docs share shingles); `nemotron-pii-test` (enterprise adapter trained on Nemotron train).
 
-The mixed **F1 0.8174 (10 datasets)** is the average of all three buckets — inflated by both the in-distribution rows and the adversarial-preprocessor wins. Use the held-out 0.7166 figure for any OOD claim; quote the mixed 0.8174 only with the caveat above.
+The mixed **F1 0.8054 (10 datasets)** is the average of all three buckets — inflated by both the in-distribution rows and the adversarial-preprocessor wins. Use the held-out 0.7166 figure for any OOD claim; quote the mixed 0.8054 only with the caveat above.
 
 ### Per-dataset F1
 

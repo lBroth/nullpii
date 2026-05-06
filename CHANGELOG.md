@@ -21,7 +21,7 @@ First public release. Local PII sanitization with reversible vault.
 
 Macro F1, IoU ≥ 0.5 partial-match span scoring. Two columns published — `nullpii` (npm subprocess, the canonical row that ships) + `nullpii-router-embedding` (Python re-impl as sanity check):
 
-- **Mixed F1 0.8174 (10 datasets, npm subprocess)** — average of all three buckets below.
+- **Mixed F1 0.8054 (10 datasets, npm subprocess)** — average of all three buckets below.
 - **Held-out non-adversarial (4 datasets) — F1 0.7166.** Honest OOD claim. `presidio-synthetic`, `ai4privacy-300k-heldout`, `isotonic-{en,de}-heldout`.
 - **Adversarial preprocessor (3 datasets) — F1 0.9409.** Preprocessor-driven lift, not model-driven. typo 0.89 / unicode 0.94 / code 1.00.
 - **In-distribution diagnostic (3 datasets) — F1 0.7884.** Memorisation, not generalisation. `nullpii-bench` 0.73 / `tab-echr` 0.92 / `nemotron-pii-test` 0.72.

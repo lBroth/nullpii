@@ -28,7 +28,7 @@ describe('PiiVault.sanitize', () => {
     const id = v.createSession();
     const text = 'Hi John there.';
     const result = v.sanitize(text, [span('private_person', 3, 7, 'John')], id);
-    expect(result.sanitized).toBe('Hi [[NULLPII:private_person:0]] there.');
+    expect(result.sanitized).toBe('Hi {{PII_PRIVATE_PERSON_0}} there.');
   });
 
   it('replaces multiple spans of different labels correctly', () => {
@@ -40,9 +40,7 @@ describe('PiiVault.sanitize', () => {
       span('private_phone', 25, 33, '555-1212'),
     ];
     const result = v.sanitize(text, spans, id);
-    expect(result.sanitized).toBe(
-      'Email [[NULLPII:private_email:0]] or call [[NULLPII:private_phone:0]].',
-    );
+    expect(result.sanitized).toBe('Email {{PII_PRIVATE_EMAIL_0}} or call {{PII_PRIVATE_PHONE_0}}.');
   });
 
   it('assigns distinct indices to same-label spans', () => {
@@ -51,9 +49,7 @@ describe('PiiVault.sanitize', () => {
     const text = 'Alice and Bob met.';
     const spans = [span('private_person', 0, 5, 'Alice'), span('private_person', 10, 13, 'Bob')];
     const result = v.sanitize(text, spans, id);
-    expect(result.sanitized).toBe(
-      '[[NULLPII:private_person:0]] and [[NULLPII:private_person:1]] met.',
-    );
+    expect(result.sanitized).toBe('{{PII_PRIVATE_PERSON_0}} and {{PII_PRIVATE_PERSON_1}} met.');
   });
 
   it('preserves char offsets when many spans are present (back-to-front)', () => {
@@ -110,8 +106,8 @@ describe('PiiVault.restore', () => {
   it('leaves unknown placeholders as-is (does not throw)', () => {
     const v = new PiiVault();
     const id = v.createSession();
-    const r = v.restore('text [[NULLPII:secret:42]] foreign', id);
-    expect(r.restored).toBe('text [[NULLPII:secret:42]] foreign');
+    const r = v.restore('text {{PII_SECRET_42}} foreign', id);
+    expect(r.restored).toBe('text {{PII_SECRET_42}} foreign');
     expect(r.replacements).toBe(0);
   });
 

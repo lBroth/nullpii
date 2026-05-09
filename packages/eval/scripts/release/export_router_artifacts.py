@@ -123,8 +123,10 @@ def export_prototypes(npz_path: Path, out_dir: Path) -> None:
     payload: dict = {}
     if "prototypes" in npz:
         payload["prototypes"] = npz["prototypes"].astype(np.float32).tolist()
-    if "domains" in npz:
-        domains_raw = npz["domains"]
+    # npz uses "labels" key; JSON schema uses "domains"
+    domain_key = "domains" if "domains" in npz else "labels"
+    if domain_key in npz:
+        domains_raw = npz[domain_key]
         if domains_raw.ndim == 0:
             payload["domains"] = list(domains_raw.item())
         else:

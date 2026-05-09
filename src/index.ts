@@ -16,7 +16,6 @@ export {
 
 // Types & constants
 export {
-  DEFAULT_MODEL_DIR,
   MAX_SEQUENCE_LENGTH,
   MODEL_DOWNLOAD_TIMEOUT_MS,
   PII_LABELS,
@@ -46,3 +45,6 @@ export { PiiVault } from './vault.js';
 
 // Public engine + functional wrappers
 export { NullPii, restore, sanitize } from './nullpii.js';
+
+// LLM-prompt helper
+export { LLM_PRESERVATION_HINT, wrapForLLM } from './wrap-for-llm.js';

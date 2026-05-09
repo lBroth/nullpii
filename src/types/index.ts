@@ -5,7 +5,6 @@ export {
 } from './labels.js';
 export {
   CHUNK_OVERLAP_TOKENS,
-  DEFAULT_MODEL_DIR,
   MAX_INPUT_TOKENS,
   MAX_SEQUENCE_LENGTH,
   MODEL_DOWNLOAD_TIMEOUT_MS,

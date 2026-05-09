@@ -17,7 +17,8 @@ pip install -e ".[presidio]" presidio-evaluator datasets
 NULLPII_MODEL_DIR=/tmp/nullpii-stack-test \
 python -u scripts/bench_full.py \
   --tools nullpii,presidio,nemotron-pii-raw,piiranha,deberta,gliner-onnx-pii-fp32,gliner-pii-large-v1 \
-  --datasets nullpii-bench,tab-echr,nemotron-pii-test,presidio-synthetic,ai4privacy-300k-heldout,isotonic-en-heldout,isotonic-de-heldout,adversarial-typo,adversarial-unicode,adversarial-code \
+  --datasets nullpii-bench,tab-echr,nemotron-pii-test,presidio-synthetic,ai4privacy-300k-heldout,isotonic-en-heldout,isotonic-de-heldout,isotonic-fr-heldout,isotonic-it-heldout \
+  --max-per-dataset 5000 --parallel-tools 1 \
   --backend cpu --confusion \
   --out-dir results/$(date +%Y%m%d)-bench
 ```

@@ -2,181 +2,595 @@
   "nullpii-bench": {
     "nullpii": {
       "status": "OK",
-      "f1": 0.7255493138144268,
-      "wall_s": 32.18093133403454,
-      "n": 264,
-      "total_n": 264,
-      "samples_per_s": 8.203615900972814
+      "f1": 0.7622117238444526,
+      "wall_s": 86.43278904096223,
+      "n": 2421,
+      "total_n": 2421,
+      "samples_per_s": 28.010203383031403
     },
-    "nullpii-router-embedding": {
+    "presidio": {
       "status": "OK",
-      "f1": 0.7279520338884612,
-      "wall_s": 9.575008880347013e-05,
-      "n": 264,
-      "total_n": 264,
-      "samples_per_s": 264000.0
+      "f1": 0.23025602863102063,
+      "wall_s": 15.84260091604665,
+      "n": 2421,
+      "total_n": 2421,
+      "samples_per_s": 152.815816849102
+    },
+    "nemotron-pii-raw": {
+      "status": "OK",
+      "f1": 0.46844133585031833,
+      "wall_s": 430.81570912501775,
+      "n": 2421,
+      "total_n": 2421,
+      "samples_per_s": 5.619572241033239
+    },
+    "piiranha": {
+      "status": "OK",
+      "f1": 0.24257959921740652,
+      "wall_s": 95.72249895799905,
+      "n": 2421,
+      "total_n": 2421,
+      "samples_per_s": 25.29185955605152
+    },
+    "deberta": {
+      "status": "OK",
+      "f1": 0.30696453603923984,
+      "wall_s": 106.97462287498638,
+      "n": 2421,
+      "total_n": 2421,
+      "samples_per_s": 22.631535731883346
+    },
+    "gliner-onnx-pii-fp32": {
+      "status": "OK",
+      "f1": 0.28551471280249874,
+      "wall_s": 58.10110804194119,
+      "n": 2421,
+      "total_n": 2421,
+      "samples_per_s": 41.66874060736266
+    },
+    "gliner-pii-large-v1": {
+      "status": "OK",
+      "f1": 0.27547594338495157,
+      "wall_s": 351.31287812499795,
+      "n": 2421,
+      "total_n": 2421,
+      "samples_per_s": 6.891293063098593
+    },
+    "nullpii-model-only": {
+      "status": "OK",
+      "f1": 0.7135027005780817,
+      "wall_s": 339.73975483397953,
+      "n": 2421,
+      "total_n": 2421,
+      "samples_per_s": 7.126042700487227
     }
   },
   "tab-echr": {
     "nullpii": {
       "status": "OK",
       "f1": 0.9169646913822348,
-      "wall_s": 59.962109375046566,
-      "n": 127,
-      "total_n": 127,
-      "samples_per_s": 2.118004208385162
-    },
-    "nullpii-router-embedding": {
-      "status": "OK",
-      "f1": 0.8861891368515233,
-      "wall_s": 6.458291318267584e-05,
+      "wall_s": 9.320804383605719e-05,
       "n": 127,
       "total_n": 127,
       "samples_per_s": 127000.0
-    }
-  },
-  "nemotron-pii-test": {
-    "nullpii": {
-      "status": "OK",
-      "f1": 0.7226831326832306,
-      "wall_s": 538.5985709590605,
-      "n": 5000,
-      "total_n": 100000,
-      "samples_per_s": 9.283351775510107
     },
-    "nullpii-router-embedding": {
+    "presidio": {
       "status": "OK",
-      "f1": 0.7601896691051848,
-      "wall_s": 0.0001407910604029894,
-      "n": 5000,
-      "total_n": 100000,
-      "samples_per_s": 5000000.0
+      "f1": 0.4656608123478968,
+      "wall_s": 8.13330989331007e-05,
+      "n": 127,
+      "total_n": 127,
+      "samples_per_s": 127000.0
+    },
+    "nemotron-pii-raw": {
+      "status": "OK",
+      "f1": 0.45213093184753167,
+      "wall_s": 6.60410150885582e-05,
+      "n": 127,
+      "total_n": 127,
+      "samples_per_s": 127000.0
+    },
+    "piiranha": {
+      "status": "OK",
+      "f1": 0.17035236385436625,
+      "wall_s": 7.395795546472073e-05,
+      "n": 127,
+      "total_n": 127,
+      "samples_per_s": 127000.0
+    },
+    "deberta": {
+      "status": "OK",
+      "f1": 0.17450338520326272,
+      "wall_s": 6.5416912548244e-05,
+      "n": 127,
+      "total_n": 127,
+      "samples_per_s": 127000.0
+    },
+    "gliner-onnx-pii-fp32": {
+      "status": "OK",
+      "f1": 0.21720774101667065,
+      "wall_s": 7.216702215373516e-05,
+      "n": 127,
+      "total_n": 127,
+      "samples_per_s": 127000.0
+    },
+    "gliner-pii-large-v1": {
+      "status": "OK",
+      "f1": 0.10021588008615143,
+      "wall_s": 5.0709000788629055e-05,
+      "n": 127,
+      "total_n": 127,
+      "samples_per_s": 127000.0
+    },
+    "nullpii-model-only": {
+      "status": "OK",
+      "f1": 0.8861891368515233,
+      "wall_s": 112.76107816700824,
+      "n": 127,
+      "total_n": 127,
+      "samples_per_s": 1.1262751479894753
     }
   },
   "presidio-synthetic": {
     "nullpii": {
       "status": "OK",
-      "f1": 0.6050929022051885,
-      "wall_s": 118.46409004204907,
+      "f1": 0.6050218413122137,
+      "wall_s": 100.71158108301461,
       "n": 5000,
       "total_n": 1500,
-      "samples_per_s": 42.20688310039979
+      "samples_per_s": 49.646723308599405
     },
-    "nullpii-router-embedding": {
+    "presidio": {
       "status": "OK",
-      "f1": 0.6811171599257836,
-      "wall_s": 0.00011274998541921377,
+      "f1": 0.5737476241682741,
+      "wall_s": 12.705366582958959,
       "n": 5000,
       "total_n": 1500,
-      "samples_per_s": 5000000.0
+      "samples_per_s": 393.5344932672968
+    },
+    "nemotron-pii-raw": {
+      "status": "OK",
+      "f1": 0.6184150873282027,
+      "wall_s": 868.2985976249911,
+      "n": 5000,
+      "total_n": 1500,
+      "samples_per_s": 5.7583877408949204
+    },
+    "piiranha": {
+      "status": "OK",
+      "f1": 0.38185740422298936,
+      "wall_s": 144.38210079201963,
+      "n": 5000,
+      "total_n": 1500,
+      "samples_per_s": 34.630331409309726
+    },
+    "deberta": {
+      "status": "OK",
+      "f1": 0.44525400126630105,
+      "wall_s": 86.4363265420543,
+      "n": 5000,
+      "total_n": 1500,
+      "samples_per_s": 57.84604922523315
+    },
+    "gliner-onnx-pii-fp32": {
+      "status": "OK",
+      "f1": 0.535961482189465,
+      "wall_s": 73.21476966596674,
+      "n": 5000,
+      "total_n": 1500,
+      "samples_per_s": 68.29223151027963
+    },
+    "gliner-pii-large-v1": {
+      "status": "OK",
+      "f1": 0.6323370263713728,
+      "wall_s": 666.8288988750428,
+      "n": 5000,
+      "total_n": 1500,
+      "samples_per_s": 7.498175331685724
+    },
+    "nullpii-model-only": {
+      "status": "OK",
+      "f1": 0.5414484279023969,
+      "wall_s": 365.3869078749558,
+      "n": 5000,
+      "total_n": 1500,
+      "samples_per_s": 13.684124669598509
     }
   },
   "ai4privacy-300k-heldout": {
     "nullpii": {
       "status": "OK",
       "f1": 0.5169763626968397,
-      "wall_s": 269.43963191693183,
+      "wall_s": 214.05693733296357,
       "n": 5000,
       "total_n": 109000,
-      "samples_per_s": 18.55703247672747
+      "samples_per_s": 23.35827122585869
     },
-    "nullpii-router-embedding": {
+    "presidio": {
       "status": "OK",
-      "f1": 0.5282567295052563,
-      "wall_s": 0.00018291606102138758,
+      "f1": 0.209871182460247,
+      "wall_s": 41.89163441595156,
       "n": 5000,
       "total_n": 109000,
-      "samples_per_s": 5000000.0
+      "samples_per_s": 119.35557229287986
+    },
+    "nemotron-pii-raw": {
+      "status": "OK",
+      "f1": 0.36881784536847173,
+      "wall_s": 1252.8892180420225,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 3.9907758227928953
+    },
+    "piiranha": {
+      "status": "OK",
+      "f1": 0.2609867652477777,
+      "wall_s": 271.3899197499268,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 18.42367618004113
+    },
+    "deberta": {
+      "status": "OK",
+      "f1": 0.15864643759440974,
+      "wall_s": 332.1614186669467,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 15.05292222096819
+    },
+    "gliner-onnx-pii-fp32": {
+      "status": "OK",
+      "f1": 0.20315146893153233,
+      "wall_s": 159.7537650410086,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 31.298166892758402
+    },
+    "gliner-pii-large-v1": {
+      "status": "OK",
+      "f1": 0.13518029000302828,
+      "wall_s": 1025.1941090419423,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 4.877125176492252
+    },
+    "nullpii-model-only": {
+      "status": "OK",
+      "f1": 0.4657394124517314,
+      "wall_s": 690.6178012919845,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 7.239894469337698
+    }
+  },
+  "nemotron-pii-test": {
+    "nullpii": {
+      "status": "OK",
+      "f1": 0.7226831326832306,
+      "wall_s": 467.06479208299424,
+      "n": 5000,
+      "total_n": 100000,
+      "samples_per_s": 10.705152871192086
+    },
+    "presidio": {
+      "status": "OK",
+      "f1": 0.5221587147175683,
+      "wall_s": 85.49059487506747,
+      "n": 5000,
+      "total_n": 100000,
+      "samples_per_s": 58.48596570542993
+    },
+    "nemotron-pii-raw": {
+      "status": "OK",
+      "f1": 0.8997027167284073,
+      "wall_s": 1711.1725016250275,
+      "n": 5000,
+      "total_n": 100000,
+      "samples_per_s": 2.921973088774927
+    },
+    "piiranha": {
+      "status": "OK",
+      "f1": 0.4875444095175666,
+      "wall_s": 418.54225641698577,
+      "n": 5000,
+      "total_n": 100000,
+      "samples_per_s": 11.946225078450846
+    },
+    "deberta": {
+      "status": "OK",
+      "f1": 0.5788751058681715,
+      "wall_s": 418.82491395797115,
+      "n": 5000,
+      "total_n": 100000,
+      "samples_per_s": 11.938162782030076
+    },
+    "gliner-onnx-pii-fp32": {
+      "status": "OK",
+      "f1": 0.4924114922015445,
+      "wall_s": 334.66881579207256,
+      "n": 5000,
+      "total_n": 100000,
+      "samples_per_s": 14.940143102865209
+    },
+    "gliner-pii-large-v1": {
+      "status": "OK",
+      "f1": 0.5376090492262926,
+      "wall_s": 1550.7192311249673,
+      "n": 5000,
+      "total_n": 100000,
+      "samples_per_s": 3.2243103068843455
+    },
+    "nullpii-model-only": {
+      "status": "OK",
+      "f1": 0.6689441888438117,
+      "wall_s": 1068.944401542074,
+      "n": 5000,
+      "total_n": 100000,
+      "samples_per_s": 4.677511751581215
     }
   },
   "isotonic-en-heldout": {
     "nullpii": {
       "status": "OK",
       "f1": 0.8684723632836431,
-      "wall_s": 166.7745352089405,
+      "wall_s": 132.37226212501992,
       "n": 5000,
       "total_n": 109000,
-      "samples_per_s": 29.980596220735013
+      "samples_per_s": 37.77226376382172
     },
-    "nullpii-router-embedding": {
+    "presidio": {
       "status": "OK",
-      "f1": 0.867058894585923,
-      "wall_s": 0.00012133305426687002,
+      "f1": 0.4726427934925907,
+      "wall_s": 19.59418829192873,
       "n": 5000,
       "total_n": 109000,
-      "samples_per_s": 5000000.0
+      "samples_per_s": 255.17770501672723
+    },
+    "nemotron-pii-raw": {
+      "status": "OK",
+      "f1": 0.7280685349294138,
+      "wall_s": 1054.126062125084,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 4.743265705735576
+    },
+    "piiranha": {
+      "status": "OK",
+      "f1": 0.5660191559085802,
+      "wall_s": 195.8275963329943,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 25.532662881169053
+    },
+    "deberta": {
+      "status": "OK",
+      "f1": 0.7512024747693109,
+      "wall_s": 140.46867170801852,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 35.59512551234995
+    },
+    "gliner-onnx-pii-fp32": {
+      "status": "OK",
+      "f1": 0.5458124347150813,
+      "wall_s": 91.59539745806251,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 54.58789566680225
+    },
+    "gliner-pii-large-v1": {
+      "status": "OK",
+      "f1": 0.5838344143603627,
+      "wall_s": 737.9648916251026,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 6.775390071727255
+    },
+    "nullpii-model-only": {
+      "status": "OK",
+      "f1": 0.8318509214656674,
+      "wall_s": 479.0315802079858,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 10.437725207655623
     }
   },
   "isotonic-de-heldout": {
     "nullpii": {
       "status": "OK",
       "f1": 0.8755546639916955,
-      "wall_s": 176.0701712090522,
+      "wall_s": 125.29566779197194,
       "n": 5000,
       "total_n": 109000,
-      "samples_per_s": 28.397768717242762
+      "samples_per_s": 39.90560957224385
     },
-    "nullpii-router-embedding": {
+    "presidio": {
       "status": "OK",
-      "f1": 0.8745665604974461,
-      "wall_s": 0.0003060000017285347,
+      "f1": 0.404713968689824,
+      "wall_s": 20.071124749956653,
       "n": 5000,
       "total_n": 109000,
-      "samples_per_s": 5000000.0
+      "samples_per_s": 249.1140911278925
+    },
+    "nemotron-pii-raw": {
+      "status": "OK",
+      "f1": 0.7039602948298901,
+      "wall_s": 911.7412905410165,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 5.4840118045252275
+    },
+    "piiranha": {
+      "status": "OK",
+      "f1": 0.5642125790308463,
+      "wall_s": 174.1628728749929,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 28.708759320873163
+    },
+    "deberta": {
+      "status": "OK",
+      "f1": 0.4933657070081869,
+      "wall_s": 163.4867194170365,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 30.583523957353098
+    },
+    "gliner-onnx-pii-fp32": {
+      "status": "OK",
+      "f1": 0.5470074915759574,
+      "wall_s": 100.9340154590318,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 49.53731383083094
+    },
+    "gliner-pii-large-v1": {
+      "status": "OK",
+      "f1": 0.5827415843050319,
+      "wall_s": 808.6312104579993,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 6.183288420401259
+    },
+    "nullpii-model-only": {
+      "status": "OK",
+      "f1": 0.8386473206744991,
+      "wall_s": 493.3711294999812,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 10.134358702884319
     }
   },
-  "adversarial-typo": {
+  "isotonic-fr-heldout": {
     "nullpii": {
       "status": "OK",
-      "f1": 0.8869312851782365,
-      "wall_s": 1.6936937920982018,
-      "n": 80,
-      "total_n": 80,
-      "samples_per_s": 47.23403980886855
+      "f1": 0.8625496709163666,
+      "wall_s": 130.5797514159931,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 38.290775911123475
     },
-    "nullpii-router-embedding": {
+    "presidio": {
       "status": "OK",
-      "f1": 0.9400000000000001,
-      "wall_s": 5.420797970145941e-05,
-      "n": 80,
-      "total_n": 80,
-      "samples_per_s": 80000.0
+      "f1": 0.41291775352829213,
+      "wall_s": 20.584461834048852,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 242.90166244373108
+    },
+    "nemotron-pii-raw": {
+      "status": "OK",
+      "f1": 0.6970027671280287,
+      "wall_s": 943.2886332919588,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 5.300604527111313
+    },
+    "piiranha": {
+      "status": "OK",
+      "f1": 0.5693534300355086,
+      "wall_s": 186.84585104091093,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 26.760026899956276
+    },
+    "deberta": {
+      "status": "OK",
+      "f1": 0.5738267480322135,
+      "wall_s": 162.29812270903494,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 30.807503602268444
+    },
+    "gliner-onnx-pii-fp32": {
+      "status": "OK",
+      "f1": 0.5511828600620258,
+      "wall_s": 108.41327125008684,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 46.11981487456495
+    },
+    "gliner-pii-large-v1": {
+      "status": "OK",
+      "f1": 0.5675782562015524,
+      "wall_s": 792.0066990830237,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 6.313077914352167
+    },
+    "nullpii-model-only": {
+      "status": "OK",
+      "f1": 0.8242952583459489,
+      "wall_s": 509.64333279198036,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 9.810782714665347
     }
   },
-  "adversarial-unicode": {
+  "isotonic-it-heldout": {
     "nullpii": {
       "status": "OK",
-      "f1": 0.9357829162707212,
-      "wall_s": 1.515847707982175,
-      "n": 80,
-      "total_n": 80,
-      "samples_per_s": 52.775750214704765
+      "f1": 0.8687022997709454,
+      "wall_s": 141.60944183298852,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 35.3083801142081
     },
-    "nullpii-router-embedding": {
+    "presidio": {
       "status": "OK",
-      "f1": 0.9357829162707212,
-      "wall_s": 4.9958936870098114e-05,
-      "n": 80,
-      "total_n": 80,
-      "samples_per_s": 80000.0
-    }
-  },
-  "adversarial-code": {
-    "nullpii": {
-      "status": "OK",
-      "f1": 1.0,
-      "wall_s": 1.8242890000110492,
-      "n": 80,
-      "total_n": 80,
-      "samples_per_s": 43.85270096981096
+      "f1": 0.41332679637448216,
+      "wall_s": 20.797986792051233,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 240.40788418573985
     },
-    "nullpii-router-embedding": {
+    "nemotron-pii-raw": {
       "status": "OK",
-      "f1": 1.0,
-      "wall_s": 5.9416983276605606e-05,
-      "n": 80,
-      "total_n": 80,
-      "samples_per_s": 80000.0
+      "f1": 0.6925193265528549,
+      "wall_s": 907.2418665840523,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 5.511209506706303
+    },
+    "piiranha": {
+      "status": "OK",
+      "f1": 0.5659605319040735,
+      "wall_s": 174.19386812497396,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 28.703651017226342
+    },
+    "deberta": {
+      "status": "OK",
+      "f1": 0.5367107311670223,
+      "wall_s": 153.90085187496152,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 32.488449148171746
+    },
+    "gliner-onnx-pii-fp32": {
+      "status": "OK",
+      "f1": 0.5444339839750467,
+      "wall_s": 96.07726341695525,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 52.041448956565766
+    },
+    "gliner-pii-large-v1": {
+      "status": "OK",
+      "f1": 0.5720846042737112,
+      "wall_s": 804.9239343749359,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 6.21176708316265
+    },
+    "nullpii-model-only": {
+      "status": "OK",
+      "f1": 0.8377604635515249,
+      "wall_s": 503.2557940420229,
+      "n": 5000,
+      "total_n": 109000,
+      "samples_per_s": 9.935305383851158
     }
   }
 }

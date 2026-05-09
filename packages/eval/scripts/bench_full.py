@@ -117,6 +117,26 @@ def _load_nullpii_bench(n: int | None) -> list[Sample]:
     return out
 
 
+def _load_presidio_synthetic_static(n: int | None) -> list[Sample]:
+    """Load the frozen presidio-synthetic gold set from datasets/.
+
+    Generated once with PresidioSentenceFaker(random_seed=2026) and saved
+    as a static JSONL so F1 is reproducible across presidio-evaluator
+    versions. Regenerate with:
+      python -c "from nullpii_eval.public_datasets import _load_presidio_synthetic; ..."
+    """
+    path = Path(__file__).resolve().parent.parent / "datasets" / "presidio-synthetic.jsonl"
+    out: list[Sample] = []
+    with path.open(encoding="utf-8") as f:
+        for line in f:
+            row = json.loads(line)
+            spans = tuple(Span(s["label"], int(s["start"]), int(s["end"])) for s in row["spans"])
+            out.append(Sample(row["text"], spans))
+            if n and len(out) >= n:
+                break
+    return out
+
+
 def _load_tab_echr_test(n: int | None) -> list[Sample]:
     """Load TAB (Text Anonymization Benchmark) test split — ECHR
     (European Court of Human Rights) court rulings annotated for legal
@@ -210,7 +230,7 @@ _ISOTONIC_HELDOUT_ROW_OFFSET = 200_000
 
 DATASET_CONFIGS: list[DatasetSpec] = [
     # ─ Generalization rows (out-of-distribution, never-seen) ───────
-    DatasetSpec("nullpii-bench",         _load_nullpii_bench,                                                  None, total_n=264),
+    DatasetSpec("nullpii-bench",         _load_nullpii_bench,                                                  None, total_n=2421),
     # Dropped 2026-05-04: composite `nullpii-adversarial` mixes decoys
     # (zero-PII gold) with real PII subsets — F1 ambiguous when the
     # individual subsets are already benched. Keep only the per-subset
@@ -237,7 +257,7 @@ DATASET_CONFIGS: list[DatasetSpec] = [
     DatasetSpec("enron-planted",         lambda n: list(public_datasets._load_enron_planted(n).samples),       10_000),
     DatasetSpec("stackoverflow-planted", lambda n: list(public_datasets._load_stackoverflow_planted(n).samples), 10_000),
     DatasetSpec("thestack-planted",      lambda n: list(public_datasets._load_thestack_planted(n).samples),    5_000),
-    DatasetSpec("presidio-synthetic",    lambda n: list(public_datasets._load_presidio_synthetic(n).samples),  5_000, total_n=1500),
+    DatasetSpec("presidio-synthetic",    _load_presidio_synthetic_static,                                      5_000, total_n=5000),
     DatasetSpec("ai4privacy-400k",       lambda n: list(public_datasets._load_ai4privacy_400k(n).samples),     5_000, total_n=400000),
 
     # ─ Public PII datasets (single slice, no fine-tune-vs-heldout
@@ -262,6 +282,7 @@ DATASET_CONFIGS: list[DatasetSpec] = [
     DatasetSpec("isotonic-en-heldout",       _isotonic("en", row_offset=_ISOTONIC_HELDOUT_ROW_OFFSET // 2),  5_000, total_n=109000),
     DatasetSpec("isotonic-de-heldout",       _isotonic("de", row_offset=_ISOTONIC_HELDOUT_ROW_OFFSET // 2),  5_000, total_n=109000),
     DatasetSpec("isotonic-fr-heldout",       _isotonic("fr", row_offset=_ISOTONIC_HELDOUT_ROW_OFFSET // 2),  5_000, total_n=109000),
+    DatasetSpec("isotonic-it-heldout",       _isotonic("it", row_offset=_ISOTONIC_HELDOUT_ROW_OFFSET // 2),  5_000, total_n=109000),
     # Dropped 2026-05-04: `wikiann-{es,zh,ja}` are PER/LOC NER, not
     # native PII labels. Loose mapping (PER → private_person, LOC →
     # private_address) makes absolute F1 incomparable to PII-native
@@ -368,6 +389,28 @@ def build_tools(args) -> dict[str, Callable]:
             routes=r,
             fallback=r["narrative"],
         ))(_routes(with_enterprise=True)),
+        # ─── Model-only — what someone gets running just the HF
+        # `lBroth/nullpii` artifacts (distiluse routing + LoRA-merged
+        # GLiNER inference + adversarial-input normalisation) without the
+        # npm runtime's regex pack / url_filter / never_pii_filter /
+        # boundary refinement. Honest representation of the HF model
+        # card's published F1: what the model alone delivers.
+        "nullpii-model-only": lambda: (lambda r: domain_routed_predictor(
+            detector=_make_embedding_detector(
+                device="cpu" if backend == "cpu" else "cuda",
+            ),
+            routes=r,
+            fallback=r["narrative"],
+        ))({
+            d: gliner_lora_predictor(
+                "urchade/gliner_multi_pii-v1",
+                f"packages/eval/results/train/adapters/{d}/adapter",
+                device=backend if backend == "cpu" else "cuda",
+                threshold=args.gliner_threshold,
+                normalize_input=True,
+            )
+            for d in ("devops", "legal", "medical", "narrative", "enterprise")
+        }),
         # ─── Bare third-party baselines (no nullpii pipeline overlay) ─
         # Each runs upstream library directly. NONE wraps nullpii post-
         # processing (boundary refine / never-PII filter / regex pack /

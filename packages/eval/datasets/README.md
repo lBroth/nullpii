@@ -17,18 +17,20 @@ Apache-2.0, no real PII (synthetic / templated / Common Crawl filtered no-PII).
 
 All project-authored bench data lives in one file with a `subset` field. Loaders filter by subset to produce the bench rows.
 
-| Subset | Rows | Used in canonical bench | Notes |
-|---|---:|:---:|---|
-| `bundled` | 202 | ✅ as `nullpii-bench` row | dev paste, RFCs, multilingual support tickets |
-| `long-prompts` | 62 | ✅ as `nullpii-bench` row | English long-form (~3k chars), chunking stress |
-| `adversarial` | 7 | ❌ | hand-curated decoy strings, regex-only, perfect F1 trivially |
-| `typo_pii` | 80 | ✅ as `adversarial-typo` | single-char neighbour swap (preprocessor lift) |
-| `unicode_obf` | 80 | ✅ as `adversarial-unicode` | Cyrillic homoglyph + zero-width insertion |
-| `code_pii` | 80 | ✅ as `adversarial-code` | credentials in code/comments |
-| `whitespace_obf` | 80 | ❌ | `g i a n l u c a @ g m a i l . c o m` — preprocessor gap |
-| `encoding_obf` | 80 | ❌ | base64 / URL / HTML-entity wrapping — preprocessor gap |
-| `decoys` | 80 | ❌ | strings that look like PII but aren't (FP stress) |
-| `textattack-homoglyph` / `charswap` / `chardelete` / `charinsert` / `charsub` | 334 each | ❌ | TextAttack perturbations over ai4privacy 0–500 |
+All subsets feed the unified `nullpii-bench` cell in the canonical bench (one F1 number summarises behaviour across all perturbation patterns). Total 2 421 rows.
+
+| Subset | Rows | Notes |
+|---|---:|---|
+| `bundled` | 202 | dev paste, RFCs, multilingual support tickets |
+| `long-prompts` | 62 | English long-form (~3 k chars), chunking stress |
+| `adversarial` | 7 | hand-curated decoy strings, regex-only, perfect F1 trivially |
+| `typo_pii` | 80 | single-char neighbour swap (preprocessor regression) |
+| `unicode_obf` | 80 | Cyrillic homoglyph + zero-width insertion |
+| `whitespace_obf` | 80 | `g i a n l u c a @ g m a i l . c o m` — preprocessor regression |
+| `encoding_obf` | 80 | base64 / URL / HTML-entity wrapping |
+| `decoys` | 80 | strings that look like PII but aren't (FP stress) |
+| `code_pii` | 80 | credentials in code/comments |
+| `textattack-homoglyph` / `charswap` / `chardelete` / `charinsert` / `charsub` | 334 each | TextAttack perturbations over ai4privacy 0–500 |
 
 ## `nullpii-bench` schema
 

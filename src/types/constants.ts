@@ -23,25 +23,30 @@ export const CHUNK_OVERLAP_TOKENS = 64;
  */
 export const MAX_INPUT_TOKENS = 32_768;
 
-/** Default on-disk model directory, relative to the consumer's `cwd`. */
-export const DEFAULT_MODEL_DIR = './models/privacy-filter';
-
 /** Maximum time spent downloading model artifacts before aborting. */
 export const MODEL_DOWNLOAD_TIMEOUT_MS = 300_000;
 
 /**
  * Regex used to find placeholders in sanitized text during restore.
- * Matches `[[NULLPII:<label>:<index>]]`. Capture groups: 1 = label, 2 = index.
- * Global flag so `String.prototype.replaceAll` and `matchAll` work.
+ * Matches `{{PII_<LABEL>_<index>}}`. Capture groups: 1 = label (lowercased),
+ * 2 = index. Global flag so `String.prototype.replaceAll` and `matchAll` work.
+ *
+ * The Mustache `{{var}}` syntax is universal in prompt-engineering tooling
+ * (Anthropic prompts, LangChain `PromptTemplate`, Jinja2, Handlebars, Vue,
+ * Django) — LLMs are deeply trained to leave such tokens untouched, which
+ * gives the highest round-trip preservation rate of the formats tested
+ * (see `packages/eval/private/PLACEHOLDER_FORMAT_ANALYSIS.md`). Token cost
+ * is also lower than the previous `[[NULLPII:type:i]]` format (-20% under
+ * the cl100k_base tokenizer).
  */
-export const PLACEHOLDER_REGEX = /\[\[NULLPII:([a-z_]+):(\d+)\]\]/g;
+export const PLACEHOLDER_REGEX = /\{\{PII_([A-Z_]+)_(\d+)\}\}/g;
 
 /**
  * Build the canonical placeholder string for a vault entry.
- * @param label - the PII label of the original span
+ * @param label - the PII label of the original span (lowercase, e.g. `private_email`)
  * @param index - 0-based index within the session
- * @returns `[[NULLPII:<label>:<index>]]`
+ * @returns `{{PII_<LABEL>_<index>}}` with label uppercased
  */
 export function PLACEHOLDER_TEMPLATE(label: string, index: number): string {
-  return `[[NULLPII:${label}:${index}]]`;
+  return `{{PII_${label.toUpperCase()}_${index}}}`;
 }

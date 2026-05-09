@@ -149,7 +149,7 @@ for d in devops legal medical narrative enterprise; do
     cp -f "$src" "$SHIP_STAGING/onnx-merged/$d/model.onnx"
 done
 
-cp -f packages/eval/private/model-cards/router-embedding.md "$SHIP_STAGING/README.md"
+cp -f packages/eval/private/model-cards/router.md "$SHIP_STAGING/README.md"
 
 du -sh "$SHIP_STAGING"
 ls -lh "$SHIP_STAGING/" "$SHIP_STAGING/onnx-merged"/*

@@ -244,6 +244,32 @@ def _map_ai4privacy_label(label: str) -> str | None:
 
 
 def _load_presidio_synthetic(max_samples: int | None) -> PublicDataset:
+    import json as _json
+    from pathlib import Path as _Path
+
+    # Prefer the frozen static file so F1 is reproducible across
+    # presidio-evaluator versions (generator output drifts with package
+    # updates even when seed is pinned).
+    static = _Path(__file__).resolve().parent.parent.parent / "datasets" / "presidio-synthetic.jsonl"
+    if static.exists():
+        n = max_samples if max_samples is not None else 5000
+        samples: list[Sample] = []
+        with static.open(encoding="utf-8") as f:
+            for line in f:
+                row = _json.loads(line)
+                spans = tuple(
+                    Span(s["label"], int(s["start"]), int(s["end"]))
+                    for s in row["spans"]
+                )
+                samples.append(Sample(text=row["text"], spans=spans))
+                if len(samples) >= n:
+                    break
+        return PublicDataset(
+            name="presidio-synthetic",
+            citation="Presidio Evaluator (PresidioSentenceFaker) synthetic generator.",
+            samples=tuple(samples),
+        )
+
     try:
         from presidio_evaluator.data_generator import PresidioSentenceFaker
     except ImportError as e:

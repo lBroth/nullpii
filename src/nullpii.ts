@@ -34,7 +34,7 @@ import { PiiVault } from './vault.js';
 
 const log = debug('nullpii');
 
-const PLACEHOLDER_OPEN = '[[';
+const PLACEHOLDER_OPEN = '{{';
 // PUA sentinel — round-trip safe and effectively never appears in
 // natural text or LLM output.
 const PLACEHOLDER_OPEN_ESCAPED = '';

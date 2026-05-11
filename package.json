@@ -41,8 +41,8 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "license-check": "license-checker --production --excludePrivatePackages --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;CC0-1.0;Apache 2.0;BlueOak-1.0.0;Unlicense;0BSD'",
-    "sbom": "cyclonedx-npm --output-format JSON --output-file bom.json && echo 'wrote bom.json (CycloneDX SBOM)'",
+    "license-check": "license-checker --production --excludePrivatePackages --onlyAllow \"MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;CC0-1.0;Apache 2.0;BlueOak-1.0.0;Unlicense;0BSD\"",
+    "sbom": "cyclonedx-npm --output-format JSON --output-file bom.json",
     "circular-check": "madge --circular --extensions ts src/",
     "prepare": "lefthook install || true"
   },

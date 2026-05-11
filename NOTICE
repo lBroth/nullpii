@@ -58,36 +58,64 @@ in the npm package; see README "First-call download"):
                                            router prototypes (~6 GB FP32).
     - lBroth/nullpii-adapters ............ raw LoRA adapters (~17 MB),
                                            upstream of the merged repo.
-    These weights are published under Apache-2.0 by the nullpii
-    contributors. A model's licence can only be as permissive as the
-    intersection of (a) the base model licence and (b) every dataset the
-    fine-tune was trained on. The authoritative per-adapter training-data
-    composition and the resulting licence provenance live on the
-    `lBroth/nullpii` HuggingFace model card — that card, not this file, is
-    the source of truth for the weights.
+    A model's licence can only be as permissive as the intersection of
+    (a) the base model licence and (b) every dataset the fine-tune was
+    trained on. The authoritative per-adapter training-data composition
+    lives on the `lBroth/nullpii` HuggingFace model card — that card, not
+    this file, is the source of truth for the weights' effective licence.
+    See the BLOCKER note below: with the current training mix the weights
+    CANNOT be released under a permissive (Apache-2.0 / MIT) licence.
 
   Fine-tune training datasets (per-domain LoRA adapters — devops / legal /
-  medical / narrative / enterprise). Each retains its own upstream licence;
-  see the respective HuggingFace dataset card and the `lBroth/nullpii`
-  model card for which dataset feeds which adapter:
-    - ai4privacy/pii-masking-300k
-    - Isotonic/pii-masking-200k
-    - the Text Anonymization Benchmark (TAB / ECHR) train split
-    - NVIDIA Nemotron-PII train split
+  medical / narrative / enterprise). Verified upstream licences (checked
+  2026-05-11 against the HuggingFace dataset cards):
+    - urchade/gliner_multi_pii-v1 ........ Apache-2.0  (base model)
+    - sentence-transformers distiluse-... Apache-2.0  (router encoder)
+    - NVIDIA Nemotron-PII (nvidia/Nemotron-PII) ... CC-BY-4.0 — commercial
+                                           use allowed; attribution to
+                                           NVIDIA required. Compatible
+                                           with redistributing derived
+                                           weights, attribution-conditioned.
+    - Text Anonymization Benchmark (TAB / ECHR) train split ... MIT (TAB
+                                           release); ECHR judgments are
+                                           public court documents.
+    - ai4privacy/pii-masking-300k ........ "other" — custom licence
+                                           (`license.md`): academic use
+                                           with citation OK; **commercial
+                                           use gated** — must contact
+                                           licensing@ai4privacy.com. NOT a
+                                           permissive licence.
+    - Isotonic/pii-masking-200k .......... cc-by-nc-4.0 — **NonCommercial**
+                                           (one mirror tags it apache-2.0;
+                                           upstream ai4privacy 200k is the
+                                           same custom licence as the 300k).
+                                           NOT a permissive licence.
     - project-authored synthetic corpora (Faker / templated; Apache-2.0,
-      see packages/eval/datasets/)
+      see packages/eval/datasets/) ......... Apache-2.0.
 
-  Outstanding licence-audit item (pre-1.0): confirm that the
-  ai4privacy-300k and NVIDIA Nemotron-PII training slices permit
-  redistribution of derived weights under Apache-2.0; if either does not,
-  re-train the affected adapter on a permissive corpus before publishing
-  the weights. Eval-only datasets (presidio-synthetic, *-heldout) do not
-  affect the weights' licence.
+  *** BLOCKER — pre-publish (the npm PACKAGE is unaffected; this is about
+  the model WEIGHTS only) ***
+  The per-domain adapters are currently trained on ai4privacy/pii-masking-
+  300k (custom, commercial-gated) and Isotonic/pii-masking-200k (CC-BY-NC).
+  Weights derived from those cannot be redistributed under Apache-2.0 for
+  commercial use. Before publishing the weights, pick one:
+    (a) re-train the affected adapters on permissive-only data — Nemotron-
+        PII (CC-BY-4.0) + TAB (MIT) + project-authored Faker/templated
+        corpora (Apache-2.0) + any CC0/Apache datasets; OR
+    (b) publish the weights under CC-BY-NC-4.0 (and drop the commercial
+        framing); OR
+    (c) obtain a commercial licence from ai4privacy.
+  (The planned "drop Nemotron-PII from the enterprise adapter" sprint is a
+  benchmarking-credibility move — Nemotron-PII's CC-BY-4.0 is NOT a licence
+  problem — so it does not resolve this blocker.)
 
 Bench / eval datasets (used only to measure F1 — never to train the
 shipped weights): presidio-synthetic, ai4privacy-300k-heldout,
 Isotonic-heldout, tab-echr test split, nemotron-pii-test. Each retains
-its own licence; see packages/eval/datasets/README.md.
+its own licence; see packages/eval/datasets/README.md. (Eval-only use
+does not affect the weights' licence, but note `*-heldout` slices come
+from the same non-permissive ai4privacy / Isotonic sources above —
+relevant if those eval JSONLs were ever to be redistributed.)
 
 License posture:
   - 100% permissive runtime tree (MIT / Apache-2.0 / BSD / ISC / CC0).

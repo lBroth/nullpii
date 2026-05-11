@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Command } from 'commander';
 import { NullPiiError } from '../errors.js';
 import { registerBenchmark } from './commands/benchmark.js';
@@ -11,7 +12,9 @@ import { registerSanitize } from './commands/sanitize.js';
 import { registerScan } from './commands/scan.js';
 
 function readPackageVersion(): string {
-  const pkgPath = join(new URL('../..', import.meta.url).pathname, 'package.json');
+  // fileURLToPath, not URL.pathname — the latter yields "/C:/..." on Windows.
+  const here = dirname(fileURLToPath(import.meta.url));
+  const pkgPath = join(here, '..', '..', 'package.json');
   const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8')) as { version?: string };
   if (!pkg.version) throw new Error(`package.json at ${pkgPath} missing 'version' field`);
   return pkg.version;

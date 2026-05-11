@@ -1,7 +1,7 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { createWriteStream, existsSync } from 'node:fs';
 import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -89,12 +89,14 @@ function asMessage(err: unknown): string {
 async function downloadWithTimeout(url: string, dest: string, timeoutMs: number): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  // Per-process, per-attempt temp name: two concurrent `sanitize()` calls on
+  // a cold cache must not interleave writes into the same `.partial` file.
+  const tmp = `${dest}.${process.pid}.${randomBytes(6).toString('hex')}.partial`;
   try {
     const res = await fetch(url, { signal: controller.signal });
     if (!res.ok || res.body === null) {
       throw new ModelNotFoundError(`${url} (HTTP ${res.status})`);
     }
-    const tmp = `${dest}.partial`;
     const hash = createHash('sha256');
     await pipeline(
       Readable.fromWeb(res.body as Parameters<typeof Readable.fromWeb>[0]),
@@ -108,6 +110,9 @@ async function downloadWithTimeout(url: string, dest: string, timeoutMs: number)
     );
     await rename(tmp, dest);
     return hash.digest('hex');
+  } catch (err) {
+    await unlink(tmp).catch(() => {});
+    throw err;
   } finally {
     clearTimeout(timer);
   }
@@ -130,5 +135,5 @@ export async function sha256File(file: string): Promise<string> {
 async function writeSidecar(file: string, sha: string): Promise<void> {
   const sidecar = `${file}${SHA_SUFFIX}`;
   await mkdir(dirname(sidecar), { recursive: true });
-  await writeFile(sidecar, `${sha}  ${file.split('/').pop() ?? ''}\n`, 'utf-8');
+  await writeFile(sidecar, `${sha}  ${basename(file)}\n`, 'utf-8');
 }

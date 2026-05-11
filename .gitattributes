@@ -1,0 +1,10 @@
+# Normalise line endings on checkout regardless of the contributor's
+# core.autocrlf setting. Without this, Windows checkouts get CRLF and
+# `biome check` (lineEnding: lf) fails in CI.
+* text=auto eol=lf
+
+# Binary assets — never touch.
+*.png binary
+*.onnx binary
+*.model binary
+*.bin binary

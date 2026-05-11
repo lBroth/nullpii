@@ -220,6 +220,8 @@ Lives on HuggingFace Hub: [`lBroth/nullpii`](https://huggingface.co/lBroth/nullp
 
 Apache 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE). Runtime tree is 100% permissive (MIT / Apache-2.0 / BSD / ISC / CC0); verified by `npm run license-check` in CI.
 
+The **model weights** on HuggingFace are a separate artifact with a separate licence — they are *not* covered by this repo's Apache-2.0 and are *not* bundled in the npm package (fetched on first use). Some per-domain adapters are currently trained on non-permissive data (ai4privacy / Isotonic), so the published weights cannot be relicensed permissively as-is — see the BLOCKER note in [NOTICE](NOTICE) and the `lBroth/nullpii` model card.
+
 ## Citation
 
 > nullpii contributors (2026). *nullpii: local PII sanitization with reversible vault.* https://github.com/lBroth/nullpii

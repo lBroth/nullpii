@@ -57,7 +57,7 @@ mixed F1 = 8-dataset macro (nemotron-pii-test excluded from F1 aggregate, includ
 
 - HuggingFace Hub: [`lBroth/nullpii`](https://huggingface.co/lBroth/nullpii) (~6 GB FP32 — 5 merged-LoRA ONNX shards + distiluse encoder + tokenizer + prototypes JSON). First call to `sanitize()` downloads everything to `~/.cache/nullpii/`.
 - Raw LoRA weights ([`lBroth/nullpii-adapters`](https://huggingface.co/lBroth/nullpii-adapters), ~17 MB) — upstream of the merged repo, used by the release pipeline.
-- Apache 2.0 throughout. Built on `urchade/gliner_multi_pii-v1` (Zaratiana et al., NAACL 2024). Per-domain LoRA training data composition + recipe documented on the HF model card.
+- Built on `urchade/gliner_multi_pii-v1` (Zaratiana et al., NAACL 2024, Apache-2.0). Per-domain LoRA training data composition + recipe documented on the HF model card. ⚠ The weights' effective licence is the intersection of all training-data licences — some adapters currently use non-permissive sources (ai4privacy / Isotonic), so the weights are NOT releasable under Apache-2.0 as-is; see [NOTICE](NOTICE) "BLOCKER".
 
 ### Red-team disclosures
 

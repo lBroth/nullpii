@@ -35,11 +35,11 @@ MacBook Pro M5 Pro CPU, 8-dataset canonical surface (macro), macro F1 at IoU ≥
 | `nemotron-pii-test` ⚠ | 5 000 | 0.7227 | 0.5222 | **0.8997** ‡ | 0.4875 | 0.5789 | 0.4924 | 0.5376 |
 | `presidio-synthetic` | 5 000 | 0.6050 | 0.5737 § | 0.6184 | 0.3819 | 0.4453 | 0.5360 | **0.6323** † |
 | `ai4privacy-300k-heldout` | 5 000 | **0.5170** | 0.2099 | 0.3688 | 0.2610 | 0.1586 | 0.2032 | 0.1352 |
-| **Mixed (8)** ¶ | — | **0.7846** | 0.3979 | 0.5912 | 0.4152 | 0.4301 | 0.4288 | 0.4312 |
-| **Held-out OOD multilingual (6)** | — | **0.7662** | 0.4145 | 0.6348 | 0.4847 | 0.4932 | 0.4879 | 0.5123 |
-| **In-distribution diagnostic (2)** | — | **0.8396** | 0.3480 | 0.4602 | 0.2065 | 0.2407 | 0.2513 | 0.1879 |
+| **Held-out OOD multilingual (6)** ← headline | — | **0.7662** | 0.4145 | 0.6348 | 0.4847 | 0.4932 | 0.4879 | 0.5123 |
+| **Mixed (8)** ¶ — incl. 2 ⚠ in-dist rows | — | **0.7846** | 0.3979 | 0.5912 | 0.4152 | 0.4301 | 0.4288 | 0.4312 |
+| **In-distribution diagnostic (2)** ⚠ | — | **0.8396** | 0.3480 | 0.4602 | 0.2065 | 0.2407 | 0.2513 | 0.1879 |
 
-**nullpii wins 7 of 8 macro datasets**. Loss: `presidio-synthetic` to `gliner-pii-large-v1` by 0.027. `nemotron-pii-test` ⚠ excluded from macro (enterprise adapter in-distribution + self-bench for `nemotron-pii-raw`). **Mixed F1 +0.19 over next-best baseline (`nemotron-pii-raw` 0.5912)**.
+**Headline — held-out OOD multilingual macro F1 = 0.7662** over 6 datasets the model never saw during training (`presidio-synthetic`, `ai4privacy-300k-heldout`, `isotonic-{en,de,fr,it}-heldout`): real generalisation across 4 languages, **+0.13 over the next-best baseline** (`nemotron-pii-raw` 0.6348). The 8-dataset **Mixed F1 = 0.7846** (+0.19 over `nemotron-pii-raw` 0.5912) folds in two ⚠ in-distribution diagnostic rows (`nullpii-bench` self-authored, `tab-echr`) — supporting, not the headline. nullpii wins 7 of 8 macro datasets; the one loss is `presidio-synthetic` to `gliner-pii-large-v1` by 0.027. `nemotron-pii-test` ⚠ excluded from every macro aggregate (enterprise adapter in-distribution + simultaneous self-bench for `nemotron-pii-raw`).
 
 Bucket interpretation:
 - **Held-out OOD multilingual (6)** — model never saw these rows during training: `presidio-synthetic`, `ai4privacy-300k-heldout`, `isotonic-{en,de,fr,it}-heldout`. Real generalisation across 4 languages.
@@ -87,9 +87,11 @@ Hardware: **MacBook Pro · Apple M5 Pro · 48 GB · macOS 26.4** · CPU backend 
 npm install nullpii onnxruntime-node
 ```
 
-`onnxruntime-node` is an optional peer dependency (CPU / MPS / CUDA backend). Requires Node 24 LTS (see `.nvmrc`).
+`onnxruntime-node` is an optional peer dependency (CPU / MPS / CUDA backend). Requires Node ≥ 22 (`.nvmrc` pins 24 for development).
 
-> **First-call download**: the first `sanitize()` invocation downloads ~6 GB of model artifacts from HuggingFace Hub ([`lBroth/nullpii`](https://huggingface.co/lBroth/nullpii) — 5 merged-LoRA ONNX shards + distiluse encoder + tokenizer + prototypes) into `~/.cache/nullpii/` (or `$XDG_CACHE_HOME/nullpii/`). One-shot; subsequent calls hit the local cache. Plan accordingly for air-gapped installs (mirror the HF repo locally and pass `modelDir`).
+> **First-call download**: the first `sanitize()` invocation downloads ~6 GB of model artifacts from HuggingFace Hub ([`lBroth/nullpii`](https://huggingface.co/lBroth/nullpii) — 5 merged-LoRA ONNX shards + distiluse encoder + tokenizer + prototypes) into `~/.cache/nullpii/` (or `$XDG_CACHE_HOME/nullpii/`). One-shot; subsequent calls hit the local cache. Downloads stream to a per-process temp file, verify a SHA-256 checksum, retry transient failures with exponential backoff, and are idempotent — re-running after an interruption resumes from whichever files already verified.
+>
+> Pre-download deterministically (Docker build, CI, air-gapped staging) with `npx nullpii prefetch`; check the cache + backends with `npx nullpii doctor`. For fully air-gapped installs, mirror the HF repo locally and pass `modelDir`.
 
 ## Usage
 

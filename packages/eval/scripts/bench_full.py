@@ -90,10 +90,6 @@ def _ai4privacy(offset: int = 0) -> Callable[[int | None], list[Sample]]:
     return lambda n: list(public_datasets._load_ai4privacy(n, offset=offset).samples)
 
 
-def _wikiann(lang: str) -> Callable[[int | None], list[Sample]]:
-    return lambda n: list(public_datasets._load_wikiann(n, lang=lang).samples)
-
-
 def _load_nullpii_bench(n: int | None) -> list[Sample]:
     """Load the entire unified `nullpii-bench.jsonl` (2421 samples).
 
@@ -126,9 +122,17 @@ def _load_presidio_synthetic_static(n: int | None) -> list[Sample]:
       python -c "from nullpii_eval.public_datasets import _load_presidio_synthetic; ..."
     """
     path = Path(__file__).resolve().parent.parent / "datasets" / "presidio-synthetic.jsonl"
+    return _load_charspan_jsonl(path, n)
+
+
+def _load_charspan_jsonl(path: Path, n: int | None) -> list[Sample]:
+    """Load `{text, spans:[{label,start,end}]}` JSONL → list[Sample]."""
     out: list[Sample] = []
     with path.open(encoding="utf-8") as f:
         for line in f:
+            line = line.strip()
+            if not line:
+                continue
             row = json.loads(line)
             spans = tuple(Span(s["label"], int(s["start"]), int(s["end"])) for s in row["spans"])
             out.append(Sample(row["text"], spans))
@@ -164,62 +168,6 @@ def _load_tab_echr_test(n: int | None) -> list[Sample]:
     return out
 
 
-def _load_nullpii_subset(n: int | None, *, subset: str) -> list[Sample]:
-    """Load a single subset from the unified `nullpii-bench.jsonl`.
-
-    All project-authored datasets live in one file with a `subset`
-    field. Subsets:
-      - bundled / long-prompts / adversarial — base nullpii-bench
-        (real-world dev paste, RFCs, multilingual; long-form chunking
-        stress; hand-curated decoy strings)
-      - typo_pii / unicode_obf / whitespace_obf / encoding_obf /
-        decoys / code_pii — preprocessor regression tests, 80 each
-      - textattack-{homoglyph,charswap,chardelete,charinsert,charsub}
-        — TextAttack perturbations over ai4privacy 0–500, 334 each
-    """
-    path = Path(__file__).resolve().parent.parent / "datasets" / "nullpii-bench.jsonl"
-    out: list[Sample] = []
-    with path.open(encoding="utf-8") as f:
-        for line in f:
-            row = json.loads(line)
-            if row.get("subset") != subset:
-                continue
-            spans = tuple(Span(s["label"], int(s["start"]), int(s["end"])) for s in row["spans"])
-            out.append(Sample(row["text"], spans))
-            if n and len(out) >= n:
-                break
-    return out
-
-
-def _load_nullpii_adversarial(n: int | None, *, subset: str) -> list[Sample]:
-    return _load_nullpii_subset(n, subset=subset)
-
-
-def _load_nullpii_adversarial_textattack(n: int | None, *, subset: str) -> list[Sample]:
-    return _load_nullpii_subset(n, subset=subset)
-
-
-# Dev-focused dataset suite (open licensing only).
-#
-#  - nullpii-bench — project-bundled (bundled + long-prompts subsets
-#    merged), Apache 2.0. Adversarial subset excluded as it only
-#    exercised the regex pack.
-#  - dev-prompts-synth — local generator, Apache 2.0, fully synthetic
-#  - enron-planted — Enron Email Corpus (FERC public-domain release)
-#                    + planted PII at known offsets
-#  - stackoverflow-planted — StackExchange CC-BY-SA archive
-#                            + planted PII at known offsets
-#
-# Excluded:
-#  - bigcode/bigcode-pii-dataset — gated, requires auth + acceptance
-#  - bigcode/the-stack-smol — opt-out concerns; not safe-by-default
-#  - ai4privacy / Isotonic / wikiann / conll / presidio-synthetic —
-#    helpers in public_datasets.py kept for future use but not
-#    registered here. Re-register if needed.
-#
-# ~50k samples total; nullpii cpu pool=8 → ~2.5h on RunPod 5090 host.
-# Override with --max-per-dataset N or --no-cap.
-#
 # Held-out offsets: training default caps were ai4privacy=100000 and
 # Isotonic prefetched 200000 train rows for the 20k-per-locale cap. To
 # benchmark on data the model never saw, slice ABOVE those indices.
@@ -229,34 +177,12 @@ _AI4_HELDOUT_OFFSET = 100_000
 _ISOTONIC_HELDOUT_ROW_OFFSET = 200_000
 
 DATASET_CONFIGS: list[DatasetSpec] = [
-    # ─ Generalization rows (out-of-distribution, never-seen) ───────
+    # ─ Project-authored unified bench (one file, all adversarial / preprocessor /
+    #   TextAttack subsets aggregated to a single F1 number) ─────────
     DatasetSpec("nullpii-bench",         _load_nullpii_bench,                                                  None, total_n=2421),
-    # Dropped 2026-05-04: composite `nullpii-adversarial` mixes decoys
-    # (zero-PII gold) with real PII subsets — F1 ambiguous when the
-    # individual subsets are already benched. Keep only the per-subset
-    # rows below.
-    DatasetSpec("adversarial-typo",      lambda n: _load_nullpii_adversarial(n, subset="typo_pii"),            None, total_n=80),
-    DatasetSpec("adversarial-unicode",   lambda n: _load_nullpii_adversarial(n, subset="unicode_obf"),         None, total_n=80),
-    DatasetSpec("adversarial-whitespace", lambda n: _load_nullpii_adversarial(n, subset="whitespace_obf"),      None, total_n=80),
-    DatasetSpec("adversarial-encoding",  lambda n: _load_nullpii_adversarial(n, subset="encoding_obf"),        None, total_n=80),
-    # Dropped 2026-05-04: `adversarial-decoys` has zero gold spans. F1
-    # is structurally meaningless on a no-PII slice (recall undefined).
-    # If FP rate matters, track separately as a precision-only row.
-    DatasetSpec("adversarial-code",      lambda n: _load_nullpii_adversarial(n, subset="code_pii"),            None, total_n=80),
-    DatasetSpec("adversarial-textattack", _load_nullpii_adversarial_textattack,                                None, total_n=1670),
-    DatasetSpec("textattack-homoglyph",   lambda n: _load_nullpii_adversarial_textattack(n, subset="textattack-homoglyph"),  None, total_n=334),
-    DatasetSpec("textattack-charswap",    lambda n: _load_nullpii_adversarial_textattack(n, subset="textattack-charswap"),   None, total_n=334),
-    DatasetSpec("textattack-chardelete",  lambda n: _load_nullpii_adversarial_textattack(n, subset="textattack-chardelete"), None, total_n=334),
-    DatasetSpec("textattack-charinsert",  lambda n: _load_nullpii_adversarial_textattack(n, subset="textattack-charinsert"), None, total_n=334),
-    DatasetSpec("textattack-charsub",     lambda n: _load_nullpii_adversarial_textattack(n, subset="textattack-charsub"),    None, total_n=334),
 
-    # ─ Third-party PII benches (legal / medical) ────────────────────
+    # ─ Third-party PII benches ────────────────────────────────────
     DatasetSpec("tab-echr",              _load_tab_echr_test,                                                  None, total_n=127),
-    DatasetSpec("lmsys-dev-planted",     lambda n: list(public_datasets._load_lmsys_dev_planted(n).samples),   5_000),
-    DatasetSpec("oasst-dev-planted",     lambda n: list(public_datasets._load_oasst_dev_planted(n).samples),   5_000, total_n=15),
-    DatasetSpec("enron-planted",         lambda n: list(public_datasets._load_enron_planted(n).samples),       10_000),
-    DatasetSpec("stackoverflow-planted", lambda n: list(public_datasets._load_stackoverflow_planted(n).samples), 10_000),
-    DatasetSpec("thestack-planted",      lambda n: list(public_datasets._load_thestack_planted(n).samples),    5_000),
     DatasetSpec("presidio-synthetic",    _load_presidio_synthetic_static,                                      5_000, total_n=5000),
     DatasetSpec("ai4privacy-400k",       lambda n: list(public_datasets._load_ai4privacy_400k(n).samples),     5_000, total_n=400000),
 
@@ -283,17 +209,24 @@ DATASET_CONFIGS: list[DatasetSpec] = [
     DatasetSpec("isotonic-de-heldout",       _isotonic("de", row_offset=_ISOTONIC_HELDOUT_ROW_OFFSET // 2),  5_000, total_n=109000),
     DatasetSpec("isotonic-fr-heldout",       _isotonic("fr", row_offset=_ISOTONIC_HELDOUT_ROW_OFFSET // 2),  5_000, total_n=109000),
     DatasetSpec("isotonic-it-heldout",       _isotonic("it", row_offset=_ISOTONIC_HELDOUT_ROW_OFFSET // 2),  5_000, total_n=109000),
-    # Dropped 2026-05-04: `wikiann-{es,zh,ja}` are PER/LOC NER, not
-    # native PII labels. Loose mapping (PER → private_person, LOC →
-    # private_address) makes absolute F1 incomparable to PII-native
-    # rows. CJK universally <0.16 F1 — known dead zone, not a bench
-    # signal worth tracking. Helper `_wikiann` retained in case future
-    # work re-introduces a stricter mapping.
 ]
 
 
 # ─── Tool builders ───────────────────────────────────────────────
+# Tools come in two flavours: single-sample (`predictor(text) -> ToolResult`)
+# and batch (`predictor(list[str]) -> list[ToolResult]`). Batch predictors
+# are tagged so `run_combo` knows to chunk samples and feed real batches,
+# which is the difference between 2 samp/s and 80+ samp/s on the 5090
+# for transformer tools like deberta / piiranha.
+def _mark_batch(batch_pred):
+    batch_pred.is_batch = True  # type: ignore[attr-defined]
+    return batch_pred
+
+
 def _wrap_batch(batch_pred):
+    """Legacy single-sample wrapper. Kept for tools whose pipeline
+    initialisation expects a single-sample callable downstream; new
+    transformer tools should use `_mark_batch` instead."""
     def _single(text):
         return batch_pred([text])[0]
     return _single
@@ -373,8 +306,13 @@ def build_tools(args) -> dict[str, Callable]:
         # vault). Requires `npm run build` and a populated model dir
         # (env `NULLPII_MODEL_DIR`, default falls through to npm's
         # default download cache).
+        # Force nullpii to CPU regardless of the global `--backend`. On
+        # the 5090 (SM_120) onnxruntime's CUDA EP can't run the GLiNER
+        # MoE node (`Non-zero status code returned while running MoE`),
+        # but the rest of the tools (PyTorch transformers) run fine on
+        # CUDA — so the pod bench wants `--backend cuda` overall.
         "nullpii": lambda: nullpii_runtime_predictor(
-            backend="cpu" if backend == "cpu" else "cuda",
+            backend="cpu",
             model_dir=os.environ.get("NULLPII_MODEL_DIR"),
         ),
         # ─── Python re-impl (sanity check vs the npm subprocess) ────
@@ -417,8 +355,8 @@ def build_tools(args) -> dict[str, Callable]:
         # `_normalize_for_detection`). Only the per-tool label remap to
         # nullpii's 8-class schema runs (cross-schema bridge).
         "presidio":  lambda: presidio_predictor(),
-        "deberta":   lambda: _wrap_batch(deberta_pii_predictor(device=backend, batch_size=32)),
-        "piiranha":  lambda: _wrap_batch(piiranha_predictor(device=backend, batch_size=32)),
+        "deberta":   lambda: _mark_batch(deberta_pii_predictor(device=backend, batch_size=32)),
+        "piiranha":  lambda: _mark_batch(piiranha_predictor(device=backend, batch_size=32)),
         # GLiNER multi PII v1 (`urchade/gliner_multi_pii-v1`) bare HF.
         "gliner-onnx-pii-fp32": lambda: gliner_v2_predictor(
             "onnx-community/gliner_multi_pii-v1",
@@ -530,24 +468,43 @@ def run_combo(
 
     t0 = time.perf_counter()
     flush_every = 100
+    # Batch-mode tools (deberta, piiranha) declare `predictor.is_batch=True`
+    # and accept `list[str]` directly. Feeding them one sample at a time
+    # caps throughput at ~2 samp/s on a 5090; in real batches deberta-pii
+    # ramps to ~100 samp/s. Single-sample tools (presidio, nullpii via
+    # npm subprocess, gliner-v2 chunked predictor) stay on the per-sample
+    # path because their internals can't share work across inputs anyway.
+    is_batch = bool(getattr(predictor, "is_batch", False))
+    # Outer chunk size for run_combo's iteration; the predictor's
+    # internal `batch_size` (set in build_tools) governs the actual GPU
+    # batch. 32 keeps activation memory safe even with 4 parallel tools
+    # sharing the 5090's 32 GB VRAM on long-document datasets (tab-echr
+    # / ai4privacy etc).
+    batch_size = 32 if is_batch else 1
     with pred_path.open("a", encoding="utf-8") as f:
-        for i in range(done_idx + 1, len(samples)):
+        for batch_start in range(done_idx + 1, len(samples), batch_size):
+            batch_end = min(batch_start + batch_size, len(samples))
             try:
-                spans = list(predictor(samples[i].text).spans)
+                if is_batch:
+                    texts = [samples[k].text for k in range(batch_start, batch_end)]
+                    results = predictor(texts)
+                    batch_spans = [list(r.spans) for r in results]
+                else:
+                    batch_spans = [list(predictor(samples[batch_start].text).spans)]
             except Exception as e:
-                # No silent recovery — flush partial state then re-raise so
-                # the (tool, dataset) cell is marked CRASHED at the outer
-                # loop. Empty-spans fallback would silently corrupt F1.
                 f.flush()
-                state_path.write_text(str(i - 1))
+                state_path.write_text(str(batch_start - 1))
                 msg = f"{type(e).__name__}: {e}"
-                print(f"  [{tool_name}/{dataset.key}] idx={i} FATAL {msg}", flush=True)
+                print(f"  [{tool_name}/{dataset.key}] idx={batch_start} FATAL {msg}", flush=True)
                 raise RuntimeError(
-                    f"{tool_name}/{dataset.key} failed at idx={i}: {msg}",
+                    f"{tool_name}/{dataset.key} failed at idx={batch_start}: {msg}",
                 ) from e
-            preds.append(spans)
-            f.write(json.dumps({"idx": i, "spans": [(s.start, s.end, s.label) for s in spans]}) + "\n")
-            if (i + 1) % flush_every == 0:
+            for offset, spans in enumerate(batch_spans):
+                i = batch_start + offset
+                preds.append(spans)
+                f.write(json.dumps({"idx": i, "spans": [(s.start, s.end, s.label) for s in spans]}) + "\n")
+            i = batch_end - 1
+            if ((i + 1) // flush_every) > (batch_start // flush_every) or i + 1 == len(samples):
                 f.flush()
                 state_path.write_text(str(i))
                 pct = (i + 1) * 100 / max(1, len(samples))

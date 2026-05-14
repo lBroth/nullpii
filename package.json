@@ -1,7 +1,7 @@
 {
   "name": "nullpii",
   "version": "0.2.0-rc.0",
-  "description": "Sanitize PII from text locally with a reversible vault. Zero cloud calls. Multi-backend (CPU/MPS/CUDA).",
+  "description": "Sanitize PII from text locally with a reversible vault. Zero cloud calls. Unified GLiNER ONNX (CPU/CUDA/CoreML via onnxruntime).",
   "license": "Apache-2.0",
   "type": "module",
   "sideEffects": false,
@@ -17,18 +17,6 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    },
-    "./backend/cpu": {
-      "types": "./dist/backend/cpu-backend.d.ts",
-      "import": "./dist/backend/cpu-backend.js"
-    },
-    "./backend/mps": {
-      "types": "./dist/backend/mps-backend.d.ts",
-      "import": "./dist/backend/mps-backend.js"
-    },
-    "./backend/cuda": {
-      "types": "./dist/backend/cuda-backend.d.ts",
-      "import": "./dist/backend/cuda-backend.js"
     }
   },
   "files": ["dist", "src", "README.md", "LICENSE", "NOTICE", "bin"],

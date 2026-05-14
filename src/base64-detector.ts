@@ -72,15 +72,15 @@ const MAX_BASE64_BLOB_BYTES = 1_000_000;
 
 /** Find PII inside base64-wrapped runs. Spans are in `text` coordinates.
  *
- * `existing` is intentionally not consulted: a base64 blob tagged
- * `secret` by the ML model can still contain a decoded `private_email`
- * — the higher `BASE64_SCORE` lets cross-label dedupe pick the correct
- * label downstream rather than us hiding the hit here.
+ * No `existing`-spans argument by design: a base64 blob the ML model
+ * tagged `secret` can still contain a decoded `private_email`. The
+ * higher `BASE64_SCORE` lets cross-label dedupe pick the correct label
+ * downstream rather than us hiding the hit here.
  *
  * Inputs above `MAX_INPUT_BYTES` are refused upfront — matches the
  * recognizer-pack / normalize policy and stops adversarial multi-MB
  * payloads from running the full decode + classify pipeline. */
-export function detectBase64Pii(text: string, _existing: readonly PiiSpan[]): PiiSpan[] {
+export function detectBase64Pii(text: string): PiiSpan[] {
   if (text.length > MAX_INPUT_BYTES) return [];
   const out: PiiSpan[] = [];
   // Re-create the regex each call so `lastIndex` doesn't bleed across calls.

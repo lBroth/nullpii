@@ -140,8 +140,11 @@ export class OrtUnifiedBackend {
 async function loadOrt(): Promise<typeof import('onnxruntime-node')> {
   try {
     return await import('onnxruntime-node');
-  } catch (_err) {
-    throw new OrtNotInstalledError();
+  } catch (err) {
+    // Preserve the underlying loader error (binding mismatch, missing
+    // native build, glibc version, etc.) via `cause` so callers can
+    // diagnose without re-running the dynamic import themselves.
+    throw new OrtNotInstalledError({ cause: err });
   }
 }
 

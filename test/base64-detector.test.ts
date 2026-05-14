@@ -13,7 +13,7 @@ describe('detectBase64Pii', () => {
     // `dXNlci4xMjNAZ21haWwuY29t` decodes to `user.123@gmail.com`.
     const blob = b64('user.123@gmail.com');
     const text = `(payload) ${blob}`;
-    const spans = detectBase64Pii(text, []);
+    const spans = detectBase64Pii(text);
     expect(spans).toHaveLength(1);
     const s = spans[0];
     if (!s) throw new Error('no span');
@@ -27,26 +27,26 @@ describe('detectBase64Pii', () => {
 
   it('tags a base64-wrapped sk- API key as secret', () => {
     const blob = b64('sk-ant-api03-aBcDeFgHiJkLmNoP01234567');
-    const spans = detectBase64Pii(blob, []);
+    const spans = detectBase64Pii(blob);
     expect(spans).toHaveLength(1);
     expect(spans[0]?.label).toBe('secret');
   });
 
   it('tags a base64-wrapped long-digit run as account_number', () => {
     const blob = b64('order 4111111111111111 confirmed');
-    const spans = detectBase64Pii(blob, []);
+    const spans = detectBase64Pii(blob);
     expect(spans).toHaveLength(1);
     expect(spans[0]?.label).toBe('account_number');
   });
 
   it('skips base64 of innocuous text (no classified pattern)', () => {
     const blob = b64('just a friendly greeting message here');
-    expect(detectBase64Pii(blob, [])).toEqual([]);
+    expect(detectBase64Pii(blob)).toEqual([]);
   });
 
   it('skips short base64-looking runs (length < 24)', () => {
     const text = 'hello YWJj world'; // YWJj = "abc"
-    expect(detectBase64Pii(text, [])).toEqual([]);
+    expect(detectBase64Pii(text)).toEqual([]);
   });
 
   it('skips runs whose length is not a multiple of 4', () => {
@@ -57,7 +57,7 @@ describe('detectBase64Pii', () => {
     const blob = b64('verylonguser@realdomain-example.com').replace(/=+$/, '');
     expect(blob.length).toBeGreaterThanOrEqual(24);
     expect(blob.length % 4).not.toBe(0);
-    expect(detectBase64Pii(blob, [])).toEqual([]);
+    expect(detectBase64Pii(blob)).toEqual([]);
   });
 
   it('skips base64 that decodes to non-printable bytes', () => {
@@ -67,11 +67,11 @@ describe('detectBase64Pii', () => {
       0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
     ]);
     const blob = binary.toString('base64');
-    expect(detectBase64Pii(blob, [])).toEqual([]);
+    expect(detectBase64Pii(blob)).toEqual([]);
   });
 
   it('skips non-base64 text', () => {
-    expect(detectBase64Pii('just a normal sentence about nothing', [])).toEqual([]);
+    expect(detectBase64Pii('just a normal sentence about nothing')).toEqual([]);
   });
 
   it('detects multiple distinct base64 PII blobs in one input', () => {
@@ -81,21 +81,22 @@ describe('detectBase64Pii', () => {
     const text = `email: ${e} | key: ${s}`;
     expect(e.length).toBeGreaterThanOrEqual(24);
     expect(s.length).toBeGreaterThanOrEqual(24);
-    const spans = detectBase64Pii(text, []);
+    const spans = detectBase64Pii(text);
     expect(spans).toHaveLength(2);
     const labels = spans.map((sp) => sp.label).sort();
     expect(labels).toEqual(['private_email', 'secret']);
   });
 
-  it('ignores the `existing` arg (cross-label dedupe handles overlap)', () => {
-    // A pre-existing `secret` span over the blob must NOT suppress the
-    // detector — it still emits a `private_email` so dedupe can pick
-    // the correct label later.
+  it('emits regardless of pre-existing overlapping spans (cross-label dedupe handles overlap)', () => {
+    // Before F-21 the function took an `existing` arg but ignored it —
+    // overlapping spans were intentionally not consulted so a base64 blob
+    // tagged `secret` by ML could still surface as `private_email` for
+    // downstream cross-label dedupe. The argument was dropped; the
+    // detector now always emits, leaving label reconciliation to the
+    // pipeline.
     const blob = b64('verylonguser@really-cool-domain.example.com');
     expect(blob.length).toBeGreaterThanOrEqual(24);
-    const spans = detectBase64Pii(blob, [
-      { label: 'secret', start: 0, end: blob.length, score: 0.99, text: blob },
-    ]);
+    const spans = detectBase64Pii(blob);
     expect(spans).toHaveLength(1);
     expect(spans[0]?.label).toBe('private_email');
   });
@@ -112,7 +113,7 @@ describe('detectBase64Pii', () => {
     // After base64 decode the payload contains multi-byte UTF-8; after
     // normalize.transliterate it becomes `admin@example.com`.
     const blob = b64('аdmin@еxample.com');
-    const spans = detectBase64Pii(blob, []);
+    const spans = detectBase64Pii(blob);
     expect(spans).toHaveLength(1);
     expect(spans[0]?.label).toBe('private_email');
   });
@@ -124,7 +125,7 @@ describe('detectBase64Pii', () => {
     const binary = Buffer.from([
       0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
     ]);
-    expect(detectBase64Pii(binary.toString('base64'), [])).toEqual([]);
+    expect(detectBase64Pii(binary.toString('base64'))).toEqual([]);
   });
 
   // F-11 regression. Without an upfront cap, an adversarial multi-MB
@@ -139,6 +140,6 @@ describe('detectBase64Pii', () => {
     const piiBlob = b64('user.123@gmail.com');
     const huge = ' '.repeat(1_100_000) + piiBlob;
     expect(huge.length).toBeGreaterThan(1_000_000);
-    expect(detectBase64Pii(huge, [])).toEqual([]);
+    expect(detectBase64Pii(huge)).toEqual([]);
   });
 });

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Base class for every error thrown by `nullpii`.
  *
@@ -22,15 +24,6 @@ export class ModelNotFoundError extends NullPiiError {
   /** @param path absolute path that was checked */
   constructor(path: string, options?: { cause?: unknown }) {
     super(`model artifact not found at: ${path}`, options);
-  }
-}
-
-/** Thrown when the requested backend cannot run on this system. */
-export class BackendNotAvailableError extends NullPiiError {
-  override readonly code = 'NULLPII_BACKEND_NOT_AVAILABLE';
-  /** @param backend identifier of the unavailable backend */
-  constructor(backend: string, options?: { cause?: unknown }) {
-    super(`backend not available on this system: ${backend}`, options);
   }
 }
 
@@ -69,5 +62,31 @@ export class InvalidPathError extends NullPiiError {
   /** @param path the offending path, as provided */
   constructor(path: string, options?: { cause?: unknown }) {
     super(`unsafe or invalid path: ${path}`, options);
+  }
+}
+
+/** Thrown when `onnxruntime-node` is required but not installed. */
+export class OrtNotInstalledError extends NullPiiError {
+  override readonly code = 'NULLPII_ORT_NOT_INSTALLED';
+  constructor(options?: { cause?: unknown }) {
+    super(
+      'onnxruntime-node is required for ML inference but was not found — install it with `npm install onnxruntime-node`',
+      options,
+    );
+  }
+}
+
+/** Thrown when a placeholder in restored text was minted by a different
+ * session than the one passed to `restore()`. Prevents silent
+ * substitution with the wrong PII value across sessions. */
+export class SessionMismatchError extends NullPiiError {
+  override readonly code = 'NULLPII_SESSION_MISMATCH';
+  /** @param expected current session id prefix
+   *  @param found placeholder session id prefix that did not match */
+  constructor(expected: string, found: string, options?: { cause?: unknown }) {
+    super(
+      `placeholder session prefix mismatch — placeholder was minted by session ${found}, restore called with session ${expected}`,
+      options,
+    );
   }
 }

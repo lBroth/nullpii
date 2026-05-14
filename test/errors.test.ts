@@ -1,10 +1,13 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { describe, expect, it } from 'vitest';
 import {
-  BackendNotAvailableError,
   InvalidPathError,
   ModelNotFoundError,
   ModelNotInitializedError,
   NullPiiError,
+  OrtNotInstalledError,
+  SessionMismatchError,
   SessionNotFoundError,
   TextTooLongError,
 } from '../src/errors.js';
@@ -38,16 +41,6 @@ describe('ModelNotFoundError', () => {
     expect(err).toBeInstanceOf(NullPiiError);
     expect(err.code).toBe('NULLPII_MODEL_NOT_FOUND');
   });
-});
-
-describe('BackendNotAvailableError', () => {
-  it('throws with the backend name', () => {
-    expect(() => {
-      throw new BackendNotAvailableError('cuda');
-    }).toThrow(/cuda/);
-  });
-
-  it('exposes a stable code', () => {});
 });
 
 describe('ModelNotInitializedError', () => {
@@ -86,6 +79,26 @@ describe('SessionNotFoundError', () => {
   });
 });
 
+describe('SessionMismatchError', () => {
+  it('throws with both expected and found prefixes', () => {
+    const err = new SessionMismatchError('aaaaaaaa', 'bbbbbbbb');
+    expect(err.message).toContain('aaaaaaaa');
+    expect(err.message).toContain('bbbbbbbb');
+  });
+
+  it('exposes a stable code', () => {
+    expect(new SessionMismatchError('x', 'y').code).toBe('NULLPII_SESSION_MISMATCH');
+  });
+});
+
+describe('OrtNotInstalledError', () => {
+  it('exposes a stable code and a setup hint', () => {
+    const err = new OrtNotInstalledError();
+    expect(err.code).toBe('NULLPII_ORT_NOT_INSTALLED');
+    expect(err.message).toMatch(/onnxruntime-node/);
+  });
+});
+
 describe('InvalidPathError', () => {
   it('throws with the offending path', () => {
     expect(() => {
@@ -103,12 +116,13 @@ describe('error codes are unique', () => {
     const codes = new Set([
       new NullPiiError('').code,
       new ModelNotFoundError('').code,
-      new BackendNotAvailableError('').code,
       new ModelNotInitializedError().code,
       new TextTooLongError(0, 0).code,
       new SessionNotFoundError('').code,
+      new SessionMismatchError('', '').code,
+      new OrtNotInstalledError().code,
       new InvalidPathError('').code,
     ]);
-    expect(codes.size).toBe(7);
+    expect(codes.size).toBe(8);
   });
 });

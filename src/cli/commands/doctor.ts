@@ -1,15 +1,15 @@
-import { existsSync, statSync } from 'node:fs';
+// SPDX-License-Identifier: Apache-2.0
+
+import { existsSync } from 'node:fs';
 import { freemem, totalmem } from 'node:os';
 import chalk from 'chalk';
 import type { Command } from 'commander';
-import { CudaBackend } from '../../backend/cuda-backend.js';
-import { MpsBackend } from '../../backend/mps-backend.js';
 import { ModelManager, defaultCacheDir } from '../../model-manager.js';
 
 export function registerDoctor(program: Command): void {
   program
     .command('doctor')
-    .description('probe environment + model cache + backends; exit 0 if healthy')
+    .description('probe environment + model cache; exit 0 if healthy')
     .action(runDoctor);
 }
 
@@ -27,7 +27,7 @@ const CHECKS: ReadonlyArray<() => Promise<boolean>> = [
   checkCacheDir,
   checkModelArtifacts,
   checkMemory,
-  checkBackends,
+  checkOrt,
 ];
 
 function ok(label: string, msg: string): true {
@@ -75,21 +75,14 @@ async function checkMemory(): Promise<boolean> {
     : warn('free memory', `${free} MB free — model load may swap`);
 }
 
-async function checkBackends(): Promise<boolean> {
-  const probes: ReadonlyArray<readonly [string, () => Promise<boolean>]> = [
-    ['cpu (always)', () => Promise.resolve(true)],
-    ['mps (Apple)', () => new MpsBackend('/').isAvailable()],
-    ['cuda (NVIDIA)', () => new CudaBackend('/').isAvailable()],
-  ];
-  let any = false;
-  for (const [label, probe] of probes) {
-    if (await probe()) {
-      ok(`backend ${label}`, 'available');
-      any = true;
-    } else warn(`backend ${label}`, 'unavailable on this host');
+async function checkOrt(): Promise<boolean> {
+  try {
+    await import('onnxruntime-node');
+    return ok('onnxruntime-node', 'installed');
+  } catch {
+    return fail(
+      'onnxruntime-node',
+      'not installed — run `npm install onnxruntime-node` to enable inference',
+    );
   }
-  return any;
 }
-
-const _ = statSync; // satisfy noUnusedLocals on conditional import paths
-void _;

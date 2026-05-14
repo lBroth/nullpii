@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { SessionNotFoundError } from '../src/errors.js';
+import { SessionMismatchError, SessionNotFoundError } from '../src/errors.js';
 import type { PiiSpan } from '../src/types/index.js';
 import { PiiVault } from '../src/vault.js';
 
 const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const PLACEHOLDER_RE = /\{\{PII_[A-Z_]+_\d+_[0-9a-f]{8}\}\}/;
+const SESSION_PREFIX_RE = /[0-9a-f]{8}/;
 
 function span(label: PiiSpan['label'], start: number, end: number, text: string): PiiSpan {
   return { label, start, end, text, score: 1.0 };
+}
+
+function expectedPrefix(id: string): string {
+  return id.replace(/-/g, '').slice(0, 8).toLowerCase();
 }
 
 describe('PiiVault.createSession', () => {
@@ -23,33 +29,39 @@ describe('PiiVault.createSession', () => {
 });
 
 describe('PiiVault.sanitize', () => {
-  it('replaces a single span with the typed placeholder', () => {
+  it('replaces a single span with the typed session-tagged placeholder', () => {
     const v = new PiiVault();
     const id = v.createSession();
     const text = 'Hi John there.';
     const result = v.sanitize(text, [span('private_person', 3, 7, 'John')], id);
-    expect(result.sanitized).toBe('Hi {{PII_PRIVATE_PERSON_0}} there.');
+    expect(result.sanitized).toBe(`Hi {{PII_PRIVATE_PERSON_0_${expectedPrefix(id)}}} there.`);
   });
 
   it('replaces multiple spans of different labels correctly', () => {
     const v = new PiiVault();
     const id = v.createSession();
+    const p = expectedPrefix(id);
     const text = 'Email john@x.com or call 555-1212.';
     const spans = [
       span('private_email', 6, 16, 'john@x.com'),
       span('private_phone', 25, 33, '555-1212'),
     ];
     const result = v.sanitize(text, spans, id);
-    expect(result.sanitized).toBe('Email {{PII_PRIVATE_EMAIL_0}} or call {{PII_PRIVATE_PHONE_0}}.');
+    expect(result.sanitized).toBe(
+      `Email {{PII_PRIVATE_EMAIL_0_${p}}} or call {{PII_PRIVATE_PHONE_0_${p}}}.`,
+    );
   });
 
   it('assigns distinct indices to same-label spans', () => {
     const v = new PiiVault();
     const id = v.createSession();
+    const p = expectedPrefix(id);
     const text = 'Alice and Bob met.';
     const spans = [span('private_person', 0, 5, 'Alice'), span('private_person', 10, 13, 'Bob')];
     const result = v.sanitize(text, spans, id);
-    expect(result.sanitized).toBe('{{PII_PRIVATE_PERSON_0}} and {{PII_PRIVATE_PERSON_1}} met.');
+    expect(result.sanitized).toBe(
+      `{{PII_PRIVATE_PERSON_0_${p}}} and {{PII_PRIVATE_PERSON_1_${p}}} met.`,
+    );
   });
 
   it('preserves char offsets when many spans are present (back-to-front)', () => {
@@ -78,6 +90,15 @@ describe('PiiVault.sanitize', () => {
     const v = new PiiVault();
     expect(() => v.sanitize('x', [], 'not-real')).toThrow(SessionNotFoundError);
   });
+
+  it('embeds the session prefix in every placeholder', () => {
+    const v = new PiiVault();
+    const id = v.createSession();
+    const result = v.sanitize('Hi John', [span('private_person', 3, 7, 'John')], id);
+    const match = PLACEHOLDER_RE.exec(result.sanitized);
+    expect(match).not.toBeNull();
+    expect(SESSION_PREFIX_RE.test(match?.[0] ?? '')).toBe(true);
+  });
 });
 
 describe('PiiVault.restore', () => {
@@ -103,12 +124,22 @@ describe('PiiVault.restore', () => {
     expect(r.replacements).toBe(0);
   });
 
-  it('leaves unknown placeholders as-is (does not throw)', () => {
+  it('leaves unknown placeholders (with matching session prefix) as-is', () => {
     const v = new PiiVault();
     const id = v.createSession();
-    const r = v.restore('text {{PII_SECRET_42}} foreign', id);
-    expect(r.restored).toBe('text {{PII_SECRET_42}} foreign');
+    const p = expectedPrefix(id);
+    const text = `text {{PII_SECRET_42_${p}}} foreign`;
+    const r = v.restore(text, id);
+    expect(r.restored).toBe(text);
     expect(r.replacements).toBe(0);
+  });
+
+  it('throws SessionMismatchError when placeholder prefix is from a different session', () => {
+    const v = new PiiVault();
+    const idA = v.createSession();
+    const idB = v.createSession();
+    const result = v.sanitize('Hi John', [span('private_person', 3, 7, 'John')], idA);
+    expect(() => v.restore(result.sanitized, idB)).toThrow(SessionMismatchError);
   });
 
   it('throws SessionNotFoundError for unknown session', () => {
@@ -137,5 +168,23 @@ describe('PiiVault.destroySession', () => {
     expect(v.sessionCount).toBe(1);
     v.destroySession(id);
     expect(v.sessionCount).toBe(0);
+  });
+});
+
+describe('PiiVault.clear', () => {
+  it('drops every session', () => {
+    const v = new PiiVault();
+    v.createSession();
+    v.createSession();
+    expect(v.sessionCount).toBe(2);
+    v.clear();
+    expect(v.sessionCount).toBe(0);
+  });
+
+  it('subsequent sanitize on a cleared session throws', () => {
+    const v = new PiiVault();
+    const id = v.createSession();
+    v.clear();
+    expect(() => v.sanitize('x', [], id)).toThrow(SessionNotFoundError);
   });
 });

@@ -1,9 +1,10 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import type { NullPiiConfig } from '../types/index.js';
 
 export interface CliConfigOptions {
   readonly modelDir?: string;
   readonly backend?: string;
-  readonly variant?: string;
   readonly threshold?: number;
   readonly threads?: number;
 }
@@ -14,9 +15,6 @@ export function configFromOptions(options: CliConfigOptions): NullPiiConfig {
   if (options.modelDir !== undefined) out.modelDir = options.modelDir;
   if (options.backend !== undefined) {
     out.backend = options.backend as NonNullable<NullPiiConfig['backend']>;
-  }
-  if (options.variant !== undefined) {
-    out.variant = options.variant as NonNullable<NullPiiConfig['variant']>;
   }
   if (options.threshold !== undefined && Number.isFinite(options.threshold)) {
     out.threshold = options.threshold;

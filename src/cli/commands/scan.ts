@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { writeSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import chalk from 'chalk';
@@ -16,7 +18,6 @@ export function registerScan(program: Command): void {
     )
     .option('--model-dir <path>', 'use a local model directory (skip download)')
     .option('--backend <name>', 'force backend: cpu | mps | cuda | auto')
-    .option('--variant <v>', 'fp32 | int4 | auto')
     .action(
       async (
         text: string | undefined,

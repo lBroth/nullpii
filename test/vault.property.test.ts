@@ -70,21 +70,22 @@ describe('PiiVault — property: sanitize ↔ restore round-trip', () => {
   });
 });
 
-describe('PiiVault — property: deterministic placeholder indexing', () => {
-  it('same input + same session twice → same sanitized output', () => {
+describe('PiiVault — property: cross-session restore mismatch', () => {
+  it('restoring placeholders minted in session A using session B throws SessionMismatchError', () => {
     fc.assert(
       fc.property(
-        fc
-          .string({ minLength: 1, maxLength: 100 })
-          .chain((text) => spansArbitrary(text).map((spans) => ({ text, spans }))),
+        fc.string({ minLength: 1, maxLength: 100 }).chain((text) =>
+          spansArbitrary(text)
+            .filter((s) => s.length > 0)
+            .map((spans) => ({ text, spans })),
+        ),
         ({ text, spans }) => {
-          const a = new PiiVault();
-          const b = new PiiVault();
-          const aId = a.createSession();
-          const bId = b.createSession();
-          const aOut = a.sanitize(text, spans, aId).sanitized;
-          const bOut = b.sanitize(text, spans, bId).sanitized;
-          expect(aOut).toBe(bOut);
+          const v = new PiiVault();
+          const a = v.createSession();
+          const b = v.createSession();
+          const sanitized = v.sanitize(text, spans, a).sanitized;
+          if (sanitized === text) return; // no placeholders emitted
+          expect(() => v.restore(sanitized, b)).toThrow();
         },
       ),
       { numRuns: 100 },

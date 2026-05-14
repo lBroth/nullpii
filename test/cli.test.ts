@@ -6,12 +6,24 @@ afterEach(() => {
 });
 
 describe('CLI: buildProgram', () => {
-  it('exposes scan, sanitize, restore, models, benchmark commands', () => {
+  it('exposes scan, sanitize, models, prefetch, doctor commands', () => {
     const program = buildProgram();
     const names = program.commands.map((c) => c.name());
     expect(names).toEqual(
-      expect.arrayContaining(['scan', 'sanitize', 'restore', 'models', 'benchmark']),
+      expect.arrayContaining(['scan', 'sanitize', 'models', 'prefetch', 'doctor']),
     );
+  });
+
+  it('does not expose restore — vault is process-local, cross-process restore was always broken', () => {
+    const program = buildProgram();
+    const names = program.commands.map((c) => c.name());
+    expect(names).not.toContain('restore');
+  });
+
+  it('does not expose benchmark — legacy multi-backend abstraction removed in v0.2', () => {
+    const program = buildProgram();
+    const names = program.commands.map((c) => c.name());
+    expect(names).not.toContain('benchmark');
   });
 
   it('has a version flag', () => {

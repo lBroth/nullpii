@@ -1,12 +1,14 @@
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Per-chunk cap on tokens fed into the model in a single forward pass.
- * The upstream model supports 131072 tokens (banded attention,
- * `sliding_window: 128`), but per-chunk memory still scales with
- * sequence length so 512 is the production CPU sweet spot. Inputs longer
- * than this are split into overlapping chunks (see `CHUNK_OVERLAP_TOKENS`)
- * unless `strictLength` is set.
+ * Set to 384 to match `gliner_config.json:max_len` on the shipped
+ * unified ONNX — the runtime rejects sequences longer than this, so the
+ * public constant matches what `sanitize()` actually accepts. Inputs
+ * longer than this are split into overlapping chunks (see
+ * `CHUNK_OVERLAP_TOKENS`) unless `strictLength` is set.
  */
-export const MAX_SEQUENCE_LENGTH = 512;
+export const MAX_SEQUENCE_LENGTH = 384;
 
 /**
  * Token overlap between consecutive chunks. Spans straddling a chunk
@@ -27,9 +29,17 @@ export const MAX_INPUT_TOKENS = 32_768;
 export const MODEL_DOWNLOAD_TIMEOUT_MS = 300_000;
 
 /**
+ * Number of hex chars from the session UUID encoded into each
+ * placeholder. Used by `restore()` to detect cross-session mismatches
+ * before substituting the wrong PII value back into text.
+ */
+export const SESSION_PREFIX_LEN = 8;
+
+/**
  * Regex used to find placeholders in sanitized text during restore.
- * Matches `{{PII_<LABEL>_<index>}}`. Capture groups: 1 = label (lowercased),
- * 2 = index. Global flag so `String.prototype.replaceAll` and `matchAll` work.
+ * Matches `{{PII_<LABEL>_<index>_<sessionPrefix>}}`. Capture groups:
+ * 1 = label (uppercase), 2 = index, 3 = 8-hex-char session prefix.
+ * Global flag so `String.prototype.replaceAll` and `matchAll` work.
  *
  * The Mustache `{{var}}` syntax is universal in prompt-engineering tooling
  * (Anthropic prompts, LangChain `PromptTemplate`, Jinja2, Handlebars, Vue,
@@ -39,14 +49,15 @@ export const MODEL_DOWNLOAD_TIMEOUT_MS = 300_000;
  * is also lower than the previous `[[NULLPII:type:i]]` format (-20% under
  * the cl100k_base tokenizer).
  */
-export const PLACEHOLDER_REGEX = /\{\{PII_([A-Z_]+)_(\d+)\}\}/g;
+export const PLACEHOLDER_REGEX = /\{\{PII_([A-Z_]+)_(\d+)_([0-9a-f]{8})\}\}/g;
 
 /**
  * Build the canonical placeholder string for a vault entry.
  * @param label - the PII label of the original span (lowercase, e.g. `private_email`)
  * @param index - 0-based index within the session
- * @returns `{{PII_<LABEL>_<index>}}` with label uppercased
+ * @param sessionPrefix - first {@link SESSION_PREFIX_LEN} hex chars of the session UUID
+ * @returns `{{PII_<LABEL>_<index>_<sessionPrefix>}}` with label uppercased
  */
-export function PLACEHOLDER_TEMPLATE(label: string, index: number): string {
-  return `{{PII_${label.toUpperCase()}_${index}}}`;
+export function PLACEHOLDER_TEMPLATE(label: string, index: number, sessionPrefix: string): string {
+  return `{{PII_${label.toUpperCase()}_${index}_${sessionPrefix}}}`;
 }

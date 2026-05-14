@@ -1,4 +1,7 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import anyAscii from 'any-ascii';
+import { MAX_INPUT_BYTES } from './defaults.js';
 
 /** Adversarial-resistant input normalisation with offset map.
  * Steps in order: whitespace-PII collapse (gated by digit/@ post-check),
@@ -35,15 +38,17 @@ const HTML_ENTITY_RE = /^(?:&#(\d+);|&#x([0-9a-fA-F]+);)/;
 const ASCII_DIGIT_RE = /\d/;
 const ASCII_ALPHA_RE = /[A-Za-z]/;
 
-const EMAIL_ANCHOR_CHARS = new Set(['@', '.', '+', '-']);
-
-const NORMALIZE_INPUT_MAX_BYTES = 1_000_000;
+/** Maximum nested URL %XX decode rounds per input position. Caps work
+ * on adversarial payloads where every byte is multiply percent-encoded.
+ * Two rounds is enough for the practical attack (`%2540` → `%40` → `@`)
+ * while keeping plain ASCII single-decode O(1). */
+const URL_DECODE_MAX_DEPTH = 2;
 
 export function normalizeForDetection(text: string): NormalizeResult {
   // Refuse pathological input. Quadratic behaviour on
   // SPACED_PII_RE / per-char loops makes adversarial 1 MB+ payloads
-  // a DoS vector. Same cap as the regex pack.
-  if (text.length > NORMALIZE_INPUT_MAX_BYTES) {
+  // a DoS vector. Same cap as the regex pack (`MAX_INPUT_BYTES`).
+  if (text.length > MAX_INPUT_BYTES) {
     const passthrough: number[] = [];
     for (let i = 0; i <= text.length; i++) passthrough.push(i);
     return { normalized: text, normToOrig: passthrough };
@@ -87,18 +92,37 @@ export function normalizeForDetection(text: string): NormalizeResult {
       }
     }
 
-    // URL %XX decode.
-    const urlMatch = URL_PERCENT_RE.exec(text.slice(i, i + 3));
-    if (urlMatch !== null && urlMatch[1] !== undefined) {
-      const code = Number.parseInt(urlMatch[1], 16);
-      const decoded = Number.isFinite(code) ? String.fromCharCode(code) : '';
-      // Email-anchor guard: keep `@` / `.` / `+` / `-` unchanged so
-      // the email regex still matches. Same behaviour as Python F03.
-      if (decoded && !EMAIL_ANCHOR_CHARS.has(decoded)) {
+    // URL %XX decode. Decode email-anchor bytes too (`%40`→`@`, `%2E`→`.`,
+    // …): a fully percent-encoded email (`john%40acme%2Ecom`) only matches
+    // the email recognizer after the literal `@`/`.` are restored — the
+    // old "keep anchors encoded" guard left those rows undetectable
+    // (adversarial-encoding ≈ 0.13).
+    //
+    // Iterate up to {@link URL_DECODE_MAX_DEPTH} times so chained encodings
+    // (`%2540` → `%40` → `@`) collapse to their final form. Without the
+    // loop, double-encoded payloads bypass downstream email / secret regex
+    // matches because the surface still contains literal `%`.
+    {
+      let consumed = 0;
+      let decoded: string | null = null;
+      for (let depth = 0; depth < URL_DECODE_MAX_DEPTH; depth++) {
+        const innerMatch = URL_PERCENT_RE.exec(text.slice(i + consumed, i + consumed + 3));
+        if (innerMatch === null || innerMatch[1] === undefined) break;
+        const code = Number.parseInt(innerMatch[1], 16);
+        if (!Number.isFinite(code)) break;
+        decoded = String.fromCharCode(code);
+        consumed += 3;
+        // Stop unless the decoded byte is itself `%` and a deeper %XX
+        // triplet immediately follows — only then is another pass
+        // meaningful. This keeps single-encoded inputs O(1).
+        if (decoded !== '%') break;
+        decoded = null;
+      }
+      if (decoded !== null && consumed > 0) {
         out.push(decoded);
-        // map decoded char to END of the triplet.
-        normToOrig.push(i + 2);
-        i += 3;
+        // map decoded char to END of the consumed run.
+        normToOrig.push(i + consumed - 1);
+        i += consumed;
         continue;
       }
     }
@@ -112,8 +136,9 @@ export function normalizeForDetection(text: string): NormalizeResult {
       if (dec !== undefined) decodedCode = Number.parseInt(dec, 10);
       else if (hex !== undefined) decodedCode = Number.parseInt(hex, 16);
       const decoded = Number.isFinite(decodedCode) ? String.fromCodePoint(decodedCode) : '';
-      // skip email-anchor chars to preserve email regex.
-      if (decoded && !EMAIL_ANCHOR_CHARS.has(decoded)) {
+      // Decode email-anchor refs too (`&#64;`→`@`, `&#46;`→`.`) — same
+      // rationale as the URL %XX block above.
+      if (decoded) {
         for (const ch of decoded) {
           out.push(ch);
           normToOrig.push(i);

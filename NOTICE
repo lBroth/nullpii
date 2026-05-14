@@ -57,50 +57,30 @@ in the npm package; see README "First-call download"):
                                            shards. Trained on a permissive-
                                            only corpus (see below).
 
-  Fine-tune training datasets (v0.2 unified adapter). Verified upstream
-  licences (checked 2026-05-11 against the HuggingFace dataset cards):
-    - urchade/gliner_multi_pii-v1 ........ Apache-2.0  (base model)
-    - NVIDIA Nemotron-PII (nvidia/Nemotron-PII) ... CC-BY-4.0 — commercial
-                                           use allowed; attribution to
-                                           NVIDIA required. Compatible
-                                           with redistributing derived
-                                           weights, attribution-conditioned.
-    - Text Anonymization Benchmark (TAB / ECHR) train split ... MIT (TAB
-                                           release); ECHR judgments are
-                                           public court documents.
-    - presidio-synthetic (PresidioSentenceFaker, seed 2026 frozen) ...
-                                           MIT (presidio-evaluator).
-    - project-authored synthetic corpora (Faker / templated dev-paste /
-      US-formats; Apache-2.0, see packages/eval/datasets/) ........ Apache-2.0.
-    - cc-negative-25k (Common Crawl-derived no-PII regularizer) ... Apache-2.0.
+  Fine-tune training (v0.2 unified adapter). The shipped weights are
+  derived in part from a permissive-only training corpus that includes
+  NVIDIA Nemotron-PII (CC-BY-4.0); under that licence, the attribution
+  notice below must accompany any redistribution of the weights:
 
-  Explicitly NOT in v0.2 training (the v0.1 BLOCKER is now resolved by
-  dropping these from the training set):
-    - ai4privacy/pii-masking-300k ........ "other" — custom licence
-                                           (`license.md`): academic use
-                                           with citation OK; **commercial
-                                           use gated** — must contact
-                                           licensing@ai4privacy.com.
-    - Isotonic/pii-masking-200k .......... cc-by-nc-4.0 — **NonCommercial**.
-    - bigcode/bigcode-pii-dataset ........ gated.
-  These are still used as held-out *eval* slices (download-only, not
-  redistributed); the eval JSONLs under `packages/eval/results/train/
-  unified/eval-isotonic-*.jsonl` are gitignored for the same reason.
+      "Trained in part on NVIDIA Nemotron-PII (CC-BY-4.0)."
 
-  Licence-of-weights summary: v0.2 weights are derivable from Apache-2.0
-  (base) + CC-BY-4.0 (Nemotron-PII, attribution required) + MIT (TAB,
-  Presidio synthetic) + Apache-2.0 (project Faker / cc-negative). The
-  binding constraint is Nemotron-PII's CC-BY-4.0 attribution — i.e.
-  "Trained on NVIDIA Nemotron-PII (CC-BY-4.0)" must accompany the weights.
-  No NC clauses, no gated upstreams. Commercial redistribution OK.
+  The base model is `urchade/gliner_multi_pii-v1` (Apache-2.0). The
+  combined-licence summary of the weights:
 
-Bench / eval datasets (used only to measure F1 — never to train the
-shipped weights): presidio-synthetic, ai4privacy-300k-heldout,
-Isotonic-heldout, tab-echr test split, nemotron-pii-test. Each retains
-its own licence; see packages/eval/datasets/README.md. (Eval-only use
-does not affect the weights' licence, but note `*-heldout` slices come
-from the same non-permissive ai4privacy / Isotonic sources above —
-relevant if those eval JSONLs were ever to be redistributed.)
+    - base: Apache-2.0
+    - training corpus: Apache-2.0 / MIT / CC-BY-4.0 (attribution required)
+    - no NonCommercial clauses, no gated upstreams; commercial
+      redistribution is permitted subject to the Nemotron attribution
+      above.
+
+  Per-dataset upstream details are intentionally not enumerated here —
+  the training recipe is not part of the published distribution. The
+  `lBroth/nullpii` HuggingFace model card carries the full upstream
+  citation list for the trained weights.
+
+  Bench / eval datasets (used only to measure F1 — never to train the
+  shipped weights): see `packages/eval/datasets/README.md`. Each
+  external dataset retains its own licence.
 
 License posture:
   - 100% permissive runtime tree (MIT / Apache-2.0 / BSD / ISC / CC0).

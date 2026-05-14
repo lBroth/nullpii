@@ -3,6 +3,22 @@
 import { MAX_INPUT_BYTES } from './defaults.js';
 import type { PiiSpan, Recognizer } from './types/index.js';
 
+/** Score assigned to a recognizer match whose `validate()` returned true.
+ *
+ * The motivation is correctness, not confidence calibration: structural
+ * checksums (mod-97 for IBAN, Luhn for cards, base58check for BTC, the
+ * CF / CPF letter-weighted checks) verify the candidate satisfies a
+ * deterministic, well-defined format. Such matches are stronger
+ * evidence than any ML softmax, including the ~0.99998 ceiling we
+ * routinely see from the unified GLiNER head. Sitting at this value
+ * lets cross-label IoU dedupe (`acrossLabels: true` in
+ * `dedupeOverlappingSpans`) pick the structurally-correct label rather
+ * than an ML mislabel (e.g. spaced IBAN tagged `private_address`
+ * 0.9999). Stays strictly below `BASE64_SCORE` (0.99999) so a base64-
+ * wrapped recognizer hit can still override a validator-passing
+ * surface match if needed. */
+export const VALIDATED_RECOGNIZER_SCORE = 0.99998;
+
 /**
  * Run every recognizer against `text`, return non-overlapping spans.
  * Used as a regex post-pass after the ML detector. ML spans take priority
@@ -103,11 +119,16 @@ function matchOne(text: string, recognizer: Recognizer, existing: readonly PiiSp
     // overlap to avoid noisy double-counting on prose.
     const overrides = recognizer.confidence >= 0.9;
     if ((overrides || !overlaps(start, end, existing)) && passesValidate(m[0], recognizer)) {
+      // Validator-passing matches use VALIDATED_RECOGNIZER_SCORE so
+      // cross-label dedupe picks the structurally-correct label over ML
+      // mislabels (F-39 regression).
+      const score =
+        recognizer.validate !== undefined ? VALIDATED_RECOGNIZER_SCORE : recognizer.confidence;
       out.push({
         label: recognizer.label,
         start,
         end,
-        score: recognizer.confidence,
+        score,
         text: m[0],
       });
     }

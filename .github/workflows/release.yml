@@ -1,0 +1,142 @@
+name: release
+
+# Triggers when a tag matching v*.*.* is pushed (or a Release is published
+# from one). Runs the full CI gate, then publishes to npm with provenance.
+#
+# Required repo configuration (one-time):
+#   - Settings → Secrets and variables → Actions:
+#       NPM_TOKEN  (npm automation token, "Publish" scope)
+#   - Permissions on this workflow already include `id-token: write` so
+#     `--provenance` works without extra setup.
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v1.0.0)'
+        required: true
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: gate (lint + typecheck + test + build + license + circular + sbom)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          registry-url: 'https://registry.npmjs.org'
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm run license-check
+      - run: npm run circular-check
+      - run: npm run sbom
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: bom.json
+
+  publish:
+    name: npm publish --provenance
+    needs: verify
+    runs-on: ubuntu-latest
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/nullpii
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          registry-url: 'https://registry.npmjs.org'
+      - run: npm ci
+      - run: npm run build
+      - name: Verify tag matches package version
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          TAG=${GITHUB_REF#refs/tags/}
+          TAG=${TAG#v}
+          if [ "$PKG_VERSION" != "$TAG" ]; then
+            echo "tag $TAG does not match package.json version $PKG_VERSION"
+            exit 1
+          fi
+      - run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  hf-push:
+    name: push model artifacts to HuggingFace Hub
+    needs: verify
+    runs-on: ubuntu-latest
+    environment:
+      name: hf
+      url: https://huggingface.co/lBroth/nullpii
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free disk space for staging (~6 GB merged ONNX)
+        run: |
+          # Standard ubuntu-latest has ~14 GB free on /. Strip preinstalled
+          # toolchains we don't need so the merge step has headroom.
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost /usr/local/lib/android
+          df -h /
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Python build deps
+        run: |
+          python -m pip install -q --upgrade pip
+          python -m pip install -q gliner peft onnx onnx-ir onnxruntime sentence-transformers transformers huggingface_hub
+      - name: Build + stage + push artifacts
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        # Raw adapter weights (~17 MB total) live in the upstream
+        # `lBroth/nullpii-adapters` HF repo. release.sh detects
+        # they're missing locally and pulls them before the merge step.
+        # Output goes to `lBroth/nullpii`.
+        run: bash packages/eval/scripts/release/release.sh
+
+  github-release:
+    name: create GitHub Release (if tag-only push)
+    needs: publish
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract changelog body for tag
+        id: changelog
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          VERSION=${TAG#v}
+          awk "/^## \\[$VERSION\\]/{flag=1;next}/^## \\[/{flag=0}flag" CHANGELOG.md > /tmp/notes.md
+          if [ ! -s /tmp/notes.md ]; then echo "Release $VERSION." > /tmp/notes.md; fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          name: sbom
+          path: .
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.changelog.outputs.tag }}
+          body_path: /tmp/notes.md
+          files: bom.json
+          generate_release_notes: false
+          draft: false
+          prerelease: false

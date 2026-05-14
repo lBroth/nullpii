@@ -1,0 +1,85 @@
+{
+  "name": "nullpii",
+  "version": "0.2.0-rc.0",
+  "description": "Sanitize PII from text locally with a reversible vault. Zero cloud calls. Unified GLiNER ONNX (CPU/CUDA/CoreML via onnxruntime).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "nullpii": "./bin/nullpii.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "src", "README.md", "LICENSE", "NOTICE", "bin"],
+  "scripts": {
+    "clean": "rm -rf dist",
+    "prebuild": "npm run clean",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "license-check": "license-checker --production --excludePrivatePackages --onlyAllow \"MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;CC0-1.0;Apache 2.0;BlueOak-1.0.0;Unlicense;0BSD\"",
+    "sbom": "cyclonedx-npm --output-format JSON --output-file bom.json",
+    "circular-check": "madge --circular --extensions ts src/",
+    "prepare": "lefthook install || true"
+  },
+  "dependencies": {
+    "@anush008/tokenizers": "^0.6.0",
+    "any-ascii": "^0.3.3",
+    "chalk": "^5.6.2",
+    "cli-progress": "^3.12.0",
+    "commander": "^14.0.3",
+    "debug": "^4.4.3"
+  },
+  "peerDependencies": {
+    "onnxruntime-node": "^1.20.0"
+  },
+  "peerDependenciesMeta": {
+    "onnxruntime-node": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@cyclonedx/cyclonedx-npm": "^4.2.1",
+    "@types/cli-progress": "^3.11.6",
+    "@types/debug": "^4.1.13",
+    "@types/node": "^22.19.17",
+    "@vitest/coverage-v8": "^4.1.5",
+    "fast-check": "^4.7.0",
+    "lefthook": "^1.10.0",
+    "license-checker": "^25.0.1",
+    "madge": "^8.0.0",
+    "onnxruntime-node": "^1.20.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.5"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lBroth/nullpii.git"
+  },
+  "bugs": {
+    "url": "https://github.com/lBroth/nullpii/issues"
+  },
+  "homepage": "https://github.com/lBroth/nullpii#readme",
+  "author": "nullpii contributors",
+  "keywords": ["pii", "redaction", "anonymization", "sanitize", "privacy", "onnx", "local"]
+}

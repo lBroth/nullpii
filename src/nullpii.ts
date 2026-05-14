@@ -240,6 +240,7 @@ export class NullPii {
     return {
       restored: unescapePlaceholders(r.restored),
       replacements: r.replacements,
+      replacementsByLabel: r.replacementsByLabel,
       unknownPlaceholders: r.unknownPlaceholders,
       foreignPlaceholders: r.foreignPlaceholders,
     };

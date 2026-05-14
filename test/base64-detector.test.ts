@@ -100,6 +100,33 @@ describe('detectBase64Pii', () => {
     expect(spans[0]?.label).toBe('private_email');
   });
 
+  // F-12 regression. The previous PRINTABLE_RE rejected every byte
+  // outside ASCII printable + CR/LF/TAB, so base64-wrapped non-ASCII PII
+  // (Cyrillic / Greek / Arabic / German-umlaut emails, addresses, etc.)
+  // never reached `classify()`. The decoded payload goes through
+  // `normalizeForDetection` (NFKC + any-ascii transliteration) before
+  // matching, so a Cyrillic-homoglyph email decodes → transliterates to
+  // its ASCII look-alike → matches EMAIL_RE.
+  it('detects base64-wrapped Cyrillic-homoglyph email (UTF-8 decoded)', () => {
+    // `а` U+0430, `е` U+0435 — Cyrillic look-alikes for Latin a / e.
+    // After base64 decode the payload contains multi-byte UTF-8; after
+    // normalize.transliterate it becomes `admin@example.com`.
+    const blob = b64('аdmin@еxample.com');
+    const spans = detectBase64Pii(blob, []);
+    expect(spans).toHaveLength(1);
+    expect(spans[0]?.label).toBe('private_email');
+  });
+
+  it('still rejects base64 that decodes to embedded NUL / control bytes', () => {
+    // 24 bytes including NUL + low controls. Must NOT be classified —
+    // distinguishing "non-ASCII text" (allowed) from "binary garbage"
+    // (rejected) is the contract we kept after broadening PRINTABLE_RE.
+    const binary = Buffer.from([
+      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+    ]);
+    expect(detectBase64Pii(binary.toString('base64'), [])).toEqual([]);
+  });
+
   // F-11 regression. Without an upfront cap, an adversarial multi-MB
   // input would be regex-scanned + decoded (Buffer.from over each blob)
   // and re-classified via EMAIL_RE / SECRET_PREFIX_RE / LONG_DIGITS_RE —

@@ -19,7 +19,6 @@ import type { PiiCategory, PiiSpan } from './types/index.js';
  */
 
 const BASE64_RUN_RE = /[A-Za-z0-9+/]{24,}={0,2}/g;
-const PRINTABLE_RE = /^[\x20-\x7e\r\n\t]+$/;
 const EMAIL_RE = /[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/;
 const SECRET_PREFIX_RE =
   /\b(?:sk-[A-Za-z0-9_\-]{16,}|ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|AKIA[A-Z0-9]{16}|xox[abp]-[A-Za-z0-9-]{10,}|ya29\.[A-Za-z0-9_\-]{20,})/;
@@ -33,6 +32,23 @@ const BASE64_SCORE = 0.99999;
 
 interface DecodedHit {
   readonly label: PiiCategory;
+}
+
+/** True when the decoded UTF-8 string looks like human text rather than
+ * binary garbage. Rejects embedded NUL and other C0 control bytes
+ * (except CR/LF/TAB) plus DEL; accepts anything above 0x7F so non-ASCII
+ * scripts (Cyrillic, Greek, Arabic, CJK, …) round-trip into
+ * `normalizeForDetection` and out the other side as their ASCII
+ * transliteration. */
+function isLikelyText(decoded: string): boolean {
+  if (decoded.length === 0) return false;
+  for (let i = 0; i < decoded.length; i++) {
+    const c = decoded.charCodeAt(i);
+    if ((c < 0x20 && c !== 0x09 && c !== 0x0a && c !== 0x0d) || c === 0x7f) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /** Run the same adversarial-input normalisation pass over the decoded
@@ -83,8 +99,11 @@ export function detectBase64Pii(text: string, _existing: readonly PiiSpan[]): Pi
     } catch {
       continue;
     }
-    // Reject control-char / binary decodes.
-    if (decoded.length < 6 || !PRINTABLE_RE.test(decoded)) continue;
+    // Reject binary / control-char decodes. Non-ASCII text is allowed —
+    // normalizeForDetection inside classify() transliterates it before
+    // matching, so Cyrillic / German-umlaut / Greek payloads still hit
+    // the email + secret + digits checks.
+    if (decoded.length < 6 || !isLikelyText(decoded)) continue;
     const hit = classify(decoded);
     if (hit === null) continue;
     out.push({

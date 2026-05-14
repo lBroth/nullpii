@@ -1,11 +1,20 @@
 # Retrain plan — full-OSS unified model (v0.2 track)
 
+> **Status (2026-05-13): Phases 0–4 mostly done on branch
+> `retrain-unified-phase1`.** Unified rank-32 LoRA (gentle-augment, ep5
+> best) at `packages/eval/results/release/onnx-unified-aug2/`. `src/`
+> stripped of routed code, npm runtime detects unified layout. Pending:
+> push aug-v2 to HF `lBroth/nullpii` + pin `DEFAULT_MODEL_REVISION`;
+> full publishable competitor matrix (partial 14/24 at
+> `packages/eval/results/runpod-20260513/`); int4 quant variant.
+
 Goal: make the published model weights cleanly redistributable under a
 permissive licence, collapse the 5 per-domain LoRA adapters + cosine router
 into a **single model**, and shrink the runtime download from ~6 GB to a few
 hundred MB. Decided 2026-05-11; supersedes the standalone "drop Nemotron-PII
 from the enterprise adapter" idea (Nemotron-PII is CC-BY-4.0 — not a licence
-problem).
+problem). Companion narrative: `packages/eval/private/JOURNAL.md` 2026-05-11
+through 2026-05-13. Repro pin: `packages/eval/private/train/REPRO_UNIFIED.md`.
 
 > Training scripts live in `packages/eval/private/` (gitignored, GPU). This
 > file is the runbook; the actual training runs off-repo. Everything tracked

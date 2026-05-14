@@ -3,6 +3,35 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] — unreleased (branch `retrain-unified-phase1`)
+
+Unified-model v0.2 track — see `packages/eval/RETRAIN.md` and the 2026-05-12/13 entries in `packages/eval/private/JOURNAL.md`.
+
+### Changed
+
+- **Single unified GLiNER ONNX replaces the v0.1 5-shard routed stack.** No more cosine domain router, no distiluse sentence encoder, no per-domain dispatch. Trained on a permissive-only corpus (Nemotron-PII CC-BY + TAB/ECHR MIT + project Faker + Presidio synthetic MIT + cc-negative regularizer; ai4privacy / Isotonic dropped from training entirely). One LoRA, rank 32, merged into `urchade/gliner_multi_pii-v1`.
+- **Default HF download: ~6 GB → ~1.2 GB FP32** (~350 MB int8). One file `model.onnx` + `tokenizer.json` + `gliner_config.json` + `tokenizer_config.json`.
+- **`src/`**: deleted `distiluse-encoder.ts`, `router-embedding.ts`, `unified-mode.ts` (transitional), `backend/multi-backend.ts`. Added `backend/unified-backend.ts` (single ORT session). `sanitize()` no longer encodes / routes — straight chunk → infer → recognizers + base64 → dedupe → vault.
+- **`packages/eval/scripts/release/`**: dropped `export_router_artifacts.py` + `export_merged_lora_onnx.py`; new `export_unified_onnx.py`. `release.sh` rewritten for the unified pipeline.
+- **`packages/eval/weights/`**: dropped `router/` + 5 per-domain `adapters/*`.
+
+### Added
+
+- **Base64-aware PII detector** (`src/base64-detector.ts`): finds base64-wrapped emails / `sk-` API keys / 13–19 digit runs and tags them at the source coordinates with score 0.99999 so cross-label dedupe picks the decoded label over the model's `secret` fallback.
+- **Recognizer pack now runs on `normalized` too** (not only `escaped`): catches url/entity-encoded PII as full spans, with the hits remapped back to escaped offsets via `normToOrig`.
+- **`normalize.ts` email-anchor fix**: URL `%XX` and HTML `&#NN;` decoding now restore `@`/`.`/`+`/`-` (previous `EMAIL_ANCHOR_CHARS` skip-list left fully-encoded emails undetectable; `adversarial-encoding` went 0.126 → 0.336 → 0.631 with the layered fixes).
+- **Unified-model release flow**: `bash packages/eval/scripts/release/release.sh --dry-run` stages the 4-file manifest under `packages/eval/results/release/hf-staging/`; drop `--dry-run` to publish to `lBroth/nullpii`.
+- **examples/05-local-model.ts** + `examples/README.md` "Loading from a local model directory" section.
+- **Bench infra**: `bench_full.py:run_combo` real-batches batched-tool predictors (`is_batch=True` flag). RunPod scripts updated — `bench-on-pod.sh` default `--parallel-tools 2` (VRAM-safe), unified manifest, `NULLPII_MODEL_DIR` auto-set; `setup-on-pod.sh` now installs `onnxruntime-node` explicitly (npm optional-peerDep gotcha).
+
+### Bench (partial, 2026-05-13)
+
+Pod 5090 SECURE on `retrain-unified-phase1`, 14/24 datasets covered before teardown (`packages/eval/results/runpod-20260513/matrix.json`). Local M5 covers nullpii rows (pod nullpii subprocess died with `BrokenPipeError` under parallel-tools contention — fixed in `nullpii_runtime_predictor` hardening but not yet re-run). Full publishable matrix lands in the next bench cycle.
+
+### Honest framing
+
+v0.2 isn't tagged yet. The HF upload + the final headline numbers ship together once the full matrix re-runs cleanly.
+
 ## [0.1.0] — 2026-05-06
 
 First public release. Local PII sanitization with reversible vault.

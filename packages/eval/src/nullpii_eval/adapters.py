@@ -50,16 +50,19 @@ def nullpii_runtime_predictor(
 ) -> Predictor:
     """Predictor backed by the local nullpii npm package via `scan --ndjson`.
 
-    Spawns `node bin/nullpii.mjs scan --ndjson` once, loads the full
-    router stack in that subprocess (distiluse encoder + embedding
-    router + 5 merged-LoRA GLiNER ONNX shards + recognizer pack +
-    vault), then streams texts in NDJSON form on stdin and reads
-    JSON-per-line span results from stdout. One model load — no
+    Spawns `node bin/nullpii.mjs scan --ndjson` once, loads the unified
+    GLiNER ONNX in that subprocess (model + recognizer pack + base64
+    detector + vault), then streams texts in NDJSON form on stdin and
+    reads JSON-per-line span results from stdout. One model load — no
     per-call startup cost.
 
     This is the canonical "what the user gets via `npm i nullpii`" row.
     Built from the local repo (`dist/cli/index.js`), not the npm
     registry — bench measures the same code that will publish.
+
+    Hardening (2026-05-13): on the first call we wait up to 120 s for
+    the model to load. stderr is captured to a tempfile so a crash
+    surfaces a real diagnostic instead of a bare `BrokenPipeError`.
     """
     if not NULLPII_BIN.is_file():
         raise FileNotFoundError(f"nullpii CLI not found at {NULLPII_BIN}")
@@ -70,27 +73,47 @@ def nullpii_runtime_predictor(
     if threshold is not None:
         argv += ["--threshold", str(threshold)]
 
+    import tempfile as _tempfile  # noqa: I001  (local-only)
+
+    stderr_log = _tempfile.NamedTemporaryFile(
+        mode="w+", prefix="nullpii-stderr-", suffix=".log", delete=False,
+    )
     proc = subprocess.Popen(
         argv,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
+        stderr=stderr_log,
         text=True,
         bufsize=1,
     )
     if proc.stdin is None or proc.stdout is None:
         raise RuntimeError("nullpii subprocess: stdin/stdout pipes failed to open")
 
+    def _drain_stderr() -> str:
+        try:
+            with open(stderr_log.name, encoding="utf-8", errors="replace") as f:
+                return f.read()[-2000:]
+        except OSError:
+            return "<stderr unreadable>"
+
     def _predict(text: str) -> ToolResult:
         t0 = time.perf_counter()
-        proc.stdin.write(json.dumps({"text": text}) + "\n")  # type: ignore[union-attr]
-        proc.stdin.flush()  # type: ignore[union-attr]
+        try:
+            proc.stdin.write(json.dumps({"text": text}) + "\n")  # type: ignore[union-attr]
+            proc.stdin.flush()  # type: ignore[union-attr]
+        except BrokenPipeError as e:
+            rc = proc.poll()
+            raise RuntimeError(
+                f"nullpii subprocess died before first write (rc={rc}). "
+                f"stderr tail:\n{_drain_stderr()}",
+            ) from e
         line = proc.stdout.readline()  # type: ignore[union-attr]
         elapsed = (time.perf_counter() - t0) * 1000
         if not line:
+            rc = proc.poll()
             raise RuntimeError(
-                "nullpii subprocess closed stdout unexpectedly. "
-                f"return code: {proc.poll()}",
+                f"nullpii subprocess closed stdout unexpectedly (rc={rc}). "
+                f"stderr tail:\n{_drain_stderr()}",
             )
         result = json.loads(line)
         if "error" in result:
@@ -1548,7 +1571,7 @@ def gliner_v2_predictor(
     onnx_file: str | None = None,
     device: str = "cuda",
     threshold: float = 0.5,
-    local_files_only: bool = True,
+    local_files_only: bool = False,
     chunk_chars: int = 1400,
     overlap_chars: int = 200,
 ) -> Predictor:

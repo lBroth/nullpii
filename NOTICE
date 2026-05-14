@@ -45,32 +45,21 @@ in the npm package; see README "First-call download"):
   Base / encoder (Apache-2.0):
     - urchade/gliner_multi_pii-v1 ........ GLiNER head on Microsoft
                                            mDeBERTa-v3 base — the backbone
-                                           the per-domain LoRA adapters are
-                                           merged into. (Zaratiana et al.,
-                                           NAACL 2024.)
-    - sentence-transformers/distiluse-base-multilingual-cased-v2 ........
-                                           the router input encoder
-                                           ("Google distiluse").
+                                           the LoRA adapter is merged into.
+                                           (Zaratiana et al., NAACL 2024.)
 
   Published weights:
-    - lBroth/nullpii ..................... merged-LoRA ONNX shards +
-                                           distiluse encoder + tokenizers +
-                                           router prototypes (~6 GB FP32).
-    - lBroth/nullpii-adapters ............ raw LoRA adapters (~17 MB),
-                                           upstream of the merged repo.
-    A model's licence can only be as permissive as the intersection of
-    (a) the base model licence and (b) every dataset the fine-tune was
-    trained on. The authoritative per-adapter training-data composition
-    lives on the `lBroth/nullpii` HuggingFace model card — that card, not
-    this file, is the source of truth for the weights' effective licence.
-    See the BLOCKER note below: with the current training mix the weights
-    CANNOT be released under a permissive (Apache-2.0 / MIT) licence.
+    - lBroth/nullpii ..................... unified merged-LoRA ONNX +
+                                           tokenizer + GLiNER config
+                                           (~1.2 GB FP32, ~350 MB int8).
+                                           v0.2: single model, no router,
+                                           no distiluse, no per-domain
+                                           shards. Trained on a permissive-
+                                           only corpus (see below).
 
-  Fine-tune training datasets (per-domain LoRA adapters — devops / legal /
-  medical / narrative / enterprise). Verified upstream licences (checked
-  2026-05-11 against the HuggingFace dataset cards):
+  Fine-tune training datasets (v0.2 unified adapter). Verified upstream
+  licences (checked 2026-05-11 against the HuggingFace dataset cards):
     - urchade/gliner_multi_pii-v1 ........ Apache-2.0  (base model)
-    - sentence-transformers distiluse-... Apache-2.0  (router encoder)
     - NVIDIA Nemotron-PII (nvidia/Nemotron-PII) ... CC-BY-4.0 — commercial
                                            use allowed; attribution to
                                            NVIDIA required. Compatible
@@ -79,35 +68,31 @@ in the npm package; see README "First-call download"):
     - Text Anonymization Benchmark (TAB / ECHR) train split ... MIT (TAB
                                            release); ECHR judgments are
                                            public court documents.
+    - presidio-synthetic (PresidioSentenceFaker, seed 2026 frozen) ...
+                                           MIT (presidio-evaluator).
+    - project-authored synthetic corpora (Faker / templated dev-paste /
+      US-formats; Apache-2.0, see packages/eval/datasets/) ........ Apache-2.0.
+    - cc-negative-25k (Common Crawl-derived no-PII regularizer) ... Apache-2.0.
+
+  Explicitly NOT in v0.2 training (the v0.1 BLOCKER is now resolved by
+  dropping these from the training set):
     - ai4privacy/pii-masking-300k ........ "other" — custom licence
                                            (`license.md`): academic use
                                            with citation OK; **commercial
                                            use gated** — must contact
-                                           licensing@ai4privacy.com. NOT a
-                                           permissive licence.
-    - Isotonic/pii-masking-200k .......... cc-by-nc-4.0 — **NonCommercial**
-                                           (one mirror tags it apache-2.0;
-                                           upstream ai4privacy 200k is the
-                                           same custom licence as the 300k).
-                                           NOT a permissive licence.
-    - project-authored synthetic corpora (Faker / templated; Apache-2.0,
-      see packages/eval/datasets/) ......... Apache-2.0.
+                                           licensing@ai4privacy.com.
+    - Isotonic/pii-masking-200k .......... cc-by-nc-4.0 — **NonCommercial**.
+    - bigcode/bigcode-pii-dataset ........ gated.
+  These are still used as held-out *eval* slices (download-only, not
+  redistributed); the eval JSONLs under `packages/eval/results/train/
+  unified/eval-isotonic-*.jsonl` are gitignored for the same reason.
 
-  *** BLOCKER — pre-publish (the npm PACKAGE is unaffected; this is about
-  the model WEIGHTS only) ***
-  The per-domain adapters are currently trained on ai4privacy/pii-masking-
-  300k (custom, commercial-gated) and Isotonic/pii-masking-200k (CC-BY-NC).
-  Weights derived from those cannot be redistributed under Apache-2.0 for
-  commercial use. Before publishing the weights, pick one:
-    (a) re-train the affected adapters on permissive-only data — Nemotron-
-        PII (CC-BY-4.0) + TAB (MIT) + project-authored Faker/templated
-        corpora (Apache-2.0) + any CC0/Apache datasets; OR
-    (b) publish the weights under CC-BY-NC-4.0 (and drop the commercial
-        framing); OR
-    (c) obtain a commercial licence from ai4privacy.
-  (The planned "drop Nemotron-PII from the enterprise adapter" sprint is a
-  benchmarking-credibility move — Nemotron-PII's CC-BY-4.0 is NOT a licence
-  problem — so it does not resolve this blocker.)
+  Licence-of-weights summary: v0.2 weights are derivable from Apache-2.0
+  (base) + CC-BY-4.0 (Nemotron-PII, attribution required) + MIT (TAB,
+  Presidio synthetic) + Apache-2.0 (project Faker / cc-negative). The
+  binding constraint is Nemotron-PII's CC-BY-4.0 attribution — i.e.
+  "Trained on NVIDIA Nemotron-PII (CC-BY-4.0)" must accompany the weights.
+  No NC clauses, no gated upstreams. Commercial redistribution OK.
 
 Bench / eval datasets (used only to measure F1 — never to train the
 shipped weights): presidio-synthetic, ai4privacy-300k-heldout,

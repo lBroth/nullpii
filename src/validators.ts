@@ -1,0 +1,234 @@
+// SPDX-License-Identifier: Apache-2.0
+
+import { createHash } from 'node:crypto';
+
+/** Post-match checksum validators wired via `Recognizer.validate`.
+ * `base58CheckValid` BTC · `luhnValid` cards · `iban97Valid` IBAN
+ * mod-97 · `cpfValid` BR CPF · `codiceFiscaleValid` IT tax id. */
+
+const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+const BASE58_INDEX = new Map<string, bigint>();
+for (let i = 0; i < BASE58_ALPHABET.length; i++) {
+  const ch = BASE58_ALPHABET[i];
+  if (ch !== undefined) BASE58_INDEX.set(ch, BigInt(i));
+}
+
+/** BIP-0013 base58check: decode → payload + 4-byte checksum;
+ * `SHA256(SHA256(payload))[:4]` must equal checksum. */
+export function base58CheckValid(addr: string): boolean {
+  if (addr.length < 25 || addr.length > 35) return false;
+  let n = 0n;
+  for (const ch of addr) {
+    const idx = BASE58_INDEX.get(ch);
+    if (idx === undefined) return false;
+    n = n * 58n + idx;
+  }
+  // Convert bigint to bytes (big-endian).
+  const body: number[] = [];
+  let v = n;
+  while (v > 0n) {
+    body.unshift(Number(v & 0xffn));
+    v >>= 8n;
+  }
+  // Re-attach leading-zero bytes encoded as leading `1`s in base58.
+  let leadingOnes = 0;
+  for (const ch of addr) {
+    if (ch === '1') leadingOnes++;
+    else break;
+  }
+  const decoded = Buffer.from([...new Array(leadingOnes).fill(0), ...body]);
+  if (decoded.length < 5) return false;
+  const payload = decoded.subarray(0, decoded.length - 4);
+  const checksum = decoded.subarray(decoded.length - 4);
+  const expected = createHash('sha256')
+    .update(createHash('sha256').update(payload).digest())
+    .digest()
+    .subarray(0, 4);
+  return checksum.equals(expected);
+}
+
+// ─── Luhn (credit card) ────────────────────────────────────────────
+
+/**
+ * Luhn / mod-10 checksum for credit-card numbers. Strips any
+ * `-`/`.`/space separators before validating. Returns `false` on
+ * non-digit residue or length out of [12, 19].
+ */
+export function luhnValid(value: string): boolean {
+  const digits = value.replace(/[\s\-.]/g, '');
+  if (digits.length < 12 || digits.length > 19) return false;
+  if (!/^\d+$/.test(digits)) return false;
+  let sum = 0;
+  let alt = false;
+  for (let i = digits.length - 1; i >= 0; i--) {
+    const d = digits.charCodeAt(i) - 48;
+    let x = d;
+    if (alt) {
+      x = x * 2;
+      if (x > 9) x -= 9;
+    }
+    sum += x;
+    alt = !alt;
+  }
+  return sum % 10 === 0;
+}
+
+// ─── IBAN mod-97 ───────────────────────────────────────────────────
+
+/**
+ * IBAN validator (ISO 13616). Rotates first 4 chars to the end,
+ * substitutes letters A=10..Z=35, and checks `mod 97 === 1`.
+ * Strips any whitespace separators (NBSP / U+202F included via the
+ * `\s` class).
+ */
+export function iban97Valid(value: string): boolean {
+  const compact = value.replace(/\s+/g, '').toUpperCase();
+  if (compact.length < 15 || compact.length > 34) return false;
+  if (!/^[A-Z]{2}\d{2}[A-Z0-9]+$/.test(compact)) return false;
+  const rotated = compact.slice(4) + compact.slice(0, 4);
+  let buf = '';
+  for (const ch of rotated) {
+    if (ch >= '0' && ch <= '9') buf += ch;
+    else buf += (ch.charCodeAt(0) - 55).toString(); // A=10..Z=35
+  }
+  // mod-97 over a long numeric string, processed in chunks.
+  let rem = 0;
+  for (let i = 0; i < buf.length; i += 7) {
+    rem = Number.parseInt(rem.toString() + buf.slice(i, i + 7), 10) % 97;
+  }
+  return rem === 1;
+}
+
+// ─── Brazilian CPF (mod-11 × 2) ────────────────────────────────────
+
+/**
+ * Brazilian CPF validator. 11 digits in `XXX.XXX.XXX-XX` form. Two
+ * check digits computed by mod-11 over weighted sums; CPFs with all
+ * 11 digits identical (e.g. `000.000.000-00`, `111.111.111-11`) are
+ * valid by formula but rejected by convention.
+ */
+export function cpfValid(value: string): boolean {
+  const digits = value.replace(/[.\-]/g, '');
+  if (digits.length !== 11) return false;
+  if (!/^\d{11}$/.test(digits)) return false;
+  if (/^(\d)\1{10}$/.test(digits)) return false;
+  const calc = (slice: string, weight: number) => {
+    let sum = 0;
+    for (let i = 0; i < slice.length; i++) {
+      sum += (slice.charCodeAt(i) - 48) * (weight - i);
+    }
+    const r = (sum * 10) % 11;
+    return r === 10 ? 0 : r;
+  };
+  const d1 = calc(digits.slice(0, 9), 10);
+  const d2 = calc(digits.slice(0, 10), 11);
+  return d1 === Number(digits[9]) && d2 === Number(digits[10]);
+}
+
+// ─── Italian Codice Fiscale (16-char personal tax id) ──────────────
+
+const CF_ODD_VALUES: Record<string, number> = {
+  '0': 1,
+  '1': 0,
+  '2': 5,
+  '3': 7,
+  '4': 9,
+  '5': 13,
+  '6': 15,
+  '7': 17,
+  '8': 19,
+  '9': 21,
+  A: 1,
+  B: 0,
+  C: 5,
+  D: 7,
+  E: 9,
+  F: 13,
+  G: 15,
+  H: 17,
+  I: 19,
+  J: 21,
+  K: 2,
+  L: 4,
+  M: 18,
+  N: 20,
+  O: 11,
+  P: 3,
+  Q: 6,
+  R: 8,
+  S: 12,
+  T: 14,
+  U: 16,
+  V: 10,
+  W: 22,
+  X: 25,
+  Y: 24,
+  Z: 23,
+};
+const CF_EVEN_VALUES: Record<string, number> = {
+  '0': 0,
+  '1': 1,
+  '2': 2,
+  '3': 3,
+  '4': 4,
+  '5': 5,
+  '6': 6,
+  '7': 7,
+  '8': 8,
+  '9': 9,
+  A: 0,
+  B: 1,
+  C: 2,
+  D: 3,
+  E: 4,
+  F: 5,
+  G: 6,
+  H: 7,
+  I: 8,
+  J: 9,
+  K: 10,
+  L: 11,
+  M: 12,
+  N: 13,
+  O: 14,
+  P: 15,
+  Q: 16,
+  R: 17,
+  S: 18,
+  T: 19,
+  U: 20,
+  V: 21,
+  W: 22,
+  X: 23,
+  Y: 24,
+  Z: 25,
+};
+const CF_CHECK_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+/**
+ * Italian Codice Fiscale validator. Format: 6 alpha + 2 digit +
+ * month-letter (one of A-EHLMPRST) + 2 digit day + alpha + 3 digit +
+ * 1 control letter.
+ *
+ * Checksum: sum odd-position weights + even-position weights over
+ * the first 15 chars; (sum mod 26) maps to check letter A-Z. Match
+ * against the 16th character.
+ */
+export function codiceFiscaleValid(value: string): boolean {
+  const cf = value.toUpperCase();
+  if (cf.length !== 16) return false;
+  if (!/^[A-Z]{6}\d{2}[A-EHLMPRST]\d{2}[A-Z]\d{3}[A-Z]$/.test(cf)) return false;
+  let sum = 0;
+  for (let i = 0; i < 15; i++) {
+    const ch = cf[i];
+    if (ch === undefined) return false;
+    // Position is 1-indexed for the official spec; odd positions in
+    // 1-indexed = even indices in 0-indexed.
+    const isOddPosition = i % 2 === 0;
+    const value = isOddPosition ? CF_ODD_VALUES[ch] : CF_EVEN_VALUES[ch];
+    if (value === undefined) return false;
+    sum += value;
+  }
+  const expected = CF_CHECK_LETTERS[sum % 26];
+  return expected !== undefined && expected === cf[15];
+}

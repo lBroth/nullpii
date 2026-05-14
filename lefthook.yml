@@ -1,0 +1,18 @@
+pre-commit:
+  parallel: true
+  commands:
+    lint:
+      glob: '*.{ts,js,json}'
+      run: npm run lint
+    typecheck:
+      glob: '*.ts'
+      run: npm run typecheck
+    test:
+      glob: '*.{ts,js}'
+      run: npm test
+    license-check:
+      glob: 'package*.json'
+      run: npm run license-check
+    circular-check:
+      glob: '*.ts'
+      run: npm run circular-check

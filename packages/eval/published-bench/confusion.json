@@ -1,0 +1,3891 @@
+{
+  "nullpii-bench": {
+    "nullpii": {
+      "secret": {
+        "tp": 146,
+        "fp": 463,
+        "fn": 39
+      },
+      "private_email": {
+        "tp": 1044,
+        "fp": 70,
+        "fn": 21
+      },
+      "private_url": {
+        "tp": 56,
+        "fp": 4,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 1275,
+        "fp": 596,
+        "fn": 352
+      },
+      "private_person": {
+        "tp": 944,
+        "fp": 2104,
+        "fn": 401
+      },
+      "account_number": {
+        "tp": 428,
+        "fp": 1911,
+        "fn": 195
+      },
+      "private_address": {
+        "tp": 2252,
+        "fp": 796,
+        "fn": 820
+      },
+      "private_phone": {
+        "tp": 94,
+        "fp": 493,
+        "fn": 5
+      }
+    },
+    "deberta": {
+      "secret": {
+        "tp": 12,
+        "fp": 510,
+        "fn": 173
+      },
+      "private_email": {
+        "tp": 682,
+        "fp": 185,
+        "fn": 383
+      },
+      "private_url": {
+        "tp": 38,
+        "fp": 6,
+        "fn": 18
+      },
+      "private_date": {
+        "tp": 617,
+        "fp": 878,
+        "fn": 1010
+      },
+      "account_number": {
+        "tp": 131,
+        "fp": 3367,
+        "fn": 492
+      },
+      "private_address": {
+        "tp": 1165,
+        "fp": 1710,
+        "fn": 1907
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 99
+      },
+      "private_person": {
+        "tp": 130,
+        "fp": 998,
+        "fn": 1215
+      }
+    },
+    "piiranha": {
+      "secret": {
+        "tp": 0,
+        "fp": 481,
+        "fn": 185
+      },
+      "private_email": {
+        "tp": 807,
+        "fp": 94,
+        "fn": 258
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 56
+      },
+      "private_date": {
+        "tp": 55,
+        "fp": 353,
+        "fn": 1572
+      },
+      "private_person": {
+        "tp": 119,
+        "fp": 1360,
+        "fn": 1226
+      },
+      "account_number": {
+        "tp": 241,
+        "fp": 1765,
+        "fn": 382
+      },
+      "private_address": {
+        "tp": 1716,
+        "fp": 870,
+        "fn": 1356
+      },
+      "private_phone": {
+        "tp": 68,
+        "fp": 521,
+        "fn": 31
+      }
+    },
+    "presidio": {
+      "secret": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 185
+      },
+      "private_email": {
+        "tp": 926,
+        "fp": 27,
+        "fn": 139
+      },
+      "private_url": {
+        "tp": 56,
+        "fp": 1620,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 534,
+        "fp": 1541,
+        "fn": 1093
+      },
+      "private_person": {
+        "tp": 287,
+        "fp": 1455,
+        "fn": 1058
+      },
+      "account_number": {
+        "tp": 14,
+        "fp": 463,
+        "fn": 609
+      },
+      "private_address": {
+        "tp": 438,
+        "fp": 335,
+        "fn": 2634
+      },
+      "private_phone": {
+        "tp": 75,
+        "fp": 963,
+        "fn": 24
+      }
+    },
+    "gliner-pii-large-v1": {
+      "secret": {
+        "tp": 148,
+        "fp": 982,
+        "fn": 37
+      },
+      "private_email": {
+        "tp": 859,
+        "fp": 342,
+        "fn": 206
+      },
+      "private_url": {
+        "tp": 30,
+        "fp": 72,
+        "fn": 26
+      },
+      "private_date": {
+        "tp": 324,
+        "fp": 319,
+        "fn": 1303
+      },
+      "private_person": {
+        "tp": 307,
+        "fp": 399,
+        "fn": 1038
+      },
+      "account_number": {
+        "tp": 38,
+        "fp": 712,
+        "fn": 585
+      },
+      "private_address": {
+        "tp": 152,
+        "fp": 356,
+        "fn": 2920
+      },
+      "private_phone": {
+        "tp": 70,
+        "fp": 936,
+        "fn": 29
+      }
+    },
+    "nemotron-pii-raw": {
+      "secret": {
+        "tp": 24,
+        "fp": 652,
+        "fn": 161
+      },
+      "private_email": {
+        "tp": 887,
+        "fp": 77,
+        "fn": 178
+      },
+      "private_url": {
+        "tp": 21,
+        "fp": 7,
+        "fn": 35
+      },
+      "private_date": {
+        "tp": 1428,
+        "fp": 1223,
+        "fn": 199
+      },
+      "private_person": {
+        "tp": 1037,
+        "fp": 2391,
+        "fn": 308
+      },
+      "account_number": {
+        "tp": 345,
+        "fp": 1865,
+        "fn": 278
+      },
+      "private_address": {
+        "tp": 2563,
+        "fp": 1298,
+        "fn": 509
+      },
+      "private_phone": {
+        "tp": 71,
+        "fp": 455,
+        "fn": 28
+      }
+    }
+  },
+  "tab-echr": {
+    "nullpii": {
+      "private_address": {
+        "tp": 478,
+        "fp": 97,
+        "fn": 45
+      },
+      "private_date": {
+        "tp": 2474,
+        "fp": 130,
+        "fn": 141
+      },
+      "account_number": {
+        "tp": 0,
+        "fp": 1,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 1025,
+        "fp": 53,
+        "fn": 38
+      }
+    },
+    "deberta": {
+      "secret": {
+        "tp": 0,
+        "fp": 52,
+        "fn": 0
+      },
+      "private_address": {
+        "tp": 183,
+        "fp": 413,
+        "fn": 340
+      },
+      "private_date": {
+        "tp": 361,
+        "fp": 467,
+        "fn": 2254
+      },
+      "private_person": {
+        "tp": 349,
+        "fp": 667,
+        "fn": 714
+      },
+      "account_number": {
+        "tp": 0,
+        "fp": 43,
+        "fn": 0
+      }
+    },
+    "piiranha": {
+      "private_address": {
+        "tp": 127,
+        "fp": 196,
+        "fn": 396
+      },
+      "private_date": {
+        "tp": 5,
+        "fp": 0,
+        "fn": 2610
+      },
+      "private_person": {
+        "tp": 133,
+        "fp": 89,
+        "fn": 930
+      }
+    },
+    "presidio": {
+      "private_url": {
+        "tp": 0,
+        "fp": 2,
+        "fn": 0
+      },
+      "private_address": {
+        "tp": 403,
+        "fp": 460,
+        "fn": 120
+      },
+      "private_date": {
+        "tp": 2531,
+        "fp": 413,
+        "fn": 84
+      },
+      "private_person": {
+        "tp": 906,
+        "fp": 198,
+        "fn": 157
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 6,
+        "fn": 0
+      }
+    },
+    "gliner-pii-large-v1": {
+      "secret": {
+        "tp": 0,
+        "fp": 16,
+        "fn": 0
+      },
+      "private_address": {
+        "tp": 5,
+        "fp": 0,
+        "fn": 518
+      },
+      "private_date": {
+        "tp": 40,
+        "fp": 1,
+        "fn": 2575
+      },
+      "private_person": {
+        "tp": 474,
+        "fp": 1153,
+        "fn": 589
+      }
+    },
+    "nemotron-pii-raw": {
+      "private_address": {
+        "tp": 445,
+        "fp": 956,
+        "fn": 78
+      },
+      "private_date": {
+        "tp": 2327,
+        "fp": 225,
+        "fn": 288
+      },
+      "account_number": {
+        "tp": 0,
+        "fp": 13,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 629,
+        "fp": 1138,
+        "fn": 434
+      }
+    }
+  },
+  "presidio-synthetic": {
+    "nullpii": {
+      "private_email": {
+        "tp": 139,
+        "fp": 14,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 85,
+        "fp": 8,
+        "fn": 15
+      },
+      "private_date": {
+        "tp": 334,
+        "fp": 14,
+        "fn": 4
+      },
+      "private_person": {
+        "tp": 2992,
+        "fp": 123,
+        "fn": 30
+      },
+      "account_number": {
+        "tp": 576,
+        "fp": 70,
+        "fn": 0
+      },
+      "private_address": {
+        "tp": 1532,
+        "fp": 184,
+        "fn": 421
+      },
+      "private_phone": {
+        "tp": 280,
+        "fp": 1,
+        "fn": 83
+      }
+    },
+    "deberta": {
+      "secret": {
+        "tp": 0,
+        "fp": 90,
+        "fn": 0
+      },
+      "private_email": {
+        "tp": 119,
+        "fp": 17,
+        "fn": 20
+      },
+      "private_url": {
+        "tp": 80,
+        "fp": 0,
+        "fn": 20
+      },
+      "private_date": {
+        "tp": 91,
+        "fp": 182,
+        "fn": 247
+      },
+      "account_number": {
+        "tp": 576,
+        "fp": 368,
+        "fn": 0
+      },
+      "private_address": {
+        "tp": 760,
+        "fp": 3808,
+        "fn": 1193
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 363
+      },
+      "private_person": {
+        "tp": 1405,
+        "fp": 998,
+        "fn": 1617
+      }
+    },
+    "piiranha": {
+      "private_email": {
+        "tp": 8,
+        "fp": 51,
+        "fn": 131
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 100
+      },
+      "private_date": {
+        "tp": 62,
+        "fp": 3,
+        "fn": 276
+      },
+      "private_person": {
+        "tp": 1739,
+        "fp": 1259,
+        "fn": 1283
+      },
+      "account_number": {
+        "tp": 463,
+        "fp": 112,
+        "fn": 113
+      },
+      "private_address": {
+        "tp": 815,
+        "fp": 3295,
+        "fn": 1138
+      },
+      "private_phone": {
+        "tp": 174,
+        "fp": 7,
+        "fn": 189
+      }
+    },
+    "presidio": {
+      "private_email": {
+        "tp": 139,
+        "fp": 0,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 100,
+        "fp": 233,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 318,
+        "fp": 1398,
+        "fn": 20
+      },
+      "private_person": {
+        "tp": 2247,
+        "fp": 653,
+        "fn": 775
+      },
+      "account_number": {
+        "tp": 450,
+        "fp": 6,
+        "fn": 126
+      },
+      "private_address": {
+        "tp": 85,
+        "fp": 1210,
+        "fn": 1868
+      },
+      "private_phone": {
+        "tp": 169,
+        "fp": 64,
+        "fn": 194
+      }
+    },
+    "gliner-pii-large-v1": {
+      "secret": {
+        "tp": 0,
+        "fp": 249,
+        "fn": 0
+      },
+      "private_email": {
+        "tp": 117,
+        "fp": 1,
+        "fn": 22
+      },
+      "private_url": {
+        "tp": 81,
+        "fp": 65,
+        "fn": 19
+      },
+      "private_date": {
+        "tp": 95,
+        "fp": 56,
+        "fn": 243
+      },
+      "private_person": {
+        "tp": 2784,
+        "fp": 304,
+        "fn": 238
+      },
+      "account_number": {
+        "tp": 338,
+        "fp": 48,
+        "fn": 238
+      },
+      "private_address": {
+        "tp": 956,
+        "fp": 158,
+        "fn": 997
+      },
+      "private_phone": {
+        "tp": 301,
+        "fp": 36,
+        "fn": 62
+      }
+    },
+    "nemotron-pii-raw": {
+      "secret": {
+        "tp": 0,
+        "fp": 83,
+        "fn": 0
+      },
+      "private_email": {
+        "tp": 120,
+        "fp": 1,
+        "fn": 19
+      },
+      "private_url": {
+        "tp": 80,
+        "fp": 0,
+        "fn": 20
+      },
+      "private_date": {
+        "tp": 299,
+        "fp": 590,
+        "fn": 39
+      },
+      "private_person": {
+        "tp": 2568,
+        "fp": 2450,
+        "fn": 454
+      },
+      "account_number": {
+        "tp": 569,
+        "fp": 193,
+        "fn": 7
+      },
+      "private_address": {
+        "tp": 1237,
+        "fp": 3387,
+        "fn": 716
+      },
+      "private_phone": {
+        "tp": 249,
+        "fp": 26,
+        "fn": 114
+      }
+    }
+  },
+  "ai4privacy-400k": {
+    "nullpii": {
+      "secret": {
+        "tp": 113,
+        "fp": 276,
+        "fn": 324
+      },
+      "private_email": {
+        "tp": 1242,
+        "fp": 15,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 425,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 919,
+        "fp": 1664,
+        "fn": 12
+      },
+      "private_person": {
+        "tp": 4568,
+        "fp": 1102,
+        "fn": 934
+      },
+      "account_number": {
+        "tp": 2676,
+        "fp": 2265,
+        "fn": 693
+      },
+      "private_address": {
+        "tp": 3415,
+        "fp": 1800,
+        "fn": 1770
+      },
+      "private_phone": {
+        "tp": 1019,
+        "fp": 180,
+        "fn": 187
+      }
+    },
+    "deberta": {
+      "secret": {
+        "tp": 209,
+        "fp": 1057,
+        "fn": 228
+      },
+      "private_email": {
+        "tp": 1216,
+        "fp": 30,
+        "fn": 26
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 420,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 814,
+        "fp": 1531,
+        "fn": 117
+      },
+      "account_number": {
+        "tp": 2514,
+        "fp": 2608,
+        "fn": 855
+      },
+      "private_address": {
+        "tp": 3917,
+        "fp": 2572,
+        "fn": 1268
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 1206
+      },
+      "private_person": {
+        "tp": 3094,
+        "fp": 1148,
+        "fn": 2408
+      }
+    },
+    "piiranha": {
+      "secret": {
+        "tp": 431,
+        "fp": 3,
+        "fn": 6
+      },
+      "private_email": {
+        "tp": 1242,
+        "fp": 1,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 856,
+        "fp": 16,
+        "fn": 75
+      },
+      "private_person": {
+        "tp": 4251,
+        "fp": 24,
+        "fn": 1251
+      },
+      "account_number": {
+        "tp": 3096,
+        "fp": 106,
+        "fn": 273
+      },
+      "private_address": {
+        "tp": 5097,
+        "fp": 57,
+        "fn": 88
+      },
+      "private_phone": {
+        "tp": 1094,
+        "fp": 11,
+        "fn": 112
+      }
+    },
+    "presidio": {
+      "secret": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 437
+      },
+      "private_email": {
+        "tp": 1241,
+        "fp": 0,
+        "fn": 1
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 2025,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 742,
+        "fp": 2887,
+        "fn": 189
+      },
+      "private_person": {
+        "tp": 2002,
+        "fp": 1571,
+        "fn": 3500
+      },
+      "account_number": {
+        "tp": 714,
+        "fp": 664,
+        "fn": 2655
+      },
+      "private_address": {
+        "tp": 1489,
+        "fp": 1127,
+        "fn": 3696
+      },
+      "private_phone": {
+        "tp": 496,
+        "fp": 1228,
+        "fn": 710
+      }
+    },
+    "gliner-pii-large-v1": {
+      "secret": {
+        "tp": 401,
+        "fp": 1434,
+        "fn": 36
+      },
+      "private_email": {
+        "tp": 1227,
+        "fp": 344,
+        "fn": 15
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 465,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 746,
+        "fp": 775,
+        "fn": 185
+      },
+      "private_person": {
+        "tp": 3038,
+        "fp": 539,
+        "fn": 2464
+      },
+      "account_number": {
+        "tp": 1503,
+        "fp": 1025,
+        "fn": 1866
+      },
+      "private_address": {
+        "tp": 1152,
+        "fp": 629,
+        "fn": 4033
+      },
+      "private_phone": {
+        "tp": 1194,
+        "fp": 1530,
+        "fn": 12
+      }
+    },
+    "nemotron-pii-raw": {
+      "secret": {
+        "tp": 373,
+        "fp": 1304,
+        "fn": 64
+      },
+      "private_email": {
+        "tp": 1130,
+        "fp": 17,
+        "fn": 112
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 448,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 926,
+        "fp": 2164,
+        "fn": 5
+      },
+      "private_person": {
+        "tp": 5192,
+        "fp": 1510,
+        "fn": 310
+      },
+      "account_number": {
+        "tp": 2478,
+        "fp": 3020,
+        "fn": 891
+      },
+      "private_address": {
+        "tp": 3875,
+        "fp": 2179,
+        "fn": 1310
+      },
+      "private_phone": {
+        "tp": 1122,
+        "fp": 167,
+        "fn": 84
+      }
+    }
+  },
+  "ai4privacy-300k": {
+    "nullpii": {
+      "secret": {
+        "tp": 0,
+        "fp": 687,
+        "fn": 0
+      },
+      "private_email": {
+        "tp": 1491,
+        "fp": 156,
+        "fn": 24
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 4,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 3053,
+        "fp": 2046,
+        "fn": 459
+      },
+      "account_number": {
+        "tp": 1124,
+        "fp": 4709,
+        "fn": 61
+      },
+      "private_address": {
+        "tp": 4514,
+        "fp": 1743,
+        "fn": 796
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 1253,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 1232,
+        "fp": 5218,
+        "fn": 778
+      }
+    },
+    "deberta": {
+      "secret": {
+        "tp": 0,
+        "fp": 1033,
+        "fn": 0
+      },
+      "private_email": {
+        "tp": 1070,
+        "fp": 376,
+        "fn": 445
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 2,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 1553,
+        "fp": 2586,
+        "fn": 1959
+      },
+      "account_number": {
+        "tp": 114,
+        "fp": 7723,
+        "fn": 1071
+      },
+      "private_address": {
+        "tp": 1753,
+        "fp": 3023,
+        "fn": 3557
+      },
+      "private_person": {
+        "tp": 72,
+        "fp": 2537,
+        "fn": 1938
+      }
+    },
+    "piiranha": {
+      "secret": {
+        "tp": 0,
+        "fp": 974,
+        "fn": 0
+      },
+      "private_email": {
+        "tp": 1451,
+        "fp": 123,
+        "fn": 64
+      },
+      "private_date": {
+        "tp": 57,
+        "fp": 1137,
+        "fn": 3455
+      },
+      "private_person": {
+        "tp": 9,
+        "fp": 3545,
+        "fn": 2001
+      },
+      "account_number": {
+        "tp": 451,
+        "fp": 4160,
+        "fn": 734
+      },
+      "private_address": {
+        "tp": 3126,
+        "fp": 1413,
+        "fn": 2184
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 1121,
+        "fn": 0
+      }
+    },
+    "presidio": {
+      "private_email": {
+        "tp": 1496,
+        "fp": 91,
+        "fn": 19
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 2237,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 1760,
+        "fp": 2978,
+        "fn": 1752
+      },
+      "private_person": {
+        "tp": 138,
+        "fp": 2704,
+        "fn": 1872
+      },
+      "account_number": {
+        "tp": 0,
+        "fp": 1441,
+        "fn": 1185
+      },
+      "private_address": {
+        "tp": 1270,
+        "fp": 802,
+        "fn": 4040
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 2386,
+        "fn": 0
+      }
+    },
+    "gliner-pii-large-v1": {
+      "secret": {
+        "tp": 0,
+        "fp": 1922,
+        "fn": 0
+      },
+      "private_email": {
+        "tp": 1290,
+        "fp": 525,
+        "fn": 225
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 63,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 579,
+        "fp": 1030,
+        "fn": 2933
+      },
+      "account_number": {
+        "tp": 0,
+        "fp": 1599,
+        "fn": 1185
+      },
+      "private_address": {
+        "tp": 158,
+        "fp": 646,
+        "fn": 5152
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 2167,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 149,
+        "fp": 1814,
+        "fn": 1861
+      }
+    },
+    "nemotron-pii-raw": {
+      "secret": {
+        "tp": 0,
+        "fp": 1544,
+        "fn": 0
+      },
+      "private_email": {
+        "tp": 1367,
+        "fp": 179,
+        "fn": 148
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 15,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 3345,
+        "fp": 2418,
+        "fn": 167
+      },
+      "account_number": {
+        "tp": 579,
+        "fp": 4252,
+        "fn": 606
+      },
+      "private_address": {
+        "tp": 4772,
+        "fp": 2577,
+        "fn": 538
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 1120,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 1449,
+        "fp": 5891,
+        "fn": 561
+      }
+    }
+  },
+  "isotonic-en": {
+    "nullpii": {
+      "secret": {
+        "tp": 282,
+        "fp": 69,
+        "fn": 116
+      },
+      "private_email": {
+        "tp": 455,
+        "fp": 4,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 340,
+        "fp": 0,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 1090,
+        "fp": 216,
+        "fn": 52
+      },
+      "account_number": {
+        "tp": 1250,
+        "fp": 1609,
+        "fn": 411
+      },
+      "private_address": {
+        "tp": 898,
+        "fp": 915,
+        "fn": 703
+      },
+      "private_phone": {
+        "tp": 239,
+        "fp": 116,
+        "fn": 37
+      },
+      "private_person": {
+        "tp": 1901,
+        "fp": 1107,
+        "fn": 569
+      }
+    },
+    "deberta": {
+      "secret": {
+        "tp": 342,
+        "fp": 169,
+        "fn": 56
+      },
+      "private_email": {
+        "tp": 443,
+        "fp": 3,
+        "fn": 12
+      },
+      "private_url": {
+        "tp": 333,
+        "fp": 0,
+        "fn": 7
+      },
+      "private_date": {
+        "tp": 1083,
+        "fp": 93,
+        "fn": 59
+      },
+      "account_number": {
+        "tp": 1492,
+        "fp": 954,
+        "fn": 169
+      },
+      "private_address": {
+        "tp": 1419,
+        "fp": 668,
+        "fn": 182
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 276
+      },
+      "private_person": {
+        "tp": 2163,
+        "fp": 432,
+        "fn": 307
+      }
+    },
+    "piiranha": {
+      "secret": {
+        "tp": 209,
+        "fp": 6,
+        "fn": 189
+      },
+      "private_email": {
+        "tp": 443,
+        "fp": 38,
+        "fn": 12
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 340
+      },
+      "private_date": {
+        "tp": 294,
+        "fp": 33,
+        "fn": 848
+      },
+      "private_person": {
+        "tp": 1576,
+        "fp": 614,
+        "fn": 894
+      },
+      "account_number": {
+        "tp": 738,
+        "fp": 654,
+        "fn": 923
+      },
+      "private_address": {
+        "tp": 1345,
+        "fp": 449,
+        "fn": 256
+      },
+      "private_phone": {
+        "tp": 203,
+        "fp": 133,
+        "fn": 73
+      }
+    },
+    "presidio": {
+      "secret": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 398
+      },
+      "private_email": {
+        "tp": 455,
+        "fp": 3,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 340,
+        "fp": 625,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 987,
+        "fp": 1387,
+        "fn": 155
+      },
+      "private_person": {
+        "tp": 1363,
+        "fp": 1191,
+        "fn": 1107
+      },
+      "account_number": {
+        "tp": 345,
+        "fp": 153,
+        "fn": 1316
+      },
+      "private_address": {
+        "tp": 582,
+        "fp": 726,
+        "fn": 1019
+      },
+      "private_phone": {
+        "tp": 169,
+        "fp": 257,
+        "fn": 107
+      }
+    },
+    "gliner-pii-large-v1": {
+      "secret": {
+        "tp": 379,
+        "fp": 1397,
+        "fn": 19
+      },
+      "private_email": {
+        "tp": 455,
+        "fp": 123,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 340,
+        "fp": 26,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 662,
+        "fp": 5,
+        "fn": 480
+      },
+      "account_number": {
+        "tp": 653,
+        "fp": 419,
+        "fn": 1008
+      },
+      "private_address": {
+        "tp": 196,
+        "fp": 300,
+        "fn": 1405
+      },
+      "private_phone": {
+        "tp": 271,
+        "fp": 616,
+        "fn": 5
+      },
+      "private_person": {
+        "tp": 1659,
+        "fp": 1198,
+        "fn": 811
+      }
+    },
+    "nemotron-pii-raw": {
+      "secret": {
+        "tp": 305,
+        "fp": 377,
+        "fn": 93
+      },
+      "private_email": {
+        "tp": 454,
+        "fp": 35,
+        "fn": 1
+      },
+      "private_url": {
+        "tp": 340,
+        "fp": 4,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 1131,
+        "fp": 608,
+        "fn": 11
+      },
+      "account_number": {
+        "tp": 1146,
+        "fp": 1942,
+        "fn": 515
+      },
+      "private_address": {
+        "tp": 1215,
+        "fp": 1268,
+        "fn": 386
+      },
+      "private_phone": {
+        "tp": 262,
+        "fp": 114,
+        "fn": 14
+      },
+      "private_person": {
+        "tp": 2312,
+        "fp": 1537,
+        "fn": 158
+      }
+    }
+  },
+  "isotonic-de": {
+    "nullpii": {
+      "secret": {
+        "tp": 284,
+        "fp": 228,
+        "fn": 72
+      },
+      "private_email": {
+        "tp": 450,
+        "fp": 6,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 288,
+        "fp": 0,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 1113,
+        "fp": 259,
+        "fn": 90
+      },
+      "account_number": {
+        "tp": 1239,
+        "fp": 1540,
+        "fn": 430
+      },
+      "private_address": {
+        "tp": 711,
+        "fp": 966,
+        "fn": 681
+      },
+      "private_phone": {
+        "tp": 247,
+        "fp": 92,
+        "fn": 37
+      },
+      "private_person": {
+        "tp": 1917,
+        "fp": 1130,
+        "fn": 619
+      }
+    },
+    "deberta": {
+      "secret": {
+        "tp": 173,
+        "fp": 60,
+        "fn": 183
+      },
+      "private_email": {
+        "tp": 432,
+        "fp": 144,
+        "fn": 18
+      },
+      "private_url": {
+        "tp": 280,
+        "fp": 11,
+        "fn": 8
+      },
+      "private_date": {
+        "tp": 885,
+        "fp": 342,
+        "fn": 318
+      },
+      "account_number": {
+        "tp": 1207,
+        "fp": 3117,
+        "fn": 462
+      },
+      "private_address": {
+        "tp": 912,
+        "fp": 4291,
+        "fn": 480
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 284
+      },
+      "private_person": {
+        "tp": 1264,
+        "fp": 21835,
+        "fn": 1272
+      }
+    },
+    "piiranha": {
+      "secret": {
+        "tp": 188,
+        "fp": 11,
+        "fn": 168
+      },
+      "private_email": {
+        "tp": 433,
+        "fp": 55,
+        "fn": 17
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 288
+      },
+      "private_date": {
+        "tp": 309,
+        "fp": 76,
+        "fn": 894
+      },
+      "private_person": {
+        "tp": 1827,
+        "fp": 624,
+        "fn": 709
+      },
+      "account_number": {
+        "tp": 685,
+        "fp": 621,
+        "fn": 984
+      },
+      "private_address": {
+        "tp": 1079,
+        "fp": 419,
+        "fn": 313
+      },
+      "private_phone": {
+        "tp": 211,
+        "fp": 180,
+        "fn": 73
+      }
+    },
+    "presidio": {
+      "secret": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 356
+      },
+      "private_email": {
+        "tp": 450,
+        "fp": 4,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 288,
+        "fp": 618,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 902,
+        "fp": 814,
+        "fn": 301
+      },
+      "private_person": {
+        "tp": 1049,
+        "fp": 12196,
+        "fn": 1487
+      },
+      "account_number": {
+        "tp": 388,
+        "fp": 130,
+        "fn": 1281
+      },
+      "private_address": {
+        "tp": 395,
+        "fp": 2781,
+        "fn": 997
+      },
+      "private_phone": {
+        "tp": 148,
+        "fp": 245,
+        "fn": 136
+      }
+    },
+    "gliner-pii-large-v1": {
+      "secret": {
+        "tp": 344,
+        "fp": 1438,
+        "fn": 12
+      },
+      "private_email": {
+        "tp": 450,
+        "fp": 65,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 288,
+        "fp": 31,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 689,
+        "fp": 6,
+        "fn": 514
+      },
+      "private_person": {
+        "tp": 1783,
+        "fp": 1284,
+        "fn": 753
+      },
+      "account_number": {
+        "tp": 621,
+        "fp": 322,
+        "fn": 1048
+      },
+      "private_address": {
+        "tp": 127,
+        "fp": 208,
+        "fn": 1265
+      },
+      "private_phone": {
+        "tp": 275,
+        "fp": 556,
+        "fn": 9
+      }
+    },
+    "nemotron-pii-raw": {
+      "secret": {
+        "tp": 267,
+        "fp": 672,
+        "fn": 89
+      },
+      "private_email": {
+        "tp": 448,
+        "fp": 70,
+        "fn": 2
+      },
+      "private_url": {
+        "tp": 288,
+        "fp": 12,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 1169,
+        "fp": 651,
+        "fn": 34
+      },
+      "private_person": {
+        "tp": 2364,
+        "fp": 1512,
+        "fn": 172
+      },
+      "account_number": {
+        "tp": 933,
+        "fp": 1553,
+        "fn": 736
+      },
+      "private_address": {
+        "tp": 1016,
+        "fp": 1367,
+        "fn": 376
+      },
+      "private_phone": {
+        "tp": 258,
+        "fp": 92,
+        "fn": 26
+      }
+    }
+  },
+  "isotonic-fr": {
+    "nullpii": {
+      "secret": {
+        "tp": 280,
+        "fp": 136,
+        "fn": 102
+      },
+      "private_email": {
+        "tp": 429,
+        "fp": 6,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 266,
+        "fp": 1,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 996,
+        "fp": 244,
+        "fn": 110
+      },
+      "private_person": {
+        "tp": 1818,
+        "fp": 1115,
+        "fn": 580
+      },
+      "account_number": {
+        "tp": 1252,
+        "fp": 1560,
+        "fn": 417
+      },
+      "private_address": {
+        "tp": 781,
+        "fp": 918,
+        "fn": 683
+      },
+      "private_phone": {
+        "tp": 250,
+        "fp": 132,
+        "fn": 22
+      }
+    },
+    "deberta": {
+      "secret": {
+        "tp": 239,
+        "fp": 122,
+        "fn": 143
+      },
+      "private_email": {
+        "tp": 419,
+        "fp": 79,
+        "fn": 10
+      },
+      "private_url": {
+        "tp": 262,
+        "fp": 0,
+        "fn": 4
+      },
+      "private_date": {
+        "tp": 955,
+        "fp": 348,
+        "fn": 151
+      },
+      "account_number": {
+        "tp": 1378,
+        "fp": 1135,
+        "fn": 291
+      },
+      "private_address": {
+        "tp": 1066,
+        "fp": 2780,
+        "fn": 398
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 272
+      },
+      "private_person": {
+        "tp": 1562,
+        "fp": 15293,
+        "fn": 836
+      }
+    },
+    "piiranha": {
+      "secret": {
+        "tp": 204,
+        "fp": 23,
+        "fn": 178
+      },
+      "private_email": {
+        "tp": 415,
+        "fp": 45,
+        "fn": 14
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 266
+      },
+      "private_date": {
+        "tp": 284,
+        "fp": 37,
+        "fn": 822
+      },
+      "private_person": {
+        "tp": 1730,
+        "fp": 673,
+        "fn": 668
+      },
+      "account_number": {
+        "tp": 635,
+        "fp": 634,
+        "fn": 1034
+      },
+      "private_address": {
+        "tp": 1159,
+        "fp": 390,
+        "fn": 305
+      },
+      "private_phone": {
+        "tp": 208,
+        "fp": 183,
+        "fn": 64
+      }
+    },
+    "presidio": {
+      "secret": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 382
+      },
+      "private_email": {
+        "tp": 429,
+        "fp": 1,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 266,
+        "fp": 558,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 767,
+        "fp": 525,
+        "fn": 339
+      },
+      "private_person": {
+        "tp": 909,
+        "fp": 3676,
+        "fn": 1489
+      },
+      "account_number": {
+        "tp": 365,
+        "fp": 151,
+        "fn": 1304
+      },
+      "private_address": {
+        "tp": 162,
+        "fp": 662,
+        "fn": 1302
+      },
+      "private_phone": {
+        "tp": 156,
+        "fp": 259,
+        "fn": 116
+      }
+    },
+    "gliner-pii-large-v1": {
+      "secret": {
+        "tp": 367,
+        "fp": 1385,
+        "fn": 15
+      },
+      "private_email": {
+        "tp": 428,
+        "fp": 70,
+        "fn": 1
+      },
+      "private_url": {
+        "tp": 266,
+        "fp": 80,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 657,
+        "fp": 4,
+        "fn": 449
+      },
+      "private_person": {
+        "tp": 1632,
+        "fp": 1299,
+        "fn": 766
+      },
+      "account_number": {
+        "tp": 527,
+        "fp": 316,
+        "fn": 1142
+      },
+      "private_address": {
+        "tp": 151,
+        "fp": 252,
+        "fn": 1313
+      },
+      "private_phone": {
+        "tp": 267,
+        "fp": 593,
+        "fn": 5
+      }
+    },
+    "nemotron-pii-raw": {
+      "secret": {
+        "tp": 285,
+        "fp": 608,
+        "fn": 97
+      },
+      "private_email": {
+        "tp": 427,
+        "fp": 56,
+        "fn": 2
+      },
+      "private_url": {
+        "tp": 266,
+        "fp": 3,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 1079,
+        "fp": 651,
+        "fn": 27
+      },
+      "private_person": {
+        "tp": 2246,
+        "fp": 1632,
+        "fn": 152
+      },
+      "account_number": {
+        "tp": 980,
+        "fp": 1645,
+        "fn": 689
+      },
+      "private_address": {
+        "tp": 1101,
+        "fp": 1420,
+        "fn": 363
+      },
+      "private_phone": {
+        "tp": 259,
+        "fp": 159,
+        "fn": 13
+      }
+    }
+  },
+  "isotonic-it": {
+    "nullpii": {
+      "secret": {
+        "tp": 281,
+        "fp": 148,
+        "fn": 74
+      },
+      "private_email": {
+        "tp": 446,
+        "fp": 8,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 275,
+        "fp": 2,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 1006,
+        "fp": 278,
+        "fn": 61
+      },
+      "account_number": {
+        "tp": 1231,
+        "fp": 1497,
+        "fn": 410
+      },
+      "private_address": {
+        "tp": 790,
+        "fp": 972,
+        "fn": 686
+      },
+      "private_phone": {
+        "tp": 254,
+        "fp": 117,
+        "fn": 38
+      },
+      "private_person": {
+        "tp": 1792,
+        "fp": 1197,
+        "fn": 527
+      }
+    },
+    "deberta": {
+      "secret": {
+        "tp": 262,
+        "fp": 124,
+        "fn": 93
+      },
+      "private_email": {
+        "tp": 434,
+        "fp": 126,
+        "fn": 12
+      },
+      "private_url": {
+        "tp": 271,
+        "fp": 3,
+        "fn": 4
+      },
+      "private_date": {
+        "tp": 867,
+        "fp": 161,
+        "fn": 200
+      },
+      "account_number": {
+        "tp": 1353,
+        "fp": 2004,
+        "fn": 288
+      },
+      "private_address": {
+        "tp": 1124,
+        "fp": 4701,
+        "fn": 352
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 292
+      },
+      "private_person": {
+        "tp": 1323,
+        "fp": 22271,
+        "fn": 996
+      }
+    },
+    "piiranha": {
+      "secret": {
+        "tp": 191,
+        "fp": 5,
+        "fn": 164
+      },
+      "private_email": {
+        "tp": 426,
+        "fp": 62,
+        "fn": 20
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 275
+      },
+      "private_date": {
+        "tp": 261,
+        "fp": 32,
+        "fn": 806
+      },
+      "private_person": {
+        "tp": 1720,
+        "fp": 696,
+        "fn": 599
+      },
+      "account_number": {
+        "tp": 651,
+        "fp": 549,
+        "fn": 990
+      },
+      "private_address": {
+        "tp": 1158,
+        "fp": 440,
+        "fn": 318
+      },
+      "private_phone": {
+        "tp": 215,
+        "fp": 170,
+        "fn": 77
+      }
+    },
+    "presidio": {
+      "secret": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 355
+      },
+      "private_email": {
+        "tp": 446,
+        "fp": 2,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 275,
+        "fp": 597,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 774,
+        "fp": 606,
+        "fn": 293
+      },
+      "private_person": {
+        "tp": 1001,
+        "fp": 7907,
+        "fn": 1318
+      },
+      "account_number": {
+        "tp": 364,
+        "fp": 141,
+        "fn": 1277
+      },
+      "private_address": {
+        "tp": 361,
+        "fp": 1998,
+        "fn": 1115
+      },
+      "private_phone": {
+        "tp": 176,
+        "fp": 236,
+        "fn": 116
+      }
+    },
+    "gliner-pii-large-v1": {
+      "secret": {
+        "tp": 338,
+        "fp": 1383,
+        "fn": 17
+      },
+      "private_email": {
+        "tp": 444,
+        "fp": 44,
+        "fn": 2
+      },
+      "private_url": {
+        "tp": 275,
+        "fp": 116,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 623,
+        "fp": 10,
+        "fn": 444
+      },
+      "private_person": {
+        "tp": 1620,
+        "fp": 1367,
+        "fn": 699
+      },
+      "account_number": {
+        "tp": 596,
+        "fp": 255,
+        "fn": 1045
+      },
+      "private_address": {
+        "tp": 122,
+        "fp": 201,
+        "fn": 1354
+      },
+      "private_phone": {
+        "tp": 289,
+        "fp": 543,
+        "fn": 3
+      }
+    },
+    "nemotron-pii-raw": {
+      "secret": {
+        "tp": 267,
+        "fp": 644,
+        "fn": 88
+      },
+      "private_email": {
+        "tp": 445,
+        "fp": 64,
+        "fn": 1
+      },
+      "private_url": {
+        "tp": 275,
+        "fp": 15,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 1023,
+        "fp": 697,
+        "fn": 44
+      },
+      "account_number": {
+        "tp": 956,
+        "fp": 1589,
+        "fn": 685
+      },
+      "private_address": {
+        "tp": 1042,
+        "fp": 1470,
+        "fn": 434
+      },
+      "private_phone": {
+        "tp": 281,
+        "fp": 157,
+        "fn": 11
+      },
+      "private_person": {
+        "tp": 2135,
+        "fp": 1853,
+        "fn": 184
+      }
+    }
+  },
+  "ai4privacy-300k-heldout": {
+    "nullpii": {
+      "secret": {
+        "tp": 0,
+        "fp": 903,
+        "fn": 0
+      },
+      "private_email": {
+        "tp": 1617,
+        "fp": 103,
+        "fn": 18
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 6,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 2984,
+        "fp": 2257,
+        "fn": 569
+      },
+      "account_number": {
+        "tp": 1532,
+        "fp": 5341,
+        "fn": 50
+      },
+      "private_address": {
+        "tp": 4975,
+        "fp": 1722,
+        "fn": 921
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 1362,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 1283,
+        "fp": 5756,
+        "fn": 505
+      }
+    },
+    "deberta": {
+      "secret": {
+        "tp": 0,
+        "fp": 494,
+        "fn": 0
+      },
+      "private_email": {
+        "tp": 1061,
+        "fp": 534,
+        "fn": 574
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 8,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 716,
+        "fp": 1687,
+        "fn": 2837
+      },
+      "account_number": {
+        "tp": 145,
+        "fp": 13690,
+        "fn": 1437
+      },
+      "private_address": {
+        "tp": 868,
+        "fp": 2671,
+        "fn": 5028
+      },
+      "private_person": {
+        "tp": 96,
+        "fp": 16715,
+        "fn": 1692
+      }
+    },
+    "piiranha": {
+      "secret": {
+        "tp": 0,
+        "fp": 1087,
+        "fn": 0
+      },
+      "private_email": {
+        "tp": 1596,
+        "fp": 80,
+        "fn": 39
+      },
+      "private_date": {
+        "tp": 56,
+        "fp": 1160,
+        "fn": 3497
+      },
+      "private_person": {
+        "tp": 7,
+        "fp": 3358,
+        "fn": 1781
+      },
+      "account_number": {
+        "tp": 668,
+        "fp": 4633,
+        "fn": 914
+      },
+      "private_address": {
+        "tp": 3454,
+        "fp": 1401,
+        "fn": 2442
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 1394,
+        "fn": 0
+      }
+    },
+    "presidio": {
+      "private_email": {
+        "tp": 1622,
+        "fp": 45,
+        "fn": 13
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 2339,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 1179,
+        "fp": 3287,
+        "fn": 2374
+      },
+      "private_person": {
+        "tp": 142,
+        "fp": 13902,
+        "fn": 1646
+      },
+      "account_number": {
+        "tp": 0,
+        "fp": 320,
+        "fn": 1582
+      },
+      "private_address": {
+        "tp": 829,
+        "fp": 2767,
+        "fn": 5067
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 1350,
+        "fn": 0
+      }
+    },
+    "gliner-pii-large-v1": {
+      "secret": {
+        "tp": 0,
+        "fp": 2065,
+        "fn": 0
+      },
+      "private_email": {
+        "tp": 1378,
+        "fp": 531,
+        "fn": 257
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 71,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 578,
+        "fp": 1045,
+        "fn": 2975
+      },
+      "account_number": {
+        "tp": 0,
+        "fp": 1952,
+        "fn": 1582
+      },
+      "private_address": {
+        "tp": 30,
+        "fp": 373,
+        "fn": 5866
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 1409,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 121,
+        "fp": 1503,
+        "fn": 1667
+      }
+    },
+    "nemotron-pii-raw": {
+      "secret": {
+        "tp": 0,
+        "fp": 2086,
+        "fn": 0
+      },
+      "private_email": {
+        "tp": 1478,
+        "fp": 134,
+        "fn": 157
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 16,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 3404,
+        "fp": 2346,
+        "fn": 149
+      },
+      "account_number": {
+        "tp": 784,
+        "fp": 4438,
+        "fn": 798
+      },
+      "private_address": {
+        "tp": 5148,
+        "fp": 2524,
+        "fn": 748
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 1425,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 1412,
+        "fp": 5651,
+        "fn": 376
+      }
+    }
+  },
+  "argilla-pii": {
+    "nullpii": {
+      "secret": {
+        "tp": 101,
+        "fp": 21,
+        "fn": 55
+      },
+      "private_email": {
+        "tp": 167,
+        "fp": 1,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 131,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 459,
+        "fp": 61,
+        "fn": 95
+      },
+      "account_number": {
+        "tp": 630,
+        "fp": 495,
+        "fn": 100
+      },
+      "private_address": {
+        "tp": 250,
+        "fp": 466,
+        "fn": 187
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 131,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 904,
+        "fp": 328,
+        "fn": 252
+      }
+    },
+    "deberta": {
+      "secret": {
+        "tp": 135,
+        "fp": 70,
+        "fn": 21
+      },
+      "private_email": {
+        "tp": 163,
+        "fp": 1,
+        "fn": 4
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 131,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 449,
+        "fp": 25,
+        "fn": 105
+      },
+      "account_number": {
+        "tp": 452,
+        "fp": 523,
+        "fn": 278
+      },
+      "private_address": {
+        "tp": 306,
+        "fp": 465,
+        "fn": 131
+      },
+      "private_person": {
+        "tp": 1017,
+        "fp": 77,
+        "fn": 139
+      }
+    },
+    "piiranha": {
+      "secret": {
+        "tp": 73,
+        "fp": 7,
+        "fn": 83
+      },
+      "private_email": {
+        "tp": 163,
+        "fp": 9,
+        "fn": 4
+      },
+      "private_date": {
+        "tp": 117,
+        "fp": 11,
+        "fn": 437
+      },
+      "private_person": {
+        "tp": 703,
+        "fp": 175,
+        "fn": 453
+      },
+      "account_number": {
+        "tp": 358,
+        "fp": 203,
+        "fn": 372
+      },
+      "private_address": {
+        "tp": 342,
+        "fp": 330,
+        "fn": 95
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 123,
+        "fn": 0
+      }
+    },
+    "presidio": {
+      "secret": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 156
+      },
+      "private_email": {
+        "tp": 167,
+        "fp": 0,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 361,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 455,
+        "fp": 454,
+        "fn": 99
+      },
+      "private_person": {
+        "tp": 634,
+        "fp": 418,
+        "fn": 522
+      },
+      "account_number": {
+        "tp": 10,
+        "fp": 174,
+        "fn": 720
+      },
+      "private_address": {
+        "tp": 148,
+        "fp": 347,
+        "fn": 289
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 190,
+        "fn": 0
+      }
+    },
+    "gliner-pii-large-v1": {
+      "secret": {
+        "tp": 149,
+        "fp": 606,
+        "fn": 7
+      },
+      "private_email": {
+        "tp": 167,
+        "fp": 54,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 134,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 262,
+        "fp": 1,
+        "fn": 292
+      },
+      "account_number": {
+        "tp": 250,
+        "fp": 166,
+        "fn": 480
+      },
+      "private_address": {
+        "tp": 65,
+        "fp": 121,
+        "fn": 372
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 338,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 783,
+        "fp": 379,
+        "fn": 373
+      }
+    },
+    "nemotron-pii-raw": {
+      "secret": {
+        "tp": 119,
+        "fp": 154,
+        "fn": 37
+      },
+      "private_email": {
+        "tp": 167,
+        "fp": 25,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 135,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 487,
+        "fp": 193,
+        "fn": 67
+      },
+      "account_number": {
+        "tp": 484,
+        "fp": 731,
+        "fn": 246
+      },
+      "private_address": {
+        "tp": 325,
+        "fp": 625,
+        "fn": 112
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 145,
+        "fn": 0
+      },
+      "private_person": {
+        "tp": 1099,
+        "fp": 500,
+        "fn": 57
+      }
+    }
+  },
+  "nemotron-pii-test": {
+    "nullpii": {
+      "secret": {
+        "tp": 1149,
+        "fp": 122,
+        "fn": 91
+      },
+      "private_email": {
+        "tp": 2141,
+        "fp": 4,
+        "fn": 5
+      },
+      "private_url": {
+        "tp": 1898,
+        "fp": 31,
+        "fn": 128
+      },
+      "private_date": {
+        "tp": 5829,
+        "fp": 472,
+        "fn": 630
+      },
+      "account_number": {
+        "tp": 6719,
+        "fp": 445,
+        "fn": 60
+      },
+      "private_address": {
+        "tp": 5295,
+        "fp": 72,
+        "fn": 299
+      },
+      "private_phone": {
+        "tp": 1096,
+        "fp": 89,
+        "fn": 26
+      },
+      "private_person": {
+        "tp": 7771,
+        "fp": 335,
+        "fn": 268
+      }
+    },
+    "deberta": {
+      "secret": {
+        "tp": 358,
+        "fp": 1279,
+        "fn": 882
+      },
+      "private_email": {
+        "tp": 1982,
+        "fp": 101,
+        "fn": 164
+      },
+      "private_url": {
+        "tp": 1757,
+        "fp": 29,
+        "fn": 269
+      },
+      "private_date": {
+        "tp": 3868,
+        "fp": 1013,
+        "fn": 2591
+      },
+      "account_number": {
+        "tp": 3582,
+        "fp": 4450,
+        "fn": 3197
+      },
+      "private_address": {
+        "tp": 3151,
+        "fp": 1886,
+        "fn": 2443
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 1122
+      },
+      "private_person": {
+        "tp": 5582,
+        "fp": 986,
+        "fn": 2457
+      }
+    },
+    "piiranha": {
+      "secret": {
+        "tp": 119,
+        "fp": 14,
+        "fn": 1121
+      },
+      "private_email": {
+        "tp": 2097,
+        "fp": 80,
+        "fn": 49
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 2026
+      },
+      "private_date": {
+        "tp": 760,
+        "fp": 7,
+        "fn": 5699
+      },
+      "private_person": {
+        "tp": 4600,
+        "fp": 373,
+        "fn": 3439
+      },
+      "account_number": {
+        "tp": 3622,
+        "fp": 919,
+        "fn": 3157
+      },
+      "private_address": {
+        "tp": 2894,
+        "fp": 1344,
+        "fn": 2700
+      },
+      "private_phone": {
+        "tp": 639,
+        "fp": 331,
+        "fn": 483
+      }
+    },
+    "presidio": {
+      "secret": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 1240
+      },
+      "private_email": {
+        "tp": 2139,
+        "fp": 4,
+        "fn": 7
+      },
+      "private_url": {
+        "tp": 1814,
+        "fp": 2876,
+        "fn": 212
+      },
+      "private_date": {
+        "tp": 5162,
+        "fp": 4636,
+        "fn": 1297
+      },
+      "private_person": {
+        "tp": 3358,
+        "fp": 1625,
+        "fn": 4681
+      },
+      "account_number": {
+        "tp": 1074,
+        "fp": 54,
+        "fn": 5705
+      },
+      "private_address": {
+        "tp": 3218,
+        "fp": 736,
+        "fn": 2376
+      },
+      "private_phone": {
+        "tp": 1118,
+        "fp": 1877,
+        "fn": 4
+      }
+    },
+    "gliner-pii-large-v1": {
+      "secret": {
+        "tp": 659,
+        "fp": 1129,
+        "fn": 581
+      },
+      "private_email": {
+        "tp": 2044,
+        "fp": 42,
+        "fn": 102
+      },
+      "private_url": {
+        "tp": 1289,
+        "fp": 69,
+        "fn": 737
+      },
+      "private_date": {
+        "tp": 1087,
+        "fp": 4,
+        "fn": 5372
+      },
+      "account_number": {
+        "tp": 2007,
+        "fp": 194,
+        "fn": 4772
+      },
+      "private_address": {
+        "tp": 393,
+        "fp": 159,
+        "fn": 5201
+      },
+      "private_phone": {
+        "tp": 1050,
+        "fp": 294,
+        "fn": 72
+      },
+      "private_person": {
+        "tp": 2309,
+        "fp": 559,
+        "fn": 5730
+      }
+    },
+    "nemotron-pii-raw": {
+      "secret": {
+        "tp": 1205,
+        "fp": 154,
+        "fn": 35
+      },
+      "private_email": {
+        "tp": 1904,
+        "fp": 26,
+        "fn": 242
+      },
+      "private_url": {
+        "tp": 1083,
+        "fp": 31,
+        "fn": 943
+      },
+      "private_date": {
+        "tp": 6199,
+        "fp": 1387,
+        "fn": 260
+      },
+      "account_number": {
+        "tp": 6751,
+        "fp": 533,
+        "fn": 28
+      },
+      "private_address": {
+        "tp": 5526,
+        "fp": 246,
+        "fn": 68
+      },
+      "private_phone": {
+        "tp": 1117,
+        "fp": 331,
+        "fn": 5
+      },
+      "private_person": {
+        "tp": 7983,
+        "fp": 578,
+        "fn": 56
+      }
+    }
+  },
+  "isotonic-en-heldout": {
+    "nullpii": {
+      "secret": {
+        "tp": 282,
+        "fp": 69,
+        "fn": 96
+      },
+      "private_email": {
+        "tp": 483,
+        "fp": 3,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 344,
+        "fp": 1,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 1065,
+        "fp": 253,
+        "fn": 54
+      },
+      "account_number": {
+        "tp": 1262,
+        "fp": 1602,
+        "fn": 385
+      },
+      "private_address": {
+        "tp": 795,
+        "fp": 917,
+        "fn": 649
+      },
+      "private_phone": {
+        "tp": 240,
+        "fp": 128,
+        "fn": 43
+      },
+      "private_person": {
+        "tp": 1812,
+        "fp": 1114,
+        "fn": 558
+      }
+    },
+    "deberta": {
+      "secret": {
+        "tp": 324,
+        "fp": 167,
+        "fn": 54
+      },
+      "private_email": {
+        "tp": 477,
+        "fp": 4,
+        "fn": 6
+      },
+      "private_url": {
+        "tp": 340,
+        "fp": 0,
+        "fn": 4
+      },
+      "private_date": {
+        "tp": 1067,
+        "fp": 89,
+        "fn": 52
+      },
+      "account_number": {
+        "tp": 1482,
+        "fp": 869,
+        "fn": 165
+      },
+      "private_address": {
+        "tp": 1268,
+        "fp": 647,
+        "fn": 176
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 283
+      },
+      "private_person": {
+        "tp": 2073,
+        "fp": 459,
+        "fn": 297
+      }
+    },
+    "piiranha": {
+      "secret": {
+        "tp": 182,
+        "fp": 20,
+        "fn": 196
+      },
+      "private_email": {
+        "tp": 470,
+        "fp": 41,
+        "fn": 13
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 344
+      },
+      "private_date": {
+        "tp": 291,
+        "fp": 30,
+        "fn": 828
+      },
+      "private_person": {
+        "tp": 1492,
+        "fp": 592,
+        "fn": 878
+      },
+      "account_number": {
+        "tp": 701,
+        "fp": 711,
+        "fn": 946
+      },
+      "private_address": {
+        "tp": 1208,
+        "fp": 456,
+        "fn": 236
+      },
+      "private_phone": {
+        "tp": 203,
+        "fp": 144,
+        "fn": 80
+      }
+    },
+    "presidio": {
+      "secret": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 378
+      },
+      "private_email": {
+        "tp": 483,
+        "fp": 2,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 344,
+        "fp": 680,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 961,
+        "fp": 1386,
+        "fn": 158
+      },
+      "private_person": {
+        "tp": 1330,
+        "fp": 1188,
+        "fn": 1040
+      },
+      "account_number": {
+        "tp": 364,
+        "fp": 142,
+        "fn": 1283
+      },
+      "private_address": {
+        "tp": 535,
+        "fp": 731,
+        "fn": 909
+      },
+      "private_phone": {
+        "tp": 168,
+        "fp": 298,
+        "fn": 115
+      }
+    },
+    "gliner-pii-large-v1": {
+      "secret": {
+        "tp": 369,
+        "fp": 1456,
+        "fn": 9
+      },
+      "private_email": {
+        "tp": 483,
+        "fp": 147,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 344,
+        "fp": 17,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 653,
+        "fp": 3,
+        "fn": 466
+      },
+      "private_person": {
+        "tp": 1620,
+        "fp": 1180,
+        "fn": 750
+      },
+      "account_number": {
+        "tp": 637,
+        "fp": 360,
+        "fn": 1010
+      },
+      "private_address": {
+        "tp": 175,
+        "fp": 321,
+        "fn": 1269
+      },
+      "private_phone": {
+        "tp": 282,
+        "fp": 643,
+        "fn": 1
+      }
+    },
+    "nemotron-pii-raw": {
+      "secret": {
+        "tp": 282,
+        "fp": 415,
+        "fn": 96
+      },
+      "private_email": {
+        "tp": 483,
+        "fp": 50,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 342,
+        "fp": 7,
+        "fn": 2
+      },
+      "private_date": {
+        "tp": 1115,
+        "fp": 644,
+        "fn": 4
+      },
+      "account_number": {
+        "tp": 1148,
+        "fp": 1850,
+        "fn": 499
+      },
+      "private_address": {
+        "tp": 1101,
+        "fp": 1240,
+        "fn": 343
+      },
+      "private_phone": {
+        "tp": 264,
+        "fp": 123,
+        "fn": 19
+      },
+      "private_person": {
+        "tp": 2205,
+        "fp": 1552,
+        "fn": 165
+      }
+    }
+  },
+  "isotonic-de-heldout": {
+    "nullpii": {
+      "secret": {
+        "tp": 301,
+        "fp": 259,
+        "fn": 80
+      },
+      "private_email": {
+        "tp": 419,
+        "fp": 9,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 283,
+        "fp": 0,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 985,
+        "fp": 290,
+        "fn": 87
+      },
+      "account_number": {
+        "tp": 1246,
+        "fp": 1519,
+        "fn": 431
+      },
+      "private_address": {
+        "tp": 830,
+        "fp": 1029,
+        "fn": 721
+      },
+      "private_phone": {
+        "tp": 251,
+        "fp": 91,
+        "fn": 39
+      },
+      "private_person": {
+        "tp": 1780,
+        "fp": 1079,
+        "fn": 588
+      }
+    },
+    "deberta": {
+      "secret": {
+        "tp": 188,
+        "fp": 58,
+        "fn": 193
+      },
+      "private_email": {
+        "tp": 405,
+        "fp": 137,
+        "fn": 14
+      },
+      "private_url": {
+        "tp": 273,
+        "fp": 14,
+        "fn": 10
+      },
+      "private_date": {
+        "tp": 807,
+        "fp": 285,
+        "fn": 265
+      },
+      "account_number": {
+        "tp": 1208,
+        "fp": 3198,
+        "fn": 469
+      },
+      "private_address": {
+        "tp": 1081,
+        "fp": 4409,
+        "fn": 470
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 290
+      },
+      "private_person": {
+        "tp": 1207,
+        "fp": 21465,
+        "fn": 1161
+      }
+    },
+    "piiranha": {
+      "secret": {
+        "tp": 184,
+        "fp": 16,
+        "fn": 197
+      },
+      "private_email": {
+        "tp": 404,
+        "fp": 45,
+        "fn": 15
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 283
+      },
+      "private_date": {
+        "tp": 265,
+        "fp": 74,
+        "fn": 807
+      },
+      "private_person": {
+        "tp": 1676,
+        "fp": 657,
+        "fn": 692
+      },
+      "account_number": {
+        "tp": 676,
+        "fp": 600,
+        "fn": 1001
+      },
+      "private_address": {
+        "tp": 1232,
+        "fp": 398,
+        "fn": 319
+      },
+      "private_phone": {
+        "tp": 216,
+        "fp": 182,
+        "fn": 74
+      }
+    },
+    "presidio": {
+      "secret": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 381
+      },
+      "private_email": {
+        "tp": 419,
+        "fp": 3,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 283,
+        "fp": 580,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 817,
+        "fp": 857,
+        "fn": 255
+      },
+      "private_person": {
+        "tp": 957,
+        "fp": 12051,
+        "fn": 1411
+      },
+      "account_number": {
+        "tp": 381,
+        "fp": 151,
+        "fn": 1296
+      },
+      "private_address": {
+        "tp": 456,
+        "fp": 2847,
+        "fn": 1095
+      },
+      "private_phone": {
+        "tp": 174,
+        "fp": 239,
+        "fn": 116
+      }
+    },
+    "gliner-pii-large-v1": {
+      "secret": {
+        "tp": 361,
+        "fp": 1448,
+        "fn": 20
+      },
+      "private_email": {
+        "tp": 418,
+        "fp": 50,
+        "fn": 1
+      },
+      "private_url": {
+        "tp": 283,
+        "fp": 39,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 607,
+        "fp": 8,
+        "fn": 465
+      },
+      "account_number": {
+        "tp": 639,
+        "fp": 326,
+        "fn": 1038
+      },
+      "private_address": {
+        "tp": 127,
+        "fp": 217,
+        "fn": 1424
+      },
+      "private_phone": {
+        "tp": 286,
+        "fp": 566,
+        "fn": 4
+      },
+      "private_person": {
+        "tp": 1632,
+        "fp": 1301,
+        "fn": 736
+      }
+    },
+    "nemotron-pii-raw": {
+      "secret": {
+        "tp": 282,
+        "fp": 676,
+        "fn": 99
+      },
+      "private_email": {
+        "tp": 417,
+        "fp": 80,
+        "fn": 2
+      },
+      "private_url": {
+        "tp": 283,
+        "fp": 7,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 1031,
+        "fp": 685,
+        "fn": 41
+      },
+      "account_number": {
+        "tp": 947,
+        "fp": 1493,
+        "fn": 730
+      },
+      "private_address": {
+        "tp": 1138,
+        "fp": 1484,
+        "fn": 413
+      },
+      "private_phone": {
+        "tp": 275,
+        "fp": 85,
+        "fn": 15
+      },
+      "private_person": {
+        "tp": 2201,
+        "fp": 1557,
+        "fn": 167
+      }
+    }
+  },
+  "isotonic-fr-heldout": {
+    "nullpii": {
+      "secret": {
+        "tp": 301,
+        "fp": 138,
+        "fn": 94
+      },
+      "private_email": {
+        "tp": 430,
+        "fp": 3,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 281,
+        "fp": 0,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 992,
+        "fp": 254,
+        "fn": 105
+      },
+      "account_number": {
+        "tp": 1268,
+        "fp": 1595,
+        "fn": 405
+      },
+      "private_address": {
+        "tp": 863,
+        "fp": 943,
+        "fn": 712
+      },
+      "private_phone": {
+        "tp": 253,
+        "fp": 130,
+        "fn": 23
+      },
+      "private_person": {
+        "tp": 1808,
+        "fp": 1149,
+        "fn": 612
+      }
+    },
+    "deberta": {
+      "secret": {
+        "tp": 251,
+        "fp": 140,
+        "fn": 144
+      },
+      "private_email": {
+        "tp": 418,
+        "fp": 73,
+        "fn": 12
+      },
+      "private_url": {
+        "tp": 277,
+        "fp": 0,
+        "fn": 4
+      },
+      "private_date": {
+        "tp": 952,
+        "fp": 275,
+        "fn": 145
+      },
+      "account_number": {
+        "tp": 1376,
+        "fp": 1205,
+        "fn": 297
+      },
+      "private_address": {
+        "tp": 1155,
+        "fp": 2740,
+        "fn": 420
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 276
+      },
+      "private_person": {
+        "tp": 1573,
+        "fp": 15320,
+        "fn": 847
+      }
+    },
+    "piiranha": {
+      "secret": {
+        "tp": 217,
+        "fp": 15,
+        "fn": 178
+      },
+      "private_email": {
+        "tp": 416,
+        "fp": 50,
+        "fn": 14
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 281
+      },
+      "private_date": {
+        "tp": 278,
+        "fp": 47,
+        "fn": 819
+      },
+      "private_person": {
+        "tp": 1702,
+        "fp": 663,
+        "fn": 718
+      },
+      "account_number": {
+        "tp": 660,
+        "fp": 629,
+        "fn": 1013
+      },
+      "private_address": {
+        "tp": 1216,
+        "fp": 399,
+        "fn": 359
+      },
+      "private_phone": {
+        "tp": 219,
+        "fp": 207,
+        "fn": 57
+      }
+    },
+    "presidio": {
+      "secret": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 395
+      },
+      "private_email": {
+        "tp": 430,
+        "fp": 1,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 281,
+        "fp": 576,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 733,
+        "fp": 591,
+        "fn": 364
+      },
+      "private_person": {
+        "tp": 882,
+        "fp": 3658,
+        "fn": 1538
+      },
+      "account_number": {
+        "tp": 377,
+        "fp": 167,
+        "fn": 1296
+      },
+      "private_address": {
+        "tp": 209,
+        "fp": 679,
+        "fn": 1366
+      },
+      "private_phone": {
+        "tp": 152,
+        "fp": 260,
+        "fn": 124
+      }
+    },
+    "gliner-pii-large-v1": {
+      "secret": {
+        "tp": 379,
+        "fp": 1391,
+        "fn": 16
+      },
+      "private_email": {
+        "tp": 426,
+        "fp": 61,
+        "fn": 4
+      },
+      "private_url": {
+        "tp": 281,
+        "fp": 57,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 598,
+        "fp": 3,
+        "fn": 499
+      },
+      "account_number": {
+        "tp": 531,
+        "fp": 283,
+        "fn": 1142
+      },
+      "private_address": {
+        "tp": 158,
+        "fp": 239,
+        "fn": 1417
+      },
+      "private_phone": {
+        "tp": 270,
+        "fp": 649,
+        "fn": 6
+      },
+      "private_person": {
+        "tp": 1650,
+        "fp": 1334,
+        "fn": 770
+      }
+    },
+    "nemotron-pii-raw": {
+      "secret": {
+        "tp": 294,
+        "fp": 663,
+        "fn": 101
+      },
+      "private_email": {
+        "tp": 430,
+        "fp": 61,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 280,
+        "fp": 12,
+        "fn": 1
+      },
+      "private_date": {
+        "tp": 1078,
+        "fp": 676,
+        "fn": 19
+      },
+      "account_number": {
+        "tp": 950,
+        "fp": 1518,
+        "fn": 723
+      },
+      "private_address": {
+        "tp": 1213,
+        "fp": 1455,
+        "fn": 362
+      },
+      "private_phone": {
+        "tp": 264,
+        "fp": 177,
+        "fn": 12
+      },
+      "private_person": {
+        "tp": 2232,
+        "fp": 1675,
+        "fn": 188
+      }
+    }
+  },
+  "isotonic-it-heldout": {
+    "nullpii": {
+      "secret": {
+        "tp": 263,
+        "fp": 151,
+        "fn": 66
+      },
+      "private_email": {
+        "tp": 463,
+        "fp": 5,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 283,
+        "fp": 1,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 990,
+        "fp": 268,
+        "fn": 61
+      },
+      "account_number": {
+        "tp": 1201,
+        "fp": 1531,
+        "fn": 401
+      },
+      "private_address": {
+        "tp": 845,
+        "fp": 976,
+        "fn": 676
+      },
+      "private_phone": {
+        "tp": 288,
+        "fp": 120,
+        "fn": 26
+      },
+      "private_person": {
+        "tp": 1797,
+        "fp": 1208,
+        "fn": 579
+      }
+    },
+    "deberta": {
+      "secret": {
+        "tp": 239,
+        "fp": 138,
+        "fn": 90
+      },
+      "private_email": {
+        "tp": 447,
+        "fp": 139,
+        "fn": 16
+      },
+      "private_url": {
+        "tp": 274,
+        "fp": 1,
+        "fn": 9
+      },
+      "private_date": {
+        "tp": 875,
+        "fp": 199,
+        "fn": 176
+      },
+      "account_number": {
+        "tp": 1288,
+        "fp": 1986,
+        "fn": 314
+      },
+      "private_address": {
+        "tp": 1174,
+        "fp": 4586,
+        "fn": 347
+      },
+      "private_phone": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 314
+      },
+      "private_person": {
+        "tp": 1411,
+        "fp": 22343,
+        "fn": 965
+      }
+    },
+    "piiranha": {
+      "secret": {
+        "tp": 170,
+        "fp": 15,
+        "fn": 159
+      },
+      "private_email": {
+        "tp": 447,
+        "fp": 60,
+        "fn": 16
+      },
+      "private_url": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 283
+      },
+      "private_date": {
+        "tp": 265,
+        "fp": 33,
+        "fn": 786
+      },
+      "private_person": {
+        "tp": 1744,
+        "fp": 744,
+        "fn": 632
+      },
+      "account_number": {
+        "tp": 639,
+        "fp": 612,
+        "fn": 963
+      },
+      "private_address": {
+        "tp": 1166,
+        "fp": 371,
+        "fn": 355
+      },
+      "private_phone": {
+        "tp": 228,
+        "fp": 190,
+        "fn": 86
+      }
+    },
+    "presidio": {
+      "secret": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 329
+      },
+      "private_email": {
+        "tp": 463,
+        "fp": 1,
+        "fn": 0
+      },
+      "private_url": {
+        "tp": 283,
+        "fp": 635,
+        "fn": 0
+      },
+      "private_date": {
+        "tp": 762,
+        "fp": 627,
+        "fn": 289
+      },
+      "private_person": {
+        "tp": 1026,
+        "fp": 7939,
+        "fn": 1350
+      },
+      "account_number": {
+        "tp": 351,
+        "fp": 148,
+        "fn": 1251
+      },
+      "private_address": {
+        "tp": 361,
+        "fp": 1961,
+        "fn": 1160
+      },
+      "private_phone": {
+        "tp": 186,
+        "fp": 231,
+        "fn": 128
+      }
+    },
+    "gliner-pii-large-v1": {
+      "secret": {
+        "tp": 311,
+        "fp": 1347,
+        "fn": 18
+      },
+      "private_email": {
+        "tp": 459,
+        "fp": 52,
+        "fn": 4
+      },
+      "private_url": {
+        "tp": 282,
+        "fp": 103,
+        "fn": 1
+      },
+      "private_date": {
+        "tp": 633,
+        "fp": 10,
+        "fn": 418
+      },
+      "account_number": {
+        "tp": 567,
+        "fp": 268,
+        "fn": 1035
+      },
+      "private_address": {
+        "tp": 144,
+        "fp": 203,
+        "fn": 1377
+      },
+      "private_phone": {
+        "tp": 305,
+        "fp": 599,
+        "fn": 9
+      },
+      "private_person": {
+        "tp": 1635,
+        "fp": 1360,
+        "fn": 741
+      }
+    },
+    "nemotron-pii-raw": {
+      "secret": {
+        "tp": 251,
+        "fp": 639,
+        "fn": 78
+      },
+      "private_email": {
+        "tp": 462,
+        "fp": 61,
+        "fn": 1
+      },
+      "private_url": {
+        "tp": 282,
+        "fp": 14,
+        "fn": 1
+      },
+      "private_date": {
+        "tp": 1021,
+        "fp": 720,
+        "fn": 30
+      },
+      "account_number": {
+        "tp": 957,
+        "fp": 1586,
+        "fn": 645
+      },
+      "private_address": {
+        "tp": 1070,
+        "fp": 1402,
+        "fn": 451
+      },
+      "private_phone": {
+        "tp": 301,
+        "fp": 141,
+        "fn": 13
+      },
+      "private_person": {
+        "tp": 2216,
+        "fp": 1838,
+        "fn": 160
+      }
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "@nullpii/recognizers-cloud",
+  "version": "0.1.0",
+  "description": "AWS / GCP / Azure access key recognizers for nullpii.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist", "src", "README.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "nullpii": "^0.0.7"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

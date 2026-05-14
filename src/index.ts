@@ -15,6 +15,7 @@ export {
   SessionMismatchError,
   SessionNotFoundError,
   TextTooLongError,
+  UnknownPlaceholderError,
 } from './errors.js';
 
 // Types & constants
@@ -35,6 +36,7 @@ export {
   type PiiCategory,
   type PiiLabel,
   type PiiSpan,
+  type RestoreOptions,
   type RestoreResult,
   type SanitizeResult,
   type VaultToken,

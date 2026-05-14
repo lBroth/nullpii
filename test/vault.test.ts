@@ -134,12 +134,23 @@ describe('PiiVault.restore', () => {
     expect(r.replacements).toBe(0);
   });
 
-  it('throws SessionMismatchError when placeholder prefix is from a different session', () => {
+  it('surfaces foreign-prefix placeholders in foreignPlaceholders (default mode)', () => {
     const v = new PiiVault();
     const idA = v.createSession();
     const idB = v.createSession();
     const result = v.sanitize('Hi John', [span('private_person', 3, 7, 'John')], idA);
-    expect(() => v.restore(result.sanitized, idB)).toThrow(SessionMismatchError);
+    const r = v.restore(result.sanitized, idB);
+    expect(r.foreignPlaceholders).toHaveLength(1);
+    expect(r.replacements).toBe(0);
+    expect(r.restored).toBe(result.sanitized);
+  });
+
+  it('throws SessionMismatchError with strict: true on foreign-prefix placeholder', () => {
+    const v = new PiiVault();
+    const idA = v.createSession();
+    const idB = v.createSession();
+    const result = v.sanitize('Hi John', [span('private_person', 3, 7, 'John')], idA);
+    expect(() => v.restore(result.sanitized, idB, { strict: true })).toThrow(SessionMismatchError);
   });
 
   it('throws SessionNotFoundError for unknown session', () => {

@@ -17,7 +17,7 @@ export {
 } from './constants.js';
 export type { PiiSpan } from './spans.js';
 export type { VaultToken } from './vault.js';
-export type { RestoreResult, SanitizeResult } from './results.js';
+export type { RestoreOptions, RestoreResult, SanitizeResult } from './results.js';
 export type { BackendName, ModelVariant, NullPiiConfig } from './config.js';
 export type { InferenceInputs, InferenceOutputs } from './backend.js';
 export type { Recognizer } from './recognizer.js';

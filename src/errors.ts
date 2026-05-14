@@ -35,15 +35,25 @@ export class ModelNotInitializedError extends NullPiiError {
   }
 }
 
-/** Thrown when input would exceed the configured token cap. */
+/** Thrown when input exceeds a configured size cap. Two raise sites today:
+ *  - tokenizer subword cap (`MAX_SEQUENCE_LENGTH`, unit = "tokens")
+ *  - upfront byte cap on `sanitize()` input (`MAX_INPUT_BYTES`, unit = "bytes")
+ *
+ * `unit` defaults to "tokens" for backwards-compatible message shape. */
 export class TextTooLongError extends NullPiiError {
   override readonly code = 'NULLPII_TEXT_TOO_LONG';
   /**
-   * @param tokenCount actual length of the encoded input
-   * @param limit configured `MAX_SEQUENCE_LENGTH`
+   * @param observed actual length of the input
+   * @param limit configured cap
+   * @param unit label for the message — "tokens" or "bytes"
    */
-  constructor(tokenCount: number, limit: number, options?: { cause?: unknown }) {
-    super(`input too long: ${tokenCount} tokens > limit ${limit}`, options);
+  constructor(
+    observed: number,
+    limit: number,
+    unit: 'tokens' | 'bytes' = 'tokens',
+    options?: { cause?: unknown },
+  ) {
+    super(`input too long: ${observed} ${unit} > limit ${limit}`, options);
   }
 }
 
@@ -78,7 +88,11 @@ export class OrtNotInstalledError extends NullPiiError {
 
 /** Thrown when a placeholder in restored text was minted by a different
  * session than the one passed to `restore()`. Prevents silent
- * substitution with the wrong PII value across sessions. */
+ * substitution with the wrong PII value across sessions.
+ *
+ * Only raised when the caller opts into `restore(text, sessionId, { strict: true })`.
+ * Default (non-strict) mode surfaces foreign-prefix placeholders via
+ * `RestoreResult.foreignPlaceholders` instead. */
 export class SessionMismatchError extends NullPiiError {
   override readonly code = 'NULLPII_SESSION_MISMATCH';
   /** @param expected current session id prefix
@@ -88,5 +102,17 @@ export class SessionMismatchError extends NullPiiError {
       `placeholder session prefix mismatch — placeholder was minted by session ${found}, restore called with session ${expected}`,
       options,
     );
+  }
+}
+
+/** Thrown when a placeholder in restored text matches the current session
+ * prefix but has no entry in the vault — typically the LLM hallucinated a
+ * placeholder shape that was never minted. Only raised in `{ strict: true }`
+ * mode; default mode surfaces these via `RestoreResult.unknownPlaceholders`. */
+export class UnknownPlaceholderError extends NullPiiError {
+  override readonly code = 'NULLPII_UNKNOWN_PLACEHOLDER';
+  /** @param placeholder the offending placeholder string, verbatim */
+  constructor(placeholder: string, options?: { cause?: unknown }) {
+    super(`placeholder not found in vault — likely an LLM hallucination: ${placeholder}`, options);
   }
 }

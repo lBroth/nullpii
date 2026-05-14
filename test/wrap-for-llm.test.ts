@@ -37,8 +37,16 @@ describe('wrapForLLM', () => {
     expect(empty).toBe(noArg);
   });
 
-  it('hint mentions the Mustache placeholder pattern', () => {
-    expect(LLM_PRESERVATION_HINT).toContain('{{PII_<TYPE>_<N>}}');
+  it('hint mentions the 4-segment Mustache placeholder pattern emitted at runtime', () => {
+    // The runtime emits `{{PII_<LABEL>_<idx>_<HEX8>}}` (see
+    // src/types/constants.ts:PLACEHOLDER_TEMPLATE). The hint MUST describe
+    // the same 4-segment shape — a hint that documents `{{PII_<TYPE>_<N>}}`
+    // (3-segment) trains the LLM to consider the trailing hex segment
+    // optional and may degrade round-trip preservation on smaller models.
+    expect(LLM_PRESERVATION_HINT).toContain('{{PII_<TYPE>_<N>_<HEX>}}');
     expect(LLM_PRESERVATION_HINT.toLowerCase()).toContain('preserve');
+    // Hint must call out the hex segment as load-bearing — otherwise the
+    // LLM may "tidy up" the placeholder by dropping it.
+    expect(LLM_PRESERVATION_HINT.toLowerCase()).toMatch(/hex|session/);
   });
 });

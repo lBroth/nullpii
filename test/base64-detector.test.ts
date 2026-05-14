@@ -99,4 +99,19 @@ describe('detectBase64Pii', () => {
     expect(spans).toHaveLength(1);
     expect(spans[0]?.label).toBe('private_email');
   });
+
+  // F-11 regression. Without an upfront cap, an adversarial multi-MB
+  // input would be regex-scanned + decoded (Buffer.from over each blob)
+  // and re-classified via EMAIL_RE / SECRET_PREFIX_RE / LONG_DIGITS_RE —
+  // each O(n) over a multi-MB string. Refuse at the entry point so the
+  // detector is constant-time on oversized input.
+  it('returns [] for input larger than MAX_INPUT_BYTES even when PII is present', () => {
+    // Embed a real PII blob inside an over-cap payload. Without the cap
+    // the detector finds the email; with the cap it refuses the whole
+    // input and emits nothing.
+    const piiBlob = b64('user.123@gmail.com');
+    const huge = ' '.repeat(1_100_000) + piiBlob;
+    expect(huge.length).toBeGreaterThan(1_000_000);
+    expect(detectBase64Pii(huge, [])).toEqual([]);
+  });
 });

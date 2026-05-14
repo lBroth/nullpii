@@ -104,11 +104,12 @@ export class PiiVault {
     const expectedPrefix = sessionPrefixOf(sessionId);
     const strict = options.strict === true;
     let replacements = 0;
+    const replacementsByLabel: Partial<Record<string, number>> = {};
     const unknownPlaceholders: string[] = [];
     const foreignPlaceholders: string[] = [];
     let strictError: SessionMismatchError | UnknownPlaceholderError | null = null;
     const re = new RegExp(PLACEHOLDER_REGEX.source, 'g');
-    const restored = text.replace(re, (match, _label, _idx, foundPrefix: string) => {
+    const restored = text.replace(re, (match, label: string, _idx, foundPrefix: string) => {
       if (foundPrefix !== expectedPrefix) {
         if (strict && strictError === null) {
           strictError = new SessionMismatchError(expectedPrefix, foundPrefix);
@@ -125,6 +126,10 @@ export class PiiVault {
         return match;
       }
       replacements += 1;
+      // Placeholder label segment is uppercased (`PRIVATE_EMAIL`); the
+      // public `PiiLabel` union is lowercased (`private_email`). Map back.
+      const lc = label.toLowerCase();
+      replacementsByLabel[lc] = (replacementsByLabel[lc] ?? 0) + 1;
       return original;
     });
     if (strictError !== null) {
@@ -137,7 +142,15 @@ export class PiiVault {
       foreignPlaceholders.length,
       expectedPrefix,
     );
-    return { restored, replacements, unknownPlaceholders, foreignPlaceholders };
+    return {
+      restored,
+      replacements,
+      replacementsByLabel: replacementsByLabel as Readonly<
+        Partial<Record<import('./types/index.js').PiiLabel, number>>
+      >,
+      unknownPlaceholders,
+      foreignPlaceholders,
+    };
   }
 
   /**

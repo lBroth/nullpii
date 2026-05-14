@@ -26,7 +26,7 @@ function span(label: PiiSpan['label'], start: number, end: number, text: string)
 }
 
 function expectedPrefix(id: string): string {
-  return id.replace(/-/g, '').slice(0, 8).toLowerCase();
+  return id.replace(/-/g, '').slice(0, 16).toLowerCase();
 }
 
 describe('F-07 · unknown placeholder (matching prefix, unknown idx)', () => {
@@ -153,7 +153,7 @@ describe('F-32 · RestoreResult.replacementsByLabel', () => {
     const v = new PiiVault();
     const idA = v.createSession();
     const idB = v.createSession();
-    const pB = idB.replace(/-/g, '').slice(0, 8).toLowerCase();
+    const pB = idB.replace(/-/g, '').slice(0, 16).toLowerCase();
     const sanitized = v.sanitize(
       'Hi John',
       [{ label: 'private_person', start: 3, end: 7, text: 'John', score: 1 }],

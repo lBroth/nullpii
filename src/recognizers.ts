@@ -96,8 +96,8 @@ function isNeverPii(value: string, label: string): boolean {
     if (IPV6_DOCS.test(value) || IPV6_LOOPBACK.test(value) || IPV6_LINK_LOCAL.test(value)) {
       return true;
     }
-    if (ZERO_MAC.test(value)) return true;
   }
+  if (label === 'private_mac' && ZERO_MAC.test(value)) return true;
   if (label === 'account_number' && NULL_UUID.test(value)) return true;
   if ((label === 'private_url' || label === 'private_email') && RFC6761_RESERVED.test(value)) {
     return true;

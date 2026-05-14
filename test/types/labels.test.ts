@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { GLINER_MODEL_CATEGORIES, PII_LABELS } from '../../src/types/labels.js';
 
 describe('PII_LABELS', () => {
-  it('contains exactly 10 labels (9 PII + O)', () => {
-    expect(PII_LABELS).toHaveLength(10);
+  it('contains exactly 11 labels (10 PII + O)', () => {
+    expect(PII_LABELS).toHaveLength(11);
   });
 
-  it('starts with O and contains the nine PII categories', () => {
+  it('starts with O and contains all PII categories including private_mac', () => {
     expect(PII_LABELS[0]).toBe('O');
     expect(PII_LABELS).toEqual([
       'O',
@@ -15,6 +15,7 @@ describe('PII_LABELS', () => {
       'private_date',
       'private_email',
       'private_ip',
+      'private_mac',
       'private_person',
       'private_phone',
       'private_url',
@@ -42,9 +43,10 @@ describe('GLINER_MODEL_CATEGORIES', () => {
     ]);
   });
 
-  it('excludes O and private_ip (post-pass recognizer-only label)', () => {
+  it('excludes O, private_ip, and private_mac (post-pass recognizer-only labels)', () => {
     const set: readonly string[] = GLINER_MODEL_CATEGORIES;
     expect(set).not.toContain('O');
     expect(set).not.toContain('private_ip');
+    expect(set).not.toContain('private_mac');
   });
 });

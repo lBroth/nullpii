@@ -6,11 +6,16 @@
  * The unified GLiNER model is trained on the 8 ML categories
  * (`account_number`, `private_address`, `private_date`, `private_email`,
  * `private_person`, `private_phone`, `private_url`, `secret`). The
- * recognizer pack additionally emits `private_ip` for IPv4 / IPv6 /
- * MAC matches — IPs do not fit any of the original 8 cleanly and were
- * previously mis-labelled as `account_number`. The model is not
- * prompted with `private_ip`, so it never appears in raw model output;
- * only the regex post-pass produces it. */
+ * recognizer pack additionally emits two post-pass-only labels:
+ *
+ *  - `private_ip` for IPv4 / IPv6 addresses;
+ *  - `private_mac` for MAC addresses (hardware identifiers; previously
+ *    misrouted under `private_ip` since both come from the regex pack,
+ *    but consumers that group spans by label benefit from the split).
+ *
+ * The model is not prompted with `private_ip` / `private_mac`, so
+ * neither appears in raw model output — only the regex post-pass
+ * produces them. */
 export const PII_LABELS = [
   'O',
   'account_number',
@@ -18,6 +23,7 @@ export const PII_LABELS = [
   'private_date',
   'private_email',
   'private_ip',
+  'private_mac',
   'private_person',
   'private_phone',
   'private_url',

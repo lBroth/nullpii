@@ -208,11 +208,7 @@ export class NullPii {
     // `dXNlci4xMjNAZ21haWwuY29t` until we decode the blob. Run on the
     // escaped surface so spans land on the source base64 substring (gold
     // annotations mark the encoded form).
-    const base64Spans = detectBase64Pii(escaped, [
-      ...mlSpans,
-      ...recoSpansEscaped,
-      ...recoSpansNorm,
-    ]);
+    const base64Spans = detectBase64Pii(escaped);
     const recoSpans: PiiSpan[] = [...recoSpansEscaped, ...recoSpansNorm, ...base64Spans];
     // High-confidence recognizers (≥ 0.9) emit even when overlapping ML
     // output, so dedupe by IoU + score: highest score wins regardless

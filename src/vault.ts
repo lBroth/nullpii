@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { randomUUID } from 'node:crypto';
-import debug from 'debug';
 import { SessionMismatchError, SessionNotFoundError, UnknownPlaceholderError } from './errors.js';
+import { logf } from './log.js';
 import {
   PLACEHOLDER_REGEX,
   PLACEHOLDER_TEMPLATE,
@@ -13,7 +13,7 @@ import {
   type SanitizeResult,
 } from './types/index.js';
 
-const log = debug('nullpii:vault');
+const LOG_SCOPE = 'nullpii:vault';
 
 interface Session {
   /** placeholder string → original value. */
@@ -45,7 +45,7 @@ export class PiiVault {
   createSession(): string {
     const id = randomUUID();
     this.sessions.set(id, { entries: new Map(), counters: new Map() });
-    log('session created (count=%d)', this.sessions.size);
+    logf(LOG_SCOPE, 'session.created', { sessions: this.sessions.size });
     return id;
   }
 
@@ -74,7 +74,7 @@ export class PiiVault {
       if (span === undefined || placeholder === undefined) continue;
       out = `${out.slice(0, span.start)}${placeholder}${out.slice(span.end)}`;
     }
-    log('sanitized: spans=%d session=%s', spans.length, sessionPrefix);
+    logf(LOG_SCOPE, 'sanitize', { spans: spans.length, session: sessionPrefix });
     return { sessionId, sanitized: out, spans };
   }
 
@@ -135,13 +135,13 @@ export class PiiVault {
     if (strictError !== null) {
       throw strictError;
     }
-    log(
-      'restored: replacements=%d unknown=%d foreign=%d session=%s',
+    logf(LOG_SCOPE, 'restore', {
       replacements,
-      unknownPlaceholders.length,
-      foreignPlaceholders.length,
-      expectedPrefix,
-    );
+      unknown: unknownPlaceholders.length,
+      foreign: foreignPlaceholders.length,
+      session: expectedPrefix,
+      ...(options.traceId !== undefined && { traceId: options.traceId }),
+    });
     return {
       restored,
       replacements,
@@ -159,7 +159,7 @@ export class PiiVault {
    */
   destroySession(sessionId: string): void {
     const existed = this.sessions.delete(sessionId);
-    if (existed) log('session destroyed: %s', sessionPrefixOf(sessionId));
+    if (existed) logf(LOG_SCOPE, 'session.destroyed', { session: sessionPrefixOf(sessionId) });
   }
 
   /** Drop every session. Called from `NullPii.dispose()` so vault state
@@ -167,7 +167,7 @@ export class PiiVault {
   clear(): void {
     const n = this.sessions.size;
     this.sessions.clear();
-    if (n > 0) log('vault cleared: dropped %d sessions', n);
+    if (n > 0) logf(LOG_SCOPE, 'vault.cleared', { dropped: n });
   }
 
   /** Number of active sessions. Diagnostic only — does not expose contents. */

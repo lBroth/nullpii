@@ -2,7 +2,6 @@
 
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
-import debug from 'debug';
 import { xdgCacheHome } from './config.js';
 import {
   CACHE_DIR_NAME,
@@ -12,10 +11,11 @@ import {
 } from './defaults.js';
 import { InvalidPathError } from './errors.js';
 import { ensureFile } from './hf-hub.js';
+import { logf } from './log.js';
 import { resolveSafePath } from './paths.js';
 import { MODEL_DOWNLOAD_TIMEOUT_MS, type ModelVariant } from './types/index.js';
 
-const log = debug('nullpii:model-manager');
+const LOG_SCOPE = 'nullpii:model-manager';
 
 /** Files required at runtime — unified single-ONNX manifest. The HF repo
  * (`lBroth/nullpii` by default) bundles one merged GLiNER ONNX plus its
@@ -93,7 +93,11 @@ export class ModelManager {
     const target = this.modelDirFor(model);
 
     const required = UNIFIED_FILES;
-    log('ensuring %d files for %s@%s', required.length, model.repo, model.revision.slice(0, 12));
+    logf(LOG_SCOPE, 'ensure.start', {
+      count: required.length,
+      repo: model.repo,
+      revision: model.revision.slice(0, 12),
+    });
 
     let done = 0;
     for (const f of required) {

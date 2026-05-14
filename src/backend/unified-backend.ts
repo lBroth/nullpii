@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { join } from 'node:path';
-import debug from 'debug';
 import type { InferenceSession, Tensor as TensorType } from 'onnxruntime-node';
 import { ModelNotFoundError, OrtNotInstalledError } from '../errors.js';
+import { logf } from '../log.js';
 import { fileExists } from '../paths.js';
 import type { InferenceInputs, InferenceOutputs } from '../types/index.js';
 
-const log = debug('nullpii:unified-backend');
+const LOG_SCOPE = 'nullpii:unified-backend';
 
 const UNIFIED_ONNX_FILE = 'model.onnx';
 
@@ -68,7 +68,7 @@ export class OrtUnifiedBackend {
     }
     const ort = await (this.options.ortLoader ?? loadOrt)();
     this.TensorCtor = ort.Tensor;
-    log('loading GLiNER ONNX %s → session', onnxPath);
+    logf(LOG_SCOPE, 'session.load', { path: onnxPath });
     const sessionOptions: InferenceSession.SessionOptions = {
       executionProviders: [...(this.options.executionProviders ?? ['cpu'])],
       graphOptimizationLevel: 'all',
@@ -129,7 +129,7 @@ export class OrtUnifiedBackend {
 
   async dispose(): Promise<void> {
     if (this.session !== null) {
-      log('releasing session');
+      logf(LOG_SCOPE, 'session.release');
       await this.session.release();
       this.session = null;
       this.TensorCtor = null;

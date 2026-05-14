@@ -44,15 +44,38 @@ describe('normalizeForDetection', () => {
     expect(r.normalized).toBe('My SSN is 123-45-6789');
   });
 
-  it('preserves email-anchor chars (%40 → kept as %40)', () => {
-    // %40 = '@'. F03 mirror — keep encoded so email regex can still
-    // anchor on the literal `@` later when the percent form is in
-    // the original; currently we drop the decoded `@` rather than
-    // emit it.
-    const text = 'john%40example.com';
+  it('decodes percent-encoded email anchors (%40 → @, %2E → .)', () => {
+    // A fully percent-encoded email is only detectable once the literal
+    // `@` / `.` are restored — the email recognizer can't anchor on `%40`.
+    const text = 'john%40example%2Ecom';
     const r = normalizeForDetection(text);
-    // %40 is kept as `%40` literal (we don't decode anchor chars).
-    expect(r.normalized).toContain('%40');
+    expect(r.normalized).toBe('john@example.com');
+  });
+
+  it('decodes percent-encoded `+` and `-` anchors', () => {
+    // Round-trip the four ex-EMAIL_ANCHOR_CHARS we removed from the
+    // skip-list. All must be restored to their literal forms.
+    const text = 'a%40b%2Bc%2Dd%2Ee';
+    const r = normalizeForDetection(text);
+    expect(r.normalized).toBe('a@b+c-d.e');
+  });
+
+  it('remaps a span over a percent-decoded email back to encoded source', () => {
+    // Model would tag `alice@acme.com` at norm[0..14]; remap must cover
+    // the full encoded form in the original so the vault rewrites it.
+    const text = 'alice%40acme.com';
+    const r = normalizeForDetection(text);
+    expect(r.normalized).toBe('alice@acme.com');
+    const [origStart, origEnd] = remapSpan(0, r.normalized.length, r.normToOrig);
+    expect(origStart).toBe(0);
+    expect(origEnd).toBe(text.length);
+  });
+
+  it('decodes HTML numeric entities for email anchors', () => {
+    // `&#64;` = @, `&#46;` = .
+    const text = 'user&#64;example&#46;com';
+    const r = normalizeForDetection(text);
+    expect(r.normalized).toBe('user@example.com');
   });
 
   it('decodes HTML numeric entities', () => {

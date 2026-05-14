@@ -1,11 +1,14 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { randomUUID } from 'node:crypto';
 import debug from 'debug';
-import { SessionNotFoundError } from './errors.js';
+import { SessionMismatchError, SessionNotFoundError } from './errors.js';
 import {
   PLACEHOLDER_REGEX,
   PLACEHOLDER_TEMPLATE,
   type PiiSpan,
   type RestoreResult,
+  SESSION_PREFIX_LEN,
   type SanitizeResult,
 } from './types/index.js';
 
@@ -25,9 +28,14 @@ interface Session {
  * - Vault contents never leave memory — `sanitize`/`restore` are the only
  *   ways to read placeholder→original mappings, and both require the
  *   correct sessionId.
+ * - Placeholders carry an 8-hex-char prefix of the minting session id.
+ *   `restore()` validates the prefix and throws `SessionMismatchError`
+ *   on mismatch, so a placeholder minted by session A cannot be
+ *   silently substituted with session B's PII.
  * - `destroySession` deletes the underlying `Map` so GC can reclaim it
  *   and subsequent `sanitize`/`restore` calls fail loud.
- * - Debug logs never carry PII — only counts and labels.
+ * - `clear()` wipes every session (call from `NullPii.dispose()`).
+ * - Debug logs never carry PII — only counts and short ids.
  */
 export class PiiVault {
   private readonly sessions = new Map<string, Session>();
@@ -53,9 +61,10 @@ export class PiiVault {
     if (spans.length === 0) {
       return { sessionId, sanitized: text, spans: [] };
     }
+    const sessionPrefix = sessionPrefixOf(sessionId);
     // Allocate placeholders in document order so indices reflect reading order.
     const ordered = [...spans].sort((a, b) => a.start - b.start);
-    const placeholders = ordered.map((span) => this.allocPlaceholder(session, span));
+    const placeholders = ordered.map((span) => this.allocPlaceholder(session, span, sessionPrefix));
     // Replace back-to-front so each replacement preserves earlier offsets.
     let out = text;
     for (let i = ordered.length - 1; i >= 0; i--) {
@@ -64,7 +73,7 @@ export class PiiVault {
       if (span === undefined || placeholder === undefined) continue;
       out = `${out.slice(0, span.start)}${placeholder}${out.slice(span.end)}`;
     }
-    log('sanitized: spans=%d session=%s', spans.length, shortId(sessionId));
+    log('sanitized: spans=%d session=%s', spans.length, sessionPrefix);
     return { sessionId, sanitized: out, spans };
   }
 
@@ -73,18 +82,29 @@ export class PiiVault {
    * session vault. Placeholders not found in the vault are left as-is.
    *
    * @throws {SessionNotFoundError} if `sessionId` is unknown.
+   * @throws {SessionMismatchError} if any placeholder in `text` carries a
+   *   session prefix that does not match `sessionId`.
    */
   restore(text: string, sessionId: string): RestoreResult {
     const session = this.requireSession(sessionId);
+    const expectedPrefix = sessionPrefixOf(sessionId);
     let replacements = 0;
+    let mismatch: { found: string } | null = null;
     const re = new RegExp(PLACEHOLDER_REGEX.source, 'g');
-    const restored = text.replace(re, (match) => {
+    const restored = text.replace(re, (match, _label, _idx, foundPrefix: string) => {
+      if (foundPrefix !== expectedPrefix) {
+        if (mismatch === null) mismatch = { found: foundPrefix };
+        return match;
+      }
       const original = session.entries.get(match);
       if (original === undefined) return match;
       replacements += 1;
       return original;
     });
-    log('restored: replacements=%d session=%s', replacements, shortId(sessionId));
+    if (mismatch !== null) {
+      throw new SessionMismatchError(expectedPrefix, (mismatch as { found: string }).found);
+    }
+    log('restored: replacements=%d session=%s', replacements, expectedPrefix);
     return { restored, replacements };
   }
 
@@ -94,7 +114,15 @@ export class PiiVault {
    */
   destroySession(sessionId: string): void {
     const existed = this.sessions.delete(sessionId);
-    if (existed) log('session destroyed: %s', shortId(sessionId));
+    if (existed) log('session destroyed: %s', sessionPrefixOf(sessionId));
+  }
+
+  /** Drop every session. Called from `NullPii.dispose()` so vault state
+   * does not outlive the engine that minted it. */
+  clear(): void {
+    const n = this.sessions.size;
+    this.sessions.clear();
+    if (n > 0) log('vault cleared: dropped %d sessions', n);
   }
 
   /** Number of active sessions. Diagnostic only — does not expose contents. */
@@ -108,15 +136,15 @@ export class PiiVault {
     return s;
   }
 
-  private allocPlaceholder(session: Session, span: PiiSpan): string {
+  private allocPlaceholder(session: Session, span: PiiSpan, sessionPrefix: string): string {
     const idx = session.counters.get(span.label) ?? 0;
     session.counters.set(span.label, idx + 1);
-    const placeholder = PLACEHOLDER_TEMPLATE(span.label, idx);
+    const placeholder = PLACEHOLDER_TEMPLATE(span.label, idx, sessionPrefix);
     session.entries.set(placeholder, span.text);
     return placeholder;
   }
 }
 
-function shortId(id: string): string {
-  return id.slice(0, 8);
+function sessionPrefixOf(sessionId: string): string {
+  return sessionId.replace(/-/g, '').slice(0, SESSION_PREFIX_LEN).toLowerCase();
 }

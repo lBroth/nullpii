@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { readFileSync } from 'node:fs';
 import chalk from 'chalk';
 import type { Command } from 'commander';
@@ -13,7 +15,6 @@ export function registerSanitize(program: Command): void {
     .option('--session <id>', 'reuse an existing vault session id')
     .option('--model-dir <path>', 'use a local model directory (skip download)')
     .option('--backend <name>', 'force backend: cpu | mps | cuda | auto')
-    .option('--variant <v>', 'fp32 | int4 | auto')
     .action(
       async (
         text: string | undefined,

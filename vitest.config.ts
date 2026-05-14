@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 // Real-ONNX E2E lives under `test/e2e/` and is opt-in via `npm run test:e2e`
@@ -8,6 +9,15 @@ import { defineConfig } from 'vitest/config';
 const E2E_ON = process.env.NULLPII_E2E === '1';
 
 export default defineConfig({
+  // The subpackages under `packages/recognizers-*/` import from `'nullpii'`
+  // to honour the published consumer surface. In this repo there is no
+  // `node_modules/nullpii` (we ARE nullpii), so resolve the import to the
+  // local source. Mirrors the `paths` entry in `tsconfig.json`.
+  resolve: {
+    alias: {
+      nullpii: fileURLToPath(new URL('./src/index.ts', import.meta.url)),
+    },
+  },
   test: {
     globals: false,
     include: E2E_ON ? ['test/e2e/**/*.test.ts'] : ['test/**/*.test.ts'],

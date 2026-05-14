@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Buffer } from 'node:buffer';
+import { MAX_INPUT_BYTES } from './defaults.js';
 import { normalizeForDetection } from './normalize.js';
 import type { PiiCategory, PiiSpan } from './types/index.js';
 
@@ -46,13 +47,25 @@ function classify(decoded: string): DecodedHit | null {
   return null;
 }
 
+/** Per-blob byte cap. Defence in depth — `MAX_INPUT_BYTES` already caps
+ * the whole `text` input, but a deployment that bumps that limit upstream
+ * should still skip pathological single-blob payloads inside the
+ * detector so a 10 MB base64 run never lands in `Buffer.from` + the
+ * classifier regex chain. */
+const MAX_BASE64_BLOB_BYTES = 1_000_000;
+
 /** Find PII inside base64-wrapped runs. Spans are in `text` coordinates.
  *
  * `existing` is intentionally not consulted: a base64 blob tagged
  * `secret` by the ML model can still contain a decoded `private_email`
  * — the higher `BASE64_SCORE` lets cross-label dedupe pick the correct
- * label downstream rather than us hiding the hit here. */
+ * label downstream rather than us hiding the hit here.
+ *
+ * Inputs above `MAX_INPUT_BYTES` are refused upfront — matches the
+ * recognizer-pack / normalize policy and stops adversarial multi-MB
+ * payloads from running the full decode + classify pipeline. */
 export function detectBase64Pii(text: string, _existing: readonly PiiSpan[]): PiiSpan[] {
+  if (text.length > MAX_INPUT_BYTES) return [];
   const out: PiiSpan[] = [];
   // Re-create the regex each call so `lastIndex` doesn't bleed across calls.
   const re = new RegExp(BASE64_RUN_RE.source, 'g');
@@ -62,6 +75,8 @@ export function detectBase64Pii(text: string, _existing: readonly PiiSpan[]): Pi
     const end = start + blob.length;
     // Length must be a base64 multiple of 4 (with padding).
     if (blob.length % 4 !== 0) continue;
+    // Per-blob cap — see `MAX_BASE64_BLOB_BYTES` rationale above.
+    if (blob.length > MAX_BASE64_BLOB_BYTES) continue;
     let decoded: string;
     try {
       decoded = Buffer.from(blob, 'base64').toString('utf8');

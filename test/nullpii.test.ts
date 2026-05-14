@@ -157,17 +157,24 @@ describe('NullPii e2e pipeline (mocked ONNX)', () => {
     expect(() => n.restore(out.sanitized, out.sessionId)).toThrow(SessionNotFoundError);
   });
 
-  it('restoring with a foreign session id raises SessionMismatchError (A3)', async () => {
+  it('restoring with a foreign session id surfaces foreignPlaceholders, throws under strict (A3)', async () => {
     const a = new NullPii({ modelDir: '/fake', backend: 'cpu' });
     const b = new NullPii({ modelDir: '/fake', backend: 'cpu' });
     const out = await a.sanitize('Reach me at bob@acme.io');
     // `b` knows nothing about `a`'s session; placeholders still carry `a`'s prefix.
-    // Force `b` to have a session of its own so the throw comes from prefix
-    // validation (not from SessionNotFoundError on the unknown id).
+    // Force `b` to have a session of its own so the prefix check is the
+    // discriminating signal (not SessionNotFoundError on the unknown id).
     const otherOut = await b.sanitize('Different text from carol@nullpii.dev');
     expect(out.spans.length).toBeGreaterThan(0);
     expect(otherOut.spans.length).toBeGreaterThan(0);
-    expect(() => b.restore(out.sanitized, otherOut.sessionId)).toThrow(SessionMismatchError);
+    // Default: no throw, anomalies in the result arrays.
+    const r = b.restore(out.sanitized, otherOut.sessionId);
+    expect(r.foreignPlaceholders.length).toBeGreaterThan(0);
+    expect(r.replacements).toBe(0);
+    // strict: true preserves the legacy throw contract.
+    expect(() => b.restore(out.sanitized, otherOut.sessionId, { strict: true })).toThrow(
+      SessionMismatchError,
+    );
     await a.dispose();
     await b.dispose();
   });

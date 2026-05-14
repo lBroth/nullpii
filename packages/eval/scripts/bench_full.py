@@ -63,7 +63,7 @@ from nullpii_eval.adapters import (
     presidio_predictor,
     url_filter_predictor,
 )
-from nullpii_eval.datasets import Sample, Span, load
+from nullpii_eval.datasets import Sample, Span
 from nullpii_eval.metrics import evaluate, macro_f1
 from nullpii_eval.router import make_embedding_detector as _make_embedding_detector
 

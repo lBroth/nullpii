@@ -2222,8 +2222,7 @@ _AZURE_PII_TO_NULLPII: dict[str, str] = {
 def _load_tab_stub(_n: int | None) -> list:
     raise NotImplementedError(
         "TAB loader stub — locate ECHR-PII dataset on HF + map labels "
-        "(PERSON/CODE/LOC/DATETIME/QUANTITY/MISC) → nullpii 8 categories. "
-        "See COMPETITIVE_ANALYSIS.md → Roadmap — bench completeness.",
+        "(PERSON/CODE/LOC/DATETIME/QUANTITY/MISC) → nullpii 8 categories.",
     )
 
 

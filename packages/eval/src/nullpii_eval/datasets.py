@@ -1,7 +1,13 @@
-"""Bundled datasets — no gated downloads, no real PII."""
+"""Shared record types for bundled datasets — Sample / Span / Dataset.
+
+The project's canonical bench file `nullpii-bench.jsonl` is loaded
+directly by `scripts/bench_full.py` and `scripts/failure_analysis.py`
+via local `_load_nullpii_bench()` helpers. External dataset adapters
+(presidio, tab-echr, isotonic, ai4privacy, nemotron, argilla) compose
+on top of the Sample / Span / Dataset shape exported here.
+"""
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,22 +31,3 @@ class Sample:
 class Dataset:
     locale: str
     samples: tuple[Sample, ...]
-
-
-LOCALES: tuple[str, ...] = ("en", "it", "de", "fr", "es")
-ADVERSARIAL = "adversarial"
-
-
-def load(locale: str) -> Dataset:
-    """Load `<locale>-baseline.jsonl` (or `adversarial.jsonl`)."""
-    name = f"{locale}.jsonl" if locale == ADVERSARIAL else f"{locale}-baseline.jsonl"
-    path = DATASETS_DIR / name
-    if not path.is_file():
-        raise FileNotFoundError(f"dataset not found: {path}")
-    samples: list[Sample] = []
-    with path.open(encoding="utf-8") as f:
-        for line in f:
-            row = json.loads(line)
-            spans = tuple(Span(s["label"], int(s["start"]), int(s["end"])) for s in row["spans"])
-            samples.append(Sample(row["text"], spans))
-    return Dataset(locale=locale, samples=tuple(samples))

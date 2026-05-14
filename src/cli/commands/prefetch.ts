@@ -1,8 +1,9 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import chalk from 'chalk';
 import cliProgress from 'cli-progress';
 import type { Command } from 'commander';
 import { ModelManager } from '../../model-manager.js';
-import type { ModelVariant } from '../../types/index.js';
 
 export function registerPrefetch(program: Command): void {
   program
@@ -10,12 +11,10 @@ export function registerPrefetch(program: Command): void {
     .description(
       'download the model into the local cache (run once at install / CI / Docker build)',
     )
-    .option('--variant <v>', 'fp32 | int4 | auto', 'auto')
     .action(runPrefetch);
 }
 
-async function runPrefetch(options: { variant: string }): Promise<void> {
-  const variant = options.variant as ModelVariant;
+async function runPrefetch(): Promise<void> {
   const bar = new cliProgress.SingleBar(
     { format: 'prefetch |{bar}| {percentage}%' },
     cliProgress.Presets.shades_grey,
@@ -24,7 +23,6 @@ async function runPrefetch(options: { variant: string }): Promise<void> {
   try {
     const manager = new ModelManager();
     const result = await manager.ensure({
-      variant,
       onProgress: (p) => bar.update(Math.round(p * 100)),
     });
     bar.update(100);

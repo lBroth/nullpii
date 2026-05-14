@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //
 // Public API surface. Internal modules (`gliner-tokenizer`,
 // `gliner-spans`, `gliner-decoder`, `hf-hub`) are deliberately not
@@ -5,24 +7,26 @@
 
 // Errors
 export {
-  BackendNotAvailableError,
   InvalidPathError,
   ModelNotFoundError,
   ModelNotInitializedError,
   NullPiiError,
+  OrtNotInstalledError,
+  SessionMismatchError,
   SessionNotFoundError,
   TextTooLongError,
 } from './errors.js';
 
 // Types & constants
 export {
+  GLINER_MODEL_CATEGORIES,
   MAX_SEQUENCE_LENGTH,
   MODEL_DOWNLOAD_TIMEOUT_MS,
   PII_LABELS,
   PLACEHOLDER_REGEX,
   PLACEHOLDER_TEMPLATE,
+  SESSION_PREFIX_LEN,
   type BackendName,
-  type BackendProvider,
   type InferenceInputs,
   type InferenceOutputs,
   type ModelVariant,
@@ -36,8 +40,7 @@ export {
   type VaultToken,
 } from './types/index.js';
 
-// Advanced control: backend selection + caching
-export { selectBackend } from './router.js';
+// Model cache control
 export { defaultCacheDir, type EnsureOptions, ModelManager } from './model-manager.js';
 
 // Vault — advanced API for direct vault control

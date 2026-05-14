@@ -1,14 +1,20 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import debug from 'debug';
-import { MultiOrtBackend } from './backend/multi-backend.js';
+import { OrtUnifiedBackend } from './backend/unified-backend.js';
+import { detectBase64Pii } from './base64-detector.js';
 import { chunkText, dedupeOverlappingSpans } from './chunking.js';
+import { nullpiiModelDir } from './config.js';
 import {
   BOUNDARY_REFINE_TRIM_CHARS,
   DEFAULT_BOUNDARY_REFINE,
+  DEFAULT_DECODE_THRESHOLD,
+  DEFAULT_DEDUPE_IOU,
+  DEFAULT_POST_FILTER_THRESHOLD,
   DEFAULT_RECOGNIZERS,
   DEFAULT_RECOGNIZERS_ENABLED,
   DEFAULT_VARIANT,
 } from './defaults.js';
-import { DistiluseEncoder } from './distiluse-encoder.js';
 import { ModelNotInitializedError, TextTooLongError } from './errors.js';
 import { decodeGlinerLogits } from './gliner-decoder.js';
 import { buildSpanCandidates } from './gliner-spans.js';
@@ -20,10 +26,9 @@ import {
 import { ModelManager } from './model-manager.js';
 import { normalizeForDetection, remapSpan } from './normalize.js';
 import { runRecognizers } from './recognizers.js';
-import { EmbeddingRouter } from './router-embedding.js';
 import {
+  GLINER_MODEL_CATEGORIES,
   type NullPiiConfig,
-  PII_LABELS,
   type PiiCategory,
   type PiiSpan,
   type Recognizer,
@@ -39,8 +44,10 @@ const PLACEHOLDER_OPEN = '{{';
 // natural text or LLM output.
 const PLACEHOLDER_OPEN_ESCAPED = '';
 
-/** Label list passed to GLiNER — the 8 PII categories without `'O'`. */
-const GLINER_LABELS: readonly string[] = PII_LABELS.filter((l): l is PiiCategory => l !== 'O');
+/** Label list prompted to GLiNER — the 8 ML categories the unified
+ * model was trained on. `private_ip` is intentionally excluded: it is
+ * a post-pass recognizer label only. */
+const GLINER_LABELS: readonly string[] = GLINER_MODEL_CATEGORIES;
 
 /**
  * Public entry point. Construct with optional `NullPiiConfig`; call
@@ -51,10 +58,8 @@ export class NullPii {
   private readonly config: NullPiiConfig;
   private readonly vault = new PiiVault();
   private readonly recognizers: Recognizer[] = [];
-  private backend: MultiOrtBackend | null = null;
+  private backend: OrtUnifiedBackend | null = null;
   private tokenizer: GlinerTokenizer | null = null;
-  private encoder: DistiluseEncoder | null = null;
-  private router: EmbeddingRouter | null = null;
   private modelDir: string | null = null;
   private initPromise: Promise<void> | null = null;
   private disposed = false;
@@ -92,9 +97,9 @@ export class NullPii {
   /** Detect PII in `text`, replace with vault placeholders, return
    * `{ sessionId, sanitized, spans }`.
    *
-   * Pipeline: escape `[[` → adversarial-normalise → distiluse-encode +
-   * route → chunk + GLiNER infer → recognizer pack → boundary refine →
-   * vault sanitize.
+   * Pipeline: escape `[[` → adversarial-normalise → chunk + GLiNER infer
+   * (unified ONNX) → recognizer pack on escaped + normalized + base64 →
+   * cross-label dedupe + threshold → boundary refine → vault sanitize.
    *
    * Inputs over `max_len=384` subwords truncate silently. Pass
    * `strictLength: true` to throw `TextTooLongError` instead. */
@@ -102,20 +107,14 @@ export class NullPii {
     await this.ensureInit();
     const tokenizer = this.tokenizer;
     const backend = this.backend;
-    const encoder = this.encoder;
-    const router = this.router;
-    if (tokenizer === null || backend === null || encoder === null || router === null) {
+    if (tokenizer === null || backend === null) {
       throw new ModelNotInitializedError();
     }
 
     const escaped = escapePlaceholders(text);
     const { normalized, normToOrig } = normalizeForDetection(escaped);
 
-    const embedding = await encoder.encode(normalized);
-    const decision = router.route(embedding);
-    log('route: domain=%s score=%f gated=%s', decision.domain, decision.score, decision.gated);
-
-    const threshold = this.config.threshold ?? 0.5;
+    const threshold = this.config.threshold ?? DEFAULT_DECODE_THRESHOLD;
     const chunks = chunkText(normalized);
     const decodedRaw: Array<{ label: string; start: number; end: number; score: number }> = [];
     for (const { text: chunk, offset } of chunks) {
@@ -124,18 +123,15 @@ export class NullPii {
         throw new TextTooLongError(enc.seqLen, DEFAULT_MAX_SEQUENCE_LENGTH);
       }
       const cand = buildSpanCandidates(enc.numWords, DEFAULT_MAX_SPAN_WIDTH);
-      const out = await backend.infer(
-        {
-          inputIds: enc.inputIds,
-          attentionMask: enc.attentionMask,
-          wordsMask: enc.wordsMask,
-          textLength: enc.numWords,
-          spanIdx: cand.spanIdx,
-          spanMask: cand.spanMask,
-          numSpans: cand.numSpans,
-        },
-        decision.domain,
-      );
+      const out = await backend.infer({
+        inputIds: enc.inputIds,
+        attentionMask: enc.attentionMask,
+        wordsMask: enc.wordsMask,
+        textLength: enc.numWords,
+        spanIdx: cand.spanIdx,
+        spanMask: cand.spanMask,
+        numSpans: cand.numSpans,
+      });
       const chunkSpans = decodeGlinerLogits(
         out.logits,
         out.textLength,
@@ -178,19 +174,51 @@ export class NullPii {
             };
           });
 
-    const recoSpans = runRecognizers(escaped, this.recognizers, mlSpans);
+    // Recognizers run on the *escaped* text so their spans align with
+    // the vault output. For inputs where normalisation changed the text
+    // (URL %XX, HTML entities, despace, NFKC/transliterate, …) the
+    // recognizer patterns can't match the original encoded form — e.g.
+    // the email regex won't fire on `john%40acme%2Ecom`. Run them on
+    // `normalized` too and remap the hits back so encoded PII is caught
+    // by the regex pack, not just the model.
+    const recoSpansEscaped = runRecognizers(escaped, this.recognizers, mlSpans);
+    const recoSpansNorm: PiiSpan[] =
+      normalized === escaped
+        ? []
+        : runRecognizers(normalized, this.recognizers, []).map((s) => {
+            const [origStart, origEnd] = remapSpan(s.start, s.end, normToOrig);
+            return {
+              label: s.label as PiiCategory,
+              start: origStart,
+              end: origEnd,
+              score: s.score,
+              text: escaped.slice(origStart, origEnd),
+            } as PiiSpan;
+          });
+    // Base64-wrapped PII: regex can't see `user.123@gmail.com` inside
+    // `dXNlci4xMjNAZ21haWwuY29t` until we decode the blob. Run on the
+    // escaped surface so spans land on the source base64 substring (gold
+    // annotations mark the encoded form).
+    const base64Spans = detectBase64Pii(escaped, [
+      ...mlSpans,
+      ...recoSpansEscaped,
+      ...recoSpansNorm,
+    ]);
+    const recoSpans: PiiSpan[] = [...recoSpansEscaped, ...recoSpansNorm, ...base64Spans];
     // High-confidence recognizers (≥ 0.9) emit even when overlapping ML
     // output, so dedupe by IoU + score: highest score wins regardless
-    // of label. Catches the common case where ML mislabels a known
-    // pattern (e.g., `ghp_…` token classified as `account_number` by
-    // the narrative adapter) — recognizer's `secret` (0.99) overrides
-    // ML's `account_number` (0.5–0.7).
-    const combined = dedupeOverlappingSpans([...mlSpans, ...recoSpans] as PiiSpan[], 0.5, {
-      acrossLabels: true,
-    }) as PiiSpan[];
+    // of label. Catches the common case where the unified GLiNER
+    // mislabels a known pattern (e.g., `ghp_…` token classified as
+    // `account_number`) — recognizer's `secret` (0.99) overrides ML's
+    // `account_number` (0.5–0.7).
+    const combined = dedupeOverlappingSpans(
+      [...mlSpans, ...recoSpans] as PiiSpan[],
+      DEFAULT_DEDUPE_IOU,
+      { acrossLabels: true },
+    ) as PiiSpan[];
     const merged = applyThresholds(
       combined,
-      this.config.threshold ?? 0,
+      this.config.threshold ?? DEFAULT_POST_FILTER_THRESHOLD,
       this.config.categoryThresholds ?? {},
     );
     const refineOn = this.config.boundaryRefine ?? DEFAULT_BOUNDARY_REFINE;
@@ -213,18 +241,23 @@ export class NullPii {
 
   async dispose(): Promise<void> {
     if (this.backend !== null) await this.backend.dispose();
-    if (this.encoder !== null) await this.encoder.dispose();
     this.backend = null;
     this.tokenizer = null;
-    this.encoder = null;
-    this.router = null;
+    this.vault.clear();
     this.disposed = true;
   }
 
   private async runInit(): Promise<void> {
     const manager = new ModelManager();
+    // Resolution order for the model directory:
+    //   1. explicit `config.modelDir` (caller intent)
+    //   2. `NULLPII_MODEL_DIR` env var (deployment override / air-gap)
+    //   3. fall through to HF download into the default cache
+    const envModelDir = nullpiiModelDir();
     if (this.config.modelDir !== undefined) {
       this.modelDir = this.config.modelDir;
+    } else if (envModelDir !== undefined) {
+      this.modelDir = envModelDir;
     } else {
       const ensured = await manager.ensure({
         variant: this.config.variant ?? DEFAULT_VARIANT,
@@ -235,23 +268,43 @@ export class NullPii {
       this.modelDir = ensured.modelDir;
     }
 
-    // Constructor work (no I/O): MultiOrtBackend lazy-loads per-domain
-    // ONNX shards on first inference; GlinerTokenizer lazy-loads
-    // tokenizer.json on first encode; DistiluseEncoder + EmbeddingRouter
-    // do their disk reads inside init() and run in parallel below.
-    this.backend = new MultiOrtBackend(this.modelDir);
-    this.encoder = new DistiluseEncoder(this.modelDir);
-    this.router = new EmbeddingRouter(this.modelDir);
+    // Constructor work (no I/O): OrtUnifiedBackend lazy-loads `model.onnx`
+    // on first inference; GlinerTokenizer lazy-loads `tokenizer.json` on
+    // first encode.
+    this.backend = new OrtUnifiedBackend(this.modelDir, {
+      executionProviders: backendToProviders(this.config.backend),
+      ...(this.config.intraOpNumThreads !== undefined && {
+        intraOpNumThreads: this.config.intraOpNumThreads,
+      }),
+      ...(this.config.interOpNumThreads !== undefined && {
+        interOpNumThreads: this.config.interOpNumThreads,
+      }),
+    });
     this.tokenizer = new GlinerTokenizer(
       this.modelDir,
       this.config.maxSequenceLength ?? DEFAULT_MAX_SEQUENCE_LENGTH,
     );
-    await Promise.all([this.encoder.init(), this.router.init()]);
-    log(
-      'init complete: modelDir=%s domains=%s',
-      this.modelDir,
-      this.router.listDomains().join(','),
-    );
+    log('init complete: modelDir=%s', this.modelDir);
+  }
+}
+
+/** Map the public {@link BackendName} to an ORT execution-provider list.
+ * Order matters — ORT tries each provider in turn and falls back. CPU is
+ * always appended last so the runtime never throws purely because the
+ * preferred accelerator is unavailable. */
+function backendToProviders(
+  backend: NullPiiConfig['backend'],
+): ReadonlyArray<'cpu' | 'cuda' | 'coreml'> {
+  switch (backend) {
+    case 'cuda':
+      return ['cuda', 'cpu'];
+    case 'mps':
+      return ['coreml', 'cpu'];
+    case 'cpu':
+      return ['cpu'];
+    case 'auto':
+    case undefined:
+      return ['cpu'];
   }
 }
 
@@ -302,28 +355,23 @@ function mapBackToOriginal(result: SanitizeResult, _original: string): SanitizeR
   return { ...result, sanitized: unescapePlaceholders(result.sanitized) };
 }
 
-const INSTANCE_CACHE_MAX = 8;
-const _instances = new Map<string, NullPii>();
+/** Shared instance for the no-config convenience functions only.
+ *
+ * The previous multi-entry `Map<JSON.stringify(config), NullPii>` cache
+ * was unsafe: regex / function recognizers serialise to `{}`, so two
+ * callers with *different* recognizer sets would receive the same
+ * cached instance and share a vault (cross-tenant PII leak).
+ *
+ * Single shared instance for the no-arg case (matches the most common
+ * usage of `await sanitize(text)`). Anything with custom config gets a
+ * fresh `NullPii` — the caller is then responsible for its lifecycle
+ * (`new NullPii(config)` + `.dispose()`). */
+let _shared: NullPii | null = null;
 
 function instance(config: NullPiiConfig = {}): NullPii {
-  const key = JSON.stringify(config);
-  const cached = _instances.get(key);
-  if (cached !== undefined) {
-    _instances.delete(key);
-    _instances.set(key, cached);
-    return cached;
-  }
-  if (_instances.size >= INSTANCE_CACHE_MAX) {
-    const oldestKey = _instances.keys().next().value;
-    if (oldestKey !== undefined) {
-      const evicted = _instances.get(oldestKey);
-      _instances.delete(oldestKey);
-      void evicted?.dispose();
-    }
-  }
-  const fresh = new NullPii(config);
-  _instances.set(key, fresh);
-  return fresh;
+  if (Object.keys(config).length > 0) return new NullPii(config);
+  if (_shared === null) _shared = new NullPii();
+  return _shared;
 }
 
 /** Convenience: `await sanitize(text)` using a process-wide instance. */

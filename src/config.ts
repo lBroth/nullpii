@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //
 // Runtime configuration: every environment-variable read in nullpii.
 // Adding a new env var? Put its name here AND a typed reader. Don't read
@@ -8,6 +10,7 @@
 const HUGGING_FACE_TOKEN = 'HUGGING_FACE_HUB_TOKEN';
 const CUDA_PATH = 'CUDA_PATH';
 const XDG_CACHE_HOME = 'XDG_CACHE_HOME';
+const NULLPII_MODEL_DIR = 'NULLPII_MODEL_DIR';
 
 /** True if `name` is set to a non-empty value. */
 function isSet(name: string): boolean {
@@ -33,4 +36,12 @@ export function huggingFaceToken(): string | undefined {
 /** XDG_CACHE_HOME if set; consumers fall back to ~/.cache themselves. */
 export function xdgCacheHome(): string | undefined {
   return readNonEmpty(XDG_CACHE_HOME);
+}
+
+/** Optional pre-staged model directory. When set, `NullPii` skips the
+ * HuggingFace download and loads artifacts from this path. Equivalent
+ * to passing `modelDir` in `NullPiiConfig`; explicit `config.modelDir`
+ * takes priority over the env var. */
+export function nullpiiModelDir(): string | undefined {
+  return readNonEmpty(NULLPII_MODEL_DIR);
 }

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import debug from 'debug';
@@ -15,33 +17,18 @@ import { MODEL_DOWNLOAD_TIMEOUT_MS, type ModelVariant } from './types/index.js';
 
 const log = debug('nullpii:model-manager');
 
-/** Files required at runtime — full router stack manifest. The HF repo
- * (`lBroth/nullpii` by default) bundles:
+/** Files required at runtime — unified single-ONNX manifest. The HF repo
+ * (`lBroth/nullpii` by default) bundles one merged GLiNER ONNX plus its
+ * tokenizer.
  *
- *   - GLiNER backbone tokenizer + SPM (shared by all 5 adapter shards)
- *   - distiluse sentence-encoder ONNX + its tokenizer (router input encoder)
- *   - router prototypes JSON (5 domain centroids + gate margins)
- *   - 5 merged-LoRA GLiNER ONNX (one per domain), under `onnx-merged/`
- *
- * Total artifact size: ~6 GB FP32 (1.1 GB × 5 adapters + 514 MB distiluse).
+ * Total artifact size: ~1.16 GB FP32 (~349 MB int8 if/when shipped).
  * First-call download is one-shot; subsequent calls hit the local cache.
  */
-const ROUTER_FILES: readonly string[] = [
-  // Shared GLiNER tokenizer + config (same across all per-domain shards).
+const UNIFIED_FILES: readonly string[] = [
+  'model.onnx',
   'tokenizer.json',
-  'spm.model',
   'gliner_config.json',
-  // Distiluse encoder + its tokenizer (router input vector).
-  'distiluse.onnx',
-  'distiluse-tokenizer.json',
-  // Prototypes + gate config.
-  'router-embeddings.json',
-  // Per-domain merged-LoRA ONNX shards.
-  'onnx-merged/devops/model.onnx',
-  'onnx-merged/legal/model.onnx',
-  'onnx-merged/medical/model.onnx',
-  'onnx-merged/narrative/model.onnx',
-  'onnx-merged/enterprise/model.onnx',
+  'tokenizer_config.json',
 ];
 
 /** Identifies which model artifact set to fetch. Pluggable so callers can
@@ -96,15 +83,16 @@ export class ModelManager {
     return this.modelDirFor(DEFAULT_MODEL);
   }
 
-  /** Ensure all router-stack artifacts are cached. The `variant` field
-   * on `EnsureOptions` is currently unused (all shards are FP32) but
-   * preserved for forward-compat with quantized-shard packs. */
+  /** Ensure the unified model artifacts are cached. The `variant` field
+   * on `EnsureOptions` is currently unused (default is FP32) — preserved
+   * for forward-compat when a quantized (`int4`/`int8`) variant is
+   * published alongside `model.onnx`. */
   async ensure(options: EnsureOptions = {}): Promise<{ modelDir: string }> {
     const model = options.model ?? DEFAULT_MODEL;
     const timeoutMs = options.timeoutMs ?? MODEL_DOWNLOAD_TIMEOUT_MS;
     const target = this.modelDirFor(model);
 
-    const required = ROUTER_FILES;
+    const required = UNIFIED_FILES;
     log('ensuring %d files for %s@%s', required.length, model.repo, model.revision.slice(0, 12));
 
     let done = 0;

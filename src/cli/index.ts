@@ -1,13 +1,13 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Command } from 'commander';
 import { NullPiiError } from '../errors.js';
-import { registerBenchmark } from './commands/benchmark.js';
 import { registerDoctor } from './commands/doctor.js';
 import { registerModels } from './commands/models.js';
 import { registerPrefetch } from './commands/prefetch.js';
-import { registerRestore } from './commands/restore.js';
 import { registerSanitize } from './commands/sanitize.js';
 import { registerScan } from './commands/scan.js';
 
@@ -29,11 +29,9 @@ export function buildProgram(): Command {
 
   registerScan(program);
   registerSanitize(program);
-  registerRestore(program);
   registerModels(program);
   registerPrefetch(program);
   registerDoctor(program);
-  registerBenchmark(program);
   return program;
 }
 

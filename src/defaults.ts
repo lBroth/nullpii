@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //
 // Single source of truth for every user-facing default in nullpii.
 // Adding a new default? Put it here. Reading a default elsewhere? Import
@@ -16,24 +18,16 @@ import {
   luhnValid,
 } from './validators.js';
 
-/** Backend chosen when the user passes nothing (or `'auto'`) — the router
- * then walks `BACKEND_AUTO_PRIORITY`. */
+/** Backend chosen when the user passes nothing (or `'auto'`). The
+ * unified ONNX runtime today always resolves to `'cpu'` execution
+ * providers + an optional accelerator fallback (`cuda` / `coreml`),
+ * mapped at session construction in `nullpii.ts`. */
 export const DEFAULT_BACKEND: BackendName = 'auto';
 
 /** Model variant chosen when the user passes nothing (or `'auto'`).
- * Each backend resolves `'auto'` via its own `BackendConfig.autoVariant`. */
+ * Only `fp32` is shipped today; `int8` / `int4` are reserved (see
+ * `PLAN.md §4`). */
 export const DEFAULT_VARIANT: ModelVariant = 'auto';
-
-/** Backend lookup order under `DEFAULT_BACKEND === 'auto'`. */
-export const BACKEND_AUTO_PRIORITY: readonly Exclude<BackendName, 'auto'>[] = [
-  'cuda',
-  'mps',
-  'cpu',
-];
-
-/** ONNX subdirectory used by legacy single-shard backends (`OrtBackend`).
- * The shipping `MultiOrtBackend` resolves shards via `onnx-merged/`. */
-export const ONNX_SUBDIR = 'onnx';
 
 /** Tokenizer file name within a model directory. */
 export const TOKENIZER_FILE = 'tokenizer.json';
@@ -46,8 +40,8 @@ export const CHECKSUM_SUFFIX = '.sha256';
 export const CACHE_DIR_NAME = 'nullpii';
 export const CACHE_MODELS_SUBDIR = 'models';
 
-/** Pinned default HF model repo. Hardcoded — full router stack
- * (5 merged-LoRA ONNX shards + distiluse encoder + prototypes). See
+/** Pinned default HF model repo. Hardcoded — unified single-ONNX GLiNER
+ * (`model.onnx` + tokenizer + config, ~1.16 GB FP32). See
  * `model-manager.ts` for the file manifest. */
 export const DEFAULT_MODEL_REPO = 'lBroth/nullpii';
 export const DEFAULT_MODEL_REVISION = 'main';
@@ -313,9 +307,15 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
   },
 
   // ─── PEM / JWT ────────────────────────────────────────────────
+  // Full block, header through trailer. Backref `\1` ensures the
+  // algorithm token in `BEGIN` matches `END`, so an unterminated header
+  // does not eat an unrelated `END` farther down the document. If the
+  // matching trailer is absent (truncated paste), no match — better to
+  // miss than to over-redact.
   {
     id: 'core:pem-private-key',
-    pattern: /-----BEGIN (?:RSA|DSA|EC|OPENSSH|PGP) PRIVATE KEY-----/g,
+    pattern:
+      /-----BEGIN (RSA|DSA|EC|OPENSSH|PGP) PRIVATE KEY-----[\s\S]*?-----END \1 PRIVATE KEY-----/g,
     label: 'secret',
     confidence: 0.99,
   },
@@ -437,27 +437,27 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
   {
     id: 'core:mac',
     pattern: /(?<![:0-9A-Fa-f])[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}(?![:0-9A-Fa-f])/g,
-    label: 'account_number',
+    label: 'private_ip',
     confidence: 0.85,
   },
   // IPv4 — octet-bounded to reject version strings.
   {
     id: 'core:ipv4',
     pattern: /\b(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}\b/g,
-    label: 'account_number',
+    label: 'private_ip',
     confidence: 0.85,
   },
   {
     id: 'core:ipv6-full',
     pattern: /\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b/g,
-    label: 'account_number',
+    label: 'private_ip',
     confidence: 0.85,
   },
   {
     id: 'core:ipv6-compressed',
     pattern:
       /\b(?:[0-9a-fA-F]{1,4}:){1,7}:|:(?::[0-9a-fA-F]{1,4}){1,7}|(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}\b/g,
-    label: 'account_number',
+    label: 'private_ip',
     confidence: 0.85,
   },
 
@@ -537,3 +537,27 @@ export const DEFAULT_BOUNDARY_REFINE = true;
 
 /** Characters trimmed from span edges when boundary-refine is on. */
 export const BOUNDARY_REFINE_TRIM_CHARS = ' \t\n\r,.;:!?"\'()[]{}<>';
+
+/** Default GLiNER decode threshold. Spans with sigmoid score below this
+ * are dropped during the model decode pass (`decodeGlinerLogits`).
+ * Tuned for the unified ONNX — lower bloats output with low-confidence
+ * noise, higher loses recall. */
+export const DEFAULT_DECODE_THRESHOLD = 0.5;
+
+/** Default secondary threshold applied AFTER ML + recognizer merge.
+ * `0` means "do not drop anything beyond what decode + per-label
+ * thresholds already filtered" — high-confidence recognizers should
+ * always pass and ML spans already cleared `DEFAULT_DECODE_THRESHOLD`.
+ * Override via `NullPiiConfig.threshold` / `categoryThresholds`. */
+export const DEFAULT_POST_FILTER_THRESHOLD = 0;
+
+/** IoU threshold used by `dedupeOverlappingSpans` when reconciling
+ * ML + recognizer spans. Two spans with IoU at or above this are
+ * treated as duplicates; higher-scoring one wins. */
+export const DEFAULT_DEDUPE_IOU = 0.5;
+
+/** Hard byte cap for `normalizeForDetection` and `runRecognizers`.
+ * Inputs above this fall back to passthrough (normalize) or refuse
+ * to scan (recognizers) so adversarial 1 MB+ payloads with quadratic
+ * regex behaviour are not a DoS vector. */
+export const MAX_INPUT_BYTES = 1_000_000;

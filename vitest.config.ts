@@ -1,11 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 import { defineConfig } from 'vitest/config';
 
+// Real-ONNX E2E lives under `test/e2e/` and is opt-in via `npm run test:e2e`
+// (which sets `NULLPII_E2E=1`). The default `npm test` excludes that folder
+// so CI stays ONNX-free and fast; the e2e script flips the env so the same
+// vitest config picks the folder back up.
+const E2E_ON = process.env.NULLPII_E2E === '1';
+
 export default defineConfig({
   test: {
     globals: false,
-    include: ['test/**/*.test.ts'],
-    exclude: ['**/node_modules/**', '**/dist/**'],
+    include: E2E_ON ? ['test/e2e/**/*.test.ts'] : ['test/**/*.test.ts'],
+    exclude: E2E_ON
+      ? ['**/node_modules/**', '**/dist/**']
+      : ['**/node_modules/**', '**/dist/**', 'test/e2e/**'],
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],

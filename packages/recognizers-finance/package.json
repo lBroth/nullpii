@@ -1,6 +1,6 @@
 {
   "name": "@nullpii/recognizers-finance",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Finance recognizers for nullpii — credit cards (Luhn-validated), IBAN, SWIFT BIC.",
   "license": "Apache-2.0",
   "type": "module",
@@ -18,7 +18,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "peerDependencies": {
-    "nullpii": "^0.0.7"
+    "nullpii": ">=0.2.0"
   },
   "publishConfig": {
     "access": "public",

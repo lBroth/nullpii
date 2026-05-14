@@ -26,6 +26,9 @@ export interface UnifiedBackendOptions {
   readonly intraOpNumThreads?: number;
   /** ORT inter-op thread count. `0` (default) = ORT picks based on host. */
   readonly interOpNumThreads?: number;
+  /** Override the runtime ORT loader. Test-only — production code leaves
+   * this undefined and `loadOrt()` dynamically imports `onnxruntime-node`. */
+  readonly ortLoader?: () => Promise<typeof import('onnxruntime-node')>;
 }
 
 /** Single-ONNX GLiNER backend.
@@ -37,22 +40,20 @@ export interface UnifiedBackendOptions {
  * `onnxruntime-node` is an optional peer dependency. The runtime is
  * imported dynamically on the first inference call so users who only
  * touch the recognizer pack / vault APIs never trigger the load.
+ *
+ * Concurrency. `infer()` allocates fresh `text_lengths` and `span_mask`
+ * tensors per call so two concurrent callers on the same backend instance
+ * never share scratch storage. A previous version pooled these buffers
+ * and assumed "the await on session.run() never interleaves with another
+ * infer call" — that's true only for strictly sequential use; under
+ * `await Promise.all([np.sanitize(a), np.sanitize(b)])` the pool's first
+ * write was clobbered by the second caller before ORT consumed it. Per-
+ * call allocation costs one trivial `BigInt64Array(1)` + `Uint8Array(N)`
+ * per inference; not worth the correctness risk to elide.
  */
 export class OrtUnifiedBackend {
   private session: InferenceSession | null = null;
   private TensorCtor: typeof TensorType | null = null;
-  /** Reusable scratch buffer for the `text_lengths` scalar tensor.
-   *
-   * The buffer is rented to ORT for the duration of `session.run()`;
-   * we never mutate it from a parallel call because `infer()` runs the
-   * full feed → run → consume cycle synchronously between awaits, and
-   * ORT clones the data on the native side. Pooling here saves one
-   * `BigInt64Array.from` allocation per inference (cheap individually,
-   * but `sanitize()` issues one per chunk on long inputs). */
-  private readonly textLengthsBuf = new BigInt64Array(1);
-  /** Reusable scratch buffer for `span_mask`. Resized lazily — ORT
-   * receives a typed-array view and copies. */
-  private boolBuf: Uint8Array = new Uint8Array(0);
 
   constructor(
     private readonly modelDir: string,
@@ -65,7 +66,7 @@ export class OrtUnifiedBackend {
     if (!(await fileExists(onnxPath))) {
       throw new ModelNotFoundError(onnxPath);
     }
-    const ort = await loadOrt();
+    const ort = await (this.options.ortLoader ?? loadOrt)();
     this.TensorCtor = ort.Tensor;
     log('loading GLiNER ONNX %s → session', onnxPath);
     const sessionOptions: InferenceSession.SessionOptions = {
@@ -89,14 +90,18 @@ export class OrtUnifiedBackend {
     if (Tensor === null) throw new OrtNotInstalledError();
     const seqLen = inputs.inputIds.length;
     const tDims: readonly number[] = [1, seqLen];
-    this.textLengthsBuf[0] = BigInt(inputs.textLength);
-    const boolBuf = this.ensureBoolBuf(inputs.spanMask.length);
+    // Per-call allocation — see class-level concurrency note. Cost is a
+    // single tiny typed-array per inference; eliminates any possibility of
+    // cross-call buffer clobber even under Promise.all() on a shared
+    // backend.
+    const textLengthsBuf = new BigInt64Array([BigInt(inputs.textLength)]);
+    const boolBuf = new Uint8Array(inputs.spanMask.length);
     fillBoolBuf(boolBuf, inputs.spanMask);
     const feeds: Record<string, TensorType> = {
       input_ids: new Tensor('int64', inputs.inputIds, tDims),
       attention_mask: new Tensor('int64', inputs.attentionMask, tDims),
       words_mask: new Tensor('int64', inputs.wordsMask, tDims),
-      text_lengths: new Tensor('int64', this.textLengthsBuf, DIMS_SCALAR_1_1),
+      text_lengths: new Tensor('int64', textLengthsBuf, DIMS_SCALAR_1_1),
       span_idx: new Tensor('int64', inputs.spanIdx, [1, inputs.numSpans, 2]),
       span_mask: new Tensor('bool', boolBuf, [1, inputs.numSpans]),
     };
@@ -129,16 +134,6 @@ export class OrtUnifiedBackend {
       this.session = null;
       this.TensorCtor = null;
     }
-  }
-
-  /** Grow `boolBuf` if needed; never shrinks. Returns a buffer of
-   * exactly `len` bytes (sliced view when the underlying buffer is
-   * larger so ORT receives the right element count). */
-  private ensureBoolBuf(len: number): Uint8Array {
-    if (this.boolBuf.length < len) {
-      this.boolBuf = new Uint8Array(len);
-    }
-    return this.boolBuf.length === len ? this.boolBuf : this.boolBuf.subarray(0, len);
   }
 }
 

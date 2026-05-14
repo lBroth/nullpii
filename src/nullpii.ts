@@ -355,23 +355,88 @@ function mapBackToOriginal(result: SanitizeResult, _original: string): SanitizeR
   return { ...result, sanitized: unescapePlaceholders(result.sanitized) };
 }
 
-/** Shared instance for the no-config convenience functions only.
+/** Engine cache for the convenience `sanitize()` / `restore()` helpers.
  *
- * The previous multi-entry `Map<JSON.stringify(config), NullPii>` cache
- * was unsafe: regex / function recognizers serialise to `{}`, so two
- * callers with *different* recognizer sets would receive the same
- * cached instance and share a vault (cross-tenant PII leak).
+ * A previous version used a single `_shared` instance for no-arg callers
+ * and `new NullPii(config)` for everything else — the latter leaked an
+ * ORT session + vault per call because the engine was never disposed.
  *
- * Single shared instance for the no-arg case (matches the most common
- * usage of `await sanitize(text)`). Anything with custom config gets a
- * fresh `NullPii` — the caller is then responsible for its lifecycle
- * (`new NullPii(config)` + `.dispose()`). */
-let _shared: NullPii | null = null;
+ * The current shape:
+ *
+ *  1. Configs that are *structurally fingerprintable* (no `recognizers`
+ *     array, no other regex/function-valued fields) are cached by their
+ *     canonical JSON fingerprint. Bare `sanitize(text)` hits the empty
+ *     fingerprint slot.
+ *  2. Configs carrying custom `recognizers: Recognizer[]` cannot be safely
+ *     fingerprinted — `JSON.stringify` flattens regex / fn to `{}` and would
+ *     collide two distinct recognizer sets into one shared vault (the prior
+ *     bug). Those callers get a fresh `NullPii` and a `NullPiiOneShotWarning`
+ *     telling them to manage the lifecycle themselves.
+ *  3. A `FinalizationRegistry` calls `dispose()` when a leaked engine is
+ *     GC'd. Best-effort defence in depth — does not replace explicit
+ *     lifecycle management on the caller side.
+ *
+ *  `recognizers: 'none'` is a value sentinel and IS fingerprintable, so it
+ *  remains cacheable. */
+const _cache = new Map<string, NullPii>();
+
+const _finalizer =
+  typeof FinalizationRegistry === 'undefined'
+    ? null
+    : new FinalizationRegistry<{ readonly engine: NullPii }>((held) => {
+        held.engine.dispose().catch(() => {
+          /* finalizer is best-effort; swallow errors */
+        });
+      });
+
+/** Canonical fingerprint of a `NullPiiConfig`. Returns `null` if the config
+ * carries values that can't be structurally hashed (regex / function under
+ * `recognizers`), signalling the caller-must-own-lifecycle path. */
+function configFingerprint(config: NullPiiConfig): string | null {
+  if (Array.isArray(config.recognizers)) return null;
+  const entries: Array<[string, unknown]> = [];
+  for (const k of Object.keys(config).sort()) {
+    const v = (config as Record<string, unknown>)[k];
+    if (v === undefined) continue;
+    entries.push([k, v]);
+  }
+  return JSON.stringify(entries);
+}
 
 function instance(config: NullPiiConfig = {}): NullPii {
-  if (Object.keys(config).length > 0) return new NullPii(config);
-  if (_shared === null) _shared = new NullPii();
-  return _shared;
+  const fp = configFingerprint(config);
+  if (fp === null) {
+    process.emitWarning(
+      'nullpii: sanitize()/restore() called with custom `recognizers` — a fresh ' +
+        'NullPii is created on each call because regex/function recognizers cannot ' +
+        'be structurally cached. The engine will NOT be disposed automatically. ' +
+        'For repeated calls, instantiate `new NullPii({ recognizers: [...] })` ' +
+        'once and call `.dispose()` yourself when done.',
+      'NullPiiOneShotWarning',
+    );
+    const np = new NullPii(config);
+    // FR rejects target === heldValue; use a weakref-style separate token.
+    _finalizer?.register(np, { engine: np });
+    return np;
+  }
+  let np = _cache.get(fp);
+  if (np === undefined) {
+    np = new NullPii(config);
+    _cache.set(fp, np);
+  }
+  return np;
+}
+
+/** Test-only escape hatch. Drops the engine cache so tests can assert on
+ * fresh-cache behaviour without leaking state across describe blocks. Not
+ * exported via `src/index.ts` — internal only. */
+export function __resetEngineCacheForTests(): void {
+  for (const np of _cache.values()) {
+    np.dispose().catch(() => {
+      /* test teardown */
+    });
+  }
+  _cache.clear();
 }
 
 /** Convenience: `await sanitize(text)` using a process-wide instance. */

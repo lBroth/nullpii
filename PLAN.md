@@ -1,7 +1,14 @@
 # nullpii — v0.2 Plan: OSS self-hosted gateway
 
-> Status: proposal. Captures the positioning + roadmap discussed during
-> the project-evaluation review of PR #1 (`drop-v10-naming`).
+> Status (2026-05-13): partial. The unified-model retrain (companion
+> doc: `packages/eval/RETRAIN.md`) is **done** on branch
+> `retrain-unified-phase1` — single ONNX, permissive-only training,
+> ~1.2 GB download. `src/` cleanup + tests + docs landed. Pending: HF
+> upload + revision pin, full publishable competitor matrix (the
+> 2026-05-13 RunPod 5090 run produced 14/24 datasets at
+> `packages/eval/results/runpod-20260513/`), and the gateway / docker /
+> blog-post work outlined below. Sections 7 (honest headline metric) and
+> 9 (licensing audit) are done — see CHANGELOG 0.2.0 + NOTICE.
 
 ## Positioning
 
@@ -108,16 +115,19 @@ Implementations to ship:
 Sticky-session via load balancer is also valid and should be
 documented as the simpler alternative.
 
-### 4. "Slim" model variant
+### 4. Quantized model variants
 
-Backbone-only build (~1.2 GB) without the 5 per-domain LoRA adapters,
-for users who don't need domain specialisation or who run under tight
-RAM. Trade-off: ~−0.05 F1 on the macro vs the full stack — needs to be
-benched and disclosed in the model card the same way the model-only
-vs full-runtime delta is already disclosed today.
+Unified GLiNER ONNX is ~1.2 GB FP32. Ship int8 (~350 MB) and int4
+(~200 MB) sidecars alongside `model.onnx` in the HF repo so users on
+tight-RAM / cold-start-sensitive workloads can opt in. Trade-off needs
+to be benched and disclosed in the model card the same way the
+model-only vs full-runtime delta is already disclosed today (int8 was
+lossier than rank-32 fp32 in pre-ship experiments — re-bench against
+the unified-aug2 weights).
 
-Surfaced as `variant: 'slim' | 'full'` in `NullPiiConfig` (the field
-already exists; this is wiring).
+Surfaced as `variant: 'fp32' | 'int8' | 'int4' | 'auto'` in
+`NullPiiConfig` (the field already exists; this is wiring on both
+the runtime fetcher and the model-manager manifest).
 
 ### 5. Two Docker images
 

@@ -230,7 +230,7 @@ export class NullPii {
     const spans = refineOn ? refineSpanBoundaries(escaped, merged) : merged;
 
     const session = sessionId ?? this.vault.createSession();
-    log('sanitize: spans=%d session=%s', spans.length, session.slice(0, 8));
+    log('sanitize: spans=%d session=%s', spans.length, session.slice(0, 8)); // 8-char log prefix (8 ≠ SESSION_PREFIX_LEN; log truncation is purely for readability, not security)
     const result = this.vault.sanitize(escaped, spans, session);
     return mapBackToOriginal(result, text);
   }

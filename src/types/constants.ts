@@ -32,8 +32,13 @@ export const MODEL_DOWNLOAD_TIMEOUT_MS = 300_000;
  * Number of hex chars from the session UUID encoded into each
  * placeholder. Used by `restore()` to detect cross-session mismatches
  * before substituting the wrong PII value back into text.
+ *
+ * 16 hex chars = 64 bits of session entropy → birthday-safe up to
+ * ~2^32 concurrent sessions per process. The previous 8-char / 32-bit
+ * value collided at ~2^16 sessions, which is the only cross-tenant
+ * barrier inside a single Node process — see F-15 in the audit plan.
  */
-export const SESSION_PREFIX_LEN = 8;
+export const SESSION_PREFIX_LEN = 16;
 
 /**
  * Regex used to find placeholders in sanitized text during restore.
@@ -49,7 +54,7 @@ export const SESSION_PREFIX_LEN = 8;
  * is also lower than the previous `[[NULLPII:type:i]]` format (-20% under
  * the cl100k_base tokenizer).
  */
-export const PLACEHOLDER_REGEX = /\{\{PII_([A-Z_]+)_(\d+)_([0-9a-f]{8})\}\}/g;
+export const PLACEHOLDER_REGEX = /\{\{PII_([A-Z_]+)_(\d+)_([0-9a-f]{16})\}\}/g;
 
 /**
  * Build the canonical placeholder string for a vault entry.

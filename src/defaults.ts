@@ -435,11 +435,13 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     label: 'account_number',
     confidence: 0.85,
   },
-  // MAC — lookbehind/lookahead bound to single-octet boundary.
+  // MAC — lookbehind/lookahead bound to single-octet boundary. Labelled
+  // `private_mac` (separate from `private_ip`) so consumers that group
+  // spans by label keep hardware identifiers distinct from IPv4/IPv6.
   {
     id: 'core:mac',
     pattern: /(?<![:0-9A-Fa-f])[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}(?![:0-9A-Fa-f])/g,
-    label: 'private_ip',
+    label: 'private_mac',
     confidence: 0.85,
   },
   // IPv4 — octet-bounded to reject version strings.

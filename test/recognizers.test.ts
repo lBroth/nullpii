@@ -126,4 +126,18 @@ describe('runRecognizers', () => {
     const spans = runRecognizers('seq 1234 end', [unvalidatedReco], []);
     expect(spans[0]?.score).toBe(0.95);
   });
+
+  // F-28 regression. MAC addresses used to ride on the `private_ip` label
+  // even though they identify hardware, not network endpoints. The
+  // dedicated `private_mac` label keeps grouping accurate for consumers
+  // that bucket spans by label.
+  it('emits the core:mac recognizer span with the private_mac label', async () => {
+    const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+    const mac = DEFAULT_RECOGNIZERS.find((r) => r.id === 'core:mac');
+    expect(mac).toBeDefined();
+    expect(mac?.label).toBe('private_mac');
+    const spans = runRecognizers('mac 01:23:45:67:89:ab end', mac ? [mac] : [], []);
+    expect(spans).toHaveLength(1);
+    expect(spans[0]?.label).toBe('private_mac');
+  });
 });

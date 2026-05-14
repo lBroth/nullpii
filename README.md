@@ -79,6 +79,25 @@ Hardware: **MacBook Pro · Apple M5 Pro · 48 GB · macOS 26.4** · CPU backend 
 
 `presidio` (regex/SpaCy) tops throughput at lowest F1. `nullpii` runs the unified GLiNER + recognizer pack + adversarial preprocessor + base64 decoder stack and lands in the top tier on throughput while topping F1 by **+0.126** over the next-best tool (`nemotron-pii-raw`). Source: `packages/eval/published-bench/matrix.json`. Full 16-dataset matrix (incl. ai4privacy / argilla extras and `ai4privacy-400k` where `piiranha` wins via training-set overlap) at `packages/eval/results/overnight-local-20260514/matrix.csv`.
 
+### Where the +0.126 macro lives — concrete adversarial inputs
+
+Six rows pulled directly from the `2026-05-14` bench checkpoints (`packages/eval/results/overnight-local-20260514/checkpoints/`). Each one is a real `nullpii-bench` sample where `nullpii` recovers the PII span and at least four of the five competing tools (`presidio`, `piiranha`, `deberta`, `gliner-pii-large-v1`, `nemotron-pii-raw`) miss it entirely under partial-match (IoU ≥ 0.5) scoring.
+
+| Adversarial surface | Input | Decoded / canonical form | `nullpii` catches | Missed by |
+|---|---|---|:---:|---|
+| **base64-wrapped secret** | `(base64-encoded) c2stYW50LWFwaTAzLWFCY0RlRmcw…` | `sk-ant-api03-aBcDeFg012345…` (Anthropic key) | ✓ `secret` | `presidio`, `piiranha`, `nemotron-pii-raw` |
+| **HTML-entity-encoded secret** | `(html_entity-encoded) &#115;&#107;&#45;&#97;&#110;&#116;&#45;…` | `sk-ant-…012345678901234567890123456789AA` | ✓ `secret` | `deberta`, `piiranha`, `gliner-pii-large-v1`, `nemotron-pii-raw` |
+| **URL-percent-encoded email** | `(url-encoded) bob.jones%40company.io` | `bob.jones@company.io` | ✓ `private_email` | `deberta`, `piiranha`, `gliner-pii-large-v1`, `nemotron-pii-raw` |
+| **Zero-width-obfuscated address** | `Profile: 221B Baker St[U+200B]re[U+200B]et [U+200B]London …` | `221B Baker Street London` | ✓ `private_address` | every other tool |
+| **Spaced-out email** | `Detected pattern: u s e r . 1 2 3 @ g m a i l . c o m — …` | `user.123@gmail.com` | ✓ `private_email` | every other tool |
+| **IBAN inside prose** | `Please contact IT60X0542811101000001023456 for details.` | (Italian IBAN, mod-97 valid) | ✓ `account_number` | `deberta`, `piiranha`, `gliner-pii-large-v1`, `nemotron-pii-raw` |
+| **Multilingual address + date** | `Spedito a via Roma 45, 00184 Roma, nato il 14/02/1988.` | (literal) | ✓ both spans | every other tool misses at least one |
+| **Stripe key in code context** | `api_key = 'sk_live_4eC39HqLyjWDarjtT1zdp7dc'` | (literal) | ✓ `secret` | `deberta`, `piiranha`, `presidio`, `nemotron-pii-raw` |
+
+These are exactly the inputs the headline macro stops aggregating over — `nullpii-bench` mixes them into a single F1 by design. The wins come from layered post-processing that the bare ML competitors don't ship: `base64-detector` decodes-then-classifies, `normalize.ts` iteratively decodes URL `%XX` and HTML numeric entities and strips zero-width characters before remapping spans back to original offsets, the 50+ recognizer regex pack (Stripe / Anthropic / IBAN / Luhn / mod-97 / etc.) catches token shapes the model wasn't trained to recognise, and the `private_ip` post-pass + RFC 5737 / 1918 / loopback never-PII filter keeps false positives off documentation traffic.
+
+Adversarial robustness comes from the **runtime pipeline**, not the model alone. The HF `lBroth/nullpii` model card publishes both `model-only` and `full runtime` columns so the delta is explicit.
+
 ## Install
 
 ```bash

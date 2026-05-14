@@ -73,6 +73,22 @@ async function retryDownload(url: string, dest: string, timeoutMs: number): Prom
   throw lastErr instanceof Error ? lastErr : new ModelNotFoundError(`${url} (download failed)`);
 }
 
+/** Node fetch / DNS / socket error codes that are worth retrying. */
+const RETRYABLE_ERROR_CODES = new Set([
+  'ABORT_ERR',
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'ETIMEDOUT',
+  'ENETUNREACH',
+  'ENETDOWN',
+  'EAI_AGAIN',
+  'EPIPE',
+  'UND_ERR_SOCKET',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_HEADERS_TIMEOUT',
+  'UND_ERR_BODY_TIMEOUT',
+]);
+
 function isRetryable(err: unknown): boolean {
   if (err instanceof ModelNotFoundError) {
     const m = err.message;
@@ -80,8 +96,15 @@ function isRetryable(err: unknown): boolean {
     if (httpMatch !== null) return RETRYABLE_HTTP.has(Number(httpMatch[1]));
     return true;
   }
-  // Abort, ECONNRESET, ETIMEDOUT, EAI_AGAIN, etc.
-  return err instanceof Error;
+  // Network / abort errors expose either `code` or `name`; everything
+  // else (TypeError, RangeError, programmer bugs) is NOT retried — re-
+  // trying a deterministic crash is wasted budget and hides the bug.
+  if (err instanceof Error) {
+    if (err.name === 'AbortError') return true;
+    const code = (err as { code?: unknown }).code;
+    if (typeof code === 'string' && RETRYABLE_ERROR_CODES.has(code)) return true;
+  }
+  return false;
 }
 
 function asMessage(err: unknown): string {

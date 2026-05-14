@@ -94,4 +94,36 @@ describe('runRecognizers', () => {
     const spans = runRecognizers('foo foo foo', [reco], []);
     expect(spans).toHaveLength(3);
   });
+
+  // F-39 regression. A recognizer with a `validate` fn whose candidate
+  // passes the validator is structurally-correct evidence — much
+  // stronger than an ML classifier's guess. The emitted score is bumped
+  // above plausible ML softmax (~0.99998 for the unified GLiNER) so
+  // cross-label IoU dedupe in nullpii.ts picks the recognizer's label,
+  // not an ML mislabel (e.g. spaced IBAN tagged `private_address`).
+  it('boosts emitted score above ML softmax for validator-passing matches', () => {
+    const validatedReco: Recognizer = {
+      id: 'validated',
+      pattern: /\b1234\b/g,
+      label: 'account_number',
+      confidence: 0.95,
+      validate: () => true,
+    };
+    const spans = runRecognizers('seq 1234 end', [validatedReco], []);
+    expect(spans).toHaveLength(1);
+    const s = spans[0];
+    expect(s?.score).toBeGreaterThan(0.9999);
+    expect(s?.score).toBeGreaterThan(validatedReco.confidence);
+  });
+
+  it('leaves emitted score at recognizer.confidence when no validator set', () => {
+    const unvalidatedReco: Recognizer = {
+      id: 'plain',
+      pattern: /\b1234\b/g,
+      label: 'account_number',
+      confidence: 0.95,
+    };
+    const spans = runRecognizers('seq 1234 end', [unvalidatedReco], []);
+    expect(spans[0]?.score).toBe(0.95);
+  });
 });

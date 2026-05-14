@@ -138,7 +138,7 @@ describe('NullPii e2e pipeline (mocked ONNX)', () => {
   it('placeholders embed the session prefix (A3)', async () => {
     const n = new NullPii({ modelDir: '/fake', backend: 'cpu' });
     const out = await n.sanitize('Email: contact@acme.io');
-    const sessionPrefix = out.sessionId.replace(/-/g, '').slice(0, 8).toLowerCase();
+    const sessionPrefix = out.sessionId.replace(/-/g, '').slice(0, 16).toLowerCase();
     const re = new RegExp(PLACEHOLDER_REGEX.source, 'g');
     for (const match of out.sanitized.matchAll(re)) {
       expect(match[3]).toBe(sessionPrefix);

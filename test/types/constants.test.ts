@@ -4,9 +4,12 @@ import {
   MODEL_DOWNLOAD_TIMEOUT_MS,
   PLACEHOLDER_REGEX,
   PLACEHOLDER_TEMPLATE,
+  SESSION_PREFIX_LEN,
 } from '../../src/types/constants.js';
 
-const SESSION = 'abcd1234';
+// F-15: 16 hex chars = 64 bits of session entropy. Collision-free up to
+// ~2^32 sessions (vs ~2^16 birthday with the prior 8-char / 32-bit prefix).
+const SESSION = 'abcd1234deadbeef';
 
 describe('numeric constants', () => {
   it('MAX_SEQUENCE_LENGTH is a positive integer', () => {
@@ -54,10 +57,16 @@ describe('PLACEHOLDER_REGEX', () => {
 
   it('does not match malformed placeholders', () => {
     const re = new RegExp(PLACEHOLDER_REGEX.source, 'g');
-    expect(re.test('{PII_FOO_0_abcd1234}')).toBe(false);
-    expect(re.test('{{PII__0_abcd1234}}')).toBe(false);
-    expect(re.test('{{PII_FOO_abc_abcd1234}}')).toBe(false);
+    expect(re.test(`{PII_FOO_0_${SESSION}}`)).toBe(false);
+    expect(re.test(`{{PII__0_${SESSION}}}`)).toBe(false);
+    expect(re.test(`{{PII_FOO_abc_${SESSION}}}`)).toBe(false);
     expect(re.test('{{PII_FOO_0}}')).toBe(false); // missing session prefix
     expect(re.test('[[NULLPII:foo:0]]')).toBe(false);
+    // Old 8-hex prefix no longer matches the bumped 16-hex format.
+    expect(re.test('{{PII_FOO_0_abcd1234}}')).toBe(false);
+  });
+
+  it('SESSION_PREFIX_LEN is 16 (64-bit entropy, F-15)', () => {
+    expect(SESSION_PREFIX_LEN).toBe(16);
   });
 });

@@ -378,12 +378,14 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
   },
 
   // ─── Account-number patterns ──────────────────────────────────
-  // IBAN — `\s?` (any whitespace) so PDF NBSP/U+202F separators
-  // match. Validated via mod-97 checksum to drop coincidental country-prefix
-  // shapes.
+  // IBAN — `\s?` (any whitespace) between every group so PDF / human-typed
+  // forms with spaces between country-check and bank-code (e.g. `GB29 NWBK
+  // …`, `DE89 3704 …`) match alongside compact forms (`IT60X05428…`).
+  // PDF NBSP / U+202F separators count as `\s`. Validated via mod-97
+  // checksum to drop coincidental country-prefix shapes.
   {
     id: 'core:iban',
-    pattern: /\b[A-Z]{2}\d{2}[A-Z0-9]{1,4}(?:\s?\d{4}){2,5}(?:\s?\d{1,4})?\b/g,
+    pattern: /\b[A-Z]{2}\d{2}\s?[A-Z0-9]{1,4}(?:\s?\d{4}){2,5}(?:\s?\d{1,4})?\b/g,
     label: 'account_number',
     confidence: 0.95,
     validate: iban97Valid,

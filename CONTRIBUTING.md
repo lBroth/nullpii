@@ -32,6 +32,20 @@ Non-negotiable — PRs that violate these will not be merged.
 - Coverage thresholds (CI-enforced): 85% lines, 80% branches.
 - Hardware-gated tests (CUDA/MPS) auto-skip when probe fails.
 
+### Real-ONNX end-to-end (`npm run test:e2e`)
+
+The default `npm test` mocks `OrtUnifiedBackend` + `GlinerTokenizer` so CI stays ONNX-free. The opt-in E2E suite under `test/e2e/` loads the real unified GLiNER model and asserts representative fixtures produce representative spans — catches regressions in ScatterND clamping, decoder index math, chunk-boundary dedupe, recognizer/ML reconciliation, and the base64 layer.
+
+```bash
+# Point at a local model directory containing model.onnx + tokenizer.json
+# + gliner_config.json + tokenizer_config.json.
+NULLPII_MODEL_DIR=/path/to/model npm run test:e2e
+```
+
+`test/e2e/*.test.ts` are excluded from the default `vitest run`; the `test:e2e` script sets `NULLPII_E2E=1` so the same `vitest.config.ts` swaps include/exclude lists.
+
+In CI the `e2e-onnx` job (`.github/workflows/ci.yml`) downloads the unified ONNX from HuggingFace and runs the same suite. It is gated on the GitHub repository variable **`NULLPII_E2E_ENABLED`** — once the HF release is published, flip it (`true`) and the job runs on every PR + push. Optional repo variables `NULLPII_E2E_HF_REPO` and `NULLPII_E2E_HF_REVISION` override the default (`lBroth/nullpii@main`) — pin the revision to a 40-char commit SHA for reproducibility.
+
 ## Commits + PR
 
 Conventional Commits (`feat`, `fix`, `docs`, `chore`, `refactor`, `perf`, `test`).

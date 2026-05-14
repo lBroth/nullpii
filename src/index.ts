@@ -38,6 +38,7 @@ export {
   type PiiSpan,
   type RestoreOptions,
   type RestoreResult,
+  type SanitizeOptions,
   type SanitizeResult,
   type VaultToken,
 } from './types/index.js';

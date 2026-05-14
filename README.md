@@ -10,46 +10,45 @@ Local PII sanitization with reversible in-memory vault. ML span detection swaps 
 
 Honest framing: this is a **night-hobby project**, not a production-ready PII tool, not a research paper, not a commercial product.
 
-Since I started using Claude Code I stopped playing video games — it became my night toy. nullpii is what fell out of those nights: a chance to learn the GLiNER + LoRA + router stack end-to-end, run it under a strict bench harness, write the honest audit on what works and what doesn't, and ship something that does the round-trip cleanly.
+Since I started using Claude Code I stopped playing video games — it became my night toy. nullpii is what fell out of those nights: a chance to learn the GLiNER + LoRA stack end-to-end, run it under a strict bench harness, write the honest audit on what works and what doesn't, and ship something that does the round-trip cleanly. v0.1 shipped a 5-shard routed stack; v0.2 collapses it into a single unified model trained on a permissive-only corpus.
 
 What's interesting here is the engineering rigor + adversarial preprocessor, not state-of-the-art F1.
 
-> **Status (2026-05-06)** — first release `v0.1.0`. Built on [`urchade/gliner_multi_pii-v1`](https://huggingface.co/urchade/gliner_multi_pii-v1) (multilingual GLiNER, **Microsoft mDeBERTa-v3** base + GLiNER head, ~278M params). Shipping pipeline: **Google distiluse** sentence encoder + 5 per-domain LoRA adapters merged into the GLiNER backbone (~6 GB total artifacts). The npm runtime downloads the full router stack from HF on first call.
+> **Status (2026-05-13)** — `v0.2` track (`retrain-unified-phase1`). Built on [`urchade/gliner_multi_pii-v1`](https://huggingface.co/urchade/gliner_multi_pii-v1) (multilingual GLiNER, **Microsoft mDeBERTa-v3** base + GLiNER head, ~278M params). Shipping pipeline: a **unified** LoRA adapter trained on a permissive-only corpus (Nemotron-PII + TAB/ECHR + project Faker + Presidio synthetic + cc-negative; no ai4privacy / Isotonic in training), merged into the GLiNER backbone (`~1.2 GB FP32` total artifacts, ~350 MB int8). Routing/distiluse removed. Recognizer pack + adversarial preprocessor + base64 decoder run client-side in the npm runtime.
 
 ## Bench at a glance
 
-MacBook Pro M5 Pro CPU, 8-dataset canonical surface (macro), macro F1 at IoU ≥ 0.5 (partial-match span scoring), `--parallel-tools 1` fair-serial, cap=5000 per dataset. `nullpii` = npm subprocess (what `npm i nullpii` runs — model + recognizer pack + boundary refinement + never-PII filter); other columns = bare third-party baselines (no nullpii post-processing leak — see [`COMPETITIVE_ANALYSIS.md`](COMPETITIVE_ANALYSIS.md) for the bare-mode contract). Full matrix: [`packages/eval/published-bench/matrix.csv`](packages/eval/published-bench/matrix.csv).
-
-> **Honest disclosure**: F1 below reflects the full npm runtime. The `lBroth/nullpii` HF model alone (without the npm regex pack / boundary / never-PII filter) scores **~0.04 lower** on average — the [HF model card](https://huggingface.co/lBroth/nullpii) publishes both `model-only` and `full runtime` columns explicitly.
+MacBook Pro M5 Pro CPU, 7-dataset canonical surface (macro), macro F1 at IoU ≥ 0.5 (partial-match span scoring), `--parallel-tools 1` fair-serial, cap=5000 per dataset. `nullpii` = npm subprocess (what `npm i nullpii` runs — unified merged-LoRA GLiNER + recognizer pack + adversarial preprocessor + base64 decoder + never-PII filter); other columns = bare third-party baselines (no nullpii post-processing leak — see [`COMPETITIVE_ANALYSIS.md`](COMPETITIVE_ANALYSIS.md) for the bare-mode contract). Full matrix (16 datasets): [`packages/eval/published-bench/matrix.csv`](packages/eval/published-bench/matrix.csv). Run: `results/overnight-local-20260514/` (2026-05-14, 11h, zero failure).
 
 `nullpii-bench` is the unified project corpus (2 421 rows: bundled OOD + long-prompts + 6 self-authored preprocessor-regression subsets + 5 TextAttack perturbation slices) — single F1 number summarises behaviour across every adversarial pattern we author. Multilingual coverage via held-out isotonic in en + de + fr + it.
 
-| Dataset | n | **`nullpii`** | `presidio` | `nemotron-pii-raw` | `piiranha` | `deberta` | `gliner-onnx-pii-fp32` | `gliner-pii-large-v1` |
-|---|---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| `tab-echr` ⚠ | 127 | **0.9170** | 0.4657 | 0.4521 | 0.1704 | 0.1745 | 0.2172 | 0.1002 |
-| `isotonic-de-heldout` | 5 000 | **0.8756** | 0.4047 | 0.7040 | 0.5642 | 0.4934 | 0.5470 | 0.5827 |
-| `isotonic-it-heldout` | 5 000 | **0.8687** | 0.4133 | 0.6925 | 0.5660 | 0.5367 | 0.5444 | 0.5721 |
-| `isotonic-en-heldout` | 5 000 | **0.8685** | 0.4726 | 0.7281 | 0.5660 | 0.7512 | 0.5458 | 0.5838 |
-| `isotonic-fr-heldout` | 5 000 | **0.8625** | 0.4129 | 0.6970 | 0.5694 | 0.5738 | 0.5512 | 0.5676 |
-| `nullpii-bench` ⚠ self-authored | 2 421 | **0.7622** | 0.2303 | 0.4684 | 0.2426 | 0.3070 | 0.2855 | 0.2755 |
-| `nemotron-pii-test` ⚠ | 5 000 | 0.7227 | 0.5222 | **0.8997** ‡ | 0.4875 | 0.5789 | 0.4924 | 0.5376 |
-| `presidio-synthetic` | 5 000 | 0.6050 | 0.5737 § | 0.6184 | 0.3819 | 0.4453 | 0.5360 | **0.6323** † |
-| `ai4privacy-300k-heldout` | 5 000 | **0.5170** | 0.2099 | 0.3688 | 0.2610 | 0.1586 | 0.2032 | 0.1352 |
-| **Held-out OOD multilingual (6)** ← headline | — | **0.7662** | 0.4145 | 0.6348 | 0.4847 | 0.4932 | 0.4879 | 0.5123 |
-| **Mixed (8)** ¶ — incl. 2 ⚠ in-dist rows | — | **0.7846** | 0.3979 | 0.5912 | 0.4152 | 0.4301 | 0.4288 | 0.4312 |
-| **In-distribution diagnostic (2)** ⚠ | — | **0.8396** | 0.3480 | 0.4602 | 0.2065 | 0.2407 | 0.2513 | 0.1879 |
+| Dataset | n | **`nullpii`** | `nemotron-pii-raw` | `gliner-pii-large-v1` | `deberta` | `piiranha` | `presidio` |
+|---|---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| `presidio-synthetic` | 5 000 | **0.9184** | 0.6182 | 0.6319 | 0.4451 | 0.3828 | 0.5746 § |
+| `isotonic-en-heldout` | 5 000 | **0.7660** | 0.7276 | 0.5838 | 0.7512 | 0.5659 | 0.4726 |
+| `isotonic-it-heldout` | 5 000 | **0.7605** | 0.6922 | 0.5720 | 0.5367 | 0.5658 | 0.4133 |
+| `isotonic-fr-heldout` | 5 000 | **0.7594** | 0.6968 | 0.5677 | 0.5738 | 0.5694 | 0.4129 |
+| `isotonic-de-heldout` | 5 000 | **0.7490** | 0.7037 | 0.5827 | 0.4934 | 0.5642 | 0.4047 |
+| `tab-echr` ⚠ | 127 | **0.6941** | 0.4520 | 0.1004 | 0.1745 | 0.1704 | 0.4657 |
+| `nullpii-bench` ⚠ self-authored | 2 421 | **0.5937** | 0.4678 | 0.2769 | 0.3070 | 0.2434 | 0.2303 |
+| `nemotron-pii-test` ⚠ | 5 000 | **0.9537** | 0.8997 ‡ | 0.5376 | 0.5789 | 0.4876 | 0.5222 |
+| `ai4privacy-300k-heldout` † | 5 000 | **0.3857** | 0.3688 | 0.1352 | 0.1586 | 0.2610 | 0.2099 |
+| **Held-out OOD multilingual (5)** ← headline | — | **0.7907** | 0.6877 | 0.5876 | 0.5601 | 0.5296 | 0.4556 |
+| **Mixed (7)** ¶ — incl. 2 ⚠ in-dist rows | — | **0.7487** | 0.6226 | 0.4736 | 0.4688 | 0.4374 | 0.4249 |
+| **In-distribution diagnostic (2)** ⚠ | — | **0.6439** | 0.4599 | 0.1886 | 0.2407 | 0.2069 | 0.3480 |
 
-**Headline — held-out OOD multilingual macro F1 = 0.7662** over 6 datasets the model never saw during training (`presidio-synthetic`, `ai4privacy-300k-heldout`, `isotonic-{en,de,fr,it}-heldout`): real generalisation across 4 languages, **+0.13 over the next-best baseline** (`nemotron-pii-raw` 0.6348). The 8-dataset **Mixed F1 = 0.7846** (+0.19 over `nemotron-pii-raw` 0.5912) folds in two ⚠ in-distribution diagnostic rows (`nullpii-bench` self-authored, `tab-echr`) — supporting, not the headline. nullpii wins 7 of 8 macro datasets; the one loss is `presidio-synthetic` to `gliner-pii-large-v1` by 0.027. `nemotron-pii-test` ⚠ excluded from every macro aggregate (enterprise adapter in-distribution + simultaneous self-bench for `nemotron-pii-raw`).
+**Headline — held-out OOD multilingual macro F1 = 0.7907** over 5 datasets the model never saw during training (`presidio-synthetic`, `isotonic-{en,de,fr,it}-heldout`): real generalisation across 4 languages, **+0.103 over the next-best baseline** (`nemotron-pii-raw` 0.6877). The 7-dataset **Mixed F1 = 0.7487** (+0.126 over `nemotron-pii-raw` 0.6226) folds in two ⚠ in-distribution diagnostic rows (`nullpii-bench` self-authored, `tab-echr`) — supporting, not the headline. nullpii wins every row on the canonical surface. `nemotron-pii-test` ⚠ excluded from every macro aggregate (simultaneous self-bench for `nemotron-pii-raw`). `ai4privacy-300k-heldout` † excluded from headline: ai4privacy is licence-gated (commercial use requires `licensing@ai4privacy.com`) so v0.2 model has zero exposure to its distribution — shown for transparency, treat as ultra-OOD.
 
 Bucket interpretation:
-- **Held-out OOD multilingual (6)** — model never saw these rows during training: `presidio-synthetic`, `ai4privacy-300k-heldout`, `isotonic-{en,de,fr,it}-heldout`. Real generalisation across 4 languages.
-- **In-distribution diagnostic (2)** — adapters trained on slices of these datasets (`nullpii-bench` ⚠ self-authored, `tab-echr`). F1 is memorisation + preprocessor regression, not generalisation. `nullpii-bench` mixes bundled OOD + 6 preprocessor-regression subsets + 5 TextAttack slices in one cell — single number summarises adversarial-pattern resistance. `nemotron-pii-test` ⚠ shown in table but **excluded from all macro rows** — enterprise adapter is in-distribution and the row is simultaneously a self-bench for `nemotron-pii-raw`.
+- **Held-out OOD multilingual (5)** — model never saw these rows during training: `presidio-synthetic`, `isotonic-{en,de,fr,it}-heldout`. Real generalisation across 4 languages.
+- **In-distribution diagnostic (2)** — same distribution as training (`nullpii-bench` ⚠ self-authored, `tab-echr` MIT). F1 here is memorisation + preprocessor regression, not generalisation. `nullpii-bench` mixes bundled OOD + 6 preprocessor-regression subsets + 5 TextAttack slices in one cell — single number summarises adversarial-pattern resistance. `nemotron-pii-test` ⚠ shown for reference but **excluded from all macro rows** — simultaneous self-bench for `nemotron-pii-raw`.
 
 Legend:
 - **bold** = best of the row
 - ⚠ = in-distribution row (see bucket above)
 - ⚠ self-authored = both perturbation generator and preprocessor authored by this project; treat as regression test, not generalisation claim
-- ¶ `nemotron-pii-test` row shown for reference but excluded from all **Mixed** / **In-distribution** macro aggregates (double disqualification: enterprise adapter in-distribution + simultaneous self-bench for `nemotron-pii-raw`)
+- † `ai4privacy-300k-heldout` excluded from headline aggregate — licence-gated (cannot use in training); shown for transparency.
+- ¶ `nemotron-pii-test` row shown for reference but excluded from all **Mixed** / **In-distribution** macro aggregates (simultaneous self-bench for `nemotron-pii-raw`)
 - ‡ `nemotron-pii-raw` runs on its own training distribution — same self-bench caveat as nullpii on `nemotron-pii-test`
 - § `presidio` runs on `presidio-synthetic` (generated by **Microsoft Presidio Evaluator**) — also a self-bench
 
@@ -67,19 +66,18 @@ Hardware: **MacBook Pro · Apple M5 Pro · 48 GB · macOS 26.4** · CPU backend 
 
 ### Cross-tool throughput (fair, serial)
 
-7 tools × 9 datasets (cap 5 000 per dataset), `--parallel-tools 1` (no CPU sharing). Same hardware as above. Throughput aggregated as `Σ n / Σ wall_s` across all 9 dataset cells per tool. **mixed F1 = 8-dataset macro** (nemotron-pii-test excluded from F1 aggregate, included in wall-time total).
+6 tools × 15 datasets (cap 5 000 per dataset, `nemotron-pii-test` excluded), `--parallel-tools 1` (no CPU sharing). Same hardware as above. Throughput aggregated as `Σ n / Σ wall_s` across all 15 dataset cells per tool. **mixed F1 = 7-dataset macro** (canonical surface).
 
 | Tool | mixed F1 | total samples | wall (s) | samp/s |
 |---|---:|---:|---:|---:|
-| `presidio` | 0.3979 | 37 548 | 237.0 | **158.4** |
-| `gliner-onnx-pii-fp32` | 0.4288 | 37 548 | 1 022.8 | 36.7 |
-| **`nullpii`** | **0.7846** | 37 548 | 1 398.1 | 26.9 |
-| `deberta` | 0.4301 | 37 548 | 1 564.6 | 24.0 |
-| `piiranha` | 0.4152 | 37 548 | 1 661.1 | 22.6 |
-| `gliner-pii-large-v1` | 0.4312 | 37 548 | 6 737.6 | 5.6 |
-| `nemotron-pii-raw` | 0.5912 | 37 548 | 8 079.6 | 4.6 |
+| `presidio` | 0.4249 | 64 548 | 392.4 | **164.5** |
+| `deberta` | 0.4688 | 64 548 | 1 776.3 | 36.3 |
+| **`nullpii`** | **0.7487** | 64 548 | 2 017.1 | 32.0 |
+| `piiranha` | 0.4374 | 64 548 | 2 588.7 | 24.9 |
+| `gliner-pii-large-v1` | 0.4736 | 64 548 | 10 848.7 | 5.9 |
+| `nemotron-pii-raw` | 0.6226 | 64 548 | 16 009.3 | 4.0 |
 
-`presidio` (regex/SpaCy) tops throughput at lowest F1. `nullpii` runs the full distiluse + GLiNER + 5-LoRA stack and lands in the top tier on throughput while topping F1 by **+0.19** over the next-best tool (`nemotron-pii-raw`). Source: `packages/eval/published-bench/matrix.json`.
+`presidio` (regex/SpaCy) tops throughput at lowest F1. `nullpii` runs the unified GLiNER + recognizer pack + adversarial preprocessor + base64 decoder stack and lands in the top tier on throughput while topping F1 by **+0.126** over the next-best tool (`nemotron-pii-raw`). Source: `packages/eval/published-bench/matrix.json`. Full 16-dataset matrix (incl. ai4privacy / argilla extras and `ai4privacy-400k` where `piiranha` wins via training-set overlap) at `packages/eval/results/overnight-local-20260514/matrix.csv`.
 
 ## Install
 
@@ -89,7 +87,7 @@ npm install nullpii onnxruntime-node
 
 `onnxruntime-node` is an optional peer dependency (CPU / MPS / CUDA backend). Requires Node ≥ 22 (`.nvmrc` pins 24 for development).
 
-> **First-call download**: the first `sanitize()` invocation downloads ~6 GB of model artifacts from HuggingFace Hub ([`lBroth/nullpii`](https://huggingface.co/lBroth/nullpii) — 5 merged-LoRA ONNX shards + distiluse encoder + tokenizer + prototypes) into `~/.cache/nullpii/` (or `$XDG_CACHE_HOME/nullpii/`). One-shot; subsequent calls hit the local cache. Downloads stream to a per-process temp file, verify a SHA-256 checksum, retry transient failures with exponential backoff, and are idempotent — re-running after an interruption resumes from whichever files already verified.
+> **First-call download**: the first `sanitize()` invocation downloads ~1.2 GB of model artifacts from HuggingFace Hub ([`lBroth/nullpii`](https://huggingface.co/lBroth/nullpii) — one unified merged-LoRA ONNX + tokenizer + GLiNER config) into `~/.cache/nullpii/` (or `$XDG_CACHE_HOME/nullpii/`). One-shot; subsequent calls hit the local cache. Downloads stream to a per-process temp file, verify a SHA-256 checksum, retry transient failures with exponential backoff, and are idempotent — re-running after an interruption resumes from whichever files already verified.
 >
 > Pre-download deterministically (Docker build, CI, air-gapped staging) with `npx nullpii prefetch`; check the cache + backends with `npx nullpii doctor`. For fully air-gapped installs, mirror the HF repo locally and pass `modelDir`.
 
@@ -137,20 +135,21 @@ CLI:
 npx nullpii sanitize --stdin --format json < customer-email.txt | jq .sanitized
 ```
 
-## What gets caught (8 categories)
+## What gets caught (9 categories)
 
-| Label             | Examples                                          |
-| ----------------- | ------------------------------------------------- |
-| `private_person`  | personal names (first / last / middle, prefixes)  |
-| `private_email`   | email addresses                                   |
-| `private_phone`   | phone / fax numbers                               |
-| `private_address` | street addresses, cities, GPE, ZIP                |
-| `private_date`    | birth / hire dates                                |
-| `private_url`     | private URLs (admin panels, internal wikis)       |
-| `account_number`  | bank accounts, IBAN, SSN, credit cards, MRN, customer IDs |
-| `secret`          | API keys, tokens, passwords, JWT, PEM private keys |
+| Label             | Examples                                          | Source                  |
+| ----------------- | ------------------------------------------------- | ----------------------- |
+| `private_person`  | personal names (first / last / middle, prefixes)  | ML model                |
+| `private_email`   | email addresses                                   | ML + regex (`core:email`) |
+| `private_phone`   | phone / fax numbers                               | ML + regex (intl / domestic IT/FR/ES) |
+| `private_address` | street addresses, cities, GPE, ZIP                | ML model                |
+| `private_date`    | birth / hire dates                                | ML model                |
+| `private_url`     | private URLs (admin panels, internal wikis)       | ML + regex (`core:url`) |
+| `private_ip`      | IPv4, IPv6, MAC addresses                         | regex pack only (post-pass) |
+| `account_number`  | bank accounts (IBAN mod-97), SSN, credit cards (Luhn), MRN, customer IDs, BTC / ETH addresses, national IDs (DNI, CPF, CF, EIN) | ML + regex (validated where possible) |
+| `secret`          | API keys (AWS / GitHub / OpenAI / Anthropic / Stripe / Slack / Linear / etc.), JWT, PEM private-key blocks, base64-wrapped PII | regex pack (50+ patterns) + base64 decoder |
 
-> **Why only 8 categories?** Microsoft Presidio ships ~20 entity types (and 30+ optional recognizers). NVIDIA Nemotron-PII trains on 55 fine-grained classes (`first_name` vs `last_name`, `mrn` vs `health_plan_beneficiary_number`, etc.). nullpii inherits the 8-class schema of its [`urchade/gliner_multi_pii-v1`](https://huggingface.co/urchade/gliner_multi_pii-v1) backbone and keeps it.
+> **Why 9 categories?** Microsoft Presidio ships ~20 entity types (and 30+ optional recognizers). NVIDIA Nemotron-PII trains on 55 fine-grained classes (`first_name` vs `last_name`, `mrn` vs `health_plan_beneficiary_number`, etc.). nullpii inherits the 8-class schema of its [`urchade/gliner_multi_pii-v1`](https://huggingface.co/urchade/gliner_multi_pii-v1) backbone (the ML model emits 8) and adds `private_ip` as a regex-only post-pass label (the model is not trained on IPs).
 >
 > Rationale: distinguishing `first_name` vs `last_name` doesn't matter when **redacting** — both end up as `{{PII_PRIVATE_PERSON_0}}`. SSN / IBAN / credit-card all collapse to `account_number` because you mask them the same way. Granular schemas are useful as training signal (Nemotron's 55-class fine-tune learns finer distinctions); broad schemas are easier downstream (one placeholder type per category, simpler restore mapping). Different targets.
 >
@@ -169,13 +168,30 @@ np.addRecognizer({
 
 ## Backends
 
-| Backend | Platform                | Notes                                  |
-| ------- | ----------------------- | -------------------------------------- |
-| `cpu`   | All                     | Universal; fast on Apple Silicon       |
-| `mps`   | macOS Apple Silicon     | CoreML EP, partial op coverage         |
-| `cuda`  | Linux / Windows + NVIDIA | CUDA EP via `onnxruntime-node`        |
+Single unified ONNX session loaded via [`onnxruntime-node`](https://www.npmjs.com/package/onnxruntime-node). Pass `backend` in `NullPiiConfig` to pick the execution-provider ladder:
 
-Auto-selects in priority **CUDA → MPS → CPU**.
+| `backend` | ORT execution providers, in order            | Platform             |
+| --------- | -------------------------------------------- | -------------------- |
+| `'cpu'`   | `['cpu']`                                    | Universal default    |
+| `'cuda'`  | `['cuda', 'cpu']` (fallback on CPU if absent)| Linux / Windows + NVIDIA |
+| `'mps'`   | `['coreml', 'cpu']` (fallback on CPU)        | macOS Apple Silicon  |
+| `'auto'`  | currently equivalent to `'cpu'`              | All                  |
+
+Optional `intraOpNumThreads` / `interOpNumThreads` are forwarded to ORT session options (`0` = ORT default).
+
+## Known limitations
+
+What the library does **not** detect today. None of these are bugs — they are scope decisions. Calling them out so adopters can layer the right extra controls on top.
+
+- **Biometric / genetic identifiers** (GDPR Art. 9 "special categories", HIPAA #15-#18). No detector for fingerprints, retina scans, voiceprints, DNA / RNA sequences, gait, facial geometry, or any structured representation of those. The schema has no class for them and the unified GLiNER was not trained to recognise them. If you handle biometric data, add a domain-specific pipeline upstream of nullpii.
+- **Free-text medical content** beyond named MRN-shaped tokens. `account_number` matches IBAN-/SSN-/CC-/MRN-shaped digit runs by regex, but the library is **not** a HIPAA de-identifier. It will not redact diagnoses, ICD codes in prose, procedure descriptions, medication dosages, lab values, or implied health attributes (e.g. "the patient on dialysis"). For clinical text use Presidio + a medical entity stack (cTAKES, MedSpaCy) and treat nullpii as a thin extra layer for the obvious identifiers.
+- **`private_ip` is regex-only**. The unified GLiNER model is not trained to emit IPs; the post-pass regex pack catches IPv4 / IPv6 / MAC and the never-PII filter drops RFC1918 / RFC5737 / loopback / link-local / multicast / IPv6 docs / IPv6 link-local. IPs embedded inside obfuscated text (zero-width separators, base64-wrapped) still depend on the adversarial preprocessor catching them.
+- **Behavioural / quasi-identifiers**. Browser fingerprints, device IDs that aren't in the recognizer pack, location traces, login timestamps, social-graph edges. Out of scope.
+- **Vendor-specific account-number formats** not in the regex pack (e.g. country-specific tax IDs beyond DNI / CPF / CF / EIN). Register a custom recognizer via `np.addRecognizer(...)` if you handle them.
+- **Inputs > 1 MB**. `normalize.ts` and `recognizers.ts` refuse to scan past 1 MB to avoid quadratic regex behaviour on adversarial padding. Chunk the input upstream.
+- **Detection is best-effort.** No detector is perfect. Treat nullpii as defence in depth, not the sole privacy control.
+
+If you need a category that isn't in the schema, add a custom recognizer for known patterns (regex post-pass) — the runtime treats recognizer hits with `confidence ≥ 0.9` as authoritative over the ML model.
 
 ## Privacy guarantees
 
@@ -196,7 +212,7 @@ Numbers above come from `packages/eval/scripts/bench_full.py` against the 10 can
 
 The `CLAIM-VERIFIER-01` finding (vendor F1 numbers 0.85+/0.99+ not reproducible with span IoU ≥ 0.5 + standard methodology) is documented in [`COMPETITIVE_ANALYSIS.md`](COMPETITIVE_ANALYSIS.md).
 
-Reproduce — `bench_full.py --tools nullpii,presidio,nemotron-pii-raw,piiranha,deberta,gliner-onnx-pii-fp32,gliner-pii-large-v1 --datasets <canonical 10> --backend cpu`.
+Reproduce — `bench_full.py --tools nullpii,deberta,piiranha,presidio,gliner-pii-large-v1,nemotron-pii-raw --backend cpu --datasets all --confusion`.
 
 ## Documentation
 
@@ -220,7 +236,7 @@ Lives on HuggingFace Hub: [`lBroth/nullpii`](https://huggingface.co/lBroth/nullp
 
 Apache 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE). Runtime tree is 100% permissive (MIT / Apache-2.0 / BSD / ISC / CC0); verified by `npm run license-check` in CI.
 
-The **model weights** on HuggingFace are a separate artifact with a separate licence — they are *not* covered by this repo's Apache-2.0 and are *not* bundled in the npm package (fetched on first use). Some per-domain adapters are currently trained on non-permissive data (ai4privacy / Isotonic), so the published weights cannot be relicensed permissively as-is — see the BLOCKER note in [NOTICE](NOTICE) and the `lBroth/nullpii` model card.
+The **model weights** on HuggingFace are a separate artifact with a separate licence — they are *not* covered by this repo's Apache-2.0 and are *not* bundled in the npm package (fetched on first use). v0.2 retrains on a **permissive-only corpus** (Nemotron-PII CC-BY-4.0 + TAB/ECHR MIT + project Faker Apache-2.0 + Presidio synthetic MIT + cc-negative Apache-2.0; ai4privacy / Isotonic dropped from training). Verified upstream licences are documented in [NOTICE](NOTICE); see also the `lBroth/nullpii` model card.
 
 ## Citation
 

@@ -127,6 +127,53 @@ describe('runRecognizers', () => {
     expect(spans[0]?.score).toBe(0.95);
   });
 
+  // F-19 regression. The fast-path indexOf-based prefix scan must
+  // produce the EXACT same span set as the legacy regex-only path for
+  // the canonical recognizer pack across a representative corpus.
+  it('fast-path and slow-path produce identical spans across DEFAULT_RECOGNIZERS', async () => {
+    const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+    // Curated corpus exercising both anchored prefixes and structural
+    // patterns; mix in negatives + noise to flush boundary handling.
+    const corpus = [
+      'leak: AKIAIOSFODNN7EXAMPLE rotate now',
+      'token: ghp_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890',
+      `sk-ant-api03-${'a'.repeat(93)}AA in note`,
+      'STRIPE=sk_live_aBcDeFgHiJkLmNoPqRsTuVwX trailing',
+      'google api AIzaSyA0123456789ABCDEFGHIJklmnoPQRSTUV0',
+      'slack xoxb-1234567890-abcdefghijklmn',
+      'gitlab glpat-abcdefghij1234567890',
+      'npm token npm_abcdefghijklmnopqrstuvwxyz0123456789',
+      'huggingface hf_abcdefghijklmnopqrstuvwxyz01234567ZZ',
+      'IBAN GB29 NWBK 6016 1331 9268 19 ok',
+      'visa 4242 4242 4242 4242 charged',
+      'IPv4 8.8.8.8 reachable',
+      'private 10.0.0.1 (RFC1918) and 224.0.0.1 (multicast)',
+      'email john@acme.io and 12345 67890 noise',
+      'no PII here just words and numbers 99999999',
+      // boundary stress: prefix appears mid-word (should NOT trigger)
+      'mid-word XAKIAIOSFODNN7EXAMPLE',
+      // adjacent placeholders
+      'AKIAIOSFODNN7EXAMPLE and AKIAIOSFODNN7EXAMPLB rotate',
+    ].join('\n\n');
+
+    // Slow-path reference: run each recognizer independently.
+    const referenceSpans: PiiSpan[] = [];
+    for (const r of DEFAULT_RECOGNIZERS) {
+      referenceSpans.push(...runRecognizers(corpus, [r], []));
+    }
+
+    // Fast + slow combined (current implementation):
+    const actualSpans = runRecognizers(corpus, DEFAULT_RECOGNIZERS, []);
+
+    // Sort by (start, end, label) for stable comparison.
+    const sort = (arr: PiiSpan[]) =>
+      [...arr].sort(
+        (a, b) =>
+          a.start - b.start || a.end - b.end || a.label.localeCompare(b.label) || a.score - b.score,
+      );
+    expect(sort(actualSpans)).toEqual(sort(referenceSpans));
+  });
+
   // F-28 regression. MAC addresses used to ride on the `private_ip` label
   // even though they identify hardware, not network endpoints. The
   // dedicated `private_mac` label keeps grouping accurate for consumers

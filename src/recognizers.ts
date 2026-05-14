@@ -27,6 +27,23 @@ export const VALIDATED_RECOGNIZER_SCORE = 0.99998;
  * Refuses inputs above `MAX_INPUT_BYTES` (1 MB): unbounded `{N,}`
  * quantifiers in upstream secret patterns are quadratic on adversarial
  * padding, well above any realistic LLM prompt.
+ *
+ * Two scan paths (F-19):
+ *
+ *  - **Fast path** for recognizers whose pattern begins with a literal
+ *    prefix (`\b<literal>…`) ≥ 3 chars — most secret-token patterns
+ *    (AKIA, ghp_, sk-ant-, AIza, glpat-, npm_, hf_, …). A single
+ *    `String.prototype.indexOf` per prefix finds all candidate
+ *    positions; the full regex is only re-run with the sticky flag at
+ *    each candidate. V8's indexOf is heavily optimised — much cheaper
+ *    than 50 separate regex passes over the whole input.
+ *
+ *  - **Slow path** unchanged for patterns without an extractable
+ *    literal prefix (alternations, character-class starts, structural
+ *    patterns like IBAN / Luhn / IPv4 / PEM).
+ *
+ * Output is identical to the slow-path-only implementation; behaviour
+ * verified by the equivalence test in `test/recognizers.test.ts`.
  */
 export function runRecognizers(
   text: string,
@@ -37,7 +54,11 @@ export function runRecognizers(
     return [];
   }
   const out: PiiSpan[] = [];
-  for (const r of recognizers) {
+  const { fast, slow } = partitionRecognizers(recognizers);
+  if (fast.size > 0) {
+    out.push(...matchAnchored(text, fast, existing));
+  }
+  for (const r of slow) {
     out.push(...matchOne(text, r, existing));
   }
   return filterNeverPii(out, text);
@@ -173,4 +194,98 @@ function overlaps(start: number, end: number, spans: readonly PiiSpan[]): boolea
 
 function passesValidate(match: string, recognizer: Recognizer): boolean {
   return recognizer.validate === undefined || recognizer.validate(match);
+}
+
+// ─── F-19 fast-path: literal-prefix scan ──────────────────────────
+
+/** Extract the literal-prefix anchor from a recognizer regex source if
+ * it starts with `\b<literal>` where literal is ≥ 3 ASCII identifier
+ * chars. Returns null for alternation-prefixed (`\b(?:A|B)…`),
+ * character-class-start (`\b[A-Z]…`), or non-anchored patterns. */
+const LITERAL_PREFIX_RE = /^\\b([A-Za-z0-9_-]{3,})/;
+function extractLiteralPrefix(re: RegExp): string | null {
+  const m = LITERAL_PREFIX_RE.exec(re.source);
+  return m && typeof m[1] === 'string' ? m[1] : null;
+}
+
+/** Memo of recognizer → literal prefix (or `null` for slow-path).
+ * Keyed by the user-supplied `RegExp` — WeakMap so user-added recognizer
+ * patterns are GC'd cleanly. */
+const PREFIX_CACHE = new WeakMap<RegExp, string | null>();
+function getLiteralPrefix(re: RegExp): string | null {
+  const cached = PREFIX_CACHE.get(re);
+  if (cached !== undefined) return cached;
+  const prefix = extractLiteralPrefix(re);
+  PREFIX_CACHE.set(re, prefix);
+  return prefix;
+}
+
+interface PartitionedRecognizers {
+  /** prefix → recognizers that share that prefix (typically 1). */
+  readonly fast: Map<string, Recognizer[]>;
+  /** recognizers without an extractable literal prefix (alternation,
+   * char-class start, etc.) — keep on the slow path. */
+  readonly slow: readonly Recognizer[];
+}
+
+function partitionRecognizers(recognizers: readonly Recognizer[]): PartitionedRecognizers {
+  const fast = new Map<string, Recognizer[]>();
+  const slow: Recognizer[] = [];
+  for (const r of recognizers) {
+    const prefix = getLiteralPrefix(r.pattern);
+    if (prefix === null) {
+      slow.push(r);
+      continue;
+    }
+    const bucket = fast.get(prefix);
+    if (bucket === undefined) fast.set(prefix, [r]);
+    else bucket.push(r);
+  }
+  return { fast, slow };
+}
+
+/** True when char at `i` would NOT cause `\b` to match between i-1 and i,
+ * i.e. the char *before* `i` is a word char (so we're INSIDE a word).
+ * Used to skip false candidate hits (`AKIA` inside `XAKIA…`). */
+function prevIsWordChar(text: string, i: number): boolean {
+  if (i === 0) return false;
+  const c = text.charCodeAt(i - 1);
+  // word char = [A-Za-z0-9_]
+  return (
+    (c >= 0x30 && c <= 0x39) || (c >= 0x41 && c <= 0x5a) || (c >= 0x61 && c <= 0x7a) || c === 0x5f
+  );
+}
+
+function matchAnchored(
+  text: string,
+  fast: Map<string, Recognizer[]>,
+  existing: readonly PiiSpan[],
+): PiiSpan[] {
+  const out: PiiSpan[] = [];
+  for (const [prefix, recs] of fast) {
+    let i = text.indexOf(prefix);
+    while (i !== -1) {
+      if (!prevIsWordChar(text, i)) {
+        for (const r of recs) {
+          const re = ensureGlobal(r.pattern);
+          re.lastIndex = i;
+          const m = re.exec(text);
+          if (m !== null && m.index === i) {
+            const start = m.index;
+            const end = start + m[0].length;
+            const overrides = r.confidence >= 0.9;
+            if ((overrides || !overlaps(start, end, existing)) && passesValidate(m[0], r)) {
+              const score = r.validate !== undefined ? VALIDATED_RECOGNIZER_SCORE : r.confidence;
+              out.push({ label: r.label, start, end, score, text: m[0] });
+            }
+          }
+        }
+      }
+      // Advance by one char so overlapping prefixes still fire (rare in
+      // practice, but `indexOf(prefix, i + prefix.length)` would miss
+      // `AKIAAKIA…` if the slow path used to catch it).
+      i = text.indexOf(prefix, i + 1);
+    }
+  }
+  return out;
 }

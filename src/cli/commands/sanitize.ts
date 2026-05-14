@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { readFileSync } from 'node:fs';
 import chalk from 'chalk';
 import type { Command } from 'commander';
 import { NullPii } from '../../nullpii.js';
@@ -41,9 +40,6 @@ async function readInput(text: string | undefined, useStdin: boolean): Promise<s
   if (useStdin) return readStdin();
   if (text === undefined) {
     throw new Error('sanitize: pass <text> or --stdin');
-  }
-  if (text.startsWith('@')) {
-    return readFileSync(text.slice(1), 'utf-8');
   }
   return text;
 }

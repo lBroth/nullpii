@@ -19,6 +19,8 @@ import { SessionMismatchError, UnknownPlaceholderError } from '../src/errors.js'
 import type { PiiSpan } from '../src/types/index.js';
 import { PiiVault } from '../src/vault.js';
 
+// F-32 regression block lives at the bottom of this file.
+
 function span(label: PiiSpan['label'], start: number, end: number, text: string): PiiSpan {
   return { label, start, end, text, score: 1.0 };
 }
@@ -112,5 +114,54 @@ describe('F-08 / F-13 · foreign-prefix placeholder', () => {
     expect(r.foreignPlaceholders).toHaveLength(2);
     expect(r.unknownPlaceholders).toHaveLength(1);
     expect(r.restored).toContain('John');
+  });
+});
+
+// F-32 regression. `RestoreResult.replacementsByLabel` exposes per-label
+// substitution counts for downstream observability — "did the LLM
+// preserve placeholders?" / "which categories actually round-tripped?"
+// Caller-visible without spelunking through `spans`.
+describe('F-32 · RestoreResult.replacementsByLabel', () => {
+  it('counts substitutions grouped by PII label', () => {
+    const v = new PiiVault();
+    const id = v.createSession();
+    const text = 'Hi Alice, then Bob and email a@x.com or b@x.com';
+    const spans: PiiSpan[] = [
+      { label: 'private_person', start: 3, end: 8, text: 'Alice', score: 1 },
+      { label: 'private_person', start: 15, end: 18, text: 'Bob', score: 1 },
+      { label: 'private_email', start: 29, end: 36, text: 'a@x.com', score: 1 },
+      { label: 'private_email', start: 40, end: 47, text: 'b@x.com', score: 1 },
+    ];
+    const sanitized = v.sanitize(text, spans, id).sanitized;
+    const r = v.restore(sanitized, id);
+    expect(r.replacements).toBe(4);
+    expect(r.replacementsByLabel).toEqual({
+      private_person: 2,
+      private_email: 2,
+    });
+  });
+
+  it('returns an empty object when nothing is restored', () => {
+    const v = new PiiVault();
+    const id = v.createSession();
+    const r = v.restore('plain text no placeholders', id);
+    expect(r.replacements).toBe(0);
+    expect(r.replacementsByLabel).toEqual({});
+  });
+
+  it('does not count anomalous (unknown/foreign) placeholders', () => {
+    const v = new PiiVault();
+    const idA = v.createSession();
+    const idB = v.createSession();
+    const pB = idB.replace(/-/g, '').slice(0, 8).toLowerCase();
+    const sanitized = v.sanitize(
+      'Hi John',
+      [{ label: 'private_person', start: 3, end: 7, text: 'John', score: 1 }],
+      idA,
+    ).sanitized;
+    const text = `${sanitized} stray-foreign {{PII_PRIVATE_EMAIL_0_${pB}}}`;
+    const r = v.restore(text, idA);
+    expect(r.replacementsByLabel).toEqual({ private_person: 1 });
+    expect(r.foreignPlaceholders).toHaveLength(1);
   });
 });

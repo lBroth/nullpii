@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import type { PiiLabel } from './labels.js';
 import type { PiiSpan } from './spans.js';
 
 /**
@@ -24,6 +25,12 @@ export interface RestoreResult {
   readonly restored: string;
   /** Number of placeholders that were successfully replaced. */
   readonly replacements: number;
+  /** Per-label substitution counts. Empty object when `replacements === 0`.
+   * Useful for "did the LLM preserve placeholders?" / "which categories
+   * actually round-tripped?" telemetry without spelunking through the
+   * sanitize spans. Anomalous placeholders (unknown / foreign) are not
+   * counted here — they appear in their own arrays. */
+  readonly replacementsByLabel: Readonly<Partial<Record<PiiLabel, number>>>;
   /** Placeholders carrying the current session's prefix but with no entry
    * in the vault — typically LLM hallucinations. Left literal in `restored`.
    * Empty if everything matched. */

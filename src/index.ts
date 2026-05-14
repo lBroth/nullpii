@@ -53,3 +53,16 @@ export { NullPii, restore, sanitize } from './nullpii.js';
 
 // LLM-prompt helper
 export { LLM_PRESERVATION_HINT, wrapForLLM } from './wrap-for-llm.js';
+
+// Structural validators — exported so recognizer packs can reuse the
+// canonical implementations instead of duplicating them. Each returns
+// `true` only when the candidate satisfies the well-defined checksum
+// for its format (mod-97 IBAN, Luhn cards, base58check BTC,
+// mod-11 × 2 CPF, weighted-position Codice Fiscale).
+export {
+  base58CheckValid,
+  codiceFiscaleValid,
+  cpfValid,
+  iban97Valid,
+  luhnValid,
+} from './validators.js';

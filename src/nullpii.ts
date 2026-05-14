@@ -14,6 +14,7 @@ import {
   DEFAULT_RECOGNIZERS,
   DEFAULT_RECOGNIZERS_ENABLED,
   DEFAULT_VARIANT,
+  MAX_INPUT_BYTES,
 } from './defaults.js';
 import { ModelNotInitializedError, TextTooLongError } from './errors.js';
 import { decodeGlinerLogits } from './gliner-decoder.js';
@@ -32,6 +33,7 @@ import {
   type PiiCategory,
   type PiiSpan,
   type Recognizer,
+  type RestoreOptions,
   type RestoreResult,
   type SanitizeResult,
 } from './types/index.js';
@@ -104,6 +106,13 @@ export class NullPii {
    * Inputs over `max_len=384` subwords truncate silently. Pass
    * `strictLength: true` to throw `TextTooLongError` instead. */
   async sanitize(text: string, sessionId?: string): Promise<SanitizeResult> {
+    // Hard cap. Adversarial 1 MB+ payloads cause quadratic regex behaviour
+    // and bypass both the recognizer pack and the adversarial-normalize
+    // pass. Refuse upfront so callers learn to chunk; matches the
+    // README "Inputs > 1 MB — refused upfront" contract.
+    if (text.length > MAX_INPUT_BYTES) {
+      throw new TextTooLongError(text.length, MAX_INPUT_BYTES, 'bytes');
+    }
     await this.ensureInit();
     const tokenizer = this.tokenizer;
     const backend = this.backend;
@@ -230,9 +239,14 @@ export class NullPii {
     return mapBackToOriginal(result, text);
   }
 
-  restore(text: string, sessionId: string): RestoreResult {
-    const r = this.vault.restore(text, sessionId);
-    return { restored: unescapePlaceholders(r.restored), replacements: r.replacements };
+  restore(text: string, sessionId: string, options: RestoreOptions = {}): RestoreResult {
+    const r = this.vault.restore(text, sessionId, options);
+    return {
+      restored: unescapePlaceholders(r.restored),
+      replacements: r.replacements,
+      unknownPlaceholders: r.unknownPlaceholders,
+      foreignPlaceholders: r.foreignPlaceholders,
+    };
   }
 
   destroySession(sessionId: string): void {
@@ -452,7 +466,16 @@ export async function sanitize(
 export function restore(
   text: string,
   sessionId: string,
-  config: NullPiiConfig = {},
+  configOrOptions: NullPiiConfig | RestoreOptions = {},
+  options: RestoreOptions = {},
 ): RestoreResult {
-  return instance(config).restore(text, sessionId);
+  // Accept the legacy 3-arg form `restore(text, sessionId, config)` and the
+  // new 4-arg form `restore(text, sessionId, config, options)`. When called
+  // with only 3 args and the third looks like an options bag (i.e. has
+  // `strict`), interpret it as options against the default config.
+  const looksLikeOptions = 'strict' in configOrOptions && Object.keys(configOrOptions).length === 1;
+  if (looksLikeOptions) {
+    return instance({}).restore(text, sessionId, configOrOptions as RestoreOptions);
+  }
+  return instance(configOrOptions as NullPiiConfig).restore(text, sessionId, options);
 }

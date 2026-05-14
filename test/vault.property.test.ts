@@ -71,7 +71,7 @@ describe('PiiVault — property: sanitize ↔ restore round-trip', () => {
 });
 
 describe('PiiVault — property: cross-session restore mismatch', () => {
-  it('restoring placeholders minted in session A using session B throws SessionMismatchError', () => {
+  it('restoring placeholders minted in session A using session B with strict surfaces or throws', () => {
     fc.assert(
       fc.property(
         fc.string({ minLength: 1, maxLength: 100 }).chain((text) =>
@@ -85,7 +85,13 @@ describe('PiiVault — property: cross-session restore mismatch', () => {
           const b = v.createSession();
           const sanitized = v.sanitize(text, spans, a).sanitized;
           if (sanitized === text) return; // no placeholders emitted
-          expect(() => v.restore(sanitized, b)).toThrow();
+          // Default mode surfaces foreign-prefix placeholders, no throw,
+          // zero replacements (none belong to session b).
+          const r = v.restore(sanitized, b);
+          expect(r.foreignPlaceholders.length).toBeGreaterThan(0);
+          expect(r.replacements).toBe(0);
+          // strict: true still throws — legacy guarantee preserved.
+          expect(() => v.restore(sanitized, b, { strict: true })).toThrow();
         },
       ),
       { numRuns: 100 },

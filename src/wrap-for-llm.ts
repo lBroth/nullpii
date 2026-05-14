@@ -3,20 +3,31 @@
 import type { SanitizeResult } from './types/index.js';
 
 /**
- * Built-in preservation hint emitted by `wrapForLLM`. Saturates round-trip
- * preservation to 100% across all task scenarios tested in
- * `packages/eval/private/scripts/placeholder_llm_with_hint.py` (translate /
- * summarise / rewrite-formal / json-extract / markdown-format / adversarial
- * "ignore-syntax"), even on smaller open-weight models.
+ * Built-in preservation hint emitted by `wrapForLLM`. Tuned to saturate
+ * round-trip preservation across translate / summarise / rewrite-formal /
+ * json-extract / markdown-format / adversarial "ignore-syntax" scenarios
+ * (see `packages/eval/private/scripts/placeholder_llm_with_hint.py`).
  *
- * Cost: ~80 prompt tokens once. Break-even is ~5 placeholders per request.
+ * The runtime placeholder shape is 4 segments: `{{PII_<TYPE>_<N>_<HEX>}}`
+ * (see `src/types/constants.ts:PLACEHOLDER_TEMPLATE`). The trailing hex
+ * segment binds each placeholder to its minting session and is verified
+ * by `restore()` — dropping it breaks the session-prefix check and turns
+ * a benign rewrite into a `SessionMismatchError` / silent
+ * `unknownPlaceholders` surfacing. The hint calls this out explicitly so
+ * the LLM doesn't "tidy up" the placeholder by trimming what looks like
+ * a noisy suffix.
+ *
+ * Cost: 103 prompt tokens (cl100k_base) / 102 (o200k_base), measured
+ * 2026-05-14 — emitted once per request, not per placeholder. Break-even
+ * ~7 placeholders per request relative to letting the LLM rewrite them.
  */
 export const LLM_PRESERVATION_HINT =
-  'IMPORTANT: Any text matching the pattern `{{PII_<TYPE>_<N>}}` is a privacy ' +
-  'placeholder. Preserve every such placeholder LITERALLY in your output — do ' +
-  'not paraphrase, reformat, expand, escape, or substitute them with ' +
-  'realistic-looking values. They will be programmatically replaced after ' +
-  'your response.';
+  'IMPORTANT: Any text matching the pattern `{{PII_<TYPE>_<N>_<HEX>}}` is a ' +
+  'privacy placeholder (e.g. `{{PII_PRIVATE_EMAIL_0_a1b2c3d4}}`). Preserve ' +
+  'every such placeholder LITERALLY and IN FULL in your output — do not ' +
+  'paraphrase, reformat, expand, escape, or substitute them with realistic-' +
+  'looking values, and do not drop the trailing hex session segment. They ' +
+  'will be programmatically replaced after your response.';
 
 /**
  * Prefix `sanitized` text with the standard PII-preservation hint, optionally
@@ -27,12 +38,12 @@ export const LLM_PRESERVATION_HINT =
  * ```ts
  * const safe = await sanitize('Email John at john@x.com');
  * const prompt = wrapForLLM(safe, 'Translate to Italian');
- * // prompt = "IMPORTANT: Any text matching {{PII_<TYPE>_<N>}} is a privacy
- * //          placeholder. Preserve … literally …
+ * // prompt = "IMPORTANT: Any text matching {{PII_<TYPE>_<N>_<HEX>}} is a
+ * //          privacy placeholder. Preserve … literally …
  * //
  * //          Translate to Italian
  * //
- * //          Email {{PII_PRIVATE_PERSON_0}} at {{PII_PRIVATE_EMAIL_0}}"
+ * //          Email {{PII_PRIVATE_PERSON_0_a1b2c3d4}} at {{PII_PRIVATE_EMAIL_0_a1b2c3d4}}"
  * const reply = await llm(prompt);  // any model
  * const out = restore(reply, safe.sessionId);
  * ```

@@ -2,11 +2,12 @@
 
 import { randomUUID } from 'node:crypto';
 import debug from 'debug';
-import { SessionMismatchError, SessionNotFoundError } from './errors.js';
+import { SessionMismatchError, SessionNotFoundError, UnknownPlaceholderError } from './errors.js';
 import {
   PLACEHOLDER_REGEX,
   PLACEHOLDER_TEMPLATE,
   type PiiSpan,
+  type RestoreOptions,
   type RestoreResult,
   SESSION_PREFIX_LEN,
   type SanitizeResult,
@@ -79,33 +80,64 @@ export class PiiVault {
 
   /**
    * Replace every placeholder in `text` with its original value from the
-   * session vault. Placeholders not found in the vault are left as-is.
+   * session vault.
+   *
+   * Anomaly classes:
+   *   - "unknown" — placeholder matches the current session prefix but has
+   *     no vault entry (typically an LLM hallucination).
+   *   - "foreign" — placeholder carries a different session's prefix.
+   *
+   * Default mode surfaces both via `RestoreResult.unknownPlaceholders` and
+   * `.foreignPlaceholders` and leaves them literal in `restored`. Legitimate
+   * placeholders are still substituted on the same pass.
+   *
+   * `{ strict: true }` throws on the first anomaly seen
+   * (`UnknownPlaceholderError` or `SessionMismatchError`) — useful when the
+   * caller treats any anomaly as a hard failure.
    *
    * @throws {SessionNotFoundError} if `sessionId` is unknown.
-   * @throws {SessionMismatchError} if any placeholder in `text` carries a
-   *   session prefix that does not match `sessionId`.
+   * @throws {SessionMismatchError} when `strict` and a foreign-prefix placeholder is found.
+   * @throws {UnknownPlaceholderError} when `strict` and a same-prefix placeholder is unknown.
    */
-  restore(text: string, sessionId: string): RestoreResult {
+  restore(text: string, sessionId: string, options: RestoreOptions = {}): RestoreResult {
     const session = this.requireSession(sessionId);
     const expectedPrefix = sessionPrefixOf(sessionId);
+    const strict = options.strict === true;
     let replacements = 0;
-    let mismatch: { found: string } | null = null;
+    const unknownPlaceholders: string[] = [];
+    const foreignPlaceholders: string[] = [];
+    let strictError: SessionMismatchError | UnknownPlaceholderError | null = null;
     const re = new RegExp(PLACEHOLDER_REGEX.source, 'g');
     const restored = text.replace(re, (match, _label, _idx, foundPrefix: string) => {
       if (foundPrefix !== expectedPrefix) {
-        if (mismatch === null) mismatch = { found: foundPrefix };
+        if (strict && strictError === null) {
+          strictError = new SessionMismatchError(expectedPrefix, foundPrefix);
+        }
+        foreignPlaceholders.push(match);
         return match;
       }
       const original = session.entries.get(match);
-      if (original === undefined) return match;
+      if (original === undefined) {
+        if (strict && strictError === null) {
+          strictError = new UnknownPlaceholderError(match);
+        }
+        unknownPlaceholders.push(match);
+        return match;
+      }
       replacements += 1;
       return original;
     });
-    if (mismatch !== null) {
-      throw new SessionMismatchError(expectedPrefix, (mismatch as { found: string }).found);
+    if (strictError !== null) {
+      throw strictError;
     }
-    log('restored: replacements=%d session=%s', replacements, expectedPrefix);
-    return { restored, replacements };
+    log(
+      'restored: replacements=%d unknown=%d foreign=%d session=%s',
+      replacements,
+      unknownPlaceholders.length,
+      foreignPlaceholders.length,
+      expectedPrefix,
+    );
+    return { restored, replacements, unknownPlaceholders, foreignPlaceholders };
   }
 
   /**

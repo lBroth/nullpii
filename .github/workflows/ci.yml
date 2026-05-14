@@ -29,3 +29,53 @@ jobs:
       - run: npm run license-check
       - run: npm run circular-check
       - run: npm run sbom
+
+  e2e-onnx:
+    # Real-ONNX end-to-end smoke test (F-18). Loads the unified GLiNER model
+    # from HuggingFace and runs a small fixture set through the real
+    # inference path so CI catches regressions the mocked unit suite cannot
+    # (ScatterND clamping, decoder index math, chunk-boundary dedupe,
+    # recognizer/ML reconciliation, base64 layer).
+    #
+    # Gated on the repo-level variable `NULLPII_E2E_ENABLED` so the job
+    # only runs once the HF repo + revision are published. Flip the
+    # variable in GitHub: Settings → Secrets and variables → Actions →
+    # Variables → New variable: NULLPII_E2E_ENABLED = true.
+    name: e2e (real ONNX)
+    if: ${{ vars.NULLPII_E2E_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    env:
+      # The unified-ONNX HF repo. Override via repo variable if you need to
+      # point at a fork or a pre-release staging repo.
+      NULLPII_E2E_HF_REPO: ${{ vars.NULLPII_E2E_HF_REPO != '' && vars.NULLPII_E2E_HF_REPO || 'lBroth/nullpii' }}
+      NULLPII_E2E_HF_REVISION: ${{ vars.NULLPII_E2E_HF_REVISION != '' && vars.NULLPII_E2E_HF_REVISION || 'main' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install huggingface-cli
+        run: python -m pip install -q huggingface_hub
+      - name: Restore cached model artifacts
+        id: model-cache
+        uses: actions/cache@v4
+        with:
+          path: ./.nullpii-e2e-model
+          key: nullpii-e2e-${{ env.NULLPII_E2E_HF_REPO }}-${{ env.NULLPII_E2E_HF_REVISION }}-v1
+      - name: Download unified ONNX from HuggingFace
+        if: steps.model-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p .nullpii-e2e-model
+          huggingface-cli download "$NULLPII_E2E_HF_REPO" \
+            --revision "$NULLPII_E2E_HF_REVISION" \
+            --local-dir .nullpii-e2e-model \
+            --include "model.onnx" "tokenizer.json" "gliner_config.json" "tokenizer_config.json"
+      - run: npm ci
+      - name: Run real-ONNX E2E suite
+        env:
+          NULLPII_MODEL_DIR: ${{ github.workspace }}/.nullpii-e2e-model
+        run: npm run test:e2e

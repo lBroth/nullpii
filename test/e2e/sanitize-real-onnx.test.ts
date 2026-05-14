@@ -70,22 +70,17 @@ describe.skipIf(SKIP)('F-18 · real ONNX sanitize end-to-end', () => {
     expect(accounts[0]?.score ?? 0).toBeGreaterThanOrEqual(0.9);
   }, 30_000);
 
-  it('catches mod-97-valid IBAN as PII (any label)', async () => {
-    // Known labeling drift (F-39 / follow-up): the unified ONNX often
-    // tags spaced IBANs as `private_address` with score ~0.9999, which
-    // wins cross-label IoU dedupe against the IBAN recognizer's
-    // `account_number` at 0.95. Both labels result in correct redaction
-    // — the bug is the label, not the detection. Assert PII coverage
-    // here; a separate finding tracks boosting validator-passing
-    // recognizers (iban97/luhn/CPF/CF/base58check) above ML scores so
-    // dedupe picks the structurally-correct label.
+  it('catches mod-97-valid IBAN with the correct `account_number` label', async () => {
+    // F-39 regression. Before VALIDATED_RECOGNIZER_SCORE, the unified
+    // ONNX often tagged spaced IBANs as `private_address` (~0.9999),
+    // outranking the IBAN recognizer's static 0.95 in cross-label IoU
+    // dedupe. Validator-passing recognizers (iban97 here) now emit at
+    // 0.99998 so dedupe picks the structurally-correct label.
     const text = 'Please wire to GB29 NWBK 6016 1331 9268 19 by Friday.';
     const out = await np.sanitize(text);
     const ibanSpans = out.spans.filter((s) => s.text.replace(/\s/g, '').startsWith('GB29NWBK'));
     expect(ibanSpans.length).toBeGreaterThanOrEqual(1);
-    const span = ibanSpans[0];
-    expect(span).toBeDefined();
-    expect(['account_number', 'private_address']).toContain(span?.label);
+    expect(ibanSpans[0]?.label).toBe('account_number');
   }, 30_000);
 
   it('catches AWS access key as a `secret`', async () => {

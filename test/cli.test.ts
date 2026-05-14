@@ -48,6 +48,6 @@ describe('CLI: buildProgram', () => {
   });
 });
 
-// Integration tests against a real model are exercised by the scratch
-// script `test-full-stack.mjs` — see the internal plan for the
-// command. The CI suite stays mock-free + ONNX-free.
+// Real-ONNX integration tests live in `test/e2e/` and run via
+// `npm run test:e2e` (gated on `NULLPII_E2E=1` + `NULLPII_MODEL_DIR`).
+// The default `npm test` suite stays mock-free of ONNX.

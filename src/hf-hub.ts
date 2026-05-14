@@ -7,11 +7,11 @@ import { basename, dirname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
-import debug from 'debug';
 import { CHECKSUM_SUFFIX } from './defaults.js';
 import { ModelNotFoundError } from './errors.js';
+import { logf } from './log.js';
 
-const log = debug('nullpii:hf-hub');
+const LOG_SCOPE = 'nullpii:hf-hub';
 
 const HF_HOST = 'https://huggingface.co';
 const SHA_SUFFIX = CHECKSUM_SUFFIX;
@@ -42,7 +42,7 @@ export async function ensureFile(
   await mkdir(dirname(dest), { recursive: true });
 
   if (existsSync(dest) && (await checksumMatchesSidecar(dest))) {
-    log('cache hit: %s', dest);
+    logf(LOG_SCOPE, 'cache.hit', { path: dest });
     return dest;
   }
 
@@ -60,13 +60,13 @@ async function retryDownload(url: string, dest: string, timeoutMs: number): Prom
   let lastErr: unknown;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      log('downloading %s (attempt %d/%d)', url, attempt, MAX_ATTEMPTS);
+      logf(LOG_SCOPE, 'download.start', { url, attempt, maxAttempts: MAX_ATTEMPTS });
       return await downloadWithTimeout(url, dest, timeoutMs);
     } catch (err) {
       lastErr = err;
       if (!isRetryable(err) || attempt === MAX_ATTEMPTS) break;
       const delay = Math.min(BACKOFF_BASE_MS * 2 ** (attempt - 1), BACKOFF_MAX_MS);
-      log('retry in %dms after: %s', delay, asMessage(err));
+      logf(LOG_SCOPE, 'download.retry', { delayMs: delay, attempt });
       await sleep(delay);
     }
   }
@@ -105,10 +105,6 @@ function isRetryable(err: unknown): boolean {
     if (typeof code === 'string' && RETRYABLE_ERROR_CODES.has(code)) return true;
   }
   return false;
-}
-
-function asMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 async function downloadWithTimeout(url: string, dest: string, timeoutMs: number): Promise<string> {

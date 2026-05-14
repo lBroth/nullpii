@@ -46,4 +46,14 @@ export interface RestoreOptions {
    * placeholder, or `UnknownPlaceholderError` on the first unknown placeholder.
    * Default `false` — anomalies surface in the returned arrays instead. */
   readonly strict?: boolean;
+  /** Caller-supplied trace identifier propagated to structured log lines
+   * emitted during this call. Never logged with PII attached. */
+  readonly traceId?: string;
+}
+
+/** Options for `sanitize()` calls. */
+export interface SanitizeOptions {
+  /** Caller-supplied trace identifier propagated to structured log lines
+   * emitted during this call. Never logged with PII attached. */
+  readonly traceId?: string;
 }

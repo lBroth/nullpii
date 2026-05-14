@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import debug from 'debug';
 import { OrtUnifiedBackend } from './backend/unified-backend.js';
 import { detectBase64Pii } from './base64-detector.js';
 import { chunkText, dedupeOverlappingSpans } from './chunking.js';
@@ -24,6 +23,7 @@ import {
   DEFAULT_MAX_SPAN_WIDTH,
   GlinerTokenizer,
 } from './gliner-tokenizer.js';
+import { logf } from './log.js';
 import { ModelManager } from './model-manager.js';
 import { normalizeForDetection, remapSpan } from './normalize.js';
 import { runRecognizers } from './recognizers.js';
@@ -35,11 +35,12 @@ import {
   type Recognizer,
   type RestoreOptions,
   type RestoreResult,
+  type SanitizeOptions,
   type SanitizeResult,
 } from './types/index.js';
 import { PiiVault } from './vault.js';
 
-const log = debug('nullpii');
+const LOG_SCOPE = 'nullpii';
 
 const PLACEHOLDER_OPEN = '{{';
 // PUA sentinel — round-trip safe and effectively never appears in
@@ -105,7 +106,11 @@ export class NullPii {
    *
    * Inputs over `max_len=384` subwords truncate silently. Pass
    * `strictLength: true` to throw `TextTooLongError` instead. */
-  async sanitize(text: string, sessionId?: string): Promise<SanitizeResult> {
+  async sanitize(
+    text: string,
+    sessionId?: string,
+    options: SanitizeOptions = {},
+  ): Promise<SanitizeResult> {
     // Hard cap. Adversarial 1 MB+ payloads cause quadratic regex behaviour
     // and bypass both the recognizer pack and the adversarial-normalize
     // pass. Refuse upfront so callers learn to chunk; matches the
@@ -230,7 +235,11 @@ export class NullPii {
     const spans = refineOn ? refineSpanBoundaries(escaped, merged) : merged;
 
     const session = sessionId ?? this.vault.createSession();
-    log('sanitize: spans=%d session=%s', spans.length, session.slice(0, 8)); // 8-char log prefix (8 ≠ SESSION_PREFIX_LEN; log truncation is purely for readability, not security)
+    logf(LOG_SCOPE, 'sanitize', {
+      spans: spans.length,
+      session: session.slice(0, 8), // log-only truncation, not the security-critical SESSION_PREFIX_LEN
+      ...(options.traceId !== undefined && { traceId: options.traceId }),
+    });
     const result = this.vault.sanitize(escaped, spans, session);
     return mapBackToOriginal(result, text);
   }
@@ -295,7 +304,7 @@ export class NullPii {
       this.modelDir,
       this.config.maxSequenceLength ?? DEFAULT_MAX_SEQUENCE_LENGTH,
     );
-    log('init complete: modelDir=%s', this.modelDir);
+    logf(LOG_SCOPE, 'init', { modelDir: this.modelDir });
   }
 }
 

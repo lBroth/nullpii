@@ -2,12 +2,12 @@
 
 import { join } from 'node:path';
 import { Tokenizer } from '@anush008/tokenizers';
-import debug from 'debug';
 import { TOKENIZER_FILE } from './defaults.js';
 import { ModelNotFoundError } from './errors.js';
+import { logf } from './log.js';
 import { fileExists } from './paths.js';
 
-const log = debug('nullpii:gliner-tokenizer');
+const LOG_SCOPE = 'nullpii:gliner-tokenizer';
 
 /** GLiNER special tokens (from `gliner_config.json`). */
 export const ENT_TOKEN = '<<ENT>>';
@@ -94,7 +94,7 @@ export class GlinerTokenizer {
     if (!(await fileExists(path))) {
       throw new ModelNotFoundError(path);
     }
-    log('loading %s (max_len=%d)', path, this.maxSequenceLength);
+    logf(LOG_SCOPE, 'load', { path, maxLen: this.maxSequenceLength });
     const t = Tokenizer.fromFile(path);
     // GLiNER ships `<<ENT>>` and `<<SEP>>` as added tokens in
     // `tokenizer.json` already, but registering them again is a no-op
@@ -209,15 +209,13 @@ export class GlinerTokenizer {
 
     const seqLen = ids.length;
     if (truncatedSubwords || truncatedByWordCap) {
-      log(
-        'input truncated to %d/%d words (subword cap %d hit=%s, word cap %d hit=%s)',
-        numTextWords,
-        words.length,
-        this.maxSequenceLength,
-        truncatedSubwords,
-        MAX_TEXT_WORDS,
-        truncatedByWordCap,
-      );
+      logf(LOG_SCOPE, 'encode.truncated', {
+        words: numTextWords,
+        count: words.length,
+        maxLen: this.maxSequenceLength,
+        truncated: true,
+        cap: truncatedByWordCap ? MAX_TEXT_WORDS : this.maxSequenceLength,
+      });
     }
 
     const promptLength = 2 * labels.length + 1; // ENT-per-label + final SEP-token

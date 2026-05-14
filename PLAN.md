@@ -1,14 +1,11 @@
 # nullpii — v0.2 Plan: OSS self-hosted gateway
 
-> Status (2026-05-13): partial. The unified-model retrain (companion
-> doc: `packages/eval/RETRAIN.md`) is **done** on branch
-> `retrain-unified-phase1` — single ONNX, permissive-only training,
-> ~1.2 GB download. `src/` cleanup + tests + docs landed. Pending: HF
-> upload + revision pin, full publishable competitor matrix (the
-> 2026-05-13 RunPod 5090 run produced 14/24 datasets at
-> `packages/eval/results/runpod-20260513/`), and the gateway / docker /
-> blog-post work outlined below. Sections 7 (honest headline metric) and
-> 9 (licensing audit) are done — see CHANGELOG 0.2.0 + NOTICE.
+> Status (2026-05-13): partial. The unified-model retrain is **done** —
+> single ONNX, permissive-only training, ~1.2 GB download. `src/` cleanup
+> + tests + docs landed. Pending: HF upload + revision pin, full
+> publishable competitor matrix, and the gateway / docker / blog-post
+> work outlined below. Sections 7 (honest headline metric) and 9
+> (licensing audit) are done — see CHANGELOG 0.2.0 + NOTICE.
 
 ## Positioning
 
@@ -167,7 +164,7 @@ This is purely a README edit, no code change.
 All three are already written internally; just need a public form.
 
 - **"PII redaction benchmarks aren't reproducible"** — derived from
-  `CLAIM-VERIFIER-01` / `COMPETITIVE_ANALYSIS.md`. Shows Presidio
+  the `CLAIM-VERIFIER-01` finding. Shows Presidio
   0.85+ and piiranha 0.99+ vendor numbers don't survive standard
   span-IoU methodology. HN-front-page material.
 - **"Why we chose `{{PII_TYPE_N}}` as the placeholder format"** —

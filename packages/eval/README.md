@@ -23,7 +23,7 @@ python -u scripts/bench_full.py \
   --out-dir results/$(date +%Y%m%d)-bench
 ```
 
-Output: `matrix.json` (per-cell F1 / wall / throughput) + `matrix.csv` (pivot). Override caps with `--max-per-dataset N` or `--no-cap`. Methodology + bare-mode contract: [`COMPETITIVE_ANALYSIS.md`](../../COMPETITIVE_ANALYSIS.md).
+Output: `matrix.json` (per-cell F1 / wall / throughput) + `matrix.csv` (pivot). Override caps with `--max-per-dataset N` or `--no-cap`. All third-party adapters run bare — no `nullpii` post-processing is applied to their predictions.
 
 ## Reproduce latency
 
@@ -43,7 +43,7 @@ python -u scripts/bench_latency.py --profiles nullpii-router-embedding \
 
 ## Bundled datasets
 
-`datasets/` — Apache 2.0, no real PII. See [`datasets/README.md`](datasets/README.md) for schema + subset breakdown. Project-authored bench data is unified under `nullpii-bench.jsonl` (2 421 rows, multiple `subset` filters). External datasets loaded on demand: `ai4privacy/pii-masking-300k`, `Isotonic/pii-masking-200k`, `nvidia/Nemotron-PII`, `presidio-research/presidio-synthetic`.
+`datasets/` — Apache 2.0, no real PII. See [`datasets/README.md`](datasets/README.md) for schema. Three files live there at HEAD: `nullpii-bench.jsonl` (project-authored), `presidio-synthetic.jsonl` (external, MIT), `tab-echr-test.jsonl` (external, MIT). All other bench rows (`ai4privacy-*`, `isotonic-*`, `nemotron-pii-*`, `argilla-pii`) are fetched from HuggingFace at bench time by the per-tool adapters.
 
 ## Model card
 

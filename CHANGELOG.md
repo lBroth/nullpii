@@ -5,11 +5,11 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [0.2.0] — unreleased (branch `retrain-unified-phase1`)
 
-Unified-model v0.2 track — see `packages/eval/RETRAIN.md` and the 2026-05-12/13 entries in `packages/eval/private/JOURNAL.md`.
+Unified-model v0.2 track.
 
 ### Changed
 
-- **Single unified GLiNER ONNX replaces the v0.1 5-shard routed stack.** No more cosine domain router, no distiluse sentence encoder, no per-domain dispatch. Trained on a permissive-only corpus (Nemotron-PII CC-BY + TAB/ECHR MIT + project Faker + Presidio synthetic MIT + cc-negative regularizer; ai4privacy / Isotonic dropped from training entirely). One LoRA, rank 32, merged into `urchade/gliner_multi_pii-v1`.
+- **Single unified GLiNER ONNX replaces the v0.1 5-shard routed stack.** No more cosine domain router, no distiluse sentence encoder, no per-domain dispatch. One LoRA, rank 32, merged into `urchade/gliner_multi_pii-v1`. Trained on a permissive-only corpus (legal attribution in [NOTICE](NOTICE) + the `lBroth/nullpii` model card).
 - **Default HF download: ~6 GB → ~1.2 GB FP32** (~350 MB int8). One file `model.onnx` + `tokenizer.json` + `gliner_config.json` + `tokenizer_config.json`.
 - **`src/`**: deleted `distiluse-encoder.ts`, `router-embedding.ts`, `unified-mode.ts` (transitional), `backend/multi-backend.ts`. Added `backend/unified-backend.ts` (single ORT session). `sanitize()` no longer encodes / routes — straight chunk → infer → recognizers + base64 → dedupe → vault.
 - **`packages/eval/scripts/release/`**: dropped `export_router_artifacts.py` + `export_merged_lora_onnx.py`; new `export_unified_onnx.py`. `release.sh` rewritten for the unified pipeline.
@@ -54,7 +54,7 @@ Macro F1, IoU ≥ 0.5 partial-match span scoring, `--parallel-tools 1`. 7 tools 
 
 - **Mixed F1 (8 datasets) — 0.7846** vs next-best baseline `nemotron-pii-raw` 0.5912 (+0.19). nullpii wins 7 of 8 macro datasets. `nemotron-pii-test` excluded from macro (enterprise adapter in-distribution + self-bench for `nemotron-pii-raw`); row still shown in README table with ⚠.
 - **Held-out OOD multilingual (6) — F1 0.7662.** Real generalisation across en + de + fr + it: `presidio-synthetic`, `ai4privacy-300k-heldout`, `isotonic-{en,de,fr,it}-heldout`.
-- **In-distribution diagnostic (2) — F1 0.8396.** Memorisation + preprocessor regression — adapters trained on slices. `nullpii-bench` ⚠ self-authored (unified 2 421-row corpus: bundled OOD + 6 preprocessor-regression subsets + 5 TextAttack slices) 0.7622 / `tab-echr` 0.9170.
+- **In-distribution diagnostic (2) — F1 0.8396.** `nullpii-bench` ⚠ self-authored (project bench corpus, 2,421 rows) 0.7622 / `tab-echr` 0.9170. Treat as project regression test, not OOD generalisation.
 
 ### Latency (MacBook Pro · Apple M5 Pro · 48 GB · CPU backend, n=50/size)
 

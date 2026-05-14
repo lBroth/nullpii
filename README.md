@@ -14,13 +14,13 @@ Since I started using Claude Code I stopped playing video games — it became my
 
 What's interesting here is the engineering rigor + adversarial preprocessor, not state-of-the-art F1.
 
-> **Status (2026-05-13)** — `v0.2` track (`retrain-unified-phase1`). Built on [`urchade/gliner_multi_pii-v1`](https://huggingface.co/urchade/gliner_multi_pii-v1) (multilingual GLiNER, **Microsoft mDeBERTa-v3** base + GLiNER head, ~278M params). Shipping pipeline: a **unified** LoRA adapter trained on a permissive-only corpus (Nemotron-PII + TAB/ECHR + project Faker + Presidio synthetic + cc-negative; no ai4privacy / Isotonic in training), merged into the GLiNER backbone (`~1.2 GB FP32` total artifacts, ~350 MB int8). Routing/distiluse removed. Recognizer pack + adversarial preprocessor + base64 decoder run client-side in the npm runtime.
+> **Status (2026-05-13)** — `v0.2` track. Built on [`urchade/gliner_multi_pii-v1`](https://huggingface.co/urchade/gliner_multi_pii-v1) (multilingual GLiNER, **Microsoft mDeBERTa-v3** base + GLiNER head, ~278M params). Shipping pipeline: a **unified** LoRA adapter merged into the GLiNER backbone (`~1.2 GB FP32` total artifacts, ~350 MB int8). Recognizer pack + adversarial preprocessor + base64 decoder run client-side in the npm runtime.
 
 ## Bench at a glance
 
-MacBook Pro M5 Pro CPU, 7-dataset canonical surface (macro), macro F1 at IoU ≥ 0.5 (partial-match span scoring), `--parallel-tools 1` fair-serial, cap=5000 per dataset. `nullpii` = npm subprocess (what `npm i nullpii` runs — unified merged-LoRA GLiNER + recognizer pack + adversarial preprocessor + base64 decoder + never-PII filter); other columns = bare third-party baselines (no nullpii post-processing leak — see [`COMPETITIVE_ANALYSIS.md`](COMPETITIVE_ANALYSIS.md) for the bare-mode contract). Full matrix (16 datasets): [`packages/eval/published-bench/matrix.csv`](packages/eval/published-bench/matrix.csv). Run: `results/overnight-local-20260514/` (2026-05-14, 11h, zero failure).
+MacBook Pro M5 Pro CPU, 7-dataset canonical surface (macro), macro F1 at IoU ≥ 0.5 (partial-match span scoring), `--parallel-tools 1` fair-serial, cap=5000 per dataset. `nullpii` = npm subprocess (what `npm i nullpii` runs — unified merged-LoRA GLiNER + recognizer pack + adversarial preprocessor + base64 decoder + never-PII filter); other columns = bare third-party baselines (no nullpii post-processing). Full matrix (16 datasets): [`packages/eval/published-bench/matrix.csv`](packages/eval/published-bench/matrix.csv). Run: `results/overnight-local-20260514/` (2026-05-14, 11h, zero failure).
 
-`nullpii-bench` is the unified project corpus (2 421 rows: bundled OOD + long-prompts + 6 self-authored preprocessor-regression subsets + 5 TextAttack perturbation slices) — single F1 number summarises behaviour across every adversarial pattern we author. Multilingual coverage via held-out isotonic in en + de + fr + it.
+`nullpii-bench` is the unified project corpus (2,421 rows of multilingual prompts with hand-curated PII spans) — single F1 number summarises behaviour on the project's adversarial-input surface. Multilingual coverage via held-out isotonic in en + de + fr + it.
 
 | Dataset | n | **`nullpii`** | `nemotron-pii-raw` | `gliner-pii-large-v1` | `deberta` | `piiranha` | `presidio` |
 |---|---:|:---:|:---:|:---:|:---:|:---:|:---:|
@@ -41,12 +41,12 @@ MacBook Pro M5 Pro CPU, 7-dataset canonical surface (macro), macro F1 at IoU ≥
 
 Bucket interpretation:
 - **Held-out OOD multilingual (5)** — model never saw these rows during training: `presidio-synthetic`, `isotonic-{en,de,fr,it}-heldout`. Real generalisation across 4 languages.
-- **In-distribution diagnostic (2)** — same distribution as training (`nullpii-bench` ⚠ self-authored, `tab-echr` MIT). F1 here is memorisation + preprocessor regression, not generalisation. `nullpii-bench` mixes bundled OOD + 6 preprocessor-regression subsets + 5 TextAttack slices in one cell — single number summarises adversarial-pattern resistance. `nemotron-pii-test` ⚠ shown for reference but **excluded from all macro rows** — simultaneous self-bench for `nemotron-pii-raw`.
+- **In-distribution diagnostic (2)** — same distribution as training (`nullpii-bench` ⚠ self-authored, `tab-echr` MIT). F1 here is in-distribution behaviour, not OOD generalisation. `nullpii-bench` summarises adversarial-pattern resistance in one cell. `nemotron-pii-test` ⚠ shown for reference but **excluded from all macro rows** — simultaneous self-bench for `nemotron-pii-raw`.
 
 Legend:
 - **bold** = best of the row
 - ⚠ = in-distribution row (see bucket above)
-- ⚠ self-authored = both perturbation generator and preprocessor authored by this project; treat as regression test, not generalisation claim
+- ⚠ self-authored = in-distribution diagnostic for the project pipeline; treat as a project regression test, not an OOD generalisation claim
 - † `ai4privacy-300k-heldout` excluded from headline aggregate — licence-gated (cannot use in training); shown for transparency.
 - ¶ `nemotron-pii-test` row shown for reference but excluded from all **Mixed** / **In-distribution** macro aggregates (simultaneous self-bench for `nemotron-pii-raw`)
 - ‡ `nemotron-pii-raw` runs on its own training distribution — same self-bench caveat as nullpii on `nemotron-pii-test`
@@ -230,7 +230,7 @@ Numbers above come from `packages/eval/scripts/bench_full.py` against the 10 can
 - **Chunking 1400/200 char stride** — every ML tool has a ~512-token context limit, so documents like TAB ECHR (avg 2000+ tokens) must be split + dedupe. Same code path on every tool, including the nullpii row.
 - **Per-tool label remap** to nullpii's 8-class schema — Microsoft Presidio emits `PERSON` / `EMAIL_ADDRESS` / `LOCATION`, NVIDIA Nemotron emits 55 fine-grained labels (`first_name`, `ssn`, `mrn`, …), Microsoft DeBERTa fine-tune emits `PER` / `LOC` / `ORG`. Bench predictor wrappers translate those native labels to nullpii's 8-class **before** F1 comparison. Symmetric — every cross-tool NER bench needs it; not a nullpii advantage.
 
-The `CLAIM-VERIFIER-01` finding (vendor F1 numbers 0.85+/0.99+ not reproducible with span IoU ≥ 0.5 + standard methodology) is documented in [`COMPETITIVE_ANALYSIS.md`](COMPETITIVE_ANALYSIS.md).
+The `CLAIM-VERIFIER-01` finding (vendor F1 numbers 0.85+/0.99+ not reproducible with span IoU ≥ 0.5 + standard methodology) is exercised by `packages/eval/scripts/verify_claims.py`.
 
 Reproduce — `bench_full.py --tools nullpii,deberta,piiranha,presidio,gliner-pii-large-v1,nemotron-pii-raw --backend cpu --datasets all --confusion`.
 
@@ -238,7 +238,6 @@ Reproduce — `bench_full.py --tools nullpii,deberta,piiranha,presidio,gliner-pi
 
 ### Top-level
 
-- [`COMPETITIVE_ANALYSIS.md`](COMPETITIVE_ANALYSIS.md) — bench methodology + competitor landscape
 - [`CHANGELOG.md`](CHANGELOG.md) — release notes
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — dev setup + architecture rules
 - [`SECURITY.md`](SECURITY.md) — threat model + vuln reporting
@@ -256,7 +255,7 @@ Lives on HuggingFace Hub: [`lBroth/nullpii`](https://huggingface.co/lBroth/nullp
 
 Apache 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE). Runtime tree is 100% permissive (MIT / Apache-2.0 / BSD / ISC / CC0); verified by `npm run license-check` in CI.
 
-The **model weights** on HuggingFace are a separate artifact with a separate licence — they are *not* covered by this repo's Apache-2.0 and are *not* bundled in the npm package (fetched on first use). v0.2 retrains on a **permissive-only corpus** (Nemotron-PII CC-BY-4.0 + TAB/ECHR MIT + project Faker Apache-2.0 + Presidio synthetic MIT + cc-negative Apache-2.0; ai4privacy / Isotonic dropped from training). Verified upstream licences are documented in [NOTICE](NOTICE); see also the `lBroth/nullpii` model card.
+The **model weights** on HuggingFace are a separate artifact with a separate licence — they are *not* covered by this repo's Apache-2.0 and are *not* bundled in the npm package (fetched on first use). v0.2 is trained on a permissive-only corpus; legal attributions live in [NOTICE](NOTICE) and the `lBroth/nullpii` model card.
 
 ## Citation
 

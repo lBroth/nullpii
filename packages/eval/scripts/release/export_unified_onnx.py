@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 """Merge ONE unified LoRA adapter into base GLiNER and export to ONNX.
 
-The v0.2 "unified full-OSS model" track (see `packages/eval/RETRAIN.md`)
-collapses the 5 per-domain adapters + cosine router into a single model.
+The v0.2 unified full-OSS model track collapses the 5 per-domain
+adapters + cosine router into a single model.
 This is the single-adapter counterpart of `export_merged_lora_onnx.py`:
 no per-domain loop, no router artifacts.
 

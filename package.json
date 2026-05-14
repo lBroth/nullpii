@@ -1,6 +1,6 @@
 {
   "name": "nullpii",
-  "version": "0.1.0",
+  "version": "0.2.0-rc.0",
   "description": "Sanitize PII from text locally with a reversible vault. Zero cloud calls. Multi-backend (CPU/MPS/CUDA).",
   "license": "Apache-2.0",
   "type": "module",
@@ -33,6 +33,8 @@
   },
   "files": ["dist", "src", "README.md", "LICENSE", "NOTICE", "bin"],
   "scripts": {
+    "clean": "rm -rf dist",
+    "prebuild": "npm run clean",
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -1,6 +1,6 @@
 {
   "name": "@nullpii/recognizers-id-it",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Italian ID recognizers (codice fiscale, partita IVA) for nullpii.",
   "license": "Apache-2.0",
   "type": "module",
@@ -18,7 +18,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "peerDependencies": {
-    "nullpii": ">=0.2.0"
+    "nullpii": ">=0.3.0"
   },
   "publishConfig": {
     "access": "public",

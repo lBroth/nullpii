@@ -1,6 +1,6 @@
 {
   "name": "nullpii",
-  "version": "0.2.0-rc.0",
+  "version": "0.3.0-rc.0",
   "description": "Sanitize PII from text locally with a reversible vault. Zero cloud calls. GLiNER ONNX (CPU/CUDA/CoreML via onnxruntime).",
   "license": "Apache-2.0",
   "type": "module",

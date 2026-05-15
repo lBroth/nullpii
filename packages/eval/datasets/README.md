@@ -23,7 +23,7 @@ licences and are NEVER bundled in the npm package — see [`NOTICE`](../../../NO
 All project-authored bench data lives in one file with a `subset` field.
 Loaders filter by subset to produce the bench rows.
 
-All subsets feed the unified `nullpii-bench` cell in the canonical bench
+All subsets feed the `nullpii-bench` cell in the canonical bench
 (one F1 number summarises behaviour across all perturbation patterns).
 Total 2,421 rows.
 

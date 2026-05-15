@@ -3,7 +3,7 @@
 /** Ordered tuple of nullpii's PII categories (plus `'O'` for legacy
  * compatibility — never emitted).
  *
- * The unified GLiNER model is trained on the 8 ML categories
+ * The GLiNER model is trained on the 8 ML categories
  * (`account_number`, `private_address`, `private_date`, `private_email`,
  * `private_person`, `private_phone`, `private_url`, `secret`). The
  * recognizer pack additionally emits two post-pass-only labels:
@@ -36,7 +36,7 @@ export type PiiLabel = (typeof PII_LABELS)[number];
 /** Union of PII labels excluding `'O'` — the user-visible categories. */
 export type PiiCategory = Exclude<PiiLabel, 'O'>;
 
-/** Subset of {@link PiiCategory} that the unified GLiNER model is
+/** Subset of {@link PiiCategory} that the GLiNER model is
  * trained to emit. The recognizer pack can produce additional labels
  * (e.g. `private_ip`) that the model itself never outputs. */
 export const GLINER_MODEL_CATEGORIES = [

@@ -3,7 +3,7 @@
 /**
  * Per-chunk cap on tokens fed into the model in a single forward pass.
  * Set to 384 to match `gliner_config.json:max_len` on the shipped
- * unified ONNX — the runtime rejects sequences longer than this, so the
+ * ONNX model — the runtime rejects sequences longer than this, so the
  * public constant matches what `sanitize()` actually accepts. Inputs
  * longer than this are split into overlapping chunks (see
  * `CHUNK_OVERLAP_TOKENS`) unless `strictLength` is set.

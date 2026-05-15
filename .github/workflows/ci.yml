@@ -31,7 +31,7 @@ jobs:
       - run: npm run sbom
 
   e2e-onnx:
-    # Real-ONNX end-to-end smoke test (F-18). Loads the unified GLiNER model
+    # Real-ONNX end-to-end smoke test (F-18). Loads the GLiNER model
     # from HuggingFace and runs a small fixture set through the real
     # inference path so CI catches regressions the mocked unit suite cannot
     # (ScatterND clamping, decoder index math, chunk-boundary dedupe,
@@ -45,7 +45,7 @@ jobs:
     if: ${{ vars.NULLPII_E2E_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     env:
-      # The unified-ONNX HF repo. Override via repo variable if you need to
+      # The HF model repo. Override via repo variable if you need to
       # point at a fork or a pre-release staging repo.
       NULLPII_E2E_HF_REPO: ${{ vars.NULLPII_E2E_HF_REPO != '' && vars.NULLPII_E2E_HF_REPO || 'lBroth/nullpii' }}
       NULLPII_E2E_HF_REVISION: ${{ vars.NULLPII_E2E_HF_REVISION != '' && vars.NULLPII_E2E_HF_REVISION || 'main' }}
@@ -66,7 +66,7 @@ jobs:
         with:
           path: ./.nullpii-e2e-model
           key: nullpii-e2e-${{ env.NULLPII_E2E_HF_REPO }}-${{ env.NULLPII_E2E_HF_REVISION }}-v1
-      - name: Download unified ONNX from HuggingFace
+      - name: Download ONNX model from HuggingFace
         if: steps.model-cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p .nullpii-e2e-model

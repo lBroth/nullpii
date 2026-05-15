@@ -30,7 +30,7 @@ describe('PII_LABELS', () => {
 });
 
 describe('GLINER_MODEL_CATEGORIES', () => {
-  it('is the 8-class subset the unified GLiNER was trained on', () => {
+  it('is the 8-class subset the GLiNER was trained on', () => {
     expect(GLINER_MODEL_CATEGORIES).toEqual([
       'account_number',
       'private_address',

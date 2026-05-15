@@ -7,9 +7,9 @@ import { logf } from '../log.js';
 import { fileExists } from '../paths.js';
 import type { InferenceInputs, InferenceOutputs } from '../types/index.js';
 
-const LOG_SCOPE = 'nullpii:unified-backend';
+const LOG_SCOPE = 'nullpii:backend';
 
-const UNIFIED_ONNX_FILE = 'model.onnx';
+const ONNX_FILE = 'model.onnx';
 
 /** Reused dim tuples — `text_lengths` is always a `[1, 1]` int64 scalar,
  * and `[1]` is the dim for the scalar's data buffer. ORT clones the dim
@@ -17,7 +17,7 @@ const UNIFIED_ONNX_FILE = 'model.onnx';
  * micro-optimisation (no aliasing concerns). */
 const DIMS_SCALAR_1_1: readonly number[] = [1, 1];
 
-export interface UnifiedBackendOptions {
+export interface BackendOptions {
   /** ORT execution providers, in priority order. Default: `['cpu']`. */
   readonly executionProviders?: ReadonlyArray<
     NonNullable<InferenceSession.SessionOptions['executionProviders']>[number]
@@ -31,7 +31,7 @@ export interface UnifiedBackendOptions {
   readonly ortLoader?: () => Promise<typeof import('onnxruntime-node')>;
 }
 
-/** Single-ONNX GLiNER backend.
+/** GLiNER ONNX backend.
  *
  * Loads `<modelDir>/model.onnx` lazily on first `infer()`. The unified
  * model replaces the v0.1 5-shard + cosine router stack; there is no
@@ -51,18 +51,18 @@ export interface UnifiedBackendOptions {
  * call allocation costs one trivial `BigInt64Array(1)` + `Uint8Array(N)`
  * per inference; not worth the correctness risk to elide.
  */
-export class OrtUnifiedBackend {
+export class OrtBackend {
   private session: InferenceSession | null = null;
   private TensorCtor: typeof TensorType | null = null;
 
   constructor(
     private readonly modelDir: string,
-    private readonly options: UnifiedBackendOptions = {},
+    private readonly options: BackendOptions = {},
   ) {}
 
   private async ensureSession(): Promise<InferenceSession> {
     if (this.session !== null) return this.session;
-    const onnxPath = join(this.modelDir, UNIFIED_ONNX_FILE);
+    const onnxPath = join(this.modelDir, ONNX_FILE);
     if (!(await fileExists(onnxPath))) {
       throw new ModelNotFoundError(onnxPath);
     }
@@ -107,9 +107,9 @@ export class OrtUnifiedBackend {
     };
     const out = await session.run(feeds);
     const outName = session.outputNames[0];
-    if (outName === undefined) throw new Error('unified-backend: model has no outputs');
+    if (outName === undefined) throw new Error('backend: model has no outputs');
     const tensor = out[outName];
-    if (tensor === undefined) throw new Error(`unified-backend: missing tensor '${outName}'`);
+    if (tensor === undefined) throw new Error(`backend: missing tensor '${outName}'`);
     const flat =
       tensor.data instanceof Float32Array
         ? tensor.data

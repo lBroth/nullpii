@@ -1,6 +1,6 @@
 # nullpii — v0.2 Plan: OSS self-hosted gateway
 
-> Status (2026-05-13): partial. The unified-model retrain is **done** —
+> Status (2026-05-13): partial. The retrain is **done** —
 > single ONNX, permissive-only training, ~1.2 GB download. `src/` cleanup
 > + tests + docs landed. Pending: HF upload + revision pin, full
 > publishable competitor matrix, and the gateway / docker / blog-post
@@ -114,13 +114,13 @@ documented as the simpler alternative.
 
 ### 4. Quantized model variants
 
-Unified GLiNER ONNX is ~1.2 GB FP32. Ship int8 (~350 MB) and int4
+GLiNER ONNX is ~1.2 GB FP32. Ship int8 (~350 MB) and int4
 (~200 MB) sidecars alongside `model.onnx` in the HF repo so users on
 tight-RAM / cold-start-sensitive workloads can opt in. Trade-off needs
 to be benched and disclosed in the model card the same way the
 model-only vs full-runtime delta is already disclosed today (int8 was
 lossier than rank-32 fp32 in pre-ship experiments — re-bench against
-the unified-aug2 weights).
+the aug2 weights).
 
 Surfaced as `variant: 'fp32' | 'int8' | 'int4' | 'auto'` in
 `NullPiiConfig` (the field already exists; this is wiring on both
@@ -175,22 +175,13 @@ All three are already written internally; just need a public form.
 
 Content drives discoverability; without it OSS dies in silence.
 
-### 9. Drop "unified" naming vestige
+### 9. Drop "unified" naming vestige — DONE
 
-`unified` was a v0.1→v0.2 transitional label distinguishing the new single ONNX from the old 5-shard routed stack. v0.1 is dead; "unified" is now redundant. Rename across ~75 occurrences in 30 files:
+`unified` was a v0.1→v0.2 transitional qualifier distinguishing the new single ONNX from the old 5-shard routed stack. v0.1 dropped; "unified" became redundant.
 
-**Code identifiers**:
-- `OrtUnifiedBackend` → `OrtBackend`
-- `src/backend/unified-backend.ts` → `src/backend/backend.ts`
-- `test/unified-backend-concurrency.test.ts` → `test/backend-concurrency.test.ts`
-- Bench tool `nullpii-bare-unified` → `nullpii-bare`
-- `packages/eval/scripts/release/export_unified_onnx.py` → `export_onnx.py`
+Landed across src/, tests/, examples/, README, CONTRIBUTING, packages/eval/, .github/workflows/ci.yml: file renames (`unified-backend.ts` → `backend.ts`, `unified-backend-concurrency.test.ts` → `backend-concurrency.test.ts`, `export_unified_onnx.py` → `export_onnx.py`), identifier renames (`OrtUnifiedBackend` → `OrtBackend`, `UnifiedBackendOptions` → `BackendOptions`, `UNIFIED_ONNX_FILE` → `ONNX_FILE`), bench tool `nullpii-bare-unified` → `nullpii-bare`, and doc phrasing scrub.
 
-**Docs**: "unified GLiNER" / "unified ONNX" / "unified merged-LoRA" → "the GLiNER ONNX" / "merged-LoRA ONNX" / "the model". Phrases like "Single unified GLiNER ONNX replaces the v0.1 5-shard routed stack" in CHANGELOG 0.2.0 stay (historical record of the change).
-
-**Out of scope for the rename**:
-- `GLINER_MODEL_CATEGORIES`, `MAX_INPUT_BYTES`, etc. — already neutral.
-- v0.1 historical mentions in CHANGELOG entries that document the v0.1→v0.2 transition.
+CHANGELOG 0.2.0 keeps the "Single unified GLiNER ONNX replaces the v0.1 5-shard routed stack" line (historical record of the change). Local artifact paths under `packages/eval/results/release/onnx-unified*` and `packages/eval/results/train/unified*` left untouched — gitignored filesystem facts.
 
 Single sweep PR. Touches src/, test/, packages/eval/scripts/, examples/, README.md, CONTRIBUTING.md, .github/workflows/ci.yml, PLAN.md, package.json description, release.sh. Auto-import-fix via tsc + biome covers most callsite cascades.
 

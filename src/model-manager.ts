@@ -17,7 +17,7 @@ import { MODEL_DOWNLOAD_TIMEOUT_MS, type ModelVariant } from './types/index.js';
 
 const LOG_SCOPE = 'nullpii:model-manager';
 
-/** Files required at runtime — unified single-ONNX manifest. The HF repo
+/** Files required at runtime — ONNX manifest. The HF repo
  * (`lBroth/nullpii` by default) bundles one merged GLiNER ONNX plus its
  * tokenizer.
  *
@@ -83,7 +83,7 @@ export class ModelManager {
     return this.modelDirFor(DEFAULT_MODEL);
   }
 
-  /** Ensure the unified model artifacts are cached. The `variant` field
+  /** Ensure the model artifacts are cached. The `variant` field
    * on `EnsureOptions` is currently unused (default is FP32) — preserved
    * for forward-compat when a quantized (`int4`/`int8`) variant is
    * published alongside `model.onnx`. */

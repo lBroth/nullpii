@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Full comparison bench: tool × dataset matrix with checkpoint resume.
 
-Single unified bench script — replaces older quick_*/eval_ensemble
+Single bench script — replaces older quick_*/eval_ensemble
 scripts. Designed for serial multi-day runs on a 4090 RunPod.
 
 Each (tool, dataset) combination writes:
@@ -94,7 +94,7 @@ def _ai4privacy(offset: int = 0) -> Callable[[int | None], list[Sample]]:
 
 
 def _load_nullpii_bench(n: int | None) -> list[Sample]:
-    """Load the entire unified `nullpii-bench.jsonl` (2421 samples).
+    """Load the entire `nullpii-bench.jsonl` (2421 samples).
 
     Single-file bench surface that covers every project-authored row:
     multilingual dev paste (`bundled` + `long-prompts`), the 6
@@ -180,7 +180,7 @@ _AI4_HELDOUT_OFFSET = 100_000
 _ISOTONIC_HELDOUT_ROW_OFFSET = 200_000
 
 DATASET_CONFIGS: list[DatasetSpec] = [
-    # ─ Project-authored unified bench (one file, all adversarial / preprocessor /
+    # ─ Project-authored bench (one file, all adversarial / preprocessor /
     #   TextAttack subsets aggregated to a single F1 number) ─────────
     DatasetSpec("nullpii-bench",         _load_nullpii_bench,                                                  None, total_n=2421),
 
@@ -368,7 +368,7 @@ def build_tools(args) -> dict[str, Callable]:
             labels=_GLINER_NATIVE_LABELS,
             label_map=_GLINER_NATIVE_TO_NULLPII8,
         ),
-        # ─── nullpii bare model — the merged-LoRA unified ONNX
+        # ─── nullpii bare model — the merged-LoRA ONNX
         # WITHOUT the npm runtime pipeline. Loads `model.onnx` from
         # `NULLPII_MODEL_DIR` (the same artifact `npm i nullpii`
         # downloads, but consumed via the bare `gliner_v2_predictor`
@@ -377,7 +377,7 @@ def build_tools(args) -> dict[str, Callable]:
         # Honest representation of what the HF artifact alone
         # delivers, paired with the `nullpii` row (full runtime) so
         # the model vs pipeline delta is explicit on the model card.
-        "nullpii-bare-unified": lambda: gliner_v2_predictor(
+        "nullpii-bare": lambda: gliner_v2_predictor(
             os.environ.get("NULLPII_MODEL_DIR", "packages/eval/results/release/onnx-unified-aug2"),
             onnx_file="model.onnx",
             threshold=args.gliner_threshold,

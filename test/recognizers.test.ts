@@ -98,7 +98,7 @@ describe('runRecognizers', () => {
   // F-39 regression. A recognizer with a `validate` fn whose candidate
   // passes the validator is structurally-correct evidence — much
   // stronger than an ML classifier's guess. The emitted score is bumped
-  // above plausible ML softmax (~0.99998 for the unified GLiNER) so
+  // above plausible ML softmax (~0.99998 for the GLiNER) so
   // cross-label IoU dedupe in nullpii.ts picks the recognizer's label,
   // not an ML mislabel (e.g. spaced IBAN tagged `private_address`).
   it('boosts emitted score above ML softmax for validator-passing matches', () => {

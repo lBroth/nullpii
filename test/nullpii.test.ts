@@ -46,15 +46,15 @@ describe('NullPii lifecycle', () => {
 
 // ─── End-to-end pipeline (mocked ONNX session) ──────────────────────
 // Exercises `runInit → sanitize → restore → dispose` without needing
-// the multi-GB unified model. The OrtUnifiedBackend.infer is stubbed
+// the multi-GB model. The OrtBackend.infer is stubbed
 // to return zero spans; recognizer pack drives detection. Verifies:
 //   - init resolves once and is cached
 //   - recognizer-only spans round-trip through the vault
 //   - placeholders carry the session prefix (A3)
 //   - dispose clears vault state (A4)
 //   - restore on a different session raises SessionMismatchError (A3)
-vi.mock('../src/backend/unified-backend.js', () => {
-  class OrtUnifiedBackend {
+vi.mock('../src/backend/backend.js', () => {
+  class OrtBackend {
     async infer(): Promise<{
       logits: Float32Array;
       textLength: number;
@@ -70,7 +70,7 @@ vi.mock('../src/backend/unified-backend.js', () => {
     }
     async dispose(): Promise<void> {}
   }
-  return { OrtUnifiedBackend };
+  return { OrtBackend };
 });
 
 vi.mock('../src/gliner-tokenizer.js', async () => {

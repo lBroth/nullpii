@@ -11,8 +11,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../src/backend/unified-backend.js', () => {
-  class OrtUnifiedBackend {
+vi.mock('../src/backend/backend.js', () => {
+  class OrtBackend {
     async infer(): Promise<{
       logits: Float32Array;
       textLength: number;
@@ -23,7 +23,7 @@ vi.mock('../src/backend/unified-backend.js', () => {
     }
     async dispose(): Promise<void> {}
   }
-  return { OrtUnifiedBackend };
+  return { OrtBackend };
 });
 
 vi.mock('../src/gliner-tokenizer.js', async () => {

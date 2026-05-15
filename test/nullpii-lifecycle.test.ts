@@ -10,8 +10,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 let backendConstructCount = 0;
 
-vi.mock('../src/backend/unified-backend.js', () => {
-  class OrtUnifiedBackend {
+vi.mock('../src/backend/backend.js', () => {
+  class OrtBackend {
     constructor() {
       backendConstructCount += 1;
     }
@@ -25,7 +25,7 @@ vi.mock('../src/backend/unified-backend.js', () => {
     }
     async dispose(): Promise<void> {}
   }
-  return { OrtUnifiedBackend };
+  return { OrtBackend };
 });
 
 vi.mock('../src/gliner-tokenizer.js', async () => {

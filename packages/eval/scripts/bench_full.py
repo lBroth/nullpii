@@ -95,7 +95,8 @@ def _ai4privacy(offset: int = 0) -> Callable[[int | None], list[Sample]]:
 
 def _load_nullpii_bench(n: int | None) -> list[Sample]:
     """Load the entire `nullpii-bench.jsonl` (2271 samples — 2171 unique
-    project corpus + 100 pipeline-favorable rows in 5 categories).
+    project corpus + 100 rows covering secrets, long docs, multi-layer
+    encoding, base64 wrapping, validator disambiguation).
 
     Single-file bench surface that covers every project-authored row:
     multilingual dev paste (`bundled` + `long-prompts`), the 6

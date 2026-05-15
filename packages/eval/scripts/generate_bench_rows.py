@@ -1,20 +1,16 @@
 #!/usr/bin/env python3
-"""Generate `nullpii-bench` rows that exercise the Node-runtime pipeline
-layers over the bare ONNX model.
-
-Each category targets one or more of:
-  - Recognizer pack (regex with anchors + validators)
-  - Chunking (inputs > GLiNER's 384-subword window)
-  - Adversarial normalize (URL %XX, HTML entity, Unicode homoglyph,
-    base64-wrapped, multi-layer encoding stack)
-  - `base64-detector` (`data:` / `Authorization: Basic …`)
-  - Validator-pass score 0.99998 (IBAN mod-97 / Luhn / codice fiscale)
+"""Generate additional `nullpii-bench` rows across five categories:
+secrets in JSON / log contexts, long documents exceeding the 384-
+subword window, multi-layer encoded emails (URL / HTML-entity /
+double-URL), base64-wrapped credentials in HTTP-style headers, and
+validator-class numbers (Luhn cards, mod-97 IBAN, Italian codice
+fiscale).
 
 Deterministic: seeded RNG, fixed corpus templates. Re-running the
 script gives byte-identical output.
 
 Usage:
-  python packages/eval/scripts/generate_pipeline_bench_rows.py \
+  python packages/eval/scripts/generate_bench_rows.py \
     --out packages/eval/datasets/nullpii-bench.jsonl --append
 """
 from __future__ import annotations
@@ -120,7 +116,7 @@ def add_sample(text: str, spans: list[tuple[int, int, str]], category: str) -> N
     SAMPLES.append({"text": text, "spans": span_dicts, "category": category})
 
 
-# A. Pure-secret in JSON / log context — recognizer pack wins
+# A. Pure-secret in JSON / log context
 SECRETS_TEMPLATES = [
     'ERROR 2024-03-15T08:42:11Z [auth] failed to verify, token={k} reason=expired',
     '{{"service":"upload","credentials":{{"aws_access_key":"{k}"}}}}',
@@ -244,8 +240,8 @@ def gen_base64_wrapped() -> None:
         add_sample(text, [(st, en, label)], "base64-wrapped")
 
 
-# E. Validator-pass disambiguation — Luhn / mod-97 / CF
-def gen_validator_disambig() -> None:
+# E. Validator-passing numbers — Luhn / mod-97 / CF
+def gen_validator_numbers() -> None:
     n = 15
     for _ in range(n):
         kind = RNG.choice(["iban-spaced", "card-luhn", "cf-italy"])
@@ -263,7 +259,7 @@ def gen_validator_disambig() -> None:
             text = tmpl.format(x=spaced)
             st = text.find(spaced)
             en = st + len(spaced)
-            add_sample(text, [(st, en, "account_number")], "validator-disambig")
+            add_sample(text, [(st, en, "account_number")], "validator-numbers")
         elif kind == "card-luhn":
             card = luhn_card()
             grouped = " ".join(card[i : i + 4] for i in range(0, 16, 4))
@@ -277,7 +273,7 @@ def gen_validator_disambig() -> None:
             text = tmpl.format(x=grouped)
             st = text.find(grouped)
             en = st + len(grouped)
-            add_sample(text, [(st, en, "account_number")], "validator-disambig")
+            add_sample(text, [(st, en, "account_number")], "validator-numbers")
         else:
             cf = "RSSMRA80D15H501O"  # valid checksum example
             tmpl = RNG.choice(
@@ -289,7 +285,7 @@ def gen_validator_disambig() -> None:
             text = tmpl.format(x=cf)
             st = text.find(cf)
             en = st + len(cf)
-            add_sample(text, [(st, en, "account_number")], "validator-disambig")
+            add_sample(text, [(st, en, "account_number")], "validator-numbers")
 
 
 # ─── CLI ──────────────────────────────────────────────────────────────
@@ -303,7 +299,7 @@ def main() -> None:
     gen_long_doc()
     gen_multilayer_encoding()
     gen_base64_wrapped()
-    gen_validator_disambig()
+    gen_validator_numbers()
 
     print(f"generated {len(SAMPLES)} samples across 5 categories")
     from collections import Counter

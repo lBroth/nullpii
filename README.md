@@ -56,14 +56,32 @@ Placeholders: `{{PII_<LABEL>_<idx>_<sessionPrefix>}}`. The session prefix binds 
 
 ## Gateway
 
-Drop-in proxy for the Anthropic Messages API. Client points `baseURL` at the gateway, nothing else changes. Sanitises every text content block before forwarding, restores placeholders in the response (streaming-safe).
+`@nullpii/gateway` is a drop-in HTTP proxy for the Anthropic Messages API. The client SDK (Anthropic, Claude Code, anything that speaks the Messages API) flips its `baseURL` to the gateway; nothing else changes. The gateway sanitises every text content block in `system` + `messages` before forwarding, then restores placeholders in the response — streaming-safe (`{{...}}` straddling SSE deltas are buffered + reassembled via `RestoreStream`). Self-hosted, Apache-2.0, multi-arch Docker image (`linux/amd64,linux/arm64`).
+
+### Claude Code quickstart
 
 ```bash
+# 1. boot the gateway (first run downloads the GLiNER model into a named volume)
 docker compose -f examples/claude-code/docker-compose.yml up -d
+
+# 2. point Claude Code at it (or any Anthropic SDK)
 export ANTHROPIC_BASE_URL=http://localhost:8787
+export ANTHROPIC_API_KEY=sk-ant-…   # your real key, passed through
+
+# 3. use Claude Code normally
+claude "summarise the email I just wrote to John Doe at john@acme.io"
 ```
 
-`@nullpii/gateway` preview — Apache-2.0, self-hosted, multi-arch image (`linux/amd64,linux/arm64`). Walk-through + Claude Code integration: [`examples/claude-code/`](examples/claude-code/).
+The gateway sees the raw prompt, runs GLiNER locally, replaces `John Doe` + `john@acme.io` with placeholders, forwards the sanitised text to `api.anthropic.com`, then restores the placeholders in the streamed response before Claude Code prints it.
+
+Verify what's redacted by tailing the structured per-request log — counts only, never values (enforced at the type level by `LogFields` in core):
+
+```bash
+docker compose -f examples/claude-code/docker-compose.yml logs -f gateway
+# {"msg":"anthropic.messages.streamed","replacements":3,"replacementsByLabel":{"private_person":1,"private_email":1,"private_address":1},...}
+```
+
+Full walk-through (host-mounted-model variant for air-gapped / pre-release, GPU notes, troubleshooting, multi-replica caveats): [`examples/claude-code/`](examples/claude-code/).
 
 ## What gets caught
 

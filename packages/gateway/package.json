@@ -1,6 +1,6 @@
 {
   "name": "@nullpii/gateway",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Self-hosted HTTP gateway that sanitizes PII before forwarding to Anthropic Claude, restores in the response. baseURL drop-in.",
   "license": "Apache-2.0",
   "type": "module",

@@ -94,7 +94,7 @@ def _ai4privacy(offset: int = 0) -> Callable[[int | None], list[Sample]]:
 
 
 def _load_nullpii_bench(n: int | None) -> list[Sample]:
-    """Load the entire `nullpii-bench.jsonl` (2421 samples).
+    """Load the entire `nullpii-bench.jsonl` (2171 samples post-dedupe).
 
     Single-file bench surface that covers every project-authored row:
     multilingual dev paste (`bundled` + `long-prompts`), the 6
@@ -182,7 +182,7 @@ _ISOTONIC_HELDOUT_ROW_OFFSET = 200_000
 DATASET_CONFIGS: list[DatasetSpec] = [
     # ─ Project-authored bench (one file, all adversarial / preprocessor /
     #   TextAttack subsets aggregated to a single F1 number) ─────────
-    DatasetSpec("nullpii-bench",         _load_nullpii_bench,                                                  None, total_n=2421),
+    DatasetSpec("nullpii-bench",         _load_nullpii_bench,                                                  None, total_n=2171),
 
     # ─ Third-party PII benches ────────────────────────────────────
     DatasetSpec("tab-echr",              _load_tab_echr_test,                                                  None, total_n=127),

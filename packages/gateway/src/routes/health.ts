@@ -1,0 +1,7 @@
+// SPDX-License-Identifier: Apache-2.0
+
+import type { FastifyInstance } from 'fastify';
+
+export async function registerHealthRoute(app: FastifyInstance): Promise<void> {
+  app.get('/health', async () => ({ status: 'ok' }));
+}

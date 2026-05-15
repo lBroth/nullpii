@@ -69,4 +69,5 @@ export {
   cpfValid,
   iban97Valid,
   luhnValid,
+  macAddressNonReserved,
 } from './validators.js';

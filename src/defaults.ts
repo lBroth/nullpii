@@ -16,6 +16,7 @@ import {
   cpfValid,
   iban97Valid,
   luhnValid,
+  macAddressNonReserved,
 } from './validators.js';
 
 /** Backend chosen when the user passes nothing (or `'auto'`). The
@@ -390,10 +391,13 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     confidence: 0.95,
     validate: iban97Valid,
   },
-  // Credit card (12-19 digits, optional `-`/`.`/space). Validated via Luhn.
+  // Credit card (13-19 digits, optional `-`/`.`/space). Validated via Luhn.
+  // 13 is the smallest issued card today (old Visa); 12-digit Luhn-passing
+  // sequences are typically long phone numbers / IDs and tagging them as
+  // `account_number` is a measurable FP source on bench corpora.
   {
     id: 'core:credit-card',
-    pattern: /\b(?:\d[ \-.]?){12,19}\b/g,
+    pattern: /\b(?:\d[ \-.]?){13,19}\b/g,
     label: 'account_number',
     confidence: 0.95,
     validate: luhnValid,
@@ -443,6 +447,7 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     pattern: /(?<![:0-9A-Fa-f])[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}(?![:0-9A-Fa-f])/g,
     label: 'private_mac',
     confidence: 0.85,
+    validate: macAddressNonReserved,
   },
   // IPv4 — octet-bounded to reject version strings.
   {

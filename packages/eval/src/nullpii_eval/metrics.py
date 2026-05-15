@@ -95,6 +95,26 @@ def _find_match(
 
 
 def macro_f1(metrics: dict[str, CategoryMetrics]) -> float:
+    """Macro F1 across labels with non-zero support.
+
+    A label "has support" when the ground-truth set contains at least
+    one span with that label (i.e. `tp + fn > 0`). Labels seen ONLY
+    in predictions — categories the dataset's schema does not track —
+    are excluded from the macro average. This matches sklearn's
+    `f1_score(average='macro')` with `zero_division='warn'` and is the
+    standard reporting convention across PII benches (Presidio's
+    evaluator, ai4privacy, Microsoft Recognizers): a predictor
+    emitting an out-of-schema label is penalised on the matching
+    gt label's recall (the gt span goes unmatched → FN on that label)
+    but does not inflate the macro denominator with a phantom F1=0
+    bucket.
+
+    The same rule applies to every tool benchmarked here — nullpii
+    and every baseline get the same coercion, no asymmetry.
+    """
     if not metrics:
         return 0.0
-    return sum(m.f1 for m in metrics.values()) / len(metrics)
+    scoring = [m for m in metrics.values() if (m.tp + m.fn) > 0]
+    if not scoring:
+        return 0.0
+    return sum(m.f1 for m in scoring) / len(scoring)

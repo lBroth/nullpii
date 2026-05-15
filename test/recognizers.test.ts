@@ -187,4 +187,74 @@ describe('runRecognizers', () => {
     expect(spans).toHaveLength(1);
     expect(spans[0]?.label).toBe('private_mac');
   });
+
+  // ─── Folded-in recognizers (formerly @nullpii/recognizers-*) ──────────────
+  // The cloud / finance / IT recognizer packs used to live as separate
+  // subpackages; we folded them into core after auditing the 6 net-new
+  // patterns (the rest duplicated existing core recognizers).
+  describe('folded-in recognizers', () => {
+    it('matches a valid Partita IVA and rejects an invalid one', async () => {
+      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+      const piva = DEFAULT_RECOGNIZERS.find((r) => r.id === 'core:partita-iva-italy');
+      expect(piva).toBeDefined();
+      // Valid checksum: mod-10 sum lands on 0 with last digit 3.
+      const valid = '12345678903';
+      // Invalid by Luhn-style mod-10.
+      const invalid = '12345678901';
+      const okSpans = runRecognizers(`ditta ${valid} fine`, piva ? [piva] : [], []);
+      const koSpans = runRecognizers(`ditta ${invalid} fine`, piva ? [piva] : [], []);
+      expect(okSpans).toHaveLength(1);
+      expect(koSpans).toHaveLength(0);
+    });
+
+    it('matches a SWIFT/BIC code in an 8 and 11-char form', async () => {
+      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+      const bic = DEFAULT_RECOGNIZERS.find((r) => r.id === 'core:swift-bic');
+      expect(bic).toBeDefined();
+      const spans = runRecognizers('wire to DEUTDEFFXXX or BNPAFRPP', bic ? [bic] : [], []);
+      expect(spans.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('catches an AWS secret access key only when canonically hinted', async () => {
+      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+      const r = DEFAULT_RECOGNIZERS.find((r) => r.id === 'core:aws-secret-key-hinted');
+      expect(r).toBeDefined();
+      const key = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY';
+      const hinted = `config: aws_secret_access_key=${key} done`;
+      const unhinted = `random base64 ${key} no anchor`;
+      expect(runRecognizers(hinted, r ? [r] : [], []).length).toBeGreaterThanOrEqual(1);
+      expect(runRecognizers(unhinted, r ? [r] : [], []).length).toBe(0);
+    });
+
+    it('catches an Azure storage AccountKey fragment', async () => {
+      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+      const r = DEFAULT_RECOGNIZERS.find((r) => r.id === 'core:azure-connection-string');
+      expect(r).toBeDefined();
+      const conn =
+        'DefaultEndpointsProtocol=https;AccountName=foo;AccountKey=' +
+        'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN12==;EndpointSuffix=core.windows.net';
+      const spans = runRecognizers(conn, r ? [r] : [], []);
+      expect(spans).toHaveLength(1);
+      expect(spans[0]?.label).toBe('secret');
+    });
+
+    it('catches a Stripe live secret key, ignores a test key', async () => {
+      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+      const r = DEFAULT_RECOGNIZERS.find((r) => r.id === 'core:stripe-live-key');
+      expect(r).toBeDefined();
+      const live = 'sk_live_aBcDeFgHiJkLmNoPqRsTuVwXyZ';
+      const test = 'sk_test_aBcDeFgHiJkLmNoPqRsTuVwXyZ';
+      expect(runRecognizers(`KEY=${live} ok`, r ? [r] : [], [])).toHaveLength(1);
+      expect(runRecognizers(`KEY=${test} ok`, r ? [r] : [], [])).toHaveLength(0);
+    });
+
+    it('catches a broad-prefix Slack token (xoxb / xoxa / xoxp / xoxr / xoxs)', async () => {
+      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+      const r = DEFAULT_RECOGNIZERS.find((r) => r.id === 'core:slack-token-broad');
+      expect(r).toBeDefined();
+      const corpus = 'bot xoxb-1234567890-abcdefghijklmn user xoxp-1234567890-abcdef';
+      const spans = runRecognizers(corpus, r ? [r] : [], []);
+      expect(spans.length).toBeGreaterThanOrEqual(2);
+    });
+  });
 });

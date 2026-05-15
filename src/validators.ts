@@ -4,7 +4,8 @@ import { createHash } from 'node:crypto';
 
 /** Post-match checksum validators wired via `Recognizer.validate`.
  * `base58CheckValid` BTC · `luhnValid` cards · `iban97Valid` IBAN
- * mod-97 · `cpfValid` BR CPF · `codiceFiscaleValid` IT tax id. */
+ * mod-97 · `cpfValid` BR CPF · `codiceFiscaleValid` IT tax id ·
+ * `partitaIvaValid` IT VAT (11-digit Luhn-style mod-10). */
 
 const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 const BASE58_INDEX = new Map<string, bigint>();
@@ -231,4 +232,28 @@ export function codiceFiscaleValid(value: string): boolean {
   }
   const expected = CF_CHECK_LETTERS[sum % 26];
   return expected !== undefined && expected === cf[15];
+}
+
+// ─── Italian Partita IVA (11-digit VAT) ────────────────────────────
+
+/**
+ * Italian Partita IVA validator. 11 digits; the 11th is a Luhn-style
+ * mod-10 check over the first 10 (positions 1, 3, 5, 7, 9 contribute
+ * themselves; positions 2, 4, 6, 8, 10 contribute `2*d - 9` when
+ * `2*d > 9`, else `2*d`). The full 11-digit number's mod 10 must be 0.
+ */
+export function partitaIvaValid(value: string): boolean {
+  const digits = value.replace(/\s+/g, '');
+  if (digits.length !== 11) return false;
+  if (!/^\d{11}$/.test(digits)) return false;
+  let sum = 0;
+  for (let i = 0; i < 11; i++) {
+    let n = digits.charCodeAt(i) - 48;
+    if (i % 2 === 1) {
+      n *= 2;
+      if (n > 9) n -= 9;
+    }
+    sum += n;
+  }
+  return sum % 10 === 0;
 }

@@ -188,11 +188,7 @@ describe('runRecognizers', () => {
     expect(spans[0]?.label).toBe('private_mac');
   });
 
-  // ─── Folded-in recognizers (formerly @nullpii/recognizers-*) ──────────────
-  // The cloud / finance / IT recognizer packs used to live as separate
-  // subpackages; we folded them into core after auditing the 6 net-new
-  // patterns (the rest duplicated existing core recognizers).
-  describe('folded-in recognizers', () => {
+  describe('credential recognizers (cloud / payments / chat)', () => {
     it('catches an AWS secret access key only when canonically hinted', async () => {
       const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
       const r = DEFAULT_RECOGNIZERS.find((r) => r.id === 'core:aws-secret-key-hinted');

@@ -5,7 +5,7 @@ import type { PiiCategory } from './labels.js';
 /**
  * User-defined recognizer that runs as a regex post-pass after the ML
  * model. Useful for known formats with poor ML coverage (internal
- * employee IDs, AWS access keys, IBAN, SWIFT BIC, ...).
+ * employee IDs, AWS access keys, IBAN, ...).
  *
  * Recognizer matches are merged into the ML span list, dropping any that
  * overlap an existing higher-confidence span.

@@ -45,7 +45,30 @@ docker run --rm -p 8787:8787 \
 A worked `docker-compose.yml` plus a Claude Code integration walk-through
 lives at [`examples/claude-code/`](../../examples/claude-code/).
 
-### From source
+### From source (dev mode, hot reload)
+
+`tsx watch` on a TS entrypoint; the ONNX engine inside `NullPii` is
+lazy — the model only loads on the first `sanitize()` call, so every
+respawn boots in ~100 ms and pays the model-load cost once on the
+first request after each reload.
+
+```bash
+# from the repo root
+NULLPII_MODEL_DIR=/abs/path/to/local/gliner-onnx \
+NULLPII_LOG_LEVEL=debug \
+npm run gateway:dev
+
+# or, from the gateway package
+NULLPII_MODEL_DIR=/abs/path/to/local/gliner-onnx \
+npm run dev
+```
+
+Edits under `packages/gateway/src/**` or the root `src/**` (the
+`nullpii` core, aliased via `tsconfig.dev.json`) trigger a respawn.
+Pre-cache the GLiNER model once (`npx nullpii prefetch`) so the
+post-reload first-request latency stays sub-second.
+
+### From source (production)
 
 ```bash
 # from the gateway package after `npm install` + `npm run build`

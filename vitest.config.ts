@@ -20,7 +20,9 @@ export default defineConfig({
   },
   test: {
     globals: false,
-    include: E2E_ON ? ['test/e2e/**/*.test.ts'] : ['test/**/*.test.ts'],
+    include: E2E_ON
+      ? ['test/e2e/**/*.test.ts']
+      : ['test/**/*.test.ts', 'packages/gateway/test/**/*.test.ts'],
     exclude: E2E_ON
       ? ['**/node_modules/**', '**/dist/**']
       : ['**/node_modules/**', '**/dist/**', 'test/e2e/**'],

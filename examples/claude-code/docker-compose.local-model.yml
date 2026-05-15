@@ -1,0 +1,55 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Same as `docker-compose.yml` but with the GLiNER model mounted from
+# the host instead of fetched from HuggingFace on first boot. Use this
+# variant when:
+#
+#   - the upstream HF repo (`lBroth/nullpii`) is still private (pre-v0.2
+#     release — the released compose returns 401 NULLPII_MODEL_NOT_FOUND
+#     on first /v1/messages until weights are public)
+#   - the host has no outbound network reach (air-gapped)
+#   - you want to pin a specific local checkpoint while iterating
+#
+# Prep:
+#
+#   # Option A — npx prefetch (network host, then copy to target)
+#   NULLPII_MODEL_DIR=~/.cache/nullpii/models/lBroth/nullpii/main \
+#     npx nullpii prefetch
+#
+#   # Option B — already exported via `packages/eval/scripts/release/export_onnx.py`
+#   #            on a build host; just point MODEL_DIR_HOST at the output dir.
+#
+#   export MODEL_DIR_HOST=~/.cache/nullpii/models/lBroth/nullpii/main
+#   docker compose -f examples/claude-code/docker-compose.local-model.yml up -d
+#
+# The model dir must contain: model.onnx, tokenizer.json, gliner_config.json,
+# tokenizer_config.json.
+
+services:
+  gateway:
+    build:
+      context: ../..
+      dockerfile: packages/gateway/Dockerfile
+    container_name: nullpii-gateway
+    ports:
+      - "8787:8787"
+    environment:
+      NULLPII_HOST: 0.0.0.0
+      NULLPII_PORT: 8787
+      NULLPII_UPSTREAM: https://api.anthropic.com
+      NULLPII_BACKEND: cpu
+      NULLPII_LOG_LEVEL: info
+      # Points the engine at the mounted dir. Skips HF entirely.
+      NULLPII_MODEL_DIR: /models
+    volumes:
+      # Host model dir → container /models. Read-only so a buggy
+      # container can't corrupt the cache. The path on the host is set
+      # via `$MODEL_DIR_HOST` — fail loud if it isn't.
+      - ${MODEL_DIR_HOST:?MODEL_DIR_HOST must point at a dir containing model.onnx + tokenizer.json}:/models:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 3s
+      start_period: 30s
+      retries: 3
+    restart: unless-stopped

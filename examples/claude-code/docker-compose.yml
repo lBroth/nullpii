@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Local nullpii gateway in front of Claude Code (or any client that
+# speaks the Anthropic Messages API). Point your client's baseURL at
+# http://localhost:8787 and your requests get PII-sanitized before
+# they leave your machine.
+#
+#   docker compose -f examples/claude-code/docker-compose.yml up -d
+#
+# First boot fetches the GLiNER ONNX model from HuggingFace (~1.2 GB)
+# into the `nullpii-model-cache` named volume. Subsequent boots are
+# instant.
+
+services:
+  gateway:
+    # Build the image from the repo. To use a pre-built tag instead:
+    #   image: nullpii/gateway:slim
+    build:
+      context: ../..
+      dockerfile: packages/gateway/Dockerfile
+    container_name: nullpii-gateway
+    ports:
+      - "8787:8787"
+    environment:
+      NULLPII_HOST: 0.0.0.0
+      NULLPII_PORT: 8787
+      NULLPII_UPSTREAM: https://api.anthropic.com
+      NULLPII_BACKEND: cpu
+      NULLPII_LOG_LEVEL: info
+    volumes:
+      # Persist the model download across container restarts. Mount a
+      # host path instead (e.g. `./model-cache:/root/.cache/nullpii`)
+      # if you want to inspect the cache.
+      - nullpii-model-cache:/root/.cache/nullpii
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 3s
+      start_period: 120s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  nullpii-model-cache:

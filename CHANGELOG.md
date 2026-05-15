@@ -3,9 +3,33 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] — unreleased (branch `retrain-unified-phase1`)
+## [0.3.0] — unreleased
 
-Unified-model v0.2 track.
+Unified-model + gateway track. Renamed from the in-flight `0.2.0` line to
+mark the gateway preview (`@nullpii/gateway`) shipping alongside core.
+
+### Added (post-0.2 rename)
+
+- **`@nullpii/gateway` preview (`0.0.x`).** Self-hosted HTTP proxy for
+  Anthropic Messages API. Non-streaming + streaming SSE, per-block
+  `RestoreStream` for placeholders straddling delta boundaries,
+  `count_tokens` passthrough, Fastify + multi-arch Docker
+  (`linux/amd64,linux/arm64`) published to GHCR. Worked Claude Code
+  integration walkthrough under `examples/claude-code/` with both
+  HF-fetch and host-mounted-model compose variants. PLAN §1.
+- **`RestoreStream` core API** (`nullpii.RestoreStream`,
+  `RestoreCapable`) — SSE-safe placeholder buffer used by the gateway
+  + any caller streaming LLM output. Holds open `{{...` tails across
+  chunk boundaries, bounded by `MAX_OPEN_BUFFER` (256 chars).
+  PLAN §2.
+- **`NullPii.createSession()`** — symmetric with `destroySession()`,
+  lets multi-call sanitize flows share one vault session.
+- **Bench fairness re-audit.** GLiNER baselines now get native-language
+  labels (instead of `_NULLPII_8` underscore form). Piiranha chunked
+  with 1000-char stride / 200-char overlap to dodge 256-token
+  truncation. OpenAI Privacy Filter wired via upstream `opf` Python
+  API with constrained Viterbi (not naive BIOES). Phase 2 publishable
+  matrix pending.
 
 ### Changed
 

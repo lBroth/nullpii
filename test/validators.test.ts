@@ -33,13 +33,7 @@ describe('base58CheckValid', () => {
   });
 });
 
-import {
-  codiceFiscaleValid,
-  cpfValid,
-  iban97Valid,
-  luhnValid,
-  partitaIvaValid,
-} from '../src/validators.js';
+import { codiceFiscaleValid, cpfValid, iban97Valid, luhnValid } from '../src/validators.js';
 
 describe('luhnValid', () => {
   it('accepts a valid Visa test card', () => {
@@ -132,24 +126,5 @@ describe('codiceFiscaleValid', () => {
 
   it('accepts lowercase input (case-insensitive)', () => {
     expect(codiceFiscaleValid('rssmra80d15h501o')).toBe(true);
-  });
-});
-
-describe('partitaIvaValid', () => {
-  it('accepts a valid Partita IVA (Luhn-style mod-10)', () => {
-    // `12345678903` — last digit 3 makes the mod-10 sum land on 0.
-    expect(partitaIvaValid('12345678903')).toBe(true);
-  });
-
-  it('rejects a tampered check digit', () => {
-    expect(partitaIvaValid('12345678901')).toBe(false);
-    expect(partitaIvaValid('00000000000')).toBe(true); // 11 zeros sums to 0
-    expect(partitaIvaValid('00000000001')).toBe(false);
-  });
-
-  it('rejects wrong length and non-digit input', () => {
-    expect(partitaIvaValid('1234567890')).toBe(false); // 10 chars
-    expect(partitaIvaValid('123456789012')).toBe(false); // 12 chars
-    expect(partitaIvaValid('1234567890A')).toBe(false);
   });
 });

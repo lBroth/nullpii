@@ -19,7 +19,7 @@ import {
 } from './validators.js';
 
 /** Backend chosen when the user passes nothing (or `'auto'`). The
- * unified ONNX runtime today always resolves to `'cpu'` execution
+ * ONNX model runtime today always resolves to `'cpu'` execution
  * providers + an optional accelerator fallback (`cuda` / `coreml`),
  * mapped at session construction in `nullpii.ts`. */
 export const DEFAULT_BACKEND: BackendName = 'auto';
@@ -40,7 +40,7 @@ export const CHECKSUM_SUFFIX = '.sha256';
 export const CACHE_DIR_NAME = 'nullpii';
 export const CACHE_MODELS_SUBDIR = 'models';
 
-/** Pinned default HF model repo. Hardcoded — unified single-ONNX GLiNER
+/** Pinned default HF model repo. Hardcoded — GLiNER ONNX
  * (`model.onnx` + tokenizer + config, ~1.16 GB FP32). See
  * `model-manager.ts` for the file manifest. */
 export const DEFAULT_MODEL_REPO = 'lBroth/nullpii';
@@ -544,7 +544,7 @@ export const BOUNDARY_REFINE_TRIM_CHARS = ' \t\n\r,.;:!?"\'()[]{}<>';
 
 /** Default GLiNER decode threshold. Spans with sigmoid score below this
  * are dropped during the model decode pass (`decodeGlinerLogits`).
- * Tuned for the unified ONNX — lower bloats output with low-confidence
+ * Tuned for the model ONNX — lower bloats output with low-confidence
  * noise, higher loses recall. */
 export const DEFAULT_DECODE_THRESHOLD = 0.5;
 

@@ -34,7 +34,7 @@ export interface NullPiiConfig {
    *
    *  1. **Decode** (`gliner-decoder`): filters raw GLiNER logits before
    *     they reach the recognizer merge. Unset → `DEFAULT_DECODE_THRESHOLD`
-   *     (= 0.5) on the unified ONNX (recall / low-confidence trade-off).
+   *     (= 0.5) on the model ONNX (recall / low-confidence trade-off).
    *  2. **Post-filter** (`applyThresholds`): final pass over the merged
    *     ML + recognizer span set. Unset → `DEFAULT_POST_FILTER_THRESHOLD`
    *     (= 0), i.e. trust decode + recognizer confidences without an

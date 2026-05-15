@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# Build + push the nullpii unified model artifacts to HuggingFace Hub.
+# Build + push the nullpii model artifacts to HuggingFace Hub.
 #
 # Pipeline:
 #   1. Merge the trained LoRA adapter into base GLiNER and export ONE
-#      ONNX (`export_unified_onnx.py`). Default source = ship adapter
+#      ONNX (`export_onnx.py`). Default source = ship adapter
 #      under `packages/eval/results/train/unified/run-aug2/adapter`.
 #   2. Stage everything under `release/hf-staging/` in the layout the
 #      npm runtime expects (`src/model-manager.ts:UNIFIED_FILES`).
@@ -65,7 +65,7 @@ echo "[release] staging: $STAGING"
 echo "[release] hf-repo: $HF_REPO  (dry-run=$DRY_RUN)"
 
 # 1. Merge + export.
-"$PY" packages/eval/scripts/release/export_unified_onnx.py \
+"$PY" packages/eval/scripts/release/export_onnx.py \
     --adapter-dir "$ADAPTER_DIR" \
     --out-dir "$STAGING"
 

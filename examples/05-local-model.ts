@@ -5,7 +5,7 @@ import { NullPii } from '../src/index.js';
 //   1. set `NULLPII_MODEL_DIR=/path/to/model` — read by the library
 //   2. pass `modelDir: '/path/to/model'` in `NullPiiConfig`
 // Explicit `modelDir` in config wins over the env var; both skip the
-// download path. The directory must contain the unified manifest:
+// download path. The directory must contain the manifest:
 //   model.onnx, tokenizer.json, gliner_config.json, tokenizer_config.json
 //
 // Useful for air-gapped hosts, pinning a specific model revision in CI,

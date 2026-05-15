@@ -10,7 +10,7 @@ import type { PiiSpan, Recognizer } from './types/index.js';
  * CF / CPF letter-weighted checks) verify the candidate satisfies a
  * deterministic, well-defined format. Such matches are stronger
  * evidence than any ML softmax, including the ~0.99998 ceiling we
- * routinely see from the unified GLiNER head. Sitting at this value
+ * routinely see from the GLiNER head. Sitting at this value
  * lets cross-label IoU dedupe (`acrossLabels: true` in
  * `dedupeOverlappingSpans`) pick the structurally-correct label rather
  * than an ML mislabel (e.g. spaced IBAN tagged `private_address`

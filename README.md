@@ -4,7 +4,7 @@
 
 # nullpii
 
-Local PII sanitization with a reversible in-memory vault. Unified GLiNER ONNX + recognizer pack + adversarial-input preprocessor + base64 decoder. Zero cloud calls after the first model download.
+Local PII sanitization with a reversible in-memory vault. GLiNER ONNX + recognizer pack + adversarial-input preprocessor + base64 decoder. Zero cloud calls after the first model download.
 
 Night-hobby project. Engineering focus is the runtime pipeline + adversarial preprocessor, not state-of-the-art F1.
 

@@ -33,7 +33,13 @@ describe('base58CheckValid', () => {
   });
 });
 
-import { codiceFiscaleValid, cpfValid, iban97Valid, luhnValid } from '../src/validators.js';
+import {
+  codiceFiscaleValid,
+  cpfValid,
+  iban97Valid,
+  luhnValid,
+  macAddressNonReserved,
+} from '../src/validators.js';
 
 describe('luhnValid', () => {
   it('accepts a valid Visa test card', () => {
@@ -56,8 +62,42 @@ describe('luhnValid', () => {
     expect(luhnValid('41111111')).toBe(false);
   });
 
+  it('rejects 12-digit Luhn-passing string (below minimum card length)', () => {
+    // Real credit cards start at 13 digits — anything shorter is FP-prone
+    // (Italian phone numbers, long IDs). Confirm a 12-digit input is
+    // rejected even when its mod-10 checksum would otherwise pass.
+    expect(luhnValid('123456789012')).toBe(false);
+  });
+
   it('rejects non-numeric content', () => {
     expect(luhnValid('4111 1111 ABCD 1111')).toBe(false);
+  });
+});
+
+describe('macAddressNonReserved', () => {
+  it('accepts a regular unicast MAC', () => {
+    expect(macAddressNonReserved('01:23:45:67:89:ab')).toBe(true);
+    expect(macAddressNonReserved('aa-bb-cc-dd-ee-ff')).toBe(true);
+  });
+
+  it('rejects the broadcast MAC', () => {
+    expect(macAddressNonReserved('ff:ff:ff:ff:ff:ff')).toBe(false);
+    expect(macAddressNonReserved('FF:FF:FF:FF:FF:FF')).toBe(false);
+  });
+
+  it('rejects the null / uninitialised MAC', () => {
+    expect(macAddressNonReserved('00:00:00:00:00:00')).toBe(false);
+  });
+
+  it('rejects multicast prefixes (IPv4, IPv6, STP)', () => {
+    expect(macAddressNonReserved('01:00:5e:00:00:01')).toBe(false); // IPv4 multicast
+    expect(macAddressNonReserved('33:33:00:00:00:01')).toBe(false); // IPv6 multicast
+    expect(macAddressNonReserved('01:80:c2:00:00:00')).toBe(false); // STP
+  });
+
+  it('rejects malformed input', () => {
+    expect(macAddressNonReserved('not-a-mac')).toBe(false);
+    expect(macAddressNonReserved('01:23:45:67:89')).toBe(false);
   });
 });
 

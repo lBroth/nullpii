@@ -4,7 +4,8 @@ import { createHash } from 'node:crypto';
 
 /** Post-match checksum validators wired via `Recognizer.validate`.
  * `base58CheckValid` BTC · `luhnValid` cards · `iban97Valid` IBAN
- * mod-97 · `cpfValid` BR CPF · `codiceFiscaleValid` IT tax id. */
+ * mod-97 · `cpfValid` BR CPF · `codiceFiscaleValid` IT tax id ·
+ * `macAddressNonReserved` MAC (rejects broadcast / null / multicast). */
 
 const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 const BASE58_INDEX = new Map<string, bigint>();
@@ -52,11 +53,16 @@ export function base58CheckValid(addr: string): boolean {
 /**
  * Luhn / mod-10 checksum for credit-card numbers. Strips any
  * `-`/`.`/space separators before validating. Returns `false` on
- * non-digit residue or length out of [12, 19].
+ * non-digit residue or length out of [13, 19].
+ *
+ * NB: the lower bound is 13 (smallest issued card today), not 12
+ * — 12-digit Luhn-passing strings occur naturally in long phone
+ * numbers and IDs; tagging them as `account_number` is a high-volume
+ * FP source on bench corpora.
  */
 export function luhnValid(value: string): boolean {
   const digits = value.replace(/[\s\-.]/g, '');
-  if (digits.length < 12 || digits.length > 19) return false;
+  if (digits.length < 13 || digits.length > 19) return false;
   if (!/^\d+$/.test(digits)) return false;
   let sum = 0;
   let alt = false;
@@ -231,4 +237,31 @@ export function codiceFiscaleValid(value: string): boolean {
   }
   const expected = CF_CHECK_LETTERS[sum % 26];
   return expected !== undefined && expected === cf[15];
+}
+
+// ─── MAC address (reject reserved / non-personal values) ───────────
+
+/**
+ * Treat a syntactically-valid MAC address as PII only if it doesn't
+ * fall into a well-known reserved range. Rejects:
+ *
+ *   - broadcast: `ff:ff:ff:ff:ff:ff`
+ *   - null: `00:00:00:00:00:00`
+ *   - IPv4 multicast: `01:00:5e:*`
+ *   - IPv6 multicast: `33:33:*`
+ *   - STP / bridge multicast: `01:80:c2:*`
+ *
+ * These identify protocol groups or uninitialised state, not a
+ * device assignable to a person. Matches the convention used by
+ * `core:ip` for `0.0.0.0` / `127.0.0.1` / link-local etc.
+ */
+export function macAddressNonReserved(value: string): boolean {
+  const hex = value.replace(/[-:]/g, '').toLowerCase();
+  if (hex.length !== 12 || !/^[0-9a-f]{12}$/.test(hex)) return false;
+  if (hex === 'ffffffffffff') return false;
+  if (hex === '000000000000') return false;
+  if (hex.startsWith('01005e')) return false; // IPv4 multicast
+  if (hex.startsWith('3333')) return false; // IPv6 multicast
+  if (hex.startsWith('0180c2')) return false; // STP / bridge multicast
+  return true;
 }

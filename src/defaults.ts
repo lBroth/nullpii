@@ -16,6 +16,7 @@ import {
   cpfValid,
   iban97Valid,
   luhnValid,
+  partitaIvaValid,
 } from './validators.js';
 
 /** Backend chosen when the user passes nothing (or `'auto'`). The
@@ -495,6 +496,59 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     label: 'account_number',
     confidence: 0.99,
     validate: codiceFiscaleValid,
+  },
+  // Italian Partita IVA — 11-digit VAT id, mod-10 Luhn-style check.
+  {
+    id: 'core:partita-iva-italy',
+    pattern: /\b\d{11}\b/g,
+    label: 'account_number',
+    confidence: 0.9,
+    validate: partitaIvaValid,
+  },
+  // SWIFT / BIC code (ISO 9362). 8 or 11 chars; no checksum, regex
+  // alone is the only signal — keep confidence modest so the ML
+  // dedupe wins on uppercase content blocks that aren't actually BICs.
+  {
+    id: 'core:swift-bic',
+    pattern: /\b[A-Z]{4}[A-Z]{2}[A-Z0-9]{2}(?:[A-Z0-9]{3})?\b/g,
+    label: 'account_number',
+    confidence: 0.85,
+  },
+
+  // ─── Cloud / payment provider secrets (more than the AKIA + ghp_ already above) ──
+  // AWS secret access key — only fired when the canonical hint
+  // `aws_secret_access_key=...` precedes the 40-char base64-ish token.
+  // Free-form 40-char base64 strings are too common to flag without an
+  // anchor.
+  {
+    id: 'core:aws-secret-key-hinted',
+    pattern: /aws_secret_access_key\s*[:=]\s*([A-Za-z0-9/+=]{40})/gi,
+    label: 'secret',
+    confidence: 0.95,
+  },
+  // Azure storage / event-hub connection string fragment.
+  {
+    id: 'core:azure-connection-string',
+    pattern: /AccountKey=[A-Za-z0-9+/=]{40,}/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+  // Stripe live secret key (`sk_live_...`). Test keys (`sk_test_...`)
+  // are public-by-design — not flagged.
+  {
+    id: 'core:stripe-live-key',
+    pattern: /\bsk_live_[A-Za-z0-9]{24,}\b/g,
+    label: 'secret',
+    confidence: 0.99,
+  },
+  // Slack broad token prefix (xoxa/xoxb/xoxp/xoxr/xoxs). Covers the
+  // generic shape; the existing `xoxe.xoxp` recognizer above stays for
+  // the legacy refresh-token variant.
+  {
+    id: 'core:slack-token-broad',
+    pattern: /\bxox[abprs]-[A-Za-z0-9-]{10,}\b/g,
+    label: 'secret',
+    confidence: 0.97,
   },
 
   // ─── Phone — anchored on `+` for international, context-anchored for domestic ──

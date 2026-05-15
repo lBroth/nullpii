@@ -277,7 +277,7 @@ def build_tools(args) -> dict[str, Callable]:
                         gliner_lora_predictor(
                             "urchade/gliner_multi_pii-v1",
                             f"packages/eval/results/train/adapters/{profile}/adapter",
-                            device=backend if backend == "cpu" else "cuda",
+                            device=backend,
                             threshold=args.gliner_threshold,
                             normalize_input=True,
                             use_expanded_prompts=use_expanded_prompts,
@@ -333,7 +333,7 @@ def build_tools(args) -> dict[str, Callable]:
         # identical to the `nullpii` row.
         "nullpii-router-embedding": lambda: (lambda r: domain_routed_predictor(
             detector=_make_embedding_detector(
-                device="cpu" if backend == "cpu" else "cuda",
+                device=backend,
             ),
             routes=r,
             fallback=r["narrative"],
@@ -346,7 +346,7 @@ def build_tools(args) -> dict[str, Callable]:
         # card's published F1: what the model alone delivers.
         "nullpii-model-only": lambda: (lambda r: domain_routed_predictor(
             detector=_make_embedding_detector(
-                device="cpu" if backend == "cpu" else "cuda",
+                device=backend,
             ),
             routes=r,
             fallback=r["narrative"],
@@ -354,7 +354,7 @@ def build_tools(args) -> dict[str, Callable]:
             d: gliner_lora_predictor(
                 "urchade/gliner_multi_pii-v1",
                 f"packages/eval/results/train/adapters/{d}/adapter",
-                device=backend if backend == "cpu" else "cuda",
+                device=backend,
                 threshold=args.gliner_threshold,
                 normalize_input=True,
             )
@@ -395,14 +395,14 @@ def build_tools(args) -> dict[str, Callable]:
         # backbone, ~600 MB, 55+ PII categories). 37→8 label remap.
         "nemotron-pii-raw": lambda: gliner_nemotron_pii_predictor(
             model_path="nvidia/gliner-pii",
-            device=backend if backend == "cpu" else "cuda",
+            device=backend,
             threshold=0.3,
         ),
         # `gliner-pii-large-v1.0` (knowledgator) — PII-specialised
         # Apache fine-tune, gliner-large backbone. Bare HF.
         "gliner-pii-large-v1": lambda: gliner_v2_predictor(
             "knowledgator/gliner-pii-large-v1.0",
-            device=backend if backend == "cpu" else "cuda",
+            device=backend,
             threshold=args.gliner_threshold,
             local_files_only=False,
             labels=_GLINER_NATIVE_LABELS,
@@ -413,7 +413,7 @@ def build_tools(args) -> dict[str, Callable]:
         # BIOES walk (the HF naive aggregation drops boundary tokens for
         # BIOES schemas). Bare HF, no nullpii post-processing.
         "openai-privacy-filter": lambda: openai_privacy_filter_predictor(
-            device=backend if backend == "cpu" else "cuda",
+            device=backend,
         ),
     }
     requested = [t.strip() for t in args.tools.split(",") if t.strip()]
@@ -560,7 +560,7 @@ def run_combo(
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--tools", default="nullpii,gliner,presidio,deberta,piiranha,regex,ensemble")
-    parser.add_argument("--backend", default="cuda", choices=["cpu", "cuda"])
+    parser.add_argument("--backend", default="cuda", choices=["cpu", "cuda", "mps"])
     parser.add_argument("--datasets", default="all")
     parser.add_argument("--max-per-dataset", type=int, default=0,
                         help="0 = use per-dataset defaults; >0 = cap every dataset to N")

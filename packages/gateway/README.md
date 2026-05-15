@@ -20,12 +20,13 @@ response. Drop-in: clients change `baseURL` and nothing else.
 
 ## Status
 
-**v0.0.2 — preview.** `POST /v1/messages` works end-to-end, both
+**v0.0.3 — preview.** `POST /v1/messages` works end-to-end, both
 non-streaming and streaming (`stream: true`). For streaming, the
 gateway parses upstream SSE frames, buffers `{{...}}` placeholders that
 straddle delta boundaries via `RestoreStream`, then re-emits restored
 `content_block_delta` events downstream — drop-in for the standard
-Anthropic SDK streaming reader. OpenAI compat
+Anthropic SDK streaming reader. `POST /v1/messages/count_tokens`
+sanitises the request body before forwarding. OpenAI compat
 (`/v1/chat/completions`) is not in this release.
 
 ## Run
@@ -106,7 +107,7 @@ All via env vars. No file config in this preview.
 | `NULLPII_UPSTREAM` | `https://api.anthropic.com` | Upstream LLM provider |
 | `NULLPII_VAULT_TTL_MS` | `1800000` | Session TTL (currently unused — destroyed per-request) |
 | `NULLPII_MODEL_DIR` | (auto-fetch) | Local GLiNER ONNX dir |
-| `NULLPII_BACKEND` | `cpu` | `cpu` / `cuda` / `coreml` |
+| `NULLPII_BACKEND` | `cpu` | `cpu` / `mps` / `cuda` / `auto` |
 | `NULLPII_LOG_LEVEL` | `info` | Fastify log level |
 | `NULLPII_BODY_LIMIT_BYTES` | `10485760` | Request body cap (10 MB) |
 

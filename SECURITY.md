@@ -9,7 +9,7 @@ Privately — open a [Security Advisory](https://github.com/lBroth/nullpii/secur
 - Detection runs entirely local — no network calls.
 - Vault is in-memory only; `destroySession()` purges it.
 - Logs never contain PII values (counts and short ids only).
-- Placeholders carry an 8-hex prefix of the minting session id. `restore()` surfaces foreign-prefix placeholders via `RestoreResult.foreignPlaceholders`; `{ strict: true }` throws `SessionMismatchError` instead.
+- Placeholders carry a 16-hex prefix of the minting session id (64-bit collision-resistant). `restore()` surfaces foreign-prefix placeholders via `RestoreResult.foreignPlaceholders`; `{ strict: true }` throws `SessionMismatchError` instead.
 
 ## What it does NOT protect
 

@@ -69,7 +69,7 @@ Before tagging a new version:
 3. **Pack inspection.** `npm pack --dry-run`. Verify every shipped file is intentional:
    - Only `dist/`, `src/`, `README.md`, `LICENSE`, `NOTICE`, `bin/` are listed (the `package.json:files` whitelist).
    - `dist/backend/` contains **only** `backend.{js,d.ts,*.map}`.
-   - No compiled outputs from removed modules (`distiluse-encoder`, `router-embedding`, `multi-backend`, `cpu/mps/cuda-backend`, `ort-backend`, `variant`, `router`).
+   - No orphan compiled outputs in `dist/` from modules that no longer exist in `src/`.
    - `tarball size` under 1 MB (sanity — model weights ship via HF, not npm).
 4. **Full quality bar.** `npm run lint && npm run typecheck && npm test && npm run license-check && npm run circular-check`. All must pass on the release commit.
 5. **SBOM refresh.** `npm run sbom` regenerates `bom.json` with the current dep tree + timestamp.

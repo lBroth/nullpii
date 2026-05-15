@@ -23,7 +23,7 @@ manifest the runtime expects:
 
 ```
 <dir>/
-├── model.onnx                 # merged GLiNER, ~1.16 GB FP32
+├── model.onnx                 # GLiNER detection model, ~1.16 GB FP32
 ├── tokenizer.json             # GLiNER tokenizer (CLS/SEP/<<ENT>>/<<SEP>>)
 ├── gliner_config.json
 └── tokenizer_config.json

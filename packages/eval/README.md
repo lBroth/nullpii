@@ -1,6 +1,6 @@
 # nullpii eval
 
-Bench reproduction kit for `nullpii` v0.1.0. Python 3.12, gitignored — not part of the npm publish surface.
+Bench reproduction kit for `nullpii`. Python 3.12. Not part of the npm publish surface.
 
 ## Setup
 
@@ -14,21 +14,21 @@ pip install -e ".[presidio]" presidio-evaluator datasets
 ## Reproduce the bench
 
 ```bash
-NULLPII_MODEL_DIR=/tmp/nullpii-stack-test \
+NULLPII_MODEL_DIR=/path/to/lBroth-nullpii \
 python -u scripts/bench_full.py \
-  --tools nullpii,presidio,nemotron-pii-raw,piiranha,deberta,gliner-onnx-pii-fp32,gliner-pii-large-v1 \
-  --datasets nullpii-bench,tab-echr,nemotron-pii-test,presidio-synthetic,ai4privacy-300k-heldout,isotonic-en-heldout,isotonic-de-heldout,isotonic-fr-heldout,isotonic-it-heldout \
+  --tools nullpii,nullpii-bare,presidio,nemotron-pii-raw,piiranha,deberta,gliner-onnx-pii-fp32,gliner-pii-large-v1,openai-privacy-filter \
+  --datasets all \
   --max-per-dataset 5000 --parallel-tools 1 \
-  --backend cpu --confusion \
+  --backend cpu \
   --out-dir results/$(date +%Y%m%d)-bench
 ```
 
-Output: `matrix.json` (per-cell F1 / wall / throughput) + `matrix.csv` (pivot). Override caps with `--max-per-dataset N` or `--no-cap`. All third-party adapters run bare — no `nullpii` post-processing is applied to their predictions.
+Output: `matrix.json` (per-cell F1 / wall / throughput) + `matrix.csv` (pivot). Override caps with `--max-per-dataset N` or `--no-cap`. Macro F1 uses the sklearn convention — labels with no ground-truth support are excluded from the macro average; the same coercion applies to every tool, no asymmetry. All third-party tools run bare — no `nullpii` post-processing is applied to their predictions.
 
 ## Reproduce latency
 
 ```bash
-python -u scripts/bench_latency.py --profiles nullpii-router-embedding \
+python -u scripts/bench_latency.py \
   --backend cpu --sizes 100 1000 10000 --n-per-size 50 \
   --out results/latency-$(date +%Y%m%d)
 ```
@@ -39,12 +39,13 @@ python -u scripts/bench_latency.py --profiles nullpii-router-embedding \
 - `scripts/failure_analysis.py` — top-K FN/FP per label per tool
 - `scripts/report_per_class.py` — per-label precision/recall breakdown
 - `scripts/verify_claims.py` — `CLAIM-VERIFIER-01`: re-run Presidio / piiranha vendor numbers under span IoU ≥ 0.5
-- `scripts/release/` — HF push pipeline (CI only)
+- `scripts/generate_bench_rows.py` — deterministic project-bench row generator
+- `scripts/reannotate_underanno_rows.py` — regex-only enrichment pass for under-labelled rows
 
 ## Bundled datasets
 
-`datasets/` — Apache 2.0, no real PII. See [`datasets/README.md`](datasets/README.md) for schema. Three files live there at HEAD: `nullpii-bench.jsonl` (project-authored), `presidio-synthetic.jsonl` (external, MIT), `tab-echr-test.jsonl` (external, MIT). All other bench rows (`ai4privacy-*`, `isotonic-*`, `nemotron-pii-*`, `argilla-pii`) are fetched from HuggingFace at bench time by the per-tool adapters.
+`datasets/` — Apache 2.0, no real PII. See [`datasets/README.md`](datasets/README.md) for schema. Three files live there at HEAD: `nullpii-bench.jsonl` (project-authored), `presidio-synthetic.jsonl` (external, MIT), `tab-echr-test.jsonl` (external, MIT). All other bench rows (`ai4privacy-*`, `isotonic-*`, `nemotron-pii-*`, `argilla-pii`) are fetched from HuggingFace at bench time.
 
 ## Model card
 
-HF Hub: [`lBroth/nullpii`](https://huggingface.co/lBroth/nullpii) — training data composition, intended use, limitations, in-distribution disclosures.
+[`lBroth/nullpii`](https://huggingface.co/lBroth/nullpii) — intended use, limitations, licence.

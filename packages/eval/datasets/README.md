@@ -25,7 +25,7 @@ Loaders filter by subset to produce the bench rows.
 
 All subsets feed the `nullpii-bench` cell in the canonical bench
 (one F1 number summarises behaviour across all perturbation patterns).
-Total 2,421 rows.
+Total 2,271 rows.
 
 | Subset | Rows | Notes |
 |---|---:|---|
@@ -78,9 +78,7 @@ fully synthetic. Used as a held-out OOD baseline.
 ## `tab-echr-test`
 
 EU jurisprudence test split, 127 docs, ~3,000 chars avg. Gold spans
-cover `private_person` / `private_address` / `private_date`. ⚠ in-
-distribution generalisation (legal adapter trained on TAB train split —
-disjoint rows, same distribution).
+cover `private_person` / `private_address` / `private_date`.
 
 ## Loading
 

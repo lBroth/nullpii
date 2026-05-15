@@ -42,45 +42,21 @@ Research kit (`packages/eval/`, Python — gitignored, not published):
 Model artifacts (downloaded at runtime from HuggingFace Hub — NOT bundled
 in the npm package; see README "First-call download"):
 
-  Base / encoder (Apache-2.0):
+  Base model (Apache-2.0):
     - urchade/gliner_multi_pii-v1 ........ GLiNER head on Microsoft
-                                           mDeBERTa-v3 base — the backbone
-                                           the LoRA adapter is merged into.
+                                           mDeBERTa-v3 base.
                                            (Zaratiana et al., NAACL 2024.)
 
   Published weights:
-    - lBroth/nullpii ..................... unified merged-LoRA ONNX +
-                                           tokenizer + GLiNER config
-                                           (~1.2 GB FP32, ~350 MB int8).
-                                           v0.2: single model, no router,
-                                           no distiluse, no per-domain
-                                           shards. Trained on a permissive-
-                                           only corpus (see below).
+    - lBroth/nullpii ..................... ONNX + tokenizer + GLiNER config
+                                           (~1.2 GB FP32). See the
+                                           HuggingFace model card for
+                                           licence, intended use, and
+                                           upstream attributions.
 
-  Fine-tune training (v0.2 unified adapter). The shipped weights are
-  derived in part from a permissive-only training corpus that includes
-  NVIDIA Nemotron-PII (CC-BY-4.0); under that licence, the attribution
-  notice below must accompany any redistribution of the weights:
-
-      "Trained in part on NVIDIA Nemotron-PII (CC-BY-4.0)."
-
-  The base model is `urchade/gliner_multi_pii-v1` (Apache-2.0). The
-  combined-licence summary of the weights:
-
-    - base: Apache-2.0
-    - training corpus: Apache-2.0 / MIT / CC-BY-4.0 (attribution required)
-    - no NonCommercial clauses, no gated upstreams; commercial
-      redistribution is permitted subject to the Nemotron attribution
-      above.
-
-  Per-dataset upstream details are intentionally not enumerated here —
-  the training recipe is not part of the published distribution. The
-  `lBroth/nullpii` HuggingFace model card carries the full upstream
-  citation list for the trained weights.
-
-  Bench / eval datasets (used only to measure F1 — never to train the
-  shipped weights): see `packages/eval/datasets/README.md`. Each
-  external dataset retains its own licence.
+  Bench / eval datasets (used only to measure F1, never bundled in the
+  npm package): see `packages/eval/datasets/README.md`. Each external
+  dataset retains its own licence.
 
 License posture:
   - 100% permissive runtime tree (MIT / Apache-2.0 / BSD / ISC / CC0).

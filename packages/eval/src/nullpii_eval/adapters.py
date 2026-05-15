@@ -154,9 +154,20 @@ def piiranha_predictor(
     *,
     device: str | None = None,
     batch_size: int = 32,
+    chunk_chars: int = 1000,
+    overlap_chars: int = 200,
 ) -> BatchPredictor:
     """`iiiorg/piiranha-v1-detect-personal-information` — multilingual
-    DeBERTa-v3-based PII detector (en/es/fr/de/it/nl, 17 labels, 256 tok)."""
+    DeBERTa-v3-based PII detector (en/es/fr/de/it/nl, 17 labels, 256 tok).
+
+    Upstream model card: "context length is 256 Deberta tokens. If your
+    text is longer than that, just split it up". We honour that by
+    chunking the input at ~1000 chars (≈ 250-300 mDeBERTa tokens with
+    English / Romance text) with 200-char overlap, then dedupe overlap
+    boundary spans by IoU. Without this, long inputs (tab-echr ~3k chars,
+    isotonic 1-2k chars) get truncated to the first 256 tokens and the
+    model's F1 is systematically under-estimated.
+    """
     try:
         import torch  # noqa: I001
         from transformers import pipeline
@@ -183,27 +194,151 @@ def piiranha_predictor(
         batch_size=batch_size,
     )
 
+    def _decode_spans(results: list[dict], offset: int = 0) -> list[Span]:
+        spans: list[Span] = []
+        for r in results:
+            entity = str(r.get("entity_group") or r.get("entity") or "")
+            key = _strip_bioes(entity).upper()
+            label = _PIIRANHA_LABEL_MAP.get(key)
+            if label is None:
+                continue
+            spans.append(Span(label, int(r["start"]) + offset, int(r["end"]) + offset))
+        return spans
+
+    def _dedupe_by_iou(spans: list[Span]) -> list[Span]:
+        if len(spans) <= 1:
+            return spans
+        sorted_spans = sorted(spans, key=lambda s: (s.start, -s.end))
+        out: list[Span] = []
+        for s in sorted_spans:
+            merged = False
+            for i in range(len(out) - 1, -1, -1):
+                prev = out[i]
+                if prev.end <= s.start:
+                    break
+                if prev.label != s.label:
+                    continue
+                inter = max(0, min(prev.end, s.end) - max(prev.start, s.start))
+                if inter == 0:
+                    continue
+                union = (prev.end - prev.start) + (s.end - s.start) - inter
+                if inter / union >= 0.5:
+                    if (s.end - s.start) > (prev.end - prev.start):
+                        out[i] = s
+                    merged = True
+                    break
+            if not merged:
+                out.append(s)
+        return sorted(out, key=lambda s: s.start)
+
     def _predict_batch(texts: list[str]) -> list[ToolResult]:
         t0 = time.perf_counter()
-        results_list = pipe(texts)
+        # Split each text into chunks; remember which chunk belongs to
+        # which input so we can stitch back.
+        per_input_chunks: list[list[tuple[int, str]]] = []
+        flat_chunks: list[str] = []
+        for text in texts:
+            tlen = len(text)
+            chunks: list[tuple[int, str]] = []
+            if tlen <= chunk_chars:
+                chunks.append((0, text))
+            else:
+                stride = chunk_chars - overlap_chars
+                for off in range(0, tlen, stride):
+                    chunk = text[off : off + chunk_chars]
+                    if not chunk:
+                        break
+                    chunks.append((off, chunk))
+                    if off + chunk_chars >= tlen:
+                        break
+            per_input_chunks.append(chunks)
+            flat_chunks.extend(c for _, c in chunks)
+
+        flat_results = pipe(flat_chunks) if flat_chunks else []
+        if flat_results and isinstance(flat_results[0], dict):
+            flat_results = [flat_results]  # type: ignore[list-item]
+
         elapsed = (time.perf_counter() - t0) * 1000
         per_call = elapsed / max(1, len(texts))
+
         out: list[ToolResult] = []
-        if results_list and isinstance(results_list[0], dict):
-            results_list = [results_list]  # type: ignore[list-item]
-        for results in results_list:
-            spans: list[Span] = []
-            for r in results:
-                entity = str(r.get("entity_group") or r.get("entity") or "")
-                key = _strip_bioes(entity).upper()
-                label = _PIIRANHA_LABEL_MAP.get(key)
-                if label is None:
-                    continue
-                spans.append(Span(label, int(r["start"]), int(r["end"])))
-            out.append(ToolResult(spans, per_call))
+        cursor = 0
+        for chunks in per_input_chunks:
+            collected: list[Span] = []
+            for off, _ in chunks:
+                results = flat_results[cursor] if cursor < len(flat_results) else []
+                cursor += 1
+                collected.extend(_decode_spans(results, offset=off))
+            out.append(ToolResult(_dedupe_by_iou(collected), per_call))
         return out
 
     return _predict_batch
+
+
+_OPENAI_PRIVACY_FILTER_OK = {
+    "ACCOUNT_NUMBER",
+    "PRIVATE_ADDRESS",
+    "PRIVATE_DATE",
+    "PRIVATE_EMAIL",
+    "PRIVATE_PERSON",
+    "PRIVATE_PHONE",
+    "PRIVATE_URL",
+    "SECRET",
+}
+
+
+def openai_privacy_filter_predictor(
+    *,
+    device: str | None = None,
+) -> Predictor:
+    """`openai/privacy-filter` — gpt-oss-derived bidirectional token
+    classifier (1.5B params total / 50M active, 128k context). Loaded
+    via the upstream `opf` Python API so the constrained Viterbi
+    decoder lives in the official runtime, not a local approximation.
+
+    Bare-mode contract: no nullpii post-processing applied. Labels are
+    the model's native 8-class taxonomy (already aligned with nullpii's
+    schema, modulo case).
+    """
+    try:
+        from opf import OPF
+    except ImportError as e:
+        raise ImportError(
+            "opf required — `pip install -e git+https://github.com/openai/privacy-filter`",
+        ) from e
+
+    if device is None:
+        try:
+            import torch
+        except ImportError as e:
+            raise ImportError("torch required") from e
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    if device not in ("cpu", "cuda"):
+        # opf only supports cpu / cuda; mps not advertised.
+        device = "cpu"
+
+    runtime = OPF(
+        device=device,
+        decode_mode="viterbi",
+        output_mode="typed",
+        trim_whitespace=True,
+    )
+
+    def _predict(text: str) -> ToolResult:
+        t0 = time.perf_counter()
+        result = runtime.redact(text)
+        elapsed = (time.perf_counter() - t0) * 1000
+        spans: list[Span] = []
+        # OPF returns either a RedactionResult or a plain string when
+        # `output_text_only`; we explicitly stay in the structured path.
+        detected = getattr(result, "detected_spans", ()) or ()
+        for d in detected:
+            label = str(d.label).upper()
+            if label in _OPENAI_PRIVACY_FILTER_OK:
+                spans.append(Span(label.lower(), int(d.start), int(d.end)))
+        return ToolResult(spans, elapsed)
+
+    return _predict
 
 
 _DEBERTA_LABEL_MAP = {
@@ -1438,6 +1573,52 @@ _NULLPII_8 = [
     "secret",
 ]
 
+# Natural-language GLiNER label set for upstream models. GLiNER is
+# label-aware (the encoder embeds each label string and matches against
+# spans), so passing labels the model never saw during training under-
+# estimates F1 substantially. Both `urchade/gliner_multi_pii-v1` and
+# `knowledgator/gliner-pii-large-v1.0` are documented with natural-
+# language label examples ("person", "email", "phone number", …) — use
+# them.
+_GLINER_NATIVE_LABELS = [
+    "person",
+    "email",
+    "phone number",
+    "address",
+    "date",
+    "URL",
+    "credit card number",
+    "social security number",
+    "bank account number",
+    "IBAN",
+    "passport number",
+    "driver license",
+    "API key",
+    "password",
+    "secret",
+]
+
+# Project the GLiNER natural-language labels back onto nullpii's 8-class
+# taxonomy for fair F1 against the 8-class gold spans. Any label not in
+# this map is dropped (predictor returns None for `_project_label`).
+_GLINER_NATIVE_TO_NULLPII8 = {
+    "person": "private_person",
+    "email": "private_email",
+    "phone number": "private_phone",
+    "address": "private_address",
+    "date": "private_date",
+    "URL": "private_url",
+    "credit card number": "account_number",
+    "social security number": "account_number",
+    "bank account number": "account_number",
+    "IBAN": "account_number",
+    "passport number": "account_number",
+    "driver license": "account_number",
+    "API key": "secret",
+    "password": "secret",
+    "secret": "secret",
+}
+
 # Expanded inference-time prompt set. GLiNER is prompt-based (model
 # interprets the semantic meaning of each label string), so we can
 # query with finer-grained labels at inference and map back to the
@@ -1574,17 +1755,27 @@ def gliner_v2_predictor(
     local_files_only: bool = False,
     chunk_chars: int = 1400,
     overlap_chars: int = 200,
+    labels: list[str] | None = None,
+    label_map: dict[str, str] | None = None,
 ) -> Predictor:
     """Bare-mode predictor for upstream GLiNER models (Apache 2.0).
-    Trained on the nullpii 8-category schema — labels passed verbatim,
-    no remap.
+
+    Caller must pass the model's NATIVE label schema via ``labels`` (GLiNER
+    is label-aware: passing labels the model never saw during training
+    materially under-estimates F1). The optional ``label_map`` projects
+    native labels onto nullpii's 8-class taxonomy for fair cross-model
+    F1 — bench gold spans are 8-class, so any model with a different
+    schema needs a bridge (same contract as the per-tool deberta /
+    piiranha / nemotron remaps).
+
+    Default ``labels=None`` → falls back to nullpii's underscore_case
+    8-class set; only correct for models fine-tuned on that exact schema
+    (e.g. nullpii's own merged-LoRA ONNX).
 
     Bare-mode contract: NO nullpii post-processing. No `_normalize_for_detection`,
     no boundary refine, no never-PII filter, no regex pack. The chunking
     1400/200 stride is the only adapter glue, applied uniformly across all
-    GLiNER-family bare baselines (`gliner-onnx-pii-fp32`, `gliner-x-*`,
-    `gliner-pii-*-v1`, `modern-gliner-bi-*`, `gliner-multi-pii-domains-v1`,
-    `gliner2-*-v1`, `nemotron-pii-raw`) so long-doc handling is fair.
+    GLiNER-family bare baselines so long-doc handling is fair.
 
     Loads either the PyTorch checkpoint (`onnx_file=None`) on the chosen
     device, or an exported ONNX model (`onnx_file="model_int4.onnx"`,
@@ -1625,14 +1816,25 @@ def gliner_v2_predictor(
                 out.append(s)
         return sorted(out, key=lambda s: s.start)
 
+    inference_labels = list(labels) if labels is not None else list(_NULLPII_8)
+    remap = dict(label_map) if label_map is not None else None
+
+    def _project_label(native: str) -> str | None:
+        if remap is None:
+            return native
+        return remap.get(native)
+
     def _predict(text: str) -> ToolResult:
         t0 = time.perf_counter()
         spans: list[Span] = []
         scores: list[float] = []
         text_len = len(text)
         if text_len <= chunk_chars:
-            for e in model.predict_entities(text, _NULLPII_8, threshold=threshold):
-                spans.append(Span(e["label"], int(e["start"]), int(e["end"])))
+            for e in model.predict_entities(text, inference_labels, threshold=threshold):
+                projected = _project_label(e["label"])
+                if projected is None:
+                    continue
+                spans.append(Span(projected, int(e["start"]), int(e["end"])))
                 scores.append(float(e.get("score", threshold)))
         else:
             stride = chunk_chars - overlap_chars
@@ -1641,11 +1843,14 @@ def gliner_v2_predictor(
                 chunk = text[offset : offset + chunk_chars]
                 if not chunk:
                     break
-                for e in model.predict_entities(chunk, _NULLPII_8, threshold=threshold):
+                for e in model.predict_entities(chunk, inference_labels, threshold=threshold):
+                    projected = _project_label(e["label"])
+                    if projected is None:
+                        continue
                     ns_full = int(e["start"]) + offset
                     ne_full = int(e["end"]) + offset
                     spans_with_scores.append((
-                        Span(e["label"], ns_full, ne_full),
+                        Span(projected, ns_full, ne_full),
                         float(e.get("score", threshold)),
                     ))
                 if offset + chunk_chars >= text_len:
@@ -2096,7 +2301,23 @@ _SCRUBADUB_LABEL_MAP = {
 
 
 def presidio_predictor(*, language: str = "en") -> Predictor:
-    """In-process Presidio analyzer. Maps Presidio entities → our 8 categories."""
+    """In-process Presidio analyzer. Maps Presidio entities → our 8 categories.
+
+    Stays single-language (English by default). A multi-language variant
+    that swapped spaCy NER backends per dataset was tried (PR-not-landed)
+    and produced *lower* F1 on isotonic-it because Presidio registers
+    its default recognizer pack (CREDIT_CARD, IBAN, US_SSN, EMAIL, URL,
+    AWS_*…) under the English language tag only — switching `language=`
+    to `it` / `de` / `fr` silently drops those recognizers, leaving just
+    the per-language spaCy PER / LOCATION tagger. The net is worse, not
+    better.
+
+    Proper fix (deferred): manually register the universal recognizers
+    (regex-based, language-agnostic) across every `supported_languages`
+    entry, then add per-language spaCy NER on top. Until that lands, we
+    report the English-only number as-is — under-estimated on non-en
+    splits but at least monotonic with what Presidio actually ships.
+    """
     try:
         from presidio_analyzer import AnalyzerEngine  # noqa: I001
     except ImportError as e:

@@ -239,6 +239,12 @@ def _wrap_batch(batch_pred):
 
 def build_tools(args) -> dict[str, Callable]:
     backend = args.backend
+    # Inner GPU batch for transformer tools. Override via env when
+    # running with high `--parallel-tools` so activation memory fits;
+    # 32 is the default that worked at parallel-2 on 5090, 8 lets
+    # parallel-4 share the same 32 GB VRAM.
+    global _BATCH
+    _BATCH = int(os.environ.get("NULLPII_BENCH_BATCH", "32"))
 
     # ─── LoRA per-domain adapter helper ──────────────────────────
     # Loaded internally by router-embedding only. The
@@ -360,8 +366,8 @@ def build_tools(args) -> dict[str, Callable]:
         # `_normalize_for_detection`). Only the per-tool label remap to
         # nullpii's 8-class schema runs (cross-schema bridge).
         "presidio":  lambda: presidio_predictor(),
-        "deberta":   lambda: _mark_batch(deberta_pii_predictor(device=backend, batch_size=32)),
-        "piiranha":  lambda: _mark_batch(piiranha_predictor(device=backend, batch_size=32)),
+        "deberta":   lambda: _mark_batch(deberta_pii_predictor(device=backend, batch_size=_BATCH)),
+        "piiranha":  lambda: _mark_batch(piiranha_predictor(device=backend, batch_size=_BATCH)),
         # GLiNER multi PII v1 (`urchade/gliner_multi_pii-v1`) bare HF.
         "gliner-onnx-pii-fp32": lambda: gliner_v2_predictor(
             "onnx-community/gliner_multi_pii-v1",

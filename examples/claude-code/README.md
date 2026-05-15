@@ -8,10 +8,12 @@ leave your machine; placeholders are restored in the response. Apache-
 ## Quickstart
 
 > **Pre-v0.2 release caveat.** The HuggingFace repo (`lBroth/nullpii`)
-> is still private — the gateway boot will return `401 NULLPII_MODEL_NOT_FOUND`
-> on the first `/v1/messages` until the model is published. Workaround:
-> mount a local model dir into the container (see "Going further" below),
-> or wait for v0.2 to land.
+> is still private — the default compose file returns
+> `401 NULLPII_MODEL_NOT_FOUND` on the first `/v1/messages` until the
+> model is published. To test end-to-end before release, use the
+> `docker-compose.local-model.yml` variant which mounts a host model
+> dir into the container. See [Pre-release demo](#pre-release-demo-mount-a-host-model)
+> below.
 
 ```bash
 # 1. Boot the gateway (first run: ~1.2 GB GLiNER model download)
@@ -75,6 +77,30 @@ substitution histogram — **counts only, never the PII values**:
 the vault doesn't know about. `foreignPlaceholders > 0` means a
 placeholder from a different session leaked into this one. Both are
 expected to be `0` on a healthy stream.
+
+## Pre-release demo (mount a host model)
+
+Until the HF repo `lBroth/nullpii` is published, the default compose
+file can't fetch the model. Use the local-model variant:
+
+```bash
+# 1. Prefetch the model on a host with network access. Drops files
+#    into the default cache path.
+NULLPII_MODEL_DIR=~/.cache/nullpii/models/lBroth/nullpii/main \
+  npx nullpii prefetch
+
+# 2. Point the compose at that directory and boot
+export MODEL_DIR_HOST=~/.cache/nullpii/models/lBroth/nullpii/main
+docker compose -f examples/claude-code/docker-compose.local-model.yml up -d
+
+# 3. Same setup as the quickstart from here on
+export ANTHROPIC_BASE_URL=http://localhost:8787
+export ANTHROPIC_API_KEY=sk-ant-…
+claude "summarise email to John at john@acme.io"
+```
+
+The directory must contain `model.onnx`, `tokenizer.json`,
+`gliner_config.json`, `tokenizer_config.json`. It's mounted read-only.
 
 ## Going further
 

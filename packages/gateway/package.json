@@ -19,6 +19,7 @@
   "files": ["dist", "src", "bin", "README.md"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch --clear-screen=false --tsconfig tsconfig.dev.json src/dev.ts",
     "start": "node bin/nullpii-gateway.mjs"
   },
   "dependencies": {

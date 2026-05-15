@@ -28,6 +28,40 @@ export async function registerAnthropicRoute(
     }
     return handleNonStreaming(req, reply, body, np, upstreamBaseUrl, fetchImpl);
   });
+
+  // `count_tokens` does NOT need restoration — the response is `{input_tokens: N}`,
+  // no PII, no placeholders. But sanitising the request body still matters: a
+  // count-tokens probe over PII-bearing text would leak the text to the upstream
+  // if forwarded raw. Sanitise → forward → return upstream response verbatim.
+  app.post('/v1/messages/count_tokens', async (req, reply) => {
+    const body = req.body as AnthropicRequest;
+    const sanitized = await sanitizeRequest(np, body);
+    const headers = buildUpstreamHeaders(
+      req.headers as Record<string, string | string[] | undefined>,
+    );
+
+    let upstream: Awaited<ReturnType<typeof forwardToAnthropic>>;
+    try {
+      upstream = await forwardToAnthropic(
+        fetchImpl,
+        upstreamBaseUrl,
+        '/v1/messages/count_tokens',
+        sanitized.body,
+        headers,
+      );
+    } catch (err) {
+      np.destroySession(sanitized.sessionId);
+      const msg = err instanceof Error ? err.message : String(err);
+      return reply.code(502).send({
+        type: 'error',
+        error: { type: 'nullpii_upstream_error', message: msg },
+      });
+    }
+    np.destroySession(sanitized.sessionId);
+    reply.code(upstream.status);
+    reply.header('content-type', upstream.headers.get('content-type') ?? 'application/json');
+    return upstream.text;
+  });
 }
 
 async function handleNonStreaming(

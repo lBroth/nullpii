@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Build-context filter for Dockerfiles in this repo. Keep this tight —
+# every byte in the context is hashed for the layer cache, and stale
+# entries here will quietly invalidate cache on every build.
+
+# Build outputs
+dist
+packages/*/dist
+*.tsbuildinfo
+
+# Dependency stores (rebuilt inside the image)
+node_modules
+packages/*/node_modules
+
+# Version control & editor
+.git
+.gitignore
+.github
+.vscode
+.idea
+
+# Secrets / local config (must NEVER reach a container)
+.env
+.env.*
+*.pem
+*.key
+
+# Logs & ephemeral
+*.log
+npm-debug.log*
+.DS_Store
+
+# Research / private — gigantic, gitignored, not needed at runtime
+packages/eval
+packages/*/private
+private
+
+# Tests + tooling not needed at runtime
+test
+packages/*/test
+**/*.test.ts
+**/*.spec.ts
+.husky
+lefthook.yml
+
+# Docker self-reference
+Dockerfile
+**/Dockerfile
+.dockerignore
+
+# Coverage / SBOM artifacts
+coverage
+bom.json

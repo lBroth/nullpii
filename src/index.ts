@@ -69,5 +69,4 @@ export {
   cpfValid,
   iban97Valid,
   luhnValid,
-  partitaIvaValid,
 } from './validators.js';

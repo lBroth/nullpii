@@ -193,28 +193,6 @@ describe('runRecognizers', () => {
   // subpackages; we folded them into core after auditing the 6 net-new
   // patterns (the rest duplicated existing core recognizers).
   describe('folded-in recognizers', () => {
-    it('matches a valid Partita IVA and rejects an invalid one', async () => {
-      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
-      const piva = DEFAULT_RECOGNIZERS.find((r) => r.id === 'core:partita-iva-italy');
-      expect(piva).toBeDefined();
-      // Valid checksum: mod-10 sum lands on 0 with last digit 3.
-      const valid = '12345678903';
-      // Invalid by Luhn-style mod-10.
-      const invalid = '12345678901';
-      const okSpans = runRecognizers(`ditta ${valid} fine`, piva ? [piva] : [], []);
-      const koSpans = runRecognizers(`ditta ${invalid} fine`, piva ? [piva] : [], []);
-      expect(okSpans).toHaveLength(1);
-      expect(koSpans).toHaveLength(0);
-    });
-
-    it('matches a SWIFT/BIC code in an 8 and 11-char form', async () => {
-      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
-      const bic = DEFAULT_RECOGNIZERS.find((r) => r.id === 'core:swift-bic');
-      expect(bic).toBeDefined();
-      const spans = runRecognizers('wire to DEUTDEFFXXX or BNPAFRPP', bic ? [bic] : [], []);
-      expect(spans.length).toBeGreaterThanOrEqual(2);
-    });
-
     it('catches an AWS secret access key only when canonically hinted', async () => {
       const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
       const r = DEFAULT_RECOGNIZERS.find((r) => r.id === 'core:aws-secret-key-hinted');

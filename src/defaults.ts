@@ -16,7 +16,6 @@ import {
   cpfValid,
   iban97Valid,
   luhnValid,
-  partitaIvaValid,
 } from './validators.js';
 
 /** Backend chosen when the user passes nothing (or `'auto'`). The
@@ -496,23 +495,6 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     label: 'account_number',
     confidence: 0.99,
     validate: codiceFiscaleValid,
-  },
-  // Italian Partita IVA — 11-digit VAT id, mod-10 Luhn-style check.
-  {
-    id: 'core:partita-iva-italy',
-    pattern: /\b\d{11}\b/g,
-    label: 'account_number',
-    confidence: 0.9,
-    validate: partitaIvaValid,
-  },
-  // SWIFT / BIC code (ISO 9362). 8 or 11 chars; no checksum, regex
-  // alone is the only signal — keep confidence modest so the ML
-  // dedupe wins on uppercase content blocks that aren't actually BICs.
-  {
-    id: 'core:swift-bic',
-    pattern: /\b[A-Z]{4}[A-Z]{2}[A-Z0-9]{2}(?:[A-Z0-9]{3})?\b/g,
-    label: 'account_number',
-    confidence: 0.85,
   },
 
   // ─── Cloud / payment provider secrets (more than the AKIA + ghp_ already above) ──

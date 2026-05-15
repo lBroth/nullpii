@@ -30,6 +30,23 @@ Anthropic SDK streaming reader. OpenAI compat
 
 ## Run
 
+### Docker (recommended)
+
+```bash
+# Build the image (slim variant — model fetched on first boot, ~926 MB image)
+docker build -t nullpii/gateway:slim -f packages/gateway/Dockerfile .
+
+# Run it
+docker run --rm -p 8787:8787 \
+  -v nullpii-cache:/root/.cache/nullpii \
+  nullpii/gateway:slim
+```
+
+A worked `docker-compose.yml` plus a Claude Code integration walk-through
+lives at [`examples/claude-code/`](../../examples/claude-code/).
+
+### From source
+
 ```bash
 # from the gateway package after `npm install` + `npm run build`
 NULLPII_MODEL_DIR=/path/to/local/gliner-onnx \

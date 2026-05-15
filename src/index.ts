@@ -49,6 +49,9 @@ export { defaultCacheDir, type EnsureOptions, ModelManager } from './model-manag
 // Vault — advanced API for direct vault control
 export { PiiVault } from './vault.js';
 
+// Streaming restore — SSE-safe placeholder buffer
+export { RestoreStream } from './restore-stream.js';
+
 // Public engine + functional wrappers
 export { NullPii, restore, sanitize } from './nullpii.js';
 

@@ -255,6 +255,14 @@ export class NullPii {
     };
   }
 
+  /** Allocate a fresh vault session id. Use when one sanitize+restore
+   * span needs to be threaded across multiple `sanitize()` calls
+   * (e.g. a gateway sanitizing a whole multi-message request body)
+   * before any text has been seen. Pair with `destroySession()`. */
+  createSession(): string {
+    return this.vault.createSession();
+  }
+
   destroySession(sessionId: string): void {
     this.vault.destroySession(sessionId);
   }

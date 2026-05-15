@@ -6,6 +6,12 @@
       "nullpii": ["./src/index.ts"]
     }
   },
-  "include": ["src/**/*", "test/**/*", "packages/recognizers-*/src/**/*"],
+  "include": [
+    "src/**/*",
+    "test/**/*",
+    "packages/recognizers-*/src/**/*",
+    "packages/gateway/src/**/*",
+    "packages/gateway/test/**/*"
+  ],
   "exclude": ["dist", "node_modules", "packages/eval", "examples"]
 }

@@ -1,0 +1,37 @@
+{
+  "name": "@nullpii/gateway",
+  "version": "0.0.1",
+  "description": "Self-hosted HTTP gateway that sanitizes PII before forwarding to Anthropic Claude, restores in the response. baseURL drop-in.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "nullpii-gateway": "./bin/nullpii-gateway.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "src", "bin", "README.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node bin/nullpii-gateway.mjs"
+  },
+  "dependencies": {
+    "fastify": "^5.2.0"
+  },
+  "peerDependencies": {
+    "nullpii": ">=0.2.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

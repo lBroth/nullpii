@@ -227,9 +227,35 @@ describe('gateway · POST /v1/messages (non-streaming)', () => {
     expect(forwardedBody).toContain('{{PII_PRIVATE_EMAIL_');
   });
 
-  it('refuses stream:true with 501 (streaming arrives in a follow-up PR)', async () => {
+  it('streams: sanitises user message, pipes SSE response through restorer', async () => {
     const { np } = buildMockNullPii();
-    const { fetchImpl, calls } = buildMockFetch(() => ({ body: '{}' }));
+    // The upstream replies with a hand-crafted SSE stream. The body of
+    // the `text_delta` echoes the placeholder back so we can verify the
+    // gateway restored it before the client saw the bytes.
+    const encoder = new TextEncoder();
+    const fetchImpl = async (_url: string, init: RequestInit) => {
+      const forwarded = JSON.parse(init.body as string) as { messages: Array<{ content: string }> };
+      const sanitizedPrompt = forwarded.messages[0]?.content ?? '';
+      const placeholder = sanitizedPrompt.match(/\{\{PII_[^}]+\}\}/)?.[0] ?? '';
+      const frames = [
+        `event: message_start\ndata: ${JSON.stringify({ type: 'message_start', message: { id: 'm', type: 'message', role: 'assistant', content: [] } })}\n\n`,
+        `event: content_block_start\ndata: ${JSON.stringify({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } })}\n\n`,
+        `event: content_block_delta\ndata: ${JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: `Reply about ${placeholder}` } })}\n\n`,
+        `event: content_block_stop\ndata: ${JSON.stringify({ type: 'content_block_stop', index: 0 })}\n\n`,
+        `event: message_stop\ndata: ${JSON.stringify({ type: 'message_stop' })}\n\n`,
+      ];
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const f of frames) controller.enqueue(encoder.encode(f));
+          controller.close();
+        },
+      });
+      return new Response(body, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    };
+
     const app = await buildServer({ config: TEST_CONFIG, np, fetchImpl });
     activeApps.push(app);
 
@@ -243,9 +269,14 @@ describe('gateway · POST /v1/messages (non-streaming)', () => {
       },
     });
 
-    expect(res.statusCode).toBe(501);
-    expect(res.json()).toMatchObject({ error: { type: 'nullpii_gateway_error' } });
-    expect(calls).toHaveLength(0); // never reached upstream
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toContain('text/event-stream');
+    // Restored output reaches the client; placeholder is never visible.
+    expect(res.body).toContain('Reply about John');
+    expect(res.body).not.toContain('{{PII_');
+    // Pass-through events preserved.
+    expect(res.body).toContain('"type":"message_start"');
+    expect(res.body).toContain('"type":"message_stop"');
   });
 
   it('passes through non-2xx upstream verbatim (no envelope rewrap)', async () => {

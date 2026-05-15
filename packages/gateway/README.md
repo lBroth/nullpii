@@ -20,10 +20,13 @@ response. Drop-in: clients change `baseURL` and nothing else.
 
 ## Status
 
-**v0.0.1 — preview.** Non-streaming `POST /v1/messages` works
-end-to-end. Streaming (`stream: true`) refuses with HTTP 501 for now;
-SSE wiring lands in a follow-up PR. OpenAI compat (`/v1/chat/completions`)
-is not in this release.
+**v0.0.2 — preview.** `POST /v1/messages` works end-to-end, both
+non-streaming and streaming (`stream: true`). For streaming, the
+gateway parses upstream SSE frames, buffers `{{...}}` placeholders that
+straddle delta boundaries via `RestoreStream`, then re-emits restored
+`content_block_delta` events downstream — drop-in for the standard
+Anthropic SDK streaming reader. OpenAI compat
+(`/v1/chat/completions`) is not in this release.
 
 ## Run
 
@@ -73,7 +76,6 @@ All via env vars. No file config in this preview.
 |--------|--------|-------|
 | Upstream 2xx | Anthropic | Restored response, `application/json` |
 | Upstream non-2xx | Anthropic | **Passthrough.** Status + body forwarded verbatim. |
-| 501 | Gateway | `stream: true` not yet implemented |
 | 502 | Gateway | Upstream `fetch` failed or returned non-JSON |
 
 Pass-through is deliberate: the Anthropic SDK already knows how to

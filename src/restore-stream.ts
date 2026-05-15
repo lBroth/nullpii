@@ -3,7 +3,15 @@
 import { SessionMismatchError } from './errors.js';
 import type { RestoreOptions, RestoreResult } from './types/index.js';
 import { PLACEHOLDER_REGEX } from './types/index.js';
-import type { PiiVault } from './vault.js';
+
+/** Structural shape of the dependency `RestoreStream` needs from its
+ * backing engine: a single `restore()` method matching `PiiVault.restore`.
+ * Both `PiiVault` and the public `NullPii` engine satisfy this — letting
+ * callers pick whichever is more convenient (the gateway passes the
+ * engine directly so it can pool one engine across many sessions). */
+export interface RestoreCapable {
+  restore(text: string, sessionId: string, options?: RestoreOptions): RestoreResult;
+}
 
 /** Hard cap on how many chars can sit in the open-brace buffer before
  * we give up and flush them as literal text. Sized as ~4× the typical
@@ -40,7 +48,7 @@ export class RestoreStream {
   private readonly foreignPlaceholders: string[] = [];
 
   constructor(
-    private readonly vault: PiiVault,
+    private readonly vault: RestoreCapable,
     private readonly sessionId: string,
     private readonly options: RestoreOptions = {},
   ) {}

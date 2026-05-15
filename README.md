@@ -66,19 +66,21 @@ Add your own via `np.addRecognizer({ id, pattern, label, confidence, validate? }
 
 Mac M5 Pro CPU, IoU ≥ 0.5 macro F1, cap 5,000 / dataset, `--parallel-tools 1` fair-serial. 16-dataset matrix: [`packages/eval/published-bench/matrix.csv`](packages/eval/published-bench/matrix.csv). Run: `packages/eval/scripts/bench_full.py`.
 
-| Tool | Held-out OOD F1 (5) | Mixed F1 (7) | samp/s | `nullpii-bench` F1 |
-|---|---:|---:|---:|---:|
-| **`nullpii`** | **0.7907** | **0.7487** | **32.0** | **0.5937** |
-| `nemotron-pii-raw` | 0.6877 | 0.6226 | 4.0 | 0.4678 |
-| `gliner-pii-large-v1` | 0.5876 | 0.4736 | 5.9 | 0.2769 |
-| `deberta` | 0.5601 | 0.4688 | 36.3 | 0.3070 |
-| `piiranha` | 0.5296 | 0.4374 | 24.9 | 0.2434 |
-| `presidio` | 0.4556 | 0.4249 | 164.5 | 0.2303 |
+Two `nullpii` rows: **`nullpii-bare`** is the ONNX in this repo + GLiNER decoder + 1400-char chunking — no post-processing. **`nullpii`** is the npm package (full runtime): same model + 70-pattern recognizer pack + adversarial preprocessor + base64 decoder + reversible vault.
 
-- **Held-out OOD F1 (5)** — macro over 5 datasets the model never saw during training (`presidio-synthetic`, `isotonic-{en,de,fr,it}-heldout`). Headline.
-- **Mixed F1 (7)** — adds two in-distribution diagnostic rows (`tab-echr`, `nullpii-bench`).
-- **samp/s** — `Σ n / Σ wall_s` across the 15-dataset canonical surface (same hardware, fair-serial).
-- **`nullpii-bench` F1** — project bench corpus (2,421 rows): adversarial-input surface where the runtime pipeline wins over bare ML.
+| Tool | OOD F1 (5) | Mixed F1 (7) | `nullpii-bench` F1 |
+|---|---:|---:|---:|
+| **`nullpii-bare`** | **0.7846** | **0.7331** | 0.5124 |
+| `nullpii` (full runtime) | 0.7085 | 0.6789 | **0.5161** |
+| `nemotron-pii-raw` | 0.6877 | 0.6226 | 0.4678 |
+| `gliner-pii-large-v1` | 0.5876 | 0.4736 | 0.2769 |
+| `deberta` | 0.5601 | 0.4688 | 0.3070 |
+| `piiranha` | 0.5296 | 0.4374 | 0.2434 |
+| `presidio` | 0.4556 | 0.4249 | 0.2303 |
+
+- **OOD F1 (5)** — macro over 5 datasets the model never saw during training (`presidio-synthetic`, `isotonic-{en,de,fr,it}-heldout`). Headline.
+- **Mixed F1 (7)** — adds `tab-echr` + `nullpii-bench` (in-distribution diagnostic rows).
+- **`nullpii-bench` F1** — project bench corpus (2,421 rows): adversarial-input surface (base64-wrapped secrets, URL/HTML-entity encoding, zero-width / spaced-out PII, IBAN in prose). The npm runtime's recognizer pack + preprocessor win here; bare model is sufficient on clean OOD splits.
 
 Latency on the same host, `nullpii` only (n=50, model preloaded): **p50 81 ms** at 100 chars, **230 ms** at 1 KB, **2.15 s** at 10 KB.
 

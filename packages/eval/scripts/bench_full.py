@@ -363,6 +363,21 @@ def build_tools(args) -> dict[str, Callable]:
             onnx_file="onnx/model.onnx",
             threshold=args.gliner_threshold,
         ),
+        # ─── nullpii bare model — the merged-LoRA unified ONNX
+        # WITHOUT the npm runtime pipeline. Loads `model.onnx` from
+        # `NULLPII_MODEL_DIR` (the same artifact `npm i nullpii`
+        # downloads, but consumed via the bare `gliner_v2_predictor`
+        # — no recognizer pack, no `_normalize_for_detection`, no
+        # base64 decoder, no boundary refine, no never-PII filter).
+        # Honest representation of what the HF artifact alone
+        # delivers, paired with the `nullpii` row (full runtime) so
+        # the model vs pipeline delta is explicit on the model card.
+        "nullpii-bare-unified": lambda: gliner_v2_predictor(
+            os.environ.get("NULLPII_MODEL_DIR", "packages/eval/results/release/onnx-unified-aug2"),
+            onnx_file="model.onnx",
+            threshold=args.gliner_threshold,
+            local_files_only=True,
+        ),
         # NVIDIA Nemotron-PII (`nvidia/gliner-pii`, gliner_large-v2.1
         # backbone, ~600 MB, 55+ PII categories). 37→8 label remap.
         "nemotron-pii-raw": lambda: gliner_nemotron_pii_predictor(

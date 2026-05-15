@@ -175,7 +175,26 @@ All three are already written internally; just need a public form.
 
 Content drives discoverability; without it OSS dies in silence.
 
-### 9. Licensing audit pass
+### 9. Drop "unified" naming vestige
+
+`unified` was a v0.1→v0.2 transitional label distinguishing the new single ONNX from the old 5-shard routed stack. v0.1 is dead; "unified" is now redundant. Rename across ~75 occurrences in 30 files:
+
+**Code identifiers**:
+- `OrtUnifiedBackend` → `OrtBackend`
+- `src/backend/unified-backend.ts` → `src/backend/backend.ts`
+- `test/unified-backend-concurrency.test.ts` → `test/backend-concurrency.test.ts`
+- Bench tool `nullpii-bare-unified` → `nullpii-bare`
+- `packages/eval/scripts/release/export_unified_onnx.py` → `export_onnx.py`
+
+**Docs**: "unified GLiNER" / "unified ONNX" / "unified merged-LoRA" → "the GLiNER ONNX" / "merged-LoRA ONNX" / "the model". Phrases like "Single unified GLiNER ONNX replaces the v0.1 5-shard routed stack" in CHANGELOG 0.2.0 stay (historical record of the change).
+
+**Out of scope for the rename**:
+- `GLINER_MODEL_CATEGORIES`, `MAX_INPUT_BYTES`, etc. — already neutral.
+- v0.1 historical mentions in CHANGELOG entries that document the v0.1→v0.2 transition.
+
+Single sweep PR. Touches src/, test/, packages/eval/scripts/, examples/, README.md, CONTRIBUTING.md, .github/workflows/ci.yml, PLAN.md, package.json description, release.sh. Auto-import-fix via tsc + biome covers most callsite cascades.
+
+### 10. Licensing audit pass
 
 Quick legal due-diligence pass before pushing the gateway publicly:
 

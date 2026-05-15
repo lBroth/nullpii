@@ -50,6 +50,8 @@ from nullpii_eval import public_datasets
 from nullpii_eval.adapters import (
     DEFAULT_REGEX_PATTERNS,
     MINIMAL_REGEX_PATTERNS,
+    _GLINER_NATIVE_LABELS,
+    _GLINER_NATIVE_TO_NULLPII8,
     boundary_refined_predictor,
     deberta_pii_predictor,
     domain_routed_predictor,
@@ -59,6 +61,7 @@ from nullpii_eval.adapters import (
     multi_ensemble_predictor,
     never_pii_filter_predictor,
     nullpii_runtime_predictor,
+    openai_privacy_filter_predictor,
     piiranha_predictor,
     presidio_predictor,
     url_filter_predictor,
@@ -362,6 +365,8 @@ def build_tools(args) -> dict[str, Callable]:
             "onnx-community/gliner_multi_pii-v1",
             onnx_file="onnx/model.onnx",
             threshold=args.gliner_threshold,
+            labels=_GLINER_NATIVE_LABELS,
+            label_map=_GLINER_NATIVE_TO_NULLPII8,
         ),
         # ─── nullpii bare model — the merged-LoRA unified ONNX
         # WITHOUT the npm runtime pipeline. Loads `model.onnx` from
@@ -392,6 +397,15 @@ def build_tools(args) -> dict[str, Callable]:
             device=backend if backend == "cpu" else "cuda",
             threshold=args.gliner_threshold,
             local_files_only=False,
+            labels=_GLINER_NATIVE_LABELS,
+            label_map=_GLINER_NATIVE_TO_NULLPII8,
+        ),
+        # `openai/privacy-filter` — DeBERTa-v3 BIOES-tagged PII tagger,
+        # trained on nullpii's exact 8-class schema. Decoded via explicit
+        # BIOES walk (the HF naive aggregation drops boundary tokens for
+        # BIOES schemas). Bare HF, no nullpii post-processing.
+        "openai-privacy-filter": lambda: openai_privacy_filter_predictor(
+            device=backend if backend == "cpu" else "cuda",
         ),
     }
     requested = [t.strip() for t in args.tools.split(",") if t.strip()]

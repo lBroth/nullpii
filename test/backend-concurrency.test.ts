@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// F-05 regression test. `OrtUnifiedBackend` previously pooled the
+// F-05 regression test. `OrtBackend` previously pooled the
 // `text_lengths` and `span_mask` scratch buffers across `infer()` calls.
 // In a sequential, single-instance usage that's fine — but two concurrent
 // `infer()` calls on the same backend (e.g. one `NullPii` shared across
@@ -85,7 +85,7 @@ vi.mock('../src/paths.js', async () => {
   return { ...actual, fileExists: async () => true };
 });
 
-const { OrtUnifiedBackend } = await import('../src/backend/unified-backend.js');
+const { OrtBackend } = await import('../src/backend/backend.js');
 
 function inputs(textLength: number, maskByte: number) {
   const numSpans = 4;
@@ -100,10 +100,10 @@ function inputs(textLength: number, maskByte: number) {
   };
 }
 
-describe('F-05 · OrtUnifiedBackend concurrency', () => {
+describe('F-05 · OrtBackend concurrency', () => {
   it('two concurrent infer() calls on the same backend see their own tensor data, not the pool', async () => {
     snapshots.length = 0;
-    const backend = new OrtUnifiedBackend('/fake', { ortLoader: async () => stubOrt });
+    const backend = new OrtBackend('/fake', { ortLoader: async () => stubOrt });
     // Distinct textLength and spanMask values per caller. With pooled
     // scratch buffers, caller B's writes clobber caller A's tensor data
     // before A's `session.run` reads it post-yield.

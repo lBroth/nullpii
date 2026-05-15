@@ -1,6 +1,6 @@
 import { ModelManager } from '../src/index.js';
 
-// Run during CI / Docker build to bake the unified GLiNER artifact into
+// Run during CI / Docker build to bake the GLiNER artifact into
 // the image (~1.2 GB FP32: `model.onnx` + tokenizer + GLiNER config —
 // see `src/model-manager.ts:UNIFIED_FILES`).
 const manager = new ModelManager();

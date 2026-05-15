@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { OrtUnifiedBackend } from './backend/unified-backend.js';
+import { OrtBackend } from './backend/backend.js';
 import { detectBase64Pii } from './base64-detector.js';
 import { chunkText, dedupeOverlappingSpans } from './chunking.js';
 import { nullpiiModelDir } from './config.js';
@@ -47,7 +47,7 @@ const PLACEHOLDER_OPEN = '{{';
 // natural text or LLM output.
 const PLACEHOLDER_OPEN_ESCAPED = '';
 
-/** Label list prompted to GLiNER — the 8 ML categories the unified
+/** Label list prompted to GLiNER — the 8 ML categories the
  * model was trained on. `private_ip` is intentionally excluded: it is
  * a post-pass recognizer label only. */
 const GLINER_LABELS: readonly string[] = GLINER_MODEL_CATEGORIES;
@@ -61,7 +61,7 @@ export class NullPii {
   private readonly config: NullPiiConfig;
   private readonly vault = new PiiVault();
   private readonly recognizers: Recognizer[] = [];
-  private backend: OrtUnifiedBackend | null = null;
+  private backend: OrtBackend | null = null;
   private tokenizer: GlinerTokenizer | null = null;
   private modelDir: string | null = null;
   private initPromise: Promise<void> | null = null;
@@ -101,7 +101,7 @@ export class NullPii {
    * `{ sessionId, sanitized, spans }`.
    *
    * Pipeline: escape `[[` → adversarial-normalise → chunk + GLiNER infer
-   * (unified ONNX) → recognizer pack on escaped + normalized + base64 →
+   * (ONNX model) → recognizer pack on escaped + normalized + base64 →
    * cross-label dedupe + threshold → boundary refine → vault sanitize.
    *
    * Inputs over `max_len=384` subwords truncate silently. Pass
@@ -217,7 +217,7 @@ export class NullPii {
     const recoSpans: PiiSpan[] = [...recoSpansEscaped, ...recoSpansNorm, ...base64Spans];
     // High-confidence recognizers (≥ 0.9) emit even when overlapping ML
     // output, so dedupe by IoU + score: highest score wins regardless
-    // of label. Catches the common case where the unified GLiNER
+    // of label. Catches the common case where the GLiNER
     // mislabels a known pattern (e.g., `ghp_…` token classified as
     // `account_number`) — recognizer's `secret` (0.99) overrides ML's
     // `account_number` (0.5–0.7).
@@ -288,10 +288,10 @@ export class NullPii {
       this.modelDir = ensured.modelDir;
     }
 
-    // Constructor work (no I/O): OrtUnifiedBackend lazy-loads `model.onnx`
+    // Constructor work (no I/O): OrtBackend lazy-loads `model.onnx`
     // on first inference; GlinerTokenizer lazy-loads `tokenizer.json` on
     // first encode.
-    this.backend = new OrtUnifiedBackend(this.modelDir, {
+    this.backend = new OrtBackend(this.modelDir, {
       executionProviders: backendToProviders(this.config.backend),
       ...(this.config.intraOpNumThreads !== undefined && {
         intraOpNumThreads: this.config.intraOpNumThreads,

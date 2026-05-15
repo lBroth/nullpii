@@ -19,7 +19,7 @@ npx tsx examples/<name>.ts
 ## Loading from a local model directory
 
 `NullPii({ modelDir })` skips the HuggingFace download entirely and loads
-the unified ONNX from disk. The directory must contain the four-file
+the ONNX model from disk. The directory must contain the four-file
 manifest the runtime expects:
 
 ```

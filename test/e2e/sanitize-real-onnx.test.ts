@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // F-18 · Real-ONNX end-to-end test. The bulk of the unit suite mocks
-// `OrtUnifiedBackend` + `GlinerTokenizer` so CI stays ONNX-free; this
-// file is the opposite end of that contract — it loads the real unified
+// `OrtBackend` + `GlinerTokenizer` so CI stays ONNX-free; this
+// file is the opposite end of that contract — it loads the real
 // GLiNER model and asserts that representative fixtures produce
 // representative spans. Catches regressions in the ScatterND clamping,
 // decoder index math, chunk-boundary dedupe, recognizer/ML reconciliation
@@ -71,8 +71,8 @@ describe.skipIf(SKIP)('F-18 · real ONNX sanitize end-to-end', () => {
   }, 30_000);
 
   it('catches mod-97-valid IBAN with the correct `account_number` label', async () => {
-    // F-39 regression. Before VALIDATED_RECOGNIZER_SCORE, the unified
-    // ONNX often tagged spaced IBANs as `private_address` (~0.9999),
+    // F-39 regression. Before VALIDATED_RECOGNIZER_SCORE, the ONNX
+    // model often tagged spaced IBANs as `private_address` (~0.9999),
     // outranking the IBAN recognizer's static 0.95 in cross-label IoU
     // dedupe. Validator-passing recognizers (iban97 here) now emit at
     // 0.99998 so dedupe picks the structurally-correct label.

@@ -63,6 +63,7 @@ from nullpii_eval.adapters import (
     nullpii_runtime_predictor,
     openai_privacy_filter_predictor,
     piiranha_predictor,
+    presidio_multilang_predictor,
     presidio_predictor,
     url_filter_predictor,
 )
@@ -366,7 +367,9 @@ def build_tools(args) -> dict[str, Callable]:
         # `_normalize_for_detection`). Only the per-tool label remap to
         # nullpii's 8-class schema runs (cross-schema bridge).
         "presidio":  lambda: presidio_predictor(),
+        "presidio-multilang": lambda: presidio_multilang_predictor(),
         "deberta":   lambda: _mark_batch(deberta_pii_predictor(device=backend, batch_size=_BATCH)),
+        "deberta-simple": lambda: _mark_batch(deberta_pii_predictor(device=backend, batch_size=_BATCH, aggregation_strategy="simple")),
         "piiranha":  lambda: _mark_batch(piiranha_predictor(device=backend, batch_size=_BATCH)),
         # GLiNER multi PII v1 (`urchade/gliner_multi_pii-v1`) bare HF.
         "gliner-onnx-pii-fp32": lambda: gliner_v2_predictor(

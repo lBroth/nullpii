@@ -33,10 +33,13 @@ export const MODEL_DOWNLOAD_TIMEOUT_MS = 300_000;
  * placeholder. Used by `restore()` to detect cross-session mismatches
  * before substituting the wrong PII value back into text.
  *
- * 16 hex chars = 64 bits of session entropy → birthday-safe up to
- * ~2^32 concurrent sessions per process. The previous 8-char / 32-bit
- * value collided at ~2^16 sessions, which is the only cross-tenant
- * barrier inside a single Node process — see F-15 in the audit plan.
+ * 16 hex chars = 64 bits of session entropy. Birthday-collision
+ * probability for N concurrent sessions ≈ N² / 2^65 — so
+ *   - p < 1 ppm at N ≈ 6 × 10^6 concurrent sessions
+ *   - p < 1 / 10^9 at N ≈ 1.9 × 10^5
+ * The previous 8-char / 32-bit prefix hit the same probabilities at
+ * N ≈ 90 / N ≈ 3, which is the only cross-tenant barrier inside a
+ * single Node process — see F-15 in the audit plan.
  */
 export const SESSION_PREFIX_LEN = 16;
 

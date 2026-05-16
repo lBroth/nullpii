@@ -28,7 +28,7 @@ const sigmoid = (x: number): number => {
  * Logits flat layout: `[textLength, maxWidth, numClasses]` row-major,
  * index `i * maxWidth * numClasses + j * numClasses + k`. `labels.length`
  * MUST equal `numClasses`. Returns spans sorted by (start, -end), highest
- * score wins on overlap (NMS at IoU > 0).
+ * score wins on overlap (NMS at `IoU >= NMS_IOU_THRESHOLD`).
  */
 export function decodeGlinerLogits(
   logits: Float32Array,
@@ -56,7 +56,11 @@ export function decodeGlinerLogits(
       for (let classIdx = 0; classIdx < numClasses; classIdx++) {
         const logit = logits[base + classIdx] ?? Number.NEGATIVE_INFINITY;
         const score = sigmoid(logit);
-        if (score <= threshold) continue;
+        // Match upstream GLiNER: keep iff `score >= threshold`. A span
+        // scoring exactly AT the threshold survives — matters when
+        // callers tune `threshold` to a precise value at the high-
+        // precision end of the curve.
+        if (score < threshold) continue;
         const startWordObj = words[startWord];
         const endWordObj = words[endWord];
         if (startWordObj === undefined || endWordObj === undefined) continue;
@@ -75,22 +79,43 @@ export function decodeGlinerLogits(
   return greedyNms(candidates);
 }
 
-/** Greedy non-max suppression: sort by score desc, keep span only if it
- * does not overlap a higher-score retained span (strict overlap > 0).
- * The output is then resorted by start char for deterministic ordering. */
+/** IoU threshold used by `greedyNms`. Matches upstream GLiNER's
+ * convention (~0.4 — `John|Smith` adjacent persons survive, partial
+ * overlaps at IoU >= 0.4 collapse). Strict `> 0` was too aggressive;
+ * adjacent same-label spans with zero overlap (`John` + `Smith`) were
+ * collapsing if char ranges abutted at exactly one boundary. */
+const NMS_IOU_THRESHOLD = 0.4;
+
+function spanIou(a: DecodedSpan, b: DecodedSpan): number {
+  const interStart = Math.max(a.start, b.start);
+  const interEnd = Math.min(a.end, b.end);
+  const inter = Math.max(0, interEnd - interStart);
+  if (inter === 0) return 0;
+  const union = a.end - a.start + (b.end - b.start) - inter;
+  return union > 0 ? inter / union : 0;
+}
+
+/** Greedy non-max suppression with IoU threshold. Sort by score desc,
+ * keep span unless it overlaps a higher-score retained span at
+ * `IoU >= NMS_IOU_THRESHOLD`. Output sorted by (start, end) for
+ * deterministic ordering. */
 function greedyNms(spans: readonly DecodedSpan[]): DecodedSpan[] {
   if (spans.length <= 1) return [...spans];
-  const sortedByScore = [...spans].sort((a, b) => b.score - a.score);
+  // Stable tie-break on (start, end) keeps ordering deterministic when
+  // two candidates share the same score.
+  const sortedByScore = [...spans].sort(
+    (a, b) => b.score - a.score || a.start - b.start || a.end - b.end,
+  );
   const kept: DecodedSpan[] = [];
   for (const cand of sortedByScore) {
-    let overlap = false;
+    let suppressed = false;
     for (const k of kept) {
-      if (cand.start < k.end && k.start < cand.end) {
-        overlap = true;
+      if (spanIou(cand, k) >= NMS_IOU_THRESHOLD) {
+        suppressed = true;
         break;
       }
     }
-    if (!overlap) kept.push(cand);
+    if (!suppressed) kept.push(cand);
   }
   return kept.sort((a, b) => a.start - b.start || a.end - b.end);
 }

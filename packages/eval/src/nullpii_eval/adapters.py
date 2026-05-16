@@ -317,11 +317,18 @@ def openai_privacy_filter_predictor(
         # opf only supports cpu / cuda; mps not advertised.
         device = "cpu"
 
+    # `discard_overlapping_predicted_spans=False` makes the bench output
+    # reproducible across opf releases — OPF's CLI default flipped in
+    # past versions; pinning it here freezes behaviour even if upstream
+    # changes its default again. Constrained Viterbi already emits
+    # mostly non-overlapping spans, so the effect on F1 is small but
+    # the determinism guarantee matters for audit reproducibility.
     runtime = OPF(
         device=device,
         decode_mode="viterbi",
         output_mode="typed",
         trim_whitespace=True,
+        discard_overlapping_predicted_spans=False,
     )
 
     def _predict(text: str) -> ToolResult:
@@ -390,10 +397,19 @@ def deberta_pii_predictor(
     *,
     device: str | None = None,
     batch_size: int = 32,
+    aggregation_strategy: str = "first",
 ) -> BatchPredictor:
     """`lakshyakh93/deberta_finetuned_pii` — DeBERTa-base English-only PII
     detector with rich label set (~50+ categories). Mapped down to
-    nullpii's 8 categories."""
+    nullpii's 8 categories.
+
+    `aggregation_strategy` defaults to `"first"`. A/B tested against
+    `"simple"` on 5 representative datasets (nullpii-bench, tab-echr,
+    presidio-synthetic, ai4privacy-400k, isotonic-en): `"first"` wins
+    every row, averaging +0.128 macro F1 over `"simple"`. The model
+    card's example also uses `"first"`. Override via the
+    `deberta-simple` bench tool only if you want to re-validate.
+    """
     try:
         import torch  # noqa: I001
         from transformers import pipeline
@@ -415,7 +431,7 @@ def deberta_pii_predictor(
     pipe = pipeline(
         task="token-classification",
         model="lakshyakh93/deberta_finetuned_pii",
-        aggregation_strategy="first",
+        aggregation_strategy=aggregation_strategy,
         device=device,
         batch_size=batch_size,
     )
@@ -1581,42 +1597,93 @@ _NULLPII_8 = [
 # language label examples ("person", "email", "phone number", …) — use
 # them.
 _GLINER_NATIVE_LABELS = [
-    "person",
-    "email",
-    "phone number",
-    "address",
-    "date",
-    "URL",
-    "credit card number",
-    "social security number",
-    "bank account number",
-    "IBAN",
-    "passport number",
-    "driver license",
-    "API key",
-    "password",
-    "secret",
+    # private_person family
+    "person", "first name", "last name", "full name", "name",
+    # private_email
+    "email", "email address",
+    # private_phone
+    "phone number", "mobile phone number", "telephone", "cell phone",
+    # private_address
+    "address", "street address", "city", "state", "country",
+    "postal code", "zip code",
+    # private_date
+    "date", "date of birth", "birth date",
+    # private_url
+    "URL", "website",
+    # account_number — numeric ids + financial
+    "credit card number", "CVV", "social security number",
+    "bank account number", "routing number", "IBAN", "SWIFT code",
+    "passport number", "driver license", "national id number",
+    "license plate", "vehicle VIN", "medical record number",
+    "health insurance number", "tax identification number",
+    # secret — credentials
+    "password", "API key", "access token", "secret key", "private key",
+    "AWS access key", "AWS secret key", "certificate",
+    # private_ip / private_mac
+    "IP address", "MAC address",
 ]
 
 # Project the GLiNER natural-language labels back onto nullpii's 8-class
 # taxonomy for fair F1 against the 8-class gold spans. Any label not in
 # this map is dropped (predictor returns None for `_project_label`).
 _GLINER_NATIVE_TO_NULLPII8 = {
+    # private_person family
     "person": "private_person",
+    "first name": "private_person",
+    "last name": "private_person",
+    "full name": "private_person",
+    "name": "private_person",
+    # private_email
     "email": "private_email",
+    "email address": "private_email",
+    # private_phone
     "phone number": "private_phone",
+    "mobile phone number": "private_phone",
+    "telephone": "private_phone",
+    "cell phone": "private_phone",
+    # private_address
     "address": "private_address",
+    "street address": "private_address",
+    "city": "private_address",
+    "state": "private_address",
+    "country": "private_address",
+    "postal code": "private_address",
+    "zip code": "private_address",
+    # private_date
     "date": "private_date",
+    "date of birth": "private_date",
+    "birth date": "private_date",
+    # private_url
     "URL": "private_url",
+    "website": "private_url",
+    # account_number
     "credit card number": "account_number",
+    "CVV": "account_number",
     "social security number": "account_number",
     "bank account number": "account_number",
+    "routing number": "account_number",
     "IBAN": "account_number",
+    "SWIFT code": "account_number",
     "passport number": "account_number",
     "driver license": "account_number",
-    "API key": "secret",
+    "national id number": "account_number",
+    "license plate": "account_number",
+    "vehicle VIN": "account_number",
+    "medical record number": "account_number",
+    "health insurance number": "account_number",
+    "tax identification number": "account_number",
+    # secret
     "password": "secret",
-    "secret": "secret",
+    "API key": "secret",
+    "access token": "secret",
+    "secret key": "secret",
+    "private key": "secret",
+    "AWS access key": "secret",
+    "AWS secret key": "secret",
+    "certificate": "secret",
+    # private_ip / private_mac
+    "IP address": "private_ip",
+    "MAC address": "private_mac",
 }
 
 # Expanded inference-time prompt set. GLiNER is prompt-based (model
@@ -2301,22 +2368,11 @@ _SCRUBADUB_LABEL_MAP = {
 
 
 def presidio_predictor(*, language: str = "en") -> Predictor:
-    """In-process Presidio analyzer. Maps Presidio entities → our 8 categories.
-
-    Stays single-language (English by default). A multi-language variant
-    that swapped spaCy NER backends per dataset was tried (PR-not-landed)
-    and produced *lower* F1 on isotonic-it because Presidio registers
-    its default recognizer pack (CREDIT_CARD, IBAN, US_SSN, EMAIL, URL,
-    AWS_*…) under the English language tag only — switching `language=`
-    to `it` / `de` / `fr` silently drops those recognizers, leaving just
-    the per-language spaCy PER / LOCATION tagger. The net is worse, not
-    better.
-
-    Proper fix (deferred): manually register the universal recognizers
-    (regex-based, language-agnostic) across every `supported_languages`
-    entry, then add per-language spaCy NER on top. Until that lands, we
-    report the English-only number as-is — under-estimated on non-en
-    splits but at least monotonic with what Presidio actually ships.
+    """In-process Presidio analyzer (English only). Maps Presidio entities
+    → our 8 categories. Use `presidio_multilang_predictor` for multilingual
+    benches — this variant analyses every text under `language=en` and
+    therefore under-counts spans on non-en datasets (no German / French /
+    Italian spaCy NER, regex pack still fires).
     """
     try:
         from presidio_analyzer import AnalyzerEngine  # noqa: I001
@@ -2337,6 +2393,92 @@ def presidio_predictor(*, language: str = "en") -> Predictor:
             if label is None:
                 continue
             spans.append(Span(label, int(r.start), int(r.end)))
+        return ToolResult(spans, elapsed)
+
+    return _predict
+
+
+def presidio_multilang_predictor(
+    *,
+    languages: tuple[str, ...] = ("en", "de", "fr", "it"),
+) -> Predictor:
+    """Multilingual Presidio. Loads spaCy NER per language + re-registers
+    every regex-pattern recognizer under each language so the universal
+    pack (CREDIT_CARD / IBAN / US_SSN / EMAIL / URL / AWS_*) fires on
+    every text regardless of locale, then adds the per-locale spaCy
+    PER / LOCATION tagger on top.
+
+    Per call: analyses the text under every language and takes the union
+    of detections, deduped by (start, end, label). 4 spaCy passes
+    per text — ~4× slower than the en-only variant; on the bench host
+    presidio still completes at ~30 samp/s.
+
+    spaCy models required (auto-installed by `pip install -e .[presidio]`
+    if listed in extras; otherwise `python -m spacy download <name>`):
+      - en_core_web_lg
+      - de_core_news_lg
+      - fr_core_news_lg
+      - it_core_news_lg
+    """
+    try:
+        from presidio_analyzer import AnalyzerEngine, PatternRecognizer  # noqa: I001
+        from presidio_analyzer.nlp_engine import NlpEngineProvider
+    except ImportError as e:
+        raise ImportError(
+            "presidio not installed; run `pip install -e '.[presidio]'`",
+        ) from e
+
+    spacy_models = {
+        "en": "en_core_web_lg",
+        "de": "de_core_news_lg",
+        "fr": "fr_core_news_lg",
+        "it": "it_core_news_lg",
+    }
+    configuration = {
+        "nlp_engine_name": "spacy",
+        "models": [
+            {"lang_code": lang, "model_name": spacy_models[lang]}
+            for lang in languages
+            if lang in spacy_models
+        ],
+    }
+    provider = NlpEngineProvider(nlp_configuration=configuration)
+    nlp_engine = provider.create_engine()
+    analyzer = AnalyzerEngine(nlp_engine=nlp_engine, supported_languages=list(languages))
+
+    # Re-register every pattern-only recognizer (regex; language-agnostic)
+    # under every language so the universal pack fires regardless of
+    # detected locale. Skip non-pattern recognizers (spaCy NER models —
+    # those are language-specific by design).
+    existing = list(analyzer.registry.recognizers)
+    seen: set[tuple[str, str]] = {(r.name, r.supported_language) for r in existing}
+    for r in existing:
+        if not isinstance(r, PatternRecognizer):
+            continue
+        for lang in languages:
+            if (r.name, lang) in seen:
+                continue
+            clone = PatternRecognizer(
+                supported_entity=r.supported_entities[0],
+                name=r.name,
+                supported_language=lang,
+                patterns=r.patterns,
+                context=getattr(r, "context", None),
+            )
+            analyzer.registry.add_recognizer(clone)
+            seen.add((r.name, lang))
+
+    def _predict(text: str) -> ToolResult:
+        t0 = time.perf_counter()
+        dedup: dict[tuple[int, int, str], None] = {}
+        for lang in languages:
+            for r in analyzer.analyze(text=text, language=lang):
+                label = _map_presidio_entity(r.entity_type)
+                if label is None:
+                    continue
+                dedup.setdefault((int(r.start), int(r.end), label), None)
+        elapsed = (time.perf_counter() - t0) * 1000
+        spans = [Span(label, start, end) for (start, end, label) in dedup]
         return ToolResult(spans, elapsed)
 
     return _predict

@@ -43,6 +43,10 @@ const ASCII_ALPHA_RE = /[A-Za-z]/;
  * Two rounds is enough for the practical attack (`%2540` → `%40` → `@`)
  * while keeping plain ASCII single-decode O(1). */
 const URL_DECODE_MAX_DEPTH = 2;
+/** Symmetric cap for HTML numeric-entity decode iterations
+ * (`&#x26;#64;` → `&#64;` → `@`). Bounded so a pathological input
+ * can't trap the preprocessor in an exponential decode loop. */
+const HTML_DECODE_MAX_DEPTH = 2;
 
 export function normalizeForDetection(text: string): NormalizeResult {
   // Refuse pathological input. Quadratic behaviour on
@@ -127,23 +131,35 @@ export function normalizeForDetection(text: string): NormalizeResult {
       }
     }
 
-    // HTML numeric entity decode.
-    const htmlMatch = HTML_ENTITY_RE.exec(text.slice(i, i + 12));
-    if (htmlMatch !== null) {
-      const dec = htmlMatch[1];
-      const hex = htmlMatch[2];
-      let decodedCode = Number.NaN;
-      if (dec !== undefined) decodedCode = Number.parseInt(dec, 10);
-      else if (hex !== undefined) decodedCode = Number.parseInt(hex, 16);
-      const decoded = Number.isFinite(decodedCode) ? String.fromCodePoint(decodedCode) : '';
-      // Decode email-anchor refs too (`&#64;`→`@`, `&#46;`→`.`) — same
-      // rationale as the URL %XX block above.
-      if (decoded) {
+    // HTML numeric entity decode. Iterate up to HTML_DECODE_MAX_DEPTH
+    // times so chained encodings (`&#x26;#64;` → `&#64;` → `@`) collapse
+    // to their final form — same rationale as the URL %XX loop above.
+    {
+      let consumed = 0;
+      let decoded: string | null = null;
+      for (let depth = 0; depth < HTML_DECODE_MAX_DEPTH; depth++) {
+        const slice = text.slice(i + consumed, i + consumed + 12);
+        const inner = HTML_ENTITY_RE.exec(slice);
+        if (inner === null) break;
+        const dec = inner[1];
+        const hex = inner[2];
+        let code = Number.NaN;
+        if (dec !== undefined) code = Number.parseInt(dec, 10);
+        else if (hex !== undefined) code = Number.parseInt(hex, 16);
+        if (!Number.isFinite(code)) break;
+        decoded = String.fromCodePoint(code);
+        consumed += inner[0].length;
+        // Only re-iterate if the decoded byte is `&` AND the next chars
+        // begin another `&#…;` triplet — otherwise we'd waste cycles.
+        if (decoded !== '&') break;
+        decoded = null;
+      }
+      if (decoded !== null && consumed > 0) {
         for (const ch of decoded) {
           out.push(ch);
-          normToOrig.push(i);
+          normToOrig.push(i + consumed - 1);
         }
-        i += htmlMatch[0].length;
+        i += consumed;
         continue;
       }
     }

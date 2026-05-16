@@ -87,17 +87,23 @@ describe('decodeGlinerLogits', () => {
   });
 
   it('respects the threshold parameter', () => {
-    // logit = 0 → sigmoid = 0.5. With threshold 0.5 the strict-greater
-    // filter rejects exactly-on-the-boundary scores.
+    // logit = 0 → sigmoid = 0.5. Upstream GLiNER convention keeps spans
+    // with `score >= threshold`, so a span exactly at the boundary
+    // survives.
     const logits = buildLogits([{ start: 1, width: 0, cls: 0, logit: 0 }]);
     expect(
       decodeGlinerLogits(logits, TEXT_LEN, MAX_WIDTH, NUM_CLASSES, WORDS, LABELS, 0.5),
-    ).toEqual([]);
-    // logit = 1 → sigmoid ≈ 0.731 > 0.7 threshold.
+    ).toHaveLength(1);
+    // logit = 1 → sigmoid ≈ 0.731 ≥ 0.7 threshold.
     const logits2 = buildLogits([{ start: 1, width: 0, cls: 0, logit: 1 }]);
     expect(
       decodeGlinerLogits(logits2, TEXT_LEN, MAX_WIDTH, NUM_CLASSES, WORDS, LABELS, 0.7),
     ).toHaveLength(1);
+    // Score strictly below the threshold is dropped.
+    const logits3 = buildLogits([{ start: 1, width: 0, cls: 0, logit: -1 }]);
+    expect(
+      decodeGlinerLogits(logits3, TEXT_LEN, MAX_WIDTH, NUM_CLASSES, WORDS, LABELS, 0.5),
+    ).toEqual([]);
   });
 
   it('skips spans whose end_word runs past textLength', () => {

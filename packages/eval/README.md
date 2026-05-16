@@ -25,6 +25,15 @@ python -u scripts/bench_full.py \
 
 Output: `matrix.json` (per-cell F1 / wall / throughput) + `matrix.csv` (pivot). Override caps with `--max-per-dataset N` or `--no-cap`. Macro F1 uses the sklearn convention — labels with no ground-truth support are excluded from the macro average; the same coercion applies to every tool, no asymmetry. All third-party tools run bare — no `nullpii` post-processing is applied to their predictions.
 
+### Chunking strategies
+
+Long-document handling differs by tool, by design:
+- **`nullpii` / `nullpii-bare`**: word-based chunker, 140 words / 30-word overlap, capped to fit the GLiNER 384-subword window.
+- **Upstream GLiNER baselines** (`gliner-onnx-pii-fp32`, `gliner-pii-large-v1`): char-based, 1400 chars / 200-char overlap.
+- **Piiranha**: char-based 1000 / 200 to dodge its 256-token truncation.
+- **DeBERTa**, **Presidio**, **OPF**: full text passed to upstream pipeline (each does its own internal handling).
+This is an intentional fair-comparison gap — each tool gets its upstream-recommended chunking; cross-tool F1 on long-doc datasets reflects the package as it ships, not a normalised harness. Same setting is applied to every benchmark cell.
+
 ## Reproduce latency
 
 ```bash

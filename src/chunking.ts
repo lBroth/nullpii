@@ -68,7 +68,13 @@ export function dedupeOverlappingSpans<T extends SpanLike>(
   //      overlaps, with `acrossLabels` controlling whether different
   //      labels at the same offsets collapse.
   const survivors = removeContainedSpans(spans);
-  const sorted = [...survivors].sort((a, b) => b.score - a.score);
+  // Sort by score desc, with stable tie-break on (start asc, end asc,
+  // label asc) so two spans at identical (start, end, label, score)
+  // resolve to a deterministic order regardless of insertion sequence.
+  const sorted = [...survivors].sort(
+    (a, b) =>
+      b.score - a.score || a.start - b.start || a.end - b.end || a.label.localeCompare(b.label),
+  );
   const kept: T[] = [];
   for (const s of sorted) {
     let isDup = false;

@@ -68,6 +68,8 @@ export {
   codiceFiscaleValid,
   cpfValid,
   iban97Valid,
+  latLonPairInRange,
   luhnValid,
   macAddressNonReserved,
+  vinValid,
 } from './validators.js';

@@ -95,17 +95,16 @@ def _ai4privacy(offset: int = 0) -> Callable[[int | None], list[Sample]]:
 
 
 def _load_nullpii_bench(n: int | None) -> list[Sample]:
-    """Load the entire `nullpii-bench.jsonl` (2271 samples — 2171 unique
-    project corpus + 100 rows covering secrets, long docs, multi-layer
-    encoding, base64 wrapping, validator disambiguation).
+    """Load the entire `nullpii-bench.jsonl` (2361 samples: 2052 `clean` +
+    219 `adversarial` + 90 `v03_coverage`).
 
     Single-file bench surface that covers every project-authored row:
-    multilingual dev paste (`bundled` + `long-prompts`), the 6
-    preprocessor-regression subsets (`typo_pii` / `unicode_obf` /
-    `whitespace_obf` / `encoding_obf` / `decoys` / `code_pii`), and the
-    5 TextAttack perturbation slices. Mixed character of the file is
-    intentional: one F1 number summarises the model's behaviour across
-    every adversarial pattern we author.
+    multilingual dev paste, long-form prompts, preprocessor regression
+    slices (typo / unicode / whitespace / encoding / decoys / code-PII),
+    TextAttack perturbations, and the v0.3 schema-coverage rows
+    (passport / driver-license / vehicle / geolocation / ip / mac).
+    Mixed character is intentional: one F1 number summarises behaviour
+    across every adversarial pattern the project authors.
     """
     path = Path(__file__).resolve().parent.parent / "datasets" / "nullpii-bench.jsonl"
     out: list[Sample] = []
@@ -154,7 +153,7 @@ def _load_tab_echr_test(n: int | None) -> list[Sample]:
     https://github.com/NorskRegnesentral/text-anonymisation-benchmark.
 
     Third-party gold standard for legal-text PII detection. Label
-    mapping (entity types from TAB → nullpii 8-cat schema):
+    mapping (entity types from TAB → nullpii 12-cat schema):
       - PERSON → private_person
       - DATETIME → private_date
       - LOC → private_address
@@ -185,7 +184,7 @@ _ISOTONIC_HELDOUT_ROW_OFFSET = 200_000
 DATASET_CONFIGS: list[DatasetSpec] = [
     # ─ Project-authored bench (one file, all adversarial / preprocessor /
     #   TextAttack subsets aggregated to a single F1 number) ─────────
-    DatasetSpec("nullpii-bench",         _load_nullpii_bench,                                                  None, total_n=2271),
+    DatasetSpec("nullpii-bench",         _load_nullpii_bench,                                                  None, total_n=2361),
 
     # ─ Third-party PII benches ────────────────────────────────────
     DatasetSpec("tab-echr",              _load_tab_echr_test,                                                  None, total_n=127),
@@ -211,10 +210,10 @@ DATASET_CONFIGS: list[DatasetSpec] = [
     # External baselines (not in training corpora — held-out).
     DatasetSpec("argilla-pii",                   lambda n: list(public_datasets._load_argilla_pii(n).samples),                          2_000, total_n=2096),
     DatasetSpec("nemotron-pii-test",             lambda n: list(public_datasets._load_nemotron_pii_test(n).samples),                    5_000, total_n=100000),
-    DatasetSpec("isotonic-en-heldout",       _isotonic("en", row_offset=_ISOTONIC_HELDOUT_ROW_OFFSET // 2),  5_000, total_n=109000),
-    DatasetSpec("isotonic-de-heldout",       _isotonic("de", row_offset=_ISOTONIC_HELDOUT_ROW_OFFSET // 2),  5_000, total_n=109000),
-    DatasetSpec("isotonic-fr-heldout",       _isotonic("fr", row_offset=_ISOTONIC_HELDOUT_ROW_OFFSET // 2),  5_000, total_n=109000),
-    DatasetSpec("isotonic-it-heldout",       _isotonic("it", row_offset=_ISOTONIC_HELDOUT_ROW_OFFSET // 2),  5_000, total_n=109000),
+    DatasetSpec("isotonic-en-heldout",       _isotonic("en", row_offset=_ISOTONIC_HELDOUT_ROW_OFFSET),  5_000, total_n=9000),
+    DatasetSpec("isotonic-de-heldout",       _isotonic("de", row_offset=_ISOTONIC_HELDOUT_ROW_OFFSET),  5_000, total_n=9000),
+    DatasetSpec("isotonic-fr-heldout",       _isotonic("fr", row_offset=_ISOTONIC_HELDOUT_ROW_OFFSET),  5_000, total_n=9000),
+    DatasetSpec("isotonic-it-heldout",       _isotonic("it", row_offset=_ISOTONIC_HELDOUT_ROW_OFFSET),  5_000, total_n=9000),
 ]
 
 
@@ -230,9 +229,9 @@ def _mark_batch(batch_pred):
 
 
 def _wrap_batch(batch_pred):
-    """Legacy single-sample wrapper. Kept for tools whose pipeline
-    initialisation expects a single-sample callable downstream; new
-    transformer tools should use `_mark_batch` instead."""
+    """Adapt a batch predictor to a single-sample callable. Used by
+    tools whose downstream pipeline expects `pred(text)`; transformer
+    tools prefer `_mark_batch` instead."""
     def _single(text):
         return batch_pred([text])[0]
     return _single
@@ -365,7 +364,7 @@ def build_tools(args) -> dict[str, Callable]:
         # Each runs upstream library directly. NONE wraps nullpii post-
         # processing (boundary refine / never-PII filter / regex pack /
         # `_normalize_for_detection`). Only the per-tool label remap to
-        # nullpii's 8-class schema runs (cross-schema bridge).
+        # nullpii's 12-class schema runs (cross-schema bridge).
         "presidio":  lambda: presidio_predictor(),
         "presidio-multilang": lambda: presidio_multilang_predictor(),
         "deberta":   lambda: _mark_batch(deberta_pii_predictor(device=backend, batch_size=_BATCH)),

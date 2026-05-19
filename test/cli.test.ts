@@ -20,7 +20,7 @@ describe('CLI: buildProgram', () => {
     expect(names).not.toContain('restore');
   });
 
-  it('does not expose benchmark — legacy multi-backend abstraction removed in v0.2', () => {
+  it('does not expose a benchmark subcommand', () => {
     const program = buildProgram();
     const names = program.commands.map((c) => c.name());
     expect(names).not.toContain('benchmark');

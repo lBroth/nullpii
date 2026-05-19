@@ -30,6 +30,7 @@ export async function buildServer(opts: BuildServerOptions): Promise<FastifyInst
     np,
     upstreamBaseUrl: config.upstreamBaseUrl,
     fetchImpl,
+    logTraffic: config.logTraffic,
   });
 
   return app;

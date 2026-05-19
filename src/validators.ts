@@ -2,10 +2,8 @@
 
 import { createHash } from 'node:crypto';
 
-/** Post-match checksum validators wired via `Recognizer.validate`.
- * `base58CheckValid` BTC · `luhnValid` cards · `iban97Valid` IBAN
- * mod-97 · `cpfValid` BR CPF · `codiceFiscaleValid` IT tax id ·
- * `macAddressNonReserved` MAC (rejects broadcast / null / multicast). */
+/** Post-match checksum / range validators wired via `Recognizer.validate`.
+ * Each function below carries its own algorithm doc. */
 
 const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 const BASE58_INDEX = new Map<string, bigint>();
@@ -263,5 +261,95 @@ export function macAddressNonReserved(value: string): boolean {
   if (hex.startsWith('01005e')) return false; // IPv4 multicast
   if (hex.startsWith('3333')) return false; // IPv6 multicast
   if (hex.startsWith('0180c2')) return false; // STP / bridge multicast
+  return true;
+}
+
+// ─── VIN (ISO 3779 mod-11 weighted check digit) ────────────────────
+
+const VIN_TRANSLIT: Record<string, number> = {
+  A: 1,
+  B: 2,
+  C: 3,
+  D: 4,
+  E: 5,
+  F: 6,
+  G: 7,
+  H: 8,
+  J: 1,
+  K: 2,
+  L: 3,
+  M: 4,
+  N: 5,
+  P: 7,
+  R: 9,
+  S: 2,
+  T: 3,
+  U: 4,
+  V: 5,
+  W: 6,
+  X: 7,
+  Y: 8,
+  Z: 9,
+  '0': 0,
+  '1': 1,
+  '2': 2,
+  '3': 3,
+  '4': 4,
+  '5': 5,
+  '6': 6,
+  '7': 7,
+  '8': 8,
+  '9': 9,
+};
+const VIN_WEIGHTS = [8, 7, 6, 5, 4, 3, 2, 10, 0, 9, 8, 7, 6, 5, 4, 3, 2];
+
+/**
+ * Vehicle Identification Number (ISO 3779). 17 chars excluding `I`,
+ * `O`, `Q` (avoid digit confusion). Check digit at position 9
+ * (0-indexed 8) computed as `sum(translit[i] * weight[i]) mod 11`,
+ * with remainder 10 represented as `X`. Note: pre-1981 VINs and
+ * some non-North-American manufacturers omit the check digit — this
+ * validator only passes strict ISO 3779; relax to syntactic match
+ * if your dataset includes legacy VINs.
+ */
+export function vinValid(value: string): boolean {
+  const vin = value.toUpperCase();
+  if (vin.length !== 17) return false;
+  if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) return false;
+  let sum = 0;
+  for (let i = 0; i < 17; i++) {
+    const ch = vin[i];
+    if (ch === undefined) return false;
+    const t = VIN_TRANSLIT[ch];
+    if (t === undefined) return false;
+    const w = VIN_WEIGHTS[i];
+    if (w === undefined) return false;
+    sum += t * w;
+  }
+  const remainder = sum % 11;
+  const expected = remainder === 10 ? 'X' : String(remainder);
+  return vin[8] === expected;
+}
+
+// ─── Geolocation (lat/lon range) ───────────────────────────────────
+
+/**
+ * A bare decimal in `[-90, 90]` or `[-180, 180]` is far too common in
+ * arbitrary text to flag in isolation (any percentage, score, sensor
+ * reading would match). This validator is intended for the paired
+ * `lat,lon` recognizer below — passed a single string of the form
+ * `"<lat>, <lon>"` (any whitespace between).
+ */
+export function latLonPairInRange(value: string): boolean {
+  const parts = value.split(/[,\s]+/).filter((p) => p.length > 0);
+  if (parts.length !== 2) return false;
+  const lat = Number(parts[0]);
+  const lon = Number(parts[1]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
+  if (lat < -90 || lat > 90) return false;
+  if (lon < -180 || lon > 180) return false;
+  // Reject the obvious null-island / origin point — almost always a
+  // sensor default or test value, not a real location.
+  if (lat === 0 && lon === 0) return false;
   return true;
 }

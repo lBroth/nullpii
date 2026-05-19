@@ -14,6 +14,7 @@ describe('public API surface', () => {
     const allowed = new Set([
       'PII_LABELS',
       'GLINER_MODEL_CATEGORIES',
+      'GLINER_ZERO_SHOT_EXTRA',
       'CHUNK_OVERLAP_TOKENS',
       'MAX_INPUT_TOKENS',
       'MAX_SEQUENCE_LENGTH',

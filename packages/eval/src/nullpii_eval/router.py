@@ -35,8 +35,8 @@ from typing import Callable
 # unaffected. The purpose is to make obfuscated/perturbed inputs
 # look closer to training-distribution to the router classifier
 # (unicode-style fonts, fullwidth chars, zero-width tricks). This is
-# transparent preprocessing, not a span-offset hack: routing changes
-# but detection still operates on the original bytes.
+# Routing only — detection still operates on the original bytes,
+# so span offsets are unaffected.
 _ZERO_WIDTH_RE = re.compile(r"[​-‍﻿⁠­]")
 _MULTI_WS_RE = re.compile(r"\s+")
 
@@ -449,8 +449,8 @@ class EmbeddingDomainRouter:
         self._labels: list[str] = list(data["labels"])
         self._prototypes = data["prototypes"]  # (N_domains, dim) float32
         embedder_name = str(data["embedder"])
-        # Some legacy npz files don't have a `prefix` key — default to
-        # the e5-style "passage: " prefix.
+        # Older prototype npz files may omit `prefix` — default to the
+        # e5-style "passage: " prefix.
         try:
             self._prefix = str(data["prefix"])
         except KeyError:

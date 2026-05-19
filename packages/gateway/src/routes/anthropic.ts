@@ -2,8 +2,10 @@
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { NullPii } from 'nullpii';
+import { printRequestSummary } from '../pretty-log.js';
 import { restoreResponse, sanitizeRequest } from '../sanitizer.js';
 import { relaySseStream } from '../sse-relay.js';
+import { logInboundResponse, logInboundSseChunk, logOutboundRequest } from '../traffic-log.js';
 import type { AnthropicRequest, AnthropicResponse } from '../types.js';
 import { type Fetch, buildUpstreamHeaders, forwardToAnthropic } from '../upstream.js';
 
@@ -11,22 +13,50 @@ export interface AnthropicRouteOptions {
   readonly np: NullPii;
   readonly upstreamBaseUrl: string;
   readonly fetchImpl: Fetch;
+  /** When true, dump sanitized request body + raw upstream response
+   * (placeholder-bearing) to stdout. Never logs real PII. */
+  readonly logTraffic: boolean;
+}
+
+/** Headers from Anthropic that diagnose rate-limit / quota failures.
+ * Forwarded verbatim so the client sees `retry-after` + the full
+ * `anthropic-ratelimit-*` family on 429 / 529 responses. */
+const UPSTREAM_ERROR_HEADERS = [
+  'content-type',
+  'retry-after',
+  'anthropic-ratelimit-requests-limit',
+  'anthropic-ratelimit-requests-remaining',
+  'anthropic-ratelimit-requests-reset',
+  'anthropic-ratelimit-input-tokens-limit',
+  'anthropic-ratelimit-input-tokens-remaining',
+  'anthropic-ratelimit-input-tokens-reset',
+  'anthropic-ratelimit-output-tokens-limit',
+  'anthropic-ratelimit-output-tokens-remaining',
+  'anthropic-ratelimit-output-tokens-reset',
+];
+
+function forwardUpstreamErrorHeaders(reply: FastifyReply, upstream: Headers): void {
+  for (const name of UPSTREAM_ERROR_HEADERS) {
+    const v = upstream.get(name);
+    if (v !== null) reply.header(name, v);
+  }
+  if (upstream.get('content-type') === null) reply.header('content-type', 'application/json');
 }
 
 export async function registerAnthropicRoute(
   app: FastifyInstance,
   opts: AnthropicRouteOptions,
 ): Promise<void> {
-  const { np, upstreamBaseUrl, fetchImpl } = opts;
+  const { np, upstreamBaseUrl, fetchImpl, logTraffic } = opts;
 
   app.post('/v1/messages', async (req, reply) => {
     const body = req.body as AnthropicRequest;
     const isStream = (body as { stream?: unknown }).stream === true;
 
     if (isStream) {
-      return handleStreaming(req, reply, body, np, upstreamBaseUrl, fetchImpl);
+      return handleStreaming(req, reply, body, np, upstreamBaseUrl, fetchImpl, logTraffic);
     }
-    return handleNonStreaming(req, reply, body, np, upstreamBaseUrl, fetchImpl);
+    return handleNonStreaming(req, reply, body, np, upstreamBaseUrl, fetchImpl, logTraffic);
   });
 
   // `count_tokens` does NOT need restoration — the response is `{input_tokens: N}`,
@@ -71,8 +101,11 @@ async function handleNonStreaming(
   np: NullPii,
   upstreamBaseUrl: string,
   fetchImpl: Fetch,
+  logTraffic: boolean,
 ): Promise<unknown> {
   const sanitized = await sanitizeRequest(np, body);
+  const reqId = typeof req.id === 'string' ? req.id : undefined;
+  if (logTraffic) logOutboundRequest(sanitized.body, reqId);
   const headers = buildUpstreamHeaders(
     req.headers as Record<string, string | string[] | undefined>,
   );
@@ -98,10 +131,20 @@ async function handleNonStreaming(
   if (upstream.status < 200 || upstream.status >= 300) {
     np.destroySession(sanitized.sessionId);
     reply.code(upstream.status);
-    const contentType = upstream.headers.get('content-type') ?? 'application/json';
-    reply.header('content-type', contentType);
+    forwardUpstreamErrorHeaders(reply, upstream.headers);
+    req.log.warn(
+      {
+        upstreamStatus: upstream.status,
+        retryAfter: upstream.headers.get('retry-after') ?? undefined,
+        rateLimitReset: upstream.headers.get('anthropic-ratelimit-requests-reset') ?? undefined,
+        body: upstream.text.slice(0, 500),
+      },
+      'anthropic.upstream_error',
+    );
     return upstream.text;
   }
+
+  if (logTraffic) logInboundResponse(upstream.text, reqId);
 
   let parsed: AnthropicResponse;
   try {
@@ -122,6 +165,8 @@ async function handleNonStreaming(
 
   req.log.info(
     {
+      captured: sanitized.captured,
+      capturedByLabel: sanitized.capturedByLabel,
       replacements: restored.replacements,
       replacementsByLabel: restored.replacementsByLabel,
       unknownPlaceholders: restored.unknownPlaceholders,
@@ -129,6 +174,16 @@ async function handleNonStreaming(
     },
     'anthropic.messages.restored',
   );
+  const summaryBase = {
+    mode: 'JSON' as const,
+    captured: sanitized.captured,
+    capturedByLabel: sanitized.capturedByLabel,
+    restored: restored.replacements,
+    restoredByLabel: restored.replacementsByLabel,
+    unknownPlaceholders: restored.unknownPlaceholders,
+    foreignPlaceholders: restored.foreignPlaceholders,
+  };
+  printRequestSummary(reqId !== undefined ? { ...summaryBase, reqId } : summaryBase);
 
   return restored.body;
 }
@@ -150,8 +205,11 @@ async function handleStreaming(
   np: NullPii,
   upstreamBaseUrl: string,
   fetchImpl: Fetch,
+  logTraffic: boolean,
 ): Promise<unknown> {
   const sanitized = await sanitizeRequest(np, body);
+  const reqId = typeof req.id === 'string' ? req.id : undefined;
+  if (logTraffic) logOutboundRequest(sanitized.body, reqId);
   const headers = buildUpstreamHeaders(
     req.headers as Record<string, string | string[] | undefined>,
   );
@@ -178,8 +236,16 @@ async function handleStreaming(
     np.destroySession(sanitized.sessionId);
     const text = await upstreamResp.text();
     reply.code(upstreamResp.status);
-    const ct = upstreamResp.headers.get('content-type') ?? 'application/json';
-    reply.header('content-type', ct);
+    forwardUpstreamErrorHeaders(reply, upstreamResp.headers);
+    req.log.warn(
+      {
+        upstreamStatus: upstreamResp.status,
+        retryAfter: upstreamResp.headers.get('retry-after') ?? undefined,
+        rateLimitReset: upstreamResp.headers.get('anthropic-ratelimit-requests-reset') ?? undefined,
+        body: text.slice(0, 500),
+      },
+      'anthropic.upstream_error',
+    );
     return text;
   }
 
@@ -212,9 +278,12 @@ async function handleStreaming(
       sessionId: sanitized.sessionId,
       upstream: upstreamResp.body as unknown as AsyncIterable<Uint8Array>,
       write: (frame) => reply.raw.write(frame),
+      ...(logTraffic ? { onUpstreamChunk: (c) => logInboundSseChunk(c, reqId) } : {}),
     });
     req.log.info(
       {
+        captured: sanitized.captured,
+        capturedByLabel: sanitized.capturedByLabel,
         replacements: counters.replacements,
         replacementsByLabel: counters.replacementsByLabel,
         unknownPlaceholders: counters.unknownPlaceholders,
@@ -222,6 +291,16 @@ async function handleStreaming(
       },
       'anthropic.messages.streamed',
     );
+    const sseSummary = {
+      mode: 'SSE' as const,
+      captured: sanitized.captured,
+      capturedByLabel: sanitized.capturedByLabel,
+      restored: counters.replacements,
+      restoredByLabel: counters.replacementsByLabel,
+      unknownPlaceholders: counters.unknownPlaceholders,
+      foreignPlaceholders: counters.foreignPlaceholders,
+    };
+    printRequestSummary(reqId !== undefined ? { ...sseSummary, reqId } : sseSummary);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ errMsg: msg }, 'anthropic.messages.stream_error');

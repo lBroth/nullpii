@@ -168,3 +168,58 @@ describe('codiceFiscaleValid', () => {
     expect(codiceFiscaleValid('rssmra80d15h501o')).toBe(true);
   });
 });
+
+import { latLonPairInRange, vinValid } from '../src/validators.js';
+
+describe('vinValid', () => {
+  it('accepts a known-valid Toyota VIN', () => {
+    // Public sample VIN from NHTSA vPIC documentation.
+    expect(vinValid('1HGCM82633A123456')).toBe(false); // pre-tampered for failure baseline
+    expect(vinValid('1HGCM82633A004352')).toBe(true);
+  });
+
+  it('rejects a VIN with bad check digit', () => {
+    expect(vinValid('1HGCM82633A004353')).toBe(false);
+  });
+
+  it('rejects forbidden chars (I, O, Q)', () => {
+    expect(vinValid('1HGCM8I633A004352')).toBe(false);
+    expect(vinValid('1HGCM8O633A004352')).toBe(false);
+    expect(vinValid('1HGCM8Q633A004352')).toBe(false);
+  });
+
+  it('rejects wrong length', () => {
+    expect(vinValid('1HGCM82633A00435')).toBe(false);
+    expect(vinValid('1HGCM82633A0043522')).toBe(false);
+  });
+
+  it('accepts lowercase (case-insensitive)', () => {
+    expect(vinValid('1hgcm82633a004352')).toBe(true);
+  });
+});
+
+describe('latLonPairInRange', () => {
+  it('accepts coords inside [-90, 90] × [-180, 180]', () => {
+    expect(latLonPairInRange('41.9028, 12.4964')).toBe(true); // Rome
+    expect(latLonPairInRange('-33.8688, 151.2093')).toBe(true); // Sydney
+    expect(latLonPairInRange('90, 180')).toBe(true);
+    expect(latLonPairInRange('-90, -180')).toBe(true);
+  });
+
+  it('rejects out-of-range coords', () => {
+    expect(latLonPairInRange('91.0, 0.0')).toBe(false);
+    expect(latLonPairInRange('0.0, 181.0')).toBe(false);
+    expect(latLonPairInRange('-90.1, 0.0')).toBe(false);
+  });
+
+  it('rejects null-island origin (0, 0)', () => {
+    expect(latLonPairInRange('0, 0')).toBe(false);
+    expect(latLonPairInRange('0.0, 0.0')).toBe(false);
+  });
+
+  it('rejects non-numeric or wrong-arity input', () => {
+    expect(latLonPairInRange('41.9028')).toBe(false);
+    expect(latLonPairInRange('41.9028, 12.4964, 100')).toBe(false);
+    expect(latLonPairInRange('lat, lon')).toBe(false);
+  });
+});

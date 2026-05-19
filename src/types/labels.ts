@@ -1,32 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 
-/** Ordered tuple of nullpii's PII categories (plus `'O'` for legacy
- * compatibility — never emitted).
- *
- * The GLiNER model is trained on the 8 ML categories
- * (`account_number`, `private_address`, `private_date`, `private_email`,
- * `private_person`, `private_phone`, `private_url`, `secret`). The
- * recognizer pack additionally emits two post-pass-only labels:
- *
- *  - `private_ip` for IPv4 / IPv6 addresses;
- *  - `private_mac` for MAC addresses (hardware identifiers; previously
- *    misrouted under `private_ip` since both come from the regex pack,
- *    but consumers that group spans by label benefit from the split).
- *
- * The model is not prompted with `private_ip` / `private_mac`, so
- * neither appears in raw model output — only the regex post-pass
- * produces them. */
+/** Ordered tuple of every PII category. Includes `'O'` (non-PII) at
+ * index 0 as a structural placeholder — never emitted by the pipeline.
+ * Source of truth for label provenance: {@link GLINER_MODEL_CATEGORIES}
+ * (trained) + {@link GLINER_ZERO_SHOT_EXTRA} (prompted, zero-shot) +
+ * recognizer-only (`private_ip`, `private_mac`). */
 export const PII_LABELS = [
   'O',
   'account_number',
   'private_address',
   'private_date',
+  'private_driver_license',
   'private_email',
+  'private_geolocation',
   'private_ip',
   'private_mac',
+  'private_passport',
   'private_person',
   'private_phone',
   'private_url',
+  'private_vehicle_id',
   'secret',
 ] as const;
 
@@ -36,9 +29,9 @@ export type PiiLabel = (typeof PII_LABELS)[number];
 /** Union of PII labels excluding `'O'` — the user-visible categories. */
 export type PiiCategory = Exclude<PiiLabel, 'O'>;
 
-/** Subset of {@link PiiCategory} that the GLiNER model is
- * trained to emit. The recognizer pack can produce additional labels
- * (e.g. `private_ip`) that the model itself never outputs. */
+/** Subset of {@link PiiCategory} the GLiNER base model was trained on.
+ * Inference also prompts {@link GLINER_ZERO_SHOT_EXTRA}; pure recognizer-
+ * pack labels (`private_ip`, `private_mac`) are never model-emitted. */
 export const GLINER_MODEL_CATEGORIES = [
   'account_number',
   'private_address',
@@ -48,4 +41,14 @@ export const GLINER_MODEL_CATEGORIES = [
   'private_phone',
   'private_url',
   'secret',
+] as const satisfies readonly PiiCategory[];
+
+/** Labels prompted to GLiNER at inference but NOT in the trained set —
+ * the base model generalises to them zero-shot. The recognizer pack
+ * still emits structured matches; the model adds free-form prose. */
+export const GLINER_ZERO_SHOT_EXTRA = [
+  'private_passport',
+  'private_driver_license',
+  'private_vehicle_id',
+  'private_geolocation',
 ] as const satisfies readonly PiiCategory[];

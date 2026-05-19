@@ -16,10 +16,7 @@ import { SessionMismatchError } from '../src/errors.js';
 import { RestoreStream } from '../src/restore-stream.js';
 import type { PiiSpan } from '../src/types/index.js';
 import { PiiVault } from '../src/vault.js';
-
-function span(label: PiiSpan['label'], start: number, end: number, text: string): PiiSpan {
-  return { label, start, end, text, score: 1.0 };
-}
+import { span } from './helpers.js';
 
 function makeSession(
   text: string,

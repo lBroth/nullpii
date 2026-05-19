@@ -21,6 +21,7 @@ const TEST_CONFIG: GatewayConfig = {
   backend: 'cpu',
   logLevel: 'fatal',
   bodyLimitBytes: 10 * 1024 * 1024,
+  logTraffic: false,
 };
 
 /**
@@ -114,10 +115,13 @@ function buildMockFetch(
   return { fetchImpl, calls };
 }
 
-let activeApps: Array<{ close: () => Promise<void> }> = [];
+const activeApps: Array<{ close: () => Promise<void> }> = [];
+function trackApp(app: { close: () => Promise<void> }): void {
+  activeApps.push(app);
+}
 afterEach(async () => {
   await Promise.all(activeApps.map((a) => a.close()));
-  activeApps = [];
+  activeApps.length = 0;
 });
 
 describe('gateway · POST /v1/messages (non-streaming)', () => {
@@ -139,7 +143,7 @@ describe('gateway · POST /v1/messages (non-streaming)', () => {
     });
 
     const app = await buildServer({ config: TEST_CONFIG, np, fetchImpl });
-    activeApps.push(app);
+    trackApp(app);
 
     const res = await app.inject({
       method: 'POST',
@@ -192,7 +196,7 @@ describe('gateway · POST /v1/messages (non-streaming)', () => {
       return { body: JSON.stringify(resp) };
     });
     const app = await buildServer({ config: TEST_CONFIG, np, fetchImpl });
-    activeApps.push(app);
+    trackApp(app);
 
     const res = await app.inject({
       method: 'POST',
@@ -257,7 +261,7 @@ describe('gateway · POST /v1/messages (non-streaming)', () => {
     };
 
     const app = await buildServer({ config: TEST_CONFIG, np, fetchImpl });
-    activeApps.push(app);
+    trackApp(app);
 
     const res = await app.inject({
       method: 'POST',
@@ -291,7 +295,7 @@ describe('gateway · POST /v1/messages (non-streaming)', () => {
       headers: { 'content-type': 'application/json' },
     }));
     const app = await buildServer({ config: TEST_CONFIG, np, fetchImpl });
-    activeApps.push(app);
+    trackApp(app);
 
     const res = await app.inject({
       method: 'POST',
@@ -309,7 +313,7 @@ describe('gateway · POST /v1/messages (non-streaming)', () => {
       throw new Error('ECONNREFUSED');
     };
     const app = await buildServer({ config: TEST_CONFIG, np, fetchImpl });
-    activeApps.push(app);
+    trackApp(app);
 
     const res = await app.inject({
       method: 'POST',
@@ -327,7 +331,7 @@ describe('gateway · /health', () => {
     const { np } = buildMockNullPii();
     const { fetchImpl } = buildMockFetch(() => ({ body: '{}' }));
     const app = await buildServer({ config: TEST_CONFIG, np, fetchImpl });
-    activeApps.push(app);
+    trackApp(app);
     const res = await app.inject({ method: 'GET', url: '/health' });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ status: 'ok' });

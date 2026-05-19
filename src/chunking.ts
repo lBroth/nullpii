@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { splitWords } from './gliner-tokenizer.js';
+import { iou } from './iou.js';
+import type { ScoredSpan } from './types/scored-span.js';
 
 /** Word-aware sliding-window chunker. Splits on GLiNER word boundaries
  * so each chunk has a bounded word count regardless of input density.
@@ -44,14 +46,7 @@ export function chunkText(
 /** Dedupe overlapping spans by IoU. Keeps the highest-score span in each
  * overlap cluster. Spans must share `label` to be considered duplicates;
  * different labels at the same offset are kept (rare with chunking). */
-export interface SpanLike {
-  readonly label: string;
-  readonly start: number;
-  readonly end: number;
-  readonly score: number;
-}
-
-export function dedupeOverlappingSpans<T extends SpanLike>(
+export function dedupeOverlappingSpans<T extends ScoredSpan>(
   spans: T[],
   iouThreshold = 0.5,
   options: { acrossLabels?: boolean } = {},
@@ -90,7 +85,7 @@ export function dedupeOverlappingSpans<T extends SpanLike>(
   return kept.sort((a, b) => a.start - b.start);
 }
 
-function removeContainedSpans<T extends SpanLike>(spans: T[]): T[] {
+function removeContainedSpans<T extends ScoredSpan>(spans: T[]): T[] {
   const out: T[] = [];
   for (let i = 0; i < spans.length; i++) {
     const a = spans[i];
@@ -110,13 +105,4 @@ function removeContainedSpans<T extends SpanLike>(spans: T[]): T[] {
     if (!contained) out.push(a);
   }
   return out;
-}
-
-function iou(a: SpanLike, b: SpanLike): number {
-  const interStart = Math.max(a.start, b.start);
-  const interEnd = Math.min(a.end, b.end);
-  const inter = Math.max(0, interEnd - interStart);
-  if (inter === 0) return 0;
-  const union = a.end - a.start + (b.end - b.start) - inter;
-  return inter / union;
 }

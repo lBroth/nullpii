@@ -23,16 +23,13 @@
 // the cache dir used by `cli/prefetch`) so the first-request latency
 // is sub-second.
 
+import { printBanner } from './banner.js';
 import { loadConfig } from './config.js';
 import { startServer } from './server.js';
 
 const config = loadConfig();
-process.stdout.write(
-  `[dev] nullpii-gateway booting on ${config.host}:${config.port} ` +
-    `(upstream=${config.upstreamBaseUrl}, backend=${config.backend})\n`,
-);
-
 const app = await startServer(config);
+printBanner(config, 'dev');
 
 async function shutdown(signal: NodeJS.Signals): Promise<void> {
   process.stdout.write(`\n[dev] ${signal} received, closing server\n`);

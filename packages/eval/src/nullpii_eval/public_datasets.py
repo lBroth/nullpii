@@ -216,21 +216,27 @@ _AI4PRIVACY_LABELS = {
     "SOCIALNUM": "account_number",
     "TAXNUM": "account_number",
     "IDCARDNUM": "account_number",
-    "DRIVERLICENSENUM": "account_number",
-    "PASSPORTNUM": "account_number",
+    # v0.3 schema split — driver licence / passport / vehicle / IP / MAC
+    # graduate from `account_number` to dedicated labels.
+    "DRIVERLICENSENUM": "private_driver_license",
+    "PASSPORTNUM": "private_passport",
     "MASKEDNUMBER": "account_number",
     "BTC_ADDRESS": "account_number",
     "BITCOINADDRESS": "account_number",
     "ETHEREUM_ADDRESS": "account_number",
     "ETHEREUMADDRESS": "account_number",
     "LITECOINADDRESS": "account_number",
-    "IPV4": "account_number",
-    "IPV6": "account_number",
-    "IP": "account_number",
-    "MAC": "account_number",
-    "MACADDRESS": "account_number",
-    "VEHICLEVIN": "account_number",
-    "VEHICLEVRM": "account_number",
+    "IPV4": "private_ip",
+    "IPV6": "private_ip",
+    "IP": "private_ip",
+    "MAC": "private_mac",
+    "MACADDRESS": "private_mac",
+    "VEHICLEVIN": "private_vehicle_id",
+    "VEHICLEVRM": "private_vehicle_id",
+    "LICENSEPLATE": "private_vehicle_id",
+    "GPSCOORDINATES": "private_geolocation",
+    "GPSCOORDINATE": "private_geolocation",
+    "COORDINATE": "private_geolocation",
     # ─── Secret ───────────────────────────────────────────────────
     "API_KEY": "secret",
     "APIKEY": "secret",
@@ -371,6 +377,19 @@ _ISOTONIC_LABEL_MAP = {
     "APIKEY": "secret",
     "BITCOINADDRESS": "account_number",
     "ETHEREUMADDRESS": "account_number",
+    # v0.3 schema split. Isotonic native vocabulary occasionally surfaces
+    # these (esp. on the EN multi-domain split) — keep mappings even if
+    # the row counts are small so per-class metrics stay correct.
+    "DRIVERLICENSENUM": "private_driver_license",
+    "PASSPORTNUM": "private_passport",
+    "VEHICLEVIN": "private_vehicle_id",
+    "VEHICLEVRM": "private_vehicle_id",
+    "LICENSEPLATE": "private_vehicle_id",
+    "IPV4": "private_ip",
+    "IPV6": "private_ip",
+    "MACADDRESS": "private_mac",
+    "NEARBYGPSCOORDINATE": "private_geolocation",
+    "GPSCOORDINATES": "private_geolocation",
 }
 
 
@@ -449,7 +468,7 @@ def _load_isotonic(
                 continue  # explicit "no label" sentinel from upstream
             mapped = _ISOTONIC_LABEL_MAP.get(_strip_index(raw_label).upper())
             if mapped is None:
-                continue  # label intentionally outside our 8-class taxonomy
+                continue  # label intentionally outside our 12-class taxonomy
             spans.append(Span(mapped, start, end))
         samples.append(Sample(text=text, spans=tuple(spans)))
     citation = "Isotonic. PII Masking 200k (open mirror of ai4privacy)."
@@ -553,7 +572,8 @@ _BIGCODE_PII_LABELS = {
     "AUTH_TOKEN": "secret",
     "EMAIL": "private_email",
     "USERNAME": None,           # too generic, drops
-    "IP_ADDRESS": "account_number",
+    # v0.4 schema split — gold uses `private_ip` for network addresses.
+    "IP_ADDRESS": "private_ip",
     "NAME": "private_person",
     "ID": "account_number",
 }
@@ -609,7 +629,7 @@ _DEV_PROMPT_TEMPLATES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         "Stack trace from prod:\n  at User.sendMail (mailer.ts:42)\n  "
         "to={EMAIL}\n  authHeader=Bearer {JWT}\n  "
         "from IP {IP} — looks like our retry logic is broken.",
-        (("EMAIL", "private_email"), ("JWT", "secret"), ("IP", "account_number")),
+        (("EMAIL", "private_email"), ("JWT", "secret"), ("IP", "private_ip")),
     ),
     (
         "Customer {NAME} (phone {PHONE}) reports their order to "
@@ -628,7 +648,7 @@ _DEV_PROMPT_TEMPLATES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     (
         "Log entry: 2024-12-03T18:42:11Z user_id={ACC} ip={IP} "
         "session=expired. Please review.",
-        (("ACC", "account_number"), ("IP", "account_number")),
+        (("ACC", "account_number"), ("IP", "private_ip")),
     ),
     (
         "Hi team, please send the contract to {NAME} at {EMAIL} "
@@ -809,7 +829,7 @@ _PLANT_CHOICES: tuple[tuple[str, str], ...] = (
     ("NAME", "private_person"),
     ("CARD", "account_number"),
     ("ACC", "account_number"),
-    ("IP", "account_number"),
+    ("IP", "private_ip"),
     ("DOB", "private_date"),
 )
 
@@ -1072,7 +1092,7 @@ def _load_oasst_dev_planted(max_samples: int | None) -> PublicDataset:
     )
 
 
-# ─── Argilla PII (29 categories) → nullpii 8-class mapping ───────
+# ─── Argilla PII (29 categories) → nullpii 12-class mapping ───────
 _ARGILLA_LABEL_MAP: dict[str, str | None] = {
     "FIRSTNAME": "private_person",
     "LASTNAME": "private_person",
@@ -1080,7 +1100,14 @@ _ARGILLA_LABEL_MAP: dict[str, str | None] = {
     "PREFIX": "private_person",
     "EMAIL": "private_email",
     "PHONEIMEI": "account_number",
-    "VEHICLEVIN": "account_number",
+    # v0.4 schema split — dedicated labels for the new classes. Argilla
+    # native vocabulary surfaces these on the EN multi-domain split;
+    # missing maps drop competitor + nullpii gold consistently.
+    "VEHICLEVIN": "private_vehicle_id",
+    "LICENSEPLATE": "private_vehicle_id",
+    "PASSPORTNUM": "private_passport",
+    "DRIVERLICENSENUM": "private_driver_license",
+    "GPSCOORDINATES": "private_geolocation",
     "AGE": "private_date",
     "DOB": "private_date",
     "DATE": "private_date",
@@ -1088,15 +1115,15 @@ _ARGILLA_LABEL_MAP: dict[str, str | None] = {
     "BUILDINGNUMBER": "private_address",
     "STREET": "private_address",
     "COUNTY": "private_address",
-    "NEARBYGPSCOORDINATE": "private_address",
+    "NEARBYGPSCOORDINATE": "private_geolocation",
     "MASKEDNUMBER": "account_number",
     "ACCOUNTNUMBER": "account_number",
     "CREDITCARDNUMBER": "account_number",
-    "IPV4": "account_number",
-    "IPV6": "account_number",
+    "IPV4": "private_ip",
+    "IPV6": "private_ip",
     "PASSWORD": "secret",
     "PIN": "secret",
-    # Skip — not in nullpii 8-class
+    # Skip — not in nullpii 12-class
     "GENDER": None,
     "HEIGHT": None,
     "EYECOLOR": None,
@@ -1113,7 +1140,7 @@ def _load_argilla_pii(max_samples: int | None) -> PublicDataset:
     stores PII span annotations under the `pii` field as a list of
     `{start, end, label}` dicts.
 
-    Maps 29 Argilla labels → nullpii 8-class via `_ARGILLA_LABEL_MAP`.
+    Maps 29 Argilla labels → nullpii 12-class via `_ARGILLA_LABEL_MAP`.
     Records whose ALL spans map to `None` (e.g. only contains GENDER /
     HEIGHT) still count as samples with empty gold.
     """
@@ -1163,7 +1190,7 @@ def _load_nemotron_pii_test(max_samples: int | None) -> PublicDataset:
     """`nvidia/Nemotron-PII` test split. 100k synthetic records spanning
     50+ industries. Schema: text + spans (Python-repr string of dict
     list — needs `ast.literal_eval`, not `json.loads`). Maps 55+
-    Nemotron labels → nullpii 8-class.
+    Nemotron labels → nullpii 12-class.
     """
     import ast as _ast
 

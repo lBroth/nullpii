@@ -3,13 +3,13 @@
 import { randomUUID } from 'node:crypto';
 import { SessionMismatchError, SessionNotFoundError, UnknownPlaceholderError } from './errors.js';
 import { logf } from './log.js';
+import { sessionPrefixOf } from './session-prefix.js';
 import {
   PLACEHOLDER_REGEX,
   PLACEHOLDER_TEMPLATE,
   type PiiSpan,
   type RestoreOptions,
   type RestoreResult,
-  SESSION_PREFIX_LEN,
   type SanitizeResult,
 } from './types/index.js';
 
@@ -188,8 +188,4 @@ export class PiiVault {
     session.entries.set(placeholder, span.text);
     return placeholder;
   }
-}
-
-function sessionPrefixOf(sessionId: string): string {
-  return sessionId.replace(/-/g, '').slice(0, SESSION_PREFIX_LEN).toLowerCase();
 }

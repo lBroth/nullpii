@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { SessionMismatchError } from './errors.js';
+import { sessionPrefixOf } from './session-prefix.js';
 import type { RestoreOptions, RestoreResult } from './types/index.js';
 import { PLACEHOLDER_REGEX } from './types/index.js';
 
@@ -141,8 +142,4 @@ export class RestoreStream {
       return r.restored;
     });
   }
-}
-
-function sessionPrefixOf(sessionId: string): string {
-  return sessionId.replace(/-/g, '').slice(0, 16).toLowerCase();
 }

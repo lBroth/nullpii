@@ -71,11 +71,10 @@ describe.skipIf(SKIP)('F-18 · real ONNX sanitize end-to-end', () => {
   }, 30_000);
 
   it('catches mod-97-valid IBAN with the correct `account_number` label', async () => {
-    // F-39 regression. Before VALIDATED_RECOGNIZER_SCORE, the ONNX
-    // model often tagged spaced IBANs as `private_address` (~0.9999),
-    // outranking the IBAN recognizer's static 0.95 in cross-label IoU
-    // dedupe. Validator-passing recognizers (iban97 here) now emit at
-    // 0.99998 so dedupe picks the structurally-correct label.
+    // Validator-passing recognizers (iban97 here) emit at
+    // VALIDATED_RECOGNIZER_SCORE (~0.99998) so cross-label IoU dedupe
+    // outranks ML softmax (~0.9999) — ensures spaced IBANs land on
+    // `account_number`, not `private_address`.
     const text = 'Please wire to GB29 NWBK 6016 1331 9268 19 by Friday.';
     const out = await np.sanitize(text);
     const ibanSpans = out.spans.filter((s) => s.text.replace(/\s/g, '').startsWith('GB29NWBK'));

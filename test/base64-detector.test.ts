@@ -88,12 +88,8 @@ describe('detectBase64Pii', () => {
   });
 
   it('emits regardless of pre-existing overlapping spans (cross-label dedupe handles overlap)', () => {
-    // Before F-21 the function took an `existing` arg but ignored it —
-    // overlapping spans were intentionally not consulted so a base64 blob
-    // tagged `secret` by ML could still surface as `private_email` for
-    // downstream cross-label dedupe. The argument was dropped; the
-    // detector now always emits, leaving label reconciliation to the
-    // pipeline.
+    // Detector always emits — label reconciliation against ML output
+    // happens later in the pipeline via cross-label IoU dedupe.
     const blob = b64('verylonguser@really-cool-domain.example.com');
     expect(blob.length).toBeGreaterThanOrEqual(24);
     const spans = detectBase64Pii(blob);

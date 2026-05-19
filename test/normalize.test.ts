@@ -53,8 +53,6 @@ describe('normalizeForDetection', () => {
   });
 
   it('decodes percent-encoded `+` and `-` anchors', () => {
-    // Round-trip the four ex-EMAIL_ANCHOR_CHARS we removed from the
-    // skip-list. All must be restored to their literal forms.
     const text = 'a%40b%2Bc%2Dd%2Ee';
     const r = normalizeForDetection(text);
     expect(r.normalized).toBe('a@b+c-d.e');

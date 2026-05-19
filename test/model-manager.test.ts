@@ -25,10 +25,6 @@ describe('ModelManager', () => {
     expect(m.modelDir.includes('..')).toBe(false);
   });
 
-  // Network-gated download/cache test removed — it required NULLPII_E2E=1
-  // and a real HF round-trip. The non-network behaviours (deterministic
-  // modelDir, error surfacing) are covered above and don't need an env flag.
-
   it('surfaces ModelNotFoundError when the underlying download fails', async () => {
     const cache = mkdtempSync(join(tmpdir(), 'nullpii-cache-'));
     const m = new ModelManager(cache);

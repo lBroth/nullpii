@@ -16,18 +16,12 @@
 
 import { describe, expect, it } from 'vitest';
 import { SessionMismatchError, UnknownPlaceholderError } from '../src/errors.js';
+import { sessionPrefixOf as expectedPrefix } from '../src/session-prefix.js';
 import type { PiiSpan } from '../src/types/index.js';
 import { PiiVault } from '../src/vault.js';
+import { span } from './helpers.js';
 
 // F-32 regression block lives at the bottom of this file.
-
-function span(label: PiiSpan['label'], start: number, end: number, text: string): PiiSpan {
-  return { label, start, end, text, score: 1.0 };
-}
-
-function expectedPrefix(id: string): string {
-  return id.replace(/-/g, '').slice(0, 16).toLowerCase();
-}
 
 describe('F-07 · unknown placeholder (matching prefix, unknown idx)', () => {
   it('returns unknownPlaceholders, leaves literal, does not throw', () => {

@@ -89,63 +89,80 @@ Full walk-through (host-mounted-model variant for air-gapped / pre-release, GPU 
 |---|---|---|
 | `private_person` | names | model |
 | `private_email` | emails | model + regex |
-| `private_phone` | int'l + IT / FR / ES domestic | model + regex |
+| `private_phone` | int'l + IT / FR / ES / HIPAA-fax domestic | model + regex |
 | `private_address` | street, city, ZIP | model |
 | `private_date` | birth / hire dates | model |
 | `private_url` | `http(s)://`, `www.` | model + regex |
 | `private_ip` | IPv4, IPv6 (RFC 1918 / 5737 / loopback filtered) | regex post-pass |
-| `private_mac` | MAC addresses | regex post-pass |
-| `account_number` | IBAN mod-97, cards (Luhn), SSN, MRN, BTC / ETH, DNI / CPF / CF / EIN | model + regex (validated) |
+| `private_mac` | MAC addresses (broadcast / multicast filtered) | regex post-pass |
+| `private_passport` | US / IT / FR / ES / DE / UK + context-anchored generic (30 countries) | regex post-pass |
+| `private_driver_license` | US per-state + IT / EU per-country (context-anchored) | regex post-pass |
+| `private_vehicle_id` | VIN (ISO 3779 mod-11), plates IT / FR / DE / UK / ES / US | regex (validated) |
+| `private_geolocation` | lat/lon decimal pairs (range-validated) + DMS notation | regex (validated) |
+| `account_number` | IBAN mod-97, cards (Luhn), SSN, MRN, BTC / ETH, DNI / CPF / CF / EIN, Medicare MBI / HIC, NPI, insurance policy, IMEI | model + regex (validated) |
 | `secret` | API keys (AWS / GitHub / OpenAI / Anthropic / Stripe / 30+), JWT, PEM, base64-wrapped PII | regex (50+) + base64 |
 
-Add your own via `np.addRecognizer({ id, pattern, label, confidence, validate? })`. Validator-passing matches (`iban97`, `luhn`, `base58check`, `cpf`, `codiceFiscale`) win cross-label dedupe over ML mislabels.
+Coverage matches HIPAA 18-identifier scrubbing + GDPR Art. 4 identity core + general-purpose PII (passport / driver licence / vehicle / geolocation). Out of scope: GDPR Art. 9 special categories (race / religion / health conditions / political opinions) — those are sentiment-classification problems, not span-extraction.
+
+Add your own via `np.addRecognizer({ id, pattern, label, confidence, validate? })`. Validator-passing matches (`iban97`, `luhn`, `base58check`, `cpf`, `codiceFiscale`, `vin`, `latLonPair`) win cross-label dedupe over ML mislabels.
 
 ## Benchmark
 
 Mac M5 Pro, IoU ≥ 0.5 macro F1 (sklearn-standard — labels with no gt support are excluded, symmetric for every tool). Cap 5,000 / dataset, `--parallel-tools 1` fair-serial. 16-dataset matrix at [`packages/eval/published-bench/matrix.csv`](packages/eval/published-bench/matrix.csv).
 
-Two `nullpii` rows are reported:
+Two `nullpii` rows + one upstream-GLiNER row let readers isolate the model from the runtime:
 
-- **`nullpii-bare`** — the ONNX in this repo + GLiNER decoder + chunking, no post-processing. What you get with the HF model alone.
-- **`nullpii`** — the npm package (full runtime): same model + recognizer pack + adversarial preprocessor + base64 decoder + reversible vault.
+- **`nullpii-bare`** — the published [`lBroth/nullpii`](https://huggingface.co/lBroth/nullpii) ONNX (project-fine-tuned weights) consumed via the bare `gliner_v2_predictor`: GLiNER decoder + chunking, no recognizer pack, no preprocessor, no base64 decoder, no boundary refine, no never-PII filter. What the HF artifact alone delivers.
+- **`gliner-onnx-pii-fp32`** — the unmodified upstream [`onnx-community/gliner_multi_pii-v1`](https://huggingface.co/onnx-community/gliner_multi_pii-v1) ONNX, same bare consumer. Baseline before any project fine-tuning.
+- **`nullpii`** — the npm package (full runtime): published model + recognizer pack + adversarial preprocessor + base64 decoder + reversible vault.
 
-v0.3.0 bench (in flight — `-` cells still computing):
+v0.3.0 bench (M5 Pro CPU, 2026-05-18, full 8×16 matrix). OOD macro for `nullpii` = **0.7784** (presidio-synthetic + isotonic-{en,de,fr,it}-heldout + ai4privacy-300k-heldout + tab-echr).
 
-| Dataset | n | **`nullpii`** | **`nullpii-bare`** | `nemotron-pii-raw` | `gliner-pii-large-v1` | `gliner-onnx-pii-fp32` | `deberta` | `piiranha` | `presidio` | `openai-privacy-filter` |
-|---|---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| `presidio-synthetic` | 5,000 | **0.9233** | 0.9045 | 0.7065 | 0.7397 | 0.7292 | 0.5087 | 0.3828 | 0.5746 § | – |
-| `isotonic-en-heldout` | 5,000 | **0.7871** | 0.7602 | – | – | – | – | – | 0.4726 | – |
-| `isotonic-de-heldout` | 5,000 | **0.7650** | 0.7458 | – | – | – | – | – | 0.4047 | – |
-| `isotonic-fr-heldout` | 5,000 | **0.7788** | 0.7555 | – | – | – | – | – | 0.4129 | – |
-| `isotonic-it-heldout` | 5,000 | **0.7782** | 0.7569 | – | – | – | – | – | 0.4133 | – |
-| `tab-echr` ⚠ | 127 | 0.9254 | **0.9281** | 0.6027 | 0.4634 | 0.5125 | 0.2908 | 0.3163 | 0.7761 | – |
-| `nullpii-bench` ⚠ self-authored | 2,271 | **0.5215** | 0.4600 | 0.4276 | 0.2860 | 0.2691 | 0.2609 | 0.2378 | 0.2001 | – |
-| `nemotron-pii-test` ⚠ | 5,000 | **0.9543** | 0.9117 | – | – | – | – | – | 0.5222 | – |
-| `ai4privacy-400k` ⚠ | 5,000 | 0.6807 | 0.6785 | 0.6797 | 0.6039 | 0.6191 | 0.5169 | **0.9548** ‡ | 0.3982 | – |
-| `ai4privacy-300k` ⚠ | 5,000 | **0.5686** | 0.5543 | 0.5742 | 0.2534 | 0.3082 | 0.3065 | 0.3515 | 0.3584 | – |
-| `ai4privacy-300k-heldout` | 5,000 | **0.5722** | 0.5614 | – | – | – | – | – | 0.2938 | – |
-| `argilla-pii` | 2,000 | **0.7329** | 0.7291 | – | – | – | – | – | 0.4197 | – |
-| `isotonic-en` ⚠ | 5,000 | **0.7876** | 0.7640 | 0.7399 | 0.6413 | 0.5907 | 0.7513 | 0.5804 | 0.4779 | – |
-| `isotonic-de` ⚠ | 5,000 | **0.7671** | 0.7511 | 0.7037 | 0.6318 | 0.5741 | 0.4879 | 0.5694 | 0.3992 | – |
-| `isotonic-fr` ⚠ | 5,000 | **0.7768** | 0.7539 | – | – | – | – | 0.5692 | 0.4146 | – |
-| `isotonic-it` ⚠ | 5,000 | **0.7744** | 0.7521 | – | – | – | – | – | 0.4145 | – |
-| **OOD (5)** held-out | — | **0.8065** | 0.7846 | – | – | – | – | – | 0.4556 | – |
-| **Mixed (7)** OOD + ⚠ in-distribution | — | **0.7828** | 0.7587 | – | – | – | – | – | 0.4649 | – |
+| Dataset | n | **`nullpii`** | **`nullpii-bare`** | `nemotron-pii-raw` | `gliner-pii-large-v1` | `gliner-onnx-pii-fp32` | `deberta` | `piiranha` | `presidio` |
+|---|---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| `presidio-synthetic` | 5,000 | **0.9137** | 0.8487 | 0.7154 | 0.6749 | 0.5254 | 0.5111 | 0.3853 | 0.5511 § |
+| `isotonic-en-heldout` | 1,900 | 0.7197 | 0.5969 | **0.7518** | 0.6662 | 0.5485 | 0.6224 | 0.4124 | 0.4472 |
+| `isotonic-de-heldout` | 2,400 | **0.7297** | 0.6191 | 0.7271 | 0.6325 | 0.5432 | 0.3969 | 0.4112 | 0.3859 |
+| `isotonic-fr-heldout` | 2,800 | 0.7254 | 0.6001 | **0.7276** | 0.6663 | 0.5393 | 0.4824 | 0.4172 | 0.4042 |
+| `isotonic-it-heldout` | 2,200 | **0.7395** | 0.6148 | 0.7273 | 0.6605 | 0.5519 | 0.4509 | 0.4176 | 0.4057 |
+| `tab-echr` ⚠ | 127 | 0.9239 | **0.9275** | 0.6026 | 0.6346 | 0.6463 | 0.2908 | 0.3163 | 0.7761 |
+| `nullpii-bench` ⚠ ⚐ self-authored | 2,361 | **0.4228** | 0.3090 | 0.3065 | 0.2851 | 0.2936 | 0.1711 | 0.1669 | 0.1436 |
+| `nemotron-pii-test` ⚠ | 5,000 | 0.8063 | 0.6814 | **0.9286** ‡ | 0.7675 | 0.7352 | 0.4153 | 0.3286 | 0.4236 |
+| `ai4privacy-400k` ⚠ | 5,000 | 0.6410 | 0.6339 | 0.5962 | 0.6624 | 0.6256 | 0.4508 | **0.9532** ‡ | 0.3897 |
+| `ai4privacy-300k` ⚠ | 5,000 | **0.7094** | 0.5303 | 0.6554 | 0.3930 | 0.4691 | 0.3015 | 0.3203 | 0.5553 |
+| `ai4privacy-300k-heldout` | 5,000 | **0.6966** | 0.5241 | 0.6608 | 0.4306 | 0.5131 | 0.2183 | 0.3266 | 0.4882 |
+| `argilla-pii` | 2,096 | 0.6465 | 0.5549 | **0.6820** | 0.6065 | 0.5044 | 0.5701 | 0.4191 | 0.4533 |
+| `isotonic-en` ⚠ | 5,000 | 0.7428 | 0.6226 | **0.7720** | 0.6784 | 0.5573 | 0.6216 | 0.4235 | 0.4535 |
+| `isotonic-de` ⚠ | 5,000 | 0.7293 | 0.6300 | **0.7337** | 0.6510 | 0.5556 | 0.4069 | 0.4144 | 0.3913 |
+| `isotonic-fr` ⚠ | 5,000 | 0.7199 | 0.5970 | **0.7340** | 0.6714 | 0.5503 | 0.4728 | 0.4137 | 0.4029 |
+| `isotonic-it` ⚠ | 5,000 | **0.7306** | 0.6215 | 0.7225 | 0.6647 | 0.5697 | 0.4531 | 0.4137 | 0.4052 |
 
 Legend:
-- **bold** = best of the row
-- ⚠ in-distribution row for at least one tool (project-authored / train/test overlap)
-- ‡ self-bench on its own training distribution
-- § presidio self-bench on Microsoft Presidio Evaluator
-- `–` cell still computing in the v0.3.0 bench cycle
+- **bold** = best F1 in the row
+- ⚠ = the dataset overlaps the training distribution of at least one competitor in the row — read those cells with caution
+- ⚐ = in-distribution for `nullpii` itself (regression cell, not an OOD claim). The held-out OOD headline is the macro over `presidio-synthetic` + `isotonic-{en,de,fr,it}-heldout` + `ai4privacy-300k-heldout` + `tab-echr`.
+- ‡ = competitor benched on its own training distribution (best-case self-report)
+- § = Presidio benched on its own evaluator dataset (best-case self-report)
+
+Threshold parity: every GLiNER-family tool (`nullpii`, `nullpii-bare`, `gliner-pii-large-v1`, `gliner-onnx-pii-fp32`) runs at threshold 0.5. `nemotron-pii-raw` runs at 0.3 per its upstream model card. DeBERTa aggregation is `first` (validated against `simple` in `adapters.py`, A/B logged). Per-tool chunking strategies are documented in [`packages/eval/README.md`](packages/eval/README.md#chunking-strategies) — intentional fair-comparison gap, each tool ships with its upstream-recommended chunker.
 
 Reproduce:
 
 ```bash
+# CPU run — portable, slower; matches the M5 Pro headline numbers above.
 NULLPII_MODEL_DIR=/path/to/lBroth-nullpii \
   python -u packages/eval/scripts/bench_full.py \
-    --tools nullpii,nullpii-bare,deberta,piiranha,presidio,gliner-pii-large-v1,nemotron-pii-raw,openai-privacy-filter \
+    --tools nullpii,nullpii-bare,deberta,piiranha,presidio,gliner-pii-large-v1,gliner-onnx-pii-fp32,nemotron-pii-raw \
     --datasets all --backend cpu \
+    --out-dir packages/eval/results/$(date +%Y%m%d)-bench
+
+# CUDA run — bench_full.py default; what RunPod 4090 / 5090 nodes use.
+# `nullpii` itself stays on CPU (onnxruntime CUDA EP can't run the
+# GLiNER MoE node on SM_120); transformer baselines benefit from GPU.
+NULLPII_MODEL_DIR=/path/to/lBroth-nullpii \
+  python -u packages/eval/scripts/bench_full.py \
+    --tools nullpii,nullpii-bare,deberta,piiranha,presidio,gliner-pii-large-v1,gliner-onnx-pii-fp32,nemotron-pii-raw \
+    --datasets all \
     --out-dir packages/eval/results/$(date +%Y%m%d)-bench
 ```
 
@@ -153,17 +170,19 @@ NULLPII_MODEL_DIR=/path/to/lBroth-nullpii \
 
 Concrete inputs where the runtime pipeline recovers PII the bare model misses:
 
-| Surface | Input | Recovers |
+| Surface | Input | Detected as |
 |---|---|---|
-| base64-wrapped secret | `(base64-encoded) c2stYW50LWFwaTAzLWFCY0RlRmcw…` | `sk-ant-api03-aBcDeFg012345…` |
-| HTML-entity-encoded secret | `(html_entity-encoded) &#115;&#107;&#45;&#97;&#110;&#116;…` | `sk-ant-…` |
-| double-URL-encoded email | `bob.jones%2540company.io` | `bob.jones@company.io` |
-| zero-width-obfuscated address | `221B Baker St`U+200B`re`U+200B`et `U+200B`London` | `221B Baker Street London` |
-| spaced-out email | `u s e r . 1 2 3 @ g m a i l . c o m` | `user.123@gmail.com` |
-| Italian IBAN in prose | `IT60X0542811101000001023456` | mod-97 validated |
-| Stripe live key in code | `api_key = 'sk_live_4eC39HqLyjWDarjtT1zdp7dc'` | matches Stripe regex |
+| base64-wrapped secret | `(base64-encoded) c2stYW50LWFwaTAzLWFCY0RlRmcw…` | `sk-ant-api03-aBcDeFg012345…` (Anthropic key) |
+| HTML-entity-encoded secret | `&#115;&#107;&#45;&#97;&#110;&#116;…` | `sk-ant-…` (Anthropic key) |
+| double-URL-encoded email | `bob.jones%2540company.io` | `bob.jones@company.io` (email) |
+| zero-width-obfuscated address | `221B Baker St`U+200B`re`U+200B`et `U+200B`London` | `221B Baker Street London` (address) |
+| spaced-out email | `u s e r . 1 2 3 @ g m a i l . c o m` | `user.123@gmail.com` (email) |
+| Cyrillic-homoglyph email | `pаyments@bank.com` (`а` = U+0430) | `payments@bank.com` (email) |
+| fullwidth ASCII email | `ＵＳＥＲ．ＮＡＭＥ＠ｅｘａｍｐｌｅ．ｃｏｍ` | `USER.NAME@example.com` (email) |
+| Italian IBAN in prose | `IT60X0542811101000001023456` | `IT60X0542811101000001023456` (account_number, mod-97 verified) |
+| Stripe live key in code | `api_key = 'sk_live_4eC39HqLyjWDarjtT1zdp7dc'` | `sk_live_4eC39HqLyjWDarjtT1zdp7dc` (credential, Stripe prefix + regex) |
 
-Four layers: base64 decode-then-classify · iterative URL `%XX` + HTML numeric entity decode · zero-width strip with offset remap · 50+ validated regex pack.
+Five layers: NFKC + `any-ascii` translit (fullwidth, Cyrillic, Greek…) · base64 decode-then-classify · iterative URL `%XX` + HTML numeric entity decode · zero-width strip with offset remap · 50+ validated regex pack.
 
 ## Backends
 

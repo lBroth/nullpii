@@ -136,7 +136,8 @@ _PIIRANHA_LABEL_MAP = {
     "IDCARDNUM": "account_number",
     "SOCIALNUM": "account_number",
     "TAXNUM": "account_number",
-    "DRIVERLICENSENUM": "account_number",
+    # v0.3 schema split: driver licence has its own `private_driver_license`.
+    "DRIVERLICENSENUM": "private_driver_license",
     "BUILDINGNUM": "private_address",
     "CITY": "private_address",
     "STREET": "private_address",
@@ -363,8 +364,10 @@ _DEBERTA_LABEL_MAP = {
     "MASKEDNUMBER": "account_number",
     "CREDITCARDNUMBER": "account_number",
     "CREDITCARDCVV": "account_number",
-    "VEHICLEVRM": "account_number",
-    "VEHICLEVIN": "account_number",
+    # v0.3 schema split: vehicle registration mark / VIN have their own
+    # `private_vehicle_id` label (was bucketed into `account_number`).
+    "VEHICLEVRM": "private_vehicle_id",
+    "VEHICLEVIN": "private_vehicle_id",
     "PIN": "secret",
     "PASSWORD": "secret",
     "SSN": "account_number",
@@ -379,7 +382,8 @@ _DEBERTA_LABEL_MAP = {
     "STATE": "private_address",
     "COUNTY": "private_address",
     "COUNTRY": "private_address",
-    "GPSCOORDINATES": "private_address",
+    # v0.3 schema split: GPS coords → `private_geolocation` (was `private_address`).
+    "GPSCOORDINATES": "private_geolocation",
     "DOB": "private_date",
     "DATE": "private_date",
     "TIME": "private_date",
@@ -400,8 +404,8 @@ def deberta_pii_predictor(
     aggregation_strategy: str = "first",
 ) -> BatchPredictor:
     """`lakshyakh93/deberta_finetuned_pii` — DeBERTa-base English-only PII
-    detector with rich label set (~50+ categories). Mapped down to
-    nullpii's 8 categories.
+    detector with rich label set (~50+ categories). Mapped to nullpii's
+    12-class schema (8 trained + 4 zero-shot extras).
 
     `aggregation_strategy` defaults to `"first"`. A/B tested against
     `"simple"` on 5 representative datasets (nullpii-bench, tab-echr,
@@ -459,56 +463,12 @@ def deberta_pii_predictor(
     return _predict_batch
 
 
-_GLINER_LABELS = [
-    "person",
-    "email",
-    "phone number",
-    "mobile phone number",
-    "address",
-    "postal code",
-    "date of birth",
-    "credit card number",
-    "bank account number",
-    "IBAN",
-    "social security number",
-    "passport number",
-    "driver's license",
-    "national identification number",
-    "URL",
-    "API key",
-    "password",
-    "username",
-]
-
-_GLINER_LABEL_MAP = {
-    "person": "private_person",
-    "email": "private_email",
-    "phone number": "private_phone",
-    "mobile phone number": "private_phone",
-    "address": "private_address",
-    "postal code": "private_address",
-    "date of birth": "private_date",
-    "credit card number": "account_number",
-    "bank account number": "account_number",
-    "IBAN": "account_number",
-    "social security number": "account_number",
-    "passport number": "account_number",
-    "driver's license": "account_number",
-    "national identification number": "account_number",
-    "URL": "private_url",
-    "API key": "secret",
-    "password": "secret",
-    "username": None,
-}
-
-
 def boundary_refined_predictor(
     *,
     inner: Predictor,
-    # extended with typographic apostrophes, guillemets,
-    # smart-quotes, low-9 quote — common in modern French / Italian /
-    # German prose. ASCII-only set previously left these as boundary
-    # noise on PII spans.
+    # Includes typographic apostrophes, guillemets, smart-quotes, low-9
+    # quote — common in French / Italian / German prose; ASCII-only
+    # leaves these as boundary noise on PII spans.
     trim_chars: str = " \t\n\r,.;:!?\"'()[]{}<>«»‹›‘’“”„‚",
 ) -> Predictor:
     """Wrap a predictor and refine span boundaries — trim leading/trailing
@@ -749,11 +709,10 @@ DEFAULT_REGEX_PATTERNS: list[tuple[str, str]] = [
     ("account_number", r"\b3[A-HJ-NP-Za-km-z1-9]{25,34}\b"),
     # Bitcoin Bech32 (segwit, bc1...)
     ("account_number", r"\bbc1[a-z0-9]{39,59}\b"),
-    # Bitcoin Legacy address — same regex shape as before
-    # (kept for backwards compat) but the `regex_recognizer_predictor`
-    # post-filter will validate the base58check checksum. Without
-    # validation, any 26-34 char base58-charset prose token (`Order
-    # 1A2B3C4D5E6F7G8H9J1K2L3M4N`) was wrongly tagged.
+    # Note: BTC Legacy/P2SH patterns above match by shape; the
+    # `regex_recognizer_predictor` post-filter validates the
+    # base58check checksum to drop prose tokens that share the shape
+    # (e.g. `Order 1A2B3C4D5E6F7G8H9J1K2L3M4N`).
     # Ethereum address (0x prefix + 40 hex)
     ("account_number", r"\b0x[a-fA-F0-9]{40}\b"),
     # UUID v4 (often used as account/customer id)
@@ -771,7 +730,7 @@ DEFAULT_REGEX_PATTERNS: list[tuple[str, str]] = [
     #   ::1, fe80::1, 2001:db8::, 2001:db8::1, ::ffff:1.2.3.4
     # Loose pattern: requires `::` plus enough flanking hex groups.
     ("account_number", r"\b(?:[0-9a-fA-F]{1,4}:){1,7}:|:(?::[0-9a-fA-F]{1,4}){1,7}|(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}\b"),
-    # ─── Additional secret patterns (non-hacky, distinct prefix) ───
+    # ─── Additional secret patterns (distinct prefix-anchored) ───
     # Google API key
     ("secret", r"\bAIza[0-9A-Za-z_\-]{35}\b"),
     # Discord webhook URL
@@ -926,11 +885,8 @@ def url_filter_predictor(*, patterns: list[tuple[str, str]]) -> Predictor:
     return _predict
 
 
-# Backwards-compat alias — `EXTENDED_REGEX_PATTERNS` was the merged
-# default+gitleaks pack while we A/B'd the two. After the merge it's
-# identical to `DEFAULT_REGEX_PATTERNS`. Kept to avoid breaking the
-# bench harness that imported it; new code should use
-# `DEFAULT_REGEX_PATTERNS` directly.
+# Alias retained for bench-harness import compatibility — identical to
+# `DEFAULT_REGEX_PATTERNS`. New code should reference the default name.
 EXTENDED_REGEX_PATTERNS: list[tuple[str, str]] = DEFAULT_REGEX_PATTERNS
 
 
@@ -1033,12 +989,10 @@ NEVER_PII_DOMAIN_SUFFIXES: tuple[str, ...] = (
     ".example.org",
 )
 
-# NANP fictional phone prefix (ITU-T E.164 / NANP-reserved). Only the
-# subscriber range 555-0100 through 555-0199 is universally fictional.
-# previous regex matched ANY 555-prefixed number with a
-# 7-digit subscriber, dropping legitimate `1-555-XXX-XXXX` calls in
-# any region. Restricted to the reserved 0100-0199 block (subscriber
-# starts with `01` followed by two digits).
+# NANP fictional phone prefix. Only the subscriber range 555-0100
+# through 555-0199 is universally fictional per ITU-T E.164. Matching
+# all `555-XXXX` would drop legitimate `1-555-XXX-XXXX` calls in
+# regions that publish 555-numbers as real subscriber lines.
 import re as _NEVER_PII_RE
 _NANP_555_FICTIONAL = _NEVER_PII_RE.compile(
     r"^[+]?\s*1?\s*[(]?555[)]?[\s\-.]*01\d{2}(?:[\s\-.]*\d{0,4})?$",
@@ -1475,9 +1429,9 @@ _LEGAL_FORMAL_SIGNALS = (
     "subsection",
     "the Chamber",
     "Grand Chamber",
-    # NOTE: honorifics "Mr ", "Mrs ", "Ms " removed — they appear
-    # constantly in dev-paste customer-support text and false-route
-    # dev-paste content to the v8 backbone (per iter-v8 compliance review).
+    # Honorifics ("Mr ", "Mrs ", "Ms ") deliberately omitted — they
+    # appear in dev-paste customer-support text and would false-route
+    # that content to the v8 backbone.
     # ─── Italian ────────────────────────────────────────────────
     "la Corte",
     "il Tribunale",
@@ -1579,6 +1533,9 @@ def _is_dev_paste_like(text: str) -> bool:
 
 
 _NULLPII_8 = [
+    # The 8 ML-trained categories. Retained as an explicit constant so
+    # bench scripts that want the trained-only baseline (e.g. ablation
+    # studies or `openai/privacy-filter` parity) can request it directly.
     "account_number",
     "private_address",
     "private_date",
@@ -1587,6 +1544,19 @@ _NULLPII_8 = [
     "private_phone",
     "private_url",
     "secret",
+]
+
+# Canonical 12-class inference prompt set — mirrors `GLINER_LABELS`
+# in `src/nullpii.ts` (the 8 trained labels + 4 zero-shot extras the
+# base model generalises to). Default for `gliner_v2_predictor` so the
+# bench harness prompts nullpii's wrapped GLiNER with the same vocabulary
+# users get in production.
+_NULLPII_LABELS = [
+    *_NULLPII_8,
+    "private_passport",
+    "private_driver_license",
+    "private_vehicle_id",
+    "private_geolocation",
 ]
 
 # Natural-language GLiNER label set for upstream models. GLiNER is
@@ -1621,11 +1591,15 @@ _GLINER_NATIVE_LABELS = [
     "AWS access key", "AWS secret key", "certificate",
     # private_ip / private_mac
     "IP address", "MAC address",
+    # private_geolocation — parity with nullpii's wrapped GLiNER prompt;
+    # absence here would deny GLiNER-native any recall on geo classes
+    # when those labels exist in gold (AI4Privacy, Isotonic, Argilla).
+    "GPS coordinate", "latitude", "longitude",
 ]
 
-# Project the GLiNER natural-language labels back onto nullpii's 8-class
-# taxonomy for fair F1 against the 8-class gold spans. Any label not in
-# this map is dropped (predictor returns None for `_project_label`).
+# Project the GLiNER natural-language labels back onto nullpii's 12-class
+# taxonomy for fair F1 against the gold spans. Any label not in this map
+# is dropped (predictor returns None for `_project_label`).
 _GLINER_NATIVE_TO_NULLPII8 = {
     # private_person family
     "person": "private_person",
@@ -1664,11 +1638,12 @@ _GLINER_NATIVE_TO_NULLPII8 = {
     "routing number": "account_number",
     "IBAN": "account_number",
     "SWIFT code": "account_number",
-    "passport number": "account_number",
-    "driver license": "account_number",
+    # v0.3 schema split — passport / driver / vehicle / GPS get their own labels.
+    "passport number": "private_passport",
+    "driver license": "private_driver_license",
     "national id number": "account_number",
-    "license plate": "account_number",
-    "vehicle VIN": "account_number",
+    "license plate": "private_vehicle_id",
+    "vehicle VIN": "private_vehicle_id",
     "medical record number": "account_number",
     "health insurance number": "account_number",
     "tax identification number": "account_number",
@@ -1684,12 +1659,16 @@ _GLINER_NATIVE_TO_NULLPII8 = {
     # private_ip / private_mac
     "IP address": "private_ip",
     "MAC address": "private_mac",
+    # private_geolocation
+    "GPS coordinate": "private_geolocation",
+    "latitude": "private_geolocation",
+    "longitude": "private_geolocation",
 }
 
 # Expanded inference-time prompt set. GLiNER is prompt-based (model
 # interprets the semantic meaning of each label string), so we can
 # query with finer-grained labels at inference and map back to the
-# 8-class schema for output. Goal: lift recall on Nemotron-style
+# 12-class schema for output. Goal: lift recall on Nemotron-style
 # US-business records (`cvv`, `swift_bic`, `health_plan_beneficiary_
 # number`, `coordinate`, `vehicle_identifier`, etc.) without retraining.
 _NULLPII_EXPANDED_PROMPTS = [
@@ -1729,7 +1708,7 @@ _EXPANDED_PROMPT_TO_NULLPII8 = {
     "postal code": "private_address",
     "city": "private_address",
     "country": "private_address",
-    "GPS coordinate": "private_address",
+    "GPS coordinate": "private_geolocation",
     "private_date": "private_date",
     "date of birth": "private_date",
     "private_url": "private_url",
@@ -1740,13 +1719,13 @@ _EXPANDED_PROMPT_TO_NULLPII8 = {
     "IBAN": "account_number",
     "SWIFT code": "account_number",
     "CVV": "account_number",
-    "passport number": "account_number",
-    "driver license": "account_number",
+    "passport number": "private_passport",
+    "driver license": "private_driver_license",
     "medical record number": "account_number",
-    "vehicle VIN": "account_number",
-    "license plate": "account_number",
-    "MAC address": "account_number",
-    "IP address": "account_number",
+    "vehicle VIN": "private_vehicle_id",
+    "license plate": "private_vehicle_id",
+    "MAC address": "private_mac",
+    "IP address": "private_ip",
     "secret": "secret",
     "password": "secret",
     "PIN code": "secret",
@@ -1756,7 +1735,7 @@ _EXPANDED_PROMPT_TO_NULLPII8 = {
 # nvidia/gliner-PII (Nemotron PII) was trained on 55+ entity types
 # (`nvidia/Nemotron-PII` dataset). Pass these labels at inference; the
 # wrapper `_NEMOTRON_TO_NULLPII8` then maps each predicted label back
-# to nullpii's 8-class schema for a fair F1 comparison.
+# to nullpii's 12-class schema for a fair F1 comparison.
 _NEMOTRON_PII_LABELS = [
     "first_name", "last_name", "user_name",
     "email", "phone_number",
@@ -1784,7 +1763,7 @@ _NEMOTRON_TO_NULLPII8 = {
     "state": "private_address",
     "postcode": "private_address",
     "country": "private_address",
-    "coordinate": "private_address",
+    "coordinate": "private_geolocation",
     "date": "private_date",
     "time": "private_date",
     "date_time": "private_date",
@@ -1801,11 +1780,12 @@ _NEMOTRON_TO_NULLPII8 = {
     "customer_id": "account_number",
     "medical_record_number": "account_number",
     "health_plan_beneficiary_number": "account_number",
-    "vehicle_identifier": "account_number",
-    "license_plate": "account_number",
+    # v0.3 schema split — vehicle/license get their own labels.
+    "vehicle_identifier": "private_vehicle_id",
+    "license_plate": "private_vehicle_id",
     "certificate_license_number": "account_number",
-    "mac_address": "account_number",
-    "ipv4": "account_number",
+    "mac_address": "private_mac",
+    "ipv4": "private_ip",
     "device_identifier": "account_number",
     "password": "secret",
     "pin": "secret",
@@ -1830,14 +1810,15 @@ def gliner_v2_predictor(
     Caller must pass the model's NATIVE label schema via ``labels`` (GLiNER
     is label-aware: passing labels the model never saw during training
     materially under-estimates F1). The optional ``label_map`` projects
-    native labels onto nullpii's 8-class taxonomy for fair cross-model
-    F1 — bench gold spans are 8-class, so any model with a different
+    native labels onto nullpii's 12-class taxonomy for fair cross-model
+    F1 — bench gold spans are 12-class, so any model with a different
     schema needs a bridge (same contract as the per-tool deberta /
     piiranha / nemotron remaps).
 
     Default ``labels=None`` → falls back to nullpii's underscore_case
-    8-class set; only correct for models fine-tuned on that exact schema
-    (e.g. nullpii's own merged-LoRA ONNX).
+    12-class set (`_NULLPII_LABELS` — 8 trained + 4 zero-shot extras,
+    matching `GLINER_LABELS` in `src/nullpii.ts`). Correct for models
+    fine-tuned on that exact schema (e.g. nullpii's own merged-LoRA ONNX).
 
     Bare-mode contract: NO nullpii post-processing. No `_normalize_for_detection`,
     no boundary refine, no never-PII filter, no regex pack. The chunking
@@ -1883,7 +1864,7 @@ def gliner_v2_predictor(
                 out.append(s)
         return sorted(out, key=lambda s: s.start)
 
-    inference_labels = list(labels) if labels is not None else list(_NULLPII_8)
+    inference_labels = list(labels) if labels is not None else list(_NULLPII_LABELS)
     remap = dict(label_map) if label_map is not None else None
 
     def _project_label(native: str) -> str | None:
@@ -2041,12 +2022,10 @@ def _normalize_for_detection(text: str) -> tuple[str, list[int]]:
             if decoded_char in ("@", ".", "+", "-"):
                 decoded_char = ""
             if decoded_char:
-                # map decoded char to the END of the triplet
-                # (last byte of `%XX`) so a span that ends at this
-                # decoded char remaps to the original-text END of the
-                # triplet, not its start. Previously every decoded char
-                # mapped to the same start index → only the first
-                # triplet of a multi-decoded URL was redacted.
+                # Map decoded char to the END of the `%XX` triplet so
+                # a span ending here remaps to the triplet's original
+                # end byte. Mapping to the start would collapse all
+                # triplets in a multi-decoded URL onto the first one.
                 out.append(decoded_char)
                 norm_to_orig.append(i + 2)
                 i += 3
@@ -2123,7 +2102,7 @@ def gliner_nemotron_pii_predictor(
     no boundary refine, no never-PII filter, no regex pack. The 37→8 label
     remap (`_NEMOTRON_TO_NULLPII8`) is the only adapter glue and is required
     for F1 schema compatibility with the bench gold labels — every competitor
-    with a non-8-class schema has the same kind of bridge (presidio,
+    with a non-12-class schema has the same kind of bridge (presidio,
     deberta, etc.). Chunking 1400/200 is shared across all GLiNER-family
     bare baselines.
 
@@ -2261,12 +2240,14 @@ def gliner_lora_predictor(
         return sorted(out, key=lambda s: s.start)
 
     # optionally use the expanded prompt set (`_NULLPII_EXPANDED_
-    # PROMPTS`) and remap finer-grained predictions back to the 8-class
-    # schema via `_EXPANDED_PROMPT_TO_NULLPII8`. Goal: lift recall on
-    # Nemotron-style US-business records (`cvv`, `swift_bic`, `gps`,
-    # `passport`, `medical record number`, etc.) without retraining.
+    # PROMPTS`) and remap finer-grained predictions back to nullpii's
+    # canonical 12-class schema via `_EXPANDED_PROMPT_TO_NULLPII8`.
+    # When `use_expanded_prompts=False` we still prompt with the 12-class
+    # set (matches `GLINER_LABELS` in src/nullpii.ts) so the bench mirrors
+    # the runtime. The trained-only 8-class subset stays available as
+    # `_NULLPII_8` for ablation runs that need it.
     prompts_for_inference = (
-        _NULLPII_EXPANDED_PROMPTS if use_expanded_prompts else _NULLPII_8
+        _NULLPII_EXPANDED_PROMPTS if use_expanded_prompts else _NULLPII_LABELS
     )
 
     def _label_out(raw: str) -> str:
@@ -2495,9 +2476,29 @@ _PRESIDIO_TO_NULLPII = {
     "IBAN_CODE": "account_number",
     "CREDIT_CARD": "account_number",
     "US_SSN": "account_number",
+    # v0.4 schema split.
+    "US_PASSPORT": "private_passport",
+    "US_DRIVER_LICENSE": "private_driver_license",
+    "UK_NHS": "account_number",
+    "MEDICAL_LICENSE": "account_number",
+    # Presidio recognizers that surface on non-US public splits — without
+    # these the corresponding gold spans get dropped as unmapped,
+    # silently penalizing Presidio on AI4Privacy / multilingual sets.
+    "US_ITIN": "account_number",
+    "US_BANK_NUMBER": "account_number",
+    "IN_AADHAAR": "account_number",
+    "IN_PAN": "account_number",
+    "IN_VOTER": "account_number",
+    "IN_PASSPORT": "private_passport",
+    "SG_NRIC_FIN": "account_number",
+    "AU_ABN": "account_number",
+    "AU_ACN": "account_number",
+    "AU_TFN": "account_number",
+    "AU_MEDICARE": "account_number",
     "API_KEY": "secret",
     "AWS_ACCESS_KEY": "secret",
     "AWS_SECRET_KEY": "secret",
+    "IP_ADDRESS": "private_ip",
 }
 
 
@@ -2529,11 +2530,11 @@ _AWS_COMPREHEND_TO_NULLPII: dict[str, str] = {
     "PASSWORD": "secret",
     "AWS_ACCESS_KEY": "secret",
     "AWS_SECRET_KEY": "secret",
-    "IP_ADDRESS": "account_number",
-    "MAC_ADDRESS": "account_number",
-    "PASSPORT_NUMBER": "account_number",
-    "DRIVER_ID": "account_number",
-    "LICENSE_PLATE": "account_number",
+    "IP_ADDRESS": "private_ip",
+    "MAC_ADDRESS": "private_mac",
+    "PASSPORT_NUMBER": "private_passport",
+    "DRIVER_ID": "private_driver_license",
+    "LICENSE_PLATE": "private_vehicle_id",
 }
 
 
@@ -2549,8 +2550,10 @@ _GCP_DLP_TO_NULLPII: dict[str, str] = {
     "US_SOCIAL_SECURITY_NUMBER": "account_number",
     "IBAN_CODE": "account_number",
     "CREDIT_CARD_NUMBER": "account_number",
-    "IP_ADDRESS": "account_number",
-    "MAC_ADDRESS": "account_number",
+    # v0.4 schema split — keep parity with AWS / Presidio so GCP isn't
+    # silently penalized when gold uses the dedicated network labels.
+    "IP_ADDRESS": "private_ip",
+    "MAC_ADDRESS": "private_mac",
     "AUTH_TOKEN": "secret",
     "AWS_CREDENTIALS": "secret",
     "ENCRYPTION_KEY": "secret",
@@ -2572,7 +2575,8 @@ _AZURE_PII_TO_NULLPII: dict[str, str] = {
     "InternationalBankingAccountNumber": "account_number",
     "EUDebitCardNumber": "account_number",
     "CreditCardNumber": "account_number",
-    "IPAddress": "account_number",
+    # v0.4 schema split — Azure has no native MAC entity; only IP routes.
+    "IPAddress": "private_ip",
     "Password": "secret",
 }
 
@@ -2581,11 +2585,11 @@ _AZURE_PII_TO_NULLPII: dict[str, str] = {
 # TAB = ECHR court rulings annotated for legal PII (ACL 2022).
 # Public dataset, third-party gold standard. Loader stub — actual data
 # location to be confirmed (HF: pieldolce/TAB or similar). Filling in
-# requires download + label-schema mapping ECHR → nullpii 8 categories.
+# requires download + label-schema mapping ECHR → nullpii 12 categories.
 def _load_tab_stub(_n: int | None) -> list:
     raise NotImplementedError(
         "TAB loader stub — locate ECHR-PII dataset on HF + map labels "
-        "(PERSON/CODE/LOC/DATETIME/QUANTITY/MISC) → nullpii 8 categories.",
+        "(PERSON/CODE/LOC/DATETIME/QUANTITY/MISC) → nullpii 12 categories.",
     )
 
 

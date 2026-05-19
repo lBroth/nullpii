@@ -26,9 +26,11 @@ import {
 import { logf } from './log.js';
 import { ModelManager } from './model-manager.js';
 import { normalizeForDetection, remapSpan } from './normalize.js';
+import { escapePlaceholders, unescapePlaceholders } from './placeholder-escape.js';
 import { runRecognizers } from './recognizers.js';
 import {
   GLINER_MODEL_CATEGORIES,
+  GLINER_ZERO_SHOT_EXTRA,
   type NullPiiConfig,
   type PiiCategory,
   type PiiSpan,
@@ -42,15 +44,9 @@ import { PiiVault } from './vault.js';
 
 const LOG_SCOPE = 'nullpii';
 
-const PLACEHOLDER_OPEN = '{{';
-// PUA sentinel — round-trip safe and effectively never appears in
-// natural text or LLM output.
-const PLACEHOLDER_OPEN_ESCAPED = '';
-
-/** Label list prompted to GLiNER — the 8 ML categories the
- * model was trained on. `private_ip` is intentionally excluded: it is
- * a post-pass recognizer label only. */
-const GLINER_LABELS: readonly string[] = GLINER_MODEL_CATEGORIES;
+/** Concatenation of trained + zero-shot labels passed to the model at
+ * inference. See `types/labels.ts` for provenance. */
+const GLINER_LABELS: readonly string[] = [...GLINER_MODEL_CATEGORIES, ...GLINER_ZERO_SHOT_EXTRA];
 
 /**
  * Public entry point. Construct with optional `NullPiiConfig`; call
@@ -241,7 +237,7 @@ export class NullPii {
       ...(options.traceId !== undefined && { traceId: options.traceId }),
     });
     const result = this.vault.sanitize(escaped, spans, session);
-    return mapBackToOriginal(result, text);
+    return { ...result, sanitized: unescapePlaceholders(result.sanitized) };
   }
 
   restore(text: string, sessionId: string, options: RestoreOptions = {}): RestoreResult {
@@ -371,41 +367,14 @@ function applyThresholds(
   });
 }
 
-function escapePlaceholders(text: string): string {
-  return text.split(PLACEHOLDER_OPEN).join(PLACEHOLDER_OPEN_ESCAPED);
-}
-
-function unescapePlaceholders(text: string): string {
-  return text.split(PLACEHOLDER_OPEN_ESCAPED).join(PLACEHOLDER_OPEN);
-}
-
-function mapBackToOriginal(result: SanitizeResult, _original: string): SanitizeResult {
-  return { ...result, sanitized: unescapePlaceholders(result.sanitized) };
-}
-
 /** Engine cache for the convenience `sanitize()` / `restore()` helpers.
- *
- * A previous version used a single `_shared` instance for no-arg callers
- * and `new NullPii(config)` for everything else — the latter leaked an
- * ORT session + vault per call because the engine was never disposed.
- *
- * The current shape:
- *
- *  1. Configs that are *structurally fingerprintable* (no `recognizers`
- *     array, no other regex/function-valued fields) are cached by their
- *     canonical JSON fingerprint. Bare `sanitize(text)` hits the empty
- *     fingerprint slot.
- *  2. Configs carrying custom `recognizers: Recognizer[]` cannot be safely
- *     fingerprinted — `JSON.stringify` flattens regex / fn to `{}` and would
- *     collide two distinct recognizer sets into one shared vault (the prior
- *     bug). Those callers get a fresh `NullPii` and a `NullPiiOneShotWarning`
- *     telling them to manage the lifecycle themselves.
- *  3. A `FinalizationRegistry` calls `dispose()` when a leaked engine is
- *     GC'd. Best-effort defence in depth — does not replace explicit
- *     lifecycle management on the caller side.
- *
- *  `recognizers: 'none'` is a value sentinel and IS fingerprintable, so it
- *  remains cacheable. */
+ * Configs without `recognizers: Recognizer[]` are cached by JSON
+ * fingerprint (`recognizers: 'none'` is a fingerprintable sentinel).
+ * Configs carrying a custom recognizer array can't be safely
+ * fingerprinted — regex/fn flatten to `{}` and would collide distinct
+ * sets — so those callers get a fresh `NullPii` plus a
+ * `NullPiiOneShotWarning`. A `FinalizationRegistry` disposes leaked
+ * one-shot engines on GC as a defence in depth. */
 const _cache = new Map<string, NullPii>();
 
 const _finalizer =
@@ -483,10 +452,9 @@ export function restore(
   configOrOptions: NullPiiConfig | RestoreOptions = {},
   options: RestoreOptions = {},
 ): RestoreResult {
-  // Accept the legacy 3-arg form `restore(text, sessionId, config)` and the
-  // new 4-arg form `restore(text, sessionId, config, options)`. When called
-  // with only 3 args and the third looks like an options bag (i.e. has
-  // `strict`), interpret it as options against the default config.
+  // Overload disambiguation: when called with 3 args and the third
+  // looks like a `RestoreOptions` bag (single `strict` key), treat it
+  // as options against the default config. Otherwise it's a config.
   const looksLikeOptions = 'strict' in configOrOptions && Object.keys(configOrOptions).length === 1;
   if (looksLikeOptions) {
     return instance({}).restore(text, sessionId, configOrOptions as RestoreOptions);

@@ -33,24 +33,16 @@ export interface BackendOptions {
 
 /** GLiNER ONNX backend.
  *
- * Loads `<modelDir>/model.onnx` lazily on first `infer()`. The unified
- * model replaces the v0.1 5-shard + cosine router stack; there is no
- * per-domain dispatch — every input runs through the same ONNX.
+ * Loads `<modelDir>/model.onnx` lazily on first `infer()`. Every input
+ * runs through one unified ONNX — no per-domain dispatch.
+ * `onnxruntime-node` is an optional peer; imported dynamically so
+ * recognizer-only / vault-only callers never trigger the load.
  *
- * `onnxruntime-node` is an optional peer dependency. The runtime is
- * imported dynamically on the first inference call so users who only
- * touch the recognizer pack / vault APIs never trigger the load.
- *
- * Concurrency. `infer()` allocates fresh `text_lengths` and `span_mask`
- * tensors per call so two concurrent callers on the same backend instance
- * never share scratch storage. A previous version pooled these buffers
- * and assumed "the await on session.run() never interleaves with another
- * infer call" — that's true only for strictly sequential use; under
- * `await Promise.all([np.sanitize(a), np.sanitize(b)])` the pool's first
- * write was clobbered by the second caller before ORT consumed it. Per-
- * call allocation costs one trivial `BigInt64Array(1)` + `Uint8Array(N)`
- * per inference; not worth the correctness risk to elide.
- */
+ * Concurrency: `infer()` allocates fresh `text_lengths` + `span_mask`
+ * tensors per call. Required for safety under
+ * `Promise.all([np.sanitize(a), np.sanitize(b)])` — pooled scratch
+ * would be clobbered by the second caller before ORT consumed the
+ * first. Cost is one `BigInt64Array(1)` + `Uint8Array(N)` per inference. */
 export class OrtBackend {
   private session: InferenceSession | null = null;
   private TensorCtor: typeof TensorType | null = null;

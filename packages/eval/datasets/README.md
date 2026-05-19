@@ -9,7 +9,7 @@ externally-licensed upstream splits.
 
 | File | Rows | Used in canonical bench | Origin |
 |---|---:|:---:|---|
-| `nullpii-bench.jsonl` | 2,421 | ✅ project-authored, see subsets below | self-authored, Apache-2.0 |
+| `nullpii-bench.jsonl` | 2,361 | ✅ project-authored, see subsets below | self-authored, Apache-2.0 |
 | `presidio-synthetic.jsonl` | 5,000 | ✅ external (held-out OOD-5) | Microsoft Presidio seed, MIT |
 | `tab-echr-test.jsonl` | 127 | ✅ EU legal test split | TAB ECHR test (ACL 2022), MIT |
 
@@ -24,27 +24,26 @@ All project-authored bench data lives in one file with a `subset` field.
 Loaders filter by subset to produce the bench rows.
 
 All subsets feed the `nullpii-bench` cell in the canonical bench
-(one F1 number summarises behaviour across all perturbation patterns).
-Total 2,271 rows.
+(one F1 number summarises behaviour across every perturbation pattern).
+Total 2,361 rows.
 
 | Subset | Rows | Notes |
 |---|---:|---|
-| `bundled` | 202 | dev paste, RFCs, multilingual support tickets |
-| `long-prompts` | 62 | English long-form (~3 k chars), chunking stress |
-| `adversarial` | 7 | hand-curated decoy strings, regex-only, perfect F1 trivially |
-| `typo_pii` | 80 | single-char neighbour swap (preprocessor regression) |
-| `unicode_obf` | 80 | Cyrillic homoglyph + zero-width insertion |
-| `whitespace_obf` | 80 | `g i a n l u c a @ g m a i l . c o m` — preprocessor regression |
-| `encoding_obf` | 80 | base64 / URL / HTML-entity wrapping |
-| `decoys` | 80 | strings that look like PII but aren't (FP stress) |
-| `code_pii` | 80 | credentials in code/comments |
-| `textattack-*` (homoglyph, charswap, chardelete, charinsert, charsub) | 334 each | adversarial perturbation slices |
+| `clean` | 2,052 | dev paste, RFCs, long-form prompts, multilingual support tickets, code-PII, decoys |
+| `adversarial` | 219 | typo / unicode-homoglyph / zero-width / whitespace / base64-URL-HTML-entity / TextAttack perturbations |
+| `v03_coverage` | 90 | v0.3 schema-coverage rows for `private_passport` / `private_driver_license` / `private_vehicle_id` / `private_geolocation` / `private_ip` / `private_mac` (15 each) |
 
-The generation scripts that produced these subsets are not tracked in
-the repo — they live under `packages/eval/private/` (gitignored). The
-output `nullpii-bench.jsonl` is the canonical artifact and is committed
-verbatim. Treat the file as fixed; rebuilds require re-fetching the
-upstream pool from internal storage.
+Sources (`source` field): `fair` (project-authored, no detector involvement) — 2,213 rows. `opf-generated` / `opf-enriched` — 148 rows re-annotated through OPF after an independent-gold audit (avoids the self-validation trap of detector-derived labels).
+
+The generation scripts that produced the `clean` / `adversarial`
+subsets are not tracked in the repo — they live under
+`packages/eval/private/` (gitignored). The v0.3 coverage subset is
+produced by the tracked `packages/eval/scripts/extend_bench_rows_v03.py`
+(pure-Python templates, seeded RNG, no `nullpii` import — see
+"Independent-gold rule" docstring). The output `nullpii-bench.jsonl` is
+the canonical artifact and is committed verbatim. Treat the file as
+fixed; rebuilds of the `clean` / `adversarial` subsets require
+re-fetching the upstream pool from internal storage.
 
 ## `nullpii-bench` schema
 

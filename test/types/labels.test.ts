@@ -1,24 +1,32 @@
 import { describe, expect, it } from 'vitest';
-import { GLINER_MODEL_CATEGORIES, PII_LABELS } from '../../src/types/labels.js';
+import {
+  GLINER_MODEL_CATEGORIES,
+  GLINER_ZERO_SHOT_EXTRA,
+  PII_LABELS,
+} from '../../src/types/labels.js';
 
 describe('PII_LABELS', () => {
-  it('contains exactly 11 labels (10 PII + O)', () => {
-    expect(PII_LABELS).toHaveLength(11);
+  it('contains exactly 15 labels (14 PII + O)', () => {
+    expect(PII_LABELS).toHaveLength(15);
   });
 
-  it('starts with O and contains all PII categories including private_mac', () => {
+  it('starts with O and contains every PII category', () => {
     expect(PII_LABELS[0]).toBe('O');
     expect(PII_LABELS).toEqual([
       'O',
       'account_number',
       'private_address',
       'private_date',
+      'private_driver_license',
       'private_email',
+      'private_geolocation',
       'private_ip',
       'private_mac',
+      'private_passport',
       'private_person',
       'private_phone',
       'private_url',
+      'private_vehicle_id',
       'secret',
     ]);
   });
@@ -43,10 +51,26 @@ describe('GLINER_MODEL_CATEGORIES', () => {
     ]);
   });
 
-  it('excludes O, private_ip, and private_mac (post-pass recognizer-only labels)', () => {
+  it('excludes labels not in the trained set (zero-shot + recognizer-only)', () => {
     const set: readonly string[] = GLINER_MODEL_CATEGORIES;
-    expect(set).not.toContain('O');
-    expect(set).not.toContain('private_ip');
-    expect(set).not.toContain('private_mac');
+    for (const notTrained of ['O', 'private_ip', 'private_mac', ...GLINER_ZERO_SHOT_EXTRA]) {
+      expect(set).not.toContain(notTrained);
+    }
+  });
+});
+
+describe('GLINER_ZERO_SHOT_EXTRA', () => {
+  it('lists the 4 inference-time zero-shot labels', () => {
+    expect(GLINER_ZERO_SHOT_EXTRA).toEqual([
+      'private_passport',
+      'private_driver_license',
+      'private_vehicle_id',
+      'private_geolocation',
+    ]);
+  });
+
+  it('is disjoint from the trained set', () => {
+    const trained: readonly string[] = GLINER_MODEL_CATEGORIES;
+    for (const z of GLINER_ZERO_SHOT_EXTRA) expect(trained).not.toContain(z);
   });
 });

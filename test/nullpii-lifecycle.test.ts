@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// F-02 regression tests. The convenience `sanitize()` helper must not create
-// a fresh NullPii (and therefore a fresh ORT session + vault) on every call
-// when the caller passes a non-empty but cacheable config. Custom recognizers
-// are intentionally not cached (regex/fn aren't structurally hashable) and
-// must surface a warning so callers know to manage the lifecycle themselves.
+// Convenience `sanitize()` lifecycle. Cacheable configs must reuse one
+// NullPii (one ORT session + vault) across calls. Custom recognizers
+// can't be structurally hashed, so they bypass the cache and surface
+// a warning telling the caller to manage lifecycle themselves.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -21,7 +20,7 @@ vi.mock('../src/backend/backend.js', () => {
       maxWidth: number;
       numClasses: number;
     }> {
-      return { logits: new Float32Array(0), textLength: 0, maxWidth: 1, numClasses: 8 };
+      return { logits: new Float32Array(0), textLength: 0, maxWidth: 1, numClasses: 12 };
     }
     async dispose(): Promise<void> {}
   }
@@ -72,12 +71,12 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('F-02 · convenience sanitize() lifecycle', () => {
+describe('convenience sanitize() lifecycle', () => {
   it('bare sanitize(text) reuses a single shared engine across N calls', async () => {
     await sanitize('Email a@acme.io');
     await sanitize('Email b@acme.io');
     await sanitize('Email c@acme.io');
-    // Today: passes (the `_shared` no-arg path already caches).
+    // No-arg path hits the empty-fingerprint cache slot.
     expect(backendConstructCount).toBe(1);
   });
 

@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { Word } from './gliner-tokenizer.js';
+import { iou } from './iou.js';
+import type { ScoredSpan } from './types/scored-span.js';
 
 /** A decoded GLiNER span — fields mirror the existing `PiiSpan`
  * representation used downstream by the recognizer / vault pipeline. */
-export interface DecodedSpan {
-  readonly label: string;
+export interface DecodedSpan extends ScoredSpan {
   /** Inclusive char offset in the original text. */
   readonly start: number;
   /** Exclusive char offset. */
@@ -86,15 +87,6 @@ export function decodeGlinerLogits(
  * collapsing if char ranges abutted at exactly one boundary. */
 const NMS_IOU_THRESHOLD = 0.4;
 
-function spanIou(a: DecodedSpan, b: DecodedSpan): number {
-  const interStart = Math.max(a.start, b.start);
-  const interEnd = Math.min(a.end, b.end);
-  const inter = Math.max(0, interEnd - interStart);
-  if (inter === 0) return 0;
-  const union = a.end - a.start + (b.end - b.start) - inter;
-  return union > 0 ? inter / union : 0;
-}
-
 /** Greedy non-max suppression with IoU threshold. Sort by score desc,
  * keep span unless it overlaps a higher-score retained span at
  * `IoU >= NMS_IOU_THRESHOLD`. Output sorted by (start, end) for
@@ -110,7 +102,7 @@ function greedyNms(spans: readonly DecodedSpan[]): DecodedSpan[] {
   for (const cand of sortedByScore) {
     let suppressed = false;
     for (const k of kept) {
-      if (spanIou(cand, k) >= NMS_IOU_THRESHOLD) {
+      if (iou(cand, k) >= NMS_IOU_THRESHOLD) {
         suppressed = true;
         break;
       }

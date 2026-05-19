@@ -28,7 +28,7 @@ export const VALIDATED_RECOGNIZER_SCORE = 0.99998;
  * quantifiers in upstream secret patterns are quadratic on adversarial
  * padding, well above any realistic LLM prompt.
  *
- * Two scan paths (F-19):
+ * Two scan paths:
  *
  *  - **Fast path** for recognizers whose pattern begins with a literal
  *    prefix (`\b<literal>…`) ≥ 3 chars — most secret-token patterns
@@ -142,7 +142,7 @@ function matchOne(text: string, recognizer: Recognizer, existing: readonly PiiSp
     if ((overrides || !overlaps(start, end, existing)) && passesValidate(m[0], recognizer)) {
       // Validator-passing matches use VALIDATED_RECOGNIZER_SCORE so
       // cross-label dedupe picks the structurally-correct label over ML
-      // mislabels (F-39 regression).
+      // mislabels.
       const score =
         recognizer.validate !== undefined ? VALIDATED_RECOGNIZER_SCORE : recognizer.confidence;
       out.push({
@@ -196,7 +196,7 @@ function passesValidate(match: string, recognizer: Recognizer): boolean {
   return recognizer.validate === undefined || recognizer.validate(match);
 }
 
-// ─── F-19 fast-path: literal-prefix scan ──────────────────────────
+// ─── Fast-path: literal-prefix scan ───────────────────────────────
 
 /** Extract the literal-prefix anchor from a recognizer regex source if
  * it starts with `\b<literal>` where literal is ≥ 3 ASCII identifier
@@ -281,9 +281,8 @@ function matchAnchored(
           }
         }
       }
-      // Advance by one char so overlapping prefixes still fire (rare in
-      // practice, but `indexOf(prefix, i + prefix.length)` would miss
-      // `AKIAAKIA…` if the slow path used to catch it).
+      // Advance by 1 char so overlapping prefixes like `AKIAAKIA…`
+      // still emit both candidate positions.
       i = text.indexOf(prefix, i + 1);
     }
   }

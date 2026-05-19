@@ -210,14 +210,24 @@ describe('relaySseStream', () => {
     expect(joined).toContain('"type":"message_stop"');
   });
 
-  it('passes through non-text deltas (tool_use input_json_delta) without mutation', async () => {
-    const { np, sessionId } = buildHarness();
+  it('restores placeholders inside tool_use input_json_delta, buffered until content_block_stop', async () => {
+    const { np, vault, sessionId } = buildHarness();
+    const ph = bake(vault, sessionId, 'IT60X0542811101000001023456', 'account_number');
+    // Two partial-JSON shards split mid-placeholder, then a stop frame.
+    const head = ph.slice(0, 8);
+    const tail = ph.slice(8);
     const frames: string[] = [
       sseFrame('content_block_delta', {
         type: 'content_block_delta',
         index: 1,
-        delta: { type: 'input_json_delta', partial_json: '{"query":"Hi"}' },
+        delta: { type: 'input_json_delta', partial_json: `{"iban":"${head}` },
       }),
+      sseFrame('content_block_delta', {
+        type: 'content_block_delta',
+        index: 1,
+        delta: { type: 'input_json_delta', partial_json: `${tail}"}` },
+      }),
+      sseFrame('content_block_stop', { type: 'content_block_stop', index: 1 }),
     ];
     const out: string[] = [];
     await relaySseStream({
@@ -226,7 +236,37 @@ describe('relaySseStream', () => {
       upstream: chunkStream(frames),
       write: (f) => out.push(f),
     });
-    expect(out.join('')).toContain('"partial_json":"{\\"query\\":\\"Hi\\"}"');
+    const joined = out.join('');
+    // Original placeholder shards must NOT leak.
+    expect(joined).not.toContain('{{PII_');
+    // Restored JSON must arrive as one synthesised input_json_delta
+    // before the stop frame.
+    expect(joined).toContain('"partial_json":"{\\"iban\\":\\"IT60X0542811101000001023456\\"}"');
+    // Stop frame still forwarded.
+    expect(joined).toContain('"type":"content_block_stop"');
+  });
+
+  it('drains buffered input_json_delta at end-of-stream when content_block_stop never arrives', async () => {
+    const { np, vault, sessionId } = buildHarness();
+    const ph = bake(vault, sessionId, 'alice@example.com', 'private_email');
+    const frames: string[] = [
+      sseFrame('content_block_delta', {
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'input_json_delta', partial_json: `{"to":"${ph}"}` },
+      }),
+      // No content_block_stop, no message_stop — upstream truncated.
+    ];
+    const out: string[] = [];
+    await relaySseStream({
+      np,
+      sessionId,
+      upstream: chunkStream(frames),
+      write: (f) => out.push(f),
+    });
+    const joined = out.join('');
+    expect(joined).not.toContain('{{PII_');
+    expect(joined).toContain('"partial_json":"{\\"to\\":\\"alice@example.com\\"}"');
   });
 
   it('keeps per-block restorers independent (block 0 + block 1 interleaved)', async () => {

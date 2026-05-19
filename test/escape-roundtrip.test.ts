@@ -1,21 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import {
+  PLACEHOLDER_OPEN_ESCAPED,
+  escapePlaceholders as escapeText,
+  unescapePlaceholders as unescapeText,
+} from '../src/placeholder-escape.js';
 
-// AUDIT F21 regression test. Internal helpers aren't exported, so
-// duplicate the constants here to validate round-trip behaviour
-// without depending on private symbols. If the constants in
-// `src/nullpii.ts` change, this file should change too.
-const PLACEHOLDER_OPEN = '{{';
-const PLACEHOLDER_OPEN_ESCAPED = '';
-
-function escapeText(text: string): string {
-  return text.split(PLACEHOLDER_OPEN).join(PLACEHOLDER_OPEN_ESCAPED);
-}
-
-function unescapeText(text: string): string {
-  return text.split(PLACEHOLDER_OPEN_ESCAPED).join(PLACEHOLDER_OPEN);
-}
-
-describe('placeholder escape round-trip (AUDIT F21)', () => {
+describe('placeholder escape round-trip', () => {
   it('round-trips plain text unchanged', () => {
     const t = 'Hello world, no placeholders here.';
     expect(unescapeText(escapeText(t))).toBe(t);
@@ -38,12 +28,10 @@ describe('placeholder escape round-trip (AUDIT F21)', () => {
   });
 
   it('documented limitation: literal PUA sentinel in user input collapses to `{{`', () => {
-    // KNOWN TRADE-OFF — not a bug. Any escape mechanism that picks a
-    // sentinel collides with itself when the sentinel appears in user
-    // input. PUA chars (U+E000-U+F8FF) are unallocated to standard
-    // glyphs and effectively never appear in natural LLM-prompt text;
-    // we accept this collision as the price for closing the previous
-    // legacy escape corruption (audit F21).
+    // KNOWN TRADE-OFF — not a bug. Any sentinel-based escape collides
+    // with itself when the sentinel appears in user input. PUA chars
+    // (U+E000-U+F8FF) are unallocated and effectively never appear in
+    // natural LLM-prompt text; accepted as the price of the round-trip.
     const t = `prefix${PLACEHOLDER_OPEN_ESCAPED}suffix`;
     expect(unescapeText(escapeText(t))).toBe('prefix{{suffix');
   });

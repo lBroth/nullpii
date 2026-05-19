@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { NullPii } from 'nullpii';
+import { LLM_PRESERVATION_HINT, type NullPii } from 'nullpii';
 import type {
   AnthropicContentBlock,
   AnthropicMessage,
@@ -24,6 +24,18 @@ export interface SanitizedRequest {
   /** Session id bound to every placeholder in `body`. Restore the
    *  upstream response against this exact id. */
   readonly sessionId: string;
+  /** Total number of spans that the engine replaced across system +
+   * messages on the way out. Surfaced so callers (route handlers /
+   * pretty-printers) can show humans what got captured before the
+   * request hit the upstream LLM. */
+  readonly captured: number;
+  /** Per-label counts; same labels the engine itself uses. */
+  readonly capturedByLabel: Readonly<Record<string, number>>;
+}
+
+interface CaptureAccumulator {
+  count: number;
+  byLabel: Record<string, number>;
 }
 
 export async function sanitizeRequest(
@@ -31,57 +43,92 @@ export async function sanitizeRequest(
   body: AnthropicRequest,
 ): Promise<SanitizedRequest> {
   const sessionId = np.createSession();
+  const acc: CaptureAccumulator = { count: 0, byLabel: {} };
   if (body.system !== undefined) {
-    body.system = await sanitizeSystem(np, body.system, sessionId);
+    body.system = await sanitizeSystem(np, body.system, sessionId, acc);
   }
-  body.messages = await Promise.all(body.messages.map((m) => sanitizeMessage(np, m, sessionId)));
-  return { body, sessionId };
+  body.messages = await Promise.all(
+    body.messages.map((m) => sanitizeMessage(np, m, sessionId, acc)),
+  );
+  // Prepend the preservation hint AFTER sanitization so the boilerplate
+  // never goes through GLiNER (it contains literal `{{PII_<TYPE>...}}`
+  // pattern descriptions that we want left alone). Without this hint,
+  // assistants tend to "tidy" placeholders into realistic-looking
+  // fabrications inside tool_use inputs — which breaks restore.
+  injectPreservationHint(body);
+  return { body, sessionId, captured: acc.count, capturedByLabel: acc.byLabel };
+}
+
+function injectPreservationHint(body: AnthropicRequest): void {
+  if (body.system === undefined) {
+    body.system = LLM_PRESERVATION_HINT;
+    return;
+  }
+  if (typeof body.system === 'string') {
+    body.system = `${LLM_PRESERVATION_HINT}\n\n${body.system}`;
+    return;
+  }
+  body.system = [{ type: 'text', text: LLM_PRESERVATION_HINT }, ...body.system];
+}
+
+function bump(acc: CaptureAccumulator, r: { spans: ReadonlyArray<{ label: string }> }): void {
+  acc.count += r.spans.length;
+  for (const span of r.spans) {
+    acc.byLabel[span.label] = (acc.byLabel[span.label] ?? 0) + 1;
+  }
 }
 
 async function sanitizeSystem(
   np: NullPii,
   system: AnthropicSystem,
   sessionId: string,
+  acc: CaptureAccumulator,
 ): Promise<AnthropicSystem> {
   if (typeof system === 'string') {
     const r = await np.sanitize(system, sessionId);
+    bump(acc, r);
     return r.sanitized;
   }
-  return Promise.all(system.map((b) => sanitizeBlock(np, b, sessionId)));
+  return Promise.all(system.map((b) => sanitizeBlock(np, b, sessionId, acc)));
 }
 
 async function sanitizeMessage(
   np: NullPii,
   msg: AnthropicMessage,
   sessionId: string,
+  acc: CaptureAccumulator,
 ): Promise<AnthropicMessage> {
-  const next: AnthropicMessage =
-    typeof msg.content === 'string'
-      ? { ...msg, content: (await np.sanitize(msg.content, sessionId)).sanitized }
-      : {
-          ...msg,
-          content: await Promise.all(msg.content.map((b) => sanitizeBlock(np, b, sessionId))),
-        };
-  return next;
+  if (typeof msg.content === 'string') {
+    const r = await np.sanitize(msg.content, sessionId);
+    bump(acc, r);
+    return { ...msg, content: r.sanitized };
+  }
+  return {
+    ...msg,
+    content: await Promise.all(msg.content.map((b) => sanitizeBlock(np, b, sessionId, acc))),
+  };
 }
 
 async function sanitizeBlock(
   np: NullPii,
   block: AnthropicContentBlock,
   sessionId: string,
+  acc: CaptureAccumulator,
 ): Promise<AnthropicContentBlock> {
   if (block.type === 'text' && typeof block.text === 'string') {
     const r = await np.sanitize(block.text, sessionId);
+    bump(acc, r);
     return { ...block, text: r.sanitized };
   }
   if (block.type === 'tool_result') {
     const content = block.content;
     if (typeof content === 'string') {
       const r = await np.sanitize(content, sessionId);
+      bump(acc, r);
       return { ...block, content: r.sanitized };
     }
     if (Array.isArray(content)) {
-      const next = await Promise.all(content.map((b) => sanitizeBlock(np, b, sessionId)));
+      const next = await Promise.all(content.map((b) => sanitizeBlock(np, b, sessionId, acc)));
       return { ...block, content: next };
     }
   }

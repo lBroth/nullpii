@@ -65,7 +65,7 @@ vi.mock('../src/backend/backend.js', () => {
         logits: new Float32Array(0),
         textLength: 0,
         maxWidth: 1,
-        numClasses: 8,
+        numClasses: 12,
       };
     }
     async dispose(): Promise<void> {}

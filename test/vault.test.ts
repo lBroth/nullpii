@@ -1,19 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { SessionMismatchError, SessionNotFoundError } from '../src/errors.js';
-import type { PiiSpan } from '../src/types/index.js';
+import { sessionPrefixOf as expectedPrefix } from '../src/session-prefix.js';
 import { PiiVault } from '../src/vault.js';
+import { span } from './helpers.js';
 
 const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const PLACEHOLDER_RE = /\{\{PII_[A-Z_]+_\d+_[0-9a-f]{16}\}\}/;
 const SESSION_PREFIX_RE = /[0-9a-f]{16}/;
-
-function span(label: PiiSpan['label'], start: number, end: number, text: string): PiiSpan {
-  return { label, start, end, text, score: 1.0 };
-}
-
-function expectedPrefix(id: string): string {
-  return id.replace(/-/g, '').slice(0, 16).toLowerCase();
-}
 
 describe('PiiVault.createSession', () => {
   it('returns a UUID v4', () => {

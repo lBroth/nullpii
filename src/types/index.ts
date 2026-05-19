@@ -2,6 +2,7 @@
 
 export {
   GLINER_MODEL_CATEGORIES,
+  GLINER_ZERO_SHOT_EXTRA,
   PII_LABELS,
   type PiiCategory,
   type PiiLabel,

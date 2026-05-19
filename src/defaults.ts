@@ -15,8 +15,10 @@ import {
   codiceFiscaleValid,
   cpfValid,
   iban97Valid,
+  latLonPairInRange,
   luhnValid,
   macAddressNonReserved,
+  vinValid,
 } from './validators.js';
 
 /** Backend chosen when the user passes nothing (or `'auto'`). The
@@ -83,7 +85,7 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     label: 'secret',
     confidence: 0.99,
   },
-  // AWS Bedrock long-lived. bounded.
+  // AWS Bedrock long-lived API key (`ABSK` prefix + 109-269 base64 chars).
   {
     id: 'core:aws-bedrock',
     pattern: /\bABSK[A-Za-z0-9+/]{109,269}={0,2}/g,
@@ -484,12 +486,6 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     confidence: 0.99,
     validate: cpfValid,
   },
-  {
-    id: 'core:passport-us',
-    pattern: /\b[A-CEFGHJ-NPR-Z]\d{8}\b/g,
-    label: 'account_number',
-    confidence: 0.85,
-  },
   { id: 'core:ein-us', pattern: /\b\d{2}-\d{7}\b/g, label: 'account_number', confidence: 0.85 },
   // Italian Codice Fiscale — Validated via per-character
   // odd/even position weights + final-letter check (drops shape
@@ -528,16 +524,6 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     label: 'secret',
     confidence: 0.99,
   },
-  // Slack broad token prefix (xoxa/xoxb/xoxp/xoxr/xoxs). Covers the
-  // generic shape; the existing `xoxe.xoxp` recognizer above stays for
-  // the legacy refresh-token variant.
-  {
-    id: 'core:slack-token-broad',
-    pattern: /\bxox[abprs]-[A-Za-z0-9-]{10,}\b/g,
-    label: 'secret',
-    confidence: 0.97,
-  },
-
   // ─── Phone — anchored on `+` for international, context-anchored for domestic ──
   {
     id: 'core:phone-international',
@@ -566,6 +552,257 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
       /\b(?:tel|tel[eé]fono|m[oó]vil|cell|cellular|phone)[\s:.]+([6-9]\d{2}[\s\-.]?\d{3}[\s\-.]?\d{2}[\s\-.]?\d{2})\b/gi,
     label: 'private_phone',
     confidence: 0.85,
+  },
+
+  // ─── Passport numbers (context-anchored where ambiguous) ──────────
+  // Pattern strategy: prefer context-anchored ("passport", "passeport",
+  // "passaporto", "passnummer", "P/N") to keep precision high. Add
+  // syntax-only patterns ONLY where the format is unique enough that
+  // standalone matching is acceptable (US: letter + 8 digits; UK: 9
+  // digits → REQUIRES context due to FP rate). The international
+  // ICAO 9303 MRZ format is too dataset-specific to ship by default.
+  {
+    // US passport book/card: 1 letter + 8 digits (I/O/Q excluded to
+    // avoid digit confusion). Context REQUIRED — the uncontexted shape
+    // collides with `id_card:` / `License:` / generic ID-number
+    // formats (measured precision ~14% on nullpii-bench standalone).
+    id: 'core:passport-us-context',
+    pattern: /(?<=\bpassport(?:\s*(?:no|number|nbr|#))?[\s:.]+)[A-HJ-NPR-Z]\d{8}\b/gi,
+    label: 'private_passport',
+    confidence: 0.97,
+  },
+  {
+    // Italian passport context: 2 letters + 7 digits (post-2006).
+    // Uncontexted variant dropped — `[A-Z]{2}\d{7}` collides with SKUs,
+    // model numbers, ISBNs on free text. Generic context fallback
+    // (`core:passport-generic-context`) covers prose with the keyword.
+    id: 'core:passport-it-context',
+    pattern: /(?<=\b(?:passaporto|passport)[\s:.n°]+)[A-Z]{2}\d{7}\b/gi,
+    label: 'private_passport',
+    confidence: 0.97,
+  },
+  {
+    // UK passport: 9 digits. Pure digits — context REQUIRED.
+    id: 'core:passport-uk-context',
+    pattern: /(?<=\bpassport(?:\s*(?:no|number))?[\s:.#]+)\d{9}\b/gi,
+    label: 'private_passport',
+    confidence: 0.95,
+  },
+  {
+    // German passport context: typically C/F/G + 9 alphanumeric.
+    // Uncontexted variant dropped — `[CFGRPT][0-9A-Z]{9}` collides
+    // with serial numbers and product codes on free text.
+    id: 'core:passport-de-context',
+    pattern: /(?<=\b(?:passnummer|reisepass|passport)[\s:.#]+)[CFGRPT][0-9A-Z]{9}\b/gi,
+    label: 'private_passport',
+    confidence: 0.95,
+  },
+  {
+    // French passport: 9 alphanumeric chars, typically 2 digit + 2 letter + 5 digit.
+    id: 'core:passport-fr-context',
+    pattern: /(?<=\b(?:passeport|passport)[\s:.n°]+)[0-9]{2}[A-Z]{2}[0-9]{5}\b/gi,
+    label: 'private_passport',
+    confidence: 0.95,
+  },
+  {
+    // Spanish passport context: 3 letters + 6 digits.
+    // Uncontexted variant dropped — overlaps with airline locators,
+    // booking refs, ISBN-like sequences. Keep context-anchored only.
+    id: 'core:passport-es-context',
+    pattern: /(?<=\b(?:pasaporte|passport)[\s:.n°#]+)[A-Z]{3}\d{6}\b/gi,
+    label: 'private_passport',
+    confidence: 0.95,
+  },
+  {
+    // Generic context-anchored passport (fallback for jurisdictions we
+    // don't ship explicit patterns for). Matches 6-12 alphanumeric
+    // after a passport keyword; required context keeps FP low.
+    id: 'core:passport-generic-context',
+    pattern:
+      /(?<=\b(?:passport|passeport|passaporto|passnummer|reisepass|pasaporte|paszport|paspoort)[\s:.n°#-]+)[A-Z0-9]{6,12}\b/gi,
+    label: 'private_passport',
+    confidence: 0.9,
+  },
+
+  // ─── Driver licence numbers (context REQUIRED — formats too varied) ─
+  // Driver licence formats are jurisdiction-specific and frequently
+  // collide with phone numbers, account IDs, or SSN-shape strings.
+  // Context anchor is mandatory; high-confidence cells stay.
+  {
+    id: 'core:driver-license-generic-context',
+    pattern:
+      /(?<=\b(?:driver(?:'s|s)?\s*(?:lic(?:ence|ense)|dl)|dln|dl#|patente|permis(?:\s*de\s*conduire)?|f[üu]hrerschein|carnet\s*de\s*conducir|rijbewijs|cnh|c[aá]rt[ae]\s*de\s*condu[çc][ãa]o)[\s:.#]+)[A-Z0-9][A-Z0-9\-]{4,18}[A-Z0-9]\b/gi,
+    label: 'private_driver_license',
+    confidence: 0.95,
+  },
+  {
+    // California: letter + 7 digits.
+    id: 'core:driver-license-ca-context',
+    pattern: /(?<=\b(?:DL|driver\s*license)[\s:.#]+)[A-Z]\d{7}\b/gi,
+    label: 'private_driver_license',
+    confidence: 0.95,
+  },
+  {
+    // New York: 9 digits OR 1 letter + 18 digits.
+    id: 'core:driver-license-ny-context',
+    pattern: /(?<=\b(?:NY\s*DL|driver\s*license)[\s:.#]+)(?:\d{9}|[A-Z]\d{18})\b/gi,
+    label: 'private_driver_license',
+    confidence: 0.95,
+  },
+  {
+    // Italian patente: 1 letter + 1 alpha + 7 digits + 1 letter (10 chars).
+    id: 'core:driver-license-it-context',
+    pattern: /(?<=\b(?:patente(?:\s*di\s*guida)?|n\.?\s*patente)[\s:.#]+)[A-Z]{1,2}\d{7}[A-Z]\b/gi,
+    label: 'private_driver_license',
+    confidence: 0.95,
+  },
+
+  // ─── Vehicle identifiers ──────────────────────────────────────────
+  // VIN: 17-char alphanumeric with mod-11 weighted check digit at pos 9.
+  // Validator drops shape matches that don't satisfy ISO 3779.
+  {
+    id: 'core:vin',
+    pattern: /\b[A-HJ-NPR-Z0-9]{17}\b/g,
+    label: 'private_vehicle_id',
+    confidence: 0.9,
+    validate: vinValid,
+  },
+  // License plates (per-country canonical formats — keep tight).
+  {
+    // Italian plates (post-1994): 2 letters + 3 digits + 2 letters.
+    id: 'core:plate-it',
+    pattern: /\b[A-Z]{2}\s?\d{3}\s?[A-Z]{2}\b/g,
+    label: 'private_vehicle_id',
+    confidence: 0.85,
+  },
+  {
+    // French plates (post-2009): 2 letters - 3 digits - 2 letters.
+    id: 'core:plate-fr',
+    pattern: /\b[A-Z]{2}-\d{3}-[A-Z]{2}\b/g,
+    label: 'private_vehicle_id',
+    confidence: 0.9,
+  },
+  {
+    // German plates: 1-3 letters + dash + 1-2 letters + 1-4 digits.
+    id: 'core:plate-de',
+    pattern: /\b[A-Z]{1,3}-[A-Z]{1,2}\s?\d{1,4}\b/g,
+    label: 'private_vehicle_id',
+    confidence: 0.85,
+  },
+  {
+    // UK plates (post-2001): 2 letters + 2 digits + space + 3 letters.
+    id: 'core:plate-uk',
+    pattern: /\b[A-Z]{2}\d{2}\s?[A-Z]{3}\b/g,
+    label: 'private_vehicle_id',
+    confidence: 0.85,
+  },
+  {
+    // Spanish plates (post-2000): 4 digits + 3 letters (no vowels).
+    id: 'core:plate-es',
+    pattern: /\b\d{4}\s?[BCDFGHJKLMNPRSTVWXYZ]{3}\b/g,
+    label: 'private_vehicle_id',
+    confidence: 0.85,
+  },
+  {
+    // US plates — too varied per state; context-anchored only.
+    id: 'core:plate-us-context',
+    pattern: /(?<=\b(?:license\s*plate|plate(?:\s*number)?|tag)[\s:.#]+)[A-Z0-9\-]{3,8}\b/gi,
+    label: 'private_vehicle_id',
+    confidence: 0.9,
+  },
+
+  // ─── Geolocation (lat/lon decimal pairs + DMS notation) ───────────
+  // Decimal degree pairs: requires BOTH lat and lon separated by `,`
+  // (with optional whitespace). Range-validated — pure decimals in
+  // `[-180, 180]` are too common in arbitrary text to flag standalone.
+  {
+    id: 'core:geo-latlon-decimal',
+    pattern: /-?\d{1,3}\.\d{2,8}\s*,\s*-?\d{1,3}\.\d{2,8}/g,
+    label: 'private_geolocation',
+    confidence: 0.9,
+    validate: latLonPairInRange,
+  },
+  {
+    // DMS (Degrees Minutes Seconds) with hemisphere letter — high
+    // precision, low FP because the °'" sequence is distinctive.
+    id: 'core:geo-dms',
+    pattern: /\d{1,3}°\s?\d{1,2}['′]\s?\d{1,2}(?:\.\d+)?["″]?\s?[NSEW]/g,
+    label: 'private_geolocation',
+    confidence: 0.95,
+  },
+  {
+    // Context-anchored decimal lat OR lon (drops the strict pairing
+    // requirement when the user explicitly says "latitude: X").
+    id: 'core:geo-context',
+    pattern:
+      /(?<=\b(?:lat(?:itude)?|lon(?:gitude)?|lng|gps|coord(?:inate)?s?)[\s:=]+)-?\d{1,3}\.\d{2,8}\b/gi,
+    label: 'private_geolocation',
+    confidence: 0.9,
+  },
+
+  // ─── HIPAA-coverage extensions to account_number ──────────────────
+  // Medicare Beneficiary Identifier (MBI): 11 chars, structured
+  // (digit/letter pattern excludes S, L, O, I, B, Z; explicit ordering).
+  {
+    id: 'core:mbi-us',
+    pattern: /\b[1-9][AC-HJ-NP-Z]\d[AC-HJ-NP-Z0-9]\d[AC-HJ-NP-Z]\d[AC-HJ-NP-Z]{2}\d{2}\b/g,
+    label: 'account_number',
+    confidence: 0.95,
+  },
+  {
+    // Medicare HIC (legacy, pre-MBI): SSN + 1-2 letter suffix.
+    id: 'core:medicare-hic-legacy',
+    pattern: /\b\d{3}-?\d{2}-?\d{4}[A-Z]{1,2}\b/g,
+    label: 'account_number',
+    confidence: 0.9,
+  },
+  {
+    // NPI (National Provider Identifier): 10 digits. Context-anchored
+    // on `NPI` / `provider id|number|#` — bare `\b\d{10}\b` collides
+    // with NA phones (no country code), order IDs, timestamps, and the
+    // generic `luhnValid` validator rejects sub-13-digit inputs by
+    // design, so the structural gate must be the context anchor.
+    // (CMS-spec NPI Luhn requires prefixing `80840` for the full
+    // 15-digit check — not implemented here; context anchor is enough.)
+    id: 'core:npi-us-context',
+    pattern: /(?<=\b(?:npi|provider(?:\s*(?:id|number|#))?)[\s:.#]+)\d{10}\b/gi,
+    label: 'account_number',
+    confidence: 0.9,
+  },
+  {
+    // Insurance policy / member number (context-anchored).
+    id: 'core:insurance-policy-context',
+    pattern:
+      /(?<=\b(?:policy(?:\s*(?:no|number|#))?|member(?:\s*id)?|subscriber(?:\s*id)?|group(?:\s*(?:no|#))?)[\s:.#]+)[A-Z0-9][A-Z0-9\-]{5,18}[A-Z0-9]\b/gi,
+    label: 'account_number',
+    confidence: 0.9,
+  },
+  {
+    // Professional / certificate licence (context-anchored).
+    id: 'core:certificate-context',
+    pattern:
+      /(?<=\b(?:cert(?:ificate)?(?:\s*(?:no|number|#))?|licen[cs]e(?:\s*(?:no|number|#))?(?!\s*plate)|registration(?:\s*(?:no|#))?)[\s:.#]+)[A-Z0-9][A-Z0-9\-]{4,18}[A-Z0-9]\b/gi,
+    label: 'account_number',
+    confidence: 0.85,
+  },
+  {
+    // Device serial (context-anchored — generic device IDs).
+    id: 'core:device-serial-context',
+    pattern:
+      /(?<=\b(?:s\/?n|serial(?:\s*(?:no|number|#))?|imei|udid|device\s*id)[\s:.#]+)[A-Z0-9][A-Z0-9\-]{6,30}[A-Z0-9]\b/gi,
+    label: 'account_number',
+    confidence: 0.85,
+  },
+  {
+    // IMEI context-anchored: 15 digits, Luhn-validated. Bare 15-digit
+    // Luhn sequences appear occasionally in transaction IDs and barcodes;
+    // anchor on an explicit IMEI / device keyword to avoid asymmetric
+    // FPs vs competitors that don't ship a standalone IMEI rule.
+    id: 'core:imei-context',
+    pattern: /(?<=\b(?:imei|device(?:\s*(?:id|imei|#))?)[\s:.#]+)\d{15}\b/gi,
+    label: 'account_number',
+    confidence: 0.95,
+    validate: luhnValid,
   },
 ];
 

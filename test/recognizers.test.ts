@@ -95,12 +95,10 @@ describe('runRecognizers', () => {
     expect(spans).toHaveLength(3);
   });
 
-  // F-39 regression. A recognizer with a `validate` fn whose candidate
-  // passes the validator is structurally-correct evidence — much
-  // stronger than an ML classifier's guess. The emitted score is bumped
-  // above plausible ML softmax (~0.99998 for the GLiNER) so
-  // cross-label IoU dedupe in nullpii.ts picks the recognizer's label,
-  // not an ML mislabel (e.g. spaced IBAN tagged `private_address`).
+  // Validator-passing matches emit a score above plausible ML softmax
+  // (~0.99998 for GLiNER) so cross-label IoU dedupe in nullpii.ts picks
+  // the recognizer's label, not an ML mislabel (e.g. spaced IBAN tagged
+  // `private_address`).
   it('boosts emitted score above ML softmax for validator-passing matches', () => {
     const validatedReco: Recognizer = {
       id: 'validated',
@@ -127,9 +125,8 @@ describe('runRecognizers', () => {
     expect(spans[0]?.score).toBe(0.95);
   });
 
-  // F-19 regression. The fast-path indexOf-based prefix scan must
-  // produce the EXACT same span set as the legacy regex-only path for
-  // the canonical recognizer pack across a representative corpus.
+  // Fast-path (indexOf prefix scan) must emit the same span set as the
+  // pure-regex slow path across DEFAULT_RECOGNIZERS.
   it('fast-path and slow-path produce identical spans across DEFAULT_RECOGNIZERS', async () => {
     const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
     // Curated corpus exercising both anchored prefixes and structural
@@ -222,13 +219,206 @@ describe('runRecognizers', () => {
       expect(runRecognizers(`KEY=${test} ok`, r ? [r] : [], [])).toHaveLength(0);
     });
 
-    it('catches a broad-prefix Slack token (xoxb / xoxa / xoxp / xoxr / xoxs)', async () => {
+    it('catches a Slack token (xoxa / xoxb / xoxp / xoxr / xoxs)', async () => {
       const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
-      const r = DEFAULT_RECOGNIZERS.find((r) => r.id === 'core:slack-token-broad');
+      const r = DEFAULT_RECOGNIZERS.find((r) => r.id === 'core:slack-token');
       expect(r).toBeDefined();
       const corpus = 'bot xoxb-1234567890-abcdefghijklmn user xoxp-1234567890-abcdef';
       const spans = runRecognizers(corpus, r ? [r] : [], []);
       expect(spans.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  describe('passport recognizers (context-anchored, v0.3)', () => {
+    it('US passport REQUIRES context — bare letter+8-digits does not match', async () => {
+      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+      const ids = DEFAULT_RECOGNIZERS.map((x) => x.id);
+      expect(ids).not.toContain('core:passport-us');
+      const r = DEFAULT_RECOGNIZERS.find((x) => x.id === 'core:passport-us-context');
+      expect(r).toBeDefined();
+      // Bare letter+8-digit collides with id_card / license numbers.
+      expect(runRecognizers('order A12345678 shipped', r ? [r] : [], [])).toHaveLength(0);
+      const ok = runRecognizers('passport: A12345678 issued 2024', r ? [r] : [], []);
+      expect(ok).toHaveLength(1);
+      expect(ok[0]?.label).toBe('private_passport');
+    });
+
+    it('UK passport REQUIRES context — 9 bare digits do not match', async () => {
+      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+      const r = DEFAULT_RECOGNIZERS.find((x) => x.id === 'core:passport-uk-context');
+      expect(r).toBeDefined();
+      expect(runRecognizers('order 123456789 received', r ? [r] : [], [])).toHaveLength(0);
+      const ok = runRecognizers('passport no. 123456789', r ? [r] : [], []);
+      expect(ok).toHaveLength(1);
+      expect(ok[0]?.label).toBe('private_passport');
+    });
+
+    it('Italian passport — context-anchored only (uncontexted variant removed)', async () => {
+      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+      const idsByLabel = DEFAULT_RECOGNIZERS.filter((x) => x.label === 'private_passport').map(
+        (x) => x.id,
+      );
+      expect(idsByLabel).not.toContain('core:passport-it');
+      expect(idsByLabel).toContain('core:passport-it-context');
+      expect(idsByLabel).not.toContain('core:passport-de');
+      expect(idsByLabel).toContain('core:passport-de-context');
+      expect(idsByLabel).not.toContain('core:passport-es');
+      expect(idsByLabel).toContain('core:passport-es-context');
+    });
+
+    it('generic passport fallback catches multilingual context (passnummer / passeport / pasaporte)', async () => {
+      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+      const r = DEFAULT_RECOGNIZERS.find((x) => x.id === 'core:passport-generic-context');
+      expect(r).toBeDefined();
+      for (const corpus of [
+        'passnummer: XY7654321',
+        'passeport n°: 12AB34567',
+        'pasaporte: ABC123456',
+      ]) {
+        const spans = runRecognizers(corpus, r ? [r] : [], []);
+        expect(spans.length).toBeGreaterThanOrEqual(1);
+        expect(spans[0]?.label).toBe('private_passport');
+      }
+    });
+  });
+
+  describe('driver licence recognizers (all context-anchored)', () => {
+    it('California DL pattern matches under DL: / driver license: anchor', async () => {
+      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+      const r = DEFAULT_RECOGNIZERS.find((x) => x.id === 'core:driver-license-ca-context');
+      expect(r).toBeDefined();
+      const ok = runRecognizers('DL: D1234567 expires 2027', r ? [r] : [], []);
+      expect(ok).toHaveLength(1);
+      expect(ok[0]?.label).toBe('private_driver_license');
+      expect(runRecognizers('order D1234567 shipped', r ? [r] : [], [])).toHaveLength(0);
+    });
+
+    it('Italian patente — anchored on patente keyword', async () => {
+      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+      const r = DEFAULT_RECOGNIZERS.find((x) => x.id === 'core:driver-license-it-context');
+      expect(r).toBeDefined();
+      const ok = runRecognizers('patente di guida: U1234567X', r ? [r] : [], []);
+      expect(ok.length).toBeGreaterThanOrEqual(1);
+      expect(ok[0]?.label).toBe('private_driver_license');
+    });
+
+    it('generic DL fallback covers EU keywords (führerschein / permis / rijbewijs)', async () => {
+      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+      const r = DEFAULT_RECOGNIZERS.find((x) => x.id === 'core:driver-license-generic-context');
+      expect(r).toBeDefined();
+      for (const corpus of [
+        'führerschein: B123456789',
+        'permis de conduire: 13AB12345',
+        'rijbewijs: 5512345678',
+      ]) {
+        const spans = runRecognizers(corpus, r ? [r] : [], []);
+        expect(spans.length).toBeGreaterThanOrEqual(1);
+        expect(spans[0]?.label).toBe('private_driver_license');
+      }
+    });
+  });
+
+  describe('vehicle id recognizers (VIN ISO 3779 + plates)', () => {
+    it('VIN validator drops invalid check digit', async () => {
+      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+      const r = DEFAULT_RECOGNIZERS.find((x) => x.id === 'core:vin');
+      expect(r).toBeDefined();
+      // Valid VIN (computed check digit) vs intentionally broken.
+      expect(runRecognizers('vehicle 1HGCM82633A004352 owner', r ? [r] : [], [])).toHaveLength(1);
+      expect(runRecognizers('vehicle 1HGCM82633A004353 owner', r ? [r] : [], [])).toHaveLength(0);
+    });
+
+    it('Italian plate matches 2L+3D+2L format', async () => {
+      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+      const r = DEFAULT_RECOGNIZERS.find((x) => x.id === 'core:plate-it');
+      expect(r).toBeDefined();
+      const spans = runRecognizers('targa AB 123 CD italiana', r ? [r] : [], []);
+      expect(spans.length).toBeGreaterThanOrEqual(1);
+      expect(spans[0]?.label).toBe('private_vehicle_id');
+    });
+
+    it('US plate REQUIRES context anchor', async () => {
+      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+      const r = DEFAULT_RECOGNIZERS.find((x) => x.id === 'core:plate-us-context');
+      expect(r).toBeDefined();
+      expect(runRecognizers('item ABC1234 in stock', r ? [r] : [], [])).toHaveLength(0);
+      const ok = runRecognizers('license plate: ABC1234 reg.', r ? [r] : [], []);
+      expect(ok).toHaveLength(1);
+      expect(ok[0]?.label).toBe('private_vehicle_id');
+    });
+  });
+
+  describe('geolocation recognizers', () => {
+    it('lat/lon decimal pair matches within bounds, rejects out-of-range', async () => {
+      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+      const r = DEFAULT_RECOGNIZERS.find((x) => x.id === 'core:geo-latlon-decimal');
+      expect(r).toBeDefined();
+      const ok = runRecognizers('met at 41.9028, 12.4964 yesterday', r ? [r] : [], []);
+      expect(ok).toHaveLength(1);
+      expect(ok[0]?.label).toBe('private_geolocation');
+      // Out of range — validator rejects.
+      expect(
+        runRecognizers('values 200.1234, 300.5678 spreadsheet', r ? [r] : [], []),
+      ).toHaveLength(0);
+      // (0, 0) sentinel rejected to avoid placeholders.
+      expect(runRecognizers('default 0.0, 0.0 fallback', r ? [r] : [], [])).toHaveLength(0);
+    });
+
+    it('DMS notation with hemisphere letter matches', async () => {
+      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+      const r = DEFAULT_RECOGNIZERS.find((x) => x.id === 'core:geo-dms');
+      expect(r).toBeDefined();
+      const spans = runRecognizers('hike at 41°54\'09"N landmark', r ? [r] : [], []);
+      expect(spans.length).toBeGreaterThanOrEqual(1);
+      expect(spans[0]?.label).toBe('private_geolocation');
+    });
+
+    it('context-anchored single decimal matches lat: / lon: / gps:', async () => {
+      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+      const r = DEFAULT_RECOGNIZERS.find((x) => x.id === 'core:geo-context');
+      expect(r).toBeDefined();
+      const ok = runRecognizers('latitude: 41.9028 logged', r ? [r] : [], []);
+      expect(ok.length).toBeGreaterThanOrEqual(1);
+      expect(ok[0]?.label).toBe('private_geolocation');
+    });
+  });
+
+  describe('healthcare / device id recognizers (context-anchored)', () => {
+    it('NPI REQUIRES anchor — bare 10-digit Luhn does not fire', async () => {
+      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+      // Old uncontexted core:npi-us removed; only context variant remains.
+      const ids = DEFAULT_RECOGNIZERS.map((x) => x.id);
+      expect(ids).not.toContain('core:npi-us');
+      expect(ids).toContain('core:npi-us-context');
+      const r = DEFAULT_RECOGNIZERS.find((x) => x.id === 'core:npi-us-context');
+      // 1234567897 = Luhn-valid 10-digit (passes the validator).
+      expect(runRecognizers('called 1234567897 today', r ? [r] : [], [])).toHaveLength(0);
+      const ok = runRecognizers('NPI: 1234567897 verified', r ? [r] : [], []);
+      expect(ok).toHaveLength(1);
+      expect(ok[0]?.label).toBe('account_number');
+    });
+
+    it('IMEI context-anchored — bare 15-digit Luhn does not fire', async () => {
+      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+      const ids = DEFAULT_RECOGNIZERS.map((x) => x.id);
+      expect(ids).not.toContain('core:imei');
+      expect(ids).toContain('core:imei-context');
+      const r = DEFAULT_RECOGNIZERS.find((x) => x.id === 'core:imei-context');
+      // 490154203237518 is the canonical Luhn-valid IMEI test number.
+      expect(runRecognizers('txn 490154203237518 OK', r ? [r] : [], [])).toHaveLength(0);
+      const ok = runRecognizers('IMEI: 490154203237518 cleared', r ? [r] : [], []);
+      expect(ok).toHaveLength(1);
+      expect(ok[0]?.label).toBe('account_number');
+    });
+
+    it('MBI matches structured 11-char pattern', async () => {
+      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+      const r = DEFAULT_RECOGNIZERS.find((x) => x.id === 'core:mbi-us');
+      expect(r).toBeDefined();
+      // Structure: D-L-D-LD-D-L-D-L-L-D-D (per CMS MBI spec).
+      const ok = runRecognizers('MBI 1A2C3D4EF56 on file', r ? [r] : [], []);
+      expect(ok).toHaveLength(1);
+      expect(ok[0]?.label).toBe('account_number');
     });
   });
 });

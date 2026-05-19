@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: Apache-2.0
 
-import { loadConfig, startServer } from '../dist/index.js';
+import { loadConfig, printBanner, startServer } from '../dist/index.js';
 
 const config = loadConfig();
 const app = await startServer(config);
+printBanner(config, 'prod');
 
 const shutdown = async (signal) => {
   app.log.info({ signal }, 'gateway.shutdown');

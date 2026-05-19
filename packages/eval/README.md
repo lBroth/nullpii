@@ -16,7 +16,7 @@ pip install -e ".[presidio]" presidio-evaluator datasets
 ```bash
 NULLPII_MODEL_DIR=/path/to/lBroth-nullpii \
 python -u scripts/bench_full.py \
-  --tools nullpii,nullpii-bare,presidio,nemotron-pii-raw,piiranha,deberta,gliner-onnx-pii-fp32,gliner-pii-large-v1,openai-privacy-filter \
+  --tools nullpii,nullpii-bare,presidio,nemotron-pii-raw,piiranha,deberta,gliner-onnx-pii-fp32,gliner-pii-large-v1 \
   --datasets all \
   --max-per-dataset 5000 --parallel-tools 1 \
   --backend cpu \
@@ -44,10 +44,10 @@ python -u scripts/bench_latency.py \
 
 ## Other scripts
 
-- `scripts/confusion_report.py` — cross-tool confusion matrix from `matrix.json`
+- `scripts/confusion_report.py` — per-class precision/recall/F1 markdown report from `bench_full.py --confusion` output
 - `scripts/failure_analysis.py` — top-K FN/FP per label per tool
 - `scripts/report_per_class.py` — per-label precision/recall breakdown
-- `scripts/verify_claims.py` — `CLAIM-VERIFIER-01`: re-run Presidio / piiranha vendor numbers under span IoU ≥ 0.5
+- `scripts/verify_claims.py` — re-run vendor numbers on each tool's native test split + native label vocabulary (presidio, gliner-pii-base, piiranha, nemotron-pii-raw); span IoU ≥ 0.5
 - `scripts/generate_bench_rows.py` — deterministic project-bench row generator
 - `scripts/reannotate_underanno_rows.py` — regex-only enrichment pass for under-labelled rows
 

@@ -25,6 +25,10 @@ export interface GatewayConfig {
   readonly logLevel: 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace';
   /** Request body size cap in bytes (Fastify default 1 MB raised to 10 MB). */
   readonly bodyLimitBytes: number;
+  /** When true, dump sanitized request body + upstream response (still
+   * carrying placeholders, never real PII) to stdout for debugging.
+   * Enabled via `NULLPII_LOG_TRAFFIC=wire`. */
+  readonly logTraffic: boolean;
 }
 
 const DEFAULT_HOST = '127.0.0.1';
@@ -68,5 +72,6 @@ export function loadConfig(): GatewayConfig {
     backend: readEnum('NULLPII_BACKEND', VALID_BACKENDS, DEFAULT_BACKEND),
     logLevel: readEnum('NULLPII_LOG_LEVEL', VALID_LOG_LEVELS, DEFAULT_LOG_LEVEL),
     bodyLimitBytes: readInt('NULLPII_BODY_LIMIT_BYTES', DEFAULT_BODY_LIMIT),
+    logTraffic: (process.env.NULLPII_LOG_TRAFFIC ?? '').toLowerCase() === 'wire',
   };
 }

@@ -44,7 +44,28 @@ docker run --rm -p 8787:8787 \
 ```
 
 A worked `docker-compose.yml` plus a Claude Code integration walk-through
-lives at [`examples/claude-code/`](../../examples/claude-code/).
+lives at [`examples/claude-code/`](https://github.com/lBroth/nullpii/tree/main/examples/claude-code).
+
+### Standalone via `npx` (no clone)
+
+If you don't want to clone the repo or run Docker, install both
+packages from npm and run the gateway as a one-shot binary:
+
+```bash
+# install once
+npm install -g nullpii @lbroth/nullpii-gateway
+
+# run
+NULLPII_MODEL_DIR=/path/to/gliner-onnx \
+ANTHROPIC_API_KEY=sk-ant-…  # OR be logged into Claude Code subscription
+  nullpii-gateway
+
+# or without global install
+npx -p nullpii -p @lbroth/nullpii-gateway nullpii-gateway
+```
+
+Pre-warm the GLiNER model once with `npx nullpii prefetch` so the
+first request doesn't pay the ~1.2 GB download.
 
 ### From source (dev mode, hot reload)
 

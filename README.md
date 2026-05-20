@@ -115,7 +115,7 @@ docker compose -f examples/claude-code/docker-compose.yml logs -f gateway
 # {"msg":"anthropic.messages.streamed","replacements":3,"replacementsByLabel":{"private_person":1,"private_email":1,"private_address":1},...}
 ```
 
-Full walk-through (host-mounted-model variant for air-gapped / pre-release, GPU notes, troubleshooting, multi-replica caveats): [`examples/claude-code/`](examples/claude-code/).
+Full walk-through (host-mounted-model variant for air-gapped / pre-release, GPU notes, troubleshooting, multi-replica caveats): [`examples/claude-code/`](https://github.com/lBroth/nullpii/tree/main/examples/claude-code).
 
 ## What gets caught
 
@@ -142,7 +142,7 @@ Add your own via `np.addRecognizer({ id, pattern, label, confidence, validate? }
 
 ## Benchmark
 
-Mac M5 Pro, IoU ≥ 0.5 macro F1 (sklearn-standard — labels with no gt support are excluded, symmetric for every tool). Cap 5,000 / dataset, `--parallel-tools 1` fair-serial. 16-dataset matrix at [`packages/eval/published-bench/matrix.csv`](packages/eval/published-bench/matrix.csv).
+Mac M5 Pro, IoU ≥ 0.5 macro F1 (sklearn-standard — labels with no gt support are excluded, symmetric for every tool). Cap 5,000 / dataset, `--parallel-tools 1` fair-serial. 16-dataset matrix at [`packages/eval/published-bench/matrix.csv`](https://github.com/lBroth/nullpii/blob/main/packages/eval/published-bench/matrix.csv).
 
 Two `nullpii` rows + one upstream-GLiNER row let readers isolate the model from the runtime:
 
@@ -194,7 +194,7 @@ Methodology disclosures (read these before drawing conclusions):
 
 - **Threshold parity** — every GLiNER-family tool (`nullpii`, `nullpii-bare`, `gliner-pii-large-v1`, `gliner-onnx-pii-fp32`) runs at threshold **0.5**. `nemotron-pii-raw` runs at **0.3** per its [upstream model card](https://huggingface.co/nvidia/gliner-pii) which prescribes 0.3 as the production decision boundary. Running nemotron at 0.5 parity would disadvantage it relative to its published characteristic (~0.07 F1 drop avg across the matrix). Both thresholds disclosed for reader mental adjustment.
 - **DeBERTa aggregation** — `first` strategy, A/B-logged against `simple` in `adapters.py`. No tuning, just picking the one HuggingFace ships as the documented default.
-- **Per-tool chunking** — each tool uses **its upstream maintainers' recommended chunker** (`gliner_multi_pii-v1` model card → 140-word/30 for `nullpii`; `gliner` package default → 1400-char/200 for the upstream GLiNERs; piiranha model-card §Limitations → 1000-char/200 to dodge 256-token truncation). Full breakdown + rationale in [`packages/eval/README.md`](packages/eval/README.md#chunking-strategies). This is NOT hand-tuned in nullpii's favour: forcing a single normalised window would silently truncate piiranha, break DeBERTa's continuation handling, and drop Presidio's NER+anchor coordination — every baseline would lose F1.
+- **Per-tool chunking** — each tool uses **its upstream maintainers' recommended chunker** (`gliner_multi_pii-v1` model card → 140-word/30 for `nullpii`; `gliner` package default → 1400-char/200 for the upstream GLiNERs; piiranha model-card §Limitations → 1000-char/200 to dodge 256-token truncation). Full breakdown + rationale in [`packages/eval/README.md`](https://github.com/lBroth/nullpii/tree/main/packages/eval#chunking-strategies). This is NOT hand-tuned in nullpii's favour: forcing a single normalised window would silently truncate piiranha, break DeBERTa's continuation handling, and drop Presidio's NER+anchor coordination — every baseline would lose F1.
 
 Reproduce:
 
@@ -256,19 +256,19 @@ CPU thread tuning: pass `intraOpNumThreads` (parallelism inside a single op) and
 
 - Detection runs entirely on your machine. The only network call is the one-time model download.
 - The vault lives in memory and goes away when you call `dispose()`.
-- Logs never contain PII — just counts and short ids. See [SECURITY.md](SECURITY.md).
+- Logs never contain PII — just counts and short ids. See [SECURITY.md](https://github.com/lBroth/nullpii/blob/main/SECURITY.md).
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE). Model weights have their own licence (see Credits).
+Apache-2.0 — see [LICENSE](https://github.com/lBroth/nullpii/blob/main/LICENSE) and [NOTICE](https://github.com/lBroth/nullpii/blob/main/NOTICE). Model weights have their own licence (see Credits).
 
 ## Further reading
 
-- [`CHANGELOG.md`](CHANGELOG.md) — release notes
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — dev setup, architecture rules, release checklist
-- [`packages/eval/README.md`](packages/eval/README.md) — bench harness
-- [`packages/eval/datasets/README.md`](packages/eval/datasets/README.md) — dataset schema + licences
+- [`CHANGELOG.md`](https://github.com/lBroth/nullpii/blob/main/CHANGELOG.md) — release notes
+- [`CONTRIBUTING.md`](https://github.com/lBroth/nullpii/blob/main/CONTRIBUTING.md) — dev setup, architecture rules, release checklist
+- [`packages/eval/README.md`](https://github.com/lBroth/nullpii/tree/main/packages/eval) — bench harness
+- [`packages/eval/datasets/README.md`](https://github.com/lBroth/nullpii/tree/main/packages/eval/datasets) — dataset schema + licences
 
 ## Credits
 
-The detection model builds on [`urchade/gliner_multi_pii-v1`](https://huggingface.co/urchade/gliner_multi_pii-v1) (GLiNER, Zaratiana et al., NAACL 2024, mDeBERTa-v3 base). Model artifact + attribution: [`lBroth/nullpii`](https://huggingface.co/lBroth/nullpii). Licence notes: [NOTICE](NOTICE).
+The detection model builds on [`urchade/gliner_multi_pii-v1`](https://huggingface.co/urchade/gliner_multi_pii-v1) (GLiNER, Zaratiana et al., NAACL 2024, mDeBERTa-v3 base). Model artifact + attribution: [`lBroth/nullpii`](https://huggingface.co/lBroth/nullpii). Licence notes: [NOTICE](https://github.com/lBroth/nullpii/blob/main/NOTICE).

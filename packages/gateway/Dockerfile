@@ -3,7 +3,7 @@
 #
 # nullpii/gateway:slim — multi-stage image.
 #
-# - Build stage compiles the `nullpii` core + the `@nullpii/gateway`
+# - Build stage compiles the `nullpii` core + the `@lbroth/nullpii-gateway`
 #   package against pinned Node + npm.
 # - Runtime stage carries only the compiled output + production
 #   `node_modules`.

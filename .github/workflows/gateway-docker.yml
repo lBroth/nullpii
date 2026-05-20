@@ -1,6 +1,6 @@
 name: gateway-docker
 
-# Multi-arch (amd64 + arm64) build + publish of the `@nullpii/gateway`
+# Multi-arch (amd64 + arm64) build + publish of the `@lbroth/nullpii-gateway`
 # Docker image to the GitHub Container Registry. The image is large
 # enough (~926 MB) that we keep the workflow off the main CI matrix —
 # this is one job, gated on changes that actually affect the image.

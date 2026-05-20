@@ -10,7 +10,7 @@ Initial Apache-2.0 public release. Published packages:
 - **`nullpii@0.3.0`** — core PII sanitization library (npm). GA: stable
   public API surface (`NullPii`, `sanitize`, `restore`, `wrapForLLM`,
   `RestoreStream`, recognizers).
-- **`@nullpii/gateway@0.0.3`** — Anthropic Messages API drop-in proxy
+- **`@lbroth/nullpii-gateway@0.0.3`** — Anthropic Messages API drop-in proxy
   (npm + multi-arch Docker). Versioned as a preview (`0.x`) while the
   gateway surface settles around streaming + tool_use coverage; pins
   `nullpii >=0.3.0 <0.4.0` as a peer.
@@ -40,7 +40,7 @@ Initial Apache-2.0 public release. Published packages:
 - `RestoreStream` — SSE chunk-safe placeholder reassembly across delta
   boundaries.
 
-### `@nullpii/gateway`
+### `@lbroth/nullpii-gateway`
 
 - Fastify-based drop-in HTTP proxy for the Anthropic Messages API.
   Sanitises every text content block before forwarding to

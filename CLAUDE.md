@@ -4,7 +4,7 @@ Open-source Apache-2.0 stack for local PII sanitization. The core npm
 library (`nullpii`) wraps a GLiNER ONNX detection model
 (`urchade/gliner_multi_pii-v1` base) + a recognizer pack + an
 adversarial-input preprocessor + a reversible in-memory vault. The
-companion `@nullpii/gateway` package is an HTTP proxy that drops in
+companion `@lbroth/nullpii-gateway` package is an HTTP proxy that drops in
 front of the Anthropic Messages API. Backends: CPU, MPS, CUDA.
 
 ## Commands
@@ -18,7 +18,7 @@ front of the Anthropic Messages API. Backends: CPU, MPS, CUDA.
 ## Architecture
 
 Monorepo. `nullpii` (root) is the core library — sources `src/`, tests
-`test/`. `@nullpii/gateway` lives under `packages/gateway/` (Fastify;
+`test/`. `@lbroth/nullpii-gateway` lives under `packages/gateway/` (Fastify;
 exports `buildServer`, `startServer`, `RestoreStream`). `onnxruntime-node`
 is the only optional peer at runtime for the core. Two recognizer-pack
 subpackages that used to live under `packages/recognizers-*/` were

@@ -1,4 +1,4 @@
-# @nullpii/gateway
+# @lbroth/nullpii-gateway
 
 Self-hosted HTTP gateway that sanitizes PII out of LLM prompts before
 forwarding to Anthropic Claude, and restores the placeholders in the

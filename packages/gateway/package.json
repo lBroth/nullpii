@@ -1,5 +1,5 @@
 {
-  "name": "@nullpii/gateway",
+  "name": "@lbroth/nullpii-gateway",
   "version": "0.0.3",
   "description": "Self-hosted HTTP gateway that sanitizes PII before forwarding to Anthropic Claude, restores in the response. baseURL drop-in.",
   "license": "Apache-2.0",
@@ -47,7 +47,7 @@
     "build": "tsc -p tsconfig.json",
     "dev": "tsx watch --clear-screen=false --tsconfig tsconfig.dev.json src/dev.ts",
     "start": "node bin/nullpii-gateway.mjs",
-    "prepublishOnly": "rm -rf dist && npm run build"
+    "prepublishOnly": "rm -rf dist && mkdir -p node_modules/nullpii && cp -R ../../dist ../../package.json ../../README.md ../../LICENSE ../../NOTICE node_modules/nullpii/ && tsc -p tsconfig.json"
   },
   "dependencies": {
     "fastify": "^5.2.0"

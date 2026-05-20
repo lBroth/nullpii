@@ -6,7 +6,7 @@
 
 Sanitize PII before it hits an LLM. Replace it with placeholders, get the original back on the way out.
 
-Works with **any LLM backend** — OpenAI, Anthropic, Gemini, Mistral, Llama, local models, your own inference server. The core `nullpii` library is provider-agnostic: you call `sanitize()` before your existing API call, then `restore()` on the response. The `@nullpii/gateway` package is just a ready-made HTTP proxy for the Anthropic Messages API — handy with Claude Code, but optional. For anything else, drop the lib in wherever you call your model.
+Works with **any LLM backend** — OpenAI, Anthropic, Gemini, Mistral, Llama, local models, your own inference server. The core `nullpii` library is provider-agnostic: you call `sanitize()` before your existing API call, then `restore()` on the response. The `@lbroth/nullpii-gateway` package is just a ready-made HTTP proxy for the Anthropic Messages API — handy with Claude Code, but optional. For anything else, drop the lib in wherever you call your model.
 
 > 🧪 **Hobby / experiment.** A nights-and-weekends project, not a product. No SLA, no roadmap commitments, no enterprise pitch. If it helps you, great. If you find a bug, file an issue.
 
@@ -230,7 +230,7 @@ Where the preprocessor + recognizer pack pulls PII the model alone would miss:
 | Cyrillic-homoglyph email | `pаyments@bank.com` (`а` = U+0430) | `payments@bank.com` (email) |
 | fullwidth ASCII email | `ＵＳＥＲ．ＮＡＭＥ＠ｅｘａｍｐｌｅ．ｃｏｍ` | `USER.NAME@example.com` (email) |
 | Italian IBAN in prose | `IT60X0542811101000001023456` | `IT60X0542811101000001023456` (account_number, mod-97 verified) |
-| Stripe live key in code | `api_key = 'sk_live_4eC39HqLyjWDarjtT1zdp7dc'` | `sk_live_4eC39HqLyjWDarjtT1zdp7dc` (credential, Stripe prefix + regex) |
+| Stripe live key in code | `api_key = 'sk_live_<24+ alphanumeric chars>'` | flagged as `secret` (Stripe `sk_live_` prefix + length check). Real example omitted to avoid tripping GitHub push-protection scanners on the docs themselves. |
 
 Roughly five passes: Unicode normalisation, base64 decoding, percent + HTML-entity decoding, zero-width strip, regex pack.
 

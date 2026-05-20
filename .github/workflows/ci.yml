@@ -37,12 +37,13 @@ jobs:
     # (ScatterND clamping, decoder index math, chunk-boundary dedupe,
     # recognizer/ML reconciliation, base64 layer).
     #
-    # Runs by default now that `lBroth/nullpii` is published. Set the
-    # repo variable `NULLPII_E2E_ENABLED=false` to disable temporarily
-    # (e.g. during HF maintenance windows). GitHub: Settings → Secrets
-    # and variables → Actions → Variables.
+    # Opt-in via the repo variable `NULLPII_E2E_ENABLED=true`. Flip
+    # it once the HuggingFace repo `lBroth/nullpii` is fully public
+    # (currently 401 on anonymous fetch — gated on HF account). Add
+    # an `HF_TOKEN` secret + set the env if you want the job to run
+    # against a private HF mirror in the meantime.
     name: e2e (real ONNX)
-    if: ${{ vars.NULLPII_E2E_ENABLED != 'false' }}
+    if: ${{ vars.NULLPII_E2E_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     env:
       # The HF model repo. Override via repo variable if you need to

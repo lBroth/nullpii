@@ -3,7 +3,7 @@
 import { OrtBackend } from './backend/backend.js';
 import { detectBase64Pii } from './base64-detector.js';
 import { chunkText, dedupeOverlappingSpans } from './chunking.js';
-import { nullpiiModelDir } from './config.js';
+import { NULLPII_MODEL_DIR, readEnvVar } from './config.js';
 import {
   BOUNDARY_REFINE_TRIM_CHARS,
   DEFAULT_BOUNDARY_REFINE,
@@ -65,11 +65,12 @@ export class NullPii {
 
   constructor(config: NullPiiConfig = {}) {
     this.config = config;
-    if (config.recognizers === 'none') {
-      // explicit opt-out
-    } else if (Array.isArray(config.recognizers)) {
+    if (config.recognizers === 'none') return;
+    if (Array.isArray(config.recognizers)) {
       this.recognizers.push(...(config.recognizers as readonly Recognizer[]));
-    } else if (DEFAULT_RECOGNIZERS_ENABLED) {
+      return;
+    }
+    if (DEFAULT_RECOGNIZERS_ENABLED) {
       this.recognizers.push(...DEFAULT_RECOGNIZERS);
     }
   }
@@ -208,8 +209,10 @@ export class NullPii {
     // Base64-wrapped PII: regex can't see `user.123@gmail.com` inside
     // `dXNlci4xMjNAZ21haWwuY29t` until we decode the blob. Run on the
     // escaped surface so spans land on the source base64 substring (gold
-    // annotations mark the encoded form).
-    const base64Spans = detectBase64Pii(escaped);
+    // annotations mark the encoded form). Gated on the same flag as the
+    // recognizer pack — `recognizers: 'none'` opts out of BOTH so a
+    // caller wiring custom validators is not surprised by base64 hits.
+    const base64Spans = this.config.recognizers === 'none' ? [] : detectBase64Pii(escaped);
     const recoSpans: PiiSpan[] = [...recoSpansEscaped, ...recoSpansNorm, ...base64Spans];
     // High-confidence recognizers (≥ 0.9) emit even when overlapping ML
     // output, so dedupe by IoU + score: highest score wins regardless
@@ -277,7 +280,7 @@ export class NullPii {
     //   1. explicit `config.modelDir` (caller intent)
     //   2. `NULLPII_MODEL_DIR` env var (deployment override / air-gap)
     //   3. fall through to HF download into the default cache
-    const envModelDir = nullpiiModelDir();
+    const envModelDir = readEnvVar(NULLPII_MODEL_DIR);
     if (this.config.modelDir !== undefined) {
       this.modelDir = this.config.modelDir;
     } else if (envModelDir !== undefined) {

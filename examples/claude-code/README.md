@@ -7,14 +7,6 @@ leave your machine; placeholders are restored in the response. Apache-
 
 ## Quickstart
 
-> **Pre-v0.2 release caveat.** The HuggingFace repo (`lBroth/nullpii`)
-> is still private — the default compose file returns
-> `401 NULLPII_MODEL_NOT_FOUND` on the first `/v1/messages` until the
-> model is published. To test end-to-end before release, use the
-> `docker-compose.local-model.yml` variant which mounts a host model
-> dir into the container. See [Pre-release demo](#pre-release-demo-mount-a-host-model)
-> below.
-
 ```bash
 # 1. Boot the gateway (first run: ~1.2 GB GLiNER model download)
 docker compose -f examples/claude-code/docker-compose.yml up -d
@@ -35,19 +27,45 @@ export ANTHROPIC_API_KEY=sk-ant-…   # your real key, passed through
 claude "summarise the email I just wrote to John Doe at john@acme.io"
 ```
 
+### Alternative: persist via Claude Code settings
+
+Skip the `export`s by writing the same vars into Claude Code's
+settings file. They're picked up on every `claude` invocation.
+
+Project-local (per-repo) — `.claude/settings.local.json`:
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://localhost:8787",
+    "ANTHROPIC_API_KEY": "sk-ant-…"
+  }
+}
+```
+
+User-global — `~/.claude/settings.json` uses the same shape;
+project-local wins on conflict. Add `.claude/settings.local.json`
+to `.gitignore` if you keep the API key inline.
+
 The gateway sees the raw prompt, runs GLiNER locally, replaces
 `John Doe` and `john@acme.io` with placeholders, forwards the
 sanitized text to `api.anthropic.com`, and restores the placeholders
-in the streamed response before Claude Code prints it.
+in the streamed response before Claude Code prints it. The SSE
+restorer (`RestoreStream`, exported from the `nullpii` core) buffers
+placeholders that straddle delta boundaries so the client never sees
+a half-written `{{PII_…` token mid-stream — see the
+[`RestoreStream` section in the root README](../../README.md) for
+direct API use.
 
 ## What gets sanitized
 
-The model recognizes 9 categories: person, email, phone, address,
-account number (incl. IBAN / credit card), SSN, IP, MAC, "secret"
-(AWS keys etc). Recognizer packs catch structurally-valid tokens
-(IBAN mod-97, Luhn, IP, base64-wrapped PII). See the root
-[`README.md`](../../README.md) for the full label list and the
-benchmark numbers.
+The model recognizes 12 categories: person, email, phone, address,
+date, URL, IP, MAC, passport, driver license, vehicle ID, geolocation,
+plus account number (incl. IBAN / credit card / SSN / MRN) and
+"secret" (AWS / GitHub / OpenAI / Anthropic / 30+ API keys, JWT,
+base64-wrapped PII). Recognizer packs catch structurally-valid
+tokens (IBAN mod-97, Luhn, VIN ISO 3779, lat/lon ranges, etc). See
+the root [`README.md`](../../README.md) for the full label table.
 
 ## Verify the redaction is working
 
@@ -78,10 +96,11 @@ the vault doesn't know about. `foreignPlaceholders > 0` means a
 placeholder from a different session leaked into this one. Both are
 expected to be `0` on a healthy stream.
 
-## Pre-release demo (mount a host model)
+## Air-gapped / pinned-checkpoint variant (mount a host model)
 
-Until the HF repo `lBroth/nullpii` is published, the default compose
-file can't fetch the model. Use the local-model variant:
+For air-gapped hosts or when you want to pin a specific model revision
+on disk, use the local-model compose variant instead of the default
+HuggingFace download path:
 
 ```bash
 # 1. Prefetch the model on a host with network access. Drops files
@@ -125,12 +144,12 @@ The directory must contain `model.onnx`, `tokenizer.json`,
 - **Multi-replica.** The current in-memory vault assumes
   sticky-session load balancing — every conversation's response must
   return to the replica that sanitized the request. A pluggable
-  `VaultStore` (Redis HA) is on the v0.2 roadmap (PLAN §3).
+  `VaultStore` (Redis HA) is on the post-v0.3 roadmap.
 
-## Limitations of this preview
+## Limitations
 
 - **Anthropic only.** OpenAI compat (`/v1/chat/completions`) is
-  intentionally out of this PR; tracked as PLAN §1 next step.
+  not in v0.3 — on the post-v0.3 roadmap.
 - **No auth on the gateway itself.** Put your own mTLS / API-key
   layer in front (typical enterprise pattern). The gateway speaks
   plain HTTP because operators add the TLS termination they trust.
@@ -142,7 +161,7 @@ The directory must contain `model.onnx`, `tokenizer.json`,
 
 | Symptom | Cause / fix |
 |---|---|
-| Container stuck in `health: starting` for > 2 min | Model download is slow. Tail logs; check HF reachability. |
+| Container stuck in `health: starting` for > 2 min | Applies to the **default** `docker-compose.yml` only (`start_period: 120s` covers the cold HF download). Tail logs and check HF reachability. The local-model variant uses `start_period: 30s` because the model is already on disk; if it's stuck there, the volume mount or `NULLPII_MODEL_DIR` path is wrong. |
 | `502 nullpii_upstream_error` | Gateway couldn't reach `api.anthropic.com`. Check `NULLPII_UPSTREAM` and outbound DNS. |
 | Claude Code prints placeholders instead of names | The LLM moved a placeholder across token boundaries in a way the streaming restorer can't reassemble. File a bug with a redacted repro — these are usually fixable. |
 | `unknownPlaceholders > 0` in logs | The LLM made up a placeholder. Usually fine (Claude is told via `LLM_PRESERVATION_HINT` to keep them, but occasionally fabricates). |

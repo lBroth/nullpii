@@ -102,6 +102,9 @@ export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCou
     const buf = jsonBuffers.get(index);
     if (buf === undefined) return null;
     jsonBuffers.delete(index);
+    // Empty buffer = upstream stop with no shards. `np.restore('')` is
+    // a no-op but the explicit short-circuit makes the intent obvious.
+    if (buf.length === 0) return '';
     const r = np.restore(buf, sessionId);
     counters.replacements += r.replacements;
     counters.unknownPlaceholders += r.unknownPlaceholders.length;
@@ -134,10 +137,12 @@ export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCou
     }
   }
 
-  // Flush any trailing decoder bytes — should be empty for well-formed
-  // streams, but exercising the contract is cheap.
+  // Flush any trailing decoder bytes. Only forward if the residue
+  // actually parses into an SSE frame — a half-frame (e.g.
+  // `event: ping\n` with no `data:` line) returned with a synthesised
+  // `\n\n` terminator would confuse strict SDKs.
   buffer += decoder.decode();
-  if (buffer.length > 0) {
+  if (buffer.length > 0 && parseFrame(buffer) !== null) {
     const out = processFrame(
       buffer,
       getRestorer,

@@ -126,4 +126,18 @@ describe('remapSpan', () => {
     const r = normalizeForDetection(text);
     expect(remapSpan(-5, 1, r.normToOrig)).toEqual([0, 1]);
   });
+
+  it('start at normalized.length clamps to last sentinel (does not silently produce empty span)', () => {
+    // Audit-flagged edge: a `normStart` equal to `normToOrig.length`
+    // (one past the last valid index) historically clamped to the
+    // sentinel index without complaint. Confirm both endpoints map
+    // to the same valid origin index, yielding an explicit empty
+    // span — never an undefined / out-of-bounds read.
+    const text = 'abc';
+    const r = normalizeForDetection(text);
+    const overshoot = r.normToOrig.length; // 4
+    const [s, e] = remapSpan(overshoot, overshoot, r.normToOrig);
+    expect(s).toBe(3);
+    expect(e).toBe(3);
+  });
 });

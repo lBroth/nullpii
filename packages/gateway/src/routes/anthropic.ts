@@ -5,7 +5,12 @@ import type { NullPii } from 'nullpii';
 import { printRequestSummary } from '../pretty-log.js';
 import { restoreResponse, sanitizeRequest } from '../sanitizer.js';
 import { relaySseStream } from '../sse-relay.js';
-import { logInboundResponse, logInboundSseChunk, logOutboundRequest } from '../traffic-log.js';
+import {
+  logInboundResponse,
+  logInboundSseChunk,
+  logOutboundHeaders,
+  logOutboundRequest,
+} from '../traffic-log.js';
 import type { AnthropicRequest, AnthropicResponse } from '../types.js';
 import { type Fetch, buildUpstreamHeaders, forwardToAnthropic } from '../upstream.js';
 
@@ -23,6 +28,7 @@ export interface AnthropicRouteOptions {
  * `anthropic-ratelimit-*` family on 429 / 529 responses. */
 const UPSTREAM_ERROR_HEADERS = [
   'content-type',
+  'request-id',
   'retry-after',
   'anthropic-ratelimit-requests-limit',
   'anthropic-ratelimit-requests-remaining',
@@ -34,6 +40,15 @@ const UPSTREAM_ERROR_HEADERS = [
   'anthropic-ratelimit-output-tokens-remaining',
   'anthropic-ratelimit-output-tokens-reset',
 ];
+
+/** Extract the `?query` suffix from a Fastify-provided request URL.
+ * Returns `''` if no query string is present. We forward this verbatim
+ * to the upstream so Anthropic sees the same feature-gate flags
+ * (`?beta=true`, etc.) the client sent. */
+function extractQuery(url: string): string {
+  const i = url.indexOf('?');
+  return i === -1 ? '' : url.slice(i);
+}
 
 function forwardUpstreamErrorHeaders(reply: FastifyReply, upstream: Headers): void {
   for (const name of UPSTREAM_ERROR_HEADERS) {
@@ -52,11 +67,34 @@ export async function registerAnthropicRoute(
   app.post('/v1/messages', async (req, reply) => {
     const body = req.body as AnthropicRequest;
     const isStream = (body as { stream?: unknown }).stream === true;
+    // Preserve the original query string (`?beta=true`, etc). Anthropic
+    // routes feature-gates + subscription scopes off the query, so
+    // dropping it makes the upstream see a different request shape than
+    // the client sent and silently downgrades / rate-limits.
+    const querySuffix = extractQuery(req.url);
 
     if (isStream) {
-      return handleStreaming(req, reply, body, np, upstreamBaseUrl, fetchImpl, logTraffic);
+      return handleStreaming(
+        req,
+        reply,
+        body,
+        np,
+        upstreamBaseUrl,
+        fetchImpl,
+        logTraffic,
+        querySuffix,
+      );
     }
-    return handleNonStreaming(req, reply, body, np, upstreamBaseUrl, fetchImpl, logTraffic);
+    return handleNonStreaming(
+      req,
+      reply,
+      body,
+      np,
+      upstreamBaseUrl,
+      fetchImpl,
+      logTraffic,
+      querySuffix,
+    );
   });
 
   // `count_tokens` does NOT need restoration — the response is `{input_tokens: N}`,
@@ -69,13 +107,14 @@ export async function registerAnthropicRoute(
     const headers = buildUpstreamHeaders(
       req.headers as Record<string, string | string[] | undefined>,
     );
+    const querySuffix = extractQuery(req.url);
 
     let upstream: Awaited<ReturnType<typeof forwardToAnthropic>>;
     try {
       upstream = await forwardToAnthropic(
         fetchImpl,
         upstreamBaseUrl,
-        '/v1/messages/count_tokens',
+        `/v1/messages/count_tokens${querySuffix}`,
         sanitized.body,
         headers,
       );
@@ -102,6 +141,7 @@ async function handleNonStreaming(
   upstreamBaseUrl: string,
   fetchImpl: Fetch,
   logTraffic: boolean,
+  querySuffix: string,
 ): Promise<unknown> {
   const sanitized = await sanitizeRequest(np, body);
   const reqId = typeof req.id === 'string' ? req.id : undefined;
@@ -109,13 +149,14 @@ async function handleNonStreaming(
   const headers = buildUpstreamHeaders(
     req.headers as Record<string, string | string[] | undefined>,
   );
+  if (logTraffic) logOutboundHeaders(headers, reqId);
 
   let upstream: Awaited<ReturnType<typeof forwardToAnthropic>>;
   try {
     upstream = await forwardToAnthropic(
       fetchImpl,
       upstreamBaseUrl,
-      '/v1/messages',
+      `/v1/messages${querySuffix}`,
       sanitized.body,
       headers,
     );
@@ -132,6 +173,11 @@ async function handleNonStreaming(
     np.destroySession(sanitized.sessionId);
     reply.code(upstream.status);
     forwardUpstreamErrorHeaders(reply, upstream.headers);
+    // PII-safety invariant: `upstream.text` is the error body Anthropic
+    // returned for a request we already sanitised, so it only echoes
+    // placeholder-bearing fragments — never real PII. Do NOT change
+    // this site to log the pre-sanitise request body or restored
+    // response without re-validating the "never log PII" rule.
     req.log.warn(
       {
         upstreamStatus: upstream.status,
@@ -206,6 +252,7 @@ async function handleStreaming(
   upstreamBaseUrl: string,
   fetchImpl: Fetch,
   logTraffic: boolean,
+  querySuffix: string,
 ): Promise<unknown> {
   const sanitized = await sanitizeRequest(np, body);
   const reqId = typeof req.id === 'string' ? req.id : undefined;
@@ -213,15 +260,28 @@ async function handleStreaming(
   const headers = buildUpstreamHeaders(
     req.headers as Record<string, string | string[] | undefined>,
   );
+  if (logTraffic) logOutboundHeaders(headers, reqId);
+
+  // Wire client-disconnect to upstream abort: when the downstream
+  // socket closes mid-stream, we stop reading + cancel the upstream
+  // `fetch` so Anthropic stops streaming (and stops billing tokens).
+  // Without this, the for-await loop keeps writing to a dead socket
+  // and the upstream call runs to completion on a request nobody is
+  // listening to.
+  const abort = new AbortController();
+  const onClientClose = (): void => abort.abort();
+  req.raw.once('close', onClientClose);
 
   let upstreamResp: Response;
   try {
-    upstreamResp = await fetchImpl(`${upstreamBaseUrl}/v1/messages`, {
+    upstreamResp = await fetchImpl(`${upstreamBaseUrl}/v1/messages${querySuffix}`, {
       method: 'POST',
       headers,
       body: JSON.stringify(sanitized.body),
+      signal: abort.signal,
     });
   } catch (err) {
+    req.raw.off('close', onClientClose);
     np.destroySession(sanitized.sessionId);
     const msg = err instanceof Error ? err.message : String(err);
     return reply.code(502).send({
@@ -233,10 +293,14 @@ async function handleStreaming(
   // Non-2xx upstream — passthrough the error body verbatim. Anthropic
   // streams errors as a JSON body (not SSE) under most failures.
   if (upstreamResp.status < 200 || upstreamResp.status >= 300) {
+    req.raw.off('close', onClientClose);
     np.destroySession(sanitized.sessionId);
     const text = await upstreamResp.text();
     reply.code(upstreamResp.status);
     forwardUpstreamErrorHeaders(reply, upstreamResp.headers);
+    // PII-safety invariant: `text` is the upstream error body for a
+    // sanitised request — only placeholders, never real PII. See the
+    // matching note in `handleNonStreaming` before changing this.
     req.log.warn(
       {
         upstreamStatus: upstreamResp.status,
@@ -250,6 +314,7 @@ async function handleStreaming(
   }
 
   if (upstreamResp.body === null) {
+    req.raw.off('close', onClientClose);
     np.destroySession(sanitized.sessionId);
     return reply.code(502).send({
       type: 'error',
@@ -303,8 +368,20 @@ async function handleStreaming(
     printRequestSummary(reqId !== undefined ? { ...sseSummary, reqId } : sseSummary);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    req.log.error({ errMsg: msg }, 'anthropic.messages.stream_error');
+    req.log.error(
+      { errMsg: msg, aborted: abort.signal.aborted },
+      'anthropic.messages.stream_error',
+    );
   } finally {
+    req.raw.off('close', onClientClose);
+    // Best-effort upstream reader cancel. If the loop completed
+    // normally the reader is already drained; if it threw mid-stream
+    // (write error, client abort) this releases the underlying socket.
+    try {
+      upstreamResp.body?.cancel();
+    } catch {
+      // Reader may already be closed/cancelled — silent is correct.
+    }
     np.destroySession(sanitized.sessionId);
     reply.raw.end();
   }

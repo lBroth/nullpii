@@ -246,6 +246,37 @@ describe('relaySseStream', () => {
     expect(joined).toContain('"type":"content_block_stop"');
   });
 
+  it('content_block_stop for a different index does not flush a buffered input_json_delta', async () => {
+    // Regression: per-block jsonBuffers must be keyed by index. A stop
+    // frame for block 9 should leave block 0's buffered JSON untouched
+    // (drain it at end-of-stream instead, not cross-emit it inside a
+    // block-9 envelope).
+    const { np, vault, sessionId } = buildHarness();
+    const ph = bake(vault, sessionId, 'bob@example.com', 'private_email');
+    const frames: string[] = [
+      sseFrame('content_block_delta', {
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'input_json_delta', partial_json: `{"to":"${ph}"}` },
+      }),
+      sseFrame('content_block_stop', { type: 'content_block_stop', index: 9 }),
+    ];
+    const out: string[] = [];
+    await relaySseStream({
+      np,
+      sessionId,
+      upstream: chunkStream(frames),
+      write: (f) => out.push(f),
+    });
+    const joined = out.join('');
+    // Restored JSON must appear EXACTLY once (drained at end-of-stream,
+    // not under the block-9 stop frame).
+    const matches = joined.match(/"partial_json":"{\\"to\\":\\"bob@example.com\\"}"/g) ?? [];
+    expect(matches).toHaveLength(1);
+    // Block-9 stop frame still forwarded verbatim.
+    expect(joined).toMatch(/"type":"content_block_stop"[\s\S]*"index":9/);
+  });
+
   it('drains buffered input_json_delta at end-of-stream when content_block_stop never arrives', async () => {
     const { np, vault, sessionId } = buildHarness();
     const ph = bake(vault, sessionId, 'alice@example.com', 'private_email');

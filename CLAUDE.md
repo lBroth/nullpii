@@ -41,7 +41,7 @@ folded into core defaults in v0.3.
 - Named constants — no magic numbers/strings inline.
 - No `any`, no global mutable state.
 - `debug` package, not `console.log`.
-- Defaults in `src/defaults.ts`. `process.env` via typed helpers in `src/config.ts` only.
+- Defaults in `src/defaults.ts`. Env reads go through `readEnvVar(NAME)` in `src/config.ts` only — declare the env-var name as an exported `const` in `src/config.ts`, never inline `process.env.X` at call sites. One-line per-var wrappers are unnecessary duplication; pass the const to `readEnvVar` instead.
 - Conventional Commits. Named exports only in `index.ts`. JSDoc on public functions. SPDX header in source files.
 - Deps: MIT/Apache-2.0/BSD/ISC/CC0 only.
 

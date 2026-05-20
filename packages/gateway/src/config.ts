@@ -41,6 +41,7 @@ const DEFAULT_BODY_LIMIT = 10 * 1024 * 1024;
 
 const VALID_BACKENDS = new Set(['cpu', 'mps', 'cuda', 'auto']);
 const VALID_LOG_LEVELS = new Set(['fatal', 'error', 'warn', 'info', 'debug', 'trace']);
+const VALID_LOG_TRAFFIC = new Set(['wire', 'off']);
 
 function readInt(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -72,6 +73,7 @@ export function loadConfig(): GatewayConfig {
     backend: readEnum('NULLPII_BACKEND', VALID_BACKENDS, DEFAULT_BACKEND),
     logLevel: readEnum('NULLPII_LOG_LEVEL', VALID_LOG_LEVELS, DEFAULT_LOG_LEVEL),
     bodyLimitBytes: readInt('NULLPII_BODY_LIMIT_BYTES', DEFAULT_BODY_LIMIT),
-    logTraffic: (process.env.NULLPII_LOG_TRAFFIC ?? '').toLowerCase() === 'wire',
+    logTraffic:
+      readEnum<'wire' | 'off'>('NULLPII_LOG_TRAFFIC', VALID_LOG_TRAFFIC, 'off') === 'wire',
   };
 }

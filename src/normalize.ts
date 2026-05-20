@@ -48,6 +48,14 @@ const URL_DECODE_MAX_DEPTH = 2;
  * can't trap the preprocessor in an exponential decode loop. */
 const HTML_DECODE_MAX_DEPTH = 2;
 
+/** `%XX` triplet length — `%` plus two hex digits matched by URL_PERCENT_RE. */
+const URL_PERCENT_LEN = 3;
+/** Upper bound on bytes a single HTML numeric entity occupies:
+ * `&#x` (3) + up to 7 hex digits for any Unicode code point + `;` (1) ≈ 12.
+ * Wide enough for the longest legal entity, narrow enough to keep
+ * HTML_ENTITY_RE's anchored scan O(1) per call site. */
+const HTML_ENTITY_MAX_LEN = 12;
+
 export function normalizeForDetection(text: string): NormalizeResult {
   // Refuse pathological input. Quadratic behaviour on
   // SPACED_PII_RE / per-char loops makes adversarial 1 MB+ payloads
@@ -119,12 +127,14 @@ function tryUrlDecode(text: string, i: number, out: string[], normToOrig: number
   let consumed = 0;
   let decoded: string | null = null;
   for (let depth = 0; depth < URL_DECODE_MAX_DEPTH; depth++) {
-    const innerMatch = URL_PERCENT_RE.exec(text.slice(i + consumed, i + consumed + 3));
+    const innerMatch = URL_PERCENT_RE.exec(
+      text.slice(i + consumed, i + consumed + URL_PERCENT_LEN),
+    );
     if (innerMatch === null || innerMatch[1] === undefined) break;
     const code = Number.parseInt(innerMatch[1], 16);
     if (!Number.isFinite(code)) break;
     decoded = String.fromCharCode(code);
-    consumed += 3;
+    consumed += URL_PERCENT_LEN;
     // Stop unless the decoded byte is itself `%` and a deeper %XX
     // triplet immediately follows — only then is another pass
     // meaningful. This keeps single-encoded inputs O(1).
@@ -145,7 +155,7 @@ function tryHtmlDecode(text: string, i: number, out: string[], normToOrig: numbe
   let consumed = 0;
   let decoded: string | null = null;
   for (let depth = 0; depth < HTML_DECODE_MAX_DEPTH; depth++) {
-    const slice = text.slice(i + consumed, i + consumed + 12);
+    const slice = text.slice(i + consumed, i + consumed + HTML_ENTITY_MAX_LEN);
     const inner = HTML_ENTITY_RE.exec(slice);
     if (inner === null) break;
     const dec = inner[1];

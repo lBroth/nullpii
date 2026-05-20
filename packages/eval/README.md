@@ -27,12 +27,38 @@ Output: `matrix.json` (per-cell F1 / wall / throughput) + `matrix.csv` (pivot). 
 
 ### Chunking strategies
 
-Long-document handling differs by tool, by design:
-- **`nullpii` / `nullpii-bare`**: word-based chunker, 140 words / 30-word overlap, capped to fit the GLiNER 384-subword window.
-- **Upstream GLiNER baselines** (`gliner-onnx-pii-fp32`, `gliner-pii-large-v1`): char-based, 1400 chars / 200-char overlap.
-- **Piiranha**: char-based 1000 / 200 to dodge its 256-token truncation.
-- **DeBERTa**, **Presidio**, **OPF**: full text passed to upstream pipeline (each does its own internal handling).
-This is an intentional fair-comparison gap — each tool gets its upstream-recommended chunking; cross-tool F1 on long-doc datasets reflects the package as it ships, not a normalised harness. Same setting is applied to every benchmark cell.
+Long-document handling differs by tool. Each tool runs with the
+chunker its upstream maintainers ship with the model, not a
+project-tuned one — there is no `nullpii`-favouring chunking:
+
+| Tool | Chunker | Source |
+|---|---|---|
+| `nullpii` / `nullpii-bare` | word-based, 140 words / 30 overlap | upstream GLiNER `gliner_multi_pii-v1` model card recommendation, fits the 384-subword window |
+| `gliner-onnx-pii-fp32`, `gliner-pii-large-v1` | char-based, 1400 / 200 overlap | upstream `gliner` package default (`predict_entities(..., chunk_size=1400)`) |
+| `piiranha` | char-based, 1000 / 200 overlap | required to dodge the model's hard 256-token truncation (HuggingFace model card §Limitations) |
+| `nemotron-pii-raw` | upstream GLiNER chunker | matches NVIDIA NIM container default |
+| `deberta`, `presidio`, `openai-privacy-filter` | full text, internal upstream handling | each pipeline manages its own windowing |
+
+Forcing every tool through a single normalised harness (e.g. fixed
+1024-char windows everywhere) would mean: (a) `piiranha` truncates at
+256 tokens and drops late-document spans, (b) DeBERTa loses its
+`aggregation_strategy='first'` continuation behaviour, (c) Presidio
+loses its NER+anchor coordination. The result would be lower F1 for
+every baseline, hand-disadvantaged. The current bench measures each
+tool as it ships, not a synthetic harness. Same setting is applied to
+every benchmark cell — no cross-cell drift.
+
+### Threshold parity
+
+Every GLiNER-family tool (`nullpii`, `nullpii-bare`,
+`gliner-onnx-pii-fp32`, `gliner-pii-large-v1`) runs at threshold
+**0.5** for cross-tool parity. `nemotron-pii-raw` runs at **0.3** per
+its [upstream model card](https://huggingface.co/nvidia/gliner-pii)
+which prescribes 0.3 as the production decision boundary; running it
+at 0.5 (parity) would drop its F1 by ~0.07 on average across the
+matrix and disadvantage it relative to its published characteristic.
+Both thresholds are disclosed in the README footnotes so readers can
+mentally adjust for the framing.
 
 ## Reproduce latency
 

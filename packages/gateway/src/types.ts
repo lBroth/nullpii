@@ -10,9 +10,24 @@
 export type AnthropicContentBlock =
   | { type: 'text'; text: string; [k: string]: unknown }
   | { type: 'image'; [k: string]: unknown }
-  | { type: 'tool_use'; [k: string]: unknown }
+  | {
+      type: 'tool_use';
+      /** Tool call arguments — JSON object. Walked for sanitize/restore. */
+      input?: unknown;
+      [k: string]: unknown;
+    }
   | { type: 'tool_result'; content?: string | AnthropicContentBlock[]; [k: string]: unknown }
   | { type: string; [k: string]: unknown };
+
+/** Top-level tool definition (request `tools[]`). Only `description`
+ * carries free text the gateway needs to scrub; `input_schema` and
+ * `name` are passed through untouched. */
+export interface AnthropicToolDef {
+  name: string;
+  description?: string;
+  input_schema?: unknown;
+  [k: string]: unknown;
+}
 
 /** A `messages` array entry on the request. `content` may be a plain
  * string (shorthand for one text block) or an array of blocks. */
@@ -30,6 +45,7 @@ export interface AnthropicRequest {
   model: string;
   messages: AnthropicMessage[];
   system?: AnthropicSystem;
+  tools?: AnthropicToolDef[];
   [k: string]: unknown;
 }
 

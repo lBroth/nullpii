@@ -10,18 +10,7 @@
  * when stdout is not a TTY (logs redirected to file, CI pipelines).
  */
 
-const ANSI = {
-  reset: '\x1b[0m',
-  bold: '\x1b[1m',
-  dim: '\x1b[2m',
-  red: '\x1b[31m',
-  green: '\x1b[32m',
-  yellow: '\x1b[33m',
-  blue: '\x1b[34m',
-  magenta: '\x1b[35m',
-  cyan: '\x1b[36m',
-  brightRed: '\x1b[91m',
-};
+import { ANSI, useColor } from './ansi.js';
 
 /** Short human-readable form for each canonical PII label. */
 const LABEL_ALIASES: Readonly<Record<string, string>> = {
@@ -78,14 +67,14 @@ export interface RequestSummary {
 
 function formatLabelBag(
   bag: Readonly<Record<string, number | undefined>>,
-  useColor: boolean,
+  colored: boolean,
 ): string {
   const entries = Object.entries(bag).filter(([, n]) => (n ?? 0) > 0);
-  if (entries.length === 0) return useColor ? `${ANSI.dim}none${ANSI.reset}` : 'none';
+  if (entries.length === 0) return colored ? `${ANSI.dim}none${ANSI.reset}` : 'none';
   return entries
     .map(([label, n]) => {
       const short = LABEL_ALIASES[label] ?? label;
-      if (!useColor) return `${short}×${n}`;
+      if (!colored) return `${short}×${n}`;
       const color = LABEL_COLORS[label] ?? ANSI.green;
       return `${color}${short}${ANSI.reset}×${n}`;
     })
@@ -97,8 +86,8 @@ function formatLabelBag(
  * request — cheap string concat, no I/O beyond stdout.
  */
 export function printRequestSummary(s: RequestSummary): void {
-  const useColor = process.stdout.isTTY ?? false;
-  const c = useColor ? ANSI : null;
+  const colored = useColor();
+  const c = colored ? ANSI : null;
   const reset = c?.reset ?? '';
   const tag = c !== null ? `${c.dim}${s.mode.padEnd(4)}${reset}` : `${s.mode.padEnd(4)} `;
   const arrow = c !== null ? `${c.cyan}→${reset}` : '→';
@@ -109,13 +98,13 @@ export function printRequestSummary(s: RequestSummary): void {
       ? c !== null
         ? `${c.dim}clean${reset}`
         : 'clean'
-      : `${c?.bold ?? ''}${s.captured} captured${reset}  ${formatLabelBag(s.capturedByLabel, useColor)}`;
+      : `${c?.bold ?? ''}${s.captured} captured${reset}  ${formatLabelBag(s.capturedByLabel, colored)}`;
   const restLabel =
     s.restored === 0
       ? c !== null
         ? `${c.dim}—${reset}`
         : '—'
-      : `${c?.bold ?? ''}${s.restored} restored${reset}  ${formatLabelBag(s.restoredByLabel, useColor)}`;
+      : `${c?.bold ?? ''}${s.restored} restored${reset}  ${formatLabelBag(s.restoredByLabel, colored)}`;
   const drift = s.unknownPlaceholders + s.foreignPlaceholders;
   const driftStr =
     drift > 0

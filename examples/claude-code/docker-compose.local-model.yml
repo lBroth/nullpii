@@ -4,11 +4,10 @@
 # the host instead of fetched from HuggingFace on first boot. Use this
 # variant when:
 #
-#   - the upstream HF repo (`lBroth/nullpii`) is still private (pre-v0.2
-#     release — the released compose returns 401 NULLPII_MODEL_NOT_FOUND
-#     on first /v1/messages until weights are public)
-#   - the host has no outbound network reach (air-gapped)
+#   - the host has no outbound network reach (air-gapped deploy)
 #   - you want to pin a specific local checkpoint while iterating
+#   - you've already prefetched the model and want to skip the
+#     ~1.2 GB cold-start download
 #
 # Prep:
 #

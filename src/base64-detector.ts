@@ -30,6 +30,11 @@ const LONG_DIGITS_RE = /\d{13,19}/;
 // during cross-label dedupe.
 const BASE64_SCORE = 0.99999;
 
+/** Minimum decoded length for a base64 payload to be worth classifying.
+ * Below this, EMAIL/SECRET/LONG_DIGITS regexes can't match anyway
+ * (shortest credible hit is a 6-char digit run). */
+const MIN_DECODED_LEN = 6;
+
 interface DecodedHit {
   readonly label: PiiCategory;
 }
@@ -103,7 +108,7 @@ export function detectBase64Pii(text: string): PiiSpan[] {
     // normalizeForDetection inside classify() transliterates it before
     // matching, so Cyrillic / German-umlaut / Greek payloads still hit
     // the email + secret + digits checks.
-    if (decoded.length < 6 || !isLikelyText(decoded)) continue;
+    if (decoded.length < MIN_DECODED_LEN || !isLikelyText(decoded)) continue;
     const hit = classify(decoded);
     if (hit === null) continue;
     out.push({

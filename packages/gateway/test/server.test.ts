@@ -326,6 +326,324 @@ describe('gateway · POST /v1/messages (non-streaming)', () => {
   });
 });
 
+describe('gateway · tool_use coverage', () => {
+  it('sanitises tool_use.input on REQUEST (client posts assistant history)', async () => {
+    const { np } = buildMockNullPii();
+    let forwardedBody = '';
+    const { fetchImpl } = buildMockFetch((call) => {
+      forwardedBody = call.init.body as string;
+      const resp: AnthropicResponse = {
+        id: 'msg',
+        type: 'message',
+        role: 'assistant',
+        content: [{ type: 'text', text: 'ok' }],
+      };
+      return { body: JSON.stringify(resp) };
+    });
+    const app = await buildServer({ config: TEST_CONFIG, np, fetchImpl });
+    trackApp(app);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/messages',
+      payload: {
+        model: 'claude-test',
+        messages: [
+          {
+            role: 'assistant',
+            content: [
+              {
+                type: 'tool_use',
+                id: 'tu_1',
+                name: 'lookup_user',
+                input: { name: 'John', email: 'john@acme.io', nested: { contact: 'John' } },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(forwardedBody).not.toContain('"John"');
+    expect(forwardedBody).not.toContain('john@acme.io');
+    expect(forwardedBody).toContain('{{PII_PRIVATE_PERSON_');
+    expect(forwardedBody).toContain('{{PII_PRIVATE_EMAIL_');
+  });
+
+  it('restores tool_use.input on non-streaming RESPONSE', async () => {
+    const { np } = buildMockNullPii();
+    const { fetchImpl } = buildMockFetch((call) => {
+      // Upstream echoes the placeholder back inside tool_use.input
+      const forwarded = JSON.parse(call.init.body as string) as {
+        messages: Array<{ content: string | Array<{ text?: string }> }>;
+      };
+      const userContent = forwarded.messages[0]?.content;
+      const userText = typeof userContent === 'string' ? userContent : '';
+      const placeholder = userText.match(/\{\{PII_[^}]+\}\}/)?.[0] ?? '';
+      const resp: AnthropicResponse = {
+        id: 'msg',
+        type: 'message',
+        role: 'assistant',
+        content: [
+          {
+            type: 'tool_use',
+            id: 'tu_2',
+            name: 'write_file',
+            input: { path: '/tmp/out.txt', body: `Subject: ${placeholder}` },
+          },
+        ],
+      };
+      return { body: JSON.stringify(resp) };
+    });
+    const app = await buildServer({ config: TEST_CONFIG, np, fetchImpl });
+    trackApp(app);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/messages',
+      payload: {
+        model: 'claude-test',
+        messages: [{ role: 'user', content: 'Write about John' }],
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as AnthropicResponse;
+    const block = body.content[0] as { type: 'tool_use'; input: { body: string; path: string } };
+    expect(block.type).toBe('tool_use');
+    expect(block.input.body).toBe('Subject: John');
+    expect(block.input.body).not.toContain('{{PII_');
+  });
+
+  it('sanitises tools[].description on the request', async () => {
+    const { np } = buildMockNullPii();
+    let forwardedBody = '';
+    const { fetchImpl } = buildMockFetch((call) => {
+      forwardedBody = call.init.body as string;
+      const resp: AnthropicResponse = {
+        id: 'msg',
+        type: 'message',
+        role: 'assistant',
+        content: [{ type: 'text', text: 'ok' }],
+      };
+      return { body: JSON.stringify(resp) };
+    });
+    const app = await buildServer({ config: TEST_CONFIG, np, fetchImpl });
+    trackApp(app);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/messages',
+      payload: {
+        model: 'claude-test',
+        tools: [
+          {
+            name: 'lookup_user',
+            description: 'Find records for John (john@acme.io) in the CRM.',
+            input_schema: { type: 'object' },
+          },
+        ],
+        messages: [{ role: 'user', content: 'Hi' }],
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const forwarded = JSON.parse(forwardedBody) as {
+      tools: Array<{ description: string }>;
+    };
+    const descr = forwarded.tools[0]?.description ?? '';
+    expect(descr).not.toContain('John');
+    expect(descr).not.toContain('john@acme.io');
+    expect(descr).toContain('{{PII_PRIVATE_PERSON_');
+    expect(descr).toContain('{{PII_PRIVATE_EMAIL_');
+  });
+});
+
+describe('gateway · preservation hint injection', () => {
+  it('appends LLM_PRESERVATION_HINT when PII was captured and system is unset', async () => {
+    const { np } = buildMockNullPii();
+    let forwardedBody = '';
+    const { fetchImpl } = buildMockFetch((call) => {
+      forwardedBody = call.init.body as string;
+      return {
+        body: JSON.stringify({
+          id: 'm',
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'text', text: 'ok' }],
+        } as AnthropicResponse),
+      };
+    });
+    const app = await buildServer({ config: TEST_CONFIG, np, fetchImpl });
+    trackApp(app);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/messages',
+      payload: { model: 'claude-test', messages: [{ role: 'user', content: 'Hi John' }] },
+    });
+    expect(res.statusCode).toBe(200);
+    const forwarded = JSON.parse(forwardedBody) as { system?: string };
+    // Hint mentions placeholder pattern verbatim.
+    expect(typeof forwarded.system).toBe('string');
+    expect(forwarded.system).toContain('{{PII_');
+  });
+
+  it('SKIPS hint when no PII was captured (cache parity with direct upstream)', async () => {
+    const { np } = buildMockNullPii();
+    let forwardedBody = '';
+    const { fetchImpl } = buildMockFetch((call) => {
+      forwardedBody = call.init.body as string;
+      return {
+        body: JSON.stringify({
+          id: 'm',
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'text', text: 'ok' }],
+        } as AnthropicResponse),
+      };
+    });
+    const app = await buildServer({ config: TEST_CONFIG, np, fetchImpl });
+    trackApp(app);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/messages',
+      payload: { model: 'claude-test', messages: [{ role: 'user', content: 'Hi' }] },
+    });
+    expect(res.statusCode).toBe(200);
+    const forwarded = JSON.parse(forwardedBody) as { system?: unknown };
+    // No PII → no hint → body.system unchanged (still undefined as sent).
+    expect(forwarded.system).toBeUndefined();
+  });
+
+  it('appends to existing string system (PRESERVES prefix for Anthropic prompt cache)', async () => {
+    const { np } = buildMockNullPii();
+    let forwardedBody = '';
+    const { fetchImpl } = buildMockFetch((call) => {
+      forwardedBody = call.init.body as string;
+      return {
+        body: JSON.stringify({
+          id: 'm',
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'text', text: 'ok' }],
+        } as AnthropicResponse),
+      };
+    });
+    const app = await buildServer({ config: TEST_CONFIG, np, fetchImpl });
+    trackApp(app);
+
+    const userSystem = 'You are a helpful assistant.';
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/messages',
+      payload: {
+        model: 'claude-test',
+        system: userSystem,
+        messages: [{ role: 'user', content: 'Hi John' }],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const forwarded = JSON.parse(forwardedBody) as { system: string };
+    // Original user system MUST appear at the start (prefix preserved
+    // for Anthropic's prompt cache); hint glued at the tail.
+    expect(forwarded.system.startsWith(userSystem)).toBe(true);
+    expect(forwarded.system).toContain('{{PII_');
+  });
+
+  it('hint is appended AFTER sanitize so the boilerplate is never scanned', async () => {
+    const { np, sanitizeCalls } = buildMockNullPii();
+    const { fetchImpl } = buildMockFetch(() => ({
+      body: JSON.stringify({
+        id: 'm',
+        type: 'message',
+        role: 'assistant',
+        content: [{ type: 'text', text: 'ok' }],
+      } as AnthropicResponse),
+    }));
+    const app = await buildServer({ config: TEST_CONFIG, np, fetchImpl });
+    trackApp(app);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/messages',
+      // Must contain PII so the hint actually fires (it's gated on
+      // `captured > 0` to avoid invalidating Anthropic's prompt cache
+      // on PII-free turns).
+      payload: { model: 'claude-test', messages: [{ role: 'user', content: 'Hi John' }] },
+    });
+    expect(res.statusCode).toBe(200);
+    // None of the sanitize calls should have been on the hint boilerplate
+    // (which contains literal `{{PII_...}}` patterns and would explode if
+    // run through the model).
+    for (const c of sanitizeCalls) {
+      expect(c).not.toContain('{{PII_PRIVATE_');
+    }
+  });
+});
+
+describe('gateway · upstream error header passthrough', () => {
+  it('forwards retry-after + anthropic-ratelimit-* headers on 429', async () => {
+    const { np } = buildMockNullPii();
+    const { fetchImpl } = buildMockFetch(() => ({
+      status: 429,
+      body: JSON.stringify({
+        type: 'error',
+        error: { type: 'rate_limit_error', message: 'slow down' },
+      }),
+      headers: {
+        'content-type': 'application/json',
+        'retry-after': '42',
+        'anthropic-ratelimit-requests-remaining': '0',
+        'anthropic-ratelimit-requests-reset': '2026-05-20T01:00:00Z',
+      },
+    }));
+    const app = await buildServer({ config: TEST_CONFIG, np, fetchImpl });
+    trackApp(app);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/messages',
+      payload: { model: 'claude-test', messages: [{ role: 'user', content: 'Hi' }] },
+    });
+    expect(res.statusCode).toBe(429);
+    expect(res.headers['retry-after']).toBe('42');
+    expect(res.headers['anthropic-ratelimit-requests-remaining']).toBe('0');
+    expect(res.headers['anthropic-ratelimit-requests-reset']).toBe('2026-05-20T01:00:00Z');
+  });
+});
+
+describe('gateway · POST /v1/messages/count_tokens', () => {
+  it('sanitises body before forwarding; returns upstream body verbatim', async () => {
+    const { np } = buildMockNullPii();
+    let forwardedBody = '';
+    let forwardedUrl = '';
+    const { fetchImpl } = buildMockFetch((call) => {
+      forwardedUrl = call.url;
+      forwardedBody = call.init.body as string;
+      return {
+        body: JSON.stringify({ input_tokens: 12 }),
+        headers: { 'content-type': 'application/json' },
+      };
+    });
+    const app = await buildServer({ config: TEST_CONFIG, np, fetchImpl });
+    trackApp(app);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/messages/count_tokens',
+      payload: { model: 'claude-test', messages: [{ role: 'user', content: 'Hi John' }] },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(forwardedUrl).toContain('/v1/messages/count_tokens');
+    expect(forwardedBody).not.toContain('John');
+    expect(forwardedBody).toContain('{{PII_PRIVATE_PERSON_');
+    expect(res.body).toContain('"input_tokens":12');
+  });
+});
+
 describe('gateway · /health', () => {
   it('returns 200 ok', async () => {
     const { np } = buildMockNullPii();

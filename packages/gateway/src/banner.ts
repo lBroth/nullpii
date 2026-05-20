@@ -1,27 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
+import { ANSI, visibleLen } from './ansi.js';
 import type { GatewayConfig } from './config.js';
 
-const ANSI = {
-  reset: '\x1b[0m',
-  bold: '\x1b[1m',
-  dim: '\x1b[2m',
-  cyan: '\x1b[36m',
-  green: '\x1b[32m',
-  yellow: '\x1b[33m',
-};
-
-// biome-ignore lint/suspicious/noControlCharactersInRegex: ESC (0x1B) is the SGR introducer for ANSI color codes — required.
-const ANSI_RE = /\[[0-9;]*m/g;
-
-function visibleLen(s: string): number {
-  return s.replace(ANSI_RE, '').length;
-}
-
 function pkgVersion(): string {
-  const require = createRequire(import.meta.url);
-  const pkg = require('../package.json') as { version: string };
+  // Resolve relative to the compiled module URL — robust under pnpm
+  // hoisting / nested `node_modules/.pnpm/...` layouts where the
+  // CommonJS `require.resolve` path heuristic from `createRequire`
+  // would miss the workspace `package.json`.
+  const url = new URL('../package.json', import.meta.url);
+  const pkg = JSON.parse(readFileSync(url, 'utf8')) as { version: string };
   return pkg.version;
 }
 

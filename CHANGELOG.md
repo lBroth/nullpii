@@ -38,19 +38,48 @@ Initial Apache-2.0 public release of `nullpii` (npm) + `@nullpii/gateway`.
   Sanitises every text content block before forwarding to
   `api.anthropic.com`, restores placeholders in the response. Streaming
   SSE supported.
+- Tool-calling coverage: walks `tool_use.input` on both request and
+  response (non-streaming JSON path mirrors SSE `input_json_delta`
+  buffering), and sanitises `tools[].description` system-level tool
+  defs so PII never ships in tool metadata.
+- Auto-injects `LLM_PRESERVATION_HINT` as system prompt so upstream
+  LLM preserves placeholders verbatim instead of fabricating realistic
+  values inside tool calls.
+- Client-abort handling: downstream socket close cancels the upstream
+  Anthropic call (`AbortController` wired to `req.raw.on('close')`),
+  stopping token billing on disconnected requests.
+- Upstream error passthrough: forwards `retry-after` + full
+  `anthropic-ratelimit-*` header family verbatim on 429 / 529 with a
+  structured warn-log carrying status + body snippet.
+- Optional wire-format traffic dump for debugging
+  (`NULLPII_LOG_TRAFFIC=wire`). Only logs sanitised /
+  placeholder-bearing payloads, never real PII. 64 KB cap per dump.
+- Claude-Code-style boxed startup banner + per-request coloured stdout
+  summary with per-label capture/restore counts.
 - Multi-arch Docker (`linux/amd64`, `linux/arm64`).
 - Claude Code quickstart in `examples/claude-code/`.
 
 ### Bench harness
 
-- 16-dataset matrix (`packages/eval/`). Public competitors: Piiranha,
-  DeBERTa-PII, GLiNER native (ONNX FP32 + `gliner-pii-large-v1`),
-  Nemotron-PII, OpenAI privacy-filter, Presidio, AWS Comprehend,
-  GCP DLP, Azure PII. Bench uses 12-class macro-F1 with sklearn-standard
-  zero-support exclusion — symmetric across every tool.
+- 9-tool × 16-dataset published matrix at
+  `packages/eval/published-bench/matrix.{csv,json}` (M5 Pro CPU, cap
+  5,000 / dataset, fair-serial). Tools: `nullpii`, `nullpii-bare`,
+  `nemotron-pii-raw`, `gliner-pii-large-v1`, `gliner-onnx-pii-fp32`,
+  `deberta`, `piiranha`, `presidio`, `openai-privacy-filter` (opf).
+  Bench uses 12-class macro-F1 with sklearn-standard zero-support
+  exclusion — symmetric across every tool.
+- argilla-pii sample parity: all 8 incumbent tools + opf benched on
+  the full n=2,096 split (no per-tool sample-size asymmetry).
 - Independent gold rule for `nullpii-bench`: re-annotation scripts use
   regex-only (no `nullpii` import), so the gold is not biased toward
   the system under test.
+- Methodology disclosures in README footnotes: nemotron threshold 0.3
+  per its upstream model card vs the 0.5 GLiNER-family parity;
+  per-tool upstream-recommended chunkers (140-word/30 for nullpii,
+  1400-char/200 for gliner-bare, 1000-char/200 for piiranha).
+- Out-of-distribution macro for `nullpii`: **0.7784** across
+  `presidio-synthetic`, `isotonic-{en,de,fr,it}-heldout`,
+  `ai4privacy-300k-heldout`, `tab-echr`.
 
 ### Security
 

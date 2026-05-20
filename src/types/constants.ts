@@ -46,7 +46,7 @@ export const SESSION_PREFIX_LEN = 16;
 /**
  * Regex used to find placeholders in sanitized text during restore.
  * Matches `{{PII_<LABEL>_<index>_<sessionPrefix>}}`. Capture groups:
- * 1 = label (uppercase), 2 = index, 3 = 8-hex-char session prefix.
+ * 1 = label (uppercase), 2 = index, 3 = 16-hex-char session prefix.
  * Global flag so `String.prototype.replaceAll` and `matchAll` work.
  *
  * The Mustache `{{var}}` syntax is universal in prompt-engineering tooling

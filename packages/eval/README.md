@@ -36,7 +36,7 @@ project-tuned one — there is no `nullpii`-favouring chunking:
 | `nullpii` / `nullpii-bare` | word-based, 140 words / 30 overlap | upstream GLiNER `gliner_multi_pii-v1` model card recommendation, fits the 384-subword window |
 | `gliner-onnx-pii-fp32`, `gliner-pii-large-v1` | char-based, 1400 / 200 overlap | upstream `gliner` package default (`predict_entities(..., chunk_size=1400)`) |
 | `piiranha` | char-based, 1000 / 200 overlap | required to dodge the model's hard 256-token truncation (HuggingFace model card §Limitations) |
-| `nemotron-pii-raw` | upstream GLiNER chunker | matches NVIDIA NIM container default |
+| `nemotron-pii-raw` | upstream GLiNER chunker | GLiNER library default (matches NVIDIA's published recipe) |
 | `deberta`, `presidio`, `openai-privacy-filter` | full text, internal upstream handling | each pipeline manages its own windowing |
 
 Forcing every tool through a single normalised harness (e.g. fixed

@@ -29,7 +29,7 @@ interface Session {
  * - Vault contents never leave memory — `sanitize`/`restore` are the only
  *   ways to read placeholder→original mappings, and both require the
  *   correct sessionId.
- * - Placeholders carry an 8-hex-char prefix of the minting session id.
+ * - Placeholders carry a 16-hex-char prefix of the minting session id.
  *   `restore()` validates the prefix and throws `SessionMismatchError`
  *   on mismatch, so a placeholder minted by session A cannot be
  *   silently substituted with session B's PII.

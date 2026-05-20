@@ -14,6 +14,7 @@ Run `npm run license-check` for the full machine-readable list.
 
 Runtime (npm):
   - @anush008/tokenizers       MIT       (NAPI bindings to HF tokenizers)
+  - any-ascii                   ISC       (Unicode → ASCII transliteration)
   - debug                       MIT
   - onnxruntime-node            MIT       (peer, optional)
   - commander                   MIT       (CLI)

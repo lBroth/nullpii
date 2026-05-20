@@ -144,12 +144,13 @@ The directory must contain `model.onnx`, `tokenizer.json`,
 - **Multi-replica.** The current in-memory vault assumes
   sticky-session load balancing — every conversation's response must
   return to the replica that sanitized the request. A pluggable
-  `VaultStore` (Redis HA) is on the post-v0.3 roadmap.
+  `VaultStore` (Redis HA) is something I'd write next if the project survives that long — no commitment, hobby project.
 
 ## Limitations
 
 - **Anthropic only.** OpenAI compat (`/v1/chat/completions`) is
-  not in v0.3 — on the post-v0.3 roadmap.
+  not in v0.3. For other backends, use the core `nullpii` library
+  directly — see the root README.
 - **No auth on the gateway itself.** Put your own mTLS / API-key
   layer in front (typical enterprise pattern). The gateway speaks
   plain HTTP because operators add the TLS termination they trust.

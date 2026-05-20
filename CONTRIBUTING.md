@@ -67,10 +67,10 @@ Before tagging a new version:
 1. **Version bump.** `package.json.version` matches the topmost section of `CHANGELOG.md`. Bump SemVer per breaking / feature / fix.
 2. **Clean build.** `npm run clean && npm run build` (the `prebuild` hook runs `clean` automatically). Confirms no orphan `dist/*.js` from deleted `src/` files.
 3. **Pack inspection.** `npm pack --dry-run`. Verify every shipped file is intentional:
-   - Only `dist/`, `src/`, `README.md`, `LICENSE`, `NOTICE`, `bin/` are listed (the `package.json:files` whitelist).
+   - Only `dist/`, `src/`, `README.md`, `LICENSE`, `NOTICE`, `bin/`, and three asset paths (`assets/logo.png`, `assets/claude-code-demo.m4v`, `assets/claude-code-demo-thumb.png`) are listed (the `package.json:files` whitelist).
    - `dist/backend/` contains **only** `backend.{js,d.ts,*.map}`.
    - No orphan compiled outputs in `dist/` from modules that no longer exist in `src/`.
-   - `tarball size` under 1 MB (sanity — model weights ship via HF, not npm).
+   - `tarball size` under 16 MB (sanity — model weights ship via HF, demo video is ~13 MB).
 4. **Full quality bar.** `npm run lint && npm run typecheck && npm test && npm run license-check && npm run circular-check`. All must pass on the release commit.
 5. **SBOM refresh.** `npm run sbom` regenerates `bom.json` with the current dep tree + timestamp.
 6. **Bench refresh.** If the runtime pipeline changed (recognizer pack, normalize, base64 decoder, dedupe, vault), rerun `packages/eval/scripts/bench_full.py` with the canonical tool set and copy the matrix/confusion into `packages/eval/published-bench/`. Update the README headline F1 if the number moved.

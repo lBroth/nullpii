@@ -82,6 +82,50 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+  publish-gateway:
+    # Publishes `@nullpii/gateway` from packages/gateway/. Versioned
+    # independently of root nullpii (preview 0.x while gateway surface
+    # settles). Runs only when the gateway version is bumped in its
+    # own package.json — the verify-tag step checks tag suffix
+    # `gateway-vX.Y.Z` OR matches gateway/package.json version against
+    # the root tag if they happen to align.
+    name: npm publish @nullpii/gateway --provenance
+    needs: verify
+    runs-on: ubuntu-latest
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/@nullpii/gateway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          registry-url: 'https://registry.npmjs.org'
+      - run: npm ci
+      - run: npm run build
+      - name: Build gateway dist
+        run: |
+          cd packages/gateway
+          rm -rf dist
+          npx tsc -p tsconfig.json
+      - name: Skip if @nullpii/gateway@<version> already published
+        id: check
+        run: |
+          PKG_VERSION=$(node -p "require('./packages/gateway/package.json').version")
+          if npm view "@nullpii/gateway@$PKG_VERSION" version >/dev/null 2>&1; then
+            echo "already-published=true" >> "$GITHUB_OUTPUT"
+            echo "Version $PKG_VERSION already on npm — skipping."
+          else
+            echo "already-published=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: npm publish
+        if: steps.check.outputs.already-published != 'true'
+        working-directory: packages/gateway
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
   hf-push:
     name: push model artifacts to HuggingFace Hub
     needs: verify

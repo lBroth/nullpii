@@ -37,12 +37,12 @@ jobs:
     # (ScatterND clamping, decoder index math, chunk-boundary dedupe,
     # recognizer/ML reconciliation, base64 layer).
     #
-    # Gated on the repo-level variable `NULLPII_E2E_ENABLED` so the job
-    # only runs once the HF repo + revision are published. Flip the
-    # variable in GitHub: Settings → Secrets and variables → Actions →
-    # Variables → New variable: NULLPII_E2E_ENABLED = true.
+    # Runs by default now that `lBroth/nullpii` is published. Set the
+    # repo variable `NULLPII_E2E_ENABLED=false` to disable temporarily
+    # (e.g. during HF maintenance windows). GitHub: Settings → Secrets
+    # and variables → Actions → Variables.
     name: e2e (real ONNX)
-    if: ${{ vars.NULLPII_E2E_ENABLED == 'true' }}
+    if: ${{ vars.NULLPII_E2E_ENABLED != 'false' }}
     runs-on: ubuntu-latest
     env:
       # The HF model repo. Override via repo variable if you need to

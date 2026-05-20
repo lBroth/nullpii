@@ -61,3 +61,6 @@ bom.xml
 
 # generated test artifacts
 .nullpii-test-artifacts/
+
+# large demo source — only the compressed .m4v + thumb are tracked.
+assets/claude-code-demo.mov

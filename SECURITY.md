@@ -2,7 +2,7 @@
 
 ## Report a vulnerability
 
-Privately — open a [Security Advisory](https://github.com/lBroth/nullpii/security/advisories/new) or email the maintainer (`package.json` `author`). **48h triage; up to 10 business days for a fix decision.** Faster on actively-exploited or production-blocking issues.
+Privately — open a [Security Advisory](https://github.com/lBroth/nullpii/security/advisories/new). This is a hobby project — best-effort response, no SLA. Critical / actively-exploited issues get priority.
 
 ## What nullpii protects
 

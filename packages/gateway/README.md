@@ -110,6 +110,7 @@ All via env vars. No file config in this preview.
 | `NULLPII_BACKEND` | `cpu` | `cpu` / `mps` / `cuda` / `auto` |
 | `NULLPII_LOG_LEVEL` | `info` | Fastify log level |
 | `NULLPII_BODY_LIMIT_BYTES` | `10485760` | Request body cap (10 MB) |
+| `NULLPII_LOG_TRAFFIC` | (off) | Set to `wire` to dump the sanitized request body + raw upstream response (placeholder-bearing only — never real PII) to stdout for debugging. 64 KB cap per dump. |
 
 ## Errors
 

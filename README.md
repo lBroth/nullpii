@@ -4,9 +4,11 @@
 
 # nullpii
 
-Local PII sanitization with a reversible in-memory vault. GLiNER ONNX + recognizer pack + adversarial-input preprocessor + base64 decoder.
+Sanitize PII before it hits an LLM. Replace it with placeholders, get the original back on the way out.
 
-Night-hobby project. Engineering focus is the runtime pipeline + adversarial preprocessor, not state-of-the-art F1.
+Works with **any LLM backend** — OpenAI, Anthropic, Gemini, Mistral, Llama, local models, your own inference server. The core `nullpii` library is provider-agnostic: you call `sanitize()` before your existing API call, then `restore()` on the response. The `@nullpii/gateway` package is just a ready-made HTTP proxy for the Anthropic Messages API — handy with Claude Code, but optional. For anything else, drop the lib in wherever you call your model.
+
+> 🧪 **Hobby / experiment.** A nights-and-weekends project, not a product. No SLA, no roadmap commitments, no enterprise pitch. If it helps you, great. If you find a bug, file an issue.
 
 ## Install
 
@@ -14,7 +16,7 @@ Night-hobby project. Engineering focus is the runtime pipeline + adversarial pre
 npm install nullpii onnxruntime-node
 ```
 
-Node ≥ 22. `onnxruntime-node` is an optional peer (CPU / CoreML / CUDA). First call to `sanitize()` downloads ~1.2 GB from [`lBroth/nullpii`](https://huggingface.co/lBroth/nullpii) into `~/.cache/nullpii/`. Pre-warm with `npx nullpii prefetch`; verify with `npx nullpii doctor`.
+Node ≥ 22. First run downloads the model (~1.2 GB) into `~/.cache/nullpii/`. Pre-warm with `npx nullpii prefetch`.
 
 ## Usage
 
@@ -27,7 +29,8 @@ const safe = await sanitize('Email John Smith at john@acme.io about SSN 123-45-6
 // Optional: prefix prompt with the built-in preservation hint
 const prompt = wrapForLLM(safe, 'Translate to Italian');
 
-// … LLM call …
+// … your LLM call here — OpenAI, Anthropic, Gemini, Ollama, anything …
+// The model only ever sees placeholders. Your real PII never leaves the box.
 
 const back = restore(reply, safe.sessionId);
 // back.restored → original text
@@ -52,11 +55,21 @@ for await (const chunk of upstreamSse) emit(stream.push(chunk));
 emit(stream.end().restored);
 ```
 
-Placeholders: `{{PII_<LABEL>_<idx>_<sessionPrefix>}}`. The session prefix binds each placeholder to its minting session — `restore()` reports foreign-prefix and unknown-idx placeholders via `RestoreResult.foreignPlaceholders` / `.unknownPlaceholders` and (opt-in) throws under `{ strict: true }`.
+Placeholders look like `{{PII_PRIVATE_PERSON_0_…}}`. Each one is bound to the session that minted it, so a placeholder from one conversation can't be restored against another.
 
 ## Gateway
 
-`@nullpii/gateway` is a drop-in HTTP proxy for the Anthropic Messages API. The client SDK (Anthropic, Claude Code, anything that speaks the Messages API) flips its `baseURL` to the gateway; nothing else changes. The gateway sanitises every text content block in `system` + `messages` before forwarding, then restores placeholders in the response — streaming-safe (`{{...}}` straddling SSE deltas are buffered + reassembled via `RestoreStream`). Self-hosted, Apache-2.0, multi-arch Docker image (`linux/amd64,linux/arm64`).
+A small HTTP proxy that sits in front of the Anthropic API. Your client (Claude Code, the Anthropic SDK, anything that talks to `api.anthropic.com`) points its `baseURL` at the gateway and works as before — but the prompts get sanitized before leaving your machine and the response gets restored before it reaches you. Streaming works too.
+
+<!-- Demo: Claude Code through the nullpii gateway. GitHub renders the
+     <video> tag inline; npmjs.com falls back to the clickable PNG. -->
+<p align="center">
+  <a href="./assets/claude-code-demo.m4v">
+    <video src="./assets/claude-code-demo.m4v" poster="./assets/claude-code-demo-thumb.png" controls muted playsinline width="720">
+      <img src="./assets/claude-code-demo-thumb.png" alt="Claude Code through the nullpii gateway — demo" width="720" />
+    </video>
+  </a>
+</p>
 
 ### Claude Code quickstart
 
@@ -71,6 +84,8 @@ export ANTHROPIC_API_KEY=sk-ant-…   # your real key, passed through
 # 3. use Claude Code normally
 claude "summarise the email I just wrote to John Doe at john@acme.io"
 ```
+
+**Subscription works too**: if you're logged into Claude Code with a Pro / Max subscription instead of an API key (`claude /login`), the OAuth Bearer token is forwarded verbatim. Just set `ANTHROPIC_BASE_URL` to the gateway and skip `ANTHROPIC_API_KEY` entirely — same routing, same endpoint, no extra config. Subscription quota applies normally.
 
 #### Alternative: persist via Claude Code settings
 
@@ -91,9 +106,9 @@ Project-local (checked into the repo, or git-ignored if it holds the key) — `.
 
 User-global — `~/.claude/settings.json` uses the same shape. Project-local wins on conflict. Add `.claude/settings.local.json` to `.gitignore` if you keep the API key inline.
 
-The gateway sees the raw prompt, runs GLiNER locally, replaces `John Doe` + `john@acme.io` with placeholders, forwards the sanitised text to `api.anthropic.com`, then restores the placeholders in the streamed response before Claude Code prints it.
+The gateway sees the raw prompt, replaces names and emails with placeholders, forwards the cleaned text to `api.anthropic.com`, then puts the originals back in the response before Claude Code prints them.
 
-Verify what's redacted by tailing the structured per-request log — counts only, never values (enforced at the type level by `LogFields` in core):
+Verify it's working by tailing the log — counts only, never PII values:
 
 ```bash
 docker compose -f examples/claude-code/docker-compose.yml logs -f gateway
@@ -121,7 +136,7 @@ Full walk-through (host-mounted-model variant for air-gapped / pre-release, GPU 
 | `account_number` | IBAN mod-97, cards (Luhn), SSN, MRN, BTC / ETH, DNI / CPF / CF / EIN, Medicare MBI / HIC, NPI, insurance policy, IMEI | model + regex (validated) |
 | `secret` | API keys (AWS / GitHub / OpenAI / Anthropic / Stripe / 30+), JWT, PEM, base64-wrapped PII | regex (50+) + base64 |
 
-Coverage matches HIPAA 18-identifier scrubbing + GDPR Art. 4 identity core + general-purpose PII (passport / driver licence / vehicle / geolocation). Out of scope: GDPR Art. 9 special categories (race / religion / health conditions / political opinions) — those are sentiment-classification problems, not span-extraction.
+Out of scope: things that look like opinions or implications (race, religion, health conditions). Those need a different kind of model — this one only finds explicit text spans.
 
 Add your own via `np.addRecognizer({ id, pattern, label, confidence, validate? })`. Validator-passing matches (`iban97`, `luhn`, `base58check`, `cpf`, `codiceFiscale`, `vin`, `latLonPair`) win cross-label dedupe over ML mislabels.
 
@@ -145,7 +160,6 @@ v0.3.0 bench (M5 Pro CPU, 2026-05-18 + opf 2026-05-20, full 9×16 matrix). OOD m
 | `isotonic-fr-heldout` | 2,800 | 0.7254 | 0.6001 | **0.7276** | 0.6663 | 0.5393 | 0.4824 | 0.4172 | 0.4042 | 0.4257 |
 | `isotonic-it-heldout` | 2,200 | **0.7395** | 0.6148 | 0.7273 | 0.6605 | 0.5519 | 0.4509 | 0.4176 | 0.4057 | 0.4420 |
 | `tab-echr` ⚠ | 127 | 0.9239 | **0.9275** | 0.6026 | 0.6346 | 0.6463 | 0.2908 | 0.3163 | 0.7761 | 0.4166 |
-| `nullpii-bench` ⚠ ⚐ self-authored | 2,361 | **0.4228** | 0.3090 | 0.3065 | 0.2851 | 0.2936 | 0.1711 | 0.1669 | 0.1436 | 0.2488 |
 | `nemotron-pii-test` ⚠ | 5,000 | 0.8063 | 0.6814 | **0.9286** ‡ | 0.7675 | 0.7352 | 0.4153 | 0.3286 | 0.4236 | 0.4005 |
 | `ai4privacy-400k` ⚠ | 5,000 | 0.6410 | 0.6339 | 0.5962 | 0.6624 | 0.6256 | 0.4508 | **0.9532** ‡ | 0.3897 | 0.6367 |
 | `ai4privacy-300k` ⚠ | 5,000 | **0.7094** | 0.5303 | 0.6554 | 0.3930 | 0.4691 | 0.3015 | 0.3203 | 0.5553 | 0.4583 |
@@ -155,13 +169,26 @@ v0.3.0 bench (M5 Pro CPU, 2026-05-18 + opf 2026-05-20, full 9×16 matrix). OOD m
 | `isotonic-de` ⚠ | 5,000 | 0.7293 | 0.6300 | **0.7337** | 0.6510 | 0.5556 | 0.4069 | 0.4144 | 0.3913 | 0.4243 |
 | `isotonic-fr` ⚠ | 5,000 | 0.7199 | 0.5970 | **0.7340** | 0.6714 | 0.5503 | 0.4728 | 0.4137 | 0.4029 | 0.4233 |
 | `isotonic-it` ⚠ | 5,000 | **0.7306** | 0.6215 | 0.7225 | 0.6647 | 0.5697 | 0.4531 | 0.4137 | 0.4052 | 0.4333 |
+| `nullpii-internal-bench` ⚐ self-authored, regression cell | 2,361 | **0.4228** | 0.3090 | 0.3065 | 0.2851 | 0.2936 | 0.1711 | 0.1669 | 0.1436 | 0.2488 |
 
 Legend:
 - **bold** = best F1 in the row
 - ⚠ = the dataset overlaps the training distribution of at least one competitor in the row — read those cells with caution
-- ⚐ = in-distribution for `nullpii` itself (regression cell, not an OOD claim). The held-out OOD headline is the macro over `presidio-synthetic` + `isotonic-{en,de,fr,it}-heldout` + `ai4privacy-300k-heldout` + `tab-echr`.
+- ⚐ = in-distribution for `nullpii` itself — regression cell, **not** counted in the OOD headline. The held-out OOD macro (0.7784) is computed over `presidio-synthetic` + `isotonic-{en,de,fr,it}-heldout` + `ai4privacy-300k-heldout` + `tab-echr` only. The `nullpii-internal-bench` row sits at the bottom of the table and is shown only as a regression watcher across releases — read it that way.
 - ‡ = competitor benched on its own training distribution (best-case self-report)
 - § = Presidio benched on its own evaluator dataset (best-case self-report)
+
+### Latency
+
+How long a single `sanitize()` call takes against the published `lBroth/nullpii` ONNX, M5 Pro CPU, Node 24:
+
+| Input size | p50 | p95 | p99 |
+|---:|---:|---:|---:|
+| 100 chars | 23 ms | 25 ms | 27 ms |
+| 1,000 chars | 95 ms | 113 ms | 114 ms |
+| 10,000 chars | 938 ms | 972 ms | 1,122 ms |
+
+Cold start (first call, ONNX load included): ~756 ms. Numbers from `packages/eval/scripts/bench_latency_public.mjs` against the public runtime — no LoRA, no router, just `new NullPii({ backend: 'cpu' })`.
 
 Methodology disclosures (read these before drawing conclusions):
 
@@ -189,9 +216,9 @@ NULLPII_MODEL_DIR=/path/to/lBroth-nullpii \
     --out-dir packages/eval/results/$(date +%Y%m%d)-bench
 ```
 
-### Where the wins live
+### Tricky inputs it still catches
 
-Concrete inputs where the runtime pipeline recovers PII the bare model misses:
+Where the preprocessor + recognizer pack pulls PII the model alone would miss:
 
 | Surface | Input | Detected as |
 |---|---|---|
@@ -205,7 +232,7 @@ Concrete inputs where the runtime pipeline recovers PII the bare model misses:
 | Italian IBAN in prose | `IT60X0542811101000001023456` | `IT60X0542811101000001023456` (account_number, mod-97 verified) |
 | Stripe live key in code | `api_key = 'sk_live_4eC39HqLyjWDarjtT1zdp7dc'` | `sk_live_4eC39HqLyjWDarjtT1zdp7dc` (credential, Stripe prefix + regex) |
 
-Five layers: NFKC + `any-ascii` translit (fullwidth, Cyrillic, Greek…) · base64 decode-then-classify · iterative URL `%XX` + HTML numeric entity decode · zero-width strip with offset remap · 50+ validated regex pack.
+Roughly five passes: Unicode normalisation, base64 decoding, percent + HTML-entity decoding, zero-width strip, regex pack.
 
 ## Backends
 
@@ -218,23 +245,22 @@ new NullPii({ backend: 'auto' });  // currently 'cpu'
 
 CPU thread tuning: pass `intraOpNumThreads` (parallelism inside a single op) and `interOpNumThreads` (parallelism across ops) to `new NullPii({...})`. Both are forwarded to the underlying ONNX Runtime session config.
 
-## Known limitations
+## What it doesn't do
 
-- Not a HIPAA de-identifier. Diagnoses, ICD codes, dosages, biometric / genetic identifiers, implied health attributes — out of scope. Pair with Presidio + a medical NER stack if you need those.
-- `private_ip` / `private_mac` come from the regex pack, not the ML model.
-- Inputs > 1 MB refused upfront with `TextTooLongError('bytes')`. Chunk upstream.
-- Detection is best-effort. Defence in depth, not the sole privacy control.
+- It's not a HIPAA tool. Medical diagnoses, dosages, that kind of thing — out of scope.
+- IPs and MAC addresses are caught by regex, not the model.
+- Inputs over 1 MB are refused — chunk them yourself.
+- Detection is best-effort. Don't make it your only privacy control.
 
 ## Privacy
 
-- Detection **fully local** — no network socket after the first model download (HF Hub only, air-gappable via `modelDir` / `NULLPII_MODEL_DIR`).
-- Vault is **in-memory only**, scoped to the `NullPii` instance, cleared on `dispose()`. `destroySession()` purges a single session early.
-- Placeholders carry a 16-hex-char session prefix; `restore()` surfaces foreign-prefix + unknown-idx placeholders (default) or throws (`{ strict: true }`).
-- Debug logs carry counts and short ids — never PII. See [SECURITY.md](SECURITY.md).
+- Detection runs entirely on your machine. The only network call is the one-time model download.
+- The vault lives in memory and goes away when you call `dispose()`.
+- Logs never contain PII — just counts and short ids. See [SECURITY.md](SECURITY.md).
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE). Runtime tree is 100% permissive (MIT / Apache-2.0 / BSD / ISC / CC0); CI gates via `npm run license-check`. Model weights on HuggingFace are a separate artifact with their own licence (see Credits below).
+Apache-2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE). Model weights have their own licence (see Credits).
 
 ## Further reading
 

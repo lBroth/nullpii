@@ -5,7 +5,15 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [0.3.0] — first public release
 
-Initial Apache-2.0 public release of `nullpii` (npm) + `@nullpii/gateway`.
+Initial Apache-2.0 public release. Published packages:
+
+- **`nullpii@0.3.0`** — core PII sanitization library (npm). GA: stable
+  public API surface (`NullPii`, `sanitize`, `restore`, `wrapForLLM`,
+  `RestoreStream`, recognizers).
+- **`@nullpii/gateway@0.0.3`** — Anthropic Messages API drop-in proxy
+  (npm + multi-arch Docker). Versioned as a preview (`0.x`) while the
+  gateway surface settles around streaming + tool_use coverage; pins
+  `nullpii >=0.3.0 <0.4.0` as a peer.
 
 ### Detection schema (12 PII categories)
 

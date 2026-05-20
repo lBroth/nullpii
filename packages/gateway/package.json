@@ -9,11 +9,16 @@
     "redact",
     "anthropic",
     "claude",
+    "claude-code",
     "gateway",
     "proxy",
+    "llm-proxy",
+    "anthropic-proxy",
     "gdpr",
     "hipaa",
-    "privacy"
+    "privacy",
+    "local-pii",
+    "self-hosted"
   ],
   "repository": {
     "type": "git",
@@ -37,11 +42,12 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "src", "bin", "README.md"],
+  "files": ["dist", "src", "bin", "README.md", "LICENSE", "NOTICE"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx watch --clear-screen=false --tsconfig tsconfig.dev.json src/dev.ts",
-    "start": "node bin/nullpii-gateway.mjs"
+    "start": "node bin/nullpii-gateway.mjs",
+    "prepublishOnly": "rm -rf dist && npm run build"
   },
   "dependencies": {
     "fastify": "^5.2.0"

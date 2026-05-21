@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeForDetection, remapSpan } from '../src/normalize.js';
+import { PLACEHOLDER_OPEN_ESCAPED, escapePlaceholders } from '../src/placeholder-escape.js';
 
 describe('normalizeForDetection', () => {
   it('passes through ASCII unchanged', () => {
@@ -11,6 +12,30 @@ describe('normalizeForDetection', () => {
     for (let i = 0; i <= text.length; i++) {
       expect(r.normToOrig[i]).toBe(i);
     }
+  });
+
+  it('strips placeholder-escape PUA sentinels (U+E000 / U+E001)', () => {
+    // The escape mechanism rewrites user-authored `{{` to a 2-char PUA
+    // pair before detection. Normalise must strip those bytes so the
+    // GLiNER tokenizer never tags them as PII — leaving them in produces
+    // spurious `private_person` spans on the sentinel itself, which
+    // corrupts the user's `{{...}}` template after vault substitution.
+    const escaped = escapePlaceholders('{{name}}');
+    const r = normalizeForDetection(escaped);
+    expect(r.normalized).toBe('name}}');
+    // A span over just `name` in normalised coords [0, 4) remaps to the
+    // word's location in escaped coords [2, 6) — sentinel positions are
+    // skipped, so vault substitution never touches them.
+    const [origStart, origEnd] = remapSpan(0, 4, r.normToOrig);
+    expect(origStart).toBe(2);
+    expect(origEnd).toBe(6);
+  });
+
+  it('does not pass-through inputs that contain the PUA sentinel', () => {
+    // Bare sentinel triggers the non-ASCII path; ensure it is stripped.
+    const text = `prefix${PLACEHOLDER_OPEN_ESCAPED}suffix`;
+    const r = normalizeForDetection(text);
+    expect(r.normalized).toBe('prefixsuffix');
   });
 
   it('strips zero-width characters', () => {

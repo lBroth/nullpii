@@ -7,7 +7,11 @@
  */
 
 export const PLACEHOLDER_OPEN = '{{';
-export const PLACEHOLDER_OPEN_ESCAPED = '';
+/** First char of the 2-char PUA sentinel pair (U+E000). */
+export const PLACEHOLDER_SENTINEL_LEFT = '\uE000';
+/** Second char of the 2-char PUA sentinel pair (U+E001). */
+export const PLACEHOLDER_SENTINEL_RIGHT = '\uE001';
+export const PLACEHOLDER_OPEN_ESCAPED = PLACEHOLDER_SENTINEL_LEFT + PLACEHOLDER_SENTINEL_RIGHT;
 
 export function escapePlaceholders(text: string): string {
   return text.split(PLACEHOLDER_OPEN).join(PLACEHOLDER_OPEN_ESCAPED);

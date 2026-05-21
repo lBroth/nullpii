@@ -62,8 +62,9 @@ export const DEFAULT_MODEL_REVISION = 'main';
 export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
   // ─── URL / Email ──────────────────────────────────────────────
   // URL: only http(s) + www. — bare-domain.tld dropped (FP-prone).
-  // The optional URL whitelist filter (PUBLIC_URL_HOSTS) lives in
-  // `src/url-filter.ts` and is opt-in.
+  // The public-host allowlist (`PUBLIC_URL_HOSTS` in `src/url-filter.ts`)
+  // runs as a post-filter and is on by default; opt out via
+  // `NullPiiConfig.urlAllowlist: 'none'`.
   {
     id: 'core:url',
     pattern: /\b(?:https?:\/\/|www\.)[^\s<>"]+/g,

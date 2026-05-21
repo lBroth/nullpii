@@ -28,6 +28,7 @@ import { ModelManager } from './model-manager.js';
 import { normalizeForDetection, remapSpan } from './normalize.js';
 import { escapePlaceholders, unescapePlaceholders } from './placeholder-escape.js';
 import { runRecognizers } from './recognizers.js';
+import { dropSpansInsideTemplates, findTemplateRanges } from './template-mask.js';
 import {
   GLINER_MODEL_CATEGORIES,
   GLINER_ZERO_SHOT_EXTRA,
@@ -230,8 +231,17 @@ export class NullPii {
       this.config.threshold ?? DEFAULT_POST_FILTER_THRESHOLD,
       this.config.categoryThresholds ?? {},
     );
+    // Drop spans that fall inside user-authored template syntax
+    // (`{{...}}`, `${...}`, `<%...%>`, `{%...%}`). The model routinely
+    // tags template variable names as `private_person`, which after
+    // vault substitution would produce nested-brace garbage like
+    // `{{{{PII_..._}}}}`. Template ranges are computed on the original
+    // input — escape is length-preserving so offsets transfer to the
+    // escaped-text coordinate space the spans live in.
+    const templateRanges = findTemplateRanges(text);
+    const masked = dropSpansInsideTemplates(merged, templateRanges);
     const refineOn = this.config.boundaryRefine ?? DEFAULT_BOUNDARY_REFINE;
-    const spans = refineOn ? refineSpanBoundaries(escaped, merged) : merged;
+    const spans = refineOn ? refineSpanBoundaries(escaped, masked) : masked;
 
     const session = sessionId ?? this.vault.createSession();
     logf(LOG_SCOPE, 'sanitize', {

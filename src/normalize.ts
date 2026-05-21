@@ -2,6 +2,7 @@
 
 import anyAscii from 'any-ascii';
 import { MAX_INPUT_BYTES } from './defaults.js';
+import { PLACEHOLDER_SENTINEL_LEFT, PLACEHOLDER_SENTINEL_RIGHT } from './placeholder-escape.js';
 
 /** Adversarial-resistant input normalisation with offset map.
  * Steps in order: whitespace-PII collapse (gated by digit/@ post-check),
@@ -22,6 +23,12 @@ const ZERO_WIDTH_CHARS = new Set([
   '﻿', // ZERO WIDTH NO-BREAK SPACE / BOM
   '⁠', // WORD JOINER
   '­', // SOFT HYPHEN
+  // Placeholder-escape PUA sentinels — strip before detection so the
+  // GLiNER tokenizer never sees them. Leaving them in causes spurious
+  // private_person spans on the sentinel bytes themselves, which then
+  // corrupt user-authored `{{...}}` templates after vault substitution.
+  PLACEHOLDER_SENTINEL_LEFT,
+  PLACEHOLDER_SENTINEL_RIGHT,
 ]);
 
 /** Same characters as the Python `_SPACED_PII_RE`. Word-anchored on

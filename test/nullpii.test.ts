@@ -179,6 +179,25 @@ describe('NullPii e2e pipeline (mocked ONNX)', () => {
     await b.dispose();
   });
 
+  it('preserves user-authored {{...}} templates around a real PII hit', async () => {
+    // Regression: gateway report showed `{{short-kebab-case-slug}}` in a
+    // system prompt was corrupted to `{{PII_PRIVATE_PERSON_2_…}}short-kebab-case-slug}}`
+    // because the escape PUA sentinel was tagged as `private_person`.
+    // With sentinels stripped before detection, the template survives the
+    // round-trip and the real PII (email) is the only thing replaced.
+    const n = new NullPii({ modelDir: '/fake', backend: 'cpu' });
+    const text = 'name: {{short-kebab-case-slug}} — contact alice@acme.io';
+    const out = await n.sanitize(text);
+    // Exactly one span — the email — fires from the recognizer pack.
+    // The template syntax is untouched.
+    expect(out.spans.find((s) => s.label === 'private_email')?.text).toBe('alice@acme.io');
+    expect(out.sanitized).toContain('{{short-kebab-case-slug}}');
+    expect(out.sanitized).not.toContain('{{PII_PRIVATE_PERSON');
+    const restored = n.restore(out.sanitized, out.sessionId);
+    expect(restored.restored).toBe(text);
+    await n.dispose();
+  });
+
   it('init runs once across many sanitize calls', async () => {
     const n = new NullPii({ modelDir: '/fake', backend: 'cpu' });
     const r1 = await n.sanitize('First email: a@acme.io');

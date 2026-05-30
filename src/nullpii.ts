@@ -41,6 +41,7 @@ import {
   type SanitizeOptions,
   type SanitizeResult,
 } from './types/index.js';
+import { dropPublicUrlSpans } from './url-filter.js';
 import { PiiVault } from './vault.js';
 
 const LOG_SCOPE = 'nullpii';
@@ -240,8 +241,13 @@ export class NullPii {
     // escaped-text coordinate space the spans live in.
     const templateRanges = findTemplateRanges(text);
     const masked = dropSpansInsideTemplates(merged, templateRanges);
+    // Drop URLs pointing at well-known public reference / documentation
+    // hosts (github.com, anthropic.com, docs.*, …). These leak no PII
+    // on their own and otherwise erode the user's token budget when a
+    // system prompt cites a project repo or API doc page.
+    const filteredUrls = this.config.urlAllowlist === 'none' ? masked : dropPublicUrlSpans(masked);
     const refineOn = this.config.boundaryRefine ?? DEFAULT_BOUNDARY_REFINE;
-    const spans = refineOn ? refineSpanBoundaries(escaped, masked) : masked;
+    const spans = refineOn ? refineSpanBoundaries(escaped, filteredUrls) : filteredUrls;
 
     const session = sessionId ?? this.vault.createSession();
     logf(LOG_SCOPE, 'sanitize', {

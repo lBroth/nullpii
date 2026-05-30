@@ -198,6 +198,55 @@ describe('NullPii e2e pipeline (mocked ONNX)', () => {
     await n.dispose();
   });
 
+  it('drops low-confidence private_date spans via built-in category threshold', async () => {
+    // Default `categoryThresholds.private_date` = 0.85 — a recognizer
+    // that fires at 0.7 must be dropped; one at 0.9 must survive. This
+    // protects against the gateway-report case of innocuous calendar
+    // dates in system prompts being placeholdered.
+    const n = new NullPii({
+      modelDir: '/fake',
+      backend: 'cpu',
+      recognizers: [
+        {
+          id: 'test:weak-date',
+          pattern: /\b2026-05-21\b/g,
+          label: 'private_date',
+          confidence: 0.7,
+        },
+        {
+          id: 'test:strong-date',
+          pattern: /\b1985-03-12\b/g,
+          label: 'private_date',
+          confidence: 0.9,
+        },
+      ],
+    });
+    const out = await n.sanitize('Today 2026-05-21 — DOB 1985-03-12');
+    expect(out.spans).toHaveLength(1);
+    expect(out.spans[0]?.text).toBe('1985-03-12');
+    await n.dispose();
+  });
+
+  it('user categoryThresholds override built-in date default per-key', async () => {
+    // Caller can lower the bar back down for their own use case.
+    const n = new NullPii({
+      modelDir: '/fake',
+      backend: 'cpu',
+      categoryThresholds: { private_date: 0.5 },
+      recognizers: [
+        {
+          id: 'test:weak-date',
+          pattern: /\b2026-05-21\b/g,
+          label: 'private_date',
+          confidence: 0.7,
+        },
+      ],
+    });
+    const out = await n.sanitize('Today 2026-05-21');
+    expect(out.spans).toHaveLength(1);
+    await n.dispose();
+  });
+
   it('init runs once across many sanitize calls', async () => {
     const n = new NullPii({ modelDir: '/fake', backend: 'cpu' });
     const r1 = await n.sanitize('First email: a@acme.io');

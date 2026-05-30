@@ -7,6 +7,7 @@ import { NULLPII_MODEL_DIR, readEnvVar } from './config.js';
 import {
   BOUNDARY_REFINE_TRIM_CHARS,
   DEFAULT_BOUNDARY_REFINE,
+  DEFAULT_CATEGORY_THRESHOLDS,
   DEFAULT_DECODE_THRESHOLD,
   DEFAULT_DEDUPE_IOU,
   DEFAULT_POST_FILTER_THRESHOLD,
@@ -225,10 +226,18 @@ export class NullPii {
       DEFAULT_DEDUPE_IOU,
       { acrossLabels: true },
     ) as PiiSpan[];
+    // Merge built-in per-category defaults with user overrides — user
+    // keys win on a key-by-key basis. The built-in `private_date: 0.85`
+    // drops the long tail of low-confidence calendar-date hits the model
+    // emits without identifying context.
+    const mergedCategoryThresholds = {
+      ...DEFAULT_CATEGORY_THRESHOLDS,
+      ...(this.config.categoryThresholds ?? {}),
+    };
     const merged = applyThresholds(
       combined,
       this.config.threshold ?? DEFAULT_POST_FILTER_THRESHOLD,
-      this.config.categoryThresholds ?? {},
+      mergedCategoryThresholds,
     );
     const refineOn = this.config.boundaryRefine ?? DEFAULT_BOUNDARY_REFINE;
     const spans = refineOn ? refineSpanBoundaries(escaped, merged) : merged;

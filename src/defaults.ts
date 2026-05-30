@@ -8,7 +8,7 @@
 // Strict TS index-access fallbacks (e.g. `arr[i] ?? 0` under
 // `noUncheckedIndexedAccess`) are NOT user-facing defaults and stay inline.
 
-import type { BackendName, ModelVariant } from './types/index.js';
+import type { BackendName, ModelVariant, PiiCategory } from './types/index.js';
 import type { Recognizer } from './types/recognizer.js';
 import {
   base58CheckValid,
@@ -832,6 +832,19 @@ export const DEFAULT_DECODE_THRESHOLD = 0.5;
  * always pass and ML spans already cleared `DEFAULT_DECODE_THRESHOLD`.
  * Override via `NullPiiConfig.threshold` / `categoryThresholds`. */
 export const DEFAULT_POST_FILTER_THRESHOLD = 0;
+
+/** Per-category post-filter thresholds layered on top of the global
+ * default. User-supplied `categoryThresholds` win on a key-by-key
+ * basis (only the labels the user spells out are overridden).
+ *
+ * `private_date` — model is over-eager on calendar dates without
+ * identifying context (e.g. "Today's date is 2026-05-21" in a system
+ * prompt or footer). Tightening to 0.85 drops the long tail of
+ * low-confidence date hits while keeping DOB / birth-date / explicit
+ * date PII (which the model emits well above 0.9). */
+export const DEFAULT_CATEGORY_THRESHOLDS: Partial<Record<PiiCategory, number>> = {
+  private_date: 0.85,
+};
 
 /** IoU threshold used by `dedupeOverlappingSpans` when reconciling
  * ML + recognizer spans. Two spans with IoU at or above this are

@@ -198,6 +198,46 @@ describe('NullPii e2e pipeline (mocked ONNX)', () => {
     await n.dispose();
   });
 
+  it('drops spans inside user-authored template syntax', async () => {
+    // Regression: even with PUA sentinels stripped (PR #43), the model
+    // still tagged template variable names (`short-kebab-case-slug`) as
+    // `private_person`, producing nested-brace garbage like
+    // `{{{{PII_..._}}}}` after vault substitution. The template-mask
+    // post-filter drops spans inside `{{...}}` / `${...}` / `<%...%>`.
+    // The recognizer pack does NOT match `short-kebab-case-slug` so this
+    // test relies on the post-filter, not the ML mock (which returns no
+    // spans). To simulate the ML false-positive we register a recognizer
+    // that fires inside the template — same code path.
+    const n = new NullPii({
+      modelDir: '/fake',
+      backend: 'cpu',
+      recognizers: [
+        {
+          id: 'test:fake-person',
+          pattern: /short-kebab-case-slug/g,
+          label: 'private_person',
+          confidence: 0.99,
+        },
+      ],
+    });
+    const text = 'name: {{short-kebab-case-slug}} email: alice@acme.io';
+    // Re-register the default email recognizer so the email still fires.
+    n.addRecognizer({
+      id: 'core:email',
+      pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
+      label: 'private_email',
+      confidence: 0.95,
+    });
+    const out = await n.sanitize(text);
+    // Only the email survives; the template content is masked out.
+    expect(out.spans).toHaveLength(1);
+    expect(out.spans[0]?.label).toBe('private_email');
+    expect(out.sanitized).toContain('{{short-kebab-case-slug}}');
+    // No nested-brace corruption.
+    expect(out.sanitized).not.toMatch(/\{\{\{\{/);
+    await n.dispose();
+  });
+
   it('init runs once across many sanitize calls', async () => {
     const n = new NullPii({ modelDir: '/fake', backend: 'cpu' });
     const r1 = await n.sanitize('First email: a@acme.io');

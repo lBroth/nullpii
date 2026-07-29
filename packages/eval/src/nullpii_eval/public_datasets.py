@@ -242,11 +242,75 @@ _AI4PRIVACY_LABELS = {
     "APIKEY": "secret",
     "PASSWORD": "secret",
     "PIN": "secret",
+    # ─── pii-masking-300k vocabulary ──────────────────────────────
+    # Everything above was written against the 400k release. The 300k
+    # release spells the SAME taxonomy differently, so these 15 keys are
+    # aliases of keys already in this dict — not new categories. Without
+    # them 56.4% of 300k gold was deleted before scoring. Counts are
+    # spans recovered on `train[100000:105000]` (the -heldout row).
+    "GIVENNAME1": "private_person",         # 1,358 — alias of GIVENNAME
+    "GIVENNAME2": "private_person",         #   379
+    "LASTNAME1": "private_person",          # 1,489 — alias of LASTNAME
+    "LASTNAME2": "private_person",          #   363
+    "LASTNAME3": "private_person",          #   122
+    "TEL": "private_phone",                 # 1,447 — alias of TELEPHONENUM
+    "BOD": "private_date",                  # 1,501 — birth date, alias of DOB
+    "BUILDING": "private_address",          # 1,196 — alias of BUILDINGNUM
+    "SECADDRESS": "private_address",        #   475 — alias of SECONDARYADDRESS
+    "SOCIALNUMBER": "account_number",       # 1,687 — alias of SOCIALNUM
+    "IDCARD": "account_number",             # 1,592 — alias of IDCARDNUM
+    "PASSPORT": "private_passport",         # 1,506 — alias of PASSPORTNUM
+    "DRIVERLICENSE": "private_driver_license",  # 1,578 — alias of DRIVERLICENSENUM
+    "PASS": "secret",                       # 1,136 — password, alias of PASSWORD
+    "GEOCOORD": "private_geolocation",      #   140 — alias of GPSCOORDINATES
 }
 
 
+# Upstream labels with no home in nullpii's 14-label schema. Listing a
+# label here is a DECISION ("this is not PII we detect"); leaving it out
+# of both this set and `_AI4PRIVACY_LABELS` is a BUG. Keeping the two
+# apart is the whole point — `.get()` used to return None for both cases,
+# so an unrecognised upstream label was indistinguishable from a
+# deliberate exclusion and silently deleted the gold span.
+_AI4PRIVACY_IGNORED = frozenset({
+    "SEX",         # gender — no demographic class in the schema
+    "CARDISSUER",  # card brand ("Diners Club International") — an org
+    # Honorific / rank held as a STANDALONE span ("Mr", "Papst",
+    # "Bürgermeisterin" — 224 distinct values, many occupational). Every
+    # other gold set in this bench folds the honorific INSIDE the person
+    # span (tab-echr: 842 of 1,063 person spans start "Mr/Mrs/Dr/…"), so
+    # mapping this would invent a span shape no other row uses. Adopting
+    # it is worth +0.0026 macro on ai4privacy-300k-heldout — declined on
+    # principle, not on score.
+    "TITLE",
+})
+
+
 def _map_ai4privacy_label(label: str) -> str | None:
-    return _AI4PRIVACY_LABELS.get(label.upper())
+    """ai4privacy raw label → nullpii category, or None if deliberately ignored.
+
+    Raises on an unknown label rather than dropping it. The 300k and 400k
+    releases ship DIFFERENT vocabularies for the same taxonomy (300k
+    `GIVENNAME1`/`LASTNAME1`/`TEL`/`BOD`/`PASS` vs 400k
+    `GIVENNAME`/`SURNAME`/`TELEPHONENUM`/`DOB`/`PASSWORD`), and this map
+    was authored against 400k only: 56.4% of 300k gold was being deleted
+    by variants absent from the dict — 15 of them, every one an alias of
+    a key already present. Silent drops also LAUNDER PRECISION, because
+    `macro_f1` skips zero-support classes: predictions on a class whose
+    gold was deleted cost nothing at all.
+    """
+    key = label.upper()
+    mapped = _AI4PRIVACY_LABELS.get(key)
+    if mapped is not None:
+        return mapped
+    if key in _AI4PRIVACY_IGNORED:
+        return None
+    raise ValueError(
+        f"[ai4privacy] unknown gold label {label!r}. Add it to "
+        f"_AI4PRIVACY_LABELS (it is PII we detect) or to "
+        f"_AI4PRIVACY_IGNORED (it is not) — never leave it to fall "
+        f"through, that silently deletes gold and inflates precision.",
+    )
 
 
 def _load_presidio_synthetic(max_samples: int | None) -> PublicDataset:
@@ -348,7 +412,6 @@ _ISOTONIC_LABEL_MAP = {
     "LASTNAME": "private_person",
     "FULLNAME": "private_person",
     "PREFIX": "private_person",
-    "JOBTITLE": None,
     "EMAIL": "private_email",
     "PHONE_NUMBER": "private_phone",
     "PHONENUMBER": "private_phone",
@@ -363,12 +426,10 @@ _ISOTONIC_LABEL_MAP = {
     "DATE": "private_date",
     "TIME": "private_date",
     "URL": "private_url",
-    "USERNAME": None,
     "ACCOUNT_NUMBER": "account_number",
     "ACCOUNTNUMBER": "account_number",
     "IBAN": "account_number",
     "CREDITCARDNUMBER": "account_number",
-    "CREDITCARDISSUER": None,
     "CREDITCARDCVV": "account_number",
     "SSN": "account_number",
     "PASSWORD": "secret",
@@ -390,7 +451,72 @@ _ISOTONIC_LABEL_MAP = {
     "MACADDRESS": "private_mac",
     "NEARBYGPSCOORDINATE": "private_geolocation",
     "GPSCOORDINATES": "private_geolocation",
+    # ─── Parity with `_AI4PRIVACY_LABELS` ─────────────────────────
+    # Isotonic is an open mirror of ai4privacy (see `_load_isotonic`
+    # docstring), so the two maps describe ONE taxonomy. These keys were
+    # mapped on the three ai4privacy rows and silently dropped on the
+    # eight isotonic rows — the same gold label counted on some rows of
+    # the published matrix and invisible on others. Counts are spans
+    # recovered across the four `-heldout` slices.
+    "MIDDLENAME": "private_person",       #   599
+    "USERNAME": "private_person",         #   601 — GDPR Art.4 online identifier;
+                                          #   ai4privacy and argilla both map it
+                                          #   to private_person. Was an explicit
+                                          #   `None` here: same dataset family,
+                                          #   opposite decisions.
+    "COUNTY": "private_address",          #   571
+    "SECONDARYADDRESS": "private_address",  # 513
+    "MASKEDNUMBER": "account_number",     #   505 — 16-digit PANs
+    "BIC": "account_number",              #   163
+    "LITECOINADDRESS": "account_number",  #   155 — sibling of the already-mapped
+                                          #   BITCOINADDRESS / ETHEREUMADDRESS.
+                                          #   Score-NEGATIVE for nullpii
+                                          #   (−0.0013 macro): kept because the
+                                          #   rule is schema membership, not score.
+    "PHONEIMEI": "account_number",        #   474 — device id; `account_number` is
+                                          #   this schema's bucket for structured
+                                          #   registry numbers, cf.
+                                          #   `core:device-serial-context`.
+    "IP": "private_ip",                   #   468
+    "MAC": "private_mac",                 #   236
 }
+
+# No home in nullpii's 14-label schema. Same contract as
+# `_AI4PRIVACY_IGNORED`: listed here = decided, absent from both = bug.
+# NB: this set was chosen by schema membership, then checked SYMMETRICALLY
+# — every entry was also scored to make sure the list is not just the
+# mappings that happen to flatter nullpii. Three of them would LOWER our
+# macro if mapped (AGE −0.0054, USERAGENT −0.0177, ACCOUNTNAME −0.0046)
+# and are excluded anyway, on the same rule that keeps LITECOINADDRESS in.
+_ISOTONIC_IGNORED = frozenset({
+    "JOBTITLE", "JOBAREA", "JOBTYPE", "COMPANYNAME",   # employment / org
+    "SEX", "GENDER", "AGE", "EYECOLOR", "HEIGHT",      # demographic attributes
+    "AMOUNT", "CURRENCY", "CURRENCYCODE",              # money identifies nobody
+    "CURRENCYNAME", "CURRENCYSYMBOL",
+    "CREDITCARDISSUER",                                # card brand — an org
+    "ACCOUNTNAME",                                     # label of an account, not its number
+    "USERAGENT",                                       # client string, not a secret
+    "ORDINALDIRECTION",                                # "Southwest" — not an address
+})
+
+
+def _map_isotonic_label(raw_label: str) -> str | None:
+    """Isotonic raw label (`CITY_1`) → nullpii category, or None if ignored.
+
+    Raises on an unknown label instead of dropping it, for the reason
+    given on `_map_ai4privacy_label`.
+    """
+    key = _strip_index(raw_label).upper()
+    mapped = _ISOTONIC_LABEL_MAP.get(key)
+    if mapped is not None:
+        return mapped
+    if key in _ISOTONIC_IGNORED:
+        return None
+    raise ValueError(
+        f"[isotonic] unknown gold label {raw_label!r}. Add it to "
+        f"_ISOTONIC_LABEL_MAP or to _ISOTONIC_IGNORED — a fall-through "
+        f"silently deletes gold and inflates precision.",
+    )
 
 
 def _strip_index(label: str) -> str:
@@ -466,9 +592,9 @@ def _load_isotonic(
             start, end, raw_label = int(entry[0]), int(entry[1]), str(entry[2])
             if raw_label == "O":
                 continue  # explicit "no label" sentinel from upstream
-            mapped = _ISOTONIC_LABEL_MAP.get(_strip_index(raw_label).upper())
+            mapped = _map_isotonic_label(raw_label)
             if mapped is None:
-                continue  # label intentionally outside our 12-class taxonomy
+                continue  # label deliberately outside our 14-label schema
             spans.append(Span(mapped, start, end))
         samples.append(Sample(text=text, spans=tuple(spans)))
     citation = "Isotonic. PII Masking 200k (open mirror of ai4privacy)."

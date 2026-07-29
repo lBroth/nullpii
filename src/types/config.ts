@@ -64,4 +64,10 @@ export interface NullPiiConfig {
   /** Trim whitespace + common punctuation from span edges as a final
    * post-pass. Default: `true`. */
   readonly boundaryRefine?: boolean;
+  /** Public-URL allowlist mode. Default: built-in {@link
+   * src/url-filter.PUBLIC_URL_HOSTS} drops URLs to well-known reference
+   * domains (github.com, anthropic.com, docs.python.org, …) from the
+   * `private_url` output. Pass `'none'` to disable and have every URL
+   * the recognizer pack and model emit treated as PII. */
+  readonly urlAllowlist?: 'none';
 }

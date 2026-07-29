@@ -150,7 +150,7 @@ Two `nullpii` rows + one upstream-GLiNER row let readers isolate the model from 
 - **`gliner-onnx-pii-fp32`** — the unmodified upstream [`onnx-community/gliner_multi_pii-v1`](https://huggingface.co/onnx-community/gliner_multi_pii-v1) ONNX, same bare consumer. Baseline before any project fine-tuning.
 - **`nullpii`** — the npm package (full runtime): published model + recognizer pack + adversarial preprocessor + base64 decoder + reversible vault.
 
-v0.3.0 bench (M5 Pro CPU, 2026-05-18 + opf 2026-05-20, full 9×16 matrix). OOD macro for `nullpii` = **0.7784** (presidio-synthetic + isotonic-{en,de,fr,it}-heldout + ai4privacy-300k-heldout + tab-echr).
+v0.3.0 bench (M5 Pro CPU, 2026-05-18 + opf 2026-05-20, full 9×16 matrix). OOD macro for `nullpii` = **0.7784** over the **OOD-7** set (presidio-synthetic + isotonic-{en,de,fr,it}-heldout + ai4privacy-300k-heldout + tab-echr). The set is defined once, in `packages/eval/scripts/ood_macro.py`; recompute the headline from any `matrix.json` with `python packages/eval/scripts/ood_macro.py <matrix.json>` rather than restating it by hand.
 
 | Dataset | n | **`nullpii`** | **`nullpii-bare`** | `nemotron-pii-raw` | `gliner-pii-large-v1` | `gliner-onnx-pii-fp32` | `deberta` | `piiranha` | `presidio` | `opf` |
 |---|---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
@@ -174,7 +174,8 @@ v0.3.0 bench (M5 Pro CPU, 2026-05-18 + opf 2026-05-20, full 9×16 matrix). OOD m
 Legend:
 - **bold** = best F1 in the row
 - ⚠ = the dataset overlaps the training distribution of at least one competitor in the row — read those cells with caution
-- ⚐ = in-distribution for `nullpii` itself — regression cell, **not** counted in the OOD headline. The held-out OOD macro (0.7784) is computed over `presidio-synthetic` + `isotonic-{en,de,fr,it}-heldout` + `ai4privacy-300k-heldout` + `tab-echr` only. The `nullpii-internal-bench` row sits at the bottom of the table and is shown only as a regression watcher across releases — read it that way.
+- ⚐ = in-distribution for `nullpii` itself — regression cell, **not** counted in the OOD headline. The held-out OOD macro (0.7784) is computed over the OOD-7 set only: `presidio-synthetic` + `isotonic-{en,de,fr,it}-heldout` + `ai4privacy-300k-heldout` + `tab-echr`. The `nullpii-internal-bench` row sits at the bottom of the table and is shown only as a regression watcher across releases — read it that way.
+- the `-heldout` suffix means rows sliced **above `nullpii`'s own training offsets** (`_AI4_HELDOUT_OFFSET` / `_ISOTONIC_HELDOUT_ROW_OFFSET` in `packages/eval/scripts/bench_full.py`). It is a guarantee about `nullpii` and about no other tool in the row — a competitor trained on the same upstream corpus sees those rows as ordinary training data.
 - ‡ = competitor benched on its own training distribution (best-case self-report)
 - § = Presidio benched on its own evaluator dataset (best-case self-report)
 

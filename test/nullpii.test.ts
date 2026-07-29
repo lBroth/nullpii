@@ -198,6 +198,34 @@ describe('NullPii e2e pipeline (mocked ONNX)', () => {
     await n.dispose();
   });
 
+  it('keeps public-host URLs verbatim, redacts private hosts', async () => {
+    // github.com / docs.python.org are in PUBLIC_URL_HOSTS — they should
+    // survive the round-trip untouched. A URL on an unknown host stays
+    // redacted as `private_url`.
+    const n = new NullPii({ modelDir: '/fake', backend: 'cpu' });
+    const text =
+      'See https://github.com/anthropics/claude-code/issues and https://acme.io/internal';
+    const out = await n.sanitize(text);
+    // Only the acme.io URL is redacted.
+    const urlSpans = out.spans.filter((s) => s.label === 'private_url');
+    expect(urlSpans).toHaveLength(1);
+    expect(urlSpans[0]?.text).toBe('https://acme.io/internal');
+    expect(out.sanitized).toContain('https://github.com/anthropics/claude-code/issues');
+    expect(out.sanitized).not.toContain('https://acme.io/internal');
+    const restored = n.restore(out.sanitized, out.sessionId);
+    expect(restored.restored).toBe(text);
+    await n.dispose();
+  });
+
+  it('urlAllowlist: "none" redacts every URL including public hosts', async () => {
+    const n = new NullPii({ modelDir: '/fake', backend: 'cpu', urlAllowlist: 'none' });
+    const text = 'See https://github.com/foo and https://acme.io/internal';
+    const out = await n.sanitize(text);
+    const urlSpans = out.spans.filter((s) => s.label === 'private_url');
+    expect(urlSpans).toHaveLength(2);
+    await n.dispose();
+  });
+
   it('init runs once across many sanitize calls', async () => {
     const n = new NullPii({ modelDir: '/fake', backend: 'cpu' });
     const r1 = await n.sanitize('First email: a@acme.io');

@@ -16,6 +16,7 @@ import {
   MAX_INPUT_BYTES,
 } from './defaults.js';
 import { ModelNotInitializedError, TextTooLongError } from './errors.js';
+import { dropNonCoordinateGeolocation } from './geo-filter.js';
 import { decodeGlinerLogits } from './gliner-decoder.js';
 import { buildSpanCandidates } from './gliner-spans.js';
 import {
@@ -40,6 +41,7 @@ import {
   type SanitizeOptions,
   type SanitizeResult,
 } from './types/index.js';
+import { dropCleanPublicUrlSpans } from './url-filter.js';
 import { PiiVault } from './vault.js';
 
 const LOG_SCOPE = 'nullpii';
@@ -161,7 +163,14 @@ export class NullPii {
         });
       }
     }
-    const decoded = dedupeOverlappingSpans(decodedRaw);
+    // Gate `private_geolocation` BEFORE any dedupe: the label is
+    // prompted zero-shot and the head applies it to place names and
+    // postcodes, which are `private_address`. Filtering here — rather
+    // than after — lets the model's own `private_address` candidate for
+    // the same region survive the overlap instead of losing it to a
+    // label that should never have won. See `geo-filter.ts`.
+    const geoFiltered = dropNonCoordinateGeolocation(decodedRaw, normalized);
+    const decoded = dedupeOverlappingSpans(geoFiltered);
 
     // Remap span offsets from the normalised text back to the escaped
     // text so they align with the regex pack and vault output.
@@ -220,11 +229,24 @@ export class NullPii {
     // mislabels a known pattern (e.g., `ghp_…` token classified as
     // `account_number`) — recognizer's `secret` (0.99) overrides ML's
     // `account_number` (0.5–0.7).
-    const combined = dedupeOverlappingSpans(
-      [...mlSpans, ...recoSpans] as PiiSpan[],
-      DEFAULT_DEDUPE_IOU,
-      { acrossLabels: true },
-    ) as PiiSpan[];
+    // Drop URLs pointing at well-known public reference / documentation
+    // hosts (github.com, anthropic.com, docs.*, …). These leak no PII
+    // on their own and otherwise erode the user's token budget when a
+    // system prompt cites a project repo or API doc page.
+    //
+    // Runs BEFORE dedupe, and only for URLs that carry no nested PII.
+    // `core:url` is greedy, so `https://github.com/a,AKIA…` is a single
+    // span; `removeContainedSpans` inside the dedupe would delete the
+    // nested `secret` regardless of score, and dropping the surviving
+    // URL span would then emit the key as plaintext. Filtering here,
+    // while the nested spans still exist, keeps the check honest — see
+    // `dropCleanPublicUrlSpans`.
+    const candidates = [...mlSpans, ...recoSpans] as PiiSpan[];
+    const allowlisted =
+      this.config.urlAllowlist === 'none' ? candidates : dropCleanPublicUrlSpans(candidates);
+    const combined = dedupeOverlappingSpans(allowlisted, DEFAULT_DEDUPE_IOU, {
+      acrossLabels: true,
+    }) as PiiSpan[];
     const merged = applyThresholds(
       combined,
       this.config.threshold ?? DEFAULT_POST_FILTER_THRESHOLD,

@@ -22,5 +22,15 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/nullpii_eval"]
 
+# Per-file allowlist, NOT a directory include. Anything under `datasets/`
+# that is not named here stays out of the distributed Apache-2.0 wheel.
+# Adding a line is a deliberate act that requires checking the upstream
+# licence first: this directory is packaged and redistributed, so a file
+# with incompatible terms (anything outside MIT/Apache-2.0/BSD/ISC/CC0)
+# must never be listed. Bench rows fetched from HuggingFace at run time
+# are unaffected — they are never written here.
 [tool.hatch.build.targets.wheel.force-include]
-"datasets" = "nullpii_eval/datasets"
+"datasets/README.md" = "nullpii_eval/datasets/README.md"
+"datasets/nullpii-bench.jsonl" = "nullpii_eval/datasets/nullpii-bench.jsonl"          # Apache-2.0, project-authored
+"datasets/presidio-synthetic.jsonl" = "nullpii_eval/datasets/presidio-synthetic.jsonl"  # MIT, Microsoft Presidio
+"datasets/tab-echr-test.jsonl" = "nullpii_eval/datasets/tab-echr-test.jsonl"          # MIT, TAB ECHR (ACL 2022)

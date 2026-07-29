@@ -10,8 +10,14 @@ externally-licensed upstream splits.
 | File | Rows | Used in canonical bench | Origin |
 |---|---:|:---:|---|
 | `nullpii-bench.jsonl` | 2,361 | ✅ project-authored, see subsets below | self-authored, Apache-2.0 |
-| `presidio-synthetic.jsonl` | 5,000 | ✅ external (held-out OOD-5) | Microsoft Presidio seed, MIT |
-| `tab-echr-test.jsonl` | 127 | ✅ EU legal test split | TAB ECHR test (ACL 2022), MIT |
+| `presidio-synthetic.jsonl` | 5,000 | ✅ external, member of **OOD-7** | Microsoft Presidio seed, MIT |
+| `tab-echr-test.jsonl` | 127 | ✅ EU legal test split, member of **OOD-7** | TAB ECHR test (ACL 2022), MIT |
+
+Every file listed here is redistributed inside the `nullpii-eval` wheel via
+the per-file allowlist in [`../pyproject.toml`](../pyproject.toml). A file
+dropped into this directory does **not** ship until it is added there —
+which is the point: adding the line forces a licence check first. Only
+MIT / Apache-2.0 / BSD / ISC / CC0 upstreams are eligible.
 
 Additional bench rows (`ai4privacy-*`, `isotonic-*`, `nemotron-pii-*`,
 `argilla-pii`) are fetched from HuggingFace at bench time by the per-tool
@@ -64,10 +70,38 @@ re-fetching the upstream pool from internal storage.
 
 ⚠ `nullpii-bench` is in-distribution for the project pipeline. F1 on
 this dataset is a regression test for the runtime (preprocessor,
-recognizer pack, base64 decoder), not an OOD generalisation claim. The
-held-out OOD headline is the macro over 5 external datasets
-(`presidio-synthetic` + `isotonic-{en,de,fr,it}-heldout`) reported in
-the top-level README.
+recognizer pack, base64 decoder), not an OOD generalisation claim.
+
+### OOD-7 — the held-out headline set
+
+The OOD headline reported in the top-level README is the macro over
+**seven** external datasets, named **OOD-7** here and in the root README:
+
+```
+presidio-synthetic
+isotonic-en-heldout   isotonic-de-heldout
+isotonic-fr-heldout   isotonic-it-heldout
+ai4privacy-300k-heldout
+tab-echr
+```
+
+Membership criterion: the dataset is externally authored **and** no part
+of it entered nullpii's training distribution. The `-heldout` suffix means
+rows sliced above nullpii's own training offsets
+(`_AI4_HELDOUT_OFFSET` / `_ISOTONIC_HELDOUT_ROW_OFFSET`,
+[`../scripts/bench_full.py`](../scripts/bench_full.py)) — it carries **no**
+held-out guarantee for any other tool in the matrix.
+
+Do not restate this number by hand. Compute it from `matrix.json`:
+
+```bash
+python packages/eval/scripts/ood_macro.py packages/eval/published-bench/matrix.json
+```
+
+An earlier revision of this file described the headline as a macro over
+five datasets; that was wrong and disagreed with the root README by
+0.0128 F1 (OOD-5 = 0.7656 vs OOD-7 = 0.7784 at v0.3.0). The root README
+figure was the correct one.
 
 ## `presidio-synthetic`
 

@@ -223,9 +223,14 @@ numbers; the published table is not fully regenerated yet.
   whole text. Covered by a mocked test whose backend fails on zero words
   like the real one, and by two new real-ONNX e2e cases.
 
+- **Boundary refine no longer trims punctuation off secrets.** It
+  strips edge punctuation so `Mario Rossi,` masks as `Mario Rossi`, but
+  on a secret that punctuation is part of the credential (`hunter2!`,
+  `"P@ss;`) and was left unmasked. Secrets now lose only whitespace.
+
 ### Test plan
 
-- 324 unit + integration tests passing (was 271 on v0.3.0); real-ONNX e2e 9/9.
+- 321 unit + integration tests passing (was 271 on v0.3.0); real-ONNX e2e 9/9.
 - New tests: `test/geo-filter.test.ts` (10 — coordinate shapes, the place names and postcodes the head mislabels, IPv4 not reading as a pair, range and null-island rejection), `test/url-filter-nested.test.ts` (10 — nested-secret retention, concatenated URLs, non-default ports, near-miss hosts), `test/url-filter.test.ts` (7), plus integration cases in `test/nullpii.test.ts`.
 - `test/url-filter.test.ts`'s span fixture was corrected: it parked every span at offset 0, which under a containment-aware drop rule reads as "this URL has PII nested inside it".
 

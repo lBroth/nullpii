@@ -240,3 +240,21 @@ describe('NullPii e2e pipeline (mocked ONNX)', () => {
     await n.dispose();
   });
 });
+
+describe('boundary refine keeps punctuation inside secrets', () => {
+  it('trims punctuation off a name but not off a secret', async () => {
+    const n = new NullPii({
+      modelDir: '/fake',
+      backend: 'cpu',
+      recognizers: [
+        { id: 't:secret', pattern: /"hunter2!;/g, label: 'secret', confidence: 0.99 },
+        { id: 't:person', pattern: /Mario Rossi,/g, label: 'private_person', confidence: 0.99 },
+      ],
+    });
+    const out = await n.sanitize('pw "hunter2!; owner Mario Rossi, ok');
+    const byLabel = Object.fromEntries(out.spans.map((s) => [s.label, s.text]));
+    expect(byLabel.secret).toBe('"hunter2!;');
+    expect(byLabel.private_person).toBe('Mario Rossi');
+    await n.dispose();
+  });
+});

@@ -398,12 +398,17 @@ function backendToProviders(
   }
 }
 
+const SECRET_LABEL = 'secret';
+const WHITESPACE_TRIM_CHARS = ' \t\n\r';
+
 /** Trim leading/trailing whitespace + common punctuation from each
- * span's edges; drop spans that collapse to empty. */
+ * span's edges; drop spans that collapse to empty. Secrets lose only
+ * whitespace: punctuation at their edges (`hunter2!`, `"P@ss;`) is part
+ * of the credential, and trimming it left those characters unmasked. */
 function refineSpanBoundaries(text: string, spans: readonly PiiSpan[]): PiiSpan[] {
-  const trim = BOUNDARY_REFINE_TRIM_CHARS;
   const out: PiiSpan[] = [];
   for (const s of spans) {
+    const trim = s.label === SECRET_LABEL ? WHITESPACE_TRIM_CHARS : BOUNDARY_REFINE_TRIM_CHARS;
     let start = s.start;
     let end = s.end;
     while (start < end && trim.includes(text[start] as string)) start += 1;

@@ -77,12 +77,18 @@ def _bootstrap_recall(gold: np.ndarray, hit: np.ndarray, idx: np.ndarray) -> np.
 
 
 def load_predictions(results: Path, tool: str, dataset: str) -> list[list[tuple[int, int]]]:
+    """Per-document predictions, by idx. A bench run resumed after an
+    interruption can append rows for indices it had already written; the
+    later row wins (it is the completed run's). Missing indices raise."""
     path = results / "checkpoints" / f"{tool}-{dataset}.jsonl"
-    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
-    rows.sort(key=lambda r: r["idx"])
-    if [r["idx"] for r in rows] != list(range(len(rows))):
+    by_idx: dict[int, list] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            row = json.loads(line)
+            by_idx[int(row["idx"])] = row["spans"]
+    if sorted(by_idx) != list(range(len(by_idx))):
         raise ValueError(f"{path}: idx sequence has gaps; the run did not complete")
-    return [[(int(s[0]), int(s[1])) for s in r["spans"]] for r in rows]
+    return [[(int(s[0]), int(s[1])) for s in by_idx[i]] for i in range(len(by_idx))]
 
 
 def tools_with_checkpoints(results: Path, dataset: str) -> list[str]:

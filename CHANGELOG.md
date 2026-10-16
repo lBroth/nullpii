@@ -142,6 +142,17 @@ numbers; the published table is not fully regenerated yet.
   `DEFAULT_CATEGORY_THRESHOLDS` applies only when `categoryThresholds`
   is unset.
 
+### Less over-masking on developer content
+
+- **Package-registry tarball URLs are public.** `PUBLIC_URL_HOSTS`
+  gains `npmjs.org` (the npm registry serves from `registry.npmjs.org`,
+  not `npmjs.com`), `yarnpkg.com` and `pythonhosted.org`. A lockfile
+  cites one such URL per dependency; on a 30k-char `package-lock.json`
+  window 66 of them were masked. URL fragments the model emits inside a
+  dropped public URL (`https:/`, `github.com`) now go with it instead of
+  splitting the reference. Developer content masked: 5.09% → 1.68%;
+  tuning-set recall unchanged.
+
 ### Fixed
 
 - **Overlapping spans no longer corrupt the restore round-trip.**

@@ -50,9 +50,12 @@ describe('dropCleanPublicUrlSpans', () => {
   });
 
   it('ignores a nested span of the same label — only foreign PII counts', () => {
+    // The nested url fragment does not block the drop, and it goes with
+    // its parent: keeping it would mask `github.com` inside a URL the
+    // allowlist just declared public, shredding the reference.
     const url = span('private_url', 0, 36, 'https://github.com/acme/infra-gitops');
     const inner = span('private_url', 8, 18, 'github.com');
-    expect(dropCleanPublicUrlSpans([url, inner])).toEqual([inner]);
+    expect(dropCleanPublicUrlSpans([url, inner])).toEqual([]);
   });
 });
 

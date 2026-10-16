@@ -20,9 +20,14 @@ export const PUBLIC_URL_HOSTS: ReadonlySet<string> = new Set([
   'bitbucket.org',
   'codeberg.org',
   'sourceforge.net',
-  // Package registries
+  // Package registries. Lockfiles (`package-lock.json`, `yarn.lock`,
+  // `poetry.lock`) cite a tarball URL per dependency on these hosts —
+  // the npm registry serves from `registry.npmjs.org`, not `npmjs.com`.
   'npmjs.com',
+  'npmjs.org',
+  'yarnpkg.com',
   'pypi.org',
+  'pythonhosted.org',
   'crates.io',
   'rubygems.org',
   'packagist.org',
@@ -128,12 +133,22 @@ const SCHEME_PATTERN = /https?:\/\//gi;
  * @param spans - candidate spans, ML and recognizer, pre-dedupe
  */
 export function dropCleanPublicUrlSpans(spans: readonly PiiSpan[]): PiiSpan[] {
-  return spans.filter((s) => {
-    if (s.label !== 'private_url' || !isPublicUrl(s.text)) return true;
-    return spans.some(
-      (t) => t !== s && t.label !== 'private_url' && t.start >= s.start && t.end <= s.end,
-    );
-  });
+  const dropped = spans.filter((s) => isCleanPublicUrl(s, spans));
+  if (dropped.length === 0) return [...spans];
+  // A `private_url` span inside a dropped one is a fragment of that same
+  // public URL (the model often emits `https:/` or a path piece next to
+  // the recognizer's full match). Containment dedupe used to remove it;
+  // with its parent gone it would survive and split the URL. Multi-scheme
+  // spans never reach here, so a nested fragment cannot be another URL.
+  const inside = (s: PiiSpan) => dropped.some((d) => s.start >= d.start && s.end <= d.end);
+  return spans.filter((s) => !dropped.includes(s) && !(s.label === 'private_url' && inside(s)));
+}
+
+function isCleanPublicUrl(s: PiiSpan, spans: readonly PiiSpan[]): boolean {
+  if (s.label !== 'private_url' || !isPublicUrl(s.text)) return false;
+  return !spans.some(
+    (t) => t !== s && t.label !== 'private_url' && t.start >= s.start && t.end <= s.end,
+  );
 }
 
 function extractHost(urlText: string): string | null {

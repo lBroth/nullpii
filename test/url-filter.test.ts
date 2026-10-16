@@ -22,6 +22,17 @@ describe('isPublicUrl', () => {
     expect(isPublicUrl('https://developer.mozilla.org/en-US/')).toBe(true);
   });
 
+  it('matches the package-registry tarball hosts lockfiles cite', () => {
+    expect(isPublicUrl('https://registry.npmjs.org/fastify/-/fastify-5.2.0.tgz')).toBe(true);
+    expect(isPublicUrl('https://registry.yarnpkg.com/debug/-/debug-4.4.3.tgz')).toBe(true);
+    expect(isPublicUrl('https://files.pythonhosted.org/packages/ab/cd/numpy-2.0.whl')).toBe(true);
+  });
+
+  it('does not extend to look-alike or private registry hosts', () => {
+    expect(isPublicUrl('https://registry.npmjs.org.attacker.io/x')).toBe(false);
+    expect(isPublicUrl('https://npm.acme-corp.internal/pkg/-/pkg-1.0.0.tgz')).toBe(false);
+  });
+
   it('strips `www.` prefix before lookup', () => {
     expect(isPublicUrl('https://www.wikipedia.org/wiki/Foo')).toBe(true);
     expect(isPublicUrl('www.github.com/issues')).toBe(true);
@@ -51,6 +62,19 @@ describe('dropCleanPublicUrlSpans', () => {
     expect(out.find((s) => s.text === 'https://github.com/foo')).toBeUndefined();
     expect(out.find((s) => s.text === 'https://acme.io/internal')).toBeDefined();
     expect(out.find((s) => s.label === 'private_email')).toBeDefined();
+  });
+
+  it('drops url fragments inside a dropped public URL, keeps fragments of private ones', () => {
+    const pub = 'https://registry.npmjs.org/debug/-/debug-4.4.3.tgz';
+    const priv = 'https://npm.acme-corp.internal/pkg.tgz';
+    const spans: PiiSpan[] = [
+      urlSpan(pub, 0),
+      { label: 'private_url', start: 0, end: 7, text: 'https:/', score: 0.6 },
+      urlSpan(priv, 100),
+      { label: 'private_url', start: 100, end: 107, text: 'https:/', score: 0.6 },
+    ];
+    const out = dropCleanPublicUrlSpans(spans);
+    expect(out.map((s) => s.start)).toEqual([100, 100]);
   });
 
   it('passes through when no private_url spans are present', () => {

@@ -121,4 +121,20 @@ describe.skipIf(SKIP)('F-18 · real ONNX sanitize end-to-end', () => {
     // Span maps back to the original (homoglyph) substring via normToOrig.
     expect(emails[0]?.text).toContain('@');
   }, 30_000);
+
+  it('handles empty and whitespace-only input (empty tool output)', async () => {
+    for (const text of ['', '   ', '\n\n']) {
+      const out = await np.sanitize(text);
+      expect(out.spans).toEqual([]);
+      expect(out.sanitized).toBe(text);
+    }
+  }, 30_000);
+
+  it('handles a word longer than the subword budget next to real PII', async () => {
+    // Minified bundles carry single identifiers of hundreds of characters.
+    const blob = `x${'aB3_'.repeat(250)}`;
+    const text = `${blob} owner: john.smith@acme.io`;
+    const out = await np.sanitize(text);
+    expect(out.spans.some((s) => s.label === 'private_email')).toBe(true);
+  }, 30_000);
 });

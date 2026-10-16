@@ -265,6 +265,12 @@ export class NullPii {
       if (this.config.strictLength === true && enc.truncated) {
         throw new TextTooLongError(enc.seqLen, maxLen);
       }
+      // No word to classify: empty or whitespace-only input, or a single
+      // word longer than the subword budget (minified identifiers, data
+      // blobs). The GLiNER head cannot take zero words — its LSTM reshape
+      // fails — and there is nothing for it to label. The recognizer pack
+      // and the base64 detector still scan the full text.
+      if (enc.numWords === 0) return 0;
       const cand = buildSpanCandidates(enc.numWords, DEFAULT_MAX_SPAN_WIDTH);
       const out = await backend.infer({
         inputIds: enc.inputIds,

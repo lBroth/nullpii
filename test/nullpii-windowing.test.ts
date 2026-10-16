@@ -12,12 +12,14 @@ const seenWords: string[] = [];
 
 vi.mock('../src/backend/backend.js', () => {
   class OrtBackend {
-    async infer(): Promise<{
+    // Like the real GLiNER ONNX, whose LSTM reshape fails on zero words.
+    async infer(inputs: { textLength: number }): Promise<{
       logits: Float32Array;
       textLength: number;
       maxWidth: number;
       numClasses: number;
     }> {
+      if (inputs.textLength === 0) throw new Error('Reshape: zero-word input');
       return { logits: new Float32Array(0), textLength: 0, maxWidth: 1, numClasses: 12 };
     }
     async dispose(): Promise<void> {}
@@ -67,6 +69,16 @@ describe('NullPii windowing on dense input', () => {
     });
     const text = Array.from({ length: 50 }, (_, i) => `tok${i}`).join(' ');
     await expect(np.sanitize(text)).rejects.toBeInstanceOf(TextTooLongError);
+    await np.dispose();
+  });
+});
+
+describe('NullPii zero-word windows', () => {
+  it('never hands a window with zero words to the model', async () => {
+    seenWords.length = 0;
+    const np = new NullPii({ modelDir: '/fake', backend: 'cpu', recognizers: 'none' });
+    const out = await np.sanitize('   ');
+    expect(out.spans).toEqual([]);
     await np.dispose();
   });
 });

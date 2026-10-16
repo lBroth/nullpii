@@ -138,9 +138,26 @@ numbers; the published table is not fully regenerated yet.
   ever generated disjoint spans, which is why this went unnoticed; it
   now also covers overlapping, nested, duplicated and out-of-range spans.
 
+- **Dense text no longer hides words from the model.** Pre-existing in
+  0.3.0. Windows are 140 words with a 30-word overlap, but the encoder
+  also caps a window at 384 subwords, and on dense text (logs full of
+  hashes, signed URLs and trace ids) a window was cut after a few dozen
+  words. The next window started at a fixed stride, so everything
+  between the cut and the next window never reached the model. On an
+  access-log-shaped probe, 48.6% of words were never scanned and only
+  30 of 81 owner names were fully masked; emails survived only because
+  the regex pack caught them. Windows now advance by what the encoder
+  actually kept (`forEachWindow` in `src/chunking.ts`), restarting 30
+  words before the cut, so every word is scanned: 79 of 81 names fully
+  masked on the same probe (the other two are partial model detections,
+  not windowing). When no window is cut, the windows are exactly the old
+  ones; on the A/B fingerprint corpus only the 2 documents with cut
+  windows changed, and latency on Claude-Code-shaped input is unchanged
+  within noise. `strictLength: true` still throws on any cut.
+
 ### Test plan
 
-- 303 unit + integration tests passing (was 271 on v0.3.0).
+- 309 unit + integration tests passing (was 271 on v0.3.0).
 - New tests: `test/geo-filter.test.ts` (10 — coordinate shapes, the place names and postcodes the head mislabels, IPv4 not reading as a pair, range and null-island rejection), `test/url-filter-nested.test.ts` (10 — nested-secret retention, concatenated URLs, non-default ports, near-miss hosts), `test/url-filter.test.ts` (7), plus integration cases in `test/nullpii.test.ts`.
 - `test/url-filter.test.ts`'s span fixture was corrected: it parked every span at offset 0, which under a containment-aware drop rule reads as "this URL has PII nested inside it".
 

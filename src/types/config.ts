@@ -21,12 +21,13 @@ export interface NullPiiConfig {
   readonly backend?: BackendName;
   /** ONNX variant. Reserved (FP32 only at present). */
   readonly variant?: ModelVariant;
-  /** Cap on subword tokens fed to the GLiNER encoder. Default 384
-   * (matches `gliner_config.json:max_len`). Inputs longer than this
-   * are silently truncated unless `strictLength` is set. */
+  /** Cap on subword tokens fed to the GLiNER encoder per window. Default
+   * 384 (matches `gliner_config.json:max_len`). A window longer than this
+   * is cut and the next window resumes at the first word that was cut, so
+   * every word still reaches the model. */
   readonly maxSequenceLength?: number;
-  /** Throw `TextTooLongError` instead of truncating when input exceeds
-   * `maxSequenceLength`. Default: `false`. */
+  /** Throw `TextTooLongError` whenever a window exceeds
+   * `maxSequenceLength`, instead of re-windowing. Default: `false`. */
   readonly strictLength?: boolean;
   /** Global confidence threshold; spans below are dropped.
    *

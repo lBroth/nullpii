@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { splitWords } from './gliner-tokenizer.js';
+import { type Word, splitWords } from './gliner-tokenizer.js';
 import { iou } from './iou.js';
 import type { ScoredSpan } from './types/scored-span.js';
 
@@ -18,14 +18,91 @@ export interface TextChunk {
 export const DEFAULT_MAX_WORDS_PER_CHUNK = 140;
 export const DEFAULT_WORD_OVERLAP = 30;
 
+/** One model window: a slice of the text and the number of words it spans. */
+export interface WordWindow extends TextChunk {
+  readonly wordCount: number;
+}
+
+/** Outcome of {@link forEachWindow}. */
+export interface WindowWalk {
+  readonly windows: number;
+  /** Words no window could consume: each alone exceeds the encoder budget. */
+  readonly unscannedWords: number;
+}
+
+function assertOverlap(maxWords: number, overlapWords: number): void {
+  if (overlapWords >= maxWords) {
+    throw new RangeError(`overlapWords (${overlapWords}) must be < maxWords (${maxWords})`);
+  }
+}
+
+function windowAt(
+  text: string,
+  words: readonly Word[],
+  cursor: number,
+  maxWords: number,
+): WordWindow {
+  if (cursor === 0 && words.length <= maxWords) {
+    return { text, offset: 0, wordCount: words.length };
+  }
+  const end = Math.min(cursor + maxWords, words.length);
+  const start = words[cursor]?.charStart ?? text.length;
+  const stop = end < words.length ? (words[end]?.charStart ?? text.length) : text.length;
+  return { text: text.slice(start, stop), offset: start, wordCount: end - cursor };
+}
+
+/** Where the next window starts after the encoder kept only `seen` of a window's words. */
+function nextAfterCut(cursor: number, seen: number, overlapWords: number): number {
+  if (seen > overlapWords) return cursor + seen - overlapWords;
+  return cursor + Math.max(1, seen);
+}
+
+/**
+ * Walk `text` in overlapping word windows, advancing by what the encoder
+ * actually consumed. `visit` returns how many leading words of the window
+ * the encoder kept; the rest were cut by its subword budget.
+ *
+ * A fixed stride (as in {@link chunkText}) silently skips the tail of a
+ * cut window whenever more than `overlapWords` words were dropped, which
+ * happens on dense text such as logs full of long tokens. Here the next
+ * window restarts `overlapWords` before the last kept word, so every word
+ * reaches the model unless it alone exceeds the budget (counted in
+ * `unscannedWords`). When no window is cut, the windows are exactly
+ * `chunkText`'s.
+ */
+export async function forEachWindow(
+  text: string,
+  visit: (window: WordWindow) => Promise<number>,
+  maxWords: number = DEFAULT_MAX_WORDS_PER_CHUNK,
+  overlapWords: number = DEFAULT_WORD_OVERLAP,
+): Promise<WindowWalk> {
+  assertOverlap(maxWords, overlapWords);
+  const words = splitWords(text);
+  let cursor = 0;
+  let windows = 0;
+  let unscannedWords = 0;
+  for (;;) {
+    const window = windowAt(text, words, cursor, maxWords);
+    const seen = await visit(window);
+    windows += 1;
+    if (seen >= window.wordCount) {
+      if (cursor + window.wordCount >= words.length) break;
+      cursor += maxWords - overlapWords;
+      continue;
+    }
+    if (seen === 0) unscannedWords += 1;
+    cursor = nextAfterCut(cursor, seen, overlapWords);
+    if (cursor >= words.length) break;
+  }
+  return { windows, unscannedWords };
+}
+
 export function chunkText(
   text: string,
   maxWords: number = DEFAULT_MAX_WORDS_PER_CHUNK,
   overlapWords: number = DEFAULT_WORD_OVERLAP,
 ): TextChunk[] {
-  if (overlapWords >= maxWords) {
-    throw new RangeError(`overlapWords (${overlapWords}) must be < maxWords (${maxWords})`);
-  }
+  assertOverlap(maxWords, overlapWords);
   const words = splitWords(text);
   if (words.length <= maxWords) return [{ text, offset: 0 }];
 

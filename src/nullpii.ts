@@ -2,7 +2,7 @@
 
 import { OrtBackend } from './backend/backend.js';
 import { detectBase64Pii } from './base64-detector.js';
-import { chunkText, dedupeOverlappingSpans } from './chunking.js';
+import { dedupeOverlappingSpans, forEachWindow } from './chunking.js';
 import { NULLPII_MODEL_DIR, readEnvVar } from './config.js';
 import {
   BOUNDARY_REFINE_TRIM_CHARS,
@@ -45,6 +45,14 @@ import { dropCleanPublicUrlSpans } from './url-filter.js';
 import { PiiVault } from './vault.js';
 
 const LOG_SCOPE = 'nullpii';
+
+/** A model span with offsets into the normalized text, before remapping. */
+interface DecodedSpan {
+  readonly label: string;
+  readonly start: number;
+  readonly end: number;
+  readonly score: number;
+}
 
 /** Concatenation of trained + zero-shot labels passed to the model at
  * inference. See `types/labels.ts` for provenance. */
@@ -103,8 +111,10 @@ export class NullPii {
    * (ONNX model) → recognizer pack on escaped + normalized + base64 →
    * cross-label dedupe + threshold → boundary refine → vault sanitize.
    *
-   * Inputs over `max_len=384` subwords truncate silently. Pass
-   * `strictLength: true` to throw `TextTooLongError` instead. */
+   * A window whose words exceed `max_len=384` subwords is cut, and the
+   * next window restarts from the last word the encoder kept, so no word
+   * is skipped. Pass `strictLength: true` to throw `TextTooLongError` on
+   * any cut instead. */
   async sanitize(
     text: string,
     sessionId?: string,
@@ -127,42 +137,7 @@ export class NullPii {
     const escaped = escapePlaceholders(text);
     const { normalized, normToOrig } = normalizeForDetection(escaped);
 
-    const threshold = this.config.threshold ?? DEFAULT_DECODE_THRESHOLD;
-    const chunks = chunkText(normalized);
-    const decodedRaw: Array<{ label: string; start: number; end: number; score: number }> = [];
-    for (const { text: chunk, offset } of chunks) {
-      const enc = await tokenizer.encode(chunk, GLINER_LABELS);
-      if (this.config.strictLength === true && enc.truncated) {
-        throw new TextTooLongError(enc.seqLen, DEFAULT_MAX_SEQUENCE_LENGTH);
-      }
-      const cand = buildSpanCandidates(enc.numWords, DEFAULT_MAX_SPAN_WIDTH);
-      const out = await backend.infer({
-        inputIds: enc.inputIds,
-        attentionMask: enc.attentionMask,
-        wordsMask: enc.wordsMask,
-        textLength: enc.numWords,
-        spanIdx: cand.spanIdx,
-        spanMask: cand.spanMask,
-        numSpans: cand.numSpans,
-      });
-      const chunkSpans = decodeGlinerLogits(
-        out.logits,
-        out.textLength,
-        out.maxWidth,
-        out.numClasses,
-        enc.words,
-        GLINER_LABELS,
-        threshold,
-      );
-      for (const s of chunkSpans) {
-        decodedRaw.push({
-          label: s.label,
-          start: s.start + offset,
-          end: s.end + offset,
-          score: s.score,
-        });
-      }
-    }
+    const decodedRaw = await this.detectWithModel(normalized, tokenizer, backend);
     // Gate `private_geolocation` BEFORE any dedupe: the label is
     // prompted zero-shot and the head applies it to place names and
     // postcodes, which are `private_address`. Filtering here — rather
@@ -263,6 +238,58 @@ export class NullPii {
     });
     const result = this.vault.sanitize(escaped, spans, session);
     return { ...result, sanitized: unescapePlaceholders(result.sanitized) };
+  }
+
+  /** Run the model over `normalized` window by window. Windows advance by
+   * what the encoder actually kept, so a window cut by the subword budget
+   * never hides its tail from the model (see `forEachWindow`). Returned
+   * spans carry offsets into `normalized`. */
+  private async detectWithModel(
+    normalized: string,
+    tokenizer: GlinerTokenizer,
+    backend: OrtBackend,
+  ): Promise<DecodedSpan[]> {
+    const threshold = this.config.threshold ?? DEFAULT_DECODE_THRESHOLD;
+    const maxLen = this.config.maxSequenceLength ?? DEFAULT_MAX_SEQUENCE_LENGTH;
+    const decoded: DecodedSpan[] = [];
+    const walk = await forEachWindow(normalized, async ({ text: chunk, offset }) => {
+      const enc = await tokenizer.encode(chunk, GLINER_LABELS);
+      if (this.config.strictLength === true && enc.truncated) {
+        throw new TextTooLongError(enc.seqLen, maxLen);
+      }
+      const cand = buildSpanCandidates(enc.numWords, DEFAULT_MAX_SPAN_WIDTH);
+      const out = await backend.infer({
+        inputIds: enc.inputIds,
+        attentionMask: enc.attentionMask,
+        wordsMask: enc.wordsMask,
+        textLength: enc.numWords,
+        spanIdx: cand.spanIdx,
+        spanMask: cand.spanMask,
+        numSpans: cand.numSpans,
+      });
+      const spans = decodeGlinerLogits(
+        out.logits,
+        out.textLength,
+        out.maxWidth,
+        out.numClasses,
+        enc.words,
+        GLINER_LABELS,
+        threshold,
+      );
+      for (const s of spans) {
+        decoded.push({
+          label: s.label,
+          start: s.start + offset,
+          end: s.end + offset,
+          score: s.score,
+        });
+      }
+      return enc.numWords;
+    });
+    if (walk.unscannedWords > 0) {
+      logf(LOG_SCOPE, 'sanitize.unscanned', { words: walk.unscannedWords, chunks: walk.windows });
+    }
+    return decoded;
   }
 
   restore(text: string, sessionId: string, options: RestoreOptions = {}): RestoreResult {

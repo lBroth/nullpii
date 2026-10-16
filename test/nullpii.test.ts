@@ -78,21 +78,24 @@ vi.mock('../src/gliner-tokenizer.js', async () => {
     '../src/gliner-tokenizer.js',
   );
   class GlinerTokenizer {
-    async encode(): Promise<{
+    // Reports every word as consumed, like the real encoder on short
+    // input, so the window scheduler sees an uncut window.
+    async encode(text: string): Promise<{
       inputIds: BigInt64Array;
       attentionMask: BigInt64Array;
       wordsMask: BigInt64Array;
       numWords: number;
-      words: readonly string[];
+      words: ReturnType<typeof actual.splitWords>;
       seqLen: number;
       truncated: boolean;
     }> {
+      const words = actual.splitWords(text);
       return {
         inputIds: BigInt64Array.from([0n]),
         attentionMask: BigInt64Array.from([1n]),
         wordsMask: BigInt64Array.from([0n]),
-        numWords: 0,
-        words: [],
+        numWords: words.length,
+        words,
         seqLen: 1,
         truncated: false,
       };

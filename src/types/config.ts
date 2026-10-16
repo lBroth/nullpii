@@ -35,7 +35,7 @@ export interface NullPiiConfig {
    *
    *  1. **Decode** (`gliner-decoder`): filters raw GLiNER logits before
    *     they reach the recognizer merge. Unset → `DEFAULT_DECODE_THRESHOLD`
-   *     (= 0.5) on the model ONNX (recall / low-confidence trade-off).
+   *     (= 0.2): recall-first, because a missed character leaks.
    *  2. **Post-filter** (`applyThresholds`): final pass over the merged
    *     ML + recognizer span set. Unset → `DEFAULT_POST_FILTER_THRESHOLD`
    *     (= 0), i.e. trust decode + recognizer confidences without an
@@ -47,7 +47,9 @@ export interface NullPiiConfig {
   readonly threshold?: number;
   /** Per-category confidence thresholds applied in the post-filter
    * stage. When set for a label, takes priority over the global
-   * `threshold` (and the post-filter default) for that label. */
+   * `threshold` (and the post-filter default) for that label. Unset →
+   * `DEFAULT_CATEGORY_THRESHOLDS` (`private_ip` and `private_mac` at 0.5);
+   * passing any object replaces those defaults entirely. */
   readonly categoryThresholds?: Partial<Record<PiiCategory, number>>;
   /** Number of intra-op threads for the ONNX Runtime session. `0` = ORT
    * default (typically physical core count). */

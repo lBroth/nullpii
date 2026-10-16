@@ -7,6 +7,7 @@ import { NULLPII_MODEL_DIR, readEnvVar } from './config.js';
 import {
   BOUNDARY_REFINE_TRIM_CHARS,
   DEFAULT_BOUNDARY_REFINE,
+  DEFAULT_CATEGORY_THRESHOLDS,
   DEFAULT_DECODE_THRESHOLD,
   DEFAULT_DEDUPE_IOU,
   DEFAULT_POST_FILTER_THRESHOLD,
@@ -225,7 +226,7 @@ export class NullPii {
     const merged = applyThresholds(
       combined,
       this.config.threshold ?? DEFAULT_POST_FILTER_THRESHOLD,
-      this.config.categoryThresholds ?? {},
+      this.config.categoryThresholds ?? DEFAULT_CATEGORY_THRESHOLDS,
     );
     const refineOn = this.config.boundaryRefine ?? DEFAULT_BOUNDARY_REFINE;
     const spans = refineOn ? refineSpanBoundaries(escaped, merged) : merged;

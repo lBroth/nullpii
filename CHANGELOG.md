@@ -128,6 +128,20 @@ numbers; the published table is not fully regenerated yet.
 - `packages/eval/scripts/ood_macro.py` — single definition of the OOD-7 set, computed from any `matrix.json`. The root README enumerated 7 datasets and `packages/eval/datasets/README.md` said 5, a 0.0128 discrepancy that would have silently blocked any regression gate. Exits non-zero if a cell is missing or `CRASHED`.
 - `packages/eval/pyproject.toml` — the wheel force-included the whole `datasets/` directory, so any file dropped there was redistributed. Now a per-file allowlist with the upstream licence annotated per line.
 
+### Detection defaults
+
+- **Decode threshold 0.5 → 0.2; IP and MAC keep 0.5.** For redaction a
+  missed character leaks, an extra one only costs context, so the
+  threshold was selected on label-agnostic, recall-weighted char-F2 over
+  the five tuning heldouts, under a fixed cap on extra masking of
+  developer content (code, markdown, JSON). Tuning set: macro char-F2
+  0.8565 → 0.8916 (paired-bootstrap CI of the gain [+0.0328, +0.0373]),
+  every dataset up, no gold label loses recall, char-precision −0.007 to
+  −0.010; developer content masked 4.78% → 5.09%. Callers who set
+  `threshold` or `categoryThresholds` keep exactly their values; the new
+  `DEFAULT_CATEGORY_THRESHOLDS` applies only when `categoryThresholds`
+  is unset.
+
 ### Fixed
 
 - **Overlapping spans no longer corrupt the restore round-trip.**

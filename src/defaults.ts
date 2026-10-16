@@ -823,9 +823,22 @@ export const BOUNDARY_REFINE_TRIM_CHARS = ' \t\n\r,.;:!?"\'()[]{}<>';
 
 /** Default GLiNER decode threshold. Spans with sigmoid score below this
  * are dropped during the model decode pass (`decodeGlinerLogits`).
- * Tuned for the model ONNX — lower bloats output with low-confidence
- * noise, higher loses recall. */
-export const DEFAULT_DECODE_THRESHOLD = 0.5;
+ *
+ * 0.2, not the GLiNER-customary 0.5: for redaction a missed character
+ * leaks while an extra one only costs context. Selected on the tuning
+ * heldouts by label-agnostic char-level F2 (recall-weighted), under a
+ * cap on extra masking of developer content (code, markdown, JSON);
+ * see `packages/eval/scripts/ab/LOG.md`, iteration D2. */
+export const DEFAULT_DECODE_THRESHOLD = 0.2;
+
+/** Post-filter thresholds applied per label when the caller sets no
+ * `categoryThresholds`. IP and MAC addresses keep 0.5: the recognizer
+ * pack owns those shapes, and low-score model guesses on them are
+ * version strings and counters, not addresses. */
+export const DEFAULT_CATEGORY_THRESHOLDS: Readonly<Partial<Record<string, number>>> = {
+  private_ip: 0.5,
+  private_mac: 0.5,
+};
 
 /** Default secondary threshold applied AFTER ML + recognizer merge.
  * `0` means "do not drop anything beyond what decode + per-label

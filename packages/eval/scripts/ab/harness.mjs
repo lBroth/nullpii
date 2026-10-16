@@ -167,16 +167,32 @@ export function canonicalSpans(spans) {
   return [...spans].sort((a, b) => a[1] - b[1] || a[2] - b[2] || (a[0] < b[0] ? -1 : 1));
 }
 
+/** Count encoder calls whose window was cut by the subword budget. Patches
+ * the prototype of the same module instance the engine imports. */
+async function cutCounter(dist) {
+  const { GlinerTokenizer } = await import(pathToFileURL(join(dist, 'gliner-tokenizer.js')).href);
+  const counter = { cuts: 0 };
+  const encode = GlinerTokenizer.prototype.encode;
+  GlinerTokenizer.prototype.encode = async function (...a) {
+    const r = await encode.apply(this, a);
+    if (r.truncated) counter.cuts += 1;
+    return r;
+  };
+  return counter;
+}
+
 async function fingerprint(args) {
+  const counter = await cutCounter(args.dist);
   const np = await loadEngine(args.dist);
   const docs = [];
   const hash = createHash('sha256');
   for (const [id, text] of fingerprintDocs(buildKinds())) {
+    counter.cuts = 0;
     const r = await np.sanitize(text);
     np.destroySession(r.sessionId);
     const spans = canonicalSpans(r.spans.map((s) => [s.label, s.start, s.end]));
     hash.update(`${id}\t${JSON.stringify(spans)}\n`);
-    docs.push({ id, spans });
+    docs.push({ id, spans, cutWindows: counter.cuts });
   }
   await np.dispose();
   return { mode: 'fingerprint', sha256: hash.digest('hex'), docs };

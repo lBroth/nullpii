@@ -4,7 +4,7 @@
 // Mechanical verdicts for the A/B loop (PROTOCOL.md). No judgement here:
 // the rules are the thresholds below, applied to two harness outputs.
 //
-//   node compare.mjs fingerprint <baseline.json> <candidate.json>
+//   node compare.mjs fingerprint <baseline.json> <candidate.json> [overlap|cuts]
 //   node compare.mjs latency     <baseline.json> <candidate.json>
 //
 // Exit code 0 = ACCEPT-eligible on this axis, 1 = REJECT.
@@ -36,24 +36,33 @@ function canonical(spans) {
   return JSON.stringify([...spans].sort((a, b) => a[1] - b[1] || a[2] - b[2] || (a[0] < b[0] ? -1 : 1)));
 }
 
-function compareFingerprints(base, cand) {
-  const byId = new Map(base.docs.map((d) => [d.id, d.spans]));
+/** What made a baseline doc's output wrong, per the defect a T0 iteration targets. */
+const BASELINE_DEFECTS = {
+  overlap: (doc) => hasOverlapOrOutOfRange(doc.spans),
+  cuts: (doc) => (doc.cutWindows ?? 0) > 0,
+};
+
+function compareFingerprints(base, cand, explain) {
+  const byId = new Map(base.docs.map((d) => [d.id, d]));
   if (cand.docs.length !== base.docs.length || cand.docs.some((d) => !byId.has(d.id))) {
     throw new Error('fingerprint corpora differ: compare runs of the same harness version');
   }
-  const changed = cand.docs.filter((d) => canonical(byId.get(d.id)) !== canonical(d.spans));
+  const changed = cand.docs.filter((d) => canonical(byId.get(d.id).spans) !== canonical(d.spans));
   if (changed.length === 0) {
     return { identical: true, verdict: 'IDENTICAL', changed: 0 };
   }
-  const explained = changed.filter((d) => hasOverlapOrOutOfRange(byId.get(d.id)));
+  const isDefect = BASELINE_DEFECTS[explain];
+  if (isDefect === undefined) throw new Error(`--explain must be one of ${Object.keys(BASELINE_DEFECTS)}`);
+  const explained = changed.filter((d) => isDefect(byId.get(d.id)));
   return {
     identical: false,
+    explain,
     changed: changed.length,
-    changedWhereBaselineOverlapped: explained.length,
+    changedWhereBaselineWrong: explained.length,
     unexplained: changed
       .filter((d) => !explained.includes(d))
       .slice(0, MAX_LISTED_DIFFS)
-      .map((d) => ({ id: d.id, base: byId.get(d.id), cand: d.spans })),
+      .map((d) => ({ id: d.id, base: byId.get(d.id).spans, cand: d.spans })),
     verdict: changed.length === explained.length ? 'CHANGED_ONLY_WHERE_BASELINE_WRONG' : 'CHANGED',
   };
 }
@@ -85,10 +94,10 @@ function round(x) {
   return Math.round(x * 10) / 10;
 }
 
-const [mode, basePath, candPath] = process.argv.slice(2);
+const [mode, basePath, candPath, explain = 'overlap'] = process.argv.slice(2);
 const base = load(basePath);
 const cand = load(candPath);
-const result = mode === 'fingerprint' ? compareFingerprints(base, cand) : compareLatency(base, cand);
+const result = mode === 'fingerprint' ? compareFingerprints(base, cand, explain) : compareLatency(base, cand);
 process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 const pass = ['IDENTICAL', 'CHANGED_ONLY_WHERE_BASELINE_WRONG', 'FASTER'].includes(result.verdict);
 process.exitCode = pass ? 0 : 1;

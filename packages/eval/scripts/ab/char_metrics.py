@@ -103,12 +103,32 @@ def dataset_arrays(results: Path, dataset: str, tools: list[str]) -> tuple[np.nd
         raise ValueError(f"{dataset}: loader returned {len(samples)} docs, checkpoints have {n}")
     gold_spans = [[(s.start, s.end) for s in smp.spans] for smp in samples]
     per_tool = {}
+    per_label = {}
     for tool, tool_preds in preds.items():
         counts = np.array(
             [doc_counts(len(smp.text), g, p) for smp, g, p in zip(samples, gold_spans, tool_preds, strict=True)],
         )
         per_tool[tool] = (counts[:, 0], counts[:, 1], counts[:, 2])
-    return np.arange(n), per_tool
+        per_label[tool] = per_label_recall(samples, tool_preds)
+    return np.arange(n), per_tool, per_label
+
+
+def per_label_recall(samples: list, tool_preds: list[list[tuple[int, int]]]) -> dict[str, dict[str, float]]:
+    """Char-recall of each gold label: which kinds of PII leak. Coverage is
+    still label-agnostic: a gold person covered by a predicted address counts."""
+    gold_chars: dict[str, int] = {}
+    hit_chars: dict[str, int] = {}
+    for smp, preds in zip(samples, tool_preds, strict=True):
+        mask = _covered(preds, len(smp.text))
+        for s in smp.spans:
+            seg = mask[max(0, s.start) : min(len(smp.text), s.end)]
+            gold_chars[s.label] = gold_chars.get(s.label, 0) + int(seg.size)
+            hit_chars[s.label] = hit_chars.get(s.label, 0) + int(seg.sum())
+    return {
+        label: {"recall": hit_chars[label] / total, "gold_chars": total}
+        for label, total in sorted(gold_chars.items())
+        if total > 0
+    }
 
 
 def compare(per_tool: dict[str, tuple], baseline: str, n: int, rng: np.random.Generator) -> dict:
@@ -149,8 +169,10 @@ def main() -> None:
         tools = args.tools.split(",") if args.tools else tools_with_checkpoints(args.results, dataset)
         if args.baseline not in tools:
             raise ValueError(f"{dataset}: baseline {args.baseline!r} has no checkpoint")
-        idx, per_tool = dataset_arrays(args.results, dataset, tools)
+        idx, per_tool, per_label = dataset_arrays(args.results, dataset, tools)
         report[dataset] = compare(per_tool, args.baseline, len(idx), rng)
+        for tool, labels in per_label.items():
+            report[dataset][tool]["per_label_recall"] = labels
         row = {t: round(v["f2"], 4) for t, v in report[dataset].items()}
         print(f"{dataset}: char-F2 {row}", flush=True)
 

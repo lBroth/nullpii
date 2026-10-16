@@ -29,6 +29,7 @@ import { logf } from './log.js';
 import { ModelManager } from './model-manager.js';
 import { normalizeForDetection, remapSpan } from './normalize.js';
 import { escapePlaceholders, unescapePlaceholders } from './placeholder-escape.js';
+import { dropSpansInsidePublicDigests } from './public-digests.js';
 import { runRecognizers } from './recognizers.js';
 import {
   GLINER_MODEL_CATEGORIES,
@@ -217,7 +218,13 @@ export class NullPii {
     // URL span would then emit the key as plaintext. Filtering here,
     // while the nested spans still exist, keeps the check honest — see
     // `dropCleanPublicUrlSpans`.
-    const candidates = [...mlSpans, ...recoSpans] as PiiSpan[];
+    // Digests of public artifacts (lockfile `integrity` fields) are not
+    // PII; drop pieces of them before dedupe so they cannot absorb or
+    // outrank anything else. See `public-digests.ts`.
+    const candidates = dropSpansInsidePublicDigests(
+      [...mlSpans, ...recoSpans] as PiiSpan[],
+      escaped,
+    );
     const allowlisted =
       this.config.urlAllowlist === 'none' ? candidates : dropCleanPublicUrlSpans(candidates);
     const combined = dedupeOverlappingSpans(allowlisted, DEFAULT_DEDUPE_IOU, {

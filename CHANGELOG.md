@@ -152,6 +152,14 @@ numbers; the published table is not fully regenerated yet.
   dropped public URL (`https:/`, `github.com`) now go with it instead of
   splitting the reference. Developer content masked: 5.09% → 1.68%;
   tuning-set recall unchanged.
+- **Subresource-integrity digests are not secrets.** Lockfile
+  `"integrity": "sha512-…"` values are hashes of public tarballs; the
+  model read pieces of the base64 as `secret` and masked them, about one
+  per dependency. Spans lying entirely inside a `sha1|sha256|sha384|
+  sha512-<base64>` token are dropped before dedupe (`src/public-digests.ts`);
+  a span reaching past the digest is kept, and free-standing base64 is
+  untouched. Developer content masked: 1.68% → 1.13%; tuning-set recall
+  unchanged.
 
 ### Fixed
 

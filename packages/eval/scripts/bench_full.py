@@ -181,6 +181,37 @@ def _load_tab_echr_test(n: int | None) -> list[Sample]:
 _AI4_HELDOUT_OFFSET = 100_000
 _ISOTONIC_HELDOUT_ROW_OFFSET = 200_000
 
+# ─ A/B loop report set (packages/eval/scripts/ab/PROTOCOL.md) ─────
+# Read only at checkpoints to test the stop criterion, never to choose
+# between variants. Isotonic rows from 100_000 are read by no other spec
+# and by no training corpus. ai4privacy-300k is grouped by language, so
+# its report slice strides across the whole split, skipping the two
+# slices other specs read, to cover every language rather than one.
+_REPORT_ISOTONIC_ROW_OFFSET = 100_000
+_REPORT_ISOTONIC_N = 1_000
+_REPORT_AI4_N = 2_000
+_REPORT_AI4_EXCLUDED = ((0, 5_000), (_AI4_HELDOUT_OFFSET, _AI4_HELDOUT_OFFSET + 5_000))
+
+
+# Claude-Code-traces report set, built by scripts/ab/traces_gen.py into
+# the gitignored results tree (its carriers are third-party files that
+# are read locally, not redistributed).
+_TRACES_REPORT = Path(__file__).resolve().parent.parent / "results" / "ab-loop" / "traces-report.jsonl"
+
+
+def _load_claude_code_traces(n: int | None) -> list[Sample]:
+    if not _TRACES_REPORT.exists():
+        raise FileNotFoundError(f"{_TRACES_REPORT} is missing: run scripts/ab/traces_gen.py first")
+    return _load_charspan_jsonl(_TRACES_REPORT, n)
+
+
+def _ai4privacy_report(n: int | None) -> list[Sample]:
+    every = list(public_datasets._load_ai4privacy(None).samples)
+    allowed = [i for i in range(len(every)) if not any(a <= i < b for a, b in _REPORT_AI4_EXCLUDED)]
+    count = n or _REPORT_AI4_N
+    stride = len(allowed) / count
+    return [every[allowed[int(k * stride)]] for k in range(count)]
+
 DATASET_CONFIGS: list[DatasetSpec] = [
     # ─ Project-authored bench (one file, all adversarial / preprocessor /
     #   TextAttack subsets aggregated to a single F1 number) ─────────
@@ -214,6 +245,13 @@ DATASET_CONFIGS: list[DatasetSpec] = [
     DatasetSpec("isotonic-de-heldout",       _isotonic("de", row_offset=_ISOTONIC_HELDOUT_ROW_OFFSET),  5_000, total_n=9000),
     DatasetSpec("isotonic-fr-heldout",       _isotonic("fr", row_offset=_ISOTONIC_HELDOUT_ROW_OFFSET),  5_000, total_n=9000),
     DatasetSpec("isotonic-it-heldout",       _isotonic("it", row_offset=_ISOTONIC_HELDOUT_ROW_OFFSET),  5_000, total_n=9000),
+    # ─ A/B loop report set — see _REPORT_* above ─────────────────
+    DatasetSpec("isotonic-en-report",        _isotonic("en", row_offset=_REPORT_ISOTONIC_ROW_OFFSET),   _REPORT_ISOTONIC_N, total_n=_REPORT_ISOTONIC_N),
+    DatasetSpec("isotonic-de-report",        _isotonic("de", row_offset=_REPORT_ISOTONIC_ROW_OFFSET),   _REPORT_ISOTONIC_N, total_n=_REPORT_ISOTONIC_N),
+    DatasetSpec("isotonic-fr-report",        _isotonic("fr", row_offset=_REPORT_ISOTONIC_ROW_OFFSET),   _REPORT_ISOTONIC_N, total_n=_REPORT_ISOTONIC_N),
+    DatasetSpec("isotonic-it-report",        _isotonic("it", row_offset=_REPORT_ISOTONIC_ROW_OFFSET),   _REPORT_ISOTONIC_N, total_n=_REPORT_ISOTONIC_N),
+    DatasetSpec("ai4privacy-300k-report",    _ai4privacy_report,                                         _REPORT_AI4_N, total_n=_REPORT_AI4_N),
+    DatasetSpec("claude-code-traces",        _load_claude_code_traces,                                   None, total_n=440),
 ]
 
 

@@ -15,6 +15,7 @@
 //
 //   node score_capture.mjs --dist <abs dist> --texts <texts.jsonl> [--threshold 0.2] --out <spans.jsonl>
 //   node score_capture.mjs --dist <abs dist> --texts <texts.jsonl> --checkpoints <dir> --tool <name>
+//   add --model-dir <dir> to load a model other than the cached default (e.g. a quantized variant)
 
 import { createReadStream, createWriteStream, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -64,7 +65,11 @@ function spanSink(path) {
 
 const args = parseArgs(process.argv.slice(2));
 const { NullPii } = await import(pathToFileURL(join(args.dist, 'index.js')).href);
-const config = { backend: 'cpu', ...(args.threshold !== undefined && { threshold: Number(args.threshold) }) };
+const config = {
+  backend: 'cpu',
+  ...(args.threshold !== undefined && { threshold: Number(args.threshold) }),
+  ...(args['model-dir'] !== undefined && { modelDir: args['model-dir'] }),
+};
 const np = new NullPii(config);
 const sink = args.out ? spanSink(args.out) : checkpointSink(args.checkpoints, args.tool);
 let n = 0;

@@ -130,7 +130,13 @@ numbers; the published table is not fully regenerated yet.
 
 ### Detection defaults
 
-- **Decode threshold 0.5 → 0.2; IP and MAC keep 0.5.** For redaction a
+- **Decode threshold 0.5 → 0.05; IP and MAC 0.5, dates 0.125, emails
+  0.075.** Second step (iteration D3b, after the recognizer-deferral fix
+  below removed the leak a lower threshold exposed): tuning-set macro
+  char-F2 0.8918 → 0.9160 (CI of the gain [+0.0222, +0.0262]), recall
+  +2.7 to +4.3 points, precision −0.9 to −1.3 points, no gold label loses
+  recall, developer content masked 1.13% → 1.33%.
+- **Decode threshold 0.5 → 0.2; IP and MAC keep 0.5.** (first step, D2) For redaction a
   missed character leaks, an extra one only costs context, so the
   threshold was selected on label-agnostic, recall-weighted char-F2 over
   the five tuning heldouts, under a fixed cap on extra masking of

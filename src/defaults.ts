@@ -824,20 +824,24 @@ export const BOUNDARY_REFINE_TRIM_CHARS = ' \t\n\r,.;:!?"\'()[]{}<>';
 /** Default GLiNER decode threshold. Spans with sigmoid score below this
  * are dropped during the model decode pass (`decodeGlinerLogits`).
  *
- * 0.2, not the GLiNER-customary 0.5: for redaction a missed character
+ * 0.05, not the GLiNER-customary 0.5: for redaction a missed character
  * leaks while an extra one only costs context. Selected on the tuning
  * heldouts by label-agnostic char-level F2 (recall-weighted), under a
  * cap on extra masking of developer content (code, markdown, JSON);
- * see `packages/eval/scripts/ab/LOG.md`, iteration D2. */
-export const DEFAULT_DECODE_THRESHOLD = 0.2;
+ * see `packages/eval/scripts/ab/LOG.md`, iterations D2 and D3b. Labels
+ * that need a higher cut are listed in `DEFAULT_CATEGORY_THRESHOLDS`. */
+export const DEFAULT_DECODE_THRESHOLD = 0.05;
 
 /** Post-filter thresholds applied per label when the caller sets no
  * `categoryThresholds`. IP and MAC addresses keep 0.5: the recognizer
  * pack owns those shapes, and low-score model guesses on them are
- * version strings and counters, not addresses. */
+ * version strings and counters, not addresses. Dates and emails were
+ * selected slightly above the decode threshold (iteration D3b). */
 export const DEFAULT_CATEGORY_THRESHOLDS: Readonly<Partial<Record<string, number>>> = {
   private_ip: 0.5,
   private_mac: 0.5,
+  private_date: 0.125,
+  private_email: 0.075,
 };
 
 /** Default secondary threshold applied AFTER ML + recognizer merge.

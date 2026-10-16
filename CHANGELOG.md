@@ -119,18 +119,28 @@ numbers; the published table is not fully regenerated yet.
 - `packages/eval/scripts/ood_macro.py` — single definition of the OOD-7 set, computed from any `matrix.json`. The root README enumerated 7 datasets and `packages/eval/datasets/README.md` said 5, a 0.0128 discrepancy that would have silently blocked any regression gate. Exits non-zero if a cell is missing or `CRASHED`.
 - `packages/eval/pyproject.toml` — the wheel force-included the whole `datasets/` directory, so any file dropped there was redistributed. Now a per-file allowlist with the upstream licence annotated per line.
 
-### Known issues
+### Fixed
 
-- Partially-overlapping spans corrupt the output and break the restore
-  round-trip. `x https://github.com/users/john.doe@acme.com y` yields
-  `private_url[2,44]` and `private_email[27,46]` — IoU 0.39, below the
-  dedupe threshold, so both survive and overwrite each other during
-  vault substitution; the email span also ends past the end of the
-  string. Pre-existing in 0.3.0, not introduced here.
+- **Overlapping spans no longer corrupt the restore round-trip.**
+  Pre-existing in 0.3.0. `x https://github.com/users/john.doe@acme.com y`
+  yielded `private_url[2,44]` and `private_email[27,46]` — IoU 0.39,
+  below the dedupe threshold — so both survived and overwrote each other
+  during vault substitution, and the email span ended past the end of
+  the string: a 46-character input restored to 67. It is not only a
+  constructed case: 1 of 926 documents in the A/B fingerprint corpus
+  (`nullpii-bench` row 77, `private_person[23,30]` inside
+  `private_email[25,41]`) hit it with real model output.
+  `PiiVault.sanitize` now clamps spans to the text and merges any that
+  share a character into their union, keeping the label and score of the
+  highest-scoring member. The union is the fail-safe choice: no
+  character an input span covered can reach the output. `spans` in the
+  result is what was actually masked. The round-trip property test only
+  ever generated disjoint spans, which is why this went unnoticed; it
+  now also covers overlapping, nested, duplicated and out-of-range spans.
 
 ### Test plan
 
-- 300 unit + integration tests passing (was 271 on v0.3.0).
+- 303 unit + integration tests passing (was 271 on v0.3.0).
 - New tests: `test/geo-filter.test.ts` (10 — coordinate shapes, the place names and postcodes the head mislabels, IPv4 not reading as a pair, range and null-island rejection), `test/url-filter-nested.test.ts` (10 — nested-secret retention, concatenated URLs, non-default ports, near-miss hosts), `test/url-filter.test.ts` (7), plus integration cases in `test/nullpii.test.ts`.
 - `test/url-filter.test.ts`'s span fixture was corrected: it parked every span at offset 0, which under a containment-aware drop rule reads as "this URL has PII nested inside it".
 

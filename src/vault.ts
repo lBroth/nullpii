@@ -63,8 +63,16 @@ export class PiiVault {
       return { sessionId, sanitized: text, spans: [] };
     }
     const sessionPrefix = sessionPrefixOf(sessionId);
-    // Allocate placeholders in document order so indices reflect reading order.
-    const ordered = [...spans].sort((a, b) => a.start - b.start);
+    // Placeholders are allocated in document order so indices reflect
+    // reading order. Overlapping spans are merged first: replacing two
+    // spans that share characters corrupts the round-trip.
+    const ordered = mergeOverlappingSpans(text, spans);
+    if (ordered.length < spans.length) {
+      logf(LOG_SCOPE, 'sanitize.merged', {
+        spans: ordered.length,
+        dropped: spans.length - ordered.length,
+      });
+    }
     const placeholders = ordered.map((span) => this.allocPlaceholder(session, span, sessionPrefix));
     // Replace back-to-front so each replacement preserves earlier offsets.
     let out = text;
@@ -74,8 +82,8 @@ export class PiiVault {
       if (span === undefined || placeholder === undefined) continue;
       out = `${out.slice(0, span.start)}${placeholder}${out.slice(span.end)}`;
     }
-    logf(LOG_SCOPE, 'sanitize', { spans: spans.length, session: sessionPrefix });
-    return { sessionId, sanitized: out, spans };
+    logf(LOG_SCOPE, 'sanitize', { spans: ordered.length, session: sessionPrefix });
+    return { sessionId, sanitized: out, spans: ordered };
   }
 
   /**
@@ -188,4 +196,37 @@ export class PiiVault {
     session.entries.set(placeholder, span.text);
     return placeholder;
   }
+}
+
+/**
+ * Clamp spans to `text`, drop empty ones, and merge any that share a
+ * character into their union, sorted by start.
+ *
+ * Masking the union never exposes a character that any input span
+ * covered, so merging is the fail-safe resolution. The merged span keeps
+ * the label of its highest-scoring member and that member's score; its
+ * `text` is re-sliced from `text` because the vault stores it verbatim.
+ */
+export function mergeOverlappingSpans(text: string, spans: readonly PiiSpan[]): PiiSpan[] {
+  const clamped = spans
+    .map((s) => ({ ...s, start: Math.max(0, s.start), end: Math.min(text.length, s.end) }))
+    .filter((s) => s.end > s.start)
+    .sort((a, b) => a.start - b.start || b.end - a.end);
+  const merged: PiiSpan[] = [];
+  for (const span of clamped) {
+    const last = merged[merged.length - 1];
+    if (last === undefined || span.start >= last.end) {
+      merged.push({ ...span, text: text.slice(span.start, span.end) });
+      continue;
+    }
+    const end = Math.max(last.end, span.end);
+    const winner = span.score > last.score ? span : last;
+    merged[merged.length - 1] = {
+      ...winner,
+      start: last.start,
+      end,
+      text: text.slice(last.start, end),
+    };
+  }
+  return merged;
 }

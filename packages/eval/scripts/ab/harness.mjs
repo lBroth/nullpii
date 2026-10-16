@@ -8,6 +8,7 @@
 //   node harness.mjs latency     --dist <abs dist> --out <file.json> [--label name]
 //   node harness.mjs fingerprint --dist <abs dist> --out <file.json>
 //   node harness.mjs cold        --dist <abs dist> --out <file.json>
+//   node harness.mjs dump-corpus --out <file.jsonl>   (inputs for competitor_latency.py)
 //
 // Engine config comes from the AB_CONFIG env var (JSON, merged over
 // `{ backend: 'cpu' }`), so a config-only variant needs no code change.
@@ -104,21 +105,37 @@ async function timeCall(np, text) {
   return ms;
 }
 
-async function warmup(np, kinds) {
-  for (const [i, size] of WARMUP_SIZES.entries()) {
-    await timeCall(np, windowOf(kinds.code, size, 1000 + i));
+/** Every timed input, in timing order. The latency mode times exactly
+ * these and `dump-corpus` exports them, so other tools replay the same
+ * texts in the same order. */
+function latencyPlan(kinds) {
+  const plan = WARMUP_SIZES.map((size, i) => ({
+    phase: 'warmup',
+    size,
+    text: windowOf(kinds.code, size, 1000 + i),
+  }));
+  for (let round = 0; round < ROUNDS; round++) {
+    for (const size of SIZES) {
+      for (const [kind, text] of Object.entries(kinds).filter(([, t]) => t.length >= size)) {
+        for (let call = 0; call < CALLS_PER_KIND[size]; call++) {
+          plan.push({ phase: 'measure', round, size, kind, call, text: windowOf(text, size, round * 100 + call) });
+        }
+      }
+    }
   }
+  return plan;
 }
 
-async function runRound(np, kinds, round) {
+async function warmup(np, plan) {
+  for (const step of plan.filter((s) => s.phase === 'warmup')) await timeCall(np, step.text);
+}
+
+async function runRound(np, plan, round) {
   const out = {};
   for (const size of SIZES) {
     const times = [];
-    const eligible = Object.entries(kinds).filter(([, t]) => t.length >= size);
-    for (const [, text] of eligible) {
-      for (let c = 0; c < CALLS_PER_KIND[size]; c++) {
-        times.push(await timeCall(np, windowOf(text, size, round * 100 + c)));
-      }
+    for (const step of plan.filter((s) => s.phase === 'measure' && s.round === round && s.size === size)) {
+      times.push(await timeCall(np, step.text));
     }
     times.sort((a, b) => a - b);
     out[size] = { p50: percentile(times, 50), p95: percentile(times, 95), n: times.length };
@@ -126,12 +143,19 @@ async function runRound(np, kinds, round) {
   return out;
 }
 
+function dumpCorpus(args) {
+  if (!args.out) throw new Error('dump-corpus needs --out <file.jsonl>');
+  const plan = latencyPlan(buildKinds());
+  writeFileSync(args.out, `${plan.map((s) => JSON.stringify(s)).join('\n')}\n`);
+  return { mode: 'dump-corpus', inputs: plan.length };
+}
+
 async function latency(args) {
   const np = await loadEngine(args.dist);
-  const kinds = buildKinds();
-  await warmup(np, kinds);
+  const plan = latencyPlan(buildKinds());
+  await warmup(np, plan);
   const rounds = [];
-  for (let r = 0; r < ROUNDS; r++) rounds.push(await runRound(np, kinds, r));
+  for (let r = 0; r < ROUNDS; r++) rounds.push(await runRound(np, plan, r));
   const bySize = {};
   for (const size of SIZES) {
     const p50s = rounds.map((r) => r[size].p50);
@@ -223,14 +247,14 @@ function parseArgs(argv) {
   const [mode, ...rest] = argv;
   const args = { mode };
   for (let i = 0; i < rest.length; i += 2) args[rest[i].replace(/^--/, '')] = rest[i + 1];
-  if (!args.dist) throw new Error('--dist <abs path to dist/> is required');
+  if (!args.dist && mode !== 'dump-corpus') throw new Error('--dist <abs path to dist/> is required');
   return args;
 }
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.mode === 'cold-child') return coldChild(args);
-  const runners = { latency, fingerprint, cold };
+  const runners = { latency, fingerprint, cold, 'dump-corpus': dumpCorpus };
   const run = runners[args.mode];
   if (!run) throw new Error(`unknown mode ${args.mode}`);
   const result = {
@@ -242,8 +266,12 @@ async function main() {
     at: new Date().toISOString(),
   };
   const json = JSON.stringify(result, null, 2);
-  if (args.out) writeFileSync(args.out, `${json}\n`);
+  if (args.out && result.mode !== 'dump-corpus') writeFileSync(args.out, `${json}\n`);
   const summary = result.mode === 'fingerprint' ? { sha256: result.sha256, docs: result.docs.length } : result;
+  if (result.mode === 'dump-corpus') {
+    process.stdout.write(`${JSON.stringify(summary)}\n`);
+    return;
+  }
   process.stdout.write(`${JSON.stringify(summary.bySize ?? summary)}\n`);
 }
 

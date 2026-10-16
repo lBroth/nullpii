@@ -131,11 +131,16 @@ def per_label_recall(samples: list, tool_preds: list[list[tuple[int, int]]]) -> 
     }
 
 
-def compare(per_tool: dict[str, tuple], baseline: str, n: int, rng: np.random.Generator) -> dict:
+def compare(
+    per_tool: dict[str, tuple], baseline: str, n: int, rng: np.random.Generator
+) -> tuple[dict, dict[str, np.ndarray]]:
+    """Point scores per tool, plus the bootstrap samples of baseline - tool
+    char-F2 so the caller can build a macro CI across datasets."""
     idx = rng.integers(0, n, size=(BOOTSTRAP_RESAMPLES, n))
     base_f2 = _bootstrap_f2(*per_tool[baseline], idx)
     base_rec = _bootstrap_recall(per_tool[baseline][0], per_tool[baseline][2], idx)
     out = {}
+    diffs: dict[str, np.ndarray] = {}
     for tool, arrays in per_tool.items():
         entry = scores(*arrays)
         entry["leak_rate"] = 1 - entry["recall"]
@@ -146,6 +151,21 @@ def compare(per_tool: dict[str, tuple], baseline: str, n: int, rng: np.random.Ge
             d_rec = base_rec - _bootstrap_recall(arrays[0], arrays[2], idx)
             entry["baseline_minus_tool_f2_ci"] = _ci(d_f2)
             entry["baseline_minus_tool_recall_ci"] = _ci(d_rec)
+            diffs[tool] = d_f2
+        out[tool] = entry
+    return out, diffs
+
+
+def macro_summary(report: dict, diffs: dict[str, list[np.ndarray]], baseline: str) -> dict:
+    """Unweighted mean char-F2 over datasets; CI from per-dataset bootstrap
+    samples averaged index-wise (each dataset resampled independently)."""
+    datasets = [d for d in report if not d.startswith("_")]
+    tools = report[datasets[0]].keys()
+    out = {}
+    for tool in tools:
+        entry = {"f2": float(np.mean([report[d][tool]["f2"] for d in datasets]))}
+        if tool != baseline:
+            entry["baseline_minus_tool_f2_ci"] = _ci(np.mean(np.stack(diffs[tool]), axis=0))
         out[tool] = entry
     return out
 
@@ -165,16 +185,23 @@ def main() -> None:
 
     rng = np.random.default_rng(BOOTSTRAP_SEED)
     report: dict[str, dict] = {}
+    all_diffs: dict[str, list[np.ndarray]] = {}
     for dataset in args.datasets.split(","):
         tools = args.tools.split(",") if args.tools else tools_with_checkpoints(args.results, dataset)
         if args.baseline not in tools:
             raise ValueError(f"{dataset}: baseline {args.baseline!r} has no checkpoint")
         idx, per_tool, per_label = dataset_arrays(args.results, dataset, tools)
-        report[dataset] = compare(per_tool, args.baseline, len(idx), rng)
+        report[dataset], diffs = compare(per_tool, args.baseline, len(idx), rng)
+        for tool, d in diffs.items():
+            all_diffs.setdefault(tool, []).append(d)
         for tool, labels in per_label.items():
             report[dataset][tool]["per_label_recall"] = labels
         row = {t: round(v["f2"], 4) for t, v in report[dataset].items()}
         print(f"{dataset}: char-F2 {row}", flush=True)
+
+    report["_macro"] = macro_summary(report, all_diffs, args.baseline)
+    for tool, entry in report["_macro"].items():
+        print(f"macro {tool}: char-F2 {entry['f2']:.4f} baseline-minus-tool CI {entry.get('baseline_minus_tool_f2_ci')}")
 
     if args.out:
         args.out.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

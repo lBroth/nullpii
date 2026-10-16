@@ -37,7 +37,9 @@ const COLD_INPUT_CHARS = 1_000;
 const FP_BENCH_ROWS = 600;
 const FP_PRESIDIO_ROWS = 300;
 const FP_LEGAL_DOCS = 20;
-const FP_SHAPED_CHARS = 30_000;
+export const FP_SHAPED_CHARS = 30_000;
+/** Window index the fingerprint corpus uses for its shaped documents. */
+export const FP_SHAPED_WINDOW = 7;
 
 function git(args) {
   return execFileSync('git', args, { cwd: REPO, encoding: 'utf-8', maxBuffer: 1 << 28 });
@@ -64,7 +66,7 @@ function jsonlTexts(file) {
 }
 
 /** Claude-Code-shaped corpora: what Read / Bash / Grep / MCP put in context. */
-function buildKinds() {
+export function buildKinds() {
   return {
     code: concatFiles(filesAt(['src', 'packages/gateway/src'], '.ts'), '//'),
     python: concatFiles(filesAt(['packages/eval'], '.py'), '#'),
@@ -76,7 +78,7 @@ function buildKinds() {
 }
 
 /** Deterministic, distinct windows: call `i` never repeats call `i-1`'s text. */
-function windowOf(text, size, i) {
+export function windowOf(text, size, i) {
   const span = Math.max(1, text.length - size);
   const start = Math.floor(i * size * WINDOW_STRIDE) % span;
   return text.slice(start, start + size);
@@ -177,7 +179,7 @@ function fingerprintDocs(kinds) {
   const bench = jsonlTexts('nullpii-bench.jsonl').slice(0, FP_BENCH_ROWS);
   const presidio = jsonlTexts('presidio-synthetic.jsonl').slice(0, FP_PRESIDIO_ROWS);
   const legal = jsonlTexts('tab-echr-test.jsonl').slice(0, FP_LEGAL_DOCS);
-  const shaped = Object.entries(kinds).map(([k, t]) => [`shaped:${k}`, windowOf(t, FP_SHAPED_CHARS, 7)]);
+  const shaped = Object.entries(kinds).map(([k, t]) => [`shaped:${k}`, windowOf(t, FP_SHAPED_CHARS, FP_SHAPED_WINDOW)]);
   return [
     ...bench.map((t, i) => [`bench:${i}`, t]),
     ...presidio.map((t, i) => [`presidio:${i}`, t]),
@@ -275,4 +277,4 @@ async function main() {
   process.stdout.write(`${JSON.stringify(summary.bySize ?? summary)}\n`);
 }
 
-await main();
+if (process.argv[1] === fileURLToPath(import.meta.url)) await main();

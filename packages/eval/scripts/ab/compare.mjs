@@ -4,7 +4,7 @@
 // Mechanical verdicts for the A/B loop (PROTOCOL.md). No judgement here:
 // the rules are the thresholds below, applied to two harness outputs.
 //
-//   node compare.mjs fingerprint <baseline.json> <candidate.json> [overlap|cuts]
+//   node compare.mjs fingerprint <baseline.json> <candidate.json> [overlap|cuts|extends]
 //   node compare.mjs latency     <baseline.json> <candidate.json>
 //
 // Exit code 0 = ACCEPT-eligible on this axis, 1 = REJECT.
@@ -42,6 +42,40 @@ const BASELINE_DEFECTS = {
   cuts: (doc) => (doc.cutWindows ?? 0) > 0,
 };
 
+function defectOf(explain) {
+  const isDefect = BASELINE_DEFECTS[explain];
+  if (isDefect === undefined) {
+    throw new Error(`explain must be one of ${[...Object.keys(BASELINE_DEFECTS), 'extends']}`);
+  }
+  return isDefect;
+}
+
+function coveredChars(spans) {
+  const set = new Set();
+  for (const [, s, e] of spans) for (let i = s; i < e; i++) set.add(i);
+  return set;
+}
+
+/** The candidate masks everything the baseline did, and every newly
+ * masked run touches a baseline span: it completes a partially covered
+ * match instead of masking something unrelated. */
+function extendsCoverage(baseSpans, candSpans) {
+  const base = coveredChars(baseSpans);
+  const cand = coveredChars(candSpans);
+  for (const i of base) if (!cand.has(i)) return false;
+  const added = [...cand].filter((i) => !base.has(i)).sort((a, b) => a - b);
+  let runStart = null;
+  for (let k = 0; k < added.length; k++) {
+    if (runStart === null) runStart = added[k];
+    const runEnd = added[k];
+    if (k === added.length - 1 || added[k + 1] !== runEnd + 1) {
+      if (!base.has(runStart - 1) && !base.has(runEnd + 1)) return false;
+      runStart = null;
+    }
+  }
+  return true;
+}
+
 function compareFingerprints(base, cand, explain) {
   const byId = new Map(base.docs.map((d) => [d.id, d]));
   if (cand.docs.length !== base.docs.length || cand.docs.some((d) => !byId.has(d.id))) {
@@ -51,9 +85,10 @@ function compareFingerprints(base, cand, explain) {
   if (changed.length === 0) {
     return { identical: true, verdict: 'IDENTICAL', changed: 0 };
   }
-  const isDefect = BASELINE_DEFECTS[explain];
-  if (isDefect === undefined) throw new Error(`--explain must be one of ${Object.keys(BASELINE_DEFECTS)}`);
-  const explained = changed.filter((d) => isDefect(byId.get(d.id)));
+  const explained =
+    explain === 'extends'
+      ? changed.filter((d) => extendsCoverage(byId.get(d.id).spans, d.spans))
+      : changed.filter((d) => defectOf(explain)(byId.get(d.id)));
   return {
     identical: false,
     explain,

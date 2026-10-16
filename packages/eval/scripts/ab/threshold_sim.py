@@ -29,8 +29,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bench_full  # noqa: E402
 from char_metrics import scores  # noqa: E402
 
-GRID = [0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.6, 0.7]
+GRID = [0.05, 0.075, 0.1, 0.125, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.6, 0.7]
 BASE_THRESHOLD = 0.5
+# PROTOCOL rule change 2 (U1): extra masking of developer content, in
+# percentage points over the starting map, that a candidate may add.
+U1_CAP_PP = 0.5
 DESCENT_PASSES = 2
 
 
@@ -94,13 +97,25 @@ def macro_f2(tables: dict[str, SpanTable], thresholds: dict[str, float]) -> tupl
     return float(np.mean([v["f2"] for v in per_ds.values()])), per_ds
 
 
-def descend(tables: dict[str, SpanTable], labels: list[str]) -> tuple[dict[str, float], float]:
-    best = dict.fromkeys(labels, BASE_THRESHOLD)
+def dev_masked_pct(dev: list[tuple[int, list]], thresholds: dict[str, float]) -> float:
+    """Masked share of developer-corpus characters under `thresholds` (U1)."""
+    total = sum(n for n, _ in dev)
+    kept = sum(e - s for _, spans in dev for s, e, label, score in spans if score >= thresholds.get(label, BASE_THRESHOLD))
+    return 100 * kept / total
+
+
+def descend(
+    tables: dict[str, SpanTable], labels: list[str], start: dict[str, float], dev: list | None
+) -> tuple[dict[str, float], float]:
+    best = {label: start.get(label, BASE_THRESHOLD) for label in labels}
     best_f2, _ = macro_f2(tables, best)
+    u1_limit = None if dev is None else dev_masked_pct(dev, best) + U1_CAP_PP
     for _ in range(DESCENT_PASSES):
         for label in labels:
             for t in GRID:
                 cand = {**best, label: t}
+                if u1_limit is not None and dev_masked_pct(dev, cand) > u1_limit:
+                    continue
                 f2, _ = macro_f2(tables, cand)
                 if f2 > best_f2:
                     best, best_f2 = cand, f2
@@ -112,15 +127,25 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--scores", required=True, type=Path)
     parser.add_argument("--out", required=True, type=Path)
+    parser.add_argument("--start", default="{}", help="JSON label->threshold map to start from (current defaults)")
+    parser.add_argument("--dev-scores", type=Path, help="score_capture output on developer texts, for the U1 cap")
+    parser.add_argument("--dev-texts", type=Path)
     args = parser.parse_args()
+    start = json.loads(args.start)
+    dev = None
+    if args.dev_scores:
+        lengths = {json.loads(l)["dataset"]: len(json.loads(l)["text"]) for l in args.dev_texts.read_text().splitlines() if l.strip()}
+        dev = [(lengths[r["dataset"]], r["spans"]) for r in map(json.loads, args.dev_scores.read_text().splitlines()) if r]
 
     captured = load_scores(args.scores)
     gold = load_gold(list(captured))
     tables = {ds: SpanTable(gold[ds], docs) for ds, docs in captured.items()}
     labels = sorted({s[2] for docs in captured.values() for spans in docs for s in spans})
-    base_f2, base_per_ds = macro_f2(tables, {})
-    print(f"all labels at {BASE_THRESHOLD}: macro char-F2 {base_f2:.4f}", flush=True)
-    best, best_f2 = descend(tables, labels)
+    base_f2, base_per_ds = macro_f2(tables, start)
+    print(f"start map: macro char-F2 {base_f2:.4f}" + ("" if dev is None else f", dev masked {dev_masked_pct(dev, start):.3f}%"), flush=True)
+    best, best_f2 = descend(tables, labels, start, dev)
+    if dev is not None:
+        print(f"best map dev masked {dev_masked_pct(dev, best):.3f}%", flush=True)
     _, best_per_ds = macro_f2(tables, best)
     args.out.write_text(
         json.dumps(

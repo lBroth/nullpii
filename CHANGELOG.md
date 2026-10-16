@@ -197,9 +197,18 @@ numbers; the published table is not fully regenerated yet.
   windows changed, and latency on Claude-Code-shaped input is unchanged
   within noise. `strictLength: true` still throws on any cut.
 
+- **A low-confidence recognizer no longer goes silent on a partial
+  model overlap.** Pre-existing in 0.3.0. Recognizers under 0.9
+  confidence (IPv4/IPv6, domestic phones, some national IDs) deferred to
+  any overlapping model span, so a short low-score model span on the
+  first 4 characters of an IPv6 address silenced `core:ipv6-full` and
+  left the other 35 in the clear. They now defer only when a model span
+  covers the whole match; partial overlaps are resolved by the usual
+  containment dedupe and the vault's union merge.
+
 ### Test plan
 
-- 309 unit + integration tests passing (was 271 on v0.3.0).
+- 319 unit + integration tests passing (was 271 on v0.3.0).
 - New tests: `test/geo-filter.test.ts` (10 — coordinate shapes, the place names and postcodes the head mislabels, IPv4 not reading as a pair, range and null-island rejection), `test/url-filter-nested.test.ts` (10 — nested-secret retention, concatenated URLs, non-default ports, near-miss hosts), `test/url-filter.test.ts` (7), plus integration cases in `test/nullpii.test.ts`.
 - `test/url-filter.test.ts`'s span fixture was corrected: it parked every span at offset 0, which under a containment-aware drop rule reads as "this URL has PII nested inside it".
 

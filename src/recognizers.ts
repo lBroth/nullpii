@@ -136,10 +136,13 @@ function matchOne(text: string, recognizer: Recognizer, existing: readonly PiiSp
     // High-confidence recognizers (≥ 0.9 — secret patterns, IBAN with
     // mod-97 validator, Luhn-validated CCs) always emit; cross-label
     // overlaps with ML output are reconciled later by IoU dedupe in
-    // `nullpii.ts`. Lower-confidence recognizers still defer to ML on
-    // overlap to avoid noisy double-counting on prose.
+    // `nullpii.ts`. Lower-confidence recognizers defer to ML only when an
+    // ML span already covers the whole match: deferring on a partial
+    // overlap left the uncovered rest of the match in the clear (a short
+    // low-score model span on the first 4 chars of an IPv6 address
+    // silenced `core:ipv6-full` and exposed the other 35).
     const overrides = recognizer.confidence >= 0.9;
-    if ((overrides || !overlaps(start, end, existing)) && passesValidate(m[0], recognizer)) {
+    if ((overrides || !isCoveredBy(start, end, existing)) && passesValidate(m[0], recognizer)) {
       // Validator-passing matches use VALIDATED_RECOGNIZER_SCORE so
       // cross-label dedupe picks the structurally-correct label over ML
       // mislabels.
@@ -185,9 +188,10 @@ function ensureGlobal(re: RegExp): RegExp {
   return cached;
 }
 
-function overlaps(start: number, end: number, spans: readonly PiiSpan[]): boolean {
+/** True when one of `spans` covers all of [start, end). */
+function isCoveredBy(start: number, end: number, spans: readonly PiiSpan[]): boolean {
   for (const s of spans) {
-    if (start < s.end && end > s.start) return true;
+    if (s.start <= start && s.end >= end) return true;
   }
   return false;
 }
@@ -274,7 +278,7 @@ function matchAnchored(
             const start = m.index;
             const end = start + m[0].length;
             const overrides = r.confidence >= 0.9;
-            if ((overrides || !overlaps(start, end, existing)) && passesValidate(m[0], r)) {
+            if ((overrides || !isCoveredBy(start, end, existing)) && passesValidate(m[0], r)) {
               const score = r.validate !== undefined ? VALIDATED_RECOGNIZER_SCORE : r.confidence;
               out.push({ label: r.label, start, end, score, text: m[0] });
             }

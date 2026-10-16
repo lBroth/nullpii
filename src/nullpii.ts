@@ -16,7 +16,7 @@ import {
   MAX_INPUT_BYTES,
 } from './defaults.js';
 import { ModelNotInitializedError, TextTooLongError } from './errors.js';
-import { dropNonCoordinateGeolocation } from './geo-filter.js';
+import { resolveNonCoordinateGeolocation } from './geo-filter.js';
 import { decodeGlinerLogits } from './gliner-decoder.js';
 import { buildSpanCandidates } from './gliner-spans.js';
 import {
@@ -138,13 +138,13 @@ export class NullPii {
     const { normalized, normToOrig } = normalizeForDetection(escaped);
 
     const decodedRaw = await this.detectWithModel(normalized, tokenizer, backend);
-    // Gate `private_geolocation` BEFORE any dedupe: the label is
+    // Resolve `private_geolocation` BEFORE any dedupe: the label is
     // prompted zero-shot and the head applies it to place names and
-    // postcodes, which are `private_address`. Filtering here — rather
-    // than after — lets the model's own `private_address` candidate for
-    // the same region survive the overlap instead of losing it to a
-    // label that should never have won. See `geo-filter.ts`.
-    const geoFiltered = dropNonCoordinateGeolocation(decodedRaw, normalized);
+    // postcodes, which are `private_address`. Relabelling here — rather
+    // than after — keeps them masked under the right label and lets them
+    // merge with the model's own address candidate for the same region.
+    // See `geo-filter.ts`.
+    const geoFiltered = resolveNonCoordinateGeolocation(decodedRaw, normalized);
     const decoded = dedupeOverlappingSpans(geoFiltered);
 
     // Remap span offsets from the normalised text back to the escaped

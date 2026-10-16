@@ -62,19 +62,41 @@ export function isCoordinateShaped(text: string): boolean {
   return latLonPairInRange(`${lat},${lon}`);
 }
 
+/** A dotted quad, with the stray punctuation span boundaries carry. The
+ * `core:ipv4` recognizer owns this shape and labels it `private_ip`. */
+const IPV4_SHAPE = /^\W*\d{1,3}(?:\.\d{1,3}){3}\W*$/;
+
+const ADDRESS_LABEL = 'private_address';
+
 /**
- * Drop model-emitted `private_geolocation` spans that carry no
+ * Resolve model-emitted `private_geolocation` spans that carry no
  * coordinate. Spans of every other label pass through untouched.
+ *
+ * - Coordinate-shaped: kept as `private_geolocation`.
+ * - IPv4-shaped: dropped, so the `core:ipv4` recognizer (which defers to
+ *   overlapping model spans) labels it `private_ip`.
+ * - Anything else: relabelled `private_address`. These are the place
+ *   names, streets and postcodes the zero-shot head mislabels, and they
+ *   are PII: dropping them, as 0.4.0 first did, left every one unmasked
+ *   whenever no competing address candidate survived.
  *
  * Call this on raw decoder output, before cross-label dedupe — see the
  * module doc for why the ordering matters.
  *
- * @param spans - decoded model spans, each carrying its surface text
+ * @param spans - decoded model spans
+ * @param text - the text the span offsets index into
  */
-export function dropNonCoordinateGeolocation<
+export function resolveNonCoordinateGeolocation<
   T extends { label: string; start: number; end: number },
 >(spans: T[], text: string): T[] {
-  return spans.filter(
-    (s) => s.label !== 'private_geolocation' || isCoordinateShaped(text.slice(s.start, s.end)),
-  );
+  const out: T[] = [];
+  for (const s of spans) {
+    const surface = text.slice(s.start, s.end);
+    if (s.label !== 'private_geolocation' || isCoordinateShaped(surface)) {
+      out.push(s);
+    } else if (!IPV4_SHAPE.test(surface)) {
+      out.push({ ...s, label: ADDRESS_LABEL });
+    }
+  }
+  return out;
 }

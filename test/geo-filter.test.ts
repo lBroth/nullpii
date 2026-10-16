@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from 'vitest';
-import { dropNonCoordinateGeolocation, isCoordinateShaped } from '../src/geo-filter.js';
+import { isCoordinateShaped, resolveNonCoordinateGeolocation } from '../src/geo-filter.js';
 
 describe('isCoordinateShaped', () => {
   it('accepts the decimal lat/lon pairs the model actually emits', () => {
@@ -44,35 +44,37 @@ describe('isCoordinateShaped', () => {
   });
 });
 
-describe('dropNonCoordinateGeolocation', () => {
+describe('resolveNonCoordinateGeolocation', () => {
   const text = 'Seen at 45.4642,9.1900 near Rohnert Park, IP 210.193.85.111';
   const at = (needle: string) => {
     const start = text.indexOf(needle);
     return { start, end: start + needle.length };
   };
+  const surfaceAndLabel = (spans: Array<{ label: string; start: number; end: number }>) =>
+    spans.map((s) => [text.slice(s.start, s.end), s.label]);
 
-  it('keeps coordinate spans and drops the rest', () => {
+  it('keeps coordinates, relabels place names as address, drops IPv4 for the ip recognizer', () => {
     const spans = [
       { label: 'private_geolocation', ...at('45.4642,9.1900') },
       { label: 'private_geolocation', ...at('Rohnert Park') },
       { label: 'private_geolocation', ...at('210.193.85.111') },
     ];
-    const kept = dropNonCoordinateGeolocation(spans, text);
-    expect(kept.map((s) => text.slice(s.start, s.end))).toEqual(['45.4642,9.1900']);
+    expect(surfaceAndLabel(resolveNonCoordinateGeolocation(spans, text))).toEqual([
+      ['45.4642,9.1900', 'private_geolocation'],
+      ['Rohnert Park', 'private_address'],
+    ]);
+  });
+
+  it('never drops a place name: it stays masked as an address', () => {
+    const spans = [{ label: 'private_geolocation', ...at('Rohnert Park') }];
+    expect(resolveNonCoordinateGeolocation(spans, text)).toHaveLength(1);
   });
 
   it('never touches spans of another label', () => {
     const spans = [
       { label: 'private_address', ...at('Rohnert Park') },
       { label: 'private_ip', ...at('210.193.85.111') },
-      { label: 'private_geolocation', ...at('Rohnert Park') },
     ];
-    const kept = dropNonCoordinateGeolocation(spans, text);
-    expect(kept.map((s) => s.label)).toEqual(['private_address', 'private_ip']);
-  });
-
-  it('is a no-op when no geolocation span is present', () => {
-    const spans = [{ label: 'private_ip', ...at('210.193.85.111') }];
-    expect(dropNonCoordinateGeolocation(spans, text)).toEqual(spans);
+    expect(resolveNonCoordinateGeolocation(spans, text)).toEqual(spans);
   });
 });

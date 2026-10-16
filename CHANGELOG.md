@@ -20,20 +20,29 @@ published table. Public API surface unchanged.
   substitution then corrupted the user's `{{...}}` into
   `{{PII_PRIVATE_PERSON_*}}...{{`. Now stripped in
   `normalizeForDetection` via the existing `ZERO_WIDTH_CHARS` set.
-- **`private_geolocation` gated on coordinate shape.** The schema
-  defines the label as a coordinate — all three recognizers that own it
-  match lat/lon literals, and `core:geo-latlon-decimal` range-validates.
-  The GLiNER head is prompted with the label zero-shot and never trained
-  on it, so it was applying it to place names, regions and postcodes:
-  only **7.6%** of its emissions on `ai4privacy-300k-heldout` were
-  coordinate-shaped, the rest `Deutschland`, `Sachsen`, `52396`. Every
-  gold span of the class is a lat/lon pair, so the gate removes false
-  positives without touching a conforming true positive — measured
-  **−2,317 FP, ±0 TP**, precision 0.129 → 0.902, recall unchanged. Runs
-  before cross-label dedupe, so the model's competing `private_address`
-  candidate survives the overlap instead of losing it to a label it
-  should never have won (+83 recovered TP: `private_ip` +60,
-  `private_address` +11, `private_vehicle_id` +7, `private_mac` +5).
+- **`private_geolocation` restricted to coordinates; place names
+  relabelled `private_address`.** The schema defines the label as a
+  coordinate — all three recognizers that own it match lat/lon literals,
+  and `core:geo-latlon-decimal` range-validates. The GLiNER head is
+  prompted with the label zero-shot and never trained on it, so it was
+  applying it to place names, regions and postcodes: only **7.6%** of its
+  emissions on `ai4privacy-300k-heldout` were coordinate-shaped, the rest
+  `Holter Straße`, `Altrip`, `Sachsen`, `52396`. A non-coordinate
+  `private_geolocation` span is now relabelled `private_address`, or
+  dropped when it is a dotted quad so the `core:ipv4` recognizer labels
+  it `private_ip`. Span-level this keeps the measured
+  `private_geolocation` precision gain (0.129 → 0.902, recall unchanged)
+  and the `private_ip` +60 TP.
+
+  An earlier revision of this change *dropped* those spans. That scored
+  well on label-matched span F1 but was a redaction regression: most of
+  them sit on gold address PII (streets, postcodes, towns), and whenever
+  no competing address candidate survived they reached the output
+  unmasked. On label-agnostic char-level recall over the five tuning
+  heldouts it cost 0.006–0.024 char-F2 per dataset (macro 0.8566 →
+  0.8445). Relabelling recovers it (macro 0.8565, paired-bootstrap CI of
+  the gain over dropping [+0.0109, +0.0130]) with no gold label losing
+  more than 0.005 recall.
 - **Public-URL allowlist on by default** (#45). URLs targeting
   `PUBLIC_URL_HOSTS` (github / gitlab / docs.python.org / anthropic /
   openai / huggingface / wikipedia / mdn / stackoverflow / cloud
@@ -113,7 +122,7 @@ numbers; the published table is not fully regenerated yet.
 
 ### Internal
 
-- `src/geo-filter.ts` — `isCoordinateShaped`, `dropNonCoordinateGeolocation`. Range and null-island rejection defer to the existing `latLonPairInRange`.
+- `src/geo-filter.ts` — `isCoordinateShaped`, `resolveNonCoordinateGeolocation`. Range and null-island rejection defer to the existing `latLonPairInRange`.
 - `src/url-filter.ts` — `PUBLIC_URL_HOSTS`, `isPublicUrl`, `dropCleanPublicUrlSpans`.
 - `src/placeholder-escape.ts` — sentinel chars now exported individually as `PLACEHOLDER_SENTINEL_LEFT` / `PLACEHOLDER_SENTINEL_RIGHT` for reuse in `normalize.ts`. Source uses `''` / `''` escape syntax instead of raw PUA (grep-friendly, no mojibake on GitHub mobile).
 - `packages/eval/scripts/ood_macro.py` — single definition of the OOD-7 set, computed from any `matrix.json`. The root README enumerated 7 datasets and `packages/eval/datasets/README.md` said 5, a 0.0128 discrepancy that would have silently blocked any regression gate. Exits non-zero if a cell is missing or `CRASHED`.

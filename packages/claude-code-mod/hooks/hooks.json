@@ -1,0 +1,4 @@
+{
+  "description": "nullpii: masks prompts and tool results through the local sidecar",
+  "modules": ["./register.ts"]
+}

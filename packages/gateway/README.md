@@ -164,6 +164,7 @@ Every request needs `Authorization: Bearer $NULLPII_SIDECAR_TOKEN`.
   - a single string over 1,000,000 characters fails with 413 `text_too_long`, so split it.
 - **Refused before the token check:** a `Host` other than `127.0.0.1`, `localhost` or `[::1]` (DNS rebinding), and any request with an `Origin` header (a browser).
 - **Responses carry counts, never masked values.** Logs carry counts only.
+- **Repeated values are served from a cache.** A `sanitize` request whose value the session has already masked gets the same response without running the model (header `x-nullpii-cache: hit`). Coding agents re-read the same files often. The cache keeps only masked output, at most 512 responses or 8 MiB per session, and is dropped with its session. The answer is identical to a fresh run because the vault mints one placeholder per value.
 - **First call:** the first `sanitize` loads the model: about 2 seconds when it is already cached.
 
 ## Errors

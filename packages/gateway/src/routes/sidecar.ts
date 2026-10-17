@@ -3,6 +3,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { type NullPii, TextTooLongError } from 'nullpii';
+import { SanitizeCache } from '../sanitize-cache.js';
 import { restoreValue, sanitizeValue } from '../sanitizer.js';
 import { SidecarSessions, isValidSessionKey } from '../sidecar-sessions.js';
 
@@ -33,6 +34,8 @@ export const SIDECAR_MAX_BYTES = 4 * 1024 * 1024;
 const SWEEP_INTERVAL_MIN_MS = 1_000;
 const SWEEP_INTERVAL_MAX_MS = 60_000;
 const MAX_RESTORE_FIELDS = 64;
+/** `hit` when a sanitize response came from the session's cache. */
+const CACHE_HEADER = 'x-nullpii-cache';
 const LOOPBACK_HOSTNAMES: ReadonlySet<string> = new Set(['127.0.0.1', 'localhost', '[::1]']);
 
 const SESSION_PARAMS = {
@@ -101,11 +104,14 @@ function rejectReason(
  * placeholders are longer than most values they replace, so a request
  * under the limit can produce a response over it. */
 function sendCapped(reply: FastifyReply, payload: Record<string, unknown>): FastifyReply {
-  const body = JSON.stringify(payload);
-  if (Buffer.byteLength(body) > SIDECAR_MAX_BYTES) {
-    return reply.code(413).send({ error: 'response_too_large' });
-  }
+  const body = cappedBody(payload);
+  if (body === undefined) return reply.code(413).send({ error: 'response_too_large' });
   return reply.type('application/json').send(body);
+}
+
+function cappedBody(payload: Record<string, unknown>): string | undefined {
+  const body = JSON.stringify(payload);
+  return Buffer.byteLength(body) > SIDECAR_MAX_BYTES ? undefined : body;
 }
 
 export async function registerSidecarRoutes(
@@ -172,15 +178,24 @@ export async function registerSidecarRoutes(
       '/v1/sidecar/sessions/:key/sanitize',
       { bodyLimit: SIDECAR_MAX_BYTES, schema: { params: SESSION_PARAMS, body: SANITIZE_BODY } },
       async (req, reply) => {
-        const vaultId = sessions.use(req.params.key);
-        if (vaultId === undefined) return reply.code(404).send({ error: 'session_not_found' });
-        const r = await sanitizeValue(np, req.body.value, vaultId);
+        const session = sessions.use(req.params.key);
+        if (session === undefined) return reply.code(404).send({ error: 'session_not_found' });
+        const cacheKey = SanitizeCache.keyOf(JSON.stringify(req.body.value));
+        const cached = session.cache.get(cacheKey);
+        if (cached !== undefined) {
+          req.log.info({ cache: 'hit' }, 'sidecar.sanitize');
+          return reply.header(CACHE_HEADER, 'hit').type('application/json').send(cached);
+        }
+        const r = await sanitizeValue(np, req.body.value, session.vaultId);
         req.log.info({ captured: r.captured, byLabel: r.capturedByLabel }, 'sidecar.sanitize');
-        return sendCapped(reply, {
+        const body = cappedBody({
           value: r.value,
           captured: r.captured,
           capturedByLabel: r.capturedByLabel,
         });
+        if (body === undefined) return reply.code(413).send({ error: 'response_too_large' });
+        session.cache.set(cacheKey, body);
+        return reply.header(CACHE_HEADER, 'miss').type('application/json').send(body);
       },
     );
 
@@ -188,14 +203,14 @@ export async function registerSidecarRoutes(
       '/v1/sidecar/sessions/:key/restore',
       { bodyLimit: SIDECAR_MAX_BYTES, schema: { params: SESSION_PARAMS, body: RESTORE_BODY } },
       async (req, reply) => {
-        const vaultId = sessions.use(req.params.key);
-        if (vaultId === undefined) return reply.code(404).send({ error: 'session_not_found' });
+        const session = sessions.use(req.params.key);
+        if (session === undefined) return reply.code(404).send({ error: 'session_not_found' });
         const { value, fields } = req.body;
         const isObject = value !== null && typeof value === 'object' && !Array.isArray(value);
         if (fields !== undefined && !isObject) {
           return reply.code(400).send({ error: 'fields_require_object_value' });
         }
-        const r = restoreValue(np, value, vaultId, fields);
+        const r = restoreValue(np, value, session.vaultId, fields);
         req.log.info(
           {
             replacements: r.replacements,

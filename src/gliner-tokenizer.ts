@@ -13,6 +13,12 @@ const LOG_SCOPE = 'nullpii:gliner-tokenizer';
 export const ENT_TOKEN = '<<ENT>>';
 export const SEP_TOKEN = '<<SEP>>';
 
+/** Sequence wrappers, by backbone convention: BERT and DeBERTa use
+ * `[CLS]` / `[SEP]`, RoBERTa and XLM-R (e5, for example) `<s>` / `</s>`.
+ * The first name the vocabulary has wins. */
+const CLS_TOKEN_CANDIDATES = ['[CLS]', '<s>'] as const;
+const SEP_TOKEN_CANDIDATES = ['[SEP]', '</s>'] as const;
+
 /** From `gliner_config.json`: max_width=12, max_len=384. */
 export const DEFAULT_MAX_SPAN_WIDTH = 12;
 export const DEFAULT_MAX_SEQUENCE_LENGTH = 384;
@@ -80,6 +86,14 @@ export interface GlinerEncodeResult {
  *   - `text_lengths` = `result.numWords`.
  *   - `span_idx` / `span_mask` are built downstream in `gliner-spans.ts`.
  */
+function firstTokenId(tok: Tokenizer, names: readonly string[]): number | null {
+  for (const name of names) {
+    const id = tok.tokenToId(name);
+    if (id !== null && id !== undefined) return id;
+  }
+  return null;
+}
+
 export class GlinerTokenizer {
   private impl: Tokenizer | null = null;
 
@@ -121,11 +135,11 @@ export class GlinerTokenizer {
 
     const words = splitWords(text);
 
-    // Resolve special tokens by name. CLS / SEP names are mDeBERTa-v3
-    // conventions ([CLS] / [SEP]); ENT/SEP_TOKEN are GLiNER additions.
-    // If any of these is missing the encoder is unusable — fail loud.
-    const clsId = tok.tokenToId('[CLS]');
-    const sepId = tok.tokenToId('[SEP]');
+    // Resolve special tokens by name: the backbone's sequence wrappers,
+    // and ENT/SEP_TOKEN, which GLiNER adds. If any of these is missing
+    // the encoder is unusable — fail loud.
+    const clsId = firstTokenId(tok, CLS_TOKEN_CANDIDATES);
+    const sepId = firstTokenId(tok, SEP_TOKEN_CANDIDATES);
     const entId = tok.tokenToId(ENT_TOKEN);
     const sepGlinerId = tok.tokenToId(SEP_TOKEN);
     if (clsId === null || sepId === null || entId === null || sepGlinerId === null) {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { NullPii } from 'nullpii';
+import { SanitizeCache } from './sanitize-cache.js';
 
 /** Caller-chosen session keys: a Claude Code session id or similar. Not
  * secret (the bearer token is the gate) and never a vault id. */
@@ -22,7 +23,14 @@ export type OpenResult = 'created' | 'exists' | 'full';
 
 interface Entry {
   readonly vaultId: string;
+  readonly cache: SanitizeCache;
   lastUsed: number;
+}
+
+/** What a caller gets for a live session. */
+export interface LiveSession {
+  readonly vaultId: string;
+  readonly cache: SanitizeCache;
 }
 
 /**
@@ -54,18 +62,22 @@ export class SidecarSessions {
       return 'exists';
     }
     if (this.entries.size >= this.opts.maxSessions) return 'full';
-    this.entries.set(key, { vaultId: this.np.createSession(), lastUsed: this.now() });
+    this.entries.set(key, {
+      vaultId: this.np.createSession(),
+      cache: new SanitizeCache(),
+      lastUsed: this.now(),
+    });
     return 'created';
   }
 
-  /** The vault session id for `key`, refreshing its idle timer, or
-   * `undefined` when there is no live session under that key. */
-  use(key: string): string | undefined {
+  /** The live session under `key`, refreshing its idle timer, or
+   * `undefined` when there is none. */
+  use(key: string): LiveSession | undefined {
     this.sweep();
     const entry = this.entries.get(key);
     if (entry === undefined) return undefined;
     entry.lastUsed = this.now();
-    return entry.vaultId;
+    return entry;
   }
 
   /** Drop the session and its vault entries. Returns false if unknown. */

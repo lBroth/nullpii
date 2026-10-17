@@ -15,6 +15,7 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
   - **Sessions:** an idle TTL (`NULLPII_VAULT_TTL_MS`, now wired up) drops each session together with its vault entries. A cap (`NULLPII_SIDECAR_MAX_SESSIONS`) fails with 429 instead of evicting a live session.
   - **Access:** a bearer token, compared in constant time. Non-loopback `Host` headers and any `Origin` header are refused before the token check.
   - **Limits and output:** 4 MiB per request and per response. Responses and logs carry counts only.
+  - **Cache:** a value the session has already masked is answered from a per-session cache, without running the model again.
 
 ### Fixed
 

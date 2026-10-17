@@ -10,6 +10,11 @@ import { PiiVault, TextTooLongError } from 'nullpii';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { GatewayConfig } from '../src/config.js';
 import { SIDECAR_MAX_BYTES } from '../src/routes/sidecar.js';
+import {
+  SANITIZE_CACHE_MAX_CHARS,
+  SANITIZE_CACHE_MAX_ENTRIES,
+  SanitizeCache,
+} from '../src/sanitize-cache.js';
 import { buildServer } from '../src/server.js';
 
 const TOKEN = 'a'.repeat(64);
@@ -35,10 +40,12 @@ const PATTERNS: ReadonlyArray<[RegExp, 'private_email' | 'private_person']> = [
   [/\bJohn\b/g, 'private_person'],
 ];
 
-function buildMockNullPii(): { np: NullPii; vault: PiiVault } {
+function buildMockNullPii(): { np: NullPii; vault: PiiVault; modelCalls: () => number } {
   const vault = new PiiVault();
+  let calls = 0;
   const mock = {
     async sanitize(text: string, sessionId?: string) {
+      calls += 1;
       const id = sessionId ?? vault.createSession();
       const spans = PATTERNS.flatMap(([re, label]) =>
         [...text.matchAll(re)].map((m) => ({
@@ -56,7 +63,7 @@ function buildMockNullPii(): { np: NullPii; vault: PiiVault } {
     createSession: () => vault.createSession(),
     destroySession: (sessionId: string) => vault.destroySession(sessionId),
   };
-  return { np: mock as unknown as NullPii, vault };
+  return { np: mock as unknown as NullPii, vault, modelCalls: () => calls };
 }
 
 const apps: FastifyInstance[] = [];
@@ -65,12 +72,18 @@ afterEach(async () => {
   apps.length = 0;
 });
 
-async function setup(config: Partial<GatewayConfig> = {}, engine = buildMockNullPii()) {
-  const { np, vault } = engine;
+interface Engine {
+  np: NullPii;
+  vault: PiiVault;
+  modelCalls?: () => number;
+}
+
+async function setup(config: Partial<GatewayConfig> = {}, engine: Engine = buildMockNullPii()) {
+  const { np, vault, modelCalls } = engine;
   const clock = { t: 1_000_000 };
   const app = await buildServer({ config: { ...BASE_CONFIG, ...config }, np, now: () => clock.t });
   apps.push(app);
-  return { app, vault, clock };
+  return { app, vault, clock, modelCalls: modelCalls ?? (() => 0) };
 }
 
 describe('sidecar · access control', () => {
@@ -386,5 +399,90 @@ describe('sidecar · sanitize and restore', () => {
     });
     expect(res.statusCode).toBe(413);
     expect(res.json()).toEqual({ error: 'response_too_large' });
+  });
+});
+
+describe('sidecar · sanitize cache', () => {
+  const VALUE = { stdout: 'owner: John <john@acme.io>' };
+
+  async function sanitize(app: FastifyInstance, key: string, value: unknown) {
+    return app.inject({
+      method: 'POST',
+      url: `/v1/sidecar/sessions/${key}/sanitize`,
+      headers: AUTH,
+      payload: { value },
+    });
+  }
+
+  it('answers a repeated value from the cache, identical and without the model', async () => {
+    const { app, modelCalls } = await setup();
+    await app.inject({ method: 'PUT', url: '/v1/sidecar/sessions/s1', headers: AUTH });
+    const first = await sanitize(app, 's1', VALUE);
+    const callsAfterFirst = modelCalls();
+    const second = await sanitize(app, 's1', VALUE);
+    expect(first.headers['x-nullpii-cache']).toBe('miss');
+    expect(second.headers['x-nullpii-cache']).toBe('hit');
+    expect(second.body).toBe(first.body);
+    expect(modelCalls()).toBe(callsAfterFirst);
+  });
+
+  it('keeps sessions apart: another session runs the model and gets its own placeholders', async () => {
+    const { app } = await setup();
+    for (const key of ['s1', 's2']) {
+      await app.inject({ method: 'PUT', url: `/v1/sidecar/sessions/${key}`, headers: AUTH });
+    }
+    const a = await sanitize(app, 's1', VALUE);
+    const b = await sanitize(app, 's2', VALUE);
+    expect(b.headers['x-nullpii-cache']).toBe('miss');
+    expect(b.body).not.toBe(a.body);
+  });
+
+  it('a cached response still restores in its session', async () => {
+    const { app } = await setup();
+    await app.inject({ method: 'PUT', url: '/v1/sidecar/sessions/s1', headers: AUTH });
+    await sanitize(app, 's1', VALUE);
+    const cached = await sanitize(app, 's1', VALUE);
+    const restored = await app.inject({
+      method: 'POST',
+      url: '/v1/sidecar/sessions/s1/restore',
+      headers: AUTH,
+      payload: { value: (cached.json() as { value: unknown }).value },
+    });
+    expect((restored.json() as { value: unknown }).value).toEqual(VALUE);
+  });
+
+  it('starts empty again after the session is closed and reopened', async () => {
+    const { app } = await setup();
+    await app.inject({ method: 'PUT', url: '/v1/sidecar/sessions/s1', headers: AUTH });
+    await sanitize(app, 's1', VALUE);
+    await app.inject({ method: 'DELETE', url: '/v1/sidecar/sessions/s1', headers: AUTH });
+    await app.inject({ method: 'PUT', url: '/v1/sidecar/sessions/s1', headers: AUTH });
+    const again = await sanitize(app, 's1', VALUE);
+    expect(again.headers['x-nullpii-cache']).toBe('miss');
+  });
+});
+
+describe('SanitizeCache', () => {
+  it('drops the least recently used entries past its entry bound', () => {
+    const cache = new SanitizeCache();
+    for (let i = 0; i <= SANITIZE_CACHE_MAX_ENTRIES; i += 1) cache.set(`k${i}`, 'x');
+    expect(cache.size).toBe(SANITIZE_CACHE_MAX_ENTRIES);
+    expect(cache.get('k0')).toBeUndefined();
+    expect(cache.get(`k${SANITIZE_CACHE_MAX_ENTRIES}`)).toBe('x');
+  });
+
+  it('keeps a recently read entry over an older one', () => {
+    const cache = new SanitizeCache();
+    for (let i = 0; i < SANITIZE_CACHE_MAX_ENTRIES; i += 1) cache.set(`k${i}`, 'x');
+    cache.get('k0');
+    cache.set('new', 'x');
+    expect(cache.get('k0')).toBe('x');
+    expect(cache.get('k1')).toBeUndefined();
+  });
+
+  it('never stores a response larger than its character bound', () => {
+    const cache = new SanitizeCache();
+    cache.set('big', 'x'.repeat(SANITIZE_CACHE_MAX_CHARS + 1));
+    expect(cache.get('big')).toBeUndefined();
   });
 });

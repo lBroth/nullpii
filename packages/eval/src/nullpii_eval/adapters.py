@@ -276,6 +276,223 @@ def piiranha_predictor(
     return _predict_batch
 
 
+# `rizzoaiacademy/rizzo-pii-0.3B` (mmBERT/ModernBERT, 22 tags, 44 BIO ids)
+# → nullpii's schema. Same contract as `_DEBERTA_LABEL_MAP`: `None` drops
+# the prediction.
+#
+# The rule is SYMMETRY WITH OUR GOLD: a competitor prediction maps to X
+# iff our dataset loaders map the corresponding gold label to X. Where
+# our gold ignores a category (age, gender, money, organisations), the
+# prediction is dropped rather than scored — charging rizzo for
+# predicting something no gold in this bench records would measure the
+# taxonomy gap, not detection quality.
+_RIZZO_LABEL_MAP: dict[str, str | None] = {
+    # ─── Person ───────────────────────────────────────────────────
+    # Legal roles (judge, lawyer, witness, party) all collapse into
+    # FULLNAME upstream — a deliberate choice in their taxonomy.
+    "FULLNAME": "private_person",
+    # ─── Contact ──────────────────────────────────────────────────
+    "EMAIL": "private_email",       # includes PEC upstream
+    "TELEPHONENUM": "private_phone",
+    # ─── Address ──────────────────────────────────────────────────
+    # nullpii collapses every postal component into one label, matching
+    # how `_AI4PRIVACY_LABELS` and `_ISOTONIC_LABEL_MAP` fold the gold.
+    "STREET": "private_address",
+    "BUILDINGNUM": "private_address",
+    "CITY": "private_address",
+    "ZIPCODE": "private_address",
+    "PROVINCE": "private_address",  # administrative subdivision ≡ ai4privacy STATE
+    # ─── Temporal ─────────────────────────────────────────────────
+    "DATE": "private_date",
+    "TIME": "private_date",         # our gold folds TIME → private_date everywhere
+    # ─── Structured identifiers ───────────────────────────────────
+    "IBAN": "account_number",
+    "CREDITCARDNUMBER": "account_number",
+    "CF": "account_number",         # nullpii's own `core:cf-italy` emits account_number
+    "PIVA": "account_number",       # tax id ≡ ai4privacy TAXNUM
+    # MAPPING HAZARD, disclosed. rizzo collapses passport / driving
+    # licence / ID card / social number into one ID_DOC tag; nullpii
+    # split private_passport and private_driver_license out in v0.3. On
+    # gold that says passport, this map produces a FP on account_number
+    # AND a FN on private_passport — rizzo is double-charged and cannot
+    # win the span. Quantify with the merged-bucket variant before
+    # reading any account_number / passport / driver_license cell.
+    "ID_DOC": "account_number",
+    # ─── Vehicle ──────────────────────────────────────────────────
+    "TARGA": "private_vehicle_id",  # nullpii ships `core:plate-it` for the same format
+    # ─── Dropped: no home in nullpii's 14-label schema ─────────────
+    "AGE": None,        # our gold ignores AGE (`_ISOTONIC_IGNORED`)
+    "GENDER": None,     # demographic attribute, not an identifier
+    "AMOUNT": None,     # a monetary figure identifies nobody
+    "ORG": None,        # our gold drops it (`public_datasets.py` `_NER_LABEL_MAP`)
+    "DOCID": None,      # docket / protocol number identifies a proceeding
+    "CATASTO": None,    # cadastral parcel; identifies a property, not a person
+}
+
+# Classes in nullpii's schema that rizzo-pii has NO tag for, so it scores
+# a structural 0 on any dataset whose gold contains them. Report the
+# resulting macro ceiling next to its score — a cell where the ceiling
+# binds says more about taxonomy overlap than about detection.
+_RIZZO_UNEMITTABLE = frozenset({
+    "secret",
+    "private_url",
+    "private_ip",
+    "private_mac",
+    "private_geolocation",
+})
+
+
+def rizzo_pii_predictor(
+    *,
+    device: str | None = None,
+    batch_size: int = 32,
+    chunk_words: int = 120,
+    overlap_words: int = 20,
+    aggregation_strategy: str = "first",
+) -> BatchPredictor:
+    """`rizzoaiacademy/rizzo-pii-0.3B` — Italian-first ModernBERT/mmBERT
+    token classifier, 22 PII tags, 0.3B dense params (fp32, ~1.23 GB).
+
+    Chunking mirrors the VENDOR'S SHIPPED SERVING PATH (`src/app/app.py`:
+    `MAX_WORDS = 120`, `OVERLAP = 20`), not their evaluation script.
+
+    `aggregation_strategy` is `"first"`, NOT the `"simple"` their app
+    uses, because `"simple"` fragments this model badly and would
+    understate it: on a probe sentence it produced 33 spans of which 28
+    were <=2 chars, shredding a codice fiscale into 12 pieces and an
+    IBAN into 4. `"first"` returns 13 spans with the CF, PIVA, IBAN,
+    plate and date each recovered whole. (`"average"` and `"max"` are
+    tidier still but drop entities outright — `"average"` loses the
+    IBAN, `"max"` loses the date.) Their production stack repairs this
+    fragmentation with the regex/checksum net; since that net is not
+    exercised here, picking the aggregation that scores them best is the
+    fair substitute. Same precedent as `deberta`. Their `evaluate_pii.py` feeds the model
+    `is_split_into_words=True` with the gold word array, so word
+    segmentation and offset recovery are solved for it before inference;
+    that is not a protocol any other tool here gets, and it is not what
+    their own users run.
+
+    The published 0.9888 micro-F1 is therefore not comparable to a cell
+    in this matrix on four independent axes: it is exact-boundary
+    word-span (stricter than IoU≥0.5), micro (not macro), over rizzo's
+    own 22 tags (not nullpii's schema), on a split of which ~18.6% of
+    gold entities were synthetically injected with template strings that
+    also appear in their training augmentation bank.
+
+    Their regex + checksum network is serving-only and is NOT exercised
+    here or in their own evaluation — this row, like their number, is the
+    bare model.
+    """
+    try:
+        import torch  # noqa: I001
+        from transformers import pipeline
+    except ImportError as e:
+        raise ImportError("transformers + torch required") from e
+
+    if device is None:
+        device = "mps" if torch.backends.mps.is_available() else (
+            "cuda" if torch.cuda.is_available() else "cpu"
+        )
+    if device == "cpu":
+        threads = max(1, (os.cpu_count() or 8) // 2)
+        torch.set_num_threads(threads)
+        try:
+            torch.set_num_interop_threads(max(1, threads // 4))
+        except RuntimeError:
+            pass
+
+    pipe = pipeline(
+        task="token-classification",
+        model="rizzoaiacademy/rizzo-pii-0.3B",
+        aggregation_strategy=aggregation_strategy,
+        device=device,
+        batch_size=batch_size,
+    )
+
+    def _word_chunks(text: str) -> list[tuple[int, str]]:
+        """(char_offset, chunk_text) at `chunk_words` words with overlap."""
+        words = [(m.start(), m.end()) for m in re.finditer(r"\S+", text)]
+        if len(words) <= chunk_words:
+            return [(0, text)]
+        stride = chunk_words - overlap_words
+        chunks: list[tuple[int, str]] = []
+        for i in range(0, len(words), stride):
+            window = words[i : i + chunk_words]
+            if not window:
+                break
+            start, end = window[0][0], window[-1][1]
+            chunks.append((start, text[start:end]))
+            if i + chunk_words >= len(words):
+                break
+        return chunks
+
+    def _decode(results: list[dict], offset: int) -> list[Span]:
+        spans: list[Span] = []
+        for r in results:
+            entity = str(r.get("entity_group") or r.get("entity") or "")
+            label = _RIZZO_LABEL_MAP.get(_strip_bioes(entity).upper())
+            if label is None:
+                continue
+            spans.append(Span(label, int(r["start"]) + offset, int(r["end"]) + offset))
+        return spans
+
+    def _predict_batch(texts: list[str]) -> list[ToolResult]:
+        t0 = time.perf_counter()
+        per_input: list[list[tuple[int, str]]] = []
+        flat: list[str] = []
+        for text in texts:
+            chunks = _word_chunks(text) if text else [(0, "")]
+            per_input.append(chunks)
+            flat.extend(c for _, c in chunks)
+
+        flat_results = pipe(flat) if flat else []
+        if flat_results and isinstance(flat_results[0], dict):
+            flat_results = [flat_results]  # type: ignore[list-item]
+
+        elapsed = (time.perf_counter() - t0) * 1000
+        per_call = elapsed / max(1, len(texts))
+
+        out: list[ToolResult] = []
+        cursor = 0
+        for chunks in per_input:
+            collected: list[Span] = []
+            for offset, _ in chunks:
+                results = flat_results[cursor] if cursor < len(flat_results) else []
+                cursor += 1
+                collected.extend(_decode(results, offset))
+            out.append(ToolResult(_dedupe_spans_by_iou(collected), per_call))
+        return out
+
+    return _predict_batch
+
+
+def _dedupe_spans_by_iou(spans: list[Span], threshold: float = 0.5) -> list[Span]:
+    """Collapse same-label spans duplicated across a chunk boundary."""
+    if len(spans) <= 1:
+        return spans
+    out: list[Span] = []
+    for s in sorted(spans, key=lambda x: (x.start, -x.end)):
+        merged = False
+        for i in range(len(out) - 1, -1, -1):
+            prev = out[i]
+            if prev.end <= s.start:
+                break
+            if prev.label != s.label:
+                continue
+            inter = max(0, min(prev.end, s.end) - max(prev.start, s.start))
+            if inter == 0:
+                continue
+            union = (prev.end - prev.start) + (s.end - s.start) - inter
+            if inter / union >= threshold:
+                if (s.end - s.start) > (prev.end - prev.start):
+                    out[i] = s
+                merged = True
+                break
+        if not merged:
+            out.append(s)
+    return sorted(out, key=lambda s: s.start)
+
+
 _OPENAI_PRIVACY_FILTER_OK = {
     "ACCOUNT_NUMBER",
     "PRIVATE_ADDRESS",

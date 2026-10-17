@@ -63,6 +63,7 @@ from nullpii_eval.adapters import (
     nullpii_runtime_predictor,
     openai_privacy_filter_predictor,
     piiranha_predictor,
+    rizzo_pii_predictor,
     presidio_multilang_predictor,
     presidio_predictor,
     url_filter_predictor,
@@ -252,6 +253,10 @@ DATASET_CONFIGS: list[DatasetSpec] = [
     # External baselines (not in training corpora — held-out).
     DatasetSpec("argilla-pii",                   lambda n: list(public_datasets._load_argilla_pii(n).samples),                          2_000, total_n=2096),
     DatasetSpec("nemotron-pii-test",             lambda n: list(public_datasets._load_nemotron_pii_test(n).samples),                    5_000, total_n=100000),
+    # Vendor-authored Italian legal corpus — the reverse-direction arena.
+    # NOT blind for rizzo-pii (same author, same generator family, and
+    # template_id values recur across its own train/validation splits).
+    DatasetSpec("rizzo-clean-val",               lambda n: list(public_datasets._load_rizzo_clean_val(n).samples),                      5_000, total_n=29297),
     DatasetSpec("isotonic-en-heldout",       _isotonic("en", row_offset=_ISOTONIC_HELDOUT_ROW_OFFSET),  5_000, total_n=9000),
     DatasetSpec("isotonic-de-heldout",       _isotonic("de", row_offset=_ISOTONIC_HELDOUT_ROW_OFFSET),  5_000, total_n=9000),
     DatasetSpec("isotonic-fr-heldout",       _isotonic("fr", row_offset=_ISOTONIC_HELDOUT_ROW_OFFSET),  5_000, total_n=9000),
@@ -421,6 +426,7 @@ def build_tools(args) -> dict[str, Callable]:
         "deberta":   lambda: _mark_batch(deberta_pii_predictor(device=backend, batch_size=_BATCH)),
         "deberta-simple": lambda: _mark_batch(deberta_pii_predictor(device=backend, batch_size=_BATCH, aggregation_strategy="simple")),
         "piiranha":  lambda: _mark_batch(piiranha_predictor(device=backend, batch_size=_BATCH)),
+        "rizzo-pii": lambda: _mark_batch(rizzo_pii_predictor(device=backend, batch_size=_BATCH)),
         # GLiNER multi PII v1 (`urchade/gliner_multi_pii-v1`) bare HF.
         "gliner-onnx-pii-fp32": lambda: gliner_v2_predictor(
             "onnx-community/gliner_multi_pii-v1",

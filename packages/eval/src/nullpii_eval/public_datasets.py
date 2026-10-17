@@ -1358,3 +1358,122 @@ def _load_nemotron_pii_test(max_samples: int | None) -> PublicDataset:
         citation="nvidia/Nemotron-PII test split (CC-BY-4.0).",
         samples=tuple(samples),
     )
+
+
+# ─── rizzo-pii (Italian-first, 22-tag taxonomy) ──────────────────────
+# Gold-side twin of `_RIZZO_LABEL_MAP` in `adapters.py` — deliberately
+# duplicated rather than imported, to keep the loader independent of the
+# tool adapters. Keep the two in sync: a competitor's prediction and the
+# gold it is scored against must be projected identically, or the
+# comparison measures the projection.
+_RIZZO_GOLD_MAP: dict[str, str | None] = {
+    "FULLNAME": "private_person",
+    "EMAIL": "private_email",
+    "TELEPHONENUM": "private_phone",
+    "STREET": "private_address",
+    "BUILDINGNUM": "private_address",
+    "CITY": "private_address",
+    "ZIPCODE": "private_address",
+    "PROVINCE": "private_address",
+    "DATE": "private_date",
+    "TIME": "private_date",
+    "IBAN": "account_number",
+    "CREDITCARDNUMBER": "account_number",
+    "CF": "account_number",
+    "PIVA": "account_number",
+    "ID_DOC": "account_number",
+    "TARGA": "private_vehicle_id",
+    # ─── Raw tags the vendor collapses at load time ────────────────
+    # The published corpus ships 34 distinct labels; their TAG_MAP folds
+    # 12 of them (98,774 entities, 10.0% of this split) into the
+    # documented 22. Replicated verbatim from their technical report
+    # §5 so this scores against the gold THEY score against:
+    #   "legal roles collapse into FULLNAME … given names + surnames →
+    #    FULLNAME; PEC → EMAIL; ID card / passport / licence / social
+    #    number → ID_DOC; account number → IBAN."
+    "GIUDICE": "private_person",      # judge
+    "AVVOCATO": "private_person",     # lawyer
+    "ATTORE": "private_person",       # plaintiff
+    "CONVENUTO": "private_person",    # defendant
+    "TESTIMONE": "private_person",    # witness
+    "GIVENNAME": "private_person",
+    "SURNAME": "private_person",
+    "PEC": "private_email",           # certified e-mail
+    "CONTO": "account_number",        # bank account → IBAN in their map
+    # Their map sends both of these to ID_DOC. nullpii has a dedicated
+    # `private_driver_license`, so following their collapse costs us the
+    # finer label — kept anyway: it is their corpus and their published
+    # methodology, and the alternative hands rizzo a structural zero on
+    # a class it deliberately does not separate.
+    "IDCARDNUM": "account_number",
+    "DRIVERLICENSENUM": "account_number",
+}
+
+# No home in nullpii's 14-label schema. NB the asymmetry this creates and
+# disclose it: a tool whose label map drops these keeps its predictions
+# on them for free, while nullpii — whose schema *is* the gold schema —
+# is charged a false positive for predicting anything there. On this
+# corpus that is 21.8% of gold entities, dominated by AMOUNT and DOCID.
+_RIZZO_GOLD_IGNORED = frozenset({
+    "ORG", "AMOUNT", "GENDER", "AGE", "DOCID", "CATASTO",
+    "RG",  # ruolo generale — docket number, same class as DOCID
+})
+
+
+def _map_rizzo_gold_label(label: str) -> str | None:
+    key = label.upper()
+    mapped = _RIZZO_GOLD_MAP.get(key)
+    if mapped is not None:
+        return mapped
+    if key in _RIZZO_GOLD_IGNORED:
+        return None
+    raise ValueError(
+        f"[rizzo-clean] unknown gold label {label!r}. Add it to "
+        f"_RIZZO_GOLD_MAP or to _RIZZO_GOLD_IGNORED — never let it fall "
+        f"through.",
+    )
+
+
+def _load_rizzo_clean_val(max_samples: int | None) -> PublicDataset:
+    """`rizzoaiacademy/anonimizzazione-testi-italiano-clean`, validation.
+
+    The vendor's other artifact — the 7,000-row `rizzo-pii-it-dataset`
+    validation split their 0.9888 headline is measured on — ships only
+    `tokens` + `bio_labels`, no `source_text` and no character offsets,
+    so scoring it span-level would measure our detokenizer rather than
+    either model. This split carries native `source_text` and real
+    character offsets (verified exact on every entity of a 400-row
+    probe), and is MIT rather than the other's `mixed-see-card`.
+
+    Italian, synthetic, template-generated. NOT a blind test for
+    rizzo-pii: `template_id` values recur across this corpus's own train
+    and validation splits, and it is the same author's generator family
+    as their training data. Read their column here as an upper bound.
+    """
+    from datasets import load_dataset
+
+    n = 5000 if max_samples is None else max_samples
+    ds = load_dataset(
+        "rizzoaiacademy/anonimizzazione-testi-italiano-clean",
+        split=f"validation[:{n}]",
+    )
+    samples: list[Sample] = []
+    for row in ds:
+        text = str(row.get("source_text") or "")
+        if not text:
+            raise ValueError("[rizzo-clean] row has empty source_text")
+        spans: list[Span] = []
+        for e in row.get("entities") or []:
+            label = _map_rizzo_gold_label(str(e.get("label", "")))
+            if label is None:
+                continue
+            spans.append(Span(label, int(e["start"]), int(e["end"])))
+        samples.append(Sample(text=text, spans=tuple(spans)))
+    return PublicDataset(
+        name="rizzo-clean-val",
+        citation=(
+            "Rizzo AI Academy. anonimizzazione-testi-italiano-clean, "
+            "validation split (MIT, synthetic Italian legal prose)."
+        ),
+        samples=tuple(samples),
+    )

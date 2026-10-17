@@ -42,7 +42,11 @@ import { OPENAI_SHELL_TOOLS, isShellTool } from './shell-restore.js';
  */
 
 /** Content parts whose payload is binary or remote: nothing to scan. */
-const UNSCANNABLE_PART_TYPES: ReadonlySet<string> = new Set(['image_url', 'input_audio', 'file']);
+const UNSCANNABLE_PART_TYPES: ReadonlySet<string> = new Set(['image_url', 'input_audio']);
+
+/** A file part: its data cannot be read, but its `filename` can name a
+ * person (`CV of …`), so that one field is scanned. */
+const FILE_PART_TYPE = 'file';
 
 /** Content-part fields that carry protocol structure. Every other field
  * of a part is sanitized, so a part type added to the API later is
@@ -67,9 +71,10 @@ const HINT_ROLE = 'system';
  * Scanned: message `content` (a string, or `text` / `refusal` parts),
  * participant `name`, `refusal`, tool-call `arguments` (parsed as JSON,
  * string leaves sanitized), custom tool-call `input`, the deprecated
- * `function_call`, tool and function `description`s, and
- * `prediction.content`. `image_url`, `input_audio` and `file` parts are
- * forwarded untouched and counted in `unscanned`.
+ * `function_call`, tool and function `description`s,
+ * `prediction.content`, and a file part's `filename`. `image_url`,
+ * `input_audio` and `file` payloads are forwarded untouched and counted
+ * in `unscanned`.
  *
  * @param np - the detection engine.
  * @param body - the client's request body; mutated and returned.
@@ -164,6 +169,7 @@ async function sanitizePart(
     acc.unscanned += 1;
     return part;
   }
+  if (part.type === FILE_PART_TYPE) return sanitizeFilePart(np, part, sessionId, acc);
   const out: ChatContentPart = { ...part };
   for (const [key, value] of Object.entries(part)) {
     if (!PART_STRUCTURAL_KEYS.has(key)) {
@@ -171,6 +177,21 @@ async function sanitizePart(
     }
   }
   return out;
+}
+
+/** Counted as unscanned (the file itself cannot be read); only the
+ * free-text `filename` is sanitized, every other field is forwarded as is. */
+async function sanitizeFilePart(
+  np: NullPii,
+  part: ChatContentPart,
+  sessionId: string,
+  acc: CaptureAccumulator,
+): Promise<ChatContentPart> {
+  acc.unscanned += 1;
+  const file = part.file;
+  if (!isRecord(file) || typeof file.filename !== 'string') return part;
+  const filename = await sanitizeText(np, file.filename, sessionId, acc);
+  return { ...part, file: { ...file, filename } };
 }
 
 async function sanitizeToolCall(

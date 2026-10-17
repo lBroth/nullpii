@@ -143,9 +143,10 @@ The gateway appends `/v1/chat/completions` to `NULLPII_OPENAI_UPSTREAM`, so set 
 - a message's participant `name` (not the function name of a deprecated `function` message) and an assistant `refusal`;
 - `tool_calls[].function.arguments`: parsed as JSON, every string value sanitized, then re-serialized (arguments that are not valid JSON are sanitized as plain text, and arguments with nothing to mask are forwarded byte for byte); a custom tool call's `input`; the deprecated `function_call.arguments`;
 - the `description` of each tool (`function` or `custom`) and of each deprecated `functions[]` entry;
-- `prediction.content`.
+- `prediction.content`;
+- a file part's `filename`, which can name a person (`CV of …`).
 
-**Not scanned:** `image_url`, `input_audio` and `file` parts are forwarded untouched, a file's `filename` included, and counted as "not scanned" in the log and the console summary. Tool names, parameter JSON schemas, `response_format`, and the identifiers a client chooses to send (`user`, `safety_identifier`, `metadata`, `prompt_cache_key`) are forwarded as they are.
+**Not scanned:** `image_url`, `input_audio` and `file` parts are forwarded untouched, apart from a file's `filename`, and counted as "not scanned" in the log and the console summary. Tool names, parameter JSON schemas, `response_format`, and the identifiers a client chooses to send (`user`, `safety_identifier`, `metadata`, `prompt_cache_key`) are forwarded as they are.
 
 **Restored** in the response: each choice's `content`, `refusal`, `tool_calls[].function.arguments` (the string values of the parsed JSON, so a restored value holding a quote stays valid JSON), a custom tool call's `input`, and `function_call.arguments`. With `stream: true`, `delta.content` and `delta.refusal` are restored as they stream, and only a placeholder split across chunks is held back until it is complete. Tool-call arguments are held per call and sent restored, in one piece, with the chunk that carries the choice's `finish_reason` (or just before `data: [DONE]` if that never comes); each call's `id` and function name still arrive at once. Not restored: `logprobs` tokens, audio transcripts and streamed custom tool-call input keep their placeholders. In the `command` of a shell tool (`Bash`, `bash`, `shell`), a value goes back only where it is safe: see [Security](#security).
 

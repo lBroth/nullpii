@@ -297,6 +297,33 @@ describe('openai · request walk', () => {
     expect((out.body.messages[0]?.content as unknown[]).slice(0, 3)).toEqual(media);
   });
 
+  it("scans a file part's filename and forwards the file data untouched", async () => {
+    const { np } = buildEngine();
+    const fileData = 'data:application/pdf;base64,JVBERi0xLjQK';
+    const body: ChatCompletionRequest = {
+      model: MODEL,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'file', file: { filename: `CV of ${PERSON}.pdf`, file_data: fileData } },
+          ],
+        },
+      ],
+    };
+
+    const out = await sanitizeChatRequest(np, body, np.createSession());
+
+    const part = (
+      out.body.messages[0]?.content as unknown as Array<{ file: Record<string, string> }>
+    )[0];
+    expect(part?.file.filename).toMatch(/^CV of \{\{PII_PRIVATE_PERSON_\d+_[0-9a-f]+\}\}\.pdf$/);
+    expect(part?.file.file_data).toBe(fileData);
+    // The file's content still cannot be read.
+    expect(out.unscanned).toBe(1);
+    expect(out.captured).toBe(1);
+  });
+
   it('sanitizes tool_calls arguments as JSON and keeps call ids and function names', async () => {
     const { app, calls } = await setup(() =>
       json(completion({ role: 'assistant', content: 'ok' })),

@@ -18,7 +18,7 @@ import {
   emptyCounts,
   formatBand,
   formatReport,
-  quoteContextAt,
+  shellContextAt,
   shellSafe,
 } from './policy.ts';
 
@@ -117,7 +117,7 @@ async function unsafeShellPlaceholders($, command: string): Promise<string[]> {
   return found
     .filter((m, i) => {
       const real = r.value[i] ?? m[0];
-      return real !== m[0] && !shellSafe(real, quoteContextAt(command, m.index ?? 0));
+      return real !== m[0] && !shellSafe(real, shellContextAt(command, m.index ?? 0));
     })
     .map((m) => m[0]);
 }

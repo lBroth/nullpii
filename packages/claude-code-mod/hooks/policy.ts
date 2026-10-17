@@ -80,7 +80,7 @@ export function formatReport(counts: Counts, problem: string | undefined): strin
 /** Tools whose restored arguments a shell interprets. */
 export const SHELL_TOOLS: ReadonlySet<string> = new Set(['Bash']);
 
-export type QuoteContext = 'none' | 'single' | 'double';
+export type QuoteContext = 'none' | 'single' | 'double' | 'heredoc';
 
 /** What a value may contain to be put back into a shell command as
  * written, by the quoting around its placeholder. A masked value comes
@@ -90,26 +90,82 @@ const SHELL_SAFE: Readonly<Record<QuoteContext, RegExp>> = {
   none: /^[A-Za-z0-9@%+=:,./_-]+$/,
   single: /^[^'\n]*$/,
   double: /^[^"$`\\!\n]*$/,
+  // A quoted-delimiter heredoc body is literal; only a newline could end
+  // it early, with the delimiter on a line of its own.
+  heredoc: /^[^\n]*$/,
 };
+
+/** Programs that run part of their arguments as code, so a value that is
+ * safe for the outer shell can still inject into them. */
+const NESTED_INTERPRETER =
+  /\b(?:bash|sh|zsh|dash|ksh|fish)\s+(?:-\w+\s+)*-\w*c\b|\beval\b|\bssh\b|\bsu\s+-c\b|\b(?:python3?|node|perl|ruby|php|deno|bun)\s+(?:-\w+\s+)*-\w*[ce]\b/;
 
 export function shellSafe(value: string, context: QuoteContext): boolean {
   return SHELL_SAFE[context].test(value);
 }
 
-/** The quoting in force at `index` of a shell command: a small lexer for
- * single quotes, double quotes and backslash escapes outside single quotes. */
+/** The context that decides what a restored value may contain at
+ * `index`: the strictest rule when the command hands code to another
+ * interpreter, a heredoc body, or the shell quoting there. */
+export function shellContextAt(command: string, index: number): QuoteContext {
+  if (NESTED_INTERPRETER.test(command)) return 'none';
+  return heredocContextAt(command, index) ?? quoteContextAt(command, index);
+}
+
+const HEREDOC_START = /<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1[^\n]*\n/g;
+
+/** `heredoc` inside the body of a heredoc with a quoted delimiter
+ * (literal), `double` inside an unquoted one (it expands `$` and
+ * backticks), `undefined` outside any heredoc body. */
+export function heredocContextAt(command: string, index: number): QuoteContext | undefined {
+  for (const m of command.matchAll(HEREDOC_START)) {
+    const bodyStart = (m.index ?? 0) + m[0].length;
+    if (index < bodyStart) continue;
+    const delimiter = m[2] as string;
+    const end = new RegExp(`^[\\t ]*${delimiter}[\\t ]*$`, 'm').exec(command.slice(bodyStart));
+    const bodyEnd = end === null ? command.length : bodyStart + end.index;
+    if (index < bodyEnd) return m[1] === '' ? 'double' : 'heredoc';
+  }
+  return undefined;
+}
+
+type LexState = 'none' | 'single' | 'double' | 'subst' | 'paren' | 'backtick';
+
+/** The quoting in force at `index` of a shell command: a small stack
+ * lexer for single and double quotes, backslash escapes, and command
+ * substitution. Inside `$(…)` or backticks the shell runs the text as a
+ * command, so it counts as unquoted even within double quotes. */
 export function quoteContextAt(command: string, index: number): QuoteContext {
-  let context: QuoteContext = 'none';
+  const stack: LexState[] = ['none'];
   for (let i = 0; i < index; i++) {
+    const top = stack[stack.length - 1] as LexState;
     const ch = command[i];
-    if (context !== 'single' && ch === '\\') {
+    if (top !== 'single' && ch === '\\') {
       i++;
       continue;
     }
-    if (context === 'none' && ch === "'") context = 'single';
-    else if (context === 'single' && ch === "'") context = 'none';
-    else if (context === 'none' && ch === '"') context = 'double';
-    else if (context === 'double' && ch === '"') context = 'none';
+    if (top === 'single') {
+      if (ch === "'") stack.pop();
+      continue;
+    }
+    if (ch === '$' && command[i + 1] === '(') {
+      stack.push('subst');
+      i++;
+    } else if (ch === '`') {
+      if (top === 'backtick') stack.pop();
+      else stack.push('backtick');
+    } else if (top === 'double') {
+      if (ch === '"') stack.pop();
+    } else if (ch === "'") {
+      stack.push('single');
+    } else if (ch === '"') {
+      stack.push('double');
+    } else if (ch === '(' && (top === 'subst' || top === 'paren')) {
+      stack.push('paren');
+    } else if (ch === ')' && (top === 'subst' || top === 'paren')) {
+      stack.pop();
+    }
   }
-  return context;
+  const top = stack[stack.length - 1] as LexState;
+  return top === 'single' || top === 'double' ? top : 'none';
 }

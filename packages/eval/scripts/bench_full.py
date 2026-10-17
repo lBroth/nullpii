@@ -49,7 +49,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from nullpii_eval import public_datasets
 from nullpii_eval.adapters import (
     DEFAULT_REGEX_PATTERNS,
+    ETTIN_68M,
     MINIMAL_REGEX_PATTERNS,
+    OPENMED_LARGE,
+    OPENMED_SMALL,
+    PII_IDENTIFIER,
     _GLINER_NATIVE_LABELS,
     _GLINER_NATIVE_TO_NULLPII8,
     boundary_refined_predictor,
@@ -58,10 +62,12 @@ from nullpii_eval.adapters import (
     gliner_lora_predictor,
     gliner_nemotron_pii_predictor,
     gliner_v2_predictor,
+    hf_token_classifier_predictor,
     multi_ensemble_predictor,
     never_pii_filter_predictor,
     nullpii_runtime_predictor,
     openai_privacy_filter_predictor,
+    openmed_privacy_filter_predictor,
     piiranha_predictor,
     rizzo_pii_predictor,
     presidio_multilang_predictor,
@@ -300,6 +306,10 @@ def _required_env(name: str) -> str:
         raise SystemExit(f"{name} must be set for this tool")
     return value
 
+# GPU batch cap for tools whose windows reach 2048 tokens (see below).
+_LONG_WINDOW_BATCH = 8
+
+
 def build_tools(args) -> dict[str, Callable]:
     backend = args.backend
     # Inner GPU batch for transformer tools. Override via env when
@@ -502,6 +512,19 @@ def build_tools(args) -> dict[str, Callable]:
         "openai-privacy-filter": lambda: openai_privacy_filter_predictor(
             device=backend,
         ),
+        # ─── Token classifiers fine-tuned on nvidia/Nemotron-PII ─────
+        # Card usage (`aggregation_strategy="simple"`), inputs cut into
+        # token windows of the fine-tuning length; see `TokenClassifierSpec`.
+        # The 2048-token ModernBERT windows run at a smaller GPU batch so
+        # activations fit next to other jobs; batch size changes padding
+        # only, never the windows a document is cut into.
+        "openmed-small": lambda: _mark_batch(hf_token_classifier_predictor(OPENMED_SMALL, device=backend, batch_size=_BATCH)),
+        "openmed-large": lambda: _mark_batch(hf_token_classifier_predictor(OPENMED_LARGE, device=backend, batch_size=_BATCH)),
+        "ettin-68m": lambda: _mark_batch(hf_token_classifier_predictor(ETTIN_68M, device=backend, batch_size=min(_BATCH, _LONG_WINDOW_BATCH))),
+        "pii-identifier": lambda: _mark_batch(hf_token_classifier_predictor(PII_IDENTIFIER, device=backend, batch_size=min(_BATCH, _LONG_WINDOW_BATCH))),
+        # OpenMed's opf fine-tune of openai/privacy-filter, served by the
+        # same opf runtime as the row above (CPU: opf has no MPS path).
+        "openmed-pf-multi-v2": lambda: openmed_privacy_filter_predictor(device=backend),
     }
     requested = [t.strip() for t in args.tools.split(",") if t.strip()]
     out: dict[str, Callable] = {}

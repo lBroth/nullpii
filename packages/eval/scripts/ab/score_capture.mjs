@@ -16,6 +16,7 @@
 //   node score_capture.mjs --dist <abs dist> --texts <texts.jsonl> [--threshold 0.2] --out <spans.jsonl>
 //   node score_capture.mjs --dist <abs dist> --texts <texts.jsonl> --checkpoints <dir> --tool <name>
 //   add --model-dir <dir> to load a model other than the cached default (e.g. a quantized variant)
+//   add --config '<json>' to merge engine options, e.g. '{"disabledCategories":[...]}'
 //   add --resume 1 to continue an interrupted run: rows already written are
 //   skipped and new ones appended (a torn last line is cut off first)
 
@@ -105,6 +106,7 @@ const config = {
   backend: 'cpu',
   ...(args.threshold !== undefined && { threshold: Number(args.threshold) }),
   ...(args['model-dir'] !== undefined && { modelDir: args['model-dir'] }),
+  ...(args.config !== undefined && JSON.parse(args.config)),
 };
 const np = new NullPii(config);
 const resume = args.resume === '1';

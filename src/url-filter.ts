@@ -68,9 +68,37 @@ export const PUBLIC_URL_HOSTS: ReadonlySet<string> = new Set([
   'stackexchange.com',
   'serverfault.com',
   'superuser.com',
-  // Standards bodies
+  // Standards bodies and licences
   'iso.org',
   'unicode.org',
+  'iana.org',
+  'apache.org',
+  'typescriptlang.org',
+  // Project-infrastructure services READMEs link to: status badges,
+  // CI, coverage, dependency and funding pages, public package CDNs.
+  // Every URL on these hosts describes a public project, never a person.
+  'shields.io',
+  'badgen.net',
+  'fury.io',
+  'nodei.co',
+  'npm.im',
+  'packagequality.com',
+  'travis-ci.org',
+  'travis-ci.com',
+  'circleci.com',
+  'appveyor.com',
+  'coveralls.io',
+  'codecov.io',
+  'david-dm.org',
+  'snyk.io',
+  'tidelift.com',
+  'opencollective.com',
+  'jsdelivr.com',
+  'jsdelivr.net',
+  'unpkg.com',
+  // Raw and avatar content of public GitHub repositories, consistent
+  // with `github.com` above.
+  'githubusercontent.com',
 ]);
 
 /**

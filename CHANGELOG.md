@@ -158,6 +158,15 @@ numbers; the published table is not fully regenerated yet.
   dropped public URL (`https:/`, `github.com`) now go with it instead of
   splitting the reference. Developer content masked: 5.09% → 1.68%;
   tuning-set recall unchanged.
+- **Project-infrastructure URLs are public.** The allowlist gains the
+  services READMEs link to: status badges (`shields.io`, `badgen.net`,
+  `badge.fury.io`, …), CI and coverage (`travis-ci`, `circleci`,
+  `appveyor`, `coveralls`, `codecov`), dependency and funding pages
+  (`david-dm`, `snyk`, `tidelift`, `opencollective`), public package CDNs
+  (`jsdelivr`, `unpkg`), `githubusercontent.com` (consistent with
+  `github.com`), and `iana.org` / `apache.org` / `typescriptlang.org`.
+  Personal websites stay masked. Claude-Code-traces tuning set
+  char-precision 0.63 → 0.70, recall unchanged.
 - **Log-record timestamps are not masked.** A timestamp that opens a
   log line and is followed by a log level (`2026-10-16T09:41:07Z INFO …`,
   `2026-10-16 09:41:07,123 - billing - WARNING - …`) dates the record,

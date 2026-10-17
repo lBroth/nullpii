@@ -28,6 +28,24 @@ describe('isPublicUrl', () => {
     expect(isPublicUrl('https://files.pythonhosted.org/packages/ab/cd/numpy-2.0.whl')).toBe(true);
   });
 
+  it('matches README badge, CI, coverage and CDN hosts', () => {
+    for (const u of [
+      'https://img.shields.io/npm/v/debug.svg',
+      'https://travis-ci.org/debug-js/debug.svg?branch=master',
+      'https://coveralls.io/repos/github/debug-js/debug/badge.svg',
+      'https://badge.fury.io/js/debug.svg',
+      'https://cdn.jsdelivr.net/npm/debug@4/src/index.js',
+      'https://raw.githubusercontent.com/debug-js/debug/master/README.md',
+    ]) {
+      expect(isPublicUrl(u), u).toBe(true);
+    }
+  });
+
+  it('keeps personal websites masked', () => {
+    expect(isPublicUrl('https://sindresorhus.com')).toBe(false);
+    expect(isPublicUrl('https://feross.org/support')).toBe(false);
+  });
+
   it('does not extend to look-alike or private registry hosts', () => {
     expect(isPublicUrl('https://registry.npmjs.org.attacker.io/x')).toBe(false);
     expect(isPublicUrl('https://npm.acme-corp.internal/pkg/-/pkg-1.0.0.tgz')).toBe(false);

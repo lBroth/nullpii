@@ -7,6 +7,7 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Claude Code mod (preview)** in `packages/claude-code-mod/`. Prompts and tool results are masked through the sidecar API before Claude reads them. Placeholders get their real values back only in the arguments of tools that run on this machine, never in web or MCP tools. It fails closed when the sidecar is unreachable. A band above the prompt shows the counts by type, and `/pii` prints them. In auto mode, a local tool call that contains a placeholder is refused, because Claude Code denies tool input that a hook rewrote.
 - **Gateway: sidecar API** (`/v1/sidecar/*`), off unless `NULLPII_SIDECAR_TOKEN` is set. It keeps vault sessions under caller-chosen keys across calls, so an editor or coding-agent extension can mask prompts and tool results turn after turn and restore real values only where it chooses (`fields`).
   - **Sessions:** an idle TTL (`NULLPII_VAULT_TTL_MS`, now wired up) drops each session together with its vault entries. A cap (`NULLPII_SIDECAR_MAX_SESSIONS`) fails with 429 instead of evicting a live session.
   - **Access:** a bearer token, compared in constant time. Non-loopback `Host` headers and any `Origin` header are refused before the token check.

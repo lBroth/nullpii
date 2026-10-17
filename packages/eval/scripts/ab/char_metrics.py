@@ -76,6 +76,11 @@ def _bootstrap_recall(gold: np.ndarray, hit: np.ndarray, idx: np.ndarray) -> np.
     return np.divide(h, g, out=np.zeros_like(h, dtype=float), where=g > 0)
 
 
+def _bootstrap_precision(pred: np.ndarray, hit: np.ndarray, idx: np.ndarray) -> np.ndarray:
+    p, h = pred[idx].sum(axis=1), hit[idx].sum(axis=1)
+    return np.divide(h, p, out=np.zeros_like(h, dtype=float), where=p > 0)
+
+
 def load_predictions(results: Path, tool: str, dataset: str) -> list[list[tuple[int, int]]]:
     """Per-document predictions, by idx. A bench run resumed after an
     interruption can append rows for indices it had already written; the
@@ -145,6 +150,7 @@ def compare(
     idx = rng.integers(0, n, size=(BOOTSTRAP_RESAMPLES, n))
     base_f2 = _bootstrap_f2(*per_tool[baseline], idx)
     base_rec = _bootstrap_recall(per_tool[baseline][0], per_tool[baseline][2], idx)
+    base_prec = _bootstrap_precision(per_tool[baseline][1], per_tool[baseline][2], idx)
     out = {}
     diffs: dict[str, np.ndarray] = {}
     for tool, arrays in per_tool.items():
@@ -157,6 +163,7 @@ def compare(
             d_rec = base_rec - _bootstrap_recall(arrays[0], arrays[2], idx)
             entry["baseline_minus_tool_f2_ci"] = _ci(d_f2)
             entry["baseline_minus_tool_recall_ci"] = _ci(d_rec)
+            entry["baseline_minus_tool_precision_ci"] = _ci(base_prec - _bootstrap_precision(arrays[1], arrays[2], idx))
             diffs[tool] = d_f2
         out[tool] = entry
     return out, diffs

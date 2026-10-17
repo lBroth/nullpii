@@ -158,6 +158,16 @@ numbers; the published table is not fully regenerated yet.
   dropped public URL (`https:/`, `github.com`) now go with it instead of
   splitting the reference. Developer content masked: 5.09% → 1.68%;
   tuning-set recall unchanged.
+- **Log-record timestamps are not masked.** A timestamp that opens a
+  log line and is followed by a log level (`2026-10-16T09:41:07Z INFO …`,
+  `2026-10-16 09:41:07,123 - billing - WARNING - …`) dates the record,
+  not a person, and an agent debugging a log needs it. The model labelled
+  every one `private_date`. Deliberately narrow: a timestamp quoted in
+  prose, a line-leading timestamp without a log level, and a bare date
+  all stay masked (broader variants cost date recall on the benchmark
+  gold, which treats timestamps in prose as personal data). On the
+  Claude-Code-traces tuning set char-precision 0.44 → 0.63 with recall
+  unchanged; tuning heldouts identical.
 - **Subresource-integrity digests are not secrets.** Lockfile
   `"integrity": "sha512-…"` values are hashes of public tarballs; the
   model read pieces of the base64 as `secret` and masked them, about one

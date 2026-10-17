@@ -26,6 +26,7 @@ import {
   GlinerTokenizer,
 } from './gliner-tokenizer.js';
 import { logf } from './log.js';
+import { dropDatesInsideMachineTimestamps } from './machine-timestamps.js';
 import { ModelManager } from './model-manager.js';
 import { normalizeForDetection, remapSpan } from './normalize.js';
 import { escapePlaceholders, unescapePlaceholders } from './placeholder-escape.js';
@@ -221,8 +222,10 @@ export class NullPii {
     // Digests of public artifacts (lockfile `integrity` fields) are not
     // PII; drop pieces of them before dedupe so they cannot absorb or
     // outrank anything else. See `public-digests.ts`.
-    const candidates = dropSpansInsidePublicDigests(
-      [...mlSpans, ...recoSpans] as PiiSpan[],
+    // Event timestamps date a log record, not a person. See
+    // `machine-timestamps.ts`.
+    const candidates = dropDatesInsideMachineTimestamps(
+      dropSpansInsidePublicDigests([...mlSpans, ...recoSpans] as PiiSpan[], escaped),
       escaped,
     );
     const allowlisted =

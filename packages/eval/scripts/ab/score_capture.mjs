@@ -16,8 +16,17 @@
 //   node score_capture.mjs --dist <abs dist> --texts <texts.jsonl> [--threshold 0.2] --out <spans.jsonl>
 //   node score_capture.mjs --dist <abs dist> --texts <texts.jsonl> --checkpoints <dir> --tool <name>
 //   add --model-dir <dir> to load a model other than the cached default (e.g. a quantized variant)
+//   add --resume 1 to continue an interrupted run: rows already written are
+//   skipped and new ones appended (a torn last line is cut off first)
 
-import { createReadStream, createWriteStream, mkdirSync } from 'node:fs';
+import {
+  createReadStream,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  truncateSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
@@ -34,13 +43,36 @@ function parseArgs(argv) {
   return args;
 }
 
-function checkpointSink(dir, tool) {
+/** Keys an interrupted run already wrote to `path`. A torn last line (the
+ * process died mid-write) is truncated away so appends stay valid JSONL. */
+function completedKeys(path, dataset) {
+  const keys = new Set();
+  if (!existsSync(path)) return keys;
+  const text = readFileSync(path, 'utf8');
+  const kept = text.slice(0, text.lastIndexOf('\n') + 1);
+  if (kept.length < text.length) truncateSync(path, Buffer.byteLength(kept));
+  for (const line of kept.split('\n')) {
+    if (line === '') continue;
+    const row = JSON.parse(line);
+    keys.add(`${row.dataset ?? dataset}:${row.idx}`);
+  }
+  return keys;
+}
+
+function checkpointSink(dir, tool, resume) {
   mkdirSync(dir, { recursive: true });
   const streams = new Map();
+  const done = new Map();
+  const pathOf = (dataset) => join(dir, `${tool}-${dataset}.jsonl`);
   return {
+    isDone(row) {
+      if (!resume) return false;
+      if (!done.has(row.dataset)) done.set(row.dataset, completedKeys(pathOf(row.dataset), row.dataset));
+      return done.get(row.dataset).has(`${row.dataset}:${row.idx}`);
+    },
     write(row, spans) {
       if (!streams.has(row.dataset)) {
-        streams.set(row.dataset, createWriteStream(join(dir, `${tool}-${row.dataset}.jsonl`)));
+        streams.set(row.dataset, createWriteStream(pathOf(row.dataset), { flags: resume ? 'a' : 'w' }));
       }
       const triples = spans.map(([s, e, label]) => [s, e, label]);
       streams.get(row.dataset).write(`${JSON.stringify({ idx: row.idx, spans: triples })}\n`);
@@ -51,9 +83,13 @@ function checkpointSink(dir, tool) {
   };
 }
 
-function spanSink(path) {
-  const out = createWriteStream(path);
+function spanSink(path, resume) {
+  const done = resume ? completedKeys(path, undefined) : new Set();
+  const out = createWriteStream(path, { flags: resume ? 'a' : 'w' });
   return {
+    isDone(row) {
+      return done.has(`${row.dataset}:${row.idx}`);
+    },
     write(row, spans) {
       out.write(`${JSON.stringify({ dataset: row.dataset, idx: row.idx, spans })}\n`);
     },
@@ -71,11 +107,17 @@ const config = {
   ...(args['model-dir'] !== undefined && { modelDir: args['model-dir'] }),
 };
 const np = new NullPii(config);
-const sink = args.out ? spanSink(args.out) : checkpointSink(args.checkpoints, args.tool);
+const resume = args.resume === '1';
+const sink = args.out ? spanSink(args.out, resume) : checkpointSink(args.checkpoints, args.tool, resume);
 let n = 0;
+let skipped = 0;
 for await (const line of createInterface({ input: createReadStream(args.texts) })) {
   if (line.trim() === '') continue;
   const row = JSON.parse(line);
+  if (sink.isDone(row)) {
+    skipped += 1;
+    continue;
+  }
   const r = await np.sanitize(row.text);
   np.destroySession(r.sessionId);
   sink.write(row, r.spans.map((s) => [s.start, s.end, s.label, s.score]));
@@ -83,4 +125,4 @@ for await (const line of createInterface({ input: createReadStream(args.texts) }
 }
 sink.end();
 await np.dispose();
-process.stdout.write(`${JSON.stringify({ docs: n, ...config })}\n`);
+process.stdout.write(`${JSON.stringify({ docs: n, skipped, ...config })}\n`);

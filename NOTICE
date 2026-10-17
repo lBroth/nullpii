@@ -48,6 +48,15 @@ in the npm package; see README "First-call download"):
                                            mDeBERTa-v3 base.
                                            (Zaratiana et al., NAACL 2024.)
 
+  Training data with attribution terms (full list and licences in
+  docs/WEIGHTS_PROVENANCE.md):
+    - nvidia/Nemotron-PII ................ NVIDIA Corporation, CC-BY-4.0.
+    - allenai/c4 ......................... Allen Institute for AI, ODC-BY;
+                                           derived from Common Crawl, used
+                                           under the Common Crawl terms.
+    - microsoft/presidio-research ........ Microsoft Corporation, MIT.
+    - Text Anonymization Benchmark (TAB) . Norsk Regnesentral, MIT.
+
   Published weights:
     - lBroth/nullpii ..................... ONNX + tokenizer + GLiNER config
                                            (~1.2 GB FP32). See the

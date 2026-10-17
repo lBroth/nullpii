@@ -18,6 +18,7 @@ import {
   latLonPairInRange,
   luhnValid,
   macAddressNonReserved,
+  partitaIvaValid,
   vinValid,
 } from './validators.js';
 
@@ -499,6 +500,25 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     label: 'account_number',
     confidence: 0.99,
     validate: codiceFiscaleValid,
+  },
+  // Italian Partita IVA. Context REQUIRED: a bare `\d{11}` + checksum
+  // passed ~10% of random 11-digit runs and was removed in #38. Anchored
+  // on the keyword (P.IVA, Partita IVA, VAT number, …) or the `IT` VAT
+  // prefix, then checked on office code and check digit.
+  {
+    id: 'core:piva-italy-context',
+    pattern:
+      /(?<=\b(?:p\.?\s?iva|partita\s+iva|vat(?:\s*(?:no|number|nr|n°|id|reg(?:istration)?))?|ust-?id(?:nr)?)[\s:.#n°]*)(?:IT\s?)?\d{11}\b/gi,
+    label: 'account_number',
+    confidence: 0.95,
+    validate: partitaIvaValid,
+  },
+  {
+    id: 'core:piva-italy-prefixed',
+    pattern: /\bIT\d{11}\b/g,
+    label: 'account_number',
+    confidence: 0.9,
+    validate: partitaIvaValid,
   },
 
   // ─── Cloud / payment provider secrets (more than the AKIA + ghp_ already above) ──

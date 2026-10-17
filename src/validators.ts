@@ -281,6 +281,44 @@ export function codiceFiscaleValid(value: string): boolean {
   return expected !== undefined && expected === cf[15];
 }
 
+// ─── Italian Partita IVA ─────────────────────────────────────────────
+
+const PIVA_DIGITS = 11;
+const PIVA_OFFICE_START = 7;
+const PIVA_OFFICE_END = 10;
+const PIVA_MAX_PROVINCE_OFFICE = 100;
+/** Office codes outside 001–100: 120 and 121 (non-residents and
+ * non-commercial bodies), 888 and 999 (assigned by the central office). */
+const PIVA_SPECIAL_OFFICES: ReadonlySet<number> = new Set([120, 121, 888, 999]);
+const PIVA_COUNTRY_PREFIX = /^IT\s?/i;
+
+/**
+ * Italian Partita IVA (VAT number) validator, with or without the `IT`
+ * country prefix: 11 digits, an office code (digits 8–10) that the tax
+ * office assigns, and the Luhn-style check digit of DPR 633/1972.
+ *
+ * For a sole trader or a freelancer the number identifies a person.
+ */
+export function partitaIvaValid(value: string): boolean {
+  const digits = value.replace(PIVA_COUNTRY_PREFIX, '');
+  if (!/^\d{11}$/.test(digits)) return false;
+  const office = Number(digits.slice(PIVA_OFFICE_START, PIVA_OFFICE_END));
+  if ((office < 1 || office > PIVA_MAX_PROVINCE_OFFICE) && !PIVA_SPECIAL_OFFICES.has(office)) {
+    return false;
+  }
+  let sum = 0;
+  for (let i = 0; i < PIVA_DIGITS - 1; i++) {
+    let d = Number(digits[i]);
+    // Even 1-indexed positions are doubled, digit sum kept.
+    if (i % 2 === 1) {
+      d *= 2;
+      if (d > 9) d -= 9;
+    }
+    sum += d;
+  }
+  return (10 - (sum % 10)) % 10 === Number(digits[PIVA_DIGITS - 1]);
+}
+
 // ─── MAC address (reject reserved / non-personal values) ───────────
 
 /**

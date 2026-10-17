@@ -9,6 +9,7 @@ Changes from the measured A/B loop (`packages/eval/scripts/ab/PROTOCOL.md`, resu
 
 ### Added
 
+- **Italian Partita IVA (VAT number)**, masked as `account_number` when it follows its keyword (`P.IVA`, `Partita IVA`, `VAT number`, …) or carries the `IT` prefix, and passes the office-code and check-digit tests. Bare 11-digit runs are left alone: a checksum alone passes about one random number in ten (#38). For a sole trader or a freelancer the number identifies a person.
 - **Extended categories:** `private_organization`, `private_occupation`, `private_demographic`, `private_sensitive` and `private_title`. They are prompted and masked by default. Turn any category off with the new `disabledCategories` config option, for example `['private_organization', 'private_occupation']` to keep company names and job titles readable.
 
 ### Changed

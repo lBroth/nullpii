@@ -201,6 +201,40 @@ describe('codiceFiscaleValid', () => {
   });
 });
 
+import { partitaIvaValid } from '../src/validators.js';
+
+// Check digits below come from an independent implementation of the
+// DPR 633/1972 algorithm, not from this validator.
+describe('partitaIvaValid', () => {
+  it('accepts valid numbers, with or without the IT prefix', () => {
+    for (const v of [
+      '12345670017',
+      '07654320881',
+      '00000011007',
+      '98765431204',
+      'IT12345670017',
+      'it 07654320881',
+    ]) {
+      expect(partitaIvaValid(v)).toBe(true);
+    }
+  });
+
+  it('rejects a wrong check digit', () => {
+    expect(partitaIvaValid('12345670018')).toBe(false);
+  });
+
+  it('rejects an office code the tax office does not assign', () => {
+    // Office 150: valid check digit, impossible office.
+    expect(partitaIvaValid('12345671502')).toBe(false);
+  });
+
+  it('rejects other lengths and non-digits', () => {
+    expect(partitaIvaValid('1234567001')).toBe(false);
+    expect(partitaIvaValid('123456700177')).toBe(false);
+    expect(partitaIvaValid('1234567001X')).toBe(false);
+  });
+});
+
 import { latLonPairInRange, vinValid } from '../src/validators.js';
 
 describe('vinValid', () => {

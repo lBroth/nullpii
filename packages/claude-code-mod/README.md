@@ -17,6 +17,7 @@ Status: preview. Tested with Claude Code 2.1.302.
 | Your prompt | Masked before it is sent. Your prompt history stores the masked text. |
 | Your prompts and Claude's replies on screen | Drawn with the real values. What Claude reads keeps the placeholders. |
 | A tool result (file contents, command output, search results, MCP results) | Masked before Claude reads it |
+| Text Claude Code adds on its own: @-mentioned files, edited-file reminders, memory, `CLAUDE.md`, your account email | Masked before Claude reads it |
 | Arguments of a tool that runs on this machine (`Bash`, `Read`, `Edit`, `Write`, `NotebookEdit`, `Grep`, `Glob`) | Placeholders get their real values back before the tool runs, so commands and file edits use your real data. The result is masked again. |
 | Arguments of a tool that sends data elsewhere (`WebFetch`, `WebSearch`, MCP tools) | Left as placeholders, so a masked value never leaves the machine through a tool call |
 
@@ -28,6 +29,7 @@ If the sidecar cannot be reached, or `NULLPII_SIDECAR_TOKEN` is not set:
 
 - a prompt is not sent, and goes back into the prompt box with the reason;
 - a tool call is refused, or its result is withheld;
+- an attachment such as an @-mentioned file is left out, and the first message's context (`CLAUDE.md`, your email) is sent empty;
 - the band turns red and says why.
 
 ## Set up

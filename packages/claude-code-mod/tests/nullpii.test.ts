@@ -303,6 +303,52 @@ test('a reply without placeholders is drawn without asking the sidecar', async (
   await ui.unmount();
 });
 
+test('an @-mentioned file reaches Claude masked', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  on('prompt.attachment', ($, e) => ({ text: e.text }));
+  await start($);
+  const out = await $.prompt.attachment({
+    type: 'file',
+    text: 'owners: John <john@acme.io>',
+    origin: { kind: 'engine' },
+  });
+  expect(out.text).not.toContain('John');
+  expect(out.text).not.toContain('john@acme.io');
+});
+
+test("the first message's context reaches Claude masked", async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  on('prompt.context', ($, e) => ({ blocks: e.blocks }));
+  await start($);
+  const out = await $.prompt.context({
+    blocks: [
+      { name: 'userEmail', text: 'john@acme.io' },
+      { name: 'currentDate', text: '2026-10-17' },
+    ],
+    instructionFiles: [],
+  });
+  expect(JSON.stringify(out.blocks)).not.toContain('john@acme.io');
+  expect(out.blocks.map((b) => b.name)).toEqual(['userEmail', 'currentDate']);
+});
+
+test('with the sidecar down, attachments are left out and the context is emptied', async ($, on) => {
+  const sidecar = fakeSidecar({ down: true });
+  stubSession(on, sidecar);
+  on('prompt.attachment', ($, e) => ({ text: e.text }));
+  on('prompt.context', ($, e) => ({ blocks: e.blocks }));
+  await start($);
+  const attachment = await $.prompt.attachment({
+    type: 'file',
+    text: 'John',
+    origin: { kind: 'engine' },
+  });
+  expect(attachment.text).toBe(null);
+  const context = await $.prompt.context({ blocks: [{ name: 'userEmail', text: 'john@acme.io' }] });
+  expect(context.blocks).toEqual([]);
+});
+
 test('/pii reports counts by type, never values', async ($, on) => {
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);

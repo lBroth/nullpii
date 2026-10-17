@@ -146,6 +146,29 @@ export function register(on) {
     };
   });
 
+  // Text Claude Code adds for Claude on its own: @-mentioned files, edited
+  // files, memory and other reminders. Unmaskable means not sent.
+  on('prompt.attachment', async ($, e, next) => {
+    return next({ ...e, text: String(await masked($, e.text)) });
+  }).catch(async ($, e, next) => {
+    blocked($, next.error.message);
+    return next.called ? next(e) : { text: null };
+  });
+
+  // The first message's context: CLAUDE.md files and the user's email. A
+  // rewritten CLAUDE.md block no longer matches its instruction files, so
+  // that list is left out, as the event requires.
+  on('prompt.context', async ($, e, next) => {
+    const texts = (await masked(
+      $,
+      e.blocks.map((b) => b.text),
+    )) as string[];
+    return next({ blocks: e.blocks.map((b, i) => ({ ...b, text: texts[i] })) });
+  }).catch(async ($, e, next) => {
+    blocked($, next.error.message);
+    return next.called ? next(e) : { blocks: [] };
+  });
+
   on('tool.call', async ($, e, next) => {
     const args = Object.fromEntries(
       (RESTORE_FIELDS[e.tool] ?? []).filter((f) => f in e).map((f) => [f, e[f]]),

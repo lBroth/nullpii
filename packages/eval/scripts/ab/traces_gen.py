@@ -367,16 +367,26 @@ def synthetic_pii_line(doc: Doc, r: random.Random, kind: str) -> None:
 SYNTHETIC_KINDS = ["log", "env", "csv", "sql", "trace"]
 
 
-def build(node_modules: Path) -> list[dict]:
-    r = random.Random(SEED)
-    carriers = carrier_files(node_modules)
+def source_of(kind: str, path: Path) -> str:
+    return f"{kind}:{path.parent.name}/{path.name}"
+
+
+def build(
+    node_modules: Path, seed: int = SEED, exclude: frozenset[str] = frozenset(), used: set[str] | None = None
+) -> list[dict]:
+    """`used`, when given, collects every carrier file read, including the
+    parts of concatenated long docs, so another set can exclude them."""
+    used = set() if used is None else used
+    r = random.Random(seed)
+    carriers = [c for c in carrier_files(node_modules) if source_of(*c) not in exclude]
     docs = []
     for i in range(N_DOCS):
         plants = 0 if r.random() < NEGATIVE_SHARE else r.randint(*PLANTS_PER_DOC)
         if r.random() < 0.6:
             kind, path = r.choice(carriers)
             doc = from_carrier(r, kind, path, plants, CARRIER_MAX_CHARS)
-            source = f"{kind}:{path.parent.name}/{path.name}"
+            source = source_of(kind, path)
+            used.add(source)
         else:
             kind = r.choice(SYNTHETIC_KINDS)
             doc = synthetic(r, kind, plants)
@@ -387,6 +397,7 @@ def build(node_modules: Path) -> list[dict]:
         doc = Doc()
         while doc.length < LONG_DOC_CHARS:
             _, path = r.choice(code)
+            used.add(source_of("code", path))
             part = from_carrier(r, "code", path, r.randint(1, 3), LONG_DOC_CHARS - doc.length)
             offset = doc.length
             doc.add(part.text())
@@ -399,8 +410,15 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--node-modules", required=True, type=Path)
     parser.add_argument("--out", required=True, type=Path)
+    parser.add_argument("--seed", type=int, default=SEED)
+    parser.add_argument(
+        "--exclude-from", type=Path, help="a <traces>.sources.json whose carrier files must not be reused"
+    )
     args = parser.parse_args()
-    docs = build(args.node_modules)
+    exclude = frozenset(json.loads(args.exclude_from.read_text())) if args.exclude_from else frozenset()
+    used: set[str] = set()
+    docs = build(args.node_modules, args.seed, exclude, used)
+    Path(f"{args.out}.sources.json").write_text(json.dumps(sorted(used)), encoding="utf-8")
     for d in docs:
         for s in d["spans"]:
             if not d["text"][s["start"] : s["end"]]:

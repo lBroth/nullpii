@@ -199,10 +199,21 @@ _REPORT_AI4_EXCLUDED = ((0, 5_000), (_AI4_HELDOUT_OFFSET, _AI4_HELDOUT_OFFSET + 
 _TRACES_REPORT = Path(__file__).resolve().parent.parent / "results" / "ab-loop" / "traces-report.jsonl"
 
 
+_TRACES_TUNING = _TRACES_REPORT.with_name("traces-tuning.jsonl")
+
+
+def _load_traces(path: Path, n: int | None) -> list[Sample]:
+    if not path.exists():
+        raise FileNotFoundError(f"{path} is missing: run scripts/ab/traces_gen.py first")
+    return _load_charspan_jsonl(path, n)
+
+
 def _load_claude_code_traces(n: int | None) -> list[Sample]:
-    if not _TRACES_REPORT.exists():
-        raise FileNotFoundError(f"{_TRACES_REPORT} is missing: run scripts/ab/traces_gen.py first")
-    return _load_charspan_jsonl(_TRACES_REPORT, n)
+    return _load_traces(_TRACES_REPORT, n)
+
+
+def _load_claude_code_traces_tuning(n: int | None) -> list[Sample]:
+    return _load_traces(_TRACES_TUNING, n)
 
 
 def _ai4privacy_report(n: int | None) -> list[Sample]:
@@ -252,6 +263,8 @@ DATASET_CONFIGS: list[DatasetSpec] = [
     DatasetSpec("isotonic-it-report",        _isotonic("it", row_offset=_REPORT_ISOTONIC_ROW_OFFSET),   _REPORT_ISOTONIC_N, total_n=_REPORT_ISOTONIC_N),
     DatasetSpec("ai4privacy-300k-report",    _ai4privacy_report,                                         _REPORT_AI4_N, total_n=_REPORT_AI4_N),
     DatasetSpec("claude-code-traces",        _load_claude_code_traces,                                   None, total_n=440),
+    # Tuning twin (seed 777, carrier files disjoint from the report set).
+    DatasetSpec("claude-code-traces-tuning", _load_claude_code_traces_tuning,                            None, total_n=440),
 ]
 
 

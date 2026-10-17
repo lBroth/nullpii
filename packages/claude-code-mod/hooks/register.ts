@@ -18,8 +18,6 @@ import {
   emptyCounts,
   formatBand,
   formatReport,
-  shellContextAt,
-  shellSafe,
 } from './policy.ts';
 
 const DEFAULT_SIDECAR_URL = 'http://127.0.0.1:8787';
@@ -36,6 +34,9 @@ interface Sanitized {
 interface Restored {
   value: Record<string, unknown>;
   replacements: number;
+  /** With `shell: true`: placeholders the sidecar left masked in
+   * `command`, because restoring them could change what the shell runs. */
+  shellKeptMasked?: string[];
 }
 
 // `{{PII_<LABEL>_<index>_<session prefix>}}` (nullpii's PLACEHOLDER_TEMPLATE).
@@ -102,24 +103,6 @@ function blocked($, err: unknown): string {
   problem = err instanceof Error ? err.message : String(err);
   $.ui.invalidate('ui.render');
   return problem;
-}
-
-const PLACEHOLDER_ALL = /\{\{PII_[A-Z0-9_]+\}\}/g;
-
-/** Placeholders whose real value would change the shell command around
- * it: it would add commands, expand variables or end its quotes. */
-async function unsafeShellPlaceholders($, command: string): Promise<string[]> {
-  const found = [...command.matchAll(PLACEHOLDER_ALL)];
-  if (found.length === 0) return [];
-  const r = (await sidecar($, 'POST', '/restore', { value: found.map((m) => m[0]) })) as {
-    value: string[];
-  };
-  return found
-    .filter((m, i) => {
-      const real = r.value[i] ?? m[0];
-      return real !== m[0] && !shellSafe(real, shellContextAt(command, m.index ?? 0));
-    })
-    .map((m) => m[0]);
 }
 
 /** The text with real values, for the screen only. */
@@ -197,20 +180,25 @@ export function register(on) {
   });
 
   on('tool.call', async ($, e, next) => {
-    if (SHELL_TOOLS.has(e.tool) && typeof e.command === 'string') {
-      const unsafe = await unsafeShellPlaceholders($, e.command);
-      if (unsafe.length > 0) {
-        return {
-          deny: `nullpii will not put the real value of ${unsafe.join(', ')} into this command: in that position the shell would interpret some of its characters, and the value came from data you could not read. Pass it through a file instead, or ask the user to run the command.`,
-        };
-      }
-    }
     const args = Object.fromEntries(
       (RESTORE_FIELDS[e.tool] ?? []).filter((f) => f in e).map((f) => [f, e[f]]),
     );
     let call = e;
     if (Object.keys(args).length > 0) {
-      const r = (await sidecar($, 'POST', '/restore', { value: args })) as Restored;
+      // For a shell tool the sidecar restores `command` by the shell
+      // rule (SECURITY.md): a value Claude never saw is kept masked where
+      // the shell would interpret it.
+      const shell = SHELL_TOOLS.has(e.tool);
+      const r = (await sidecar($, 'POST', '/restore', {
+        value: args,
+        ...(shell && { shell }),
+      })) as Restored;
+      const kept = r.shellKeptMasked ?? [];
+      if (kept.length > 0) {
+        return {
+          deny: `nullpii will not put the real value of ${kept.join(', ')} into this command: in that position the shell would interpret some of its characters, and the value came from data you could not read. Pass it through a file instead, or ask the user to run the command.`,
+        };
+      }
       // Rewrite the call only when a placeholder was replaced: a rewritten
       // call is denied in auto mode, so untouched calls must stay as written.
       if (r.replacements > 0) {

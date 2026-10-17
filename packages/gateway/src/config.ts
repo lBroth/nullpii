@@ -29,6 +29,15 @@ export interface GatewayConfig {
    * carrying placeholders, never real PII) to stdout for debugging.
    * Enabled via `NULLPII_LOG_TRAFFIC=wire`. */
   readonly logTraffic: boolean;
+  /** Bearer token for the `/v1/sidecar/*` routes (`NULLPII_SIDECAR_TOKEN`,
+   * at least 32 characters). Unset: the sidecar routes are not
+   * registered at all. Generate one per launch, for example with
+   * `openssl rand -hex 32`. */
+  readonly sidecarToken?: string;
+  /** Cap on concurrent sidecar sessions. Creating one more fails with 429
+   * instead of evicting a live session, whose placeholders would then no
+   * longer restore. */
+  readonly sidecarMaxSessions: number;
 }
 
 const DEFAULT_HOST = '127.0.0.1';
@@ -38,6 +47,8 @@ const DEFAULT_VAULT_TTL_MS = 30 * 60 * 1000;
 const DEFAULT_BACKEND = 'cpu' as const;
 const DEFAULT_LOG_LEVEL = 'info' as const;
 const DEFAULT_BODY_LIMIT = 10 * 1024 * 1024;
+const DEFAULT_SIDECAR_MAX_SESSIONS = 64;
+const MIN_SIDECAR_TOKEN_LENGTH = 32;
 
 const VALID_BACKENDS = new Set(['cpu', 'mps', 'cuda', 'auto']);
 const VALID_LOG_LEVELS = new Set(['fatal', 'error', 'warn', 'info', 'debug', 'trace']);
@@ -62,8 +73,20 @@ function readEnum<T extends string>(name: string, allowed: Set<string>, fallback
   return raw as T;
 }
 
+function readSidecarToken(): string | undefined {
+  const raw = process.env.NULLPII_SIDECAR_TOKEN;
+  if (raw === undefined || raw === '') return undefined;
+  if (raw.length < MIN_SIDECAR_TOKEN_LENGTH) {
+    throw new Error(
+      `NULLPII_SIDECAR_TOKEN must be at least ${MIN_SIDECAR_TOKEN_LENGTH} characters`,
+    );
+  }
+  return raw;
+}
+
 export function loadConfig(): GatewayConfig {
   const modelDir = process.env.NULLPII_MODEL_DIR;
+  const sidecarToken = readSidecarToken();
   return {
     host: process.env.NULLPII_HOST ?? DEFAULT_HOST,
     port: readInt('NULLPII_PORT', DEFAULT_PORT),
@@ -75,5 +98,7 @@ export function loadConfig(): GatewayConfig {
     bodyLimitBytes: readInt('NULLPII_BODY_LIMIT_BYTES', DEFAULT_BODY_LIMIT),
     logTraffic:
       readEnum<'wire' | 'off'>('NULLPII_LOG_TRAFFIC', VALID_LOG_TRAFFIC, 'off') === 'wire',
+    ...(sidecarToken !== undefined && { sidecarToken }),
+    sidecarMaxSessions: readInt('NULLPII_SIDECAR_MAX_SESSIONS', DEFAULT_SIDECAR_MAX_SESSIONS),
   };
 }

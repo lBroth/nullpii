@@ -5,6 +5,13 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Gateway: sidecar API** (`/v1/sidecar/*`), off unless `NULLPII_SIDECAR_TOKEN` is set. It keeps vault sessions under caller-chosen keys across calls, so an editor or coding-agent extension can mask prompts and tool results turn after turn and restore real values only where it chooses (`fields`).
+  - **Sessions:** an idle TTL (`NULLPII_VAULT_TTL_MS`, now wired up) drops each session together with its vault entries. A cap (`NULLPII_SIDECAR_MAX_SESSIONS`) fails with 429 instead of evicting a live session.
+  - **Access:** a bearer token, compared in constant time. Non-loopback `Host` headers and any `Origin` header are refused before the token check.
+  - **Limits and output:** 4 MiB per request and per response. Responses and logs carry counts only.
+
 ### Security
 
 - **Gateway: content blocks it did not model reached the upstream unsanitized.** `sanitizeRequest` walked `text`, `tool_use` and `tool_result` blocks only. Every other block was forwarded verbatim:

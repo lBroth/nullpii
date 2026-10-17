@@ -278,6 +278,26 @@ function sanitizeChild(
     : sanitizeFields(np, value, sessionId, acc);
 }
 
+/** A JSON value with every string leaf sanitized into one vault session. */
+export interface SanitizedValue {
+  readonly value: unknown;
+  readonly captured: number;
+  readonly capturedByLabel: Readonly<Record<string, number>>;
+}
+
+/** Sanitize every string leaf of a parsed JSON value (a string, a tool
+ * result, a prompt) into an existing vault session. Object keys are left
+ * as they are. Used by the sidecar routes. */
+export async function sanitizeValue(
+  np: NullPii,
+  value: unknown,
+  sessionId: string,
+): Promise<SanitizedValue> {
+  const acc: CaptureAccumulator = { count: 0, byLabel: {}, unscanned: 0 };
+  const out = await sanitizeJsonValue(np, value, sessionId, acc);
+  return { value: out, captured: acc.count, capturedByLabel: acc.byLabel };
+}
+
 /** Recursively walk a JSON value (the result of `JSON.parse` on tool
  * input), sanitising every string leaf. Numbers / booleans / null pass
  * through. Arrays + plain objects recurse. Cycles are not possible on
@@ -352,6 +372,46 @@ export function restoreResponse(
   });
   return {
     body,
+    replacements: acc.replacements,
+    replacementsByLabel: acc.byLabel,
+    unknownPlaceholders: acc.unknown,
+    foreignPlaceholders: acc.foreign,
+  };
+}
+
+/** A JSON value with placeholders restored, plus counts only. */
+export interface RestoredValue {
+  readonly value: unknown;
+  readonly replacements: number;
+  readonly replacementsByLabel: Readonly<Partial<Record<string, number>>>;
+  readonly unknownPlaceholders: number;
+  readonly foreignPlaceholders: number;
+}
+
+/** Restore placeholders in every string leaf of a parsed JSON value.
+ * With `fields`, only those top-level keys of an object are restored and
+ * every other key keeps its placeholders, so a caller can put real values
+ * back into the arguments a tool writes to disk and nowhere else. */
+export function restoreValue(
+  np: NullPii,
+  value: unknown,
+  sessionId: string,
+  fields?: readonly string[],
+): RestoredValue {
+  const acc: RestoreAccumulator = { replacements: 0, byLabel: {}, unknown: 0, foreign: 0 };
+  let out: unknown;
+  if (fields === undefined) {
+    out = restoreJsonValue(np, value, sessionId, acc);
+  } else {
+    const obj = value as Record<string, unknown>;
+    const restored: Record<string, unknown> = { ...obj };
+    for (const key of fields) {
+      if (Object.hasOwn(obj, key)) restored[key] = restoreJsonValue(np, obj[key], sessionId, acc);
+    }
+    out = restored;
+  }
+  return {
+    value: out,
     replacements: acc.replacements,
     replacementsByLabel: acc.byLabel,
     unknownPlaceholders: acc.unknown,

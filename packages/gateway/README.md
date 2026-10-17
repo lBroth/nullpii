@@ -126,13 +126,45 @@ All via env vars. No file config in this preview.
 | `NULLPII_HOST` | `127.0.0.1` | Bind host |
 | `NULLPII_PORT` | `8787` | Bind port |
 | `NULLPII_UPSTREAM` | `https://api.anthropic.com` | Upstream LLM provider |
-| `NULLPII_VAULT_TTL_MS` | `1800000` | Session TTL (currently unused — destroyed per-request) |
+| `NULLPII_VAULT_TTL_MS` | `1800000` | Idle TTL of a sidecar session. The Messages proxy keeps one session per request and destroys it at the end. |
+| `NULLPII_SIDECAR_TOKEN` | (off) | Enables the [sidecar API](#sidecar-api). Bearer token, at least 32 characters. |
+| `NULLPII_SIDECAR_MAX_SESSIONS` | `64` | Concurrent sidecar sessions. One more fails with 429. |
 | `NULLPII_MODEL_DIR` | (auto-fetch) | Local GLiNER ONNX dir |
 | `NULLPII_BACKEND` | `cpu` | `cpu` / `mps` / `cuda` / `auto` |
 | `NULLPII_LOG_LEVEL` | `info` | Fastify log level |
 | `NULLPII_BODY_LIMIT_BYTES` | `10485760` | Request body cap (10 MB) |
 | `NULLPII_LOG_TRAFFIC` | (off) | Set to `wire` to dump the sanitized request body + raw upstream response (placeholder-bearing only — never real PII) to stdout for debugging. 64 KB cap per dump. |
 | `NULLPII_DISABLE_HINT` | (off) | Debug-only. Set to `1` to suppress the `LLM_PRESERVATION_HINT` system-prompt injection. Useful when an upstream proxy / cache rejects the modified system prompt; leave unset in normal operation. |
+
+## Sidecar API
+
+Session-scoped sanitize and restore for local callers that keep one vault session across many calls, such as an editor or coding-agent extension. It is off unless `NULLPII_SIDECAR_TOKEN` is set.
+
+```bash
+export NULLPII_SIDECAR_TOKEN=$(openssl rand -hex 32)
+nullpii-gateway
+```
+
+Every request needs `Authorization: Bearer $NULLPII_SIDECAR_TOKEN`.
+
+| Method and path | Body | Response |
+|---|---|---|
+| `GET /v1/sidecar/status` | — | `{ status, sessions }` |
+| `PUT /v1/sidecar/sessions/:key` | — | 201 created or 200 already open. 429 when `NULLPII_SIDECAR_MAX_SESSIONS` are open. |
+| `POST /v1/sidecar/sessions/:key/sanitize` | `{ value }`: a string or any JSON | `{ value, captured, capturedByLabel }` |
+| `POST /v1/sidecar/sessions/:key/restore` | `{ value, fields? }` | `{ value, replacements, replacementsByLabel, unknownPlaceholders, foreignPlaceholders }` |
+| `DELETE /v1/sidecar/sessions/:key` | — | 204, or 404 if unknown |
+
+- **`key`** is chosen by the caller (`[A-Za-z0-9._-]`, up to 128 characters), for example the agent's conversation id. It is not a secret: the token is the gate.
+- **`value`**: every string leaf is processed. Object keys, numbers and booleans pass through.
+- **`fields`** restores only those top-level keys of an object. Use it to put real values back into the arguments a tool writes to disk, while every other argument keeps its placeholders.
+- **Sessions** expire after `NULLPII_VAULT_TTL_MS` without a call, and their vault entries are dropped with them. A placeholder from an expired session no longer restores and is counted in `unknownPlaceholders`. All sessions are dropped when the server stops.
+- **Limits:**
+  - requests and responses are capped at 4 MiB (413 `response_too_large` for the latter); placeholders are longer than most of the values they replace, so a response can exceed the cap even when its request did not;
+  - a single string over 1,000,000 characters fails with 413 `text_too_long`, so split it.
+- **Refused before the token check:** a `Host` other than `127.0.0.1`, `localhost` or `[::1]` (DNS rebinding), and any request with an `Origin` header (a browser).
+- **Responses carry counts, never masked values.** Logs carry counts only.
+- **First call:** the first `sanitize` loads the model: about 2 seconds when it is already cached.
 
 ## Errors
 

@@ -230,6 +230,7 @@ async function handleNonStreaming(
       replacementsByLabel: restored.replacementsByLabel,
       unknownPlaceholders: restored.unknownPlaceholders,
       foreignPlaceholders: restored.foreignPlaceholders,
+      unsafeShellPlaceholders: restored.unsafeShellPlaceholders,
     },
     'anthropic.messages.restored',
   );
@@ -242,6 +243,7 @@ async function handleNonStreaming(
     restoredByLabel: restored.replacementsByLabel,
     unknownPlaceholders: restored.unknownPlaceholders,
     foreignPlaceholders: restored.foreignPlaceholders,
+    unsafeShell: restored.unsafeShellPlaceholders,
   };
   printRequestSummary(reqId !== undefined ? { ...summaryBase, reqId } : summaryBase);
 
@@ -366,6 +368,7 @@ async function handleStreaming(
         replacementsByLabel: counters.replacementsByLabel,
         unknownPlaceholders: counters.unknownPlaceholders,
         foreignPlaceholders: counters.foreignPlaceholders,
+        unsafeShellPlaceholders: counters.unsafeShellPlaceholders,
       },
       'anthropic.messages.streamed',
     );
@@ -378,6 +381,7 @@ async function handleStreaming(
       restoredByLabel: counters.replacementsByLabel,
       unknownPlaceholders: counters.unknownPlaceholders,
       foreignPlaceholders: counters.foreignPlaceholders,
+      unsafeShell: counters.unsafeShellPlaceholders,
     };
     printRequestSummary(reqId !== undefined ? { ...sseSummary, reqId } : sseSummary);
   } catch (err) {

@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { LLM_PRESERVATION_HINT, type NullPii, type RestoreResult } from 'nullpii';
+import {
+  ANTHROPIC_SHELL_TOOLS,
+  SHELL_COMMAND_FIELD,
+  countPlaceholders,
+  isShellTool,
+  restoreShellCommand,
+} from './shell-restore.js';
 import type {
   AnthropicContentBlock,
   AnthropicMessage,
@@ -374,6 +381,9 @@ export interface RestoredResponse<TBody = AnthropicResponse> {
   readonly replacementsByLabel: Readonly<Partial<Record<string, number>>>;
   readonly unknownPlaceholders: number;
   readonly foreignPlaceholders: number;
+  /** Placeholders left literal in a shell tool's `command` because their
+   * value was not safe in the quoting there (see `shell-restore.ts`). */
+  readonly unsafeShellPlaceholders: number;
 }
 
 // rothunter:ignore-duplicate-interface
@@ -383,6 +393,13 @@ export interface RestoreAccumulator {
   byLabel: Record<string, number>;
   unknown: number;
   foreign: number;
+  /** Placeholders kept literal in a shell command: unsafe there. */
+  unsafeShell: number;
+}
+
+/** A zeroed restore accumulator. */
+export function newRestoreAccumulator(): RestoreAccumulator {
+  return { replacements: 0, byLabel: {}, unknown: 0, foreign: 0, unsafeShell: 0 };
 }
 
 export function restoreResponse(
@@ -390,7 +407,7 @@ export function restoreResponse(
   body: AnthropicResponse,
   sessionId: string,
 ): RestoredResponse {
-  const acc: RestoreAccumulator = { replacements: 0, byLabel: {}, unknown: 0, foreign: 0 };
+  const acc = newRestoreAccumulator();
   body.content = body.content.map((block) => {
     if (block.type === 'text' && typeof block.text === 'string') {
       return { ...block, text: restoreString(np, block.text, sessionId, acc) };
@@ -399,8 +416,9 @@ export function restoreResponse(
       // Mirror SSE path's `restoreJsonBuffer`: walk the tool input tree
       // and restore string leaves. Without this, non-streaming
       // tool-calling workflows leak `{{PII_*}}` placeholders verbatim
-      // to the client.
-      return { ...block, input: restoreJsonValue(np, block.input, sessionId, acc) };
+      // to the client. A `Bash` command gets the shell-aware restore.
+      const runsInShell = isShellTool(block.name, ANTHROPIC_SHELL_TOOLS);
+      return { ...block, input: restoreToolInput(np, block.input, sessionId, acc, runsInShell) };
     }
     return block;
   });
@@ -410,6 +428,7 @@ export function restoreResponse(
     replacementsByLabel: acc.byLabel,
     unknownPlaceholders: acc.unknown,
     foreignPlaceholders: acc.foreign,
+    unsafeShellPlaceholders: acc.unsafeShell,
   };
 }
 
@@ -432,7 +451,7 @@ export function restoreValue(
   sessionId: string,
   fields?: readonly string[],
 ): RestoredValue {
-  const acc: RestoreAccumulator = { replacements: 0, byLabel: {}, unknown: 0, foreign: 0 };
+  const acc = newRestoreAccumulator();
   let out: unknown;
   if (fields === undefined) {
     out = restoreJsonValue(np, value, sessionId, acc);
@@ -496,6 +515,45 @@ export function restoreJsonValue(
 }
 
 /**
+ * Restore a tool call's input. For a tool a shell runs (`runsInShell`),
+ * the top-level `command` string gets the shell-aware restore: each
+ * placeholder is put back only when its value is safe in the quoting
+ * around it. Every other field, and every field of any other tool, gets
+ * its real values back as usual.
+ */
+export function restoreToolInput(
+  np: NullPii,
+  input: unknown,
+  sessionId: string,
+  acc: RestoreAccumulator,
+  runsInShell: boolean,
+): unknown {
+  if (!runsInShell || !isRecord(input)) return restoreJsonValue(np, input, sessionId, acc);
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(input)) {
+    out[key] =
+      key === SHELL_COMMAND_FIELD && typeof value === 'string'
+        ? restoreShellText(np, value, sessionId, acc)
+        : restoreJsonValue(np, value, sessionId, acc);
+  }
+  return out;
+}
+
+/** Shell-aware restore of one command string (see `shell-restore.ts`),
+ * tallying counts into `acc`. */
+export function restoreShellText(
+  np: NullPii,
+  command: string,
+  sessionId: string,
+  acc: RestoreAccumulator,
+): string {
+  const r = restoreShellCommand(np, command, sessionId);
+  for (const result of r.results) tallyRestore(acc, result);
+  acc.unsafeShell += r.unsafe;
+  return r.command;
+}
+
+/**
  * Restore a JSON document held as a string: tool-call arguments, or the
  * tool input a stream assembles from `input_json_delta` shards. It is
  * parsed and only its string leaves are restored, then re-serialized, so
@@ -504,6 +562,11 @@ export function restoreJsonValue(
  * off mid-stream) is restored as plain text rather than dropped; one with
  * nothing to restore is returned exactly as it came.
  *
+ * With `runsInShell`, the input's `command` gets the shell-aware restore
+ * (`restoreToolInput`), and input that does not parse keeps every
+ * placeholder: without its JSON structure there is no telling which part
+ * a shell would run.
+ *
  * @param acc - restore counts are added here.
  */
 export function restoreJsonText(
@@ -511,10 +574,16 @@ export function restoreJsonText(
   text: string,
   sessionId: string,
   acc: RestoreAccumulator,
+  runsInShell = false,
 ): string {
   const parsed = parseJson(text);
+  if (parsed === undefined && runsInShell) {
+    acc.unsafeShell += countPlaceholders(text);
+    return text;
+  }
   if (parsed === undefined) return restoreString(np, text, sessionId, acc);
-  const next = JSON.stringify(restoreJsonValue(np, parsed.value, sessionId, acc));
+  const restored = restoreToolInput(np, parsed.value, sessionId, acc, runsInShell);
+  const next = JSON.stringify(restored);
   return next === JSON.stringify(parsed.value) ? text : next;
 }
 
@@ -531,4 +600,9 @@ export function parseJson(text: string): { value: unknown } | undefined {
     // has a fallback for it.
     return undefined;
   }
+}
+
+/** True for a non-null, non-array object. */
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

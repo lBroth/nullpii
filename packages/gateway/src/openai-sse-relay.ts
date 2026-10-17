@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { type NullPii, RestoreStream } from 'nullpii';
-import { isRecord } from './openai-sanitizer.js';
 import type {
   ChatChunkChoice,
   ChatCompletionChunk,
@@ -9,7 +8,15 @@ import type {
   ChatFunctionCall,
   ChatToolCallDelta,
 } from './openai-types.js';
-import { type RestoreAccumulator, parseJson, restoreJsonText, tallyRestore } from './sanitizer.js';
+import {
+  type RestoreAccumulator,
+  isRecord,
+  newRestoreAccumulator,
+  parseJson,
+  restoreJsonText,
+  tallyRestore,
+} from './sanitizer.js';
+import { OPENAI_SHELL_TOOLS, isShellTool } from './shell-restore.js';
 import type { SseRelayCounters, SseRelayOptions } from './sse-relay.js';
 
 /**
@@ -95,12 +102,7 @@ export async function relayChatSseStream(opts: SseRelayOptions): Promise<SseRela
 /** Per-stream state: one `ChoiceRestorer` per open choice. */
 class ChatRelay {
   private readonly choices = new Map<number, ChoiceRestorer>();
-  private readonly acc: RestoreAccumulator = {
-    replacements: 0,
-    byLabel: {},
-    unknown: 0,
-    foreign: 0,
-  };
+  private readonly acc: RestoreAccumulator = newRestoreAccumulator();
   private envelope: Record<string, unknown> = {};
 
   constructor(
@@ -141,6 +143,7 @@ class ChatRelay {
       replacementsByLabel: this.acc.byLabel,
       unknownPlaceholders: this.acc.unknown,
       foreignPlaceholders: this.acc.foreign,
+      unsafeShellPlaceholders: this.acc.unsafeShell,
     };
   }
 
@@ -175,7 +178,10 @@ class ChatRelay {
 class ChoiceRestorer {
   private readonly text = new Map<TextField, RestoreStream>();
   private readonly toolArgs = new Map<number, string>();
+  /** Function name per tool-call index, from the call's first delta. */
+  private readonly toolNames = new Map<number, string>();
   private functionArgs: string | null = null;
+  private functionName: string | undefined;
 
   constructor(
     private readonly np: NullPii,
@@ -216,15 +222,16 @@ class ChoiceRestorer {
   private holdToolArgs(call: ChatToolCallDelta): boolean {
     if (!isRecord(call) || typeof call.index !== 'number') return false;
     const fn = call.function;
-    if (!isRecord(fn) || typeof fn.arguments !== 'string' || fn.arguments.length === 0) {
-      return false;
-    }
+    if (!isRecord(fn)) return false;
+    if (typeof fn.name === 'string') this.toolNames.set(call.index, fn.name);
+    if (typeof fn.arguments !== 'string' || fn.arguments.length === 0) return false;
     this.toolArgs.set(call.index, (this.toolArgs.get(call.index) ?? '') + fn.arguments);
     fn.arguments = '';
     return true;
   }
 
   private holdFunctionArgs(fn: ChatFunctionCall): boolean {
+    if (typeof fn.name === 'string') this.functionName = fn.name;
     if (typeof fn.arguments !== 'string' || fn.arguments.length === 0) return false;
     this.functionArgs = (this.functionArgs ?? '') + fn.arguments;
     fn.arguments = '';
@@ -249,15 +256,22 @@ class ChoiceRestorer {
   private flushArgs(delta: ChatDelta): boolean {
     const added = this.toolArgs.size > 0 || this.functionArgs !== null;
     for (const [index, args] of this.toolArgs) {
-      setToolArgs(delta, index, restoreJsonText(this.np, args, this.sessionId, this.acc));
+      setToolArgs(delta, index, this.restoreArgs(args, this.toolNames.get(index)));
     }
     this.toolArgs.clear();
     if (this.functionArgs !== null) {
-      const args = restoreJsonText(this.np, this.functionArgs, this.sessionId, this.acc);
+      const args = this.restoreArgs(this.functionArgs, this.functionName);
       delta.function_call = { ...delta.function_call, arguments: args };
       this.functionArgs = null;
     }
     return added;
+  }
+
+  /** Restore one call's assembled arguments; a shell tool's `command`
+   * gets the shell-aware restore. */
+  private restoreArgs(args: string, name: string | undefined): string {
+    const runsInShell = isShellTool(name, OPENAI_SHELL_TOOLS);
+    return restoreJsonText(this.np, args, this.sessionId, this.acc, runsInShell);
   }
 
   private textStream(field: TextField): RestoreStream {

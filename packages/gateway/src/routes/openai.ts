@@ -2,11 +2,11 @@
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { NullPii } from 'nullpii';
-import { isRecord, restoreChatResponse, sanitizeChatRequest } from '../openai-sanitizer.js';
+import { restoreChatResponse, sanitizeChatRequest } from '../openai-sanitizer.js';
 import { relayChatSseStream } from '../openai-sse-relay.js';
 import type { ChatCompletionRequest, ChatCompletionResponse } from '../openai-types.js';
 import { printRequestSummary } from '../pretty-log.js';
-import { type RestoredResponse, type SanitizedRequest, parseJson } from '../sanitizer.js';
+import { type RestoredResponse, type SanitizedRequest, isRecord, parseJson } from '../sanitizer.js';
 import {
   logInboundResponse,
   logInboundSseChunk,
@@ -65,7 +65,11 @@ const LOGGABLE_ERROR_FIELD = /^[\w.-]{1,64}$/;
 
 type RestoreCounts = Pick<
   RestoredResponse,
-  'replacements' | 'replacementsByLabel' | 'unknownPlaceholders' | 'foreignPlaceholders'
+  | 'replacements'
+  | 'replacementsByLabel'
+  | 'unknownPlaceholders'
+  | 'foreignPlaceholders'
+  | 'unsafeShellPlaceholders'
 >;
 
 /** Everything one proxied call needs once its request is sanitized. */
@@ -281,6 +285,7 @@ function logRoundTrip(call: ChatCall, mode: 'JSON' | 'SSE', counts: RestoreCount
       replacementsByLabel: counts.replacementsByLabel,
       unknownPlaceholders: counts.unknownPlaceholders,
       foreignPlaceholders: counts.foreignPlaceholders,
+      unsafeShellPlaceholders: counts.unsafeShellPlaceholders,
     },
     mode === 'JSON' ? 'openai.chat.restored' : 'openai.chat.streamed',
   );
@@ -293,6 +298,7 @@ function logRoundTrip(call: ChatCall, mode: 'JSON' | 'SSE', counts: RestoreCount
     restoredByLabel: counts.replacementsByLabel,
     unknownPlaceholders: counts.unknownPlaceholders,
     foreignPlaceholders: counts.foreignPlaceholders,
+    unsafeShell: counts.unsafeShellPlaceholders,
   };
   printRequestSummary(call.reqId !== undefined ? { ...summary, reqId: call.reqId } : summary);
 }

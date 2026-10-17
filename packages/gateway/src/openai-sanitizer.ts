@@ -19,12 +19,16 @@ import {
   type RestoredResponse,
   type SanitizedRequest,
   bump,
+  isRecord,
+  newRestoreAccumulator,
   parseJson,
   restoreJsonText,
+  restoreShellText,
   restoreString,
   sanitizeJsonValue,
   shouldAppendHint,
 } from './sanitizer.js';
+import { OPENAI_SHELL_TOOLS, isShellTool } from './shell-restore.js';
 
 /**
  * Request and response walk for the OpenAI Chat Completions format, with
@@ -273,7 +277,7 @@ export function restoreChatResponse(
   body: ChatCompletionResponse,
   sessionId: string,
 ): RestoredResponse<ChatCompletionResponse> {
-  const acc: RestoreAccumulator = { replacements: 0, byLabel: {}, unknown: 0, foreign: 0 };
+  const acc = newRestoreAccumulator();
   if (Array.isArray(body.choices)) {
     body.choices = body.choices.map((choice) =>
       isRecord(choice.message)
@@ -287,6 +291,7 @@ export function restoreChatResponse(
     replacementsByLabel: acc.byLabel,
     unknownPlaceholders: acc.unknown,
     foreignPlaceholders: acc.foreign,
+    unsafeShellPlaceholders: acc.unsafeShell,
   };
 }
 
@@ -319,7 +324,11 @@ function restoreToolCall(
     out.function = restoreFunctionCall(np, call.function, sessionId, acc);
   }
   if (isRecord(call.custom) && typeof call.custom.input === 'string') {
-    out.custom = { ...call.custom, input: restoreString(np, call.custom.input, sessionId, acc) };
+    // A custom shell tool's whole input is the command.
+    const input = isShellTool(call.custom.name, OPENAI_SHELL_TOOLS)
+      ? restoreShellText(np, call.custom.input, sessionId, acc)
+      : restoreString(np, call.custom.input, sessionId, acc);
+    out.custom = { ...call.custom, input };
   }
   return out;
 }
@@ -331,10 +340,6 @@ function restoreFunctionCall(
   acc: RestoreAccumulator,
 ): ChatFunctionCall {
   if (typeof fn.arguments !== 'string') return fn;
-  return { ...fn, arguments: restoreJsonText(np, fn.arguments, sessionId, acc) };
-}
-
-/** True for a non-null, non-array object. */
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
+  const runsInShell = isShellTool(fn.name, OPENAI_SHELL_TOOLS);
+  return { ...fn, arguments: restoreJsonText(np, fn.arguments, sessionId, acc, runsInShell) };
 }

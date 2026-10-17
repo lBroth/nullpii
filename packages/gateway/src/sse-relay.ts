@@ -1,7 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { type NullPii, RestoreStream } from 'nullpii';
-import { type RestoreAccumulator, restoreJsonText, tallyRestore } from './sanitizer.js';
+import {
+  type RestoreAccumulator,
+  isRecord,
+  newRestoreAccumulator,
+  restoreJsonText,
+  tallyRestore,
+} from './sanitizer.js';
+import { ANTHROPIC_SHELL_TOOLS, isShellTool } from './shell-restore.js';
 // The gateway hands `NullPii` directly to `RestoreStream` — both
 // satisfy the `RestoreCapable` structural type the stream needs. No
 // adapter / private-field reach-through required.
@@ -41,6 +48,10 @@ import { type RestoreAccumulator, restoreJsonText, tallyRestore } from './saniti
  *   sit inside JSON string values where naive substring restore can
  *   re-emit a partial-JSON shard mid-token. Tool inputs are short
  *   relative to text bodies, so the UX cost is negligible.
+ * - A `Bash` tool call (named in its `content_block_start`) → its
+ *   `command` gets the shell-aware restore (`shell-restore.ts`): a
+ *   placeholder is put back only when its value is safe in the quoting
+ *   around it, and is otherwise left literal and counted.
  * - Anything else (`message_start`, other delta types, …) → passed
  *   through byte-for-byte.
  */
@@ -49,6 +60,8 @@ export interface SseRelayCounters {
   replacementsByLabel: Record<string, number>;
   unknownPlaceholders: number;
   foreignPlaceholders: number;
+  /** Placeholders left literal in a shell command (unsafe there). */
+  unsafeShellPlaceholders: number;
 }
 
 interface ContentBlockDelta {
@@ -86,7 +99,9 @@ export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCou
   const decoder = new TextDecoder();
   const restorers = new Map<number, RestoreStream>();
   const jsonBuffers = new Map<number, string>();
-  const acc: RestoreAccumulator = { replacements: 0, byLabel: {}, unknown: 0, foreign: 0 };
+  /** Indices of the content blocks that call a shell tool. */
+  const shellBlocks = new Set<number>();
+  const acc = newRestoreAccumulator();
 
   function getRestorer(index: number): RestoreStream {
     let rs = restorers.get(index);
@@ -104,7 +119,8 @@ export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCou
     // Empty buffer = upstream stop with no shards. Restoring '' is a
     // no-op but the explicit short-circuit makes the intent obvious.
     if (buf.length === 0) return '';
-    return restoreJsonText(np, buf, sessionId, acc);
+    const runsInShell = shellBlocks.delete(index);
+    return restoreJsonText(np, buf, sessionId, acc, runsInShell);
   }
 
   let buffer = '';
@@ -117,7 +133,15 @@ export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCou
       if (sep === -1) break;
       const frame = buffer.slice(0, sep);
       buffer = buffer.slice(sep + FRAME_SEPARATOR.length);
-      const out = processFrame(frame, getRestorer, restorers, jsonBuffers, restoreJsonBuffer, acc);
+      const out = processFrame(
+        frame,
+        getRestorer,
+        restorers,
+        jsonBuffers,
+        restoreJsonBuffer,
+        acc,
+        shellBlocks,
+      );
       for (const f of out) write(f);
     }
   }
@@ -128,7 +152,15 @@ export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCou
   // `\n\n` terminator would confuse strict SDKs.
   buffer += decoder.decode();
   if (buffer.length > 0 && parseFrame(buffer) !== null) {
-    const out = processFrame(buffer, getRestorer, restorers, jsonBuffers, restoreJsonBuffer, acc);
+    const out = processFrame(
+      buffer,
+      getRestorer,
+      restorers,
+      jsonBuffers,
+      restoreJsonBuffer,
+      acc,
+      shellBlocks,
+    );
     for (const f of out) write(f);
   }
 
@@ -157,6 +189,7 @@ export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCou
     replacementsByLabel: acc.byLabel,
     unknownPlaceholders: acc.unknown,
     foreignPlaceholders: acc.foreign,
+    unsafeShellPlaceholders: acc.unsafeShell,
   };
 }
 
@@ -172,6 +205,7 @@ function processFrame(
   jsonBuffers: Map<number, string>,
   restoreJsonBuffer: (index: number) => string | null,
   acc: RestoreAccumulator,
+  shellBlocks: Set<number>,
 ): string[] {
   if (frame.length === 0) return [];
   const parsed = parseFrame(frame);
@@ -226,8 +260,17 @@ function processFrame(
     return out;
   }
 
+  if (data?.type === 'content_block_start') noteShellBlock(data, shellBlocks);
   // Everything else — passthrough.
   return [`${frame}${FRAME_SEPARATOR}`];
+}
+
+/** Remember the content blocks that call a shell tool: their input gets
+ * the shell-aware restore at `content_block_stop`. */
+function noteShellBlock(data: Record<string, unknown>, shellBlocks: Set<number>): void {
+  const block = data.content_block;
+  if (typeof data.index !== 'number' || !isRecord(block) || block.type !== 'tool_use') return;
+  if (isShellTool(block.name, ANTHROPIC_SHELL_TOOLS)) shellBlocks.add(data.index);
 }
 
 interface ParsedFrame {

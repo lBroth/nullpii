@@ -61,6 +61,9 @@ export interface RequestSummary {
   /** Drift indicators — values > 0 are noisy and warrant a yellow flag. */
   readonly unknownPlaceholders: number;
   readonly foreignPlaceholders: number;
+  /** Images and binary documents forwarded without a scan (nullpii
+   * cannot read them). Flagged so the user knows what was not checked. */
+  readonly unscanned?: number;
   /** Optional Fastify reqId to correlate against the JSON log line. */
   readonly reqId?: string;
 }
@@ -110,5 +113,10 @@ export function printRequestSummary(s: RequestSummary): void {
     drift > 0
       ? `  ${c?.yellow ?? ''}⚠ ${drift} unrestored (unknown=${s.unknownPlaceholders} foreign=${s.foreignPlaceholders})${reset}`
       : '';
-  process.stdout.write(`${tag}${id}  ${arrow} ${capLabel}  ${back} ${restLabel}${driftStr}\n`);
+  const unscanned = s.unscanned ?? 0;
+  const unscannedStr =
+    unscanned > 0 ? `  ${c?.yellow ?? ''}⚠ ${unscanned} not scanned (image/binary)${reset}` : '';
+  process.stdout.write(
+    `${tag}${id}  ${arrow} ${capLabel}  ${back} ${restLabel}${driftStr}${unscannedStr}\n`,
+  );
 }

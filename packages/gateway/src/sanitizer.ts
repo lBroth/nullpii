@@ -32,19 +32,61 @@ export interface SanitizedRequest {
   readonly captured: number;
   /** Per-label counts; same labels the engine itself uses. */
   readonly capturedByLabel: Readonly<Record<string, number>>;
+  /** Content the gateway forwarded without being able to scan it: images,
+   * and documents sent as base64, URL or file reference. Surfaced so a
+   * caller can warn, or refuse by policy; nullpii cannot see inside them. */
+  readonly unscanned: number;
 }
 
 interface CaptureAccumulator {
   count: number;
   byLabel: Record<string, number>;
+  unscanned: number;
 }
+
+/** Block and source fields that carry protocol structure, never user
+ * text. Every other string field of a non-tool block is sanitized, so a
+ * block type this gateway does not know yet is scrubbed by default
+ * instead of forwarded verbatim. */
+const STRUCTURAL_KEYS: ReadonlySet<string> = new Set([
+  'type',
+  'id',
+  'tool_use_id',
+  'name',
+  'signature',
+  'media_type',
+  'cache_control',
+  'file_id',
+  // Server-tool payloads the upstream verifies; rewriting them breaks the turn.
+  'encrypted_content',
+  'encrypted_index',
+]);
+
+/** Source types whose payload is binary or remote: nothing to scan. */
+const UNSCANNABLE_SOURCE_TYPES: ReadonlySet<string> = new Set(['base64', 'url', 'file']);
+
+/** Assistant reasoning is forwarded as-is. Its `signature` covers the
+ * text, so rewriting it would make the upstream reject the turn; and it
+ * already carries placeholders, because it was generated from sanitized
+ * input and the restore path never touches thinking deltas. */
+const OPAQUE_BLOCK_TYPES: ReadonlySet<string> = new Set(['thinking', 'redacted_thinking']);
+
+/** Blocks whose `input` is arbitrary tool-argument JSON. */
+const TOOL_CALL_TYPES: ReadonlySet<string> = new Set([
+  'tool_use',
+  'server_tool_use',
+  'mcp_tool_use',
+]);
+
+/** Blocks whose `content` is a string or a list of content blocks. */
+const TOOL_RESULT_TYPES: ReadonlySet<string> = new Set(['tool_result', 'mcp_tool_result']);
 
 export async function sanitizeRequest(
   np: NullPii,
   body: AnthropicRequest,
 ): Promise<SanitizedRequest> {
   const sessionId = np.createSession();
-  const acc: CaptureAccumulator = { count: 0, byLabel: {} };
+  const acc: CaptureAccumulator = { count: 0, byLabel: {}, unscanned: 0 };
   if (body.system !== undefined) {
     body.system = await sanitizeSystem(np, body.system, sessionId, acc);
   }
@@ -75,7 +117,13 @@ export async function sanitizeRequest(
   if (acc.count > 0 && process.env.NULLPII_DISABLE_HINT !== '1') {
     injectPreservationHint(body);
   }
-  return { body, sessionId, captured: acc.count, capturedByLabel: acc.byLabel };
+  return {
+    body,
+    sessionId,
+    captured: acc.count,
+    capturedByLabel: acc.byLabel,
+    unscanned: acc.unscanned,
+  };
 }
 
 function injectPreservationHint(body: AnthropicRequest): void {
@@ -146,12 +194,12 @@ async function sanitizeBlock(
   sessionId: string,
   acc: CaptureAccumulator,
 ): Promise<AnthropicContentBlock> {
-  if (block.type === 'text' && typeof block.text === 'string') {
-    const r = await np.sanitize(block.text, sessionId);
-    bump(acc, r);
-    return { ...block, text: r.sanitized };
+  if (OPAQUE_BLOCK_TYPES.has(block.type)) return block;
+  if (block.type === 'image') {
+    acc.unscanned += 1;
+    return block;
   }
-  if (block.type === 'tool_use') {
+  if (TOOL_CALL_TYPES.has(block.type)) {
     // Walk `input` (arbitrary JSON tree) and sanitize every string leaf.
     // Required when the client posts an assistant turn from history that
     // already contained a tool call — without this, raw PII inside the
@@ -162,7 +210,7 @@ async function sanitizeBlock(
     }
     return block;
   }
-  if (block.type === 'tool_result') {
+  if (TOOL_RESULT_TYPES.has(block.type)) {
     const content = block.content;
     if (typeof content === 'string') {
       const r = await np.sanitize(content, sessionId);
@@ -170,11 +218,64 @@ async function sanitizeBlock(
       return { ...block, content: r.sanitized };
     }
     if (Array.isArray(content)) {
-      const next = await Promise.all(content.map((b) => sanitizeBlock(np, b, sessionId, acc)));
+      const next = await Promise.all(
+        content.map((b) => sanitizeBlock(np, b as AnthropicContentBlock, sessionId, acc)),
+      );
       return { ...block, content: next };
     }
+    return block;
   }
-  return block;
+  // `text` (its `citations` quote source documents), `document`,
+  // `search_result`, and any block type added to the API later.
+  return (await sanitizeFields(np, block, sessionId, acc)) as AnthropicContentBlock;
+}
+
+/** Sanitize every string field of a block, recursively, except the
+ * structural ones. A nested `{ type: 'base64' | 'url' | 'file' }` source
+ * is binary or remote: it is forwarded untouched and counted as
+ * unscanned. A nested object with a `type` is a content block (for
+ * example a document's `content`) and goes back through `sanitizeBlock`. */
+async function sanitizeFields(
+  np: NullPii,
+  value: unknown,
+  sessionId: string,
+  acc: CaptureAccumulator,
+): Promise<unknown> {
+  if (typeof value === 'string') {
+    const r = await np.sanitize(value, sessionId);
+    bump(acc, r);
+    return r.sanitized;
+  }
+  if (Array.isArray(value)) {
+    return Promise.all(value.map((v) => sanitizeChild(np, v, sessionId, acc)));
+  }
+  if (value === null || typeof value !== 'object') return value;
+  const obj = value as Record<string, unknown>;
+  if (typeof obj.type === 'string' && UNSCANNABLE_SOURCE_TYPES.has(obj.type)) {
+    acc.unscanned += 1;
+    return value;
+  }
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    out[k] = STRUCTURAL_KEYS.has(k) ? v : await sanitizeChild(np, v, sessionId, acc);
+  }
+  return out;
+}
+
+function sanitizeChild(
+  np: NullPii,
+  value: unknown,
+  sessionId: string,
+  acc: CaptureAccumulator,
+): Promise<unknown> {
+  const isBlock =
+    value !== null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    typeof (value as { type?: unknown }).type === 'string';
+  return isBlock
+    ? sanitizeBlock(np, value as AnthropicContentBlock, sessionId, acc)
+    : sanitizeFields(np, value, sessionId, acc);
 }
 
 /** Recursively walk a JSON value (the result of `JSON.parse` on tool

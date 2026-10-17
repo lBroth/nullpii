@@ -3,6 +3,20 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- **Gateway: content blocks it did not model reached the upstream unsanitized.** `sanitizeRequest` walked `text`, `tool_use` and `tool_result` blocks only. Every other block was forwarded verbatim:
+  - plain-text and content-block `document` sources;
+  - `search_result` blocks, standalone or inside a tool result;
+  - quoted `citations[].cited_text`;
+  - MCP tool calls and results;
+  - any block type added to the API later.
+
+  Unknown blocks are now scrubbed by default: every string field except protocol structure (`type`, ids, tool names, `signature`, media types, encrypted server-tool payloads) goes through `sanitize`. `thinking` blocks stay byte-identical, because their signature covers the text and they already carry placeholders.
+- **Gateway: unscannable content is counted.** Images and documents sent as base64, URL or file reference cannot be read by nullpii. They are still forwarded, and are now counted in `SanitizedRequest.unscanned`, in the request log (`unscanned`) and in the console summary ("⚠ N not scanned"), so the user knows what was not checked.
+
 ## [0.3.0] — first public release
 
 Initial Apache-2.0 public release. Published packages:

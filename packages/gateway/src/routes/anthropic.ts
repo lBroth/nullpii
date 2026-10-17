@@ -213,6 +213,7 @@ async function handleNonStreaming(
     {
       captured: sanitized.captured,
       capturedByLabel: sanitized.capturedByLabel,
+      unscanned: sanitized.unscanned,
       replacements: restored.replacements,
       replacementsByLabel: restored.replacementsByLabel,
       unknownPlaceholders: restored.unknownPlaceholders,
@@ -224,6 +225,7 @@ async function handleNonStreaming(
     mode: 'JSON' as const,
     captured: sanitized.captured,
     capturedByLabel: sanitized.capturedByLabel,
+    unscanned: sanitized.unscanned,
     restored: restored.replacements,
     restoredByLabel: restored.replacementsByLabel,
     unknownPlaceholders: restored.unknownPlaceholders,
@@ -349,6 +351,7 @@ async function handleStreaming(
       {
         captured: sanitized.captured,
         capturedByLabel: sanitized.capturedByLabel,
+        unscanned: sanitized.unscanned,
         replacements: counters.replacements,
         replacementsByLabel: counters.replacementsByLabel,
         unknownPlaceholders: counters.unknownPlaceholders,
@@ -360,6 +363,7 @@ async function handleStreaming(
       mode: 'SSE' as const,
       captured: sanitized.captured,
       capturedByLabel: sanitized.capturedByLabel,
+      unscanned: sanitized.unscanned,
       restored: counters.replacements,
       restoredByLabel: counters.replacementsByLabel,
       unknownPlaceholders: counters.unknownPlaceholders,

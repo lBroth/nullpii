@@ -1,0 +1,8 @@
+# Every change needs the maintainer's review. Security-sensitive paths are
+# listed separately so a future co-maintainer split keeps them guarded.
+*                       @lBroth
+/src/vault.ts           @lBroth
+/src/normalize.ts       @lBroth
+/.github/               @lBroth
+/.gitleaks.toml         @lBroth
+/scripts/check-repo-hygiene.mjs @lBroth

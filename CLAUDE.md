@@ -45,10 +45,6 @@ folded into core defaults in v0.3.
 - Conventional Commits. Named exports only in `index.ts`. JSDoc on public functions. SPDX header in source files.
 - Deps: MIT/Apache-2.0/BSD/ISC/CC0 only.
 
-## Workflow
-
-**Never commit.** User runs git themselves — do not run `git commit`, `git add`, or `git push`.
-
 ## Security
 
 - Never log PII values (counts/short-ids only).

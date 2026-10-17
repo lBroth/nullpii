@@ -293,6 +293,13 @@ def _wrap_batch(batch_pred):
     return _single
 
 
+
+def _required_env(name: str) -> str:
+    value = os.environ.get(name, "")
+    if not value:
+        raise SystemExit(f"{name} must be set for this tool")
+    return value
+
 def build_tools(args) -> dict[str, Callable]:
     backend = args.backend
     # Inner GPU batch for transformer tools. Override via env when
@@ -466,6 +473,15 @@ def build_tools(args) -> dict[str, Callable]:
             local_files_only=False,
             labels=_GLINER_NATIVE_LABELS,
             label_map=_GLINER_NATIVE_TO_NULLPII8,
+        ),
+        # A local merged GLiNER directory (phase-F2 bare-model A/B), prompted
+        # with nullpii's 12 runtime labels. The directory comes from
+        # NULLPII_EVAL_GLINER_DIR; run each model into its own --out-dir.
+        "gliner-local": lambda: gliner_v2_predictor(
+            _required_env("NULLPII_EVAL_GLINER_DIR"),
+            device=backend,
+            threshold=args.gliner_threshold,
+            local_files_only=True,
         ),
         # Knowledgator's streaming-span GLiNER on a Qwen3-0.6B causal
         # backbone (July 2026, Apache-2.0). Needs gliner>=0.2.28, newer

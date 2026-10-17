@@ -218,17 +218,21 @@ would break SDK-level retry + backoff heuristics.
 
 ## Security
 
-**Shell commands keep unsafe values masked.** A masked value comes from data the model could not read, such as a file an agent opened, so it can hold anything, shell syntax included. When the gateway puts real values back into a tool call that a shell runs (Anthropic `Bash`; `Bash`, `bash` or `shell` on the OpenAI route, as a function or a custom tool), each placeholder in the `command` is restored only when its value is safe in the quoting around it:
+**Shell commands keep unsafe values masked.** A masked value comes from data the model could not read, such as a file an agent opened, so it can hold anything, shell syntax included. When the gateway puts real values back into a tool call that a shell runs (Anthropic `Bash`; `Bash`, `bash` or `shell` on the OpenAI route, as a function or a custom tool), each placeholder in the `command` is restored only when its value is safe where the placeholder stands. The first row that applies decides:
 
 | Where the placeholder stands | Restored only when the value |
 |---|---|
+| anywhere in a command that hands code to another interpreter: `bash -c` (also `-lc`), `sh`/`zsh`/`dash`/`ksh`/`fish -c`, `eval`, `ssh`, `su -c`, `python`/`node`/`perl`/`ruby`/`php`/`deno`/`bun` with `-c` or `-e`, a pipe into one of them (`… \| sh`), `awk`, `sed` | matches `^[A-Za-z0-9@%+=:,./_-]+$` |
+| in the body of a heredoc read by `cat` or `tee`, with a quoted delimiter (`<<'EOF'`, `<<"EOF"`, `<<\EOF`, also `<<-`) | has no newline |
+| in the body of a heredoc read by `cat` or `tee`, with a bare delimiter (`<<EOF`) | the double-quote rule; inside a `$(…)` in the body, the unquoted rule |
+| in the body of any other heredoc (`python3 - <<'EOF'`), of one piped on, or of one without its closing line | matches `^[A-Za-z0-9@%+=:,./_-]+$` |
 | unquoted, or inside `$(…)` or backticks, even within double quotes | matches `^[A-Za-z0-9@%+=:,./_-]+$` |
 | inside single quotes | has no `'` and no newline |
 | inside double quotes | has none of `"`, `$`, `` ` ``, `\`, `!`, and no newline |
 
-Otherwise the placeholder stays as written, and the command works on the placeholder text, which is harmless: in `echo {{PII_SECRET_0_…}}` it stays, in `echo '{{PII_SECRET_0_…}}'` the real value goes back. The same rule applies to JSON responses and to streams. Placeholders kept this way are counted as `unsafeShellPlaceholders` in the request log and shown in the console summary, as a count only. The tool call's other fields, and every other tool (`Write` content, for example), are restored as usual. A shell tool's input that is not valid JSON keeps all of its placeholders.
+Otherwise the placeholder stays as written, and the command works on the placeholder text, which is harmless: in `echo {{PII_SECRET_0_…}}` it stays, in `echo '{{PII_SECRET_0_…}}'` the real value goes back. Names still come back in Claude Code's usual commit form, `git commit -m "$(cat <<'EOF' … EOF)"`. Heredoc bodies are skipped when the quoting is read, so an apostrophe in a body does not open a quote for the rest of the command, and `<<` counts only in shell code, not inside quotes or as the here-string `<<<`. The same rule applies to JSON responses and to streams. Placeholders kept this way are counted as `unsafeShellPlaceholders` in the request log and shown in the console summary, as a count only. The tool call's other fields, and every other tool (`Write` content, for example), are restored as usual. A shell tool's input that is not valid JSON keeps all of its placeholders.
 
-The rule follows how this shell parses the command, not programs that run part of it as code: a value restored inside the quoted argument of `bash -c`, `eval`, `ssh host …` or `python -c` is quoted for this shell only.
+The interpreter list is best effort: a program it does not name that runs its quoted argument as code (for example `psql -c` or `mysql -e`, which run SQL) is covered by the quoting rules only.
 
 ## Privacy
 

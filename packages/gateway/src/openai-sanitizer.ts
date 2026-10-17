@@ -19,7 +19,8 @@ import {
   type RestoredResponse,
   type SanitizedRequest,
   bump,
-  restoreJsonValue,
+  parseJson,
+  restoreJsonText,
   restoreString,
   sanitizeJsonValue,
   shouldAppendHint,
@@ -330,44 +331,7 @@ function restoreFunctionCall(
   acc: RestoreAccumulator,
 ): ChatFunctionCall {
   if (typeof fn.arguments !== 'string') return fn;
-  return { ...fn, arguments: restoreArguments(np, fn.arguments, sessionId, acc) };
-}
-
-/**
- * Restore a tool-call `arguments` string. It is parsed and only its string
- * leaves are restored, then re-serialized, so a restored value holding a
- * quote, a backslash or a newline is escaped instead of breaking the JSON.
- * A string that does not parse (a reply cut off by `max_tokens`) is
- * restored as plain text; one with nothing to restore is returned as is.
- * The streaming relay restores each call's buffered arguments with this.
- *
- * @param acc - restore counts are added here.
- */
-export function restoreArguments(
-  np: NullPii,
-  args: string,
-  sessionId: string,
-  acc: RestoreAccumulator,
-): string {
-  const parsed = parseJson(args);
-  if (parsed === undefined) return restoreString(np, args, sessionId, acc);
-  const next = JSON.stringify(restoreJsonValue(np, parsed.value, sessionId, acc));
-  return next === JSON.stringify(parsed.value) ? args : next;
-}
-
-/**
- * Parse `text` as JSON. Wrapped in `{ value }` so a JSON `null` is told
- * apart from a parse failure, which returns `undefined`.
- */
-export function parseJson(text: string): { value: unknown } | undefined {
-  try {
-    return { value: JSON.parse(text) as unknown };
-  } catch {
-    // Deliberate: not-JSON is an expected input here (tool arguments cut
-    // off mid-stream, an SSE payload that is not a chunk). Every caller
-    // has a fallback for it.
-    return undefined;
-  }
+  return { ...fn, arguments: restoreJsonText(np, fn.arguments, sessionId, acc) };
 }
 
 /** True for a non-null, non-array object. */

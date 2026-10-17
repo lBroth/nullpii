@@ -117,7 +117,7 @@ in the response `content[].text` blocks. The vault session lives only
 for the duration of the round-trip and is destroyed before the gateway
 replies to the client.
 
-With `stream: true`, a client that disconnects mid-stream cancels the upstream call, so Anthropic stops generating (and billing) the rest of the reply.
+With `stream: true`, text deltas are restored as they stream, holding back only a placeholder split across deltas. Tool input (`input_json_delta`) is held per content block and sent once, restored, just before its `content_block_stop`: the assembled JSON is parsed and its string values restored, so a value holding a quote or a newline stays valid JSON. A client that disconnects mid-stream cancels the upstream call, so Anthropic stops generating (and billing) the rest of the reply.
 
 ## OpenAI-compatible route
 

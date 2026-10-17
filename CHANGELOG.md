@@ -20,6 +20,7 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
 - **Gateway: a client that disconnected mid-stream did not cancel the upstream Anthropic call.** The abort was wired to the request's `close` event, which Node 16+ emits as soon as the request body has been read, before the route attached its listener, so the upstream kept generating, and billing, the rest of the reply. The route now listens for the response connection closing.
 - **Gateway: a vault session leaked when sanitization failed.** `sanitizeRequest` opened the session before walking the body, so a walk that threw (a text over the engine's size cap, a detector error) left the session, with every value it had already masked, in memory until the process exited. It now destroys the session before rethrowing, and the Messages and `count_tokens` routes drop the session in one `finally` on every path instead of at each exit.
+- **Gateway: streamed tool input could come back as invalid JSON.** The SSE relay restored the assembled `input_json_delta` text by pasting each value in raw, so a restored value holding a quote, a backslash or a newline broke the tool input the client parses at `content_block_stop`. The input is now parsed, its string values restored and re-serialized; input that is not valid JSON at `content_block_stop` is still restored, as text. The OpenAI route uses the same helper.
 
 ### Security
 

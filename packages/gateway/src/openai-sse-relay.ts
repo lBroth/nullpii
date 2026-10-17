@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { type NullPii, RestoreStream } from 'nullpii';
-import { isRecord, parseJson, restoreArguments } from './openai-sanitizer.js';
+import { isRecord } from './openai-sanitizer.js';
 import type {
   ChatChunkChoice,
   ChatCompletionChunk,
@@ -9,7 +9,7 @@ import type {
   ChatFunctionCall,
   ChatToolCallDelta,
 } from './openai-types.js';
-import { type RestoreAccumulator, tallyRestore } from './sanitizer.js';
+import { type RestoreAccumulator, parseJson, restoreJsonText, tallyRestore } from './sanitizer.js';
 import type { SseRelayCounters, SseRelayOptions } from './sse-relay.js';
 
 /**
@@ -249,11 +249,11 @@ class ChoiceRestorer {
   private flushArgs(delta: ChatDelta): boolean {
     const added = this.toolArgs.size > 0 || this.functionArgs !== null;
     for (const [index, args] of this.toolArgs) {
-      setToolArgs(delta, index, restoreArguments(this.np, args, this.sessionId, this.acc));
+      setToolArgs(delta, index, restoreJsonText(this.np, args, this.sessionId, this.acc));
     }
     this.toolArgs.clear();
     if (this.functionArgs !== null) {
-      const args = restoreArguments(this.np, this.functionArgs, this.sessionId, this.acc);
+      const args = restoreJsonText(this.np, this.functionArgs, this.sessionId, this.acc);
       delta.function_call = { ...delta.function_call, arguments: args };
       this.functionArgs = null;
     }

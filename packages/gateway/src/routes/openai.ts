@@ -2,16 +2,11 @@
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { NullPii } from 'nullpii';
-import {
-  isRecord,
-  parseJson,
-  restoreChatResponse,
-  sanitizeChatRequest,
-} from '../openai-sanitizer.js';
+import { isRecord, restoreChatResponse, sanitizeChatRequest } from '../openai-sanitizer.js';
 import { relayChatSseStream } from '../openai-sse-relay.js';
 import type { ChatCompletionRequest, ChatCompletionResponse } from '../openai-types.js';
 import { printRequestSummary } from '../pretty-log.js';
-import type { RestoredResponse, SanitizedRequest } from '../sanitizer.js';
+import { type RestoredResponse, type SanitizedRequest, parseJson } from '../sanitizer.js';
 import {
   logInboundResponse,
   logInboundSseChunk,

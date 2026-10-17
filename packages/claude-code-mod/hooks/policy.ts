@@ -76,3 +76,6 @@ export function formatReport(counts: Counts, problem: string | undefined): strin
   if (labels !== '') lines.push(`By type: ${labels}`);
   return lines.join('\n');
 }
+
+/** Tools whose restored arguments a shell interprets. */
+export const SHELL_TOOLS: ReadonlySet<string> = new Set(['Bash']);

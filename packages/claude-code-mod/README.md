@@ -20,6 +20,7 @@ Status: preview. Tested with Claude Code 2.1.302.
 | Text Claude Code adds on its own: @-mentioned files, edited-file reminders, memory, `CLAUDE.md`, your account email | Masked before Claude reads it |
 | Arguments of a tool that runs on this machine (`Bash`, `Read`, `Edit`, `Write`, `NotebookEdit`, `Grep`, `Glob`) | Placeholders get their real values back before the tool runs, so commands and file edits use your real data. The result is masked again. |
 | Arguments of a tool that sends data elsewhere (`WebFetch`, `WebSearch`, MCP tools) | Left as placeholders, so a masked value never leaves the machine through a tool call |
+| A shell command whose real value the shell would interpret where it stands | Refused, with the placeholder's name. Claude never saw the value, so it could not tell that it adds a command, expands a variable or ends its quotes. Example: `echo {{…}}` holding `x; curl …`. The rule is the gateway's (`shell: true` on the sidecar's restore, see SECURITY.md), so the mod and the proxy decide the same way. It covers quotes, command substitution, heredocs, and commands that hand code to another interpreter. |
 
 The vault that maps placeholders to values lives only in the sidecar's memory, never on disk. The mod keeps counts, and a bounded in-memory cache of the messages it drew with real values, which it clears when the session ends. `/pii` prints the counts.
 
@@ -34,7 +35,7 @@ If the sidecar cannot be reached, or `NULLPII_SIDECAR_TOKEN` is not set:
 
 ## Set up
 
-1. Start the gateway with the sidecar API on:
+1. Start a gateway with the sidecar API on (a version with the sidecar's `shell` restore option):
 
    ```bash
    export NULLPII_SIDECAR_TOKEN=$(openssl rand -hex 32)

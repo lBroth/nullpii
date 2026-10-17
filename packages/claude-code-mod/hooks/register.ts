@@ -11,7 +11,14 @@
 // to the user and a tool call is refused, instead of going out unmasked.
 // The vault lives in the sidecar's memory; this mod keeps counts only.
 
-import { RESTORE_FIELDS, addMasked, emptyCounts, formatBand, formatReport } from './policy.ts';
+import {
+  RESTORE_FIELDS,
+  SHELL_TOOLS,
+  addMasked,
+  emptyCounts,
+  formatBand,
+  formatReport,
+} from './policy.ts';
 
 const DEFAULT_SIDECAR_URL = 'http://127.0.0.1:8787';
 const SESSIONS_PATH = '/v1/sidecar/sessions/';
@@ -27,6 +34,9 @@ interface Sanitized {
 interface Restored {
   value: Record<string, unknown>;
   replacements: number;
+  /** With `shell: true`: placeholders the sidecar left masked in
+   * `command`, because restoring them could change what the shell runs. */
+  shellKeptMasked?: string[];
 }
 
 // `{{PII_<LABEL>_<index>_<session prefix>}}` (nullpii's PLACEHOLDER_TEMPLATE).
@@ -175,7 +185,20 @@ export function register(on) {
     );
     let call = e;
     if (Object.keys(args).length > 0) {
-      const r = (await sidecar($, 'POST', '/restore', { value: args })) as Restored;
+      // For a shell tool the sidecar restores `command` by the shell
+      // rule (SECURITY.md): a value Claude never saw is kept masked where
+      // the shell would interpret it.
+      const shell = SHELL_TOOLS.has(e.tool);
+      const r = (await sidecar($, 'POST', '/restore', {
+        value: args,
+        ...(shell && { shell }),
+      })) as Restored;
+      const kept = r.shellKeptMasked ?? [];
+      if (kept.length > 0) {
+        return {
+          deny: `nullpii will not put the real value of ${kept.join(', ')} into this command: in that position the shell would interpret some of its characters, and the value came from data you could not read. Pass it through a file instead, or ask the user to run the command.`,
+        };
+      }
       // Rewrite the call only when a placeholder was replaced: a rewritten
       // call is denied in auto mode, so untouched calls must stay as written.
       if (r.replacements > 0) {

@@ -6,7 +6,7 @@
 
 Mask personal data and secrets before they reach an LLM, and put them back on the way out. Detection runs on your machine: a fine-tuned GLiNER model plus validated recognizers, with a reversible in-memory vault.
 
-- **Measured, not claimed.** Scored on every character over eight public and synthetic test sets, nullpii is ahead of each of the 13 open-source detectors we compared (macro char-F2 0.894, next best 0.830), and every confidence interval of the difference excludes zero ([results](#benchmark)).
+- **Measured, not claimed.** Scored on every character over eight public and synthetic test sets, nullpii is ahead of 13 of the 14 open-source detectors we compared, and every confidence interval of those differences excludes zero (macro char-F2 0.894; the next best is 0.830). The fourteenth, OpenMed's privacy-filter-multilingual-v2, ties overall. It was trained on the text of five of the eight test sets; on the three it did not see, nullpii leads 0.899 to 0.784 ([results](#benchmark)).
 - **Works with any model.** Call `sanitize()` before your LLM call and `restore()` after it. Or run the gateway in front of the Anthropic or OpenAI API, or the Claude Code mod.
 - **Built for coding agents.**
   - It masks tool output (files, logs, command results), not just prompts.
@@ -218,6 +218,7 @@ Every number here comes from the protocol in [`packages/eval/scripts/ab/PROTOCOL
 The full per-dataset matrix, and the in-distribution flags for tools trained on a test set's source, are in [`packages/eval/scripts/ab/LOG.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/scripts/ab/LOG.md).
 
 **Where nullpii is not ahead.**
+- **Test sets a competitor trained on:** OpenMed's privacy-filter-multilingual-v2 scores 0.994–0.997 on the four Isotonic sets and 0.851 on argilla-pii. All five are re-releases of ai4privacy text it lists as training data, verified verbatim. Those cells are flagged ‡ and left out of the comparison against it.
 - **`argilla-pii`:** openmed-small finds more (recall 0.944 vs 0.927, significant), and three tools score higher on F2.
 - **`claude-code-traces`:** openai-privacy-filter scores 0.840 and gliner-stream-pii 0.813, against 0.811. Neither difference is significant. nullpii leaks less there (recall 0.924, against 0.836 and 0.878) and over-masks more.
 

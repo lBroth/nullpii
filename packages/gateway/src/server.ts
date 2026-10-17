@@ -5,6 +5,7 @@ import { NullPii } from 'nullpii';
 import type { GatewayConfig } from './config.js';
 import { registerAnthropicRoute } from './routes/anthropic.js';
 import { registerHealthRoute } from './routes/health.js';
+import { registerSidecarRoutes } from './routes/sidecar.js';
 import type { Fetch } from './upstream.js';
 
 export interface BuildServerOptions {
@@ -14,6 +15,9 @@ export interface BuildServerOptions {
   readonly np: NullPii;
   /** Pluggable `fetch`. Defaults to the global. Tests inject a mock. */
   readonly fetchImpl?: Fetch;
+  /** Clock for sidecar session expiry. Defaults to `Date.now`. Tests
+   * inject a manual clock. */
+  readonly now?: () => number;
 }
 
 export async function buildServer(opts: BuildServerOptions): Promise<FastifyInstance> {
@@ -32,6 +36,15 @@ export async function buildServer(opts: BuildServerOptions): Promise<FastifyInst
     fetchImpl,
     logTraffic: config.logTraffic,
   });
+  if (config.sidecarToken !== undefined) {
+    await registerSidecarRoutes(app, {
+      np,
+      token: config.sidecarToken,
+      ttlMs: config.vaultTtlMs,
+      maxSessions: config.sidecarMaxSessions,
+      ...(opts.now !== undefined && { now: opts.now }),
+    });
+  }
 
   return app;
 }

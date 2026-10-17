@@ -22,6 +22,7 @@ const TEST_CONFIG: GatewayConfig = {
   logLevel: 'fatal',
   bodyLimitBytes: 10 * 1024 * 1024,
   logTraffic: false,
+  sidecarMaxSessions: 64,
 };
 
 /**

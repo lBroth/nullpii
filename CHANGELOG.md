@@ -5,11 +5,16 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Changes from the measured A/B loop (`packages/eval/scripts/ab/PROTOCOL.md`, results in `LOG.md`). Each one passed the protocol's checks on the tuning set before it was kept.
+The detection changes come from the measured A/B loop (`packages/eval/scripts/ab/PROTOCOL.md`, results in `LOG.md`); each one passed the protocol's checks on the tuning set before it was kept.
 
 ### Added
 
 - **Extended categories:** `private_organization`, `private_occupation`, `private_demographic`, `private_sensitive` and `private_title`. They are prompted and masked by default. Turn any category off with the new `disabledCategories` config option, for example `['private_organization', 'private_occupation']` to keep company names and job titles readable.
+- **Gateway: sidecar API** (`/v1/sidecar/*`), off unless `NULLPII_SIDECAR_TOKEN` is set. It keeps vault sessions under caller-chosen keys across calls, so an editor or coding-agent extension can mask prompts and tool results turn after turn and restore real values only where it chooses (`fields`).
+  - **Sessions:** an idle TTL (`NULLPII_VAULT_TTL_MS`, now wired up) drops each session together with its vault entries. A cap (`NULLPII_SIDECAR_MAX_SESSIONS`) fails with 429 instead of evicting a live session.
+  - **Access:** a bearer token, compared in constant time. Non-loopback `Host` headers and any `Origin` header are refused before the token check.
+  - **Limits and output:** 4 MiB per request and per response. Responses and logs carry counts only.
+  - **Cache:** a value the session has already masked is answered from a per-session cache, without running the model again.
 
 ### Changed
 
@@ -29,6 +34,18 @@ Changes from the measured A/B loop (`packages/eval/scripts/ab/PROTOCOL.md`, resu
 - An empty or whitespace-only input, or a window with zero words, crashed the model run.
 - A recognizer deferred to any overlapping model span. It now defers only when the model span covers its whole match.
 - Edge punctuation was trimmed off `secret` spans, leaving part of the credential unmasked.
+
+### Security
+
+- **Gateway: content blocks it did not model reached the upstream unsanitized.** `sanitizeRequest` walked `text`, `tool_use` and `tool_result` blocks only. Every other block was forwarded verbatim:
+  - plain-text and content-block `document` sources;
+  - `search_result` blocks, standalone or inside a tool result;
+  - quoted `citations[].cited_text`;
+  - MCP tool calls and results;
+  - any block type added to the API later.
+
+  Unknown blocks are now scrubbed by default: every string field except protocol structure (`type`, ids, tool names, `signature`, media types, encrypted server-tool payloads) goes through `sanitize`. `thinking` blocks stay byte-identical, because their signature covers the text and they already carry placeholders.
+- **Gateway: unscannable content is counted.** Images and documents sent as base64, URL or file reference cannot be read by nullpii. They are still forwarded, and are now counted in `SanitizedRequest.unscanned`, in the request log (`unscanned`) and in the console summary ("⚠ N not scanned"), so the user knows what was not checked.
 
 ## [0.4.0] — bench correctness + detection fixes
 

@@ -6,6 +6,7 @@
 // model + real Anthropic round-trip lives in an E2E suite gated on
 // `NULLPII_GATEWAY_E2E=1` (not in this PR).
 
+import type { AddressInfo } from 'node:net';
 import type { NullPii } from 'nullpii';
 import { PiiVault } from 'nullpii';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -644,6 +645,97 @@ describe('gateway · POST /v1/messages/count_tokens', () => {
     expect(forwardedBody).toContain('{{PII_PRIVATE_PERSON_');
     expect(res.body).toContain('"input_tokens":12');
   });
+});
+
+/** Upstream SSE stream that sends a ping every `SLOW_STREAM_TICK_MS` for
+ * about a second, and errors as soon as the gateway aborts its fetch. */
+const SLOW_STREAM_TICK_MS = 25;
+const SLOW_STREAM_FRAMES = 40;
+/** How long a disconnect may take to reach the upstream signal. */
+const DISCONNECT_WAIT_MS = 500;
+const POLL_MS = 10;
+const PING_FRAME = `event: ping\ndata: ${JSON.stringify({ type: 'ping' })}\n\n`;
+
+function slowSseBody(signal: AbortSignal | undefined): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  let timer: ReturnType<typeof setInterval> | undefined;
+  let done = false;
+  const stop = (): void => {
+    done = true;
+    clearInterval(timer);
+  };
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      let sent = 0;
+      timer = setInterval(() => {
+        controller.enqueue(encoder.encode(PING_FRAME));
+        sent += 1;
+        if (sent < SLOW_STREAM_FRAMES) return;
+        stop();
+        controller.close();
+      }, SLOW_STREAM_TICK_MS);
+      signal?.addEventListener(
+        'abort',
+        () => {
+          if (done) return;
+          stop();
+          controller.error(signal.reason);
+        },
+        { once: true },
+      );
+    },
+    cancel: stop,
+  });
+}
+
+async function waitFor(condition: () => boolean, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition() && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+  }
+}
+
+describe('gateway · client disconnect', () => {
+  // Real sockets: `app.inject` cannot drop a client connection mid-stream.
+  it.each(['/v1/messages', '/v1/chat/completions'])(
+    'cancels the upstream call when the client disconnects mid-stream (%s)',
+    async (path) => {
+      const { np } = buildMockNullPii();
+      let upstreamSignal: AbortSignal | undefined;
+      const fetchImpl = async (_url: string, init: RequestInit) => {
+        upstreamSignal = init.signal ?? undefined;
+        return new Response(slowSseBody(upstreamSignal), {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        });
+      };
+      const app = await buildServer({ config: TEST_CONFIG, np, fetchImpl });
+      trackApp(app);
+      await app.listen({ host: '127.0.0.1', port: 0 });
+      const { port } = app.server.address() as AddressInfo;
+
+      const client = new AbortController();
+      const res = await fetch(`http://127.0.0.1:${port}${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'test',
+          stream: true,
+          messages: [{ role: 'user', content: 'Hi' }],
+        }),
+        signal: client.signal,
+      });
+      // The stream is live: the first frame reached the client.
+      expect(res.status).toBe(200);
+      await res.body?.getReader().read();
+      expect(upstreamSignal?.aborted).toBe(false);
+
+      client.abort();
+      await waitFor(() => upstreamSignal?.aborted === true, DISCONNECT_WAIT_MS);
+
+      expect(upstreamSignal?.aborted).toBe(true);
+    },
+  );
 });
 
 describe('gateway · /health', () => {

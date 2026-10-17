@@ -266,10 +266,12 @@ async function handleStreaming(
   // `fetch` so Anthropic stops streaming (and stops billing tokens).
   // Without this, the for-await loop keeps writing to a dead socket
   // and the upstream call runs to completion on a request nobody is
-  // listening to.
+  // listening to. The signal is `reply.raw` closing: on Node 16+
+  // `req.raw` emits 'close' as soon as the request body has been read,
+  // before this handler runs, so a listener there never fires.
   const abort = new AbortController();
   const onClientClose = (): void => abort.abort();
-  req.raw.once('close', onClientClose);
+  reply.raw.once('close', onClientClose);
 
   let upstreamResp: Response;
   try {
@@ -280,7 +282,7 @@ async function handleStreaming(
       signal: abort.signal,
     });
   } catch (err) {
-    req.raw.off('close', onClientClose);
+    reply.raw.off('close', onClientClose);
     np.destroySession(sanitized.sessionId);
     const msg = err instanceof Error ? err.message : String(err);
     return reply.code(502).send({
@@ -292,7 +294,7 @@ async function handleStreaming(
   // Non-2xx upstream — passthrough the error body verbatim. Anthropic
   // streams errors as a JSON body (not SSE) under most failures.
   if (upstreamResp.status < 200 || upstreamResp.status >= 300) {
-    req.raw.off('close', onClientClose);
+    reply.raw.off('close', onClientClose);
     np.destroySession(sanitized.sessionId);
     const text = await upstreamResp.text();
     reply.code(upstreamResp.status);
@@ -313,7 +315,7 @@ async function handleStreaming(
   }
 
   if (upstreamResp.body === null) {
-    req.raw.off('close', onClientClose);
+    reply.raw.off('close', onClientClose);
     np.destroySession(sanitized.sessionId);
     return reply.code(502).send({
       type: 'error',
@@ -369,20 +371,14 @@ async function handleStreaming(
     printRequestSummary(reqId !== undefined ? { ...sseSummary, reqId } : sseSummary);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    req.log.error(
-      { errMsg: msg, aborted: abort.signal.aborted },
-      'anthropic.messages.stream_error',
-    );
+    const clientGone = abort.signal.aborted;
+    // Stop the upstream call whatever broke the stream (client gone,
+    // write error, upstream cut off): aborting the fetch releases its
+    // socket. A normal end needs nothing, the body is already drained.
+    abort.abort();
+    req.log.error({ errMsg: msg, aborted: clientGone }, 'anthropic.messages.stream_error');
   } finally {
-    req.raw.off('close', onClientClose);
-    // Best-effort upstream reader cancel. If the loop completed
-    // normally the reader is already drained; if it threw mid-stream
-    // (write error, client abort) this releases the underlying socket.
-    try {
-      upstreamResp.body?.cancel();
-    } catch {
-      // Reader may already be closed/cancelled — silent is correct.
-    }
+    reply.raw.off('close', onClientClose);
     np.destroySession(sanitized.sessionId);
     reply.raw.end();
   }

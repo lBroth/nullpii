@@ -117,6 +117,8 @@ in the response `content[].text` blocks. The vault session lives only
 for the duration of the round-trip and is destroyed before the gateway
 replies to the client.
 
+With `stream: true`, a client that disconnects mid-stream cancels the upstream call, so Anthropic stops generating (and billing) the rest of the reply.
+
 ## OpenAI-compatible route
 
 `POST /v1/chat/completions` takes the OpenAI Chat Completions format, so the OpenAI SDKs, and any client that lets you set an OpenAI base URL, can go through the gateway. It works like the Messages route: one vault session per request, sanitize, forward to `NULLPII_OPENAI_UPSTREAM`, restore the JSON response or the SSE stream, destroy the session.

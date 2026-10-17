@@ -16,6 +16,10 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
   - **Access:** a bearer token, compared in constant time. Non-loopback `Host` headers and any `Origin` header are refused before the token check.
   - **Limits and output:** 4 MiB per request and per response. Responses and logs carry counts only.
 
+### Fixed
+
+- **Gateway: a client that disconnected mid-stream did not cancel the upstream Anthropic call.** The abort was wired to the request's `close` event, which Node 16+ emits as soon as the request body has been read, before the route attached its listener, so the upstream kept generating, and billing, the rest of the reply. The route now listens for the response connection closing.
+
 ### Security
 
 - **Gateway: content blocks it did not model reached the upstream unsanitized.** `sanitizeRequest` walked `text`, `tool_use` and `tool_result` blocks only. Every other block was forwarded verbatim:

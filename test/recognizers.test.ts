@@ -185,6 +185,16 @@ describe('runRecognizers', () => {
     expect(spans[0]?.label).toBe('private_mac');
   });
 
+  it('catches an omocodic or lowercase codice fiscale, not a camelCase identifier', async () => {
+    const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+    const cf = DEFAULT_RECOGNIZERS.find((r) => r.id === 'core:cf-italy');
+    expect(cf).toBeDefined();
+    const run = (text: string) => runRecognizers(text, cf ? [cf] : [], []);
+    expect(run('codice fiscale RSSMRA85T10A56NH, grazie')).toHaveLength(1);
+    expect(run('cf: rssmra85t10a562s')).toHaveLength(1);
+    expect(run('const RssMra85T10a562S = 1')).toHaveLength(0);
+  });
+
   describe('credential recognizers (cloud / payments / chat)', () => {
     it('catches an AWS secret access key only when canonically hinted', async () => {
       const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');

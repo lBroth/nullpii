@@ -208,20 +208,64 @@ const CF_EVEN_VALUES: Record<string, number> = {
   Z: 25,
 };
 const CF_CHECK_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+/** Omocodia: the letters that stand for 0–9 when the tax office replaces
+ * digits to tell apart two people with the same code. */
+const CF_OMOCODIC_DIGITS = 'LMNPQRSTUV';
+/** 0-based positions of the seven digits a codice fiscale carries. */
+const CF_DIGIT_POSITIONS = [6, 7, 9, 10, 12, 13, 14] as const;
+const CF_DAY_POSITION = 9;
+const CF_FEMALE_DAY_OFFSET = 40;
+const CF_MAX_DAY = 31;
+const CF_SHAPE =
+  /^[A-Z]{6}[\dLMNPQRSTUV]{2}[A-EHLMPRST][\dLMNPQRSTUV]{2}[A-Z][\dLMNPQRSTUV]{3}[A-Z]$/;
+
+/**
+ * The code with omocodic letters mapped back to digits, or `undefined`
+ * when the substitution is not a valid one. The office replaces digits
+ * from the rightmost leftwards, so letters may only fill a suffix of the
+ * digit positions.
+ */
+function cfDecodeDigits(cf: string): string | undefined {
+  const chars = [...cf];
+  let inSuffix = false;
+  for (const pos of CF_DIGIT_POSITIONS) {
+    const digit = CF_OMOCODIC_DIGITS.indexOf(chars[pos] ?? '');
+    if (digit >= 0) {
+      inSuffix = true;
+      chars[pos] = String(digit);
+    } else if (inSuffix) {
+      // A digit after a replaced one: not a substitution the office makes.
+      return undefined;
+    }
+  }
+  return chars.join('');
+}
 
 /**
  * Italian Codice Fiscale validator. Format: 6 alpha + 2 digit +
  * month-letter (one of A-EHLMPRST) + 2 digit day + alpha + 3 digit +
- * 1 control letter.
+ * 1 control letter. Case-insensitive.
+ *
+ * Omocodic codes, where the tax office replaced some digits with the
+ * letters L–V, are valid when the letters fill a suffix of the digit
+ * positions. The day (01–31, or 41–71 for women) is checked on the
+ * decoded digits.
  *
  * Checksum: sum odd-position weights + even-position weights over
- * the first 15 chars; (sum mod 26) maps to check letter A-Z. Match
- * against the 16th character.
+ * the first 15 chars, as written; (sum mod 26) maps to check letter
+ * A-Z. Match against the 16th character.
  */
 export function codiceFiscaleValid(value: string): boolean {
   const cf = value.toUpperCase();
   if (cf.length !== 16) return false;
-  if (!/^[A-Z]{6}\d{2}[A-EHLMPRST]\d{2}[A-Z]\d{3}[A-Z]$/.test(cf)) return false;
+  // People write a code in one case. Mixed case is a code identifier.
+  if (value !== cf && value !== value.toLowerCase()) return false;
+  if (!CF_SHAPE.test(cf)) return false;
+  const decoded = cfDecodeDigits(cf);
+  if (decoded === undefined) return false;
+  const day = Number(decoded.slice(CF_DAY_POSITION, CF_DAY_POSITION + 2));
+  const dayOfMonth = day > CF_FEMALE_DAY_OFFSET ? day - CF_FEMALE_DAY_OFFSET : day;
+  if (dayOfMonth < 1 || dayOfMonth > CF_MAX_DAY) return false;
   let sum = 0;
   for (let i = 0; i < 15; i++) {
     const ch = cf[i];

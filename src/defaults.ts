@@ -493,7 +493,9 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
   // matches that don't satisfy the official checksum).
   {
     id: 'core:cf-italy',
-    pattern: /\b[A-Z]{6}\d{2}[A-EHLMPRST]\d{2}[A-Z]\d{3}[A-Z]\b/g,
+    // Omocodic letters (L–V) may stand in for digits; any case.
+    pattern:
+      /\b[A-Z]{6}[\dLMNPQRSTUV]{2}[A-EHLMPRST][\dLMNPQRSTUV]{2}[A-Z][\dLMNPQRSTUV]{3}[A-Z]\b/gi,
     label: 'account_number',
     confidence: 0.99,
     validate: codiceFiscaleValid,

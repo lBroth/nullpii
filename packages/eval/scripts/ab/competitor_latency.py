@@ -38,11 +38,10 @@ def load_inputs(path: Path) -> list[dict]:
 
 
 def make_predictor(tool: str, backend: str):
-    args = SimpleNamespace(backend=backend, gliner_threshold=GLINER_THRESHOLD, drop_rfc1918=False)
-    builders = bench_full.build_tools(args)
-    if tool not in builders:
-        raise ValueError(f"unknown tool {tool!r}; known: {sorted(builders)}")
-    pred = builders[tool]()
+    args = SimpleNamespace(
+        tools=tool, backend=backend, gliner_threshold=GLINER_THRESHOLD, drop_rfc1918=False
+    )
+    pred = bench_full.build_tools(args)[tool]  # build_tools returns constructed predictors
     if getattr(pred, "is_batch", False):
         return lambda text: pred([text])[0]
     return pred

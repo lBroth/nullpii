@@ -51,6 +51,13 @@ export interface NullPiiConfig {
    * `DEFAULT_CATEGORY_THRESHOLDS` (IP and MAC at 0.5, date 0.125, email 0.075);
    * passing any object replaces those defaults entirely. */
   readonly categoryThresholds?: Partial<Record<PiiCategory, number>>;
+  /** Categories to leave unmasked. They are not prompted to the model
+   * (fewer labels also mean a shorter prompt per window) and their spans
+   * are dropped from every detector, recognizers included. Default: none,
+   * so every category is masked. Typical use: keep organisations and
+   * occupations visible in business text with
+   * `['private_organization', 'private_occupation']`. */
+  readonly disabledCategories?: readonly PiiCategory[];
   /** Number of intra-op threads for the ONNX Runtime session. `0` = ORT
    * default (typically physical core count). */
   readonly intraOpNumThreads?: number;

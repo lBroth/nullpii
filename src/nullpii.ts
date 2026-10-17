@@ -33,6 +33,7 @@ import { escapePlaceholders, unescapePlaceholders } from './placeholder-escape.j
 import { dropSpansInsidePublicDigests } from './public-digests.js';
 import { runRecognizers } from './recognizers.js';
 import {
+  GLINER_EXTENDED_CATEGORIES,
   GLINER_MODEL_CATEGORIES,
   GLINER_ZERO_SHOT_EXTRA,
   type NullPiiConfig,
@@ -57,9 +58,13 @@ interface DecodedSpan {
   readonly score: number;
 }
 
-/** Concatenation of trained + zero-shot labels passed to the model at
- * inference. See `types/labels.ts` for provenance. */
-const GLINER_LABELS: readonly string[] = [...GLINER_MODEL_CATEGORIES, ...GLINER_ZERO_SHOT_EXTRA];
+/** Every label the model can be prompted with, in prompt order: trained,
+ * zero-shot, then the extended categories. See `types/labels.ts`. */
+const GLINER_LABELS: readonly PiiCategory[] = [
+  ...GLINER_MODEL_CATEGORIES,
+  ...GLINER_ZERO_SHOT_EXTRA,
+  ...GLINER_EXTENDED_CATEGORIES,
+];
 
 /**
  * Public entry point. Construct with optional `NullPiiConfig`; call
@@ -68,6 +73,9 @@ const GLINER_LABELS: readonly string[] = [...GLINER_MODEL_CATEGORIES, ...GLINER_
  */
 export class NullPii {
   private readonly config: NullPiiConfig;
+  /** `GLINER_LABELS` minus `config.disabledCategories`. */
+  private readonly promptLabels: readonly string[];
+  private readonly disabled: ReadonlySet<string>;
   private readonly vault = new PiiVault();
   private readonly recognizers: Recognizer[] = [];
   private backend: OrtBackend | null = null;
@@ -78,6 +86,8 @@ export class NullPii {
 
   constructor(config: NullPiiConfig = {}) {
     this.config = config;
+    this.disabled = new Set(config.disabledCategories ?? []);
+    this.promptLabels = GLINER_LABELS.filter((l) => !this.disabled.has(l));
     if (config.recognizers === 'none') return;
     if (Array.isArray(config.recognizers)) {
       this.recognizers.push(...(config.recognizers as readonly Recognizer[]));
@@ -224,8 +234,11 @@ export class NullPii {
     // outrank anything else. See `public-digests.ts`.
     // Event timestamps date a log record, not a person. See
     // `machine-timestamps.ts`.
+    const enabled = ([...mlSpans, ...recoSpans] as PiiSpan[]).filter(
+      (s) => !this.disabled.has(s.label),
+    );
     const candidates = dropDatesInsideMachineTimestamps(
-      dropSpansInsidePublicDigests([...mlSpans, ...recoSpans] as PiiSpan[], escaped),
+      dropSpansInsidePublicDigests(enabled, escaped),
       escaped,
     );
     const allowlisted =
@@ -264,7 +277,7 @@ export class NullPii {
     const maxLen = this.config.maxSequenceLength ?? DEFAULT_MAX_SEQUENCE_LENGTH;
     const decoded: DecodedSpan[] = [];
     const walk = await forEachWindow(normalized, async ({ text: chunk, offset }) => {
-      const enc = await tokenizer.encode(chunk, GLINER_LABELS);
+      const enc = await tokenizer.encode(chunk, this.promptLabels);
       if (this.config.strictLength === true && enc.truncated) {
         throw new TextTooLongError(enc.seqLen, maxLen);
       }
@@ -290,7 +303,7 @@ export class NullPii {
         out.maxWidth,
         out.numClasses,
         enc.words,
-        GLINER_LABELS,
+        this.promptLabels,
         threshold,
       );
       for (const s of spans) {

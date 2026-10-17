@@ -7,7 +7,7 @@ import {
   SessionNotFoundError,
 } from '../src/errors.js';
 import { NullPii } from '../src/nullpii.js';
-import { PLACEHOLDER_REGEX } from '../src/types/index.js';
+import { GLINER_MODEL_CATEGORIES, PLACEHOLDER_REGEX } from '../src/types/index.js';
 
 describe('NullPii lifecycle', () => {
   it('rejects sanitize after dispose with ModelNotInitializedError', async () => {
@@ -53,6 +53,11 @@ describe('NullPii lifecycle', () => {
 //   - placeholders carry the session prefix (A3)
 //   - dispose clears vault state (A4)
 //   - restore on a different session raises SessionMismatchError (A3)
+// What the last `encode` call prompted, so the mocked backend can answer
+// with one logit column per label, as the real model does, and tests can
+// check which labels were prompted.
+const prompt = vi.hoisted(() => ({ labels: [] as readonly string[] }));
+
 vi.mock('../src/backend/backend.js', () => {
   class OrtBackend {
     async infer(): Promise<{
@@ -65,7 +70,7 @@ vi.mock('../src/backend/backend.js', () => {
         logits: new Float32Array(0),
         textLength: 0,
         maxWidth: 1,
-        numClasses: 12,
+        numClasses: prompt.labels.length,
       };
     }
     async dispose(): Promise<void> {}
@@ -80,7 +85,10 @@ vi.mock('../src/gliner-tokenizer.js', async () => {
   class GlinerTokenizer {
     // Reports every word as consumed, like the real encoder on short
     // input, so the window scheduler sees an uncut window.
-    async encode(text: string): Promise<{
+    async encode(
+      text: string,
+      labels: readonly string[],
+    ): Promise<{
       inputIds: BigInt64Array;
       attentionMask: BigInt64Array;
       wordsMask: BigInt64Array;
@@ -89,6 +97,7 @@ vi.mock('../src/gliner-tokenizer.js', async () => {
       seqLen: number;
       truncated: boolean;
     }> {
+      prompt.labels = labels;
       const words = actual.splitWords(text);
       return {
         inputIds: BigInt64Array.from([0n]),
@@ -135,6 +144,31 @@ describe('NullPii e2e pipeline (mocked ONNX)', () => {
     const restored = n.restore(out.sanitized, out.sessionId);
     expect(restored.restored).toBe(text);
     expect(restored.replacements).toBe(out.spans.length);
+    await n.dispose();
+  });
+
+  it('prompts every category by default, extended ones included', async () => {
+    const n = new NullPii({ modelDir: '/fake', backend: 'cpu' });
+    await n.sanitize('Send to alice@acme.io today.');
+    expect(prompt.labels).toContain('private_organization');
+    expect(prompt.labels).toContain('private_sensitive');
+    expect(prompt.labels.slice(0, 8)).toEqual(GLINER_MODEL_CATEGORIES);
+    await n.dispose();
+  });
+
+  it('disabledCategories are neither prompted nor emitted', async () => {
+    const n = new NullPii({
+      modelDir: '/fake',
+      backend: 'cpu',
+      disabledCategories: ['private_email', 'private_occupation'],
+    });
+    const out = await n.sanitize('Send to alice@acme.io today.');
+    expect(prompt.labels).not.toContain('private_email');
+    expect(prompt.labels).not.toContain('private_occupation');
+    expect(prompt.labels).toContain('private_person');
+    // The recognizer pack matches the address, but its label is off.
+    expect(out.spans.find((s) => s.label === 'private_email')).toBeUndefined();
+    expect(out.sanitized).toContain('alice@acme.io');
     await n.dispose();
   });
 

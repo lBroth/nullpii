@@ -6,6 +6,7 @@
 // a warning telling the caller to manage lifecycle themselves.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { PROMPT_LABEL_COUNT } from './helpers.js';
 
 let backendConstructCount = 0;
 
@@ -20,7 +21,12 @@ vi.mock('../src/backend/backend.js', () => {
       maxWidth: number;
       numClasses: number;
     }> {
-      return { logits: new Float32Array(0), textLength: 0, maxWidth: 1, numClasses: 12 };
+      return {
+        logits: new Float32Array(0),
+        textLength: 0,
+        maxWidth: 1,
+        numClasses: PROMPT_LABEL_COUNT,
+      };
     }
     async dispose(): Promise<void> {}
   }

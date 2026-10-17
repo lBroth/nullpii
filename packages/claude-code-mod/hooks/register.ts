@@ -29,6 +29,13 @@ interface Restored {
   replacements: number;
 }
 
+// `{{PII_<LABEL>_<index>_<session prefix>}}` (nullpii's PLACEHOLDER_TEMPLATE).
+const PLACEHOLDER = /\{\{PII_[A-Z0-9_]+\}\}/;
+// Display-only restores, keyed by the masked text. In memory only, bounded,
+// and cleared when the session ends.
+const SHOWN_MAX = 256;
+const shown = new Map<string, string>();
+
 const counts = emptyCounts();
 let sidecarUrl = DEFAULT_SIDECAR_URL;
 let token: string | undefined;
@@ -88,6 +95,16 @@ function blocked($, err: unknown): string {
   return problem;
 }
 
+/** The text with real values, for the screen only. */
+async function restoredForDisplay($, text: string): Promise<string> {
+  const cached = shown.get(text);
+  if (cached !== undefined) return cached;
+  const r = (await sidecar($, 'POST', '/restore', { value: text })) as { value: string };
+  if (shown.size >= SHOWN_MAX) shown.delete(shown.keys().next().value as string);
+  shown.set(text, r.value);
+  return r.value;
+}
+
 export function register(on) {
   on('session.start', async ($, e, next) => {
     await $.command.register({
@@ -106,6 +123,7 @@ export function register(on) {
   });
 
   on('session.end', async ($, e, next) => {
+    shown.clear();
     try {
       await sidecar($, 'DELETE', '');
     } catch (err) {
@@ -162,6 +180,15 @@ export function register(on) {
   });
 
   on('command.run', { command: 'pii' }, async () => ({ text: formatReport(counts, problem) }));
+
+  // The transcript shows real values; what Claude reads keeps the
+  // placeholders. If the sidecar fails, the hook is skipped and the row is
+  // drawn as stored, with placeholders: nothing leaks either way.
+  on('ui.render', { component: ['AssistantMessage', 'UserMessage'] }, async ($, e, next) => {
+    if (!PLACEHOLDER.test(e.props.text)) return next(e);
+    const text = await restoredForDisplay($, e.props.text);
+    return next({ ...e, props: { ...e.props, text } });
+  });
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const { Box, Text } = $.ui.resolve(e);

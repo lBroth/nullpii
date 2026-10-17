@@ -14,12 +14,13 @@ Status: preview. Tested with Claude Code 2.1.302.
 
 | Where | What happens |
 |---|---|
-| Your prompt | Masked before it is sent. The transcript and your prompt history show the masked text. |
+| Your prompt | Masked before it is sent. Your prompt history stores the masked text. |
+| Your prompts and Claude's replies on screen | Drawn with the real values. What Claude reads keeps the placeholders. |
 | A tool result (file contents, command output, search results, MCP results) | Masked before Claude reads it |
 | Arguments of a tool that runs on this machine (`Bash`, `Read`, `Edit`, `Write`, `NotebookEdit`, `Grep`, `Glob`) | Placeholders get their real values back before the tool runs, so commands and file edits use your real data. The result is masked again. |
 | Arguments of a tool that sends data elsewhere (`WebFetch`, `WebSearch`, MCP tools) | Left as placeholders, so a masked value never leaves the machine through a tool call |
 
-The vault that maps placeholders to values lives only in the sidecar's memory, never on disk. The mod keeps counts only, and `/pii` prints them.
+The vault that maps placeholders to values lives only in the sidecar's memory, never on disk. The mod keeps counts, and a bounded in-memory cache of the messages it drew with real values, which it clears when the session ends. `/pii` prints the counts.
 
 ## Fails closed
 
@@ -49,7 +50,7 @@ If the sidecar cannot be reached, or `NULLPII_SIDECAR_TOKEN` is not set:
 ## Limits
 
 - **Auto mode.** Claude Code denies a tool call whose arguments a hook changed after the model wrote them. A local tool call that contains a placeholder is therefore refused in auto mode. Calls without placeholders are passed on unchanged and run normally.
-- **Claude's replies are not restored on screen.** They show placeholders, the way Claude wrote them. Real values come back only inside local tool calls.
+- **Tool rows and tool results on screen show placeholders.** Prompts and replies are drawn with real values. If the sidecar is unreachable, they show placeholders too.
 - **Images and other binary attachments are not scanned.**
 - **Detection is statistical.** nullpii's leak rate is measured and published, and it is not zero. Treat this as pseudonymization with a measured leak rate, not anonymization.
 - **A placeholder from an expired sidecar session** (idle longer than `NULLPII_VAULT_TTL_MS`, or a sidecar restart) no longer restores, and stays a placeholder.

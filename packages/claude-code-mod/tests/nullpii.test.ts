@@ -268,6 +268,41 @@ test('the band turns into a warning when the mod is blocking', async ($, on) => 
   await ui.unmount();
 });
 
+function messageSite(text: string) {
+  return {
+    plugin: 'nullpii',
+    component: 'AssistantMessage',
+    requestId: 'msg-1',
+    surface: 'terminal',
+    viewport: { columns: 100, rows: 30 },
+    props: { text, isFirstOfReply: true },
+  } as const;
+}
+
+test("Claude's reply is drawn with real values, while Claude keeps the placeholders", async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('ui.render', ($, e) => ({ type: 'Text', props: {}, children: [e.props.text] }));
+  await start($);
+  await $.prompt.submit({ text: 'write to john@acme.io', wait: false, origin: COMPOSER });
+  const ui = await $.ui.mount(messageSite('Sent the draft to {{PII_EMAIL_0}}.'));
+  expect(await ui.find({ type: 'Text', text: 'Sent the draft to john@acme.io.' })).toBeDefined();
+  await ui.unmount();
+});
+
+test('a reply without placeholders is drawn without asking the sidecar', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  on('ui.render', ($, e) => ({ type: 'Text', props: {}, children: [e.props.text] }));
+  await start($);
+  const before = sidecar.calls.length;
+  const ui = await $.ui.mount(messageSite('All tests pass.'));
+  expect(await ui.find({ type: 'Text', text: 'All tests pass.' })).toBeDefined();
+  expect(sidecar.calls.length).toBe(before);
+  await ui.unmount();
+});
+
 test('/pii reports counts by type, never values', async ($, on) => {
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);

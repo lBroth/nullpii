@@ -33,7 +33,12 @@ const TEST_CONFIG: GatewayConfig = {
  * `john@acme.io` in the input. Lets the gateway test prove the walk
  * touched every text block without depending on ONNX.
  */
-function buildMockNullPii(): { np: NullPii; sanitizeCalls: string[]; restoreCalls: string[] } {
+function buildMockNullPii(): {
+  np: NullPii;
+  vault: PiiVault;
+  sanitizeCalls: string[];
+  restoreCalls: string[];
+} {
   const vault = new PiiVault();
   const sanitizeCalls: string[] = [];
   const restoreCalls: string[] = [];
@@ -58,7 +63,7 @@ function buildMockNullPii(): { np: NullPii; sanitizeCalls: string[]; restoreCall
     },
   };
 
-  return { np: mock as unknown as NullPii, sanitizeCalls, restoreCalls };
+  return { np: mock as unknown as NullPii, vault, sanitizeCalls, restoreCalls };
 }
 
 function findSpans(text: string) {
@@ -694,6 +699,79 @@ async function waitFor(condition: () => boolean, timeoutMs: number): Promise<voi
     await new Promise((resolve) => setTimeout(resolve, POLL_MS));
   }
 }
+
+describe('gateway · vault session lifecycle', () => {
+  const okMessage: AnthropicResponse = {
+    id: 'msg',
+    type: 'message',
+    role: 'assistant',
+    content: [{ type: 'text', text: 'ok' }],
+  };
+  const okStream = `event: message_stop\ndata: ${JSON.stringify({ type: 'message_stop' })}\n\n`;
+  const sseHeaders = { 'content-type': 'text/event-stream' };
+  const outcomes: Array<[string, boolean, number, () => Promise<Response>]> = [
+    ['a restored reply', false, 200, async () => new Response(JSON.stringify(okMessage))],
+    ['a restored stream', true, 200, async () => new Response(okStream, { headers: sseHeaders })],
+    ['an upstream 4xx', false, 400, async () => new Response('{}', { status: 400 })],
+    ['an upstream 4xx on a stream', true, 400, async () => new Response('{}', { status: 400 })],
+    [
+      'a failed fetch',
+      true,
+      502,
+      async () => {
+        throw new Error('ECONNREFUSED');
+      },
+    ],
+  ];
+
+  it.each(outcomes)(
+    'leaves no live vault session after %s',
+    async (_outcome, stream, status, fetchImpl) => {
+      const { np, vault } = buildMockNullPii();
+      const app = await buildServer({ config: TEST_CONFIG, np, fetchImpl });
+      trackApp(app);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/messages',
+        payload: { model: 'claude-test', stream, messages: [{ role: 'user', content: 'Hi John' }] },
+      });
+
+      expect(res.statusCode).toBe(status);
+      expect(vault.sessionCount).toBe(0);
+    },
+  );
+
+  it.each([
+    ['/v1/messages', false],
+    ['/v1/messages', true],
+    ['/v1/messages/count_tokens', false],
+    ['/v1/chat/completions', false],
+  ])('leaves no live vault session when sanitize throws (%s, stream: %s)', async (url, stream) => {
+    const vault = new PiiVault();
+    const np = {
+      async sanitize(): Promise<never> {
+        throw new Error('detector failed');
+      },
+      restore: (text: string, sessionId: string) => vault.restore(text, sessionId),
+      createSession: () => vault.createSession(),
+      destroySession: (sessionId: string) => vault.destroySession(sessionId),
+    } as unknown as NullPii;
+    const { fetchImpl, calls } = buildMockFetch(() => ({ body: '{}' }));
+    const app = await buildServer({ config: TEST_CONFIG, np, fetchImpl });
+    trackApp(app);
+
+    const res = await app.inject({
+      method: 'POST',
+      url,
+      payload: { model: 'claude-test', stream, messages: [{ role: 'user', content: 'Hi John' }] },
+    });
+
+    expect(res.statusCode).toBe(500);
+    expect(calls).toHaveLength(0);
+    expect(vault.sessionCount).toBe(0);
+  });
+});
 
 describe('gateway · client disconnect', () => {
   // Real sockets: `app.inject` cannot drop a client connection mid-stream.

@@ -83,11 +83,31 @@ const TOOL_CALL_TYPES: ReadonlySet<string> = new Set([
 /** Blocks whose `content` is a string or a list of content blocks. */
 const TOOL_RESULT_TYPES: ReadonlySet<string> = new Set(['tool_result', 'mcp_tool_result']);
 
+/**
+ * Sanitize an Anthropic request body in place into a new vault session.
+ * The caller owns the returned `sessionId` and destroys it once the
+ * response is restored. If the walk throws, the session is destroyed
+ * here before the error propagates: the caller never learns its id, so
+ * it could not drop it.
+ */
 export async function sanitizeRequest(
   np: NullPii,
   body: AnthropicRequest,
 ): Promise<SanitizedRequest> {
   const sessionId = np.createSession();
+  try {
+    return await sanitizeIntoSession(np, body, sessionId);
+  } catch (err) {
+    np.destroySession(sessionId);
+    throw err;
+  }
+}
+
+async function sanitizeIntoSession(
+  np: NullPii,
+  body: AnthropicRequest,
+  sessionId: string,
+): Promise<SanitizedRequest> {
   const acc: CaptureAccumulator = { count: 0, byLabel: {}, unscanned: 0 };
   if (body.system !== undefined) {
     body.system = await sanitizeSystem(np, body.system, sessionId, acc);

@@ -795,7 +795,20 @@ def _token_windows(tokenizer, text: str, window_tokens: int, overlap_tokens: int
     # The Rust backend is what the fast tokenizer's offset mapping comes
     # from; calling it directly skips the wrapper's over-length warning,
     # which does not apply to an offsets-only pass over the full text.
-    offsets = tokenizer.backend_tokenizer.encode(text, add_special_tokens=False).offsets
+    # Some checkpoints ship `tokenizer.json` with truncation on (512 tokens
+    # for openmed-small, 1024 for ettin-68m), which would silently cut the
+    # offsets, and so the windows, to the first few thousand characters.
+    # Truncation is off for this pass and put back as it was.
+    backend = tokenizer.backend_tokenizer
+    saved = backend.truncation
+    backend.no_truncation()
+    try:
+        offsets = backend.encode(text, add_special_tokens=False).offsets
+    finally:
+        if saved is not None:
+            backend.enable_truncation(**saved)
+    if offsets and offsets[-1][1] < len(text.rstrip()):
+        raise ValueError(f"token offsets end at char {offsets[-1][1]} of {len(text)}: the text was cut")
     if len(offsets) <= window_tokens:
         return [(0, text)]
     stride = window_tokens - overlap_tokens

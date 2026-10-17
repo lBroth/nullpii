@@ -980,6 +980,10 @@ def hf_token_classifier_predictor(
     return _predict_batch
 
 
+# lakshyakh93/deberta_finetuned_pii is a deberta-base fine-tune (512 positions).
+_DEBERTA_MAX_TOKENS = 512
+_DEBERTA_OVERLAP_TOKENS = 128
+
 _DEBERTA_LABEL_MAP = {
     "FIRSTNAME": "private_person",
     "LASTNAME": "private_person",
@@ -1071,24 +1075,33 @@ def deberta_pii_predictor(
         batch_size=batch_size,
     )
 
+    # The pipeline truncates each input to 512 tokens, so a long document
+    # is cut into token windows first, as for the other HF classifiers.
+    window = _DEBERTA_MAX_TOKENS - _WINDOW_RESERVED_TOKENS
+
     def _predict_batch(texts: list[str]) -> list[ToolResult]:
         t0 = time.perf_counter()
-        results_list = pipe(texts)
-        elapsed = (time.perf_counter() - t0) * 1000
-        per_call = elapsed / max(1, len(texts))
+        per_input = [
+            _token_windows(pipe.tokenizer, text, window, _DEBERTA_OVERLAP_TOKENS) if text else []
+            for text in texts
+        ]
+        flat = [chunk for chunks in per_input for _, chunk in chunks]
+        flat_results = pipe(flat) if flat else []
+        if flat_results and isinstance(flat_results[0], dict):
+            flat_results = [flat_results]  # type: ignore[list-item]
+        per_call = (time.perf_counter() - t0) * 1000 / max(1, len(texts))
         out: list[ToolResult] = []
-        if results_list and isinstance(results_list[0], dict):
-            results_list = [results_list]  # type: ignore[list-item]
-        for results in results_list:
+        cursor = 0
+        for chunks in per_input:
             spans: list[Span] = []
-            for r in results:
-                entity = str(r.get("entity_group") or r.get("entity") or "")
-                key = _strip_bioes(entity).upper()
-                label = _DEBERTA_LABEL_MAP.get(key)
-                if label is None:
-                    continue
-                spans.append(Span(label, int(r["start"]), int(r["end"])))
-            out.append(ToolResult(spans, per_call))
+            for offset, _ in chunks:
+                for r in flat_results[cursor]:
+                    entity = str(r.get("entity_group") or r.get("entity") or "")
+                    label = _DEBERTA_LABEL_MAP.get(_strip_bioes(entity).upper())
+                    if label is not None:
+                        spans.append(Span(label, int(r["start"]) + offset, int(r["end"]) + offset))
+                cursor += 1
+            out.append(ToolResult(_dedupe_spans_by_iou(spans), per_call))
         return out
 
     return _predict_batch

@@ -20,7 +20,14 @@ interface Session {
   readonly entries: Map<string, string>;
   /** label → next index for that label. */
   readonly counters: Map<string, number>;
+  /** `label + NUL + exact value` → the placeholder minted for it, so a
+   * value that recurs in the session reaches the model as the same token
+   * (issue #50). Keyed on the exact value: folding case or whitespace
+   * would restore every occurrence with the first one's spelling. */
+  readonly byValue: Map<string, string>;
 }
+
+const VALUE_KEY_SEPARATOR = '\u0000';
 
 /**
  * In-memory reversible vault for PII placeholders.
@@ -44,7 +51,7 @@ export class PiiVault {
   /** Create a fresh vault session. Returns a UUID v4. */
   createSession(): string {
     const id = randomUUID();
-    this.sessions.set(id, { entries: new Map(), counters: new Map() });
+    this.sessions.set(id, { entries: new Map(), counters: new Map(), byValue: new Map() });
     logf(LOG_SCOPE, 'session.created', { sessions: this.sessions.size });
     return id;
   }
@@ -190,10 +197,14 @@ export class PiiVault {
   }
 
   private allocPlaceholder(session: Session, span: PiiSpan, sessionPrefix: string): string {
+    const key = `${span.label}${VALUE_KEY_SEPARATOR}${span.text}`;
+    const existing = session.byValue.get(key);
+    if (existing !== undefined) return existing;
     const idx = session.counters.get(span.label) ?? 0;
     session.counters.set(span.label, idx + 1);
     const placeholder = PLACEHOLDER_TEMPLATE(span.label, idx, sessionPrefix);
     session.entries.set(placeholder, span.text);
+    session.byValue.set(key, placeholder);
     return placeholder;
   }
 }

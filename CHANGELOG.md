@@ -3,6 +3,33 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Changes from the measured A/B loop (`packages/eval/scripts/ab/PROTOCOL.md`, results in `LOG.md`). Each one passed the protocol's checks on the tuning set before it was kept.
+
+### Added
+
+- **Extended categories:** `private_organization`, `private_occupation`, `private_demographic`, `private_sensitive` and `private_title`. They are prompted and masked by default. Turn any category off with the new `disabledCategories` config option, for example `['private_organization', 'private_occupation']` to keep company names and job titles readable.
+
+### Changed
+
+- **One placeholder per value** (#50). A value that recurs in a session reaches the model as the same token, so it can still tell the same person from someone else. Values are matched exactly, case included, so `restore()` stays byte-exact.
+- **Recall-first thresholds.** The decode threshold drops to 0.05, with per-label cuts: date 0.125, email 0.075, IP and MAC 0.5. Fewer characters leak, at a small cost in over-masking.
+- **Developer content is masked less:**
+  - log-record timestamps;
+  - pieces of subresource-integrity digests;
+  - package-registry tarball URLs;
+  - project-infrastructure hosts (badges, CI, package CDNs).
+- **Geolocation:** a geolocation span that is not a coordinate is relabelled as an address instead of being dropped.
+
+### Fixed
+
+- `restore()` was not byte-exact when two detected spans overlapped. Overlapping spans are now merged before masking.
+- On dense text, a window cut by the encoder's token budget hid its tail from the model. Windows now advance by what the encoder kept.
+- An empty or whitespace-only input, or a window with zero words, crashed the model run.
+- A recognizer deferred to any overlapping model span. It now defers only when the model span covers its whole match.
+- Edge punctuation was trimmed off `secret` spans, leaving part of the credential unmasked.
+
 ## [0.4.0] — bench correctness + detection fixes
 
 Started as gateway hardening from a Claude Code proxy integration

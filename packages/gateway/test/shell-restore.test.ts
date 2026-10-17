@@ -255,7 +255,7 @@ describe('shell restore · restoreShellCommand', () => {
     const r = restoreShellCommand(np, `echo ${secret} && echo '${secret}'`, sessionId);
 
     expect(r.command).toBe(`echo ${secret} && echo '${INJECTION}'`);
-    expect(r.unsafe).toBe(1);
+    expect(r.keptMasked).toHaveLength(1);
     expect(r.results.reduce((n, x) => n + x.replacements, 0)).toBe(1);
   });
 
@@ -266,7 +266,7 @@ describe('shell restore · restoreShellCommand', () => {
     const r = restoreShellCommand(np, `echo "${person}" ${person}`, sessionId);
 
     expect(r.command).toBe(`echo "${FULL_NAME}" ${person}`);
-    expect(r.unsafe).toBe(1);
+    expect(r.keptMasked).toHaveLength(1);
   });
 
   it('keeps an unsafe value masked inside a command substitution in double quotes', () => {
@@ -276,7 +276,7 @@ describe('shell restore · restoreShellCommand', () => {
     const r = restoreShellCommand(np, `echo "$(echo ${secret})"`, sessionId);
 
     expect(r.command).toBe(`echo "$(echo ${secret})"`);
-    expect(r.unsafe).toBe(1);
+    expect(r.keptMasked).toHaveLength(1);
   });
 
   it('restores a two-word name in a quoted heredoc (Claude Code commit message)', () => {
@@ -286,7 +286,7 @@ describe('shell restore · restoreShellCommand', () => {
     const r = restoreShellCommand(np, commitWith(`Thanks ${person}`), sessionId);
 
     expect(r.command).toBe(commitWith(`Thanks ${FULL_NAME}`));
-    expect(r.unsafe).toBe(0);
+    expect(r.keptMasked).toHaveLength(0);
   });
 
   it('keeps a value with `$` masked in an unquoted heredoc, restores it in a quoted one', () => {
@@ -296,7 +296,7 @@ describe('shell restore · restoreShellCommand', () => {
     const r = restoreShellCommand(np, `cat <<EOF\n${ph}\nEOF\ncat <<'EOF'\n${ph}\nEOF`, sessionId);
 
     expect(r.command).toBe(`cat <<EOF\n${ph}\nEOF\ncat <<'EOF'\n${EXPANSION}\nEOF`);
-    expect(r.unsafe).toBe(1);
+    expect(r.keptMasked).toHaveLength(1);
   });
 
   it('keeps a name masked in a heredoc that another program reads', () => {
@@ -307,7 +307,7 @@ describe('shell restore · restoreShellCommand', () => {
     const r = restoreShellCommand(np, command, sessionId);
 
     expect(r.command).toBe(command);
-    expect(r.unsafe).toBe(1);
+    expect(r.keptMasked).toHaveLength(1);
   });
 
   it('bash -lc: keeps a two-word name masked, restores a plain-word email', () => {
@@ -318,7 +318,7 @@ describe('shell restore · restoreShellCommand', () => {
     const r = restoreShellCommand(np, `bash -lc "echo ${person} ${email}"`, sessionId);
 
     expect(r.command).toBe(`bash -lc "echo ${person} ${EMAIL}"`);
-    expect(r.unsafe).toBe(1);
+    expect(r.keptMasked).toHaveLength(1);
   });
 
   it('counts an unknown placeholder as unknown, not as unsafe', () => {
@@ -329,7 +329,7 @@ describe('shell restore · restoreShellCommand', () => {
     const r = restoreShellCommand(np, `cat ${known} ${unknown}`, sessionId);
 
     expect(r.command).toBe(`cat readme.md ${unknown}`);
-    expect(r.unsafe).toBe(0);
+    expect(r.keptMasked).toHaveLength(0);
     expect(r.results.reduce((n, x) => n + x.unknownPlaceholders.length, 0)).toBe(1);
   });
 });

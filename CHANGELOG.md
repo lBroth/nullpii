@@ -16,6 +16,7 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
   - **Access:** a bearer token, compared in constant time. Non-loopback `Host` headers and any `Origin` header are refused before the token check.
   - **Limits and output:** 4 MiB per request and per response. Responses and logs carry counts only.
   - **Cache:** a value the session has already masked is answered from a per-session cache, without running the model again.
+  - **Shell commands:** `restore` takes `shell: true` for a shell tool's input. Its `command` then follows the gateway's shell rule (heredocs, nested interpreters, quoting), so an extension can rely on the same check as the proxy routes instead of carrying its own; `shellKeptMasked` lists the placeholders left masked, never their values.
 
 ### Fixed
 

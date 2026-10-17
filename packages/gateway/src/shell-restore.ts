@@ -306,9 +306,9 @@ export interface ShellRestore {
   /** One result per placeholder restored, or found unknown or foreign
    * (left literal, and counted as such by the caller). */
   readonly results: readonly RestoreResult[];
-  /** Placeholders left literal because their value was not safe where
-   * they stand. A count only, never the values. */
-  readonly unsafe: number;
+  /** The placeholders left literal because their value was not safe
+   * where they stand, once per occurrence. Placeholders, never values. */
+  readonly keptMasked: readonly string[];
 }
 
 /**
@@ -326,7 +326,7 @@ export function restoreShellCommand(
   sessionId: string,
 ): ShellRestore {
   const results: RestoreResult[] = [];
-  let unsafe = 0;
+  const keptMasked: string[] = [];
   let out = '';
   let last = 0;
   for (const match of command.matchAll(placeholderPattern())) {
@@ -335,11 +335,11 @@ export function restoreShellCommand(
     const r = np.restore(placeholder, sessionId);
     const safe = r.replacements === 0 || shellSafe(r.restored, shellContextAt(command, start));
     if (safe) results.push(r);
-    else unsafe += 1;
+    else keptMasked.push(placeholder);
     out += command.slice(last, start) + (safe ? r.restored : placeholder);
     last = start + placeholder.length;
   }
-  return { command: out + command.slice(last), results, unsafe };
+  return { command: out + command.slice(last), results, keptMasked };
 }
 
 /** How many placeholders `text` holds. */

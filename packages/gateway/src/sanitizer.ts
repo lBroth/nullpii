@@ -439,27 +439,41 @@ export interface RestoredValue {
   readonly replacementsByLabel: Readonly<Partial<Record<string, number>>>;
   readonly unknownPlaceholders: number;
   readonly foreignPlaceholders: number;
+  /** With `shell`: the distinct placeholders left masked in `command`
+   * because their value was not safe there. Placeholders, never values. */
+  readonly shellKeptMasked?: readonly string[];
 }
 
 /** Restore placeholders in every string leaf of a parsed JSON value.
  * With `fields`, only those top-level keys of an object are restored and
  * every other key keeps its placeholders, so a caller can put real values
- * back into the arguments a tool writes to disk and nowhere else. */
+ * back into the arguments a tool writes to disk and nowhere else.
+ *
+ * With `shell` (the value is a shell tool's input), a top-level `command`
+ * string that is restored gets the shell-aware rule of
+ * `shell-restore.ts`; the placeholders it leaves masked are listed in
+ * `shellKeptMasked`. */
 export function restoreValue(
   np: NullPii,
   value: unknown,
   sessionId: string,
   fields?: readonly string[],
+  shell = false,
 ): RestoredValue {
   const acc = newRestoreAccumulator();
+  const keptMasked: string[] = [];
+  const restoreField = (key: string, field: unknown): unknown =>
+    shell && key === SHELL_COMMAND_FIELD && typeof field === 'string'
+      ? restoreShellText(np, field, sessionId, acc, keptMasked)
+      : restoreJsonValue(np, field, sessionId, acc);
+  const obj = isRecord(value) ? value : undefined;
   let out: unknown;
-  if (fields === undefined) {
+  if (obj === undefined || (fields === undefined && !shell)) {
     out = restoreJsonValue(np, value, sessionId, acc);
   } else {
-    const obj = value as Record<string, unknown>;
     const restored: Record<string, unknown> = { ...obj };
-    for (const key of fields) {
-      if (Object.hasOwn(obj, key)) restored[key] = restoreJsonValue(np, obj[key], sessionId, acc);
+    for (const key of fields ?? Object.keys(obj)) {
+      if (Object.hasOwn(obj, key)) restored[key] = restoreField(key, obj[key]);
     }
     out = restored;
   }
@@ -469,6 +483,7 @@ export function restoreValue(
     replacementsByLabel: acc.byLabel,
     unknownPlaceholders: acc.unknown,
     foreignPlaceholders: acc.foreign,
+    ...(shell && { shellKeptMasked: [...new Set(keptMasked)] }),
   };
 }
 
@@ -540,16 +555,19 @@ export function restoreToolInput(
 }
 
 /** Shell-aware restore of one command string (see `shell-restore.ts`),
- * tallying counts into `acc`. */
+ * tallying counts into `acc` and, when given, appending the placeholders
+ * it left masked to `keptMasked`. */
 export function restoreShellText(
   np: NullPii,
   command: string,
   sessionId: string,
   acc: RestoreAccumulator,
+  keptMasked?: string[],
 ): string {
   const r = restoreShellCommand(np, command, sessionId);
   for (const result of r.results) tallyRestore(acc, result);
-  acc.unsafeShell += r.unsafe;
+  acc.unsafeShell += r.keptMasked.length;
+  keptMasked?.push(...r.keptMasked);
   return r.command;
 }
 

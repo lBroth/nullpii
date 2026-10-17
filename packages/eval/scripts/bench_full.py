@@ -467,6 +467,18 @@ def build_tools(args) -> dict[str, Callable]:
             labels=_GLINER_NATIVE_LABELS,
             label_map=_GLINER_NATIVE_TO_NULLPII8,
         ),
+        # Knowledgator's streaming-span GLiNER on a Qwen3-0.6B causal
+        # backbone (July 2026, Apache-2.0). Needs gliner>=0.2.28, newer
+        # than this venv's pin, so it runs from a separate venv; same
+        # native labels and map as its sibling gliner-pii-large-v1.
+        "gliner-stream-pii": lambda: gliner_v2_predictor(
+            "knowledgator/gliner-stream-pii-v1.0",
+            device=backend,
+            threshold=args.gliner_threshold,
+            local_files_only=False,
+            labels=_GLINER_NATIVE_LABELS,
+            label_map=_GLINER_NATIVE_TO_NULLPII8,
+        ),
         # `openai/privacy-filter` — DeBERTa-v3 BIOES-tagged PII tagger,
         # trained on nullpii's exact 8-class schema. Decoded via explicit
         # BIOES walk (the HF naive aggregation drops boundary tokens for

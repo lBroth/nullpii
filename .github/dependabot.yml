@@ -1,0 +1,28 @@
+# Weekly dependency and action bumps. Actions are pinned by SHA in the
+# workflows, so this is what keeps those pins current.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directories: ['/', '/packages/gateway']
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      dev-dependencies:
+        dependency-type: development
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
+  - package-ecosystem: docker
+    directory: /packages/gateway
+    schedule:
+      interval: weekly
+  - package-ecosystem: pip
+    directory: /packages/eval
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3

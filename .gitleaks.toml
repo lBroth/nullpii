@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Secret scanning for this repository (gitleaks >= 8.28; run in CI by
+# .github/workflows/security.yml and before each commit by lefthook).
+#
+# nullpii detects PII and secrets, so its tests and its self-authored
+# benchmark carry fake values in real formats on purpose. They are
+# allowed below by exact value or by the path of a generated dataset,
+# never by rule: a real secret pasted anywhere else still fails the scan.
+# Adding an entry here needs a reviewer to confirm the value is fake.
+
+title = "nullpii"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Self-authored synthetic benchmark (every value is generated)"
+paths = [
+  '''(^|/)packages/eval/datasets/nullpii-bench\.jsonl$''',
+  '''(^|/)packages/eval/datasets/nullpii-adversarial\.jsonl$''',
+]
+
+[[allowlists]]
+description = "Fake credentials in recognizer tests"
+regexes = [
+  # AWS's own documentation example key id, and a one-letter variant.
+  '''AKIAIOSFODNN7EXAMPL[EB]''',
+  '''sk_live_aBcDeFgHiJkLmNoPqRsTuVwX''',
+  '''glpat-abcdefghij1234567890''',
+]

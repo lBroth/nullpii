@@ -6,7 +6,7 @@
 
 Sanitize PII before it hits an LLM. Replace it with placeholders, get the original back on the way out.
 
-Works with **any LLM backend** — OpenAI, Anthropic, Gemini, Mistral, Llama, local models, your own inference server. The core `nullpii` library is provider-agnostic: you call `sanitize()` before your existing API call, then `restore()` on the response. The `@lbroth/nullpii-gateway` package is just a ready-made HTTP proxy for the Anthropic Messages API — handy with Claude Code, but optional. For anything else, drop the lib in wherever you call your model.
+Works with **any LLM backend** — OpenAI, Anthropic, Gemini, Mistral, Llama, local models, your own inference server. The core `nullpii` library is provider-agnostic: you call `sanitize()` before your existing API call, then `restore()` on the response. The `@lbroth/nullpii-gateway` package is just a ready-made HTTP proxy for the Anthropic Messages API and the OpenAI Chat Completions API — handy with Claude Code or any OpenAI-compatible client, but optional. For anything else, drop the lib in wherever you call your model.
 
 > 🧪 **Hobby / experiment.** A nights-and-weekends project, not a product. No SLA, no roadmap commitments, no enterprise pitch. If it helps you, great. If you find a bug, file an issue.
 

@@ -5,6 +5,7 @@ import { NullPii } from 'nullpii';
 import type { GatewayConfig } from './config.js';
 import { registerAnthropicRoute } from './routes/anthropic.js';
 import { registerHealthRoute } from './routes/health.js';
+import { registerOpenAiRoute } from './routes/openai.js';
 import { registerSidecarRoutes } from './routes/sidecar.js';
 import type { Fetch } from './upstream.js';
 
@@ -33,6 +34,12 @@ export async function buildServer(opts: BuildServerOptions): Promise<FastifyInst
   await registerAnthropicRoute(app, {
     np,
     upstreamBaseUrl: config.upstreamBaseUrl,
+    fetchImpl,
+    logTraffic: config.logTraffic,
+  });
+  await registerOpenAiRoute(app, {
+    np,
+    upstreamBaseUrl: config.openaiUpstreamBaseUrl,
     fetchImpl,
     logTraffic: config.logTraffic,
   });

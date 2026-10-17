@@ -17,6 +17,7 @@ const TEST_CONFIG: GatewayConfig = {
   host: '127.0.0.1',
   port: 0,
   upstreamBaseUrl: 'https://upstream.test',
+  openaiUpstreamBaseUrl: 'https://openai.test',
   vaultTtlMs: 60_000,
   backend: 'cpu',
   logLevel: 'fatal',

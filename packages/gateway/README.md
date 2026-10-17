@@ -1,8 +1,9 @@
 # @lbroth/nullpii-gateway
 
 Self-hosted HTTP gateway that sanitizes PII out of LLM prompts before
-forwarding to Anthropic Claude, and restores the placeholders in the
-response. Drop-in: clients change `baseURL` and nothing else.
+forwarding to Anthropic Claude or to an OpenAI-compatible API, and
+restores the placeholders in the response. Drop-in: clients change
+`baseURL` and nothing else.
 
 ```
 [client SDK] ──baseURL=http://nullpii-gateway:8787──▶ [nullpii-gateway]
@@ -26,8 +27,7 @@ gateway parses upstream SSE frames, buffers `{{...}}` placeholders that
 straddle delta boundaries via `RestoreStream`, then re-emits restored
 `content_block_delta` events downstream — drop-in for the standard
 Anthropic SDK streaming reader. `POST /v1/messages/count_tokens`
-sanitises the request body before forwarding. OpenAI compat
-(`/v1/chat/completions`) is not in this release.
+sanitises the request body before forwarding. `POST /v1/chat/completions` takes the OpenAI Chat Completions format, streaming included: see [OpenAI-compatible route](#openai-compatible-route).
 
 ## Run
 
@@ -117,6 +117,40 @@ in the response `content[].text` blocks. The vault session lives only
 for the duration of the round-trip and is destroyed before the gateway
 replies to the client.
 
+## OpenAI-compatible route
+
+`POST /v1/chat/completions` takes the OpenAI Chat Completions format, so the OpenAI SDKs, and any client that lets you set an OpenAI base URL, can go through the gateway. It works like the Messages route: one vault session per request, sanitize, forward to `NULLPII_OPENAI_UPSTREAM`, restore the JSON response or the SSE stream, destroy the session.
+
+```bash
+export OPENAI_BASE_URL=http://127.0.0.1:8787/v1
+export OPENAI_API_KEY=sk-…   # reaches the upstream as the Authorization header
+```
+
+```ts
+import OpenAI from 'openai';
+
+// Reads OPENAI_API_KEY; OPENAI_BASE_URL also works instead of baseURL.
+const client = new OpenAI({ baseURL: 'http://127.0.0.1:8787/v1' });
+```
+
+The gateway appends `/v1/chat/completions` to `NULLPII_OPENAI_UPSTREAM`, so set it without `/v1`: `https://api.openai.com` (the default), `http://localhost:11434` for Ollama, `https://openrouter.ai/api` for OpenRouter. The client headers forwarded upstream are `Authorization`, `OpenAI-Organization`, `OpenAI-Project`, `OpenAI-Beta`, `User-Agent` and `x-stainless-*`.
+
+**Scanned** before the request leaves:
+
+- message `content`, as a string or as `text` and `refusal` parts, for every role, `tool` results included;
+- a message's participant `name` (not the function name of a deprecated `function` message) and an assistant `refusal`;
+- `tool_calls[].function.arguments`: parsed as JSON, every string value sanitized, then re-serialized (arguments that are not valid JSON are sanitized as plain text, and arguments with nothing to mask are forwarded byte for byte); a custom tool call's `input`; the deprecated `function_call.arguments`;
+- the `description` of each tool (`function` or `custom`) and of each deprecated `functions[]` entry;
+- `prediction.content`.
+
+**Not scanned:** `image_url`, `input_audio` and `file` parts are forwarded untouched, a file's `filename` included, and counted as "not scanned" in the log and the console summary. Tool names, parameter JSON schemas, `response_format`, and the identifiers a client chooses to send (`user`, `safety_identifier`, `metadata`, `prompt_cache_key`) are forwarded as they are.
+
+**Restored** in the response: each choice's `content`, `refusal`, `tool_calls[].function.arguments` (the string values of the parsed JSON, so a restored value holding a quote stays valid JSON), a custom tool call's `input`, and `function_call.arguments`. With `stream: true`, `delta.content` and `delta.refusal` are restored as they stream, and only a placeholder split across chunks is held back until it is complete. Tool-call arguments are held per call and sent restored, in one piece, with the chunk that carries the choice's `finish_reason` (or just before `data: [DONE]` if that never comes); each call's `id` and function name still arrive at once. Not restored: `logprobs` tokens, audio transcripts and streamed custom tool-call input keep their placeholders.
+
+When something was masked, the gateway appends `LLM_PRESERVATION_HINT` as a last `system` message: appended, never prepended, so the upstream prompt cache keeps the conversation prefix. `NULLPII_DISABLE_HINT=1` turns it off, for example for an upstream whose chat template accepts a system message only at the start.
+
+Upstream errors pass through with their status and body, plus `retry-after`, `retry-after-ms`, `x-should-retry`, `x-request-id` and `x-ratelimit-*`. A failed upstream call returns 502 with `{ "error": { "type": "nullpii_upstream_error", "message": "…" } }`. A client that disconnects mid-stream cancels the upstream call.
+
 ## Config
 
 All via env vars. No file config in this preview.
@@ -125,7 +159,8 @@ All via env vars. No file config in this preview.
 |-----|---------|---------|
 | `NULLPII_HOST` | `127.0.0.1` | Bind host |
 | `NULLPII_PORT` | `8787` | Bind port |
-| `NULLPII_UPSTREAM` | `https://api.anthropic.com` | Upstream LLM provider |
+| `NULLPII_UPSTREAM` | `https://api.anthropic.com` | Upstream for `/v1/messages` (Anthropic Messages API) |
+| `NULLPII_OPENAI_UPSTREAM` | `https://api.openai.com` | Upstream for `/v1/chat/completions`: an OpenAI-compatible base URL without `/v1`, which the gateway appends. A value ending in `/v1` is refused at startup. |
 | `NULLPII_VAULT_TTL_MS` | `1800000` | Idle TTL of a sidecar session. The Messages proxy keeps one session per request and destroys it at the end. |
 | `NULLPII_SIDECAR_TOKEN` | (off) | Enables the [sidecar API](#sidecar-api). Bearer token, at least 32 characters. |
 | `NULLPII_SIDECAR_MAX_SESSIONS` | `64` | Concurrent sidecar sessions. One more fails with 429. |

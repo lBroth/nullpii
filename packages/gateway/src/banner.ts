@@ -27,7 +27,8 @@ export function printBanner(config: GatewayConfig, mode: 'dev' | 'prod' = 'prod'
     `${ANSI.bold}${ANSI.cyan}✻ nullpii gateway${ANSI.reset}  ${ANSI.dim}v${version}${ANSI.reset}${modeTag}`,
     '',
     `${ANSI.green}✓${ANSI.reset} listening  ${ANSI.bold}${baseUrl}${ANSI.reset}`,
-    `${ANSI.green}✓${ANSI.reset} upstream   ${config.upstreamBaseUrl}`,
+    `${ANSI.green}✓${ANSI.reset} anthropic  ${config.upstreamBaseUrl}`,
+    `${ANSI.green}✓${ANSI.reset} openai     ${config.openaiUpstreamBaseUrl}`,
     `${ANSI.green}✓${ANSI.reset} backend    ${config.backend}`,
     ...(config.logTraffic
       ? [
@@ -37,6 +38,7 @@ export function printBanner(config: GatewayConfig, mode: 'dev' | 'prod' = 'prod'
     '',
     `${ANSI.dim}point your client:${ANSI.reset}`,
     `  ${ANSI.bold}export ANTHROPIC_BASE_URL=${baseUrl}${ANSI.reset}`,
+    `  ${ANSI.bold}export OPENAI_BASE_URL=${baseUrl}/v1${ANSI.reset}`,
   ];
   const inner = 64;
   const top = `${ANSI.cyan}╭${'─'.repeat(inner)}╮${ANSI.reset}`;

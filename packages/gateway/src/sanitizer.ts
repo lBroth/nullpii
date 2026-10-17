@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { LLM_PRESERVATION_HINT, type NullPii } from 'nullpii';
+import { LLM_PRESERVATION_HINT, type NullPii, type RestoreResult } from 'nullpii';
 import type {
   AnthropicContentBlock,
   AnthropicMessage,
@@ -19,9 +19,9 @@ import type {
  * extensions, future params) untouched — the gateway is forward-compat
  * by default.
  */
-export interface SanitizedRequest {
+export interface SanitizedRequest<TBody = AnthropicRequest> {
   /** The mutated request body — same reference as the input. */
-  readonly body: AnthropicRequest;
+  readonly body: TBody;
   /** Session id bound to every placeholder in `body`. Restore the
    *  upstream response against this exact id. */
   readonly sessionId: string;
@@ -38,7 +38,9 @@ export interface SanitizedRequest {
   readonly unscanned: number;
 }
 
-interface CaptureAccumulator {
+/** Running sanitize counts for one request walk. Shared with the
+ * OpenAI walk (`openai-sanitizer.ts`). */
+export interface CaptureAccumulator {
   count: number;
   byLabel: Record<string, number>;
   unscanned: number;
@@ -114,7 +116,7 @@ export async function sanitizeRequest(
   //    cache invalidation — skip it entirely.
   //
   // Opt-out: NULLPII_DISABLE_HINT=1 (debugging hook).
-  if (acc.count > 0 && process.env.NULLPII_DISABLE_HINT !== '1') {
+  if (shouldAppendHint(acc.count)) {
     injectPreservationHint(body);
   }
   return {
@@ -124,6 +126,14 @@ export async function sanitizeRequest(
     capturedByLabel: acc.byLabel,
     unscanned: acc.unscanned,
   };
+}
+
+/** Whether a request walk that masked `captured` spans gets
+ * `LLM_PRESERVATION_HINT` appended: only when something was masked, and
+ * never with `NULLPII_DISABLE_HINT=1`. Shared by the Anthropic and
+ * OpenAI walks so both routes honour the same opt-out. */
+export function shouldAppendHint(captured: number): boolean {
+  return captured > 0 && process.env.NULLPII_DISABLE_HINT !== '1';
 }
 
 function injectPreservationHint(body: AnthropicRequest): void {
@@ -138,7 +148,11 @@ function injectPreservationHint(body: AnthropicRequest): void {
   body.system = [...body.system, { type: 'text', text: LLM_PRESERVATION_HINT }];
 }
 
-function bump(acc: CaptureAccumulator, r: { spans: ReadonlyArray<{ label: string }> }): void {
+/** Add one `sanitize()` result's spans to `acc` (counts and labels only). */
+export function bump(
+  acc: CaptureAccumulator,
+  r: { spans: ReadonlyArray<{ label: string }> },
+): void {
   acc.count += r.spans.length;
   for (const span of r.spans) {
     acc.byLabel[span.label] = (acc.byLabel[span.label] ?? 0) + 1;
@@ -302,7 +316,7 @@ export async function sanitizeValue(
  * input), sanitising every string leaf. Numbers / booleans / null pass
  * through. Arrays + plain objects recurse. Cycles are not possible on
  * JSON.parse output, so no visited-set is needed. */
-async function sanitizeJsonValue(
+export async function sanitizeJsonValue(
   np: NullPii,
   value: unknown,
   sessionId: string,
@@ -334,8 +348,8 @@ async function sanitizeJsonValue(
  * triple — caller logs the per-label counts. PII values themselves are
  * never returned in the counter (counts only).
  */
-export interface RestoredResponse {
-  readonly body: AnthropicResponse;
+export interface RestoredResponse<TBody = AnthropicResponse> {
+  readonly body: TBody;
   readonly replacements: number;
   readonly replacementsByLabel: Readonly<Partial<Record<string, number>>>;
   readonly unknownPlaceholders: number;
@@ -343,8 +357,8 @@ export interface RestoredResponse {
 }
 
 // rothunter:ignore-duplicate-interface
-// reason: short-named closure-scope accumulator for restoreResponse; sse-relay's public SseRelayCounters uses long names that match the pino log-field contract — merging would force either a public API rename or verbose names in this 60-line internal struct.
-interface RestoreAccumulator {
+// reason: short-named accumulator for the restore walks (restoreResponse, and the OpenAI walk and relay, which convert it to SseRelayCounters at the end); sse-relay's public SseRelayCounters uses long names that match the pino log-field contract — merging would force either a public API rename or verbose names in this internal struct.
+export interface RestoreAccumulator {
   replacements: number;
   byLabel: Record<string, number>;
   unknown: number;
@@ -419,23 +433,31 @@ export function restoreValue(
   };
 }
 
-function restoreString(
-  np: NullPii,
-  text: string,
-  sessionId: string,
-  acc: RestoreAccumulator,
-): string {
-  const r = np.restore(text, sessionId);
+/** Add one restore result's counts to `acc`. Takes the result of
+ * `np.restore()` or of `RestoreStream.end()`; values are never kept. */
+export function tallyRestore(acc: RestoreAccumulator, r: RestoreResult): void {
   acc.replacements += r.replacements;
   for (const [lbl, count] of Object.entries(r.replacementsByLabel)) {
     acc.byLabel[lbl] = (acc.byLabel[lbl] ?? 0) + (count ?? 0);
   }
   acc.unknown += r.unknownPlaceholders.length;
   acc.foreign += r.foreignPlaceholders.length;
+}
+
+/** Restore the placeholders in one string, tallying counts into `acc`. */
+export function restoreString(
+  np: NullPii,
+  text: string,
+  sessionId: string,
+  acc: RestoreAccumulator,
+): string {
+  const r = np.restore(text, sessionId);
+  tallyRestore(acc, r);
   return r.restored;
 }
 
-function restoreJsonValue(
+/** Restore every string leaf of a parsed JSON value (object keys untouched). */
+export function restoreJsonValue(
   np: NullPii,
   value: unknown,
   sessionId: string,

@@ -7,6 +7,10 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Gateway: OpenAI-compatible route** (`POST /v1/chat/completions`), so the OpenAI SDKs and any client that takes an OpenAI base URL (`OPENAI_BASE_URL=http://127.0.0.1:8787/v1`) can go through the gateway. The upstream is `NULLPII_OPENAI_UPSTREAM` (default `https://api.openai.com`, set without `/v1`).
+  - **Scanned:** message content (strings, `text` and `refusal` parts) for every role, tool results, participant names, refusals, tool-call arguments (parsed as JSON, string values sanitized), custom tool-call input, the deprecated `function_call`, tool and function descriptions, and `prediction.content`. Image, audio and file parts are forwarded untouched and counted as unscanned.
+  - **Restored:** content, refusals and tool-call arguments, in JSON responses and in SSE streams. A placeholder split across chunks is held until it is complete; tool-call arguments are sent restored, re-escaped as JSON, when the choice finishes.
+  - **Lifecycle:** one vault session per request, destroyed on every path. The preservation hint is appended as a last `system` message only when something was masked. Upstream errors pass through verbatim; a failed upstream call is a 502 with an OpenAI-style error body; a client that disconnects mid-stream cancels the upstream call.
 - **Gateway: sidecar API** (`/v1/sidecar/*`), off unless `NULLPII_SIDECAR_TOKEN` is set. It keeps vault sessions under caller-chosen keys across calls, so an editor or coding-agent extension can mask prompts and tool results turn after turn and restore real values only where it chooses (`fields`).
   - **Sessions:** an idle TTL (`NULLPII_VAULT_TTL_MS`, now wired up) drops each session together with its vault entries. A cap (`NULLPII_SIDECAR_MAX_SESSIONS`) fails with 429 instead of evicting a live session.
   - **Access:** a bearer token, compared in constant time. Non-loopback `Host` headers and any `Origin` header are refused before the token check.

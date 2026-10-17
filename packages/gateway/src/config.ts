@@ -5,8 +5,8 @@
  * field is typed; no `process.env` access lives outside this module.
  *
  * Defaults are conservative: `127.0.0.1` bind so the gateway is not
- * exposed accidentally, 30-minute vault TTL, Anthropic as the
- * upstream.
+ * exposed accidentally, 30-minute vault TTL, Anthropic and OpenAI as
+ * the upstreams.
  */
 export interface GatewayConfig {
   /** Bind host for the Fastify server. */
@@ -15,6 +15,10 @@ export interface GatewayConfig {
   readonly port: number;
   /** Upstream LLM provider base URL (no trailing slash). */
   readonly upstreamBaseUrl: string;
+  /** Upstream for `POST /v1/chat/completions`: an OpenAI-compatible base
+   * URL without the `/v1` segment, which the route appends
+   * (`NULLPII_OPENAI_UPSTREAM`). */
+  readonly openaiUpstreamBaseUrl: string;
   /** ms the vault keeps a session alive after the last access. */
   readonly vaultTtlMs: number;
   /** Path to the local GLiNER model dir. Forwarded to `NullPii`. */
@@ -43,6 +47,10 @@ export interface GatewayConfig {
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PORT = 8787;
 const DEFAULT_UPSTREAM = 'https://api.anthropic.com';
+const DEFAULT_OPENAI_UPSTREAM = 'https://api.openai.com';
+/** The OpenAI route appends `/v1/chat/completions` itself. */
+const API_VERSION_SUFFIX = /\/v1$/;
+const TRAILING_SLASHES = /\/+$/;
 const DEFAULT_VAULT_TTL_MS = 30 * 60 * 1000;
 const DEFAULT_BACKEND = 'cpu' as const;
 const DEFAULT_LOG_LEVEL = 'info' as const;
@@ -73,6 +81,22 @@ function readEnum<T extends string>(name: string, allowed: Set<string>, fallback
   return raw as T;
 }
 
+/** A base URL with trailing slashes stripped; unset or empty → `fallback`. */
+function readBaseUrl(name: string, fallback: string): string {
+  const raw = process.env[name];
+  return (raw === undefined || raw === '' ? fallback : raw).replace(TRAILING_SLASHES, '');
+}
+
+function readOpenAiUpstream(): string {
+  const url = readBaseUrl('NULLPII_OPENAI_UPSTREAM', DEFAULT_OPENAI_UPSTREAM);
+  if (API_VERSION_SUFFIX.test(url)) {
+    throw new Error(
+      `NULLPII_OPENAI_UPSTREAM must not end with /v1 (the gateway appends /v1/chat/completions), got: ${url}`,
+    );
+  }
+  return url;
+}
+
 function readSidecarToken(): string | undefined {
   const raw = process.env.NULLPII_SIDECAR_TOKEN;
   if (raw === undefined || raw === '') return undefined;
@@ -90,7 +114,8 @@ export function loadConfig(): GatewayConfig {
   return {
     host: process.env.NULLPII_HOST ?? DEFAULT_HOST,
     port: readInt('NULLPII_PORT', DEFAULT_PORT),
-    upstreamBaseUrl: (process.env.NULLPII_UPSTREAM ?? DEFAULT_UPSTREAM).replace(/\/+$/, ''),
+    upstreamBaseUrl: readBaseUrl('NULLPII_UPSTREAM', DEFAULT_UPSTREAM),
+    openaiUpstreamBaseUrl: readOpenAiUpstream(),
     vaultTtlMs: readInt('NULLPII_VAULT_TTL_MS', DEFAULT_VAULT_TTL_MS),
     ...(modelDir !== undefined && modelDir !== '' ? { modelDir } : {}),
     backend: readEnum('NULLPII_BACKEND', VALID_BACKENDS, DEFAULT_BACKEND),

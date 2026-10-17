@@ -12,7 +12,13 @@ import {
   logOutboundRequest,
 } from '../traffic-log.js';
 import type { AnthropicRequest, AnthropicResponse } from '../types.js';
-import { type Fetch, buildUpstreamHeaders, forwardToAnthropic } from '../upstream.js';
+import {
+  type Fetch,
+  type UpstreamCall,
+  buildUpstreamHeaders,
+  extractQuery,
+  forwardToUpstream,
+} from '../upstream.js';
 
 export interface AnthropicRouteOptions {
   readonly np: NullPii;
@@ -40,15 +46,6 @@ const UPSTREAM_ERROR_HEADERS = [
   'anthropic-ratelimit-output-tokens-remaining',
   'anthropic-ratelimit-output-tokens-reset',
 ];
-
-/** Extract the `?query` suffix from a Fastify-provided request URL.
- * Returns `''` if no query string is present. We forward this verbatim
- * to the upstream so Anthropic sees the same feature-gate flags
- * (`?beta=true`, etc.) the client sent. */
-function extractQuery(url: string): string {
-  const i = url.indexOf('?');
-  return i === -1 ? '' : url.slice(i);
-}
 
 function forwardUpstreamErrorHeaders(reply: FastifyReply, upstream: Headers): void {
   for (const name of UPSTREAM_ERROR_HEADERS) {
@@ -109,9 +106,9 @@ export async function registerAnthropicRoute(
     );
     const querySuffix = extractQuery(req.url);
 
-    let upstream: Awaited<ReturnType<typeof forwardToAnthropic>>;
+    let upstream: UpstreamCall;
     try {
-      upstream = await forwardToAnthropic(
+      upstream = await forwardToUpstream(
         fetchImpl,
         upstreamBaseUrl,
         `/v1/messages/count_tokens${querySuffix}`,
@@ -151,9 +148,9 @@ async function handleNonStreaming(
   );
   if (logTraffic) logOutboundHeaders(headers, reqId);
 
-  let upstream: Awaited<ReturnType<typeof forwardToAnthropic>>;
+  let upstream: UpstreamCall;
   try {
-    upstream = await forwardToAnthropic(
+    upstream = await forwardToUpstream(
       fetchImpl,
       upstreamBaseUrl,
       `/v1/messages${querySuffix}`,

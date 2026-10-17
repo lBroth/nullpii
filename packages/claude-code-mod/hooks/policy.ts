@@ -76,3 +76,40 @@ export function formatReport(counts: Counts, problem: string | undefined): strin
   if (labels !== '') lines.push(`By type: ${labels}`);
   return lines.join('\n');
 }
+
+/** Tools whose restored arguments a shell interprets. */
+export const SHELL_TOOLS: ReadonlySet<string> = new Set(['Bash']);
+
+export type QuoteContext = 'none' | 'single' | 'double';
+
+/** What a value may contain to be put back into a shell command as
+ * written, by the quoting around its placeholder. A masked value comes
+ * from data Claude could not read, so it must not add commands, expand
+ * variables or end its quotes. */
+const SHELL_SAFE: Readonly<Record<QuoteContext, RegExp>> = {
+  none: /^[A-Za-z0-9@%+=:,./_-]+$/,
+  single: /^[^'\n]*$/,
+  double: /^[^"$`\\!\n]*$/,
+};
+
+export function shellSafe(value: string, context: QuoteContext): boolean {
+  return SHELL_SAFE[context].test(value);
+}
+
+/** The quoting in force at `index` of a shell command: a small lexer for
+ * single quotes, double quotes and backslash escapes outside single quotes. */
+export function quoteContextAt(command: string, index: number): QuoteContext {
+  let context: QuoteContext = 'none';
+  for (let i = 0; i < index; i++) {
+    const ch = command[i];
+    if (context !== 'single' && ch === '\\') {
+      i++;
+      continue;
+    }
+    if (context === 'none' && ch === "'") context = 'single';
+    else if (context === 'single' && ch === "'") context = 'none';
+    else if (context === 'none' && ch === '"') context = 'double';
+    else if (context === 'double' && ch === '"') context = 'none';
+  }
+  return context;
+}

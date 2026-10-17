@@ -11,7 +11,16 @@
 // to the user and a tool call is refused, instead of going out unmasked.
 // The vault lives in the sidecar's memory; this mod keeps counts only.
 
-import { RESTORE_FIELDS, addMasked, emptyCounts, formatBand, formatReport } from './policy.ts';
+import {
+  RESTORE_FIELDS,
+  SHELL_TOOLS,
+  addMasked,
+  emptyCounts,
+  formatBand,
+  formatReport,
+  quoteContextAt,
+  shellSafe,
+} from './policy.ts';
 
 const DEFAULT_SIDECAR_URL = 'http://127.0.0.1:8787';
 const SESSIONS_PATH = '/v1/sidecar/sessions/';
@@ -95,6 +104,24 @@ function blocked($, err: unknown): string {
   return problem;
 }
 
+const PLACEHOLDER_ALL = /\{\{PII_[A-Z0-9_]+\}\}/g;
+
+/** Placeholders whose real value would change the shell command around
+ * it: it would add commands, expand variables or end its quotes. */
+async function unsafeShellPlaceholders($, command: string): Promise<string[]> {
+  const found = [...command.matchAll(PLACEHOLDER_ALL)];
+  if (found.length === 0) return [];
+  const r = (await sidecar($, 'POST', '/restore', { value: found.map((m) => m[0]) })) as {
+    value: string[];
+  };
+  return found
+    .filter((m, i) => {
+      const real = r.value[i] ?? m[0];
+      return real !== m[0] && !shellSafe(real, quoteContextAt(command, m.index ?? 0));
+    })
+    .map((m) => m[0]);
+}
+
 /** The text with real values, for the screen only. */
 async function restoredForDisplay($, text: string): Promise<string> {
   const cached = shown.get(text);
@@ -170,6 +197,14 @@ export function register(on) {
   });
 
   on('tool.call', async ($, e, next) => {
+    if (SHELL_TOOLS.has(e.tool) && typeof e.command === 'string') {
+      const unsafe = await unsafeShellPlaceholders($, e.command);
+      if (unsafe.length > 0) {
+        return {
+          deny: `nullpii will not put the real value of ${unsafe.join(', ')} into this command: in that position the shell would interpret some of its characters, and the value came from data you could not read. Pass it through a file instead, or ask the user to run the command.`,
+        };
+      }
+    }
     const args = Object.fromEntries(
       (RESTORE_FIELDS[e.tool] ?? []).filter((f) => f in e).map((f) => [f, e[f]]),
     );

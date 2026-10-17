@@ -27,6 +27,9 @@ function header(arrow: string, color: string, label: string, reqId: string | und
  * + first tool_use block + first content chunk. */
 const MAX_DUMP_BYTES = 64 * 1024;
 
+/** Upstream named in the dump labels when a route does not pass one. */
+const DEFAULT_TARGET = 'anthropic';
+
 function truncate(s: string): string {
   if (s.length <= MAX_DUMP_BYTES) return s;
   return `${s.slice(0, MAX_DUMP_BYTES)}\n…[truncated ${s.length - MAX_DUMP_BYTES}b]`;
@@ -40,10 +43,11 @@ function pretty(body: unknown): string {
   }
 }
 
-/** Dump the outbound (sanitized) request body — what Anthropic will
- * actually see. Body fields contain placeholders, never real PII. */
-export function logOutboundRequest(body: unknown, reqId?: string): void {
-  process.stdout.write(`\n${header('→', ANSI.cyan, 'REQ  (sanitized → anthropic)', reqId)}\n`);
+/** Dump the outbound (sanitized) request body — what the upstream
+ * (`target`) will actually see. Body fields contain placeholders, never
+ * real PII. */
+export function logOutboundRequest(body: unknown, reqId?: string, target = DEFAULT_TARGET): void {
+  process.stdout.write(`\n${header('→', ANSI.cyan, `REQ  (sanitized → ${target})`, reqId)}\n`);
   process.stdout.write(`${pretty(body)}\n`);
 }
 
@@ -51,7 +55,11 @@ export function logOutboundRequest(body: unknown, reqId?: string): void {
  * tokens (`x-api-key`, `authorization`) are masked — we log the
  * presence + last 6 chars only so it's easy to confirm "yes a token
  * was forwarded" without leaking the credential. */
-export function logOutboundHeaders(headers: Record<string, string>, reqId?: string): void {
+export function logOutboundHeaders(
+  headers: Record<string, string>,
+  reqId?: string,
+  target = DEFAULT_TARGET,
+): void {
   const c = useColor();
   const dim = c ? ANSI.dim : '';
   const reset = c ? ANSI.reset : '';
@@ -61,7 +69,7 @@ export function logOutboundHeaders(headers: Record<string, string>, reqId?: stri
     masked[k] = SENSITIVE.has(k.toLowerCase()) ? `<masked, …${v.slice(-6)}, len=${v.length}>` : v;
   }
   process.stdout.write(
-    `${dim}HDR  (gateway → anthropic)${reset} ${header('→', ANSI.cyan, '', reqId)}\n`,
+    `${dim}HDR  (gateway → ${target})${reset} ${header('→', ANSI.cyan, '', reqId)}\n`,
   );
   process.stdout.write(`${pretty(masked)}\n`);
 }
@@ -69,8 +77,8 @@ export function logOutboundHeaders(headers: Record<string, string>, reqId?: stri
 /** Dump the inbound non-stream response body BEFORE restore. The body
  * carries placeholders the upstream echoed back — restore happens
  * after this dump. */
-export function logInboundResponse(text: string, reqId?: string): void {
-  process.stdout.write(`\n${header('←', ANSI.magenta, 'RES  (anthropic → restore)', reqId)}\n`);
+export function logInboundResponse(text: string, reqId?: string, target = DEFAULT_TARGET): void {
+  process.stdout.write(`\n${header('←', ANSI.magenta, `RES  (${target} → restore)`, reqId)}\n`);
   process.stdout.write(`${truncate(text)}\n`);
 }
 

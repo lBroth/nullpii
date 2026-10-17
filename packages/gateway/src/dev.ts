@@ -17,6 +17,7 @@
 // Env vars (see `src/config.ts` for the full list):
 //   NULLPII_MODEL_DIR=/abs/path/to/local/gliner-onnx   # skip HF fetch
 //   NULLPII_UPSTREAM=https://api.anthropic.com
+//   NULLPII_OPENAI_UPSTREAM=https://api.openai.com      # no /v1
 //   NULLPII_LOG_LEVEL=debug                            # see every request
 //
 // Pre-cache the model once with `npx nullpii prefetch` (or by mounting

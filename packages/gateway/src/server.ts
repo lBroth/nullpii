@@ -5,6 +5,7 @@ import { NullPii } from 'nullpii';
 import type { GatewayConfig } from './config.js';
 import { registerAnthropicRoute } from './routes/anthropic.js';
 import { registerHealthRoute } from './routes/health.js';
+import { registerOpenAiRoute } from './routes/openai.js';
 import { registerSidecarRoutes } from './routes/sidecar.js';
 import type { Fetch } from './upstream.js';
 
@@ -18,6 +19,9 @@ export interface BuildServerOptions {
   /** Clock for sidecar session expiry. Defaults to `Date.now`. Tests
    * inject a manual clock. */
   readonly now?: () => number;
+  /** Destination of the JSON request log. Defaults to stdout. Tests
+   * inject a sink to check what is logged (counts, never values). */
+  readonly logStream?: { write(line: string): void };
 }
 
 export async function buildServer(opts: BuildServerOptions): Promise<FastifyInstance> {
@@ -25,7 +29,10 @@ export async function buildServer(opts: BuildServerOptions): Promise<FastifyInst
   const fetchImpl: Fetch = opts.fetchImpl ?? ((input, init) => fetch(input, init));
 
   const app = Fastify({
-    logger: { level: config.logLevel },
+    logger: {
+      level: config.logLevel,
+      ...(opts.logStream !== undefined && { stream: opts.logStream }),
+    },
     bodyLimit: config.bodyLimitBytes,
   });
 
@@ -33,6 +40,12 @@ export async function buildServer(opts: BuildServerOptions): Promise<FastifyInst
   await registerAnthropicRoute(app, {
     np,
     upstreamBaseUrl: config.upstreamBaseUrl,
+    fetchImpl,
+    logTraffic: config.logTraffic,
+  });
+  await registerOpenAiRoute(app, {
+    np,
+    upstreamBaseUrl: config.openaiUpstreamBaseUrl,
     fetchImpl,
     logTraffic: config.logTraffic,
   });

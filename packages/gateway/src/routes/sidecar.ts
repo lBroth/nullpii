@@ -58,6 +58,7 @@ const RESTORE_BODY = {
   properties: {
     value: {},
     fields: { type: 'array', maxItems: MAX_RESTORE_FIELDS, items: { type: 'string' } },
+    shell: { type: 'boolean' },
   },
 } as const;
 
@@ -70,7 +71,9 @@ interface SanitizeRequest extends SessionRequest {
 }
 
 interface RestoreRequest extends SessionRequest {
-  Body: { value: unknown; fields?: string[] };
+  /** `shell`: the value is a shell tool's input, so its `command` gets the
+   * shell-aware restore (see `shell-restore.ts`). */
+  Body: { value: unknown; fields?: string[]; shell?: boolean };
 }
 
 function sha256(value: string): Buffer {
@@ -206,16 +209,21 @@ export async function registerSidecarRoutes(
         const session = sessions.use(req.params.key);
         if (session === undefined) return reply.code(404).send({ error: 'session_not_found' });
         const { value, fields } = req.body;
+        const shell = req.body.shell === true;
         const isObject = value !== null && typeof value === 'object' && !Array.isArray(value);
         if (fields !== undefined && !isObject) {
           return reply.code(400).send({ error: 'fields_require_object_value' });
         }
-        const r = restoreValue(np, value, session.vaultId, fields);
+        if (shell && !isObject) {
+          return reply.code(400).send({ error: 'shell_requires_object_value' });
+        }
+        const r = restoreValue(np, value, session.vaultId, fields, shell);
         req.log.info(
           {
             replacements: r.replacements,
             unknown: r.unknownPlaceholders,
             foreign: r.foreignPlaceholders,
+            ...(r.shellKeptMasked !== undefined && { unsafeShell: r.shellKeptMasked.length }),
           },
           'sidecar.restore',
         );
@@ -225,6 +233,7 @@ export async function registerSidecarRoutes(
           replacementsByLabel: r.replacementsByLabel,
           unknownPlaceholders: r.unknownPlaceholders,
           foreignPlaceholders: r.foreignPlaceholders,
+          ...(r.shellKeptMasked !== undefined && { shellKeptMasked: r.shellKeptMasked }),
         });
       },
     );

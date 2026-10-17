@@ -1,0 +1,366 @@
+// SPDX-License-Identifier: Apache-2.0
+
+import { LLM_PRESERVATION_HINT, type NullPii } from 'nullpii';
+import type {
+  ChatCompletionRequest,
+  ChatCompletionResponse,
+  ChatContent,
+  ChatContentPart,
+  ChatCustomCall,
+  ChatFunctionCall,
+  ChatFunctionDef,
+  ChatMessage,
+  ChatToolCall,
+  ChatToolDef,
+} from './openai-types.js';
+import {
+  type CaptureAccumulator,
+  type RestoreAccumulator,
+  type RestoredResponse,
+  type SanitizedRequest,
+  bump,
+  isRecord,
+  newRestoreAccumulator,
+  parseJson,
+  restoreJsonText,
+  restoreShellText,
+  restoreString,
+  sanitizeJsonValue,
+  shouldAppendHint,
+} from './sanitizer.js';
+import { OPENAI_SHELL_TOOLS, isShellTool } from './shell-restore.js';
+
+/**
+ * Request and response walk for the OpenAI Chat Completions format, with
+ * the contract `sanitizer.ts` has for Anthropic: every field that carries
+ * user text is sanitized into one vault session, protocol structure
+ * (roles, ids, tool and function names, JSON schemas) is left alone, and
+ * media nullpii cannot read is forwarded as it is and counted.
+ *
+ * Bodies are mutated in place, so fields the gateway does not model
+ * (sampling params, `response_format`, provider extensions) pass through.
+ */
+
+/** Content parts whose payload is binary or remote: nothing to scan. */
+const UNSCANNABLE_PART_TYPES: ReadonlySet<string> = new Set(['image_url', 'input_audio']);
+
+/** A file part: its data cannot be read, but its `filename` can name a
+ * person (`CV of …`), so that one field is scanned. */
+const FILE_PART_TYPE = 'file';
+
+/** Content-part fields that carry protocol structure. Every other field
+ * of a part is sanitized, so a part type added to the API later is
+ * scrubbed by default instead of forwarded verbatim. */
+const PART_STRUCTURAL_KEYS: ReadonlySet<string> = new Set(['type', 'cache_control']);
+
+/** Deprecated role whose `name` is the function's name. On every other
+ * role, `name` is a free-text participant name and is sanitized. */
+const FUNCTION_ROLE = 'function';
+
+/** `tools[]` payloads whose `description` is free text. */
+const TOOL_DEF_KEYS = ['function', 'custom'] as const;
+
+/** Role of the message that carries `LLM_PRESERVATION_HINT`. */
+const HINT_ROLE = 'system';
+
+/**
+ * Sanitize a Chat Completions request body in place, binding every
+ * placeholder to `sessionId`. The caller owns the session and destroys it
+ * once the response is restored, on every path.
+ *
+ * Scanned: message `content` (a string, or `text` / `refusal` parts),
+ * participant `name`, `refusal`, tool-call `arguments` (parsed as JSON,
+ * string leaves sanitized), custom tool-call `input`, the deprecated
+ * `function_call`, tool and function `description`s,
+ * `prediction.content`, and a file part's `filename`. `image_url`,
+ * `input_audio` and `file` payloads are forwarded untouched and counted
+ * in `unscanned`.
+ *
+ * @param np - the detection engine.
+ * @param body - the client's request body; mutated and returned.
+ * @param sessionId - an open vault session, from `np.createSession()`.
+ * @returns the body plus capture counts (never values).
+ */
+export async function sanitizeChatRequest(
+  np: NullPii,
+  body: ChatCompletionRequest,
+  sessionId: string,
+): Promise<SanitizedRequest<ChatCompletionRequest>> {
+  const acc: CaptureAccumulator = { count: 0, byLabel: {}, unscanned: 0 };
+  body.messages = await Promise.all(
+    body.messages.map((m) => sanitizeMessage(np, m, sessionId, acc)),
+  );
+  if (Array.isArray(body.tools)) {
+    body.tools = await Promise.all(body.tools.map((t) => sanitizeToolDef(np, t, sessionId, acc)));
+  }
+  if (Array.isArray(body.functions)) {
+    body.functions = await Promise.all(
+      body.functions.map((f) => sanitizeFunctionDef(np, f, sessionId, acc)),
+    );
+  }
+  const prediction = body.prediction;
+  if (isRecord(prediction) && prediction.content !== undefined) {
+    const content = await sanitizeContent(np, prediction.content, sessionId, acc);
+    body.prediction = { ...prediction, content };
+  }
+  // Same rules as the Anthropic walk (`sanitizeRequest`): added after
+  // sanitization, so its literal `{{PII_…}}` examples are never scanned;
+  // only when something was masked; and appended as the LAST message.
+  // OpenAI caches prompts by prefix, so a message prepended to every
+  // request would invalidate the cache on each turn.
+  if (shouldAppendHint(acc.count)) {
+    body.messages = [...body.messages, { role: HINT_ROLE, content: LLM_PRESERVATION_HINT }];
+  }
+  return {
+    body,
+    sessionId,
+    captured: acc.count,
+    capturedByLabel: acc.byLabel,
+    unscanned: acc.unscanned,
+  };
+}
+
+async function sanitizeMessage(
+  np: NullPii,
+  msg: ChatMessage,
+  sessionId: string,
+  acc: CaptureAccumulator,
+): Promise<ChatMessage> {
+  const out: ChatMessage = { ...msg };
+  if (msg.content !== undefined && msg.content !== null) {
+    out.content = await sanitizeContent(np, msg.content, sessionId, acc);
+  }
+  if (typeof msg.name === 'string' && msg.role !== FUNCTION_ROLE) {
+    out.name = await sanitizeText(np, msg.name, sessionId, acc);
+  }
+  if (typeof msg.refusal === 'string') {
+    out.refusal = await sanitizeText(np, msg.refusal, sessionId, acc);
+  }
+  if (Array.isArray(msg.tool_calls)) {
+    out.tool_calls = await Promise.all(
+      msg.tool_calls.map((c) => sanitizeToolCall(np, c, sessionId, acc)),
+    );
+  }
+  if (isRecord(msg.function_call)) {
+    out.function_call = await sanitizeFunctionCall(np, msg.function_call, sessionId, acc);
+  }
+  return out;
+}
+
+async function sanitizeContent(
+  np: NullPii,
+  content: ChatContent,
+  sessionId: string,
+  acc: CaptureAccumulator,
+): Promise<ChatContent> {
+  if (typeof content === 'string') return sanitizeText(np, content, sessionId, acc);
+  return Promise.all(content.map((p) => sanitizePart(np, p, sessionId, acc)));
+}
+
+/** `text`, `refusal`, and any part type added later: every field but the
+ * structural ones is sanitized. Media parts are counted, not scanned. */
+async function sanitizePart(
+  np: NullPii,
+  part: ChatContentPart,
+  sessionId: string,
+  acc: CaptureAccumulator,
+): Promise<ChatContentPart> {
+  if (UNSCANNABLE_PART_TYPES.has(part.type)) {
+    acc.unscanned += 1;
+    return part;
+  }
+  if (part.type === FILE_PART_TYPE) return sanitizeFilePart(np, part, sessionId, acc);
+  const out: ChatContentPart = { ...part };
+  for (const [key, value] of Object.entries(part)) {
+    if (!PART_STRUCTURAL_KEYS.has(key)) {
+      out[key] = await sanitizeJsonValue(np, value, sessionId, acc);
+    }
+  }
+  return out;
+}
+
+/** Counted as unscanned (the file itself cannot be read); only the
+ * free-text `filename` is sanitized, every other field is forwarded as is. */
+async function sanitizeFilePart(
+  np: NullPii,
+  part: ChatContentPart,
+  sessionId: string,
+  acc: CaptureAccumulator,
+): Promise<ChatContentPart> {
+  acc.unscanned += 1;
+  const file = part.file;
+  if (!isRecord(file) || typeof file.filename !== 'string') return part;
+  const filename = await sanitizeText(np, file.filename, sessionId, acc);
+  return { ...part, file: { ...file, filename } };
+}
+
+async function sanitizeToolCall(
+  np: NullPii,
+  call: ChatToolCall,
+  sessionId: string,
+  acc: CaptureAccumulator,
+): Promise<ChatToolCall> {
+  const out: ChatToolCall = { ...call };
+  if (isRecord(call.function)) {
+    out.function = await sanitizeFunctionCall(np, call.function, sessionId, acc);
+  }
+  if (isRecord(call.custom)) {
+    out.custom = await sanitizeCustomCall(np, call.custom, sessionId, acc);
+  }
+  return out;
+}
+
+async function sanitizeFunctionCall(
+  np: NullPii,
+  fn: ChatFunctionCall,
+  sessionId: string,
+  acc: CaptureAccumulator,
+): Promise<ChatFunctionCall> {
+  if (typeof fn.arguments !== 'string') return fn;
+  return { ...fn, arguments: await sanitizeArguments(np, fn.arguments, sessionId, acc) };
+}
+
+async function sanitizeCustomCall(
+  np: NullPii,
+  call: ChatCustomCall,
+  sessionId: string,
+  acc: CaptureAccumulator,
+): Promise<ChatCustomCall> {
+  if (typeof call.input !== 'string') return call;
+  return { ...call, input: await sanitizeText(np, call.input, sessionId, acc) };
+}
+
+/** Tool-call `arguments` is a JSON document encoded as a string. It is
+ * parsed and every string leaf is sanitized, so a placeholder never lands
+ * across a quote; a string that does not parse is sanitized as plain
+ * text. The client's exact string is kept when nothing changed:
+ * re-serializing would reformat it and shift the prompt prefix the
+ * upstream caches. */
+async function sanitizeArguments(
+  np: NullPii,
+  args: string,
+  sessionId: string,
+  acc: CaptureAccumulator,
+): Promise<string> {
+  const parsed = parseJson(args);
+  if (parsed === undefined) return sanitizeText(np, args, sessionId, acc);
+  const next = JSON.stringify(await sanitizeJsonValue(np, parsed.value, sessionId, acc));
+  return next === JSON.stringify(parsed.value) ? args : next;
+}
+
+async function sanitizeToolDef(
+  np: NullPii,
+  tool: ChatToolDef,
+  sessionId: string,
+  acc: CaptureAccumulator,
+): Promise<ChatToolDef> {
+  const out: ChatToolDef = { ...tool };
+  for (const key of TOOL_DEF_KEYS) {
+    const def = tool[key];
+    if (isRecord(def)) out[key] = await sanitizeFunctionDef(np, def, sessionId, acc);
+  }
+  return out;
+}
+
+async function sanitizeFunctionDef(
+  np: NullPii,
+  def: ChatFunctionDef,
+  sessionId: string,
+  acc: CaptureAccumulator,
+): Promise<ChatFunctionDef> {
+  if (typeof def.description !== 'string') return def;
+  return { ...def, description: await sanitizeText(np, def.description, sessionId, acc) };
+}
+
+async function sanitizeText(
+  np: NullPii,
+  text: string,
+  sessionId: string,
+  acc: CaptureAccumulator,
+): Promise<string> {
+  const r = await np.sanitize(text, sessionId);
+  bump(acc, r);
+  return r.sanitized;
+}
+
+/**
+ * Restore placeholders in a non-streaming Chat Completions response, in
+ * place: each choice's `content`, `refusal`, tool-call `arguments`,
+ * custom tool-call `input` and deprecated `function_call`. Returns counts
+ * only, never values.
+ *
+ * @param np - the engine whose vault holds `sessionId`.
+ * @param body - the parsed upstream response; mutated and returned.
+ * @param sessionId - the session the request was sanitized into.
+ */
+export function restoreChatResponse(
+  np: NullPii,
+  body: ChatCompletionResponse,
+  sessionId: string,
+): RestoredResponse<ChatCompletionResponse> {
+  const acc = newRestoreAccumulator();
+  if (Array.isArray(body.choices)) {
+    body.choices = body.choices.map((choice) =>
+      isRecord(choice.message)
+        ? { ...choice, message: restoreMessage(np, choice.message, sessionId, acc) }
+        : choice,
+    );
+  }
+  return {
+    body,
+    replacements: acc.replacements,
+    replacementsByLabel: acc.byLabel,
+    unknownPlaceholders: acc.unknown,
+    foreignPlaceholders: acc.foreign,
+    unsafeShellPlaceholders: acc.unsafeShell,
+  };
+}
+
+function restoreMessage(
+  np: NullPii,
+  msg: ChatMessage,
+  sessionId: string,
+  acc: RestoreAccumulator,
+): ChatMessage {
+  const out: ChatMessage = { ...msg };
+  if (typeof msg.content === 'string') out.content = restoreString(np, msg.content, sessionId, acc);
+  if (typeof msg.refusal === 'string') out.refusal = restoreString(np, msg.refusal, sessionId, acc);
+  if (Array.isArray(msg.tool_calls)) {
+    out.tool_calls = msg.tool_calls.map((c) => restoreToolCall(np, c, sessionId, acc));
+  }
+  if (isRecord(msg.function_call)) {
+    out.function_call = restoreFunctionCall(np, msg.function_call, sessionId, acc);
+  }
+  return out;
+}
+
+function restoreToolCall(
+  np: NullPii,
+  call: ChatToolCall,
+  sessionId: string,
+  acc: RestoreAccumulator,
+): ChatToolCall {
+  const out: ChatToolCall = { ...call };
+  if (isRecord(call.function)) {
+    out.function = restoreFunctionCall(np, call.function, sessionId, acc);
+  }
+  if (isRecord(call.custom) && typeof call.custom.input === 'string') {
+    // A custom shell tool's whole input is the command.
+    const input = isShellTool(call.custom.name, OPENAI_SHELL_TOOLS)
+      ? restoreShellText(np, call.custom.input, sessionId, acc)
+      : restoreString(np, call.custom.input, sessionId, acc);
+    out.custom = { ...call.custom, input };
+  }
+  return out;
+}
+
+function restoreFunctionCall(
+  np: NullPii,
+  fn: ChatFunctionCall,
+  sessionId: string,
+  acc: RestoreAccumulator,
+): ChatFunctionCall {
+  if (typeof fn.arguments !== 'string') return fn;
+  const runsInShell = isShellTool(fn.name, OPENAI_SHELL_TOOLS);
+  return { ...fn, arguments: restoreJsonText(np, fn.arguments, sessionId, acc, runsInShell) };
+}

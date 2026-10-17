@@ -64,6 +64,9 @@ export interface RequestSummary {
   /** Images and binary documents forwarded without a scan (nullpii
    * cannot read them). Flagged so the user knows what was not checked. */
   readonly unscanned?: number;
+  /** Placeholders kept masked in a shell command because their value was
+   * not safe in the quoting there. */
+  readonly unsafeShell?: number;
   /** Optional Fastify reqId to correlate against the JSON log line. */
   readonly reqId?: string;
 }
@@ -116,7 +119,12 @@ export function printRequestSummary(s: RequestSummary): void {
   const unscanned = s.unscanned ?? 0;
   const unscannedStr =
     unscanned > 0 ? `  ${c?.yellow ?? ''}⚠ ${unscanned} not scanned (image/binary)${reset}` : '';
+  const unsafeShell = s.unsafeShell ?? 0;
+  const unsafeShellStr =
+    unsafeShell > 0
+      ? `  ${c?.yellow ?? ''}⚠ ${unsafeShell} kept masked in shell commands${reset}`
+      : '';
   process.stdout.write(
-    `${tag}${id}  ${arrow} ${capLabel}  ${back} ${restLabel}${driftStr}${unscannedStr}\n`,
+    `${tag}${id}  ${arrow} ${capLabel}  ${back} ${restLabel}${driftStr}${unscannedStr}${unsafeShellStr}\n`,
   );
 }

@@ -85,6 +85,34 @@ function reassembleBlocks(frames: string[]): Map<number, string> {
   return out;
 }
 
+/** Reassemble per-block tool input by concatenating every
+ * `input_json_delta.partial_json` by `index`, as the Anthropic SDK does. */
+function reassembleInputJson(frames: string[]): Map<number, string> {
+  const out = new Map<number, string>();
+  for (const frame of frames) {
+    const dataLine = frame.split('\n').find((l) => l.startsWith('data:'));
+    if (dataLine === undefined) continue;
+    const parsed = JSON.parse(dataLine.slice('data:'.length).trim()) as {
+      type?: string;
+      index?: number;
+      delta?: { type?: string; partial_json?: string };
+    };
+    const delta = parsed.delta;
+    if (parsed.type !== 'content_block_delta' || typeof parsed.index !== 'number') continue;
+    if (delta?.type !== 'input_json_delta' || typeof delta.partial_json !== 'string') continue;
+    out.set(parsed.index, (out.get(parsed.index) ?? '') + delta.partial_json);
+  }
+  return out;
+}
+
+function inputJsonFrame(index: number, partialJson: string): string {
+  return sseFrame('content_block_delta', {
+    type: 'content_block_delta',
+    index,
+    delta: { type: 'input_json_delta', partial_json: partialJson },
+  });
+}
+
 describe('relaySseStream', () => {
   it('restores a placeholder that arrives in a single delta', async () => {
     const { np, vault, sessionId } = buildHarness();
@@ -244,6 +272,46 @@ describe('relaySseStream', () => {
     expect(joined).toContain('"partial_json":"{\\"iban\\":\\"IT60X0542811101000001023456\\"}"');
     // Stop frame still forwarded.
     expect(joined).toContain('"type":"content_block_stop"');
+  });
+
+  it('restores tool input as JSON: a value holding a quote and a newline stays valid JSON', async () => {
+    const { np, vault, sessionId } = buildHarness();
+    const address = 'Via "Roma" 1\nRome';
+    const ph = bake(vault, sessionId, address, 'private_address');
+    const frames: string[] = [
+      inputJsonFrame(1, `{"address":"${ph.slice(0, 8)}`),
+      inputJsonFrame(1, `${ph.slice(8)}","floor":2}`),
+      sseFrame('content_block_stop', { type: 'content_block_stop', index: 1 }),
+    ];
+    const out: string[] = [];
+    const counters = await relaySseStream({
+      np,
+      sessionId,
+      upstream: chunkStream(frames),
+      write: (f) => out.push(f),
+    });
+    expect(out.join('')).not.toContain('{{PII_');
+    const input = reassembleInputJson(out).get(1) ?? '';
+    expect(JSON.parse(input)).toEqual({ address, floor: 2 });
+    expect(counters.replacements).toBe(1);
+  });
+
+  it('restores tool input that is not valid JSON at content_block_stop as text', async () => {
+    const { np, vault, sessionId } = buildHarness();
+    const ph = bake(vault, sessionId, 'bob@example.com', 'private_email');
+    // Cut off mid-object: not JSON, but still forwarded, restored.
+    const frames: string[] = [
+      inputJsonFrame(0, `{"to":"${ph}`),
+      sseFrame('content_block_stop', { type: 'content_block_stop', index: 0 }),
+    ];
+    const out: string[] = [];
+    await relaySseStream({
+      np,
+      sessionId,
+      upstream: chunkStream(frames),
+      write: (f) => out.push(f),
+    });
+    expect(reassembleInputJson(out).get(0)).toBe('{"to":"bob@example.com');
   });
 
   it('content_block_stop for a different index does not flush a buffered input_json_delta', async () => {

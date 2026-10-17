@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { LLM_PRESERVATION_HINT, type NullPii } from 'nullpii';
+import { LLM_PRESERVATION_HINT, type NullPii, type RestoreResult } from 'nullpii';
+import {
+  ANTHROPIC_SHELL_TOOLS,
+  SHELL_COMMAND_FIELD,
+  countPlaceholders,
+  isShellTool,
+  restoreShellCommand,
+} from './shell-restore.js';
 import type {
   AnthropicContentBlock,
   AnthropicMessage,
@@ -19,9 +26,9 @@ import type {
  * extensions, future params) untouched — the gateway is forward-compat
  * by default.
  */
-export interface SanitizedRequest {
+export interface SanitizedRequest<TBody = AnthropicRequest> {
   /** The mutated request body — same reference as the input. */
-  readonly body: AnthropicRequest;
+  readonly body: TBody;
   /** Session id bound to every placeholder in `body`. Restore the
    *  upstream response against this exact id. */
   readonly sessionId: string;
@@ -38,7 +45,9 @@ export interface SanitizedRequest {
   readonly unscanned: number;
 }
 
-interface CaptureAccumulator {
+/** Running sanitize counts for one request walk. Shared with the
+ * OpenAI walk (`openai-sanitizer.ts`). */
+export interface CaptureAccumulator {
   count: number;
   byLabel: Record<string, number>;
   unscanned: number;
@@ -81,11 +90,31 @@ const TOOL_CALL_TYPES: ReadonlySet<string> = new Set([
 /** Blocks whose `content` is a string or a list of content blocks. */
 const TOOL_RESULT_TYPES: ReadonlySet<string> = new Set(['tool_result', 'mcp_tool_result']);
 
+/**
+ * Sanitize an Anthropic request body in place into a new vault session.
+ * The caller owns the returned `sessionId` and destroys it once the
+ * response is restored. If the walk throws, the session is destroyed
+ * here before the error propagates: the caller never learns its id, so
+ * it could not drop it.
+ */
 export async function sanitizeRequest(
   np: NullPii,
   body: AnthropicRequest,
 ): Promise<SanitizedRequest> {
   const sessionId = np.createSession();
+  try {
+    return await sanitizeIntoSession(np, body, sessionId);
+  } catch (err) {
+    np.destroySession(sessionId);
+    throw err;
+  }
+}
+
+async function sanitizeIntoSession(
+  np: NullPii,
+  body: AnthropicRequest,
+  sessionId: string,
+): Promise<SanitizedRequest> {
   const acc: CaptureAccumulator = { count: 0, byLabel: {}, unscanned: 0 };
   if (body.system !== undefined) {
     body.system = await sanitizeSystem(np, body.system, sessionId, acc);
@@ -114,7 +143,7 @@ export async function sanitizeRequest(
   //    cache invalidation — skip it entirely.
   //
   // Opt-out: NULLPII_DISABLE_HINT=1 (debugging hook).
-  if (acc.count > 0 && process.env.NULLPII_DISABLE_HINT !== '1') {
+  if (shouldAppendHint(acc.count)) {
     injectPreservationHint(body);
   }
   return {
@@ -124,6 +153,14 @@ export async function sanitizeRequest(
     capturedByLabel: acc.byLabel,
     unscanned: acc.unscanned,
   };
+}
+
+/** Whether a request walk that masked `captured` spans gets
+ * `LLM_PRESERVATION_HINT` appended: only when something was masked, and
+ * never with `NULLPII_DISABLE_HINT=1`. Shared by the Anthropic and
+ * OpenAI walks so both routes honour the same opt-out. */
+export function shouldAppendHint(captured: number): boolean {
+  return captured > 0 && process.env.NULLPII_DISABLE_HINT !== '1';
 }
 
 function injectPreservationHint(body: AnthropicRequest): void {
@@ -138,7 +175,11 @@ function injectPreservationHint(body: AnthropicRequest): void {
   body.system = [...body.system, { type: 'text', text: LLM_PRESERVATION_HINT }];
 }
 
-function bump(acc: CaptureAccumulator, r: { spans: ReadonlyArray<{ label: string }> }): void {
+/** Add one `sanitize()` result's spans to `acc` (counts and labels only). */
+export function bump(
+  acc: CaptureAccumulator,
+  r: { spans: ReadonlyArray<{ label: string }> },
+): void {
   acc.count += r.spans.length;
   for (const span of r.spans) {
     acc.byLabel[span.label] = (acc.byLabel[span.label] ?? 0) + 1;
@@ -302,7 +343,7 @@ export async function sanitizeValue(
  * input), sanitising every string leaf. Numbers / booleans / null pass
  * through. Arrays + plain objects recurse. Cycles are not possible on
  * JSON.parse output, so no visited-set is needed. */
-async function sanitizeJsonValue(
+export async function sanitizeJsonValue(
   np: NullPii,
   value: unknown,
   sessionId: string,
@@ -334,21 +375,31 @@ async function sanitizeJsonValue(
  * triple — caller logs the per-label counts. PII values themselves are
  * never returned in the counter (counts only).
  */
-export interface RestoredResponse {
-  readonly body: AnthropicResponse;
+export interface RestoredResponse<TBody = AnthropicResponse> {
+  readonly body: TBody;
   readonly replacements: number;
   readonly replacementsByLabel: Readonly<Partial<Record<string, number>>>;
   readonly unknownPlaceholders: number;
   readonly foreignPlaceholders: number;
+  /** Placeholders left literal in a shell tool's `command` because their
+   * value was not safe in the quoting there (see `shell-restore.ts`). */
+  readonly unsafeShellPlaceholders: number;
 }
 
 // rothunter:ignore-duplicate-interface
-// reason: short-named closure-scope accumulator for restoreResponse; sse-relay's public SseRelayCounters uses long names that match the pino log-field contract — merging would force either a public API rename or verbose names in this 60-line internal struct.
-interface RestoreAccumulator {
+// reason: short-named accumulator for the restore walks (restoreResponse, and the OpenAI walk and relay, which convert it to SseRelayCounters at the end); sse-relay's public SseRelayCounters uses long names that match the pino log-field contract — merging would force either a public API rename or verbose names in this internal struct.
+export interface RestoreAccumulator {
   replacements: number;
   byLabel: Record<string, number>;
   unknown: number;
   foreign: number;
+  /** Placeholders kept literal in a shell command: unsafe there. */
+  unsafeShell: number;
+}
+
+/** A zeroed restore accumulator. */
+export function newRestoreAccumulator(): RestoreAccumulator {
+  return { replacements: 0, byLabel: {}, unknown: 0, foreign: 0, unsafeShell: 0 };
 }
 
 export function restoreResponse(
@@ -356,7 +407,7 @@ export function restoreResponse(
   body: AnthropicResponse,
   sessionId: string,
 ): RestoredResponse {
-  const acc: RestoreAccumulator = { replacements: 0, byLabel: {}, unknown: 0, foreign: 0 };
+  const acc = newRestoreAccumulator();
   body.content = body.content.map((block) => {
     if (block.type === 'text' && typeof block.text === 'string') {
       return { ...block, text: restoreString(np, block.text, sessionId, acc) };
@@ -365,8 +416,9 @@ export function restoreResponse(
       // Mirror SSE path's `restoreJsonBuffer`: walk the tool input tree
       // and restore string leaves. Without this, non-streaming
       // tool-calling workflows leak `{{PII_*}}` placeholders verbatim
-      // to the client.
-      return { ...block, input: restoreJsonValue(np, block.input, sessionId, acc) };
+      // to the client. A `Bash` command gets the shell-aware restore.
+      const runsInShell = isShellTool(block.name, ANTHROPIC_SHELL_TOOLS);
+      return { ...block, input: restoreToolInput(np, block.input, sessionId, acc, runsInShell) };
     }
     return block;
   });
@@ -376,6 +428,7 @@ export function restoreResponse(
     replacementsByLabel: acc.byLabel,
     unknownPlaceholders: acc.unknown,
     foreignPlaceholders: acc.foreign,
+    unsafeShellPlaceholders: acc.unsafeShell,
   };
 }
 
@@ -386,27 +439,41 @@ export interface RestoredValue {
   readonly replacementsByLabel: Readonly<Partial<Record<string, number>>>;
   readonly unknownPlaceholders: number;
   readonly foreignPlaceholders: number;
+  /** With `shell`: the distinct placeholders left masked in `command`
+   * because their value was not safe there. Placeholders, never values. */
+  readonly shellKeptMasked?: readonly string[];
 }
 
 /** Restore placeholders in every string leaf of a parsed JSON value.
  * With `fields`, only those top-level keys of an object are restored and
  * every other key keeps its placeholders, so a caller can put real values
- * back into the arguments a tool writes to disk and nowhere else. */
+ * back into the arguments a tool writes to disk and nowhere else.
+ *
+ * With `shell` (the value is a shell tool's input), a top-level `command`
+ * string that is restored gets the shell-aware rule of
+ * `shell-restore.ts`; the placeholders it leaves masked are listed in
+ * `shellKeptMasked`. */
 export function restoreValue(
   np: NullPii,
   value: unknown,
   sessionId: string,
   fields?: readonly string[],
+  shell = false,
 ): RestoredValue {
-  const acc: RestoreAccumulator = { replacements: 0, byLabel: {}, unknown: 0, foreign: 0 };
+  const acc = newRestoreAccumulator();
+  const keptMasked: string[] = [];
+  const restoreField = (key: string, field: unknown): unknown =>
+    shell && key === SHELL_COMMAND_FIELD && typeof field === 'string'
+      ? restoreShellText(np, field, sessionId, acc, keptMasked)
+      : restoreJsonValue(np, field, sessionId, acc);
+  const obj = isRecord(value) ? value : undefined;
   let out: unknown;
-  if (fields === undefined) {
+  if (obj === undefined || (fields === undefined && !shell)) {
     out = restoreJsonValue(np, value, sessionId, acc);
   } else {
-    const obj = value as Record<string, unknown>;
     const restored: Record<string, unknown> = { ...obj };
-    for (const key of fields) {
-      if (Object.hasOwn(obj, key)) restored[key] = restoreJsonValue(np, obj[key], sessionId, acc);
+    for (const key of fields ?? Object.keys(obj)) {
+      if (Object.hasOwn(obj, key)) restored[key] = restoreField(key, obj[key]);
     }
     out = restored;
   }
@@ -416,26 +483,35 @@ export function restoreValue(
     replacementsByLabel: acc.byLabel,
     unknownPlaceholders: acc.unknown,
     foreignPlaceholders: acc.foreign,
+    ...(shell && { shellKeptMasked: [...new Set(keptMasked)] }),
   };
 }
 
-function restoreString(
-  np: NullPii,
-  text: string,
-  sessionId: string,
-  acc: RestoreAccumulator,
-): string {
-  const r = np.restore(text, sessionId);
+/** Add one restore result's counts to `acc`. Takes the result of
+ * `np.restore()` or of `RestoreStream.end()`; values are never kept. */
+export function tallyRestore(acc: RestoreAccumulator, r: RestoreResult): void {
   acc.replacements += r.replacements;
   for (const [lbl, count] of Object.entries(r.replacementsByLabel)) {
     acc.byLabel[lbl] = (acc.byLabel[lbl] ?? 0) + (count ?? 0);
   }
   acc.unknown += r.unknownPlaceholders.length;
   acc.foreign += r.foreignPlaceholders.length;
+}
+
+/** Restore the placeholders in one string, tallying counts into `acc`. */
+export function restoreString(
+  np: NullPii,
+  text: string,
+  sessionId: string,
+  acc: RestoreAccumulator,
+): string {
+  const r = np.restore(text, sessionId);
+  tallyRestore(acc, r);
   return r.restored;
 }
 
-function restoreJsonValue(
+/** Restore every string leaf of a parsed JSON value (object keys untouched). */
+export function restoreJsonValue(
   np: NullPii,
   value: unknown,
   sessionId: string,
@@ -451,4 +527,100 @@ function restoreJsonValue(
     return out;
   }
   return value;
+}
+
+/**
+ * Restore a tool call's input. For a tool a shell runs (`runsInShell`),
+ * the top-level `command` string gets the shell-aware restore: each
+ * placeholder is put back only when its value is safe in the quoting
+ * around it. Every other field, and every field of any other tool, gets
+ * its real values back as usual.
+ */
+export function restoreToolInput(
+  np: NullPii,
+  input: unknown,
+  sessionId: string,
+  acc: RestoreAccumulator,
+  runsInShell: boolean,
+): unknown {
+  if (!runsInShell || !isRecord(input)) return restoreJsonValue(np, input, sessionId, acc);
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(input)) {
+    out[key] =
+      key === SHELL_COMMAND_FIELD && typeof value === 'string'
+        ? restoreShellText(np, value, sessionId, acc)
+        : restoreJsonValue(np, value, sessionId, acc);
+  }
+  return out;
+}
+
+/** Shell-aware restore of one command string (see `shell-restore.ts`),
+ * tallying counts into `acc` and, when given, appending the placeholders
+ * it left masked to `keptMasked`. */
+export function restoreShellText(
+  np: NullPii,
+  command: string,
+  sessionId: string,
+  acc: RestoreAccumulator,
+  keptMasked?: string[],
+): string {
+  const r = restoreShellCommand(np, command, sessionId);
+  for (const result of r.results) tallyRestore(acc, result);
+  acc.unsafeShell += r.keptMasked.length;
+  keptMasked?.push(...r.keptMasked);
+  return r.command;
+}
+
+/**
+ * Restore a JSON document held as a string: tool-call arguments, or the
+ * tool input a stream assembles from `input_json_delta` shards. It is
+ * parsed and only its string leaves are restored, then re-serialized, so
+ * a restored value holding a quote, a backslash or a newline is escaped
+ * instead of breaking the JSON. A string that does not parse (input cut
+ * off mid-stream) is restored as plain text rather than dropped; one with
+ * nothing to restore is returned exactly as it came.
+ *
+ * With `runsInShell`, the input's `command` gets the shell-aware restore
+ * (`restoreToolInput`), and input that does not parse keeps every
+ * placeholder: without its JSON structure there is no telling which part
+ * a shell would run.
+ *
+ * @param acc - restore counts are added here.
+ */
+export function restoreJsonText(
+  np: NullPii,
+  text: string,
+  sessionId: string,
+  acc: RestoreAccumulator,
+  runsInShell = false,
+): string {
+  const parsed = parseJson(text);
+  if (parsed === undefined && runsInShell) {
+    acc.unsafeShell += countPlaceholders(text);
+    return text;
+  }
+  if (parsed === undefined) return restoreString(np, text, sessionId, acc);
+  const restored = restoreToolInput(np, parsed.value, sessionId, acc, runsInShell);
+  const next = JSON.stringify(restored);
+  return next === JSON.stringify(parsed.value) ? text : next;
+}
+
+/**
+ * Parse `text` as JSON. Wrapped in `{ value }` so a JSON `null` is told
+ * apart from a parse failure, which returns `undefined`.
+ */
+export function parseJson(text: string): { value: unknown } | undefined {
+  try {
+    return { value: JSON.parse(text) as unknown };
+  } catch {
+    // Deliberate: not-JSON is an expected input here (tool arguments cut
+    // off mid-stream, an SSE payload that is not a chunk). Every caller
+    // has a fallback for it.
+    return undefined;
+  }
+}
+
+/** True for a non-null, non-array object. */
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

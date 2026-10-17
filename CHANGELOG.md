@@ -22,12 +22,6 @@ The detection changes come from the measured A/B loop (`packages/eval/scripts/ab
   - **Cache:** a value the session has already masked is answered from a per-session cache, without running the model again.
   - **Shell commands:** `restore` takes `shell: true` for a shell tool's input. Its `command` then follows the gateway's shell rule (heredocs, nested interpreters, quoting), so an extension can rely on the same check as the proxy routes instead of carrying its own; `shellKeptMasked` lists the placeholders left masked, never their values.
 
-### Fixed
-
-- **Gateway: a client that disconnected mid-stream did not cancel the upstream Anthropic call.** The abort was wired to the request's `close` event, which Node 16+ emits as soon as the request body has been read, before the route attached its listener, so the upstream kept generating, and billing, the rest of the reply. The route now listens for the response connection closing.
-- **Gateway: a vault session leaked when sanitization failed.** `sanitizeRequest` opened the session before walking the body, so a walk that threw (a text over the engine's size cap, a detector error) left the session, with every value it had already masked, in memory until the process exited. It now destroys the session before rethrowing, and the Messages and `count_tokens` routes drop the session in one `finally` on every path instead of at each exit.
-- **Gateway: streamed tool input could come back as invalid JSON.** The SSE relay restored the assembled `input_json_delta` text by pasting each value in raw, so a restored value holding a quote, a backslash or a newline broke the tool input the client parses at `content_block_stop`. The input is now parsed, its string values restored and re-serialized; input that is not valid JSON at `content_block_stop` is still restored, as text. The OpenAI route uses the same helper.
-
 ### Changed
 
 - **One placeholder per value** (#50). A value that recurs in a session reaches the model as the same token, so it can still tell the same person from someone else. Values are matched exactly, case included, so `restore()` stays byte-exact.
@@ -40,6 +34,11 @@ The detection changes come from the measured A/B loop (`packages/eval/scripts/ab
 - **Geolocation:** a geolocation span that is not a coordinate is relabelled as an address instead of being dropped.
 
 ### Fixed
+
+- **Gateway: a client that disconnected mid-stream did not cancel the upstream Anthropic call.** The abort was wired to the request's `close` event, which Node 16+ emits as soon as the request body has been read, before the route attached its listener, so the upstream kept generating, and billing, the rest of the reply. The route now listens for the response connection closing.
+- **Gateway: a vault session leaked when sanitization failed.** `sanitizeRequest` opened the session before walking the body, so a walk that threw (a text over the engine's size cap, a detector error) left the session, with every value it had already masked, in memory until the process exited. It now destroys the session before rethrowing, and the Messages and `count_tokens` routes drop the session in one `finally` on every path instead of at each exit.
+- **Gateway: streamed tool input could come back as invalid JSON.** The SSE relay restored the assembled `input_json_delta` text by pasting each value in raw, so a restored value holding a quote, a backslash or a newline broke the tool input the client parses at `content_block_stop`. The input is now parsed, its string values restored and re-serialized; input that is not valid JSON at `content_block_stop` is still restored, as text. The OpenAI route uses the same helper.
+
 
 - `restore()` was not byte-exact when two detected spans overlapped. Overlapping spans are now merged before masking.
 - On dense text, a window cut by the encoder's token budget hid its tail from the model. Windows now advance by what the encoder kept.

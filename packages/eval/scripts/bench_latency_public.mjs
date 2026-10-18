@@ -10,7 +10,7 @@
 //
 // Writes `packages/eval/published-bench/latency.{json,md}`.
 
-import { writeFileSync, readFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -107,6 +107,7 @@ async function main() {
     cold_start_ms: +coldMs.toFixed(1),
     by_size_chars: results,
   };
+  mkdirSync(OUT_DIR, { recursive: true });
   writeFileSync(join(OUT_DIR, 'latency.json'), JSON.stringify(json, null, 2) + '\n');
 
   let md = '# Public-runtime latency\n\n';

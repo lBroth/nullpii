@@ -18,7 +18,7 @@ above nullpii's own training offsets (`_AI4_HELDOUT_OFFSET` /
 held-out guarantee for any other tool in the matrix.
 
 Usage:
-  python ood_macro.py packages/eval/published-bench/matrix.json
+  python ood_macro.py <bench_full output dir>/matrix.json
   python ood_macro.py matrix.json --tool nullpii-bare
   python ood_macro.py a/matrix.json --baseline b/matrix.json   # A/B delta
 

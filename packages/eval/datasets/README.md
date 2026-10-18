@@ -95,7 +95,7 @@ held-out guarantee for any other tool in the matrix.
 Do not restate this number by hand. Compute it from `matrix.json`:
 
 ```bash
-python packages/eval/scripts/ood_macro.py packages/eval/published-bench/matrix.json
+python packages/eval/scripts/ood_macro.py <bench_full output dir>/matrix.json
 ```
 
 An earlier revision of this file described the headline as a macro over

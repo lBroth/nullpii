@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import atexit
 import hashlib
+import itertools
 import json
 import os
 import re
@@ -2545,6 +2546,30 @@ _NEMOTRON_TO_NULLPII8 = {
 }
 
 
+# GLiNER's own word splitter (`WhitespaceTokenSplitter`).
+_GLINER_WORD = re.compile(r"\w+(?:[-_]\w+)*|\S")
+
+
+def _gliner_windows(text: str, chunk_chars: int, overlap_chars: int, max_words: int) -> list[tuple[int, str]]:
+    """(offset, chunk) windows for a GLiNER model: `chunk_chars` characters
+    with `overlap_chars` of overlap, except that a window ends at its
+    `max_words`-th word. GLiNER drops every word past its `max_len` without
+    an error, and dense code or logs reach 384 words well inside 1,400
+    characters, so a longer window would leave its tail unread. Prose
+    windows never hit the cap and are unchanged."""
+    windows: list[tuple[int, str]] = []
+    offset, n = 0, len(text)
+    while True:
+        end = min(offset + chunk_chars, n)
+        words = list(itertools.islice(_GLINER_WORD.finditer(text, offset, end), max_words + 1))
+        if len(words) > max_words:
+            end = words[max_words - 1].end()
+        windows.append((offset, text[offset:end]))
+        if end >= n:
+            return windows
+        offset = max(end - overlap_chars, offset + 1)
+
+
 def gliner_v2_predictor(
     model_path: str,
     *,
@@ -2576,7 +2601,8 @@ def gliner_v2_predictor(
     Bare-mode contract: NO nullpii post-processing. No `_normalize_for_detection`,
     no boundary refine, no never-PII filter, no regex pack. The chunking
     1400/200 stride is the only adapter glue, applied uniformly across all
-    GLiNER-family bare baselines so long-doc handling is fair.
+    GLiNER-family bare baselines so long-doc handling is fair; a window
+    also ends at the model's `max_len` words (`_gliner_windows`).
 
     Loads either the PyTorch checkpoint (`onnx_file=None`) on the chosen
     device, or an exported ONNX model (`onnx_file="model_int4.onnx"`,
@@ -2629,12 +2655,14 @@ def gliner_v2_predictor(
             return None
         return label
 
+    max_words = int(model.config.max_len)
+
     def _predict(text: str) -> ToolResult:
         t0 = time.perf_counter()
         spans: list[Span] = []
         scores: list[float] = []
-        text_len = len(text)
-        if text_len <= chunk_chars:
+        windows = _gliner_windows(text, chunk_chars, overlap_chars, max_words)
+        if len(windows) == 1:
             for e in model.predict_entities(text, inference_labels, threshold=threshold):
                 projected = _project_label(e["label"], float(e["score"]))
                 if projected is None:
@@ -2642,12 +2670,8 @@ def gliner_v2_predictor(
                 spans.append(Span(projected, int(e["start"]), int(e["end"])))
                 scores.append(float(e.get("score", threshold)))
         else:
-            stride = chunk_chars - overlap_chars
             spans_with_scores: list[tuple[Span, float]] = []
-            for offset in range(0, text_len, stride):
-                chunk = text[offset : offset + chunk_chars]
-                if not chunk:
-                    break
+            for offset, chunk in windows:
                 for e in model.predict_entities(chunk, inference_labels, threshold=threshold):
                     projected = _project_label(e["label"], float(e["score"]))
                     if projected is None:
@@ -2658,8 +2682,6 @@ def gliner_v2_predictor(
                         Span(projected, ns_full, ne_full),
                         float(e.get("score", threshold)),
                     ))
-                if offset + chunk_chars >= text_len:
-                    break
             kept = _dedupe([sp for sp, _ in spans_with_scores])
             score_by_id = {id(sp): sc for sp, sc in spans_with_scores}
             for sp in kept:
@@ -2862,7 +2884,7 @@ def gliner_nemotron_pii_predictor(
     for F1 schema compatibility with the bench gold labels — every competitor
     with a non-12-class schema has the same kind of bridge (presidio,
     deberta, etc.). Chunking 1400/200 is shared across all GLiNER-family
-    bare baselines.
+    bare baselines, with windows capped at `max_len` words (`_gliner_windows`).
 
     Default threshold 0.3 follows Nvidia's evaluation recipe (model card).
     Backbone is `urchade/gliner_large-v2.1` (~600M params, 2× the size
@@ -2906,12 +2928,14 @@ def gliner_nemotron_pii_predictor(
             return None
         return label
 
+    max_words = int(model.config.max_len)
+
     def _predict(text: str) -> ToolResult:
         t0 = time.perf_counter()
         spans: list[Span] = []
         scores: list[float] = []
-        text_len = len(text)
-        if text_len <= chunk_chars:
+        windows = _gliner_windows(text, chunk_chars, overlap_chars, max_words)
+        if len(windows) == 1:
             entities = model.predict_entities(
                 text, _NEMOTRON_PII_LABELS, threshold=threshold,
             )
@@ -2922,12 +2946,8 @@ def gliner_nemotron_pii_predictor(
                 spans.append(Span(mapped, int(e["start"]), int(e["end"])))
                 scores.append(float(e.get("score", threshold)))
         else:
-            stride = chunk_chars - overlap_chars
             spans_with_scores: list[tuple[Span, float]] = []
-            for offset in range(0, text_len, stride):
-                chunk = text[offset:offset + chunk_chars]
-                if not chunk:
-                    break
+            for offset, chunk in windows:
                 for e in model.predict_entities(chunk, _NEMOTRON_PII_LABELS, threshold=threshold):
                     mapped = _mapped(e)
                     if mapped is None:
@@ -2938,8 +2958,6 @@ def gliner_nemotron_pii_predictor(
                         Span(mapped, ns_full, ne_full),
                         float(e.get("score", threshold)),
                     ))
-                if offset + chunk_chars >= text_len:
-                    break
             kept = _dedupe([sp for sp, _ in spans_with_scores])
             score_by_id = {id(sp): sc for sp, sc in spans_with_scores}
             for sp in kept:

@@ -399,6 +399,14 @@ _RIZZO_UNEMITTABLE = frozenset({
     "private_geolocation",
 })
 
+# rizzo-pii's 120-word chunks stay under 420 tokens on prose (Isotonic,
+# ai4privacy), but a whitespace-free "word" in code or logs can run to
+# thousands of tokens: on the traces tuning set 560 chunks exceed 512 and one
+# reaches 7661, which ran a 12 GB GPU out of memory. Chunks longer than this
+# are cut into token windows; prose chunks are untouched.
+_RIZZO_MAX_TOKENS = 512
+_RIZZO_OVERLAP_TOKENS = 64
+
 
 def rizzo_pii_predictor(
     *,
@@ -414,7 +422,9 @@ def rizzo_pii_predictor(
     token classifier, 22 PII tags, 0.3B dense params (fp32, ~1.23 GB).
 
     Chunking mirrors the VENDOR'S SHIPPED SERVING PATH (`src/app/app.py`:
-    `MAX_WORDS = 120`, `OVERLAP = 20`), not their evaluation script.
+    `MAX_WORDS = 120`, `OVERLAP = 20`), not their evaluation script. A chunk
+    over `_RIZZO_MAX_TOKENS` (code or logs, never prose here) is cut further
+    into token windows.
 
     `aggregation_strategy` is `"first"`, NOT the `"simple"` their app
     uses, because `"simple"` fragments this model badly and would
@@ -487,6 +497,17 @@ def rizzo_pii_predictor(
                 break
         return chunks
 
+    window = _RIZZO_MAX_TOKENS - _WINDOW_RESERVED_TOKENS
+
+    def _chunks(text: str) -> list[tuple[int, str]]:
+        """The vendor's word chunks, each cut into token windows if it is
+        longer than the model should see at once."""
+        return [
+            (offset + sub_offset, sub)
+            for offset, chunk in _word_chunks(text)
+            for sub_offset, sub in _token_windows(pipe.tokenizer, chunk, window, _RIZZO_OVERLAP_TOKENS)
+        ]
+
     def _decode(results: list[dict], offset: int) -> list[tuple[Span, float]]:
         spans: list[tuple[Span, float]] = []
         for r in results:
@@ -503,7 +524,7 @@ def rizzo_pii_predictor(
         per_input: list[list[tuple[int, str]]] = []
         flat: list[str] = []
         for text in texts:
-            chunks = _word_chunks(text) if text else [(0, "")]
+            chunks = _chunks(text) if text else [(0, "")]
             per_input.append(chunks)
             flat.extend(c for _, c in chunks)
 

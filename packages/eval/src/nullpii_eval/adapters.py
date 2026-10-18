@@ -42,6 +42,23 @@ class ToolResult:
 Predictor = Callable[[str], ToolResult]
 
 
+def _utf16_to_code_points(text: str) -> list[int]:
+    """Map each UTF-16 offset of `text` to its code-point offset.
+
+    The nullpii runtime is JavaScript, so its span offsets count UTF-16 code
+    units; Python strings and the gold spans count code points. An astral
+    character (most emoji) is two units and one code point, so without this
+    every span after one would land one position early per such character.
+    """
+    m: list[int] = []
+    for cp, ch in enumerate(text):
+        m.append(cp)
+        if ord(ch) > 0xFFFF:
+            m.append(cp)
+    m.append(len(text))
+    return m
+
+
 def nullpii_runtime_predictor(
     *,
     backend: str = "cpu",
@@ -118,10 +135,11 @@ def nullpii_runtime_predictor(
         result = json.loads(line)
         if "error" in result:
             raise RuntimeError(f"nullpii ndjson error: {result['error']}")
+        to_point = _utf16_to_code_points(text)
         spans: list[Span] = []
         for s in result.get("spans", []):
             label = str(s.get("label", "")).lower()
-            spans.append(Span(label, int(s["start"]), int(s["end"])))
+            spans.append(Span(label, to_point[int(s["start"])], to_point[int(s["end"])]))
         return ToolResult(spans, elapsed)
 
     return _predict

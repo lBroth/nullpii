@@ -95,6 +95,57 @@ describe('dropCleanPublicUrlSpans', () => {
     expect(out.map((s) => s.start)).toEqual([100, 100]);
   });
 
+  it('drops a README badge span that covers two public URLs', () => {
+    const badge = 'https://img.shields.io/travis/foo/bar.svg)](https://travis-ci.org/foo/bar';
+    expect(dropCleanPublicUrlSpans([urlSpan(badge, 10)])).toEqual([]);
+  });
+
+  it('keeps the private URL of a span that joins a public and a private one', () => {
+    const joined = 'https://github.com/foo,https://acme.io/internal';
+    const out = dropCleanPublicUrlSpans([urlSpan(joined, 5)]);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({
+      label: 'private_url',
+      start: 28,
+      end: 52,
+      text: 'https://acme.io/internal',
+    });
+  });
+
+  it('keeps the private URL when it comes first', () => {
+    const joined = 'https://acme.io/internal)](https://github.com/foo';
+    const out = dropCleanPublicUrlSpans([urlSpan(joined, 0)]);
+    expect(out.map((s) => s.text)).toEqual(['https://acme.io/internal)](']);
+  });
+
+  it('keeps a multi-URL span whole when none of its URLs is public', () => {
+    const span = urlSpan('https://acme.io/a,https://corp.example/b', 0);
+    expect(dropCleanPublicUrlSpans([span])).toEqual([span]);
+  });
+
+  it('keeps a public part that holds another PII span', () => {
+    const joined = 'https://github.com/a,AKIAIOSFODNN7EXAMPLE,https://github.com/b';
+    const secret = {
+      label: 'secret' as const,
+      start: 21,
+      end: 41,
+      text: 'AKIAIOSFODNN7EXAMPLE',
+      score: 0.9,
+    };
+    const out = dropCleanPublicUrlSpans([urlSpan(joined, 0), secret]);
+    expect(out.map((s) => [s.label, s.text])).toEqual([
+      ['private_url', 'https://github.com/a,AKIAIOSFODNN7EXAMPLE,'],
+      ['secret', 'AKIAIOSFODNN7EXAMPLE'],
+    ]);
+  });
+
+  it('never judges text before the first scheme as a public URL', () => {
+    const span = urlSpan('see:https://github.com/a)](https://github.com/b', 0);
+    expect(dropCleanPublicUrlSpans([span]).map((s) => s.text)).toEqual([
+      'see:https://github.com/a)](',
+    ]);
+  });
+
   it('passes through when no private_url spans are present', () => {
     const spans: PiiSpan[] = [
       { label: 'private_email', start: 0, end: 7, text: 'a@b.com', score: 0.95 },

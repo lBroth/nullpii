@@ -19,6 +19,10 @@
 //   add --config '<json>' to merge engine options, e.g. '{"disabledCategories":[...]}'
 //   add --resume 1 to continue an interrupted run: rows already written are
 //   skipped and new ones appended (a torn last line is cut off first)
+//
+// Offsets are written as code points, the way Python indexes strings, so
+// they line up with the gold spans. Captures made before 2026-10-18 09:30
+// wrote UTF-16 offsets; `utf16_offsets.py` converts them.
 
 import {
   createReadStream,
@@ -58,6 +62,28 @@ function completedKeys(path, dataset) {
     keys.add(`${row.dataset ?? dataset}:${row.idx}`);
   }
   return keys;
+}
+
+/** Maps a UTF-16 offset of `text` to its code-point offset. Span offsets
+ * from the runtime index UTF-16 code units, as JavaScript strings do, but
+ * the scorers and the gold spans are Python, which indexes code points:
+ * without this, every span after an emoji or other astral character lands
+ * one position early per such character. */
+function codePointOffsets(text) {
+  const map = new Uint32Array(text.length + 1);
+  let cp = 0;
+  for (let i = 0; i < text.length; i++) {
+    map[i] = cp;
+    const unit = text.charCodeAt(i);
+    const next = text.charCodeAt(i + 1);
+    if (unit >= 0xd800 && unit <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) {
+      i += 1;
+      map[i] = cp;
+    }
+    cp += 1;
+  }
+  map[text.length] = cp;
+  return (offset) => map[offset];
 }
 
 function checkpointSink(dir, tool, resume) {
@@ -122,7 +148,8 @@ for await (const line of createInterface({ input: createReadStream(args.texts) }
   }
   const r = await np.sanitize(row.text);
   np.destroySession(r.sessionId);
-  sink.write(row, r.spans.map((s) => [s.start, s.end, s.label, s.score]));
+  const cp = codePointOffsets(row.text);
+  sink.write(row, r.spans.map((s) => [cp(s.start), cp(s.end), s.label, s.score]));
   n += 1;
 }
 sink.end();

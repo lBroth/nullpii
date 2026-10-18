@@ -25,6 +25,7 @@ Changes from the measured A/B loop (`packages/eval/scripts/ab/PROTOCOL.md`, resu
   - pieces of subresource-integrity digests;
   - package-registry tarball URLs;
   - project-infrastructure hosts (badges, CI, package CDNs).
+  - README badge rows: a span the model draws across two links (`[![build](https://img.shields.io/…)](https://travis-ci.org/…)`) is now judged one URL at a time, so public badge and CI links are left readable while a private URL next to them stays masked.
 - **Geolocation:** a geolocation span that is not a coordinate is relabelled as an address instead of being dropped.
 
 ### Fixed

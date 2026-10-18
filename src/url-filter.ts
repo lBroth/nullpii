@@ -161,15 +161,48 @@ const SCHEME_PATTERN = /https?:\/\//gi;
  * @param spans - candidate spans, ML and recognizer, pre-dedupe
  */
 export function dropCleanPublicUrlSpans(spans: readonly PiiSpan[]): PiiSpan[] {
-  const dropped = spans.filter((s) => isCleanPublicUrl(s, spans));
+  const dropped: PiiSpan[] = [];
+  const kept: PiiSpan[] = [];
+  for (const s of spans) {
+    const parts = splitAtSchemes(s);
+    const publicParts = parts.filter((p) => isCleanPublicUrl(p, spans));
+    if (publicParts.length === 0) {
+      kept.push(s);
+      continue;
+    }
+    dropped.push(...publicParts);
+    kept.push(...parts.filter((p) => !publicParts.includes(p)));
+  }
   if (dropped.length === 0) return [...spans];
   // A `private_url` span inside a dropped one is a fragment of that same
   // public URL (the model often emits `https:/` or a path piece next to
   // the recognizer's full match). Containment dedupe used to remove it;
-  // with its parent gone it would survive and split the URL. Multi-scheme
-  // spans never reach here, so a nested fragment cannot be another URL.
+  // with its parent gone it would survive and split the URL. A dropped
+  // span or part carries exactly one scheme, at its start, so a nested
+  // fragment cannot be another URL.
   const inside = (s: PiiSpan) => dropped.some((d) => s.start >= d.start && s.end <= d.end);
-  return spans.filter((s) => !dropped.includes(s) && !(s.label === 'private_url' && inside(s)));
+  return kept.filter((s) => !(s.label === 'private_url' && inside(s)));
+}
+
+/**
+ * Splits a `private_url` span that covers several URLs into one part per
+ * URL, cut where each later scheme starts. The model often emits a single
+ * span across a README badge, `[![ci](https://img.shields.io/…)](https://travis-ci.org/…)`,
+ * and {@link isPublicUrl} refuses to judge a span with two schemes. Each
+ * part is judged on its own host instead: a public part can be dropped
+ * while a private one next to it stays masked. Text before the first
+ * scheme stays with the first part, which then has no scheme at its start
+ * and is never judged public. Any other span is returned as is.
+ */
+function splitAtSchemes(s: PiiSpan): PiiSpan[] {
+  if (s.label !== 'private_url') return [s];
+  const starts = [...s.text.matchAll(SCHEME_PATTERN)].map((m) => m.index);
+  if (starts.length < 2) return [s];
+  const ends = [...starts.slice(1), s.text.length];
+  return [0, ...starts.slice(1)].map((from, i) => {
+    const to = ends[i] ?? s.text.length;
+    return { ...s, start: s.start + from, end: s.start + to, text: s.text.slice(from, to) };
+  });
 }
 
 function isCleanPublicUrl(s: PiiSpan, spans: readonly PiiSpan[]): boolean {

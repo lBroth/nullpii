@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { joinAddressParts } from './address-join.js';
 import { OrtBackend } from './backend/backend.js';
 import { detectBase64Pii } from './base64-detector.js';
 import { dedupeOverlappingSpans, forEachWindow } from './chunking.js';
@@ -127,7 +128,8 @@ export class NullPii {
    *
    * Pipeline: escape `[[` → adversarial-normalise → chunk + GLiNER infer
    * (ONNX model) → recognizer pack on escaped + normalized + base64 →
-   * cross-label dedupe + threshold → boundary refine → vault sanitize.
+   * cross-label dedupe + threshold → boundary refine → address-part join →
+   * vault sanitize.
    *
    * A window whose words exceed `max_len=384` subwords is cut, and the
    * next window restarts from the last word the encoder kept, so no word
@@ -258,7 +260,12 @@ export class NullPii {
       acrossLabels: true,
     }) as PiiSpan[];
     const refineOn = this.config.boundaryRefine ?? DEFAULT_BOUNDARY_REFINE;
-    const spans = refineOn ? refineSpanBoundaries(escaped, merged) : merged;
+    // One address the model split into parts is masked as one value, with
+    // the separators between the parts (`address-join.ts`).
+    const spans = joinAddressParts(
+      escaped,
+      refineOn ? refineSpanBoundaries(escaped, merged) : merged,
+    );
 
     const session = sessionId ?? this.vault.createSession();
     logf(LOG_SCOPE, 'sanitize', {

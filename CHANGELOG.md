@@ -29,6 +29,7 @@ Changes from the measured A/B loop (`packages/eval/scripts/ab/PROTOCOL.md`, resu
 - On dense text, a window cut by the encoder's token budget hid its tail from the model. Windows now advance by what the encoder kept.
 - An empty or whitespace-only input, or a window with zero words, crashed the model run.
 - A recognizer deferred to any overlapping model span. It now defers only when the model span covers its whole match.
+- A model span below its label's score threshold could silence or absorb another span before the threshold dropped it, leaving both unmasked. A MAC or IP address the model guessed as a date at a low score went out in the clear. Thresholds now run before deduplication and before recognizers defer to the model.
 - Edge punctuation was trimmed off `secret` spans, leaving part of the credential unmasked.
 - **Italian codice fiscale:** omocodic codes (digits replaced by the letters L–V, as the tax office does to tell apart two people) and codes written in lowercase were not recognized. Both are now. The validator also checks the day of birth, and rejects mixed case, which is a code identifier rather than a written code.
 

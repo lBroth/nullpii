@@ -45,6 +45,7 @@ import {
   type SanitizeOptions,
   type SanitizeResult,
 } from './types/index.js';
+import type { ScoredSpan } from './types/scored-span.js';
 import { dropCleanPublicUrlSpans } from './url-filter.js';
 import { PiiVault } from './vault.js';
 
@@ -158,7 +159,12 @@ export class NullPii {
     // merge with the model's own address candidate for the same region.
     // See `geo-filter.ts`.
     const geoFiltered = resolveNonCoordinateGeolocation(decodedRaw, normalized);
-    const decoded = dedupeOverlappingSpans(geoFiltered);
+    // Score cut BEFORE any dedupe or recognizer deferral: a span the
+    // thresholds will drop must not first absorb, outrank or silence
+    // another one. A 0.06 `private_date` guess on a MAC address made
+    // `core:mac` defer to it, then fell under the 0.125 date threshold
+    // and left the address in the clear.
+    const decoded = dedupeOverlappingSpans(this.applyConfiguredThresholds(geoFiltered));
 
     // Remap span offsets from the normalised text back to the escaped
     // text so they align with the regex pack and vault output.
@@ -234,8 +240,9 @@ export class NullPii {
     // outrank anything else. See `public-digests.ts`.
     // Event timestamps date a log record, not a person. See
     // `machine-timestamps.ts`.
-    const enabled = ([...mlSpans, ...recoSpans] as PiiSpan[]).filter(
-      (s) => !this.disabled.has(s.label),
+    // Thresholds run before dedupe here too, for the same reason as above.
+    const enabled = this.applyConfiguredThresholds(
+      ([...mlSpans, ...recoSpans] as PiiSpan[]).filter((s) => !this.disabled.has(s.label)),
     );
     const candidates = dropDatesInsideMachineTimestamps(
       dropSpansInsidePublicDigests(enabled, escaped),
@@ -243,14 +250,9 @@ export class NullPii {
     );
     const allowlisted =
       this.config.urlAllowlist === 'none' ? candidates : dropCleanPublicUrlSpans(candidates);
-    const combined = dedupeOverlappingSpans(allowlisted, DEFAULT_DEDUPE_IOU, {
+    const merged = dedupeOverlappingSpans(allowlisted, DEFAULT_DEDUPE_IOU, {
       acrossLabels: true,
     }) as PiiSpan[];
-    const merged = applyThresholds(
-      combined,
-      this.config.threshold ?? DEFAULT_POST_FILTER_THRESHOLD,
-      this.config.categoryThresholds ?? DEFAULT_CATEGORY_THRESHOLDS,
-    );
     const refineOn = this.config.boundaryRefine ?? DEFAULT_BOUNDARY_REFINE;
     const spans = refineOn ? refineSpanBoundaries(escaped, merged) : merged;
 
@@ -262,6 +264,15 @@ export class NullPii {
     });
     const result = this.vault.sanitize(escaped, spans, session);
     return { ...result, sanitized: unescapePlaceholders(result.sanitized) };
+  }
+
+  /** The configured global and per-label score cuts, or their defaults. */
+  private applyConfiguredThresholds<T extends ScoredSpan>(spans: T[]): T[] {
+    return applyThresholds(
+      spans,
+      this.config.threshold ?? DEFAULT_POST_FILTER_THRESHOLD,
+      this.config.categoryThresholds ?? DEFAULT_CATEGORY_THRESHOLDS,
+    );
   }
 
   /** Run the model over `normalized` window by window. Windows advance by
@@ -441,11 +452,11 @@ function refineSpanBoundaries(text: string, spans: readonly PiiSpan[]): PiiSpan[
 }
 
 /** Drop spans below threshold. Per-category override wins over the global threshold. */
-function applyThresholds(
-  spans: PiiSpan[],
+function applyThresholds<T extends ScoredSpan>(
+  spans: T[],
   globalThreshold: number,
   perLabel: Partial<Record<string, number>>,
-): PiiSpan[] {
+): T[] {
   const noPerLabel = Object.keys(perLabel).length === 0;
   if (globalThreshold <= 0 && noPerLabel) return spans;
   return spans.filter((s) => {

@@ -6,6 +6,7 @@ import { dedupeOverlappingSpans, forEachWindow } from './chunking.js';
 import { NULLPII_MODEL_DIR, readEnvVar } from './config.js';
 import {
   BOUNDARY_REFINE_TRIM_CHARS,
+  DEFAULT_BACKEND,
   DEFAULT_BOUNDARY_REFINE,
   DEFAULT_CATEGORY_THRESHOLDS,
   DEFAULT_DECODE_THRESHOLD,
@@ -28,6 +29,7 @@ import {
 import { logf } from './log.js';
 import { dropDatesInsideMachineTimestamps } from './machine-timestamps.js';
 import { ModelManager } from './model-manager.js';
+import { onnxCandidates } from './model-variant.js';
 import { normalizeForDetection, remapSpan } from './normalize.js';
 import { escapePlaceholders, unescapePlaceholders } from './placeholder-escape.js';
 import { dropSpansInsidePublicDigests } from './public-digests.js';
@@ -371,24 +373,32 @@ export class NullPii {
     //   2. `NULLPII_MODEL_DIR` env var (deployment override / air-gap)
     //   3. fall through to HF download into the default cache
     const envModelDir = readEnvVar(NULLPII_MODEL_DIR);
+    const variant = this.config.variant ?? DEFAULT_VARIANT;
+    const backendName = this.config.backend ?? DEFAULT_BACKEND;
+    // A local directory may hold either precision; the backend loads the
+    // first candidate present. A download fetches exactly one.
+    let onnxFiles = onnxCandidates(variant, backendName);
     if (this.config.modelDir !== undefined) {
       this.modelDir = this.config.modelDir;
     } else if (envModelDir !== undefined) {
       this.modelDir = envModelDir;
     } else {
       const ensured = await manager.ensure({
-        variant: this.config.variant ?? DEFAULT_VARIANT,
+        variant,
+        backend: backendName,
         ...(this.config.downloadTimeoutMs !== undefined && {
           timeoutMs: this.config.downloadTimeoutMs,
         }),
       });
       this.modelDir = ensured.modelDir;
+      onnxFiles = [ensured.onnxFile];
     }
 
-    // Constructor work (no I/O): OrtBackend lazy-loads `model.onnx`
+    // Constructor work (no I/O): OrtBackend lazy-loads the ONNX graph
     // on first inference; GlinerTokenizer lazy-loads `tokenizer.json` on
     // first encode.
     this.backend = new OrtBackend(this.modelDir, {
+      onnxFiles,
       executionProviders: backendToProviders(this.config.backend),
       ...(this.config.intraOpNumThreads !== undefined && {
         intraOpNumThreads: this.config.intraOpNumThreads,

@@ -9,11 +9,14 @@ Changes from the measured A/B loop (`packages/eval/scripts/ab/PROTOCOL.md`, resu
 
 ### Added
 
+- **fp16 model on CUDA.** With `backend: 'cuda'`, the default `variant: 'auto'` loads `model_fp16.onnx` when the model ships it, and `model.onnx` otherwise. On an RTX 4070 Ti that is about 15% faster (100k characters in 1.61 s against 1.89 s), with recall unchanged on the tuning and report sets. `variant: 'fp16'` requires the file; `variant: 'fp32'` always loads `model.onnx`. Every other backend stays fp32, because ORT's CPU and CoreML kernels gain nothing from fp16.
+
 - **Italian Partita IVA (VAT number)**, masked as `account_number` when it follows its keyword (`P.IVA`, `Partita IVA`, `VAT number`, …) or carries the `IT` prefix, and passes the office-code and check-digit tests. Bare 11-digit runs are left alone: a checksum alone passes about one random number in ten (#38). For a sole trader or a freelancer the number identifies a person.
 - **Extended categories:** `private_organization`, `private_occupation`, `private_demographic`, `private_sensitive` and `private_title`. They are prompted and masked by default. Turn any category off with the new `disabledCategories` config option, for example `['private_organization', 'private_occupation']` to keep company names and job titles readable.
 
 ### Changed
 
+- **`ModelVariant` loses `'int4'`.** It was never implemented: the option was accepted and ignored, and fp32 was loaded. An unknown variant now throws.
 - **Retrained detection model** (run H3b, `docs/WEIGHTS_PROVENANCE.md`). Same base model and size, trained on a larger corpus: a wider Nemotron-PII slice labelled for the extended categories, plus generated secrets, financial numbers, developer records and developer hard negatives.
   - **Report set:** macro char-F2 0.894 → 0.930. Recall rises from 0.922 to 0.977, so fewer characters leak; precision moves from 0.829 to 0.807.
   - **Speed:** unchanged (100k characters in 14.8 s against 14.7 s, M5 Pro CPU).

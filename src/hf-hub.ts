@@ -89,11 +89,25 @@ const RETRYABLE_ERROR_CODES = new Set([
   'UND_ERR_BODY_TIMEOUT',
 ]);
 
+const HTTP_NOT_FOUND = 404;
+
+/** HTTP status a download failure carries in its message, if any. */
+function httpStatusOf(err: ModelNotFoundError): number | undefined {
+  const httpMatch = err.message.match(/HTTP (\d+)/);
+  return httpMatch === null ? undefined : Number(httpMatch[1]);
+}
+
+/** `true` when `err` says the file does not exist at that revision (HTTP
+ * 404), as opposed to a network or server failure. Callers with an
+ * alternative file can try it; anything else must surface. */
+export function isMissingFile(err: unknown): boolean {
+  return err instanceof ModelNotFoundError && httpStatusOf(err) === HTTP_NOT_FOUND;
+}
+
 function isRetryable(err: unknown): boolean {
   if (err instanceof ModelNotFoundError) {
-    const m = err.message;
-    const httpMatch = m.match(/HTTP (\d+)/);
-    if (httpMatch !== null) return RETRYABLE_HTTP.has(Number(httpMatch[1]));
+    const status = httpStatusOf(err);
+    if (status !== undefined) return RETRYABLE_HTTP.has(status);
     return true;
   }
   // Network / abort errors expose either `code` or `name`; everything

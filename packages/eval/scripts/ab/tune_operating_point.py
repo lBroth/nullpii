@@ -8,14 +8,15 @@ nullpii got).
    set. The grid is the tool's own recall knob: GLiNER and Presidio run at a
    low score floor, a token classifier lowers its `O` logit (`o_bias`), opf
    moves its Viterbi transition biases.
-2. Cut: if the best grid run carries scores and `--cut-base` is given,
-   `threshold_sim.py` screens a global, then a per-label, score threshold on
-   that run.
-3. Confirm: a real run with the best grid config plus the screened cut.
+2. Cut: if `--cut-base` is given, `threshold_sim.py` screens a global, then
+   a per-label, score threshold on every grid run that carries scores, the
+   default included: the best raw run is not always the best one to cut.
+3. Confirm: a real run with the best-screened run's config plus its cut.
 
-The operating point is the confirmed config if it beats the default on
-macro char-F2, else the default. Everything lands under `--work/<tool>/`;
-runs resume from their checkpoints. Only the tuning set is read.
+The operating point is whichever scores the highest macro char-F2 in a real
+run: the confirmed config, any raw grid config, or the default (which wins
+ties). Everything lands under `--work/<tool>/`; runs resume from their
+checkpoints. Only the tuning set is read.
 
   python tune_operating_point.py --tool nemotron-pii-raw --grid '[{"threshold": 0.05}]' \\
       --cut-base 0.3 --datasets isotonic-en-heldout,... --work results/ab-loop/r9-tuning
@@ -114,26 +115,38 @@ def main() -> None:
         grid[slug(config)] = {"config": config, "macro_f2": f2}
         print(f"[{args.tool}] {slug(config)} {json.dumps(config, sort_keys=True)}: macro char-F2 {f2:.4f}", flush=True)
     default_f2 = grid["default"]["macro_f2"]
-    best_slug = max((s for s in grid if s != "default"), key=lambda s: grid[s]["macro_f2"], default="default")
-    best = grid[best_slug]["config"]
     summary: dict = {"tool": args.tool, "datasets": args.datasets, "default_macro_f2": default_f2, "grid": grid}
+    # Real runs only; "default" comes first, so it wins ties.
+    finalists = dict(grid)
 
-    first = args.datasets.split(",")[0]
-    if args.cut_base is not None and has_scores(root / best_slug, args.tool, first):
-        sim = screen_cut(root / best_slug, args.tool, args)
-        summary["screen"] = {"from": best_slug, "start": sim["base"]["macro_f2"], "best": sim["best"]["macro_f2"]}
-        best = {**best, "label_cut": sim["label_cut"]}
+    screens = screen_grid(root, grid, args)
+    if screens:
+        summary["screens"] = {s: {"start": e["start"], "best": e["best"]} for s, e in screens.items()}
+        cut_slug = max(screens, key=lambda s: screens[s]["best"])
+        cut_config = {**grid[cut_slug]["config"], "label_cut": screens[cut_slug]["label_cut"]}
+        confirmed_f2 = run(args.tool, cut_config, root / f"confirm-{slug(cut_config)}", args)
+        summary["confirmed"] = {"from": cut_slug, "config": cut_config, "macro_f2": confirmed_f2}
+        finalists["confirmed"] = {"config": cut_config, "macro_f2": confirmed_f2}
 
-    if best != grid[best_slug]["config"]:
-        confirmed_f2 = run(args.tool, best, root / f"confirm-{slug(best)}", args)
-    else:
-        confirmed_f2 = grid[best_slug]["macro_f2"]
-    summary["confirmed"] = {"config": best, "macro_f2": confirmed_f2}
-    chosen = best if confirmed_f2 > default_f2 else {}
-    summary["operating_point"] = {"config": chosen, "macro_f2": max(confirmed_f2, default_f2)}
+    pick = max(finalists, key=lambda s: finalists[s]["macro_f2"])
+    summary["operating_point"] = {"from": pick, **finalists[pick]}
     (root / "operating-point.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(f"[{args.tool}] default {default_f2:.4f}, confirmed {confirmed_f2:.4f}; operating point "
-          f"{'tuned' if chosen else 'default'}", flush=True)
+    print(f"[{args.tool}] default {default_f2:.4f}, operating point {pick} {finalists[pick]['macro_f2']:.4f}", flush=True)
+
+
+def screen_grid(root: Path, grid: dict, args: argparse.Namespace) -> dict:
+    """The threshold screen of every grid run that carries scores."""
+    if args.cut_base is None:
+        return {}
+    first = args.datasets.split(",")[0]
+    screens = {}
+    for s in grid:
+        if not has_scores(root / s, args.tool, first):
+            continue
+        sim = screen_cut(root / s, args.tool, args)
+        screens[s] = {"start": sim["base"]["macro_f2"], "best": sim["best"]["macro_f2"], "label_cut": sim["label_cut"]}
+        print(f"[{args.tool}] screen {s}: {screens[s]['start']:.4f} -> {screens[s]['best']:.4f}", flush=True)
+    return screens
 
 
 if __name__ == "__main__":

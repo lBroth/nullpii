@@ -75,16 +75,19 @@ def load_gold(datasets: list[str]) -> dict[str, list]:
 
 
 class SpanTable:
-    """Per-span (label, score, length, gold-overlap chars) for one dataset.
+    """Char-level counts of one dataset under any threshold map.
 
-    Captured spans are disjoint (the vault merges overlaps before
-    returning them), so coverage is additive over kept spans and any
-    threshold map is evaluated with array sums instead of a pass over
-    every document.
+    Each document is cut into elementary segments at every span boundary,
+    so the set of spans covering a segment is fixed. A segment is masked
+    iff any covering span is kept. Masked and correctly masked characters
+    are then exact array sums even where spans overlap (Presidio, token
+    classifiers, GLiNER across labels), and equal plain per-span sums where
+    they do not (nullpii, whose vault merges overlaps).
     """
 
     def __init__(self, samples: list, docs: list[list]) -> None:
-        labels, scores_, lengths, hits = [], [], [], []
+        labels, scores_ = [], []
+        seg_len, seg_gold, inc_seg, inc_span = [], [], [], []
         gold_total = 0
         for smp, spans in zip(samples, docs, strict=True):
             n = len(smp.text)
@@ -92,24 +95,44 @@ class SpanTable:
             for g in smp.spans:
                 gold[max(0, g.start) : min(n, g.end)] = True
             gold_total += int(gold.sum())
-            for start, end, label, score in spans:
-                a, b = max(0, start), min(n, end)
+            clipped = [(max(0, a), min(n, b), label, score) for a, b, label, score in spans]
+            clipped = [c for c in clipped if c[1] > c[0]]
+            if not clipped:
+                continue
+            prefix = np.concatenate(([0], np.cumsum(gold)))
+            cuts = sorted({p for a, b, _, _ in clipped for p in (a, b)})
+            first = len(seg_len)
+            pos = {p: first + i for i, p in enumerate(cuts)}
+            for a, b in zip(cuts, cuts[1:]):
+                seg_len.append(b - a)
+                seg_gold.append(int(prefix[b] - prefix[a]))
+            for a, b, label, score in clipped:
+                span_id = len(labels)
                 labels.append(label)
                 scores_.append(score)
-                lengths.append(max(0, b - a))
-                hits.append(int(gold[a:b].sum()) if b > a else 0)
+                inc_seg.extend(range(pos[a], pos[b]))
+                inc_span.extend([span_id] * (pos[b] - pos[a]))
+            seg_len.append(0)  # the slot after the last cut; never covered
+            seg_gold.append(0)
         self.labels = np.array(labels)
         self.scores = np.array(scores_, dtype=float)
-        self.lengths = np.array(lengths, dtype=float)
-        self.hits = np.array(hits, dtype=float)
+        self.seg_len = np.array(seg_len, dtype=np.int64)
+        self.seg_gold = np.array(seg_gold, dtype=np.int64)
+        self.inc_seg = np.array(inc_seg, dtype=np.int64)
+        self.inc_span = np.array(inc_span, dtype=np.int64)
         self.gold_total = float(gold_total)
 
     def evaluate(self, thresholds: dict[str, float], base: float = BASE_THRESHOLD) -> dict[str, float]:
         cut = np.full(self.scores.shape, base)
         for label, t in thresholds.items():
             cut[self.labels == label] = t
-        keep = self.scores >= cut
-        return scores(np.array([self.gold_total]), np.array([self.lengths[keep].sum()]), np.array([self.hits[keep].sum()]))
+        keep = (self.scores >= cut).astype(float)
+        covered = np.bincount(self.inc_seg, weights=keep[self.inc_span], minlength=len(self.seg_len)) > 0
+        return scores(
+            np.array([self.gold_total]),
+            np.array([float(self.seg_len[covered].sum())]),
+            np.array([float(self.seg_gold[covered].sum())]),
+        )
 
 
 def macro_f2(tables: dict[str, SpanTable], thresholds: dict[str, float], base: float = BASE_THRESHOLD) -> tuple[float, dict]:

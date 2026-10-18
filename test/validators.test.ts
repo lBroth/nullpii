@@ -167,6 +167,72 @@ describe('codiceFiscaleValid', () => {
   it('accepts lowercase input (case-insensitive)', () => {
     expect(codiceFiscaleValid('rssmra80d15h501o')).toBe(true);
   });
+
+  // Check letters below come from an independent implementation of the
+  // official tables (DM 12/03/1974), not from this validator.
+  it('accepts omocodic codes, one to seven digits replaced from the right', () => {
+    for (const cf of [
+      'RSSMRA85T10A56NH',
+      'RSSMRA85T10A5SNT',
+      'RSSMRA85T10ARSNO',
+      'RSSMRA85T1LARSNR',
+      'RSSMRA85TMLARSNC',
+      'RSSMRA8RTMLARSNO',
+      'RSSMRAURTMLARSNL',
+    ]) {
+      expect(codiceFiscaleValid(cf)).toBe(true);
+    }
+  });
+
+  it('rejects a substitution that is not a suffix of the digits', () => {
+    // Year digit replaced while the later digits are still digits.
+    expect(codiceFiscaleValid('RSSMRAU5T10A562P')).toBe(false);
+  });
+
+  it("checks the day: 41–71 marks a woman's code, 32–40 is impossible", () => {
+    expect(codiceFiscaleValid('VRDLCU90A41H501M')).toBe(true);
+    expect(codiceFiscaleValid('RSSMRA85T32A562Y')).toBe(false);
+  });
+
+  it('rejects mixed case, which is a code identifier, not a written code', () => {
+    expect(codiceFiscaleValid('RSSMRA85T10A562S')).toBe(true);
+    expect(codiceFiscaleValid('rssmra85t10a562s')).toBe(true);
+    expect(codiceFiscaleValid('RssMra85T10a562S')).toBe(false);
+  });
+});
+
+import { partitaIvaValid } from '../src/validators.js';
+
+// Check digits below come from an independent implementation of the
+// DPR 633/1972 algorithm, not from this validator.
+describe('partitaIvaValid', () => {
+  it('accepts valid numbers, with or without the IT prefix', () => {
+    for (const v of [
+      '12345670017',
+      '07654320881',
+      '00000011007',
+      '98765431204',
+      'IT12345670017',
+      'it 07654320881',
+    ]) {
+      expect(partitaIvaValid(v)).toBe(true);
+    }
+  });
+
+  it('rejects a wrong check digit', () => {
+    expect(partitaIvaValid('12345670018')).toBe(false);
+  });
+
+  it('rejects an office code the tax office does not assign', () => {
+    // Office 150: valid check digit, impossible office.
+    expect(partitaIvaValid('12345671502')).toBe(false);
+  });
+
+  it('rejects other lengths and non-digits', () => {
+    expect(partitaIvaValid('1234567001')).toBe(false);
+    expect(partitaIvaValid('123456700177')).toBe(false);
+    expect(partitaIvaValid('1234567001X')).toBe(false);
+  });
 });
 
 import { latLonPairInRange, vinValid } from '../src/validators.js';

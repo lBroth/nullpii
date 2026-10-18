@@ -9,6 +9,7 @@ The detection changes come from the measured A/B loop (`packages/eval/scripts/ab
 
 ### Added
 
+- **Italian Partita IVA (VAT number)**, masked as `account_number` when it follows its keyword (`P.IVA`, `Partita IVA`, `VAT number`, …) or carries the `IT` prefix, and passes the office-code and check-digit tests. Bare 11-digit runs are left alone: a checksum alone passes about one random number in ten (#38). For a sole trader or a freelancer the number identifies a person.
 - **Extended categories:** `private_organization`, `private_occupation`, `private_demographic`, `private_sensitive` and `private_title`. They are prompted and masked by default. Turn any category off with the new `disabledCategories` config option, for example `['private_organization', 'private_occupation']` to keep company names and job titles readable.
 - **Claude Code mod (preview)** in `packages/claude-code-mod/`. Prompts and tool results are masked through the sidecar API before Claude reads them. Placeholders get their real values back only in the arguments of tools that run on this machine, never in web or MCP tools. It fails closed when the sidecar is unreachable. A band above the prompt shows the counts by type, and `/pii` prints them. In auto mode, a local tool call that contains a placeholder is refused, because Claude Code denies tool input that a hook rewrote.
 - **Gateway: OpenAI-compatible route** (`POST /v1/chat/completions`), so the OpenAI SDKs and any client that takes an OpenAI base URL (`OPENAI_BASE_URL=http://127.0.0.1:8787/v1`) can go through the gateway. The upstream is `NULLPII_OPENAI_UPSTREAM` (default `https://api.openai.com`, set without `/v1`).
@@ -44,7 +45,9 @@ The detection changes come from the measured A/B loop (`packages/eval/scripts/ab
 - On dense text, a window cut by the encoder's token budget hid its tail from the model. Windows now advance by what the encoder kept.
 - An empty or whitespace-only input, or a window with zero words, crashed the model run.
 - A recognizer deferred to any overlapping model span. It now defers only when the model span covers its whole match.
+- A model span below its label's score threshold could silence or absorb another span before the threshold dropped it, leaving both unmasked. A MAC or IP address the model guessed as a date at a low score went out in the clear. Thresholds now run before deduplication and before recognizers defer to the model.
 - Edge punctuation was trimmed off `secret` spans, leaving part of the credential unmasked.
+- **Italian codice fiscale:** omocodic codes (digits replaced by the letters L–V, as the tax office does to tell apart two people) and codes written in lowercase were not recognized. Both are now. The validator also checks the day of birth, and rejects mixed case, which is a code identifier rather than a written code.
 
 ### Security
 

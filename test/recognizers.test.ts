@@ -185,6 +185,36 @@ describe('runRecognizers', () => {
     expect(spans[0]?.label).toBe('private_mac');
   });
 
+  it('catches an omocodic or lowercase codice fiscale, not a camelCase identifier', async () => {
+    const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+    const cf = DEFAULT_RECOGNIZERS.find((r) => r.id === 'core:cf-italy');
+    expect(cf).toBeDefined();
+    const run = (text: string) => runRecognizers(text, cf ? [cf] : [], []);
+    expect(run('codice fiscale RSSMRA85T10A56NH, grazie')).toHaveLength(1);
+    expect(run('cf: rssmra85t10a562s')).toHaveLength(1);
+    expect(run('const RssMra85T10a562S = 1')).toHaveLength(0);
+  });
+
+  it('catches a Partita IVA after its keyword or with the IT prefix, never bare digits', async () => {
+    const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+    const piva = DEFAULT_RECOGNIZERS.filter((r) => r.id.startsWith('core:piva-italy'));
+    expect(piva).toHaveLength(2);
+    const run = (text: string) => runRecognizers(text, piva, []);
+    for (const text of [
+      'P.IVA 12345670017',
+      'Partita IVA: 07654320881',
+      'p. iva n° 12345670017',
+      'VAT number IT 07654320881',
+      'fattura a IT12345670017 entro marzo',
+    ]) {
+      const spans = run(text);
+      expect(spans.length).toBeGreaterThanOrEqual(1);
+      expect(spans.every((s) => s.label === 'account_number')).toBe(true);
+    }
+    expect(run('order 12345670017 shipped')).toHaveLength(0);
+    expect(run('P.IVA 12345670018')).toHaveLength(0);
+  });
+
   describe('credential recognizers (cloud / payments / chat)', () => {
     it('catches an AWS secret access key only when canonically hinted', async () => {
       const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');

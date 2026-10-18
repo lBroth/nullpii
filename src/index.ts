@@ -63,7 +63,7 @@ export { LLM_PRESERVATION_HINT, wrapForLLM } from './wrap-for-llm.js';
 // canonical implementations instead of duplicating them. Each returns
 // `true` only when the candidate satisfies the well-defined checksum
 // for its format (mod-97 IBAN, Luhn cards, base58check BTC,
-// mod-11 × 2 CPF, weighted-position Codice Fiscale).
+// mod-11 × 2 CPF, weighted-position Codice Fiscale, Luhn-style Partita IVA).
 export {
   base58CheckValid,
   codiceFiscaleValid,
@@ -72,5 +72,6 @@ export {
   latLonPairInRange,
   luhnValid,
   macAddressNonReserved,
+  partitaIvaValid,
   vinValid,
 } from './validators.js';

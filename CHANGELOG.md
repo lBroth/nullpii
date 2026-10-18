@@ -29,6 +29,7 @@ Changes from the measured A/B loop (`packages/eval/scripts/ab/PROTOCOL.md`, resu
   - package-registry tarball URLs;
   - project-infrastructure hosts (badges, CI, package CDNs).
   - README badge rows: a span the model draws across two links (`[![build](https://img.shields.io/…)](https://travis-ci.org/…)`) is now judged one URL at a time, so public badge and CI links are left readable while a private URL next to them stays masked.
+- **One address, one placeholder.** When the model splits an address into parts (`Via Roma 1` and `20121 Milano`), the parts are joined across a gap of up to 3 spaces, commas, dashes or slashes on one line, so the separator between them is masked too. A semicolon, a line break or another kind of span between them keeps them apart.
 - **Public-URL allowlist releases only the URL itself.** A URL span on an allowlisted host used to be released whole, including any text the model or the greedy URL recognizer swept into it: a name after a space, a private `www.` host after a comma. Now only the URL token is left readable (it ends at whitespace, quotes, brackets, commas and semicolons), and anything after it stays masked unless it is punctuation. A URL with `user:password@`, or with a second URL inside it, is never released.
 - **Geolocation:** a geolocation span that is not a coordinate is relabelled as an address instead of being dropped.
 

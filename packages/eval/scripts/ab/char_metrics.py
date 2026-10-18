@@ -120,33 +120,57 @@ def dataset_arrays(results: Path, dataset: str, tools: list[str]) -> tuple[np.nd
             [doc_counts(len(smp.text), g, p) for smp, g, p in zip(samples, gold_spans, tool_preds, strict=True)],
         )
         per_tool[tool] = (counts[:, 0], counts[:, 1], counts[:, 2])
-        per_label[tool] = per_label_recall(samples, tool_preds)
+        per_label[tool] = label_counts(samples, tool_preds)
     return np.arange(n), per_tool, per_label
 
 
-def per_label_recall(samples: list, tool_preds: list[list[tuple[int, int]]]) -> dict[str, dict[str, float]]:
-    """Char-recall of each gold label: which kinds of PII leak. Coverage is
-    still label-agnostic: a gold person covered by a predicted address counts."""
-    gold_chars: dict[str, int] = {}
-    hit_chars: dict[str, int] = {}
-    for smp, preds in zip(samples, tool_preds, strict=True):
+def label_counts(samples: list, tool_preds: list[list[tuple[int, int]]]) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+    """Per gold label: gold characters and covered characters, per document.
+    Coverage is label-agnostic: a gold person covered by a predicted address
+    counts."""
+    n = len(samples)
+    gold: dict[str, np.ndarray] = {}
+    hit: dict[str, np.ndarray] = {}
+    for i, (smp, preds) in enumerate(zip(samples, tool_preds, strict=True)):
         mask = _covered(preds, len(smp.text))
         for s in smp.spans:
             seg = mask[max(0, s.start) : min(len(smp.text), s.end)]
-            gold_chars[s.label] = gold_chars.get(s.label, 0) + int(seg.size)
-            hit_chars[s.label] = hit_chars.get(s.label, 0) + int(seg.sum())
-    return {
-        label: {"recall": hit_chars[label] / total, "gold_chars": total}
-        for label, total in sorted(gold_chars.items())
-        if total > 0
-    }
+            gold.setdefault(s.label, np.zeros(n, dtype=np.int64))[i] += seg.size
+            hit.setdefault(s.label, np.zeros(n, dtype=np.int64))[i] += int(seg.sum())
+    return {label: (gold[label], hit[label]) for label in sorted(gold) if gold[label].sum() > 0}
+
+
+def per_label_recall(
+    counts: dict[str, tuple[np.ndarray, np.ndarray]],
+    base_counts: dict[str, tuple[np.ndarray, np.ndarray]] | None,
+    idx: np.ndarray,
+) -> dict[str, dict]:
+    """Char-recall of each gold label (which kinds of PII leak), and, against
+    a baseline, the paired-bootstrap CI of baseline minus tool recall on the
+    same resampled documents as the dataset-level CIs. PROTOCOL T3 gates on
+    it: a label must not lose recall significantly."""
+    out: dict[str, dict] = {}
+    for label, (g, h) in counts.items():
+        entry: dict = {"recall": float(h.sum() / g.sum()), "gold_chars": int(g.sum())}
+        if base_counts is not None:
+            if label not in base_counts:
+                raise ValueError(f"label {label!r} has gold for the tool but not for the baseline")
+            bg, bh = base_counts[label]
+            entry["baseline_minus_tool_recall_ci"] = _ci(_bootstrap_recall(bg, bh, idx) - _bootstrap_recall(g, h, idx))
+        out[label] = entry
+    return out
 
 
 def compare(
-    per_tool: dict[str, tuple], baseline: str, n: int, rng: np.random.Generator
+    per_tool: dict[str, tuple],
+    per_label: dict[str, dict[str, tuple[np.ndarray, np.ndarray]]],
+    baseline: str,
+    n: int,
+    rng: np.random.Generator,
 ) -> tuple[dict, dict[str, np.ndarray]]:
-    """Point scores per tool, plus the bootstrap samples of baseline - tool
-    char-F2 so the caller can build a macro CI across datasets."""
+    """Point scores per tool, per-label recall with paired CIs, and the
+    bootstrap samples of baseline - tool char-F2 so the caller can build a
+    macro CI across datasets."""
     idx = rng.integers(0, n, size=(BOOTSTRAP_RESAMPLES, n))
     base_f2 = _bootstrap_f2(*per_tool[baseline], idx)
     base_rec = _bootstrap_recall(per_tool[baseline][0], per_tool[baseline][2], idx)
@@ -165,6 +189,9 @@ def compare(
             entry["baseline_minus_tool_recall_ci"] = _ci(d_rec)
             entry["baseline_minus_tool_precision_ci"] = _ci(base_prec - _bootstrap_precision(arrays[1], arrays[2], idx))
             diffs[tool] = d_f2
+        entry["per_label_recall"] = per_label_recall(
+            per_label[tool], None if tool == baseline else per_label[baseline], idx
+        )
         out[tool] = entry
     return out, diffs
 
@@ -204,11 +231,9 @@ def main() -> None:
         if args.baseline not in tools:
             raise ValueError(f"{dataset}: baseline {args.baseline!r} has no checkpoint")
         idx, per_tool, per_label = dataset_arrays(args.results, dataset, tools)
-        report[dataset], diffs = compare(per_tool, args.baseline, len(idx), rng)
+        report[dataset], diffs = compare(per_tool, per_label, args.baseline, len(idx), rng)
         for tool, d in diffs.items():
             all_diffs.setdefault(tool, []).append(d)
-        for tool, labels in per_label.items():
-            report[dataset][tool]["per_label_recall"] = labels
         row = {t: round(v["f2"], 4) for t, v in report[dataset].items()}
         print(f"{dataset}: char-F2 {row}", flush=True)
 

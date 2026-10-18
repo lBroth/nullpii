@@ -34,7 +34,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bench_full  # noqa: E402
 from char_metrics import scores  # noqa: E402
 
-GRID = [0.05, 0.075, 0.1, 0.125, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.6, 0.7]
+# 0.01–0.03 and 0.8–0.9 were added during competitor tuning (rule change 9):
+# GLiNER competitors settled on 0.05 and 0.7, the old edges. A value below the
+# run's own score floor keeps nothing more than the floor does.
+GRID = [0.01, 0.02, 0.03, 0.05, 0.075, 0.1, 0.125, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.6, 0.7, 0.8, 0.9]
 BASE_THRESHOLD = 0.5
 # PROTOCOL rule change 2 (U1): extra masking of developer content, in
 # percentage points over the starting map, that a candidate may add.

@@ -78,6 +78,8 @@ def main() -> None:
     ap.add_argument("--tasks", required=True, help="comma list of target dataset names")
     ap.add_argument("--corpus", type=Path, help="nullpii's training corpus (jsonl)")
     ap.add_argument("--tuning", type=Path, help="nullpii's tuning texts (jsonl with `text`)")
+    ap.add_argument("--reference", action="append", default=[], metavar="NAME=PATH",
+                    help="another reference corpus (jsonl with `text`); repeatable")
     ap.add_argument("--out", type=Path, required=True)
     args = ap.parse_args()
 
@@ -91,6 +93,9 @@ def main() -> None:
         references.append(("nullpii-train", corpus_texts(args.corpus)))
     if args.tuning:
         references.append(("nullpii-tuning", (r["text"] for r in jsonl(args.tuning))))
+    for spec in args.reference:
+        name, _, path = spec.partition("=")
+        references.append((name, (r["text"] for r in jsonl(Path(path)))))
     references += [(key, hf_texts(name, field)) for key, (name, field) in HF_REFERENCES.items()]
 
     report: dict[str, dict] = {}

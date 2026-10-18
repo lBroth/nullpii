@@ -36,6 +36,8 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import csv
+import functools
+import hashlib
 import json
 import os
 import sys
@@ -51,6 +53,7 @@ from nullpii_eval.adapters import (
     DEFAULT_REGEX_PATTERNS,
     ETTIN_68M,
     MINIMAL_REGEX_PATTERNS,
+    LabelCut,
     OPENMED_LARGE,
     OPENMED_SMALL,
     PII_IDENTIFIER,
@@ -223,6 +226,57 @@ def _load_claude_code_traces_tuning(n: int | None) -> list[Sample]:
     return _load_traces(_TRACES_TUNING, n)
 
 
+# ─ Gated report set R2 (PROTOCOL rule change 9) ─────────────────
+# Each file is frozen by SHA-256 before any tool runs on it; a changed
+# file fails loud instead of being scored. traces-v2 comes from
+# scripts/r2/traces_v2_gen.py (default seed); the PIIMB file is the
+# `sentences` test split of piimb/pii-masking-benchmark (CC-BY-NC-4.0,
+# evaluation only, never redistributed).
+_RESULTS = Path(__file__).resolve().parent.parent / "results"
+_TRACES_V2 = _RESULTS / "r2" / "traces-v2.jsonl"
+_TRACES_V2_SHA256 = "3a741e9a58e3446f0742296f26d5cee7df0bd8e3a59a188140ccc1739313951f"
+_PIIMB_SENTENCES = _RESULTS / "ab-loop" / "piimb" / "test_sentences.jsonl"
+_PIIMB_SENTENCES_SHA256 = "5ff46f3a80316318794f94596fa374060d70f2f32a85909f958cbabc70bae41f"
+
+
+def _frozen_rows(path: Path, sha256: str) -> list[dict]:
+    if not path.exists():
+        raise FileNotFoundError(f"{path} is missing")
+    data = path.read_bytes()
+    digest = hashlib.sha256(data).hexdigest()
+    if digest != sha256:
+        raise ValueError(f"{path}: SHA-256 {digest} is not the frozen {sha256}")
+    return [json.loads(line) for line in data.decode("utf-8").splitlines() if line.strip()]
+
+
+@functools.cache
+def _piimb_rows() -> tuple[dict, ...]:
+    return tuple(_frozen_rows(_PIIMB_SENTENCES, _PIIMB_SENTENCES_SHA256))
+
+
+def _piimb(task: str) -> Callable[[int | None], list[Sample]]:
+    def _load(n: int | None) -> list[Sample]:
+        samples = public_datasets.load_piimb_task(list(_piimb_rows()), task)
+        return samples[:n] if n else samples
+    return _load
+
+
+def _load_traces_v2(n: int | None) -> list[Sample]:
+    rows = _frozen_rows(_TRACES_V2, _TRACES_V2_SHA256)
+    samples = [Sample(r["text"], tuple(Span(s["label"], int(s["start"]), int(s["end"])) for s in r["spans"])) for r in rows]
+    return samples[:n] if n else samples
+
+
+def _traces_v2_clusters(n: int) -> list[str]:
+    """The template skeleton of each traces-v2 document: rule change 9
+    resamples this set by template cluster, not by document."""
+    return [r["template"] for r in _frozen_rows(_TRACES_V2, _TRACES_V2_SHA256)[:n]]
+
+
+# Datasets resampled by cluster in `char_metrics.py`: key -> cluster id per document.
+DATASET_CLUSTERS: dict[str, Callable[[int], list[str]]] = {"traces-v2": _traces_v2_clusters}
+
+
 def _ai4privacy_report(n: int | None) -> list[Sample]:
     every = list(public_datasets._load_ai4privacy(None).samples)
     allowed = [i for i in range(len(every)) if not any(a <= i < b for a, b in _REPORT_AI4_EXCLUDED)]
@@ -276,6 +330,11 @@ DATASET_CONFIGS: list[DatasetSpec] = [
     DatasetSpec("claude-code-traces",        _load_claude_code_traces,                                   None, total_n=440),
     # Tuning twin (seed 777, carrier files disjoint from the report set).
     DatasetSpec("claude-code-traces-tuning", _load_claude_code_traces_tuning,                            None, total_n=440),
+    # ─ Gated report set R2 (rule change 9) — see _TRACES_V2 above ──
+    DatasetSpec("piimb-mapa-eur-lex",        _piimb("mapa-eur-lex"),                                     None, total_n=12_200),
+    DatasetSpec("piimb-privy",               _piimb("privy"),                                            None, total_n=5_363),
+    DatasetSpec("piimb-gretel",              _piimb("gretel"),                                           None, total_n=19_601),
+    DatasetSpec("traces-v2",                 _load_traces_v2,                                            None, total_n=600),
 ]
 
 
@@ -438,19 +497,19 @@ def build_tools(args) -> dict[str, Callable]:
         # processing (boundary refine / never-PII filter / regex pack /
         # `_normalize_for_detection`). Only the per-tool label remap to
         # nullpii's 12-class schema runs (cross-schema bridge).
-        "presidio":  lambda: presidio_predictor(),
-        "presidio-multilang": lambda: presidio_multilang_predictor(),
-        "deberta":   lambda: _mark_batch(deberta_pii_predictor(device=backend, batch_size=_BATCH)),
+        "presidio":  lambda **kw: presidio_predictor(**kw),
+        "presidio-multilang": lambda **kw: presidio_multilang_predictor(**kw),
+        "deberta":   lambda **kw: _mark_batch(deberta_pii_predictor(device=backend, batch_size=_BATCH, **kw)),
         "deberta-simple": lambda: _mark_batch(deberta_pii_predictor(device=backend, batch_size=_BATCH, aggregation_strategy="simple")),
-        "piiranha":  lambda: _mark_batch(piiranha_predictor(device=backend, batch_size=_BATCH)),
-        "rizzo-pii": lambda: _mark_batch(rizzo_pii_predictor(device=backend, batch_size=_BATCH)),
+        "piiranha":  lambda **kw: _mark_batch(piiranha_predictor(device=backend, batch_size=_BATCH, **kw)),
+        "rizzo-pii": lambda **kw: _mark_batch(rizzo_pii_predictor(device=backend, batch_size=_BATCH, **kw)),
         # GLiNER multi PII v1 (`urchade/gliner_multi_pii-v1`) bare HF.
-        "gliner-onnx-pii-fp32": lambda: gliner_v2_predictor(
+        "gliner-onnx-pii-fp32": lambda **kw: gliner_v2_predictor(
             "onnx-community/gliner_multi_pii-v1",
             onnx_file="onnx/model.onnx",
-            threshold=args.gliner_threshold,
             labels=_GLINER_NATIVE_LABELS,
             label_map=_GLINER_NATIVE_TO_NULLPII8,
+            **{"threshold": args.gliner_threshold, **kw},
         ),
         # ─── nullpii bare model — the merged-LoRA ONNX
         # WITHOUT the npm runtime pipeline. Loads `model.onnx` from
@@ -469,20 +528,20 @@ def build_tools(args) -> dict[str, Callable]:
         ),
         # NVIDIA Nemotron-PII (`nvidia/gliner-pii`, gliner_large-v2.1
         # backbone, ~600 MB, 55+ PII categories). 37→8 label remap.
-        "nemotron-pii-raw": lambda: gliner_nemotron_pii_predictor(
+        "nemotron-pii-raw": lambda **kw: gliner_nemotron_pii_predictor(
             model_path="nvidia/gliner-pii",
             device=backend,
-            threshold=0.3,
+            **{"threshold": 0.3, **kw},
         ),
         # `gliner-pii-large-v1.0` (knowledgator) — PII-specialised
         # Apache fine-tune, gliner-large backbone. Bare HF.
-        "gliner-pii-large-v1": lambda: gliner_v2_predictor(
+        "gliner-pii-large-v1": lambda **kw: gliner_v2_predictor(
             "knowledgator/gliner-pii-large-v1.0",
             device=backend,
-            threshold=args.gliner_threshold,
             local_files_only=False,
             labels=_GLINER_NATIVE_LABELS,
             label_map=_GLINER_NATIVE_TO_NULLPII8,
+            **{"threshold": args.gliner_threshold, **kw},
         ),
         # A local merged GLiNER directory (phase-F2 bare-model A/B), prompted
         # with nullpii's 12 runtime labels. The directory comes from
@@ -497,20 +556,20 @@ def build_tools(args) -> dict[str, Callable]:
         # backbone (July 2026, Apache-2.0). Needs gliner>=0.2.28, newer
         # than this venv's pin, so it runs from a separate venv; same
         # native labels and map as its sibling gliner-pii-large-v1.
-        "gliner-stream-pii": lambda: gliner_v2_predictor(
+        "gliner-stream-pii": lambda **kw: gliner_v2_predictor(
             "knowledgator/gliner-stream-pii-v1.0",
             device=backend,
-            threshold=args.gliner_threshold,
             local_files_only=False,
             labels=_GLINER_NATIVE_LABELS,
             label_map=_GLINER_NATIVE_TO_NULLPII8,
+            **{"threshold": args.gliner_threshold, **kw},
         ),
         # `openai/privacy-filter` — DeBERTa-v3 BIOES-tagged PII tagger,
         # trained on nullpii's exact 8-class schema. Decoded via explicit
         # BIOES walk (the HF naive aggregation drops boundary tokens for
         # BIOES schemas). Bare HF, no nullpii post-processing.
-        "openai-privacy-filter": lambda: openai_privacy_filter_predictor(
-            device=backend,
+        "openai-privacy-filter": lambda **kw: openai_privacy_filter_predictor(
+            device=backend, **kw,
         ),
         # ─── Token classifiers fine-tuned on nvidia/Nemotron-PII ─────
         # Card usage (`aggregation_strategy="simple"`), inputs cut into
@@ -518,22 +577,43 @@ def build_tools(args) -> dict[str, Callable]:
         # The 2048-token ModernBERT windows run at a smaller GPU batch so
         # activations fit next to other jobs; batch size changes padding
         # only, never the windows a document is cut into.
-        "openmed-small": lambda: _mark_batch(hf_token_classifier_predictor(OPENMED_SMALL, device=backend, batch_size=_BATCH)),
-        "openmed-large": lambda: _mark_batch(hf_token_classifier_predictor(OPENMED_LARGE, device=backend, batch_size=_BATCH)),
-        "ettin-68m": lambda: _mark_batch(hf_token_classifier_predictor(ETTIN_68M, device=backend, batch_size=min(_BATCH, _LONG_WINDOW_BATCH))),
-        "pii-identifier": lambda: _mark_batch(hf_token_classifier_predictor(PII_IDENTIFIER, device=backend, batch_size=min(_BATCH, _LONG_WINDOW_BATCH))),
+        "openmed-small": lambda **kw: _mark_batch(hf_token_classifier_predictor(OPENMED_SMALL, device=backend, batch_size=_BATCH, **kw)),
+        "openmed-large": lambda **kw: _mark_batch(hf_token_classifier_predictor(OPENMED_LARGE, device=backend, batch_size=_BATCH, **kw)),
+        "ettin-68m": lambda **kw: _mark_batch(hf_token_classifier_predictor(ETTIN_68M, device=backend, batch_size=min(_BATCH, _LONG_WINDOW_BATCH), **kw)),
+        "pii-identifier": lambda **kw: _mark_batch(hf_token_classifier_predictor(PII_IDENTIFIER, device=backend, batch_size=min(_BATCH, _LONG_WINDOW_BATCH), **kw)),
         # OpenMed's opf fine-tune of openai/privacy-filter, served by the
         # same opf runtime as the row above (CPU: opf has no MPS path).
-        "openmed-pf-multi-v2": lambda: openmed_privacy_filter_predictor(device=backend),
+        "openmed-pf-multi-v2": lambda **kw: openmed_privacy_filter_predictor(device=backend, **kw),
     }
     requested = [t.strip() for t in args.tools.split(",") if t.strip()]
+    configs = _tool_configs(args.tool_config)
+    unknown = sorted(set(configs) - set(requested))
+    if unknown:
+        raise SystemExit(f"--tool-config names tools not requested: {unknown}")
     out: dict[str, Callable] = {}
     for t in requested:
         if t not in builders:
             raise SystemExit(f"unknown tool: {t}")
-        print(f"[bench] loading {t} ({backend})…", flush=True)
-        out[t] = builders[t]()
+        print(f"[bench] loading {t} ({backend}) {sorted(configs.get(t, {}))}…", flush=True)
+        out[t] = builders[t](**configs.get(t, {}))
     return out
+
+
+def _tool_configs(path: str) -> dict[str, dict]:
+    """Per-tool builder overrides from `--tool-config` (rule change 9: a
+    competitor's tuned operating point). `{"tool": {"threshold": 0.05,
+    "label_cut": {"default": 0.5, "thresholds": {...}}, "o_bias": 2.0,
+    "viterbi_biases": {...}}}`; a `label_cut` object becomes a `LabelCut`."""
+    if not path:
+        return {}
+    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    configs: dict[str, dict] = {}
+    for tool, kwargs in raw.items():
+        cut = kwargs.get("label_cut")
+        if cut is not None:
+            kwargs = {**kwargs, "label_cut": LabelCut(thresholds=dict(cut["thresholds"]), default=float(cut["default"]))}
+        configs[tool] = kwargs
+    return configs
 
 
 # ─── Checkpointed worker ─────────────────────────────────────────
@@ -542,6 +622,16 @@ def _checkpoint_paths(ckpt_dir: Path, tool: str, dataset: str) -> tuple[Path, Pa
         ckpt_dir / f"{tool}-{dataset}.jsonl",
         ckpt_dir / f"{tool}-{dataset}.state",
     )
+
+
+def _checkpoint_spans(result) -> list[tuple]:
+    """(start, end, label), plus the tool's score where it emits one, so
+    `threshold_sim.py` can screen operating points from the checkpoint."""
+    if not result.scores:
+        return [(s.start, s.end, s.label) for s in result.spans]
+    if len(result.scores) != len(result.spans):
+        raise ValueError(f"{len(result.spans)} spans but {len(result.scores)} scores")
+    return [(s.start, s.end, s.label, round(sc, 6)) for s, sc in zip(result.spans, result.scores, strict=True)]
 
 
 def _load_done_idx(state_path: Path) -> int:
@@ -634,10 +724,9 @@ def run_combo(
             try:
                 if is_batch:
                     texts = [samples[k].text for k in range(batch_start, batch_end)]
-                    results = predictor(texts)
-                    batch_spans = [list(r.spans) for r in results]
+                    results = list(predictor(texts))
                 else:
-                    batch_spans = [list(predictor(samples[batch_start].text).spans)]
+                    results = [predictor(samples[batch_start].text)]
             except Exception as e:
                 f.flush()
                 state_path.write_text(str(batch_start - 1))
@@ -646,10 +735,10 @@ def run_combo(
                 raise RuntimeError(
                     f"{tool_name}/{dataset.key} failed at idx={batch_start}: {msg}",
                 ) from e
-            for offset, spans in enumerate(batch_spans):
+            for offset, result in enumerate(results):
                 i = batch_start + offset
-                preds.append(spans)
-                f.write(json.dumps({"idx": i, "spans": [(s.start, s.end, s.label) for s in spans]}) + "\n")
+                preds.append(list(result.spans))
+                f.write(json.dumps({"idx": i, "spans": _checkpoint_spans(result)}) + "\n")
             i = batch_end - 1
             if ((i + 1) // flush_every) > (batch_start // flush_every) or i + 1 == len(samples):
                 f.flush()
@@ -681,6 +770,8 @@ def main() -> None:
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--checkpoint-dir", default="")
     parser.add_argument("--gliner-threshold", type=float, default=0.5)
+    parser.add_argument("--tool-config", default="",
+                        help="JSON file of per-tool builder overrides (operating points); see _tool_configs")
     parser.add_argument(
         "--drop-rfc1918", action="store_true",
         help="Enable nullpii's never_pii_filter to drop RFC1918 + link-local IPs. "

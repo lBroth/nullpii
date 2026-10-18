@@ -145,6 +145,21 @@ def dataset_arrays(
     return np.arange(n), per_tool, per_label
 
 
+def by_cluster(per_tool: dict[str, tuple], per_label: dict[str, dict], clusters: list[str]) -> tuple[dict, dict, int]:
+    """Sum per-document counts within each cluster, so the bootstrap draws
+    clusters instead of documents (rule change 9, item 5). Point scores do
+    not change: every count is a character total."""
+    keys = {c: i for i, c in enumerate(sorted(set(clusters)))}
+    inv = np.array([keys[c] for c in clusters])
+
+    def agg(a: np.ndarray) -> np.ndarray:
+        return np.bincount(inv, weights=a, minlength=len(keys)).astype(np.int64)
+
+    tools = {t: tuple(agg(a) for a in arrays) for t, arrays in per_tool.items()}
+    labels = {t: {lab: (agg(g), agg(h)) for lab, (g, h) in counts.items()} for t, counts in per_label.items()}
+    return tools, labels, len(keys)
+
+
 def label_counts(samples: list, tool_preds: list[list[tuple[int, int]]]) -> dict[str, tuple[np.ndarray, np.ndarray]]:
     """Per gold label: gold characters and covered characters, per document.
     Coverage is label-agnostic: a gold person covered by a predicted address
@@ -262,7 +277,14 @@ def main() -> None:
         if args.baseline not in tools:
             raise ValueError(f"{dataset}: baseline {args.baseline!r} has no checkpoint")
         idx, per_tool, per_label = dataset_arrays(args.results, dataset, tools, args.mask_all)
-        report[dataset], diffs = compare(per_tool, per_label, args.baseline, len(idx), rng)
+        docs, units = len(idx), len(idx)
+        cluster_ids = bench_full.DATASET_CLUSTERS.get(dataset)
+        if cluster_ids is not None:
+            per_tool, per_label, units = by_cluster(per_tool, per_label, cluster_ids(docs))
+        report[dataset], diffs = compare(per_tool, per_label, args.baseline, units, rng)
+        if cluster_ids is not None:
+            for entry in report[dataset].values():
+                entry["docs"], entry["bootstrap_clusters"] = docs, units
         for tool, d in diffs.items():
             all_diffs.setdefault(tool, []).append(d)
         row = {t: round(v["f2"], 4) for t, v in report[dataset].items()}

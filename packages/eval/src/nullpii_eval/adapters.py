@@ -9,6 +9,7 @@ Presidio runs in-process via its Python API.
 from __future__ import annotations
 
 import atexit
+import hashlib
 import json
 import os
 import re
@@ -17,7 +18,7 @@ import sys
 import threading
 import time
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -40,6 +41,44 @@ class ToolResult:
 
 
 Predictor = Callable[[str], ToolResult]
+
+
+@dataclass(frozen=True, slots=True)
+class LabelCut:
+    """A per-label operating point (PROTOCOL rule change 9, item 3): a span
+    is kept iff its score reaches its label's threshold, or `default` for a
+    label the map does not list. Applied to a tool's own scores, after its
+    label map and before its window dedupe."""
+
+    thresholds: Mapping[str, float]
+    default: float
+
+    def keeps(self, label: str, score: float) -> bool:
+        return score >= self.thresholds.get(label, self.default)
+
+
+def _scored_result(spans_with_scores: list[tuple[Span, float]], kept: list[Span], elapsed_ms: float) -> ToolResult:
+    """The `kept` spans (a subset of the same objects) with their scores."""
+    score_by_id = {id(sp): sc for sp, sc in spans_with_scores}
+    return ToolResult(kept, elapsed_ms, scores=tuple(score_by_id[id(sp)] for sp in kept))
+
+
+def _bias_background_logit(model, bias: float) -> None:
+    """Lower the background (`O`) logit of every token by `bias`, so a
+    positive bias trades precision for recall (rule change 9, item 3: the
+    recall knob of a token classifier). A bias of 0 leaves the model
+    untouched, so the tool's default output is reproduced exactly."""
+    if bias == 0.0:
+        return
+    o_id = model.config.label2id.get("O")
+    if o_id is None:
+        raise ValueError(f"{model.config.name_or_path}: no 'O' label to bias")
+
+    def _hook(_module, _inputs, output):
+        output.logits[..., o_id] -= bias
+        return output
+
+    model.register_forward_hook(_hook)
 
 
 def _utf16_to_code_points(text: str) -> list[int]:
@@ -175,6 +214,8 @@ def piiranha_predictor(
     batch_size: int = 32,
     chunk_chars: int = 1000,
     overlap_chars: int = 200,
+    o_bias: float = 0.0,
+    label_cut: LabelCut | None = None,
 ) -> BatchPredictor:
     """`iiiorg/piiranha-v1-detect-personal-information` — multilingual
     DeBERTa-v3-based PII detector (en/es/fr/de/it/nl, 17 labels, 256 tok).
@@ -212,16 +253,18 @@ def piiranha_predictor(
         device=device,
         batch_size=batch_size,
     )
+    _bias_background_logit(pipe.model, o_bias)
 
-    def _decode_spans(results: list[dict], offset: int = 0) -> list[Span]:
-        spans: list[Span] = []
+    def _decode_spans(results: list[dict], offset: int = 0) -> list[tuple[Span, float]]:
+        spans: list[tuple[Span, float]] = []
         for r in results:
             entity = str(r.get("entity_group") or r.get("entity") or "")
             key = _strip_bioes(entity).upper()
             label = _PIIRANHA_LABEL_MAP.get(key)
-            if label is None:
+            score = float(r["score"])
+            if label is None or (label_cut is not None and not label_cut.keeps(label, score)):
                 continue
-            spans.append(Span(label, int(r["start"]) + offset, int(r["end"]) + offset))
+            spans.append((Span(label, int(r["start"]) + offset, int(r["end"]) + offset), score))
         return spans
 
     def _dedupe_by_iou(spans: list[Span]) -> list[Span]:
@@ -283,12 +326,12 @@ def piiranha_predictor(
         out: list[ToolResult] = []
         cursor = 0
         for chunks in per_input_chunks:
-            collected: list[Span] = []
+            collected: list[tuple[Span, float]] = []
             for off, _ in chunks:
                 results = flat_results[cursor] if cursor < len(flat_results) else []
                 cursor += 1
                 collected.extend(_decode_spans(results, offset=off))
-            out.append(ToolResult(_dedupe_by_iou(collected), per_call))
+            out.append(_scored_result(collected, _dedupe_by_iou([sp for sp, _ in collected]), per_call))
         return out
 
     return _predict_batch
@@ -367,6 +410,8 @@ def rizzo_pii_predictor(
     chunk_words: int = 120,
     overlap_words: int = 20,
     aggregation_strategy: str = "first",
+    o_bias: float = 0.0,
+    label_cut: LabelCut | None = None,
 ) -> BatchPredictor:
     """`rizzoaiacademy/rizzo-pii-0.3B` — Italian-first ModernBERT/mmBERT
     token classifier, 22 PII tags, 0.3B dense params (fp32, ~1.23 GB).
@@ -426,6 +471,7 @@ def rizzo_pii_predictor(
         device=device,
         batch_size=batch_size,
     )
+    _bias_background_logit(pipe.model, o_bias)
 
     def _word_chunks(text: str) -> list[tuple[int, str]]:
         """(char_offset, chunk_text) at `chunk_words` words with overlap."""
@@ -444,14 +490,15 @@ def rizzo_pii_predictor(
                 break
         return chunks
 
-    def _decode(results: list[dict], offset: int) -> list[Span]:
-        spans: list[Span] = []
+    def _decode(results: list[dict], offset: int) -> list[tuple[Span, float]]:
+        spans: list[tuple[Span, float]] = []
         for r in results:
             entity = str(r.get("entity_group") or r.get("entity") or "")
             label = _RIZZO_LABEL_MAP.get(_strip_bioes(entity).upper())
-            if label is None:
+            score = float(r["score"])
+            if label is None or (label_cut is not None and not label_cut.keeps(label, score)):
                 continue
-            spans.append(Span(label, int(r["start"]) + offset, int(r["end"]) + offset))
+            spans.append((Span(label, int(r["start"]) + offset, int(r["end"]) + offset), score))
         return spans
 
     def _predict_batch(texts: list[str]) -> list[ToolResult]:
@@ -473,12 +520,12 @@ def rizzo_pii_predictor(
         out: list[ToolResult] = []
         cursor = 0
         for chunks in per_input:
-            collected: list[Span] = []
+            collected: list[tuple[Span, float]] = []
             for offset, _ in chunks:
                 results = flat_results[cursor] if cursor < len(flat_results) else []
                 cursor += 1
                 collected.extend(_decode(results, offset))
-            out.append(ToolResult(_dedupe_spans_by_iou(collected), per_call))
+            out.append(_scored_result(collected, _dedupe_spans_by_iou([sp for sp, _ in collected]), per_call))
         return out
 
     return _predict_batch
@@ -528,6 +575,7 @@ def openai_privacy_filter_predictor(
     device: str | None = None,
     model: str | Path | None = None,
     label_map: dict[str, str | None] | None = None,
+    viterbi_biases: Mapping[str, float] | None = None,
 ) -> Predictor:
     """`openai/privacy-filter` — gpt-oss-derived bidirectional token
     classifier (1.5B params total / 50M active, 128k context). Loaded
@@ -542,9 +590,15 @@ def openai_privacy_filter_predictor(
     instead of the base model; a fine-tune with its own taxonomy then
     passes `label_map` (native upper-case label → nullpii label or None),
     and a predicted label missing from it raises.
+
+    `viterbi_biases` sets the decoder's transition biases, the operating-
+    point control the opf README documents for the precision/recall
+    trade-off (rule change 9, item 3). Keys are opf's own
+    `VITERBI_BIAS_KEYS`; an unlisted key stays 0. `None` uses the
+    checkpoint's shipped calibration.
     """
     try:
-        from opf import OPF
+        from opf import OPF, DecodeOptions
     except ImportError as e:
         raise ImportError(
             "opf required — `pip install -e git+https://github.com/openai/privacy-filter`",
@@ -574,6 +628,9 @@ def openai_privacy_filter_predictor(
         trim_whitespace=True,
         discard_overlapping_predicted_spans=False,
     )
+    decode = None
+    if viterbi_biases is not None:
+        decode = DecodeOptions(viterbi_calibration_path=str(_opf_calibration_file(viterbi_biases)))
 
     def _project(native: str) -> str | None:
         if label_map is None:
@@ -582,7 +639,7 @@ def openai_privacy_filter_predictor(
 
     def _predict(text: str) -> ToolResult:
         t0 = time.perf_counter()
-        result = runtime.redact(text)
+        result = runtime.redact(text, decode=decode)
         elapsed = (time.perf_counter() - t0) * 1000
         spans: list[Span] = []
         # OPF returns either a RedactionResult or a plain string when
@@ -595,6 +652,24 @@ def openai_privacy_filter_predictor(
         return ToolResult(spans, elapsed)
 
     return _predict
+
+
+def _opf_calibration_file(biases: Mapping[str, float]) -> Path:
+    """An opf `viterbi_calibration.json` holding `biases` as its default
+    operating point, written once under the eval cache, keyed by content."""
+    from opf._core.decoding import VITERBI_BIAS_KEYS
+
+    unknown = sorted(set(biases) - set(VITERBI_BIAS_KEYS))
+    if unknown:
+        raise ValueError(f"unknown opf Viterbi bias keys: {unknown}")
+    full = {key: float(biases.get(key, 0.0)) for key in VITERBI_BIAS_KEYS}
+    payload = json.dumps({"operating_points": {"default": {"biases": full}}}, sort_keys=True)
+    digest = hashlib.sha256(payload.encode()).hexdigest()[:16]
+    path = _OPF_CALIBRATION_CACHE / f"viterbi-{digest}.json"
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(payload + "\n", encoding="utf-8")
+    return path
 
 
 def _map_native_label(native: str, label_map: dict[str, str | None], *, tool: str) -> str | None:
@@ -754,9 +829,12 @@ _OPENMED_PF_LABEL_MAP: dict[str, str | None] = {
 OPENMED_PF_REPO = "OpenMed/privacy-filter-multilingual-v2"
 OPENMED_PF_REVISION = "0d0c0430fa386435ace1d9f842f0f966903a9ac8"
 _OPF_CHECKPOINT_CACHE = Path.home() / ".cache" / "nullpii-eval" / "opf-checkpoints"
+_OPF_CALIBRATION_CACHE = Path.home() / ".cache" / "nullpii-eval" / "opf-calibration"
 
 
-def openmed_privacy_filter_predictor(*, device: str | None = None) -> Predictor:
+def openmed_privacy_filter_predictor(
+    *, device: str | None = None, viterbi_biases: Mapping[str, float] | None = None
+) -> Predictor:
     """`OpenMed/privacy-filter-multilingual-v2` — full fine-tune of
     `openai/privacy-filter` (same 1.4B-total / 50M-active MoE) with
     `opf train`, 54 types × BIOES, 16 languages.
@@ -771,7 +849,9 @@ def openmed_privacy_filter_predictor(*, device: str | None = None) -> Predictor:
 
     checkpoint = ensure_opf_checkpoint(OPENMED_PF_REPO, OPENMED_PF_REVISION, _OPF_CHECKPOINT_CACHE)
     _check_label_coverage(_opf_span_labels(checkpoint), _OPENMED_PF_LABEL_MAP, tool="openmed-pf")
-    return openai_privacy_filter_predictor(device=device, model=checkpoint, label_map=_OPENMED_PF_LABEL_MAP)
+    return openai_privacy_filter_predictor(
+        device=device, model=checkpoint, label_map=_OPENMED_PF_LABEL_MAP, viterbi_biases=viterbi_biases
+    )
 
 
 def _opf_span_labels(checkpoint: Path) -> set[str]:
@@ -842,14 +922,16 @@ def _token_windows(tokenizer, text: str, window_tokens: int, overlap_tokens: int
 def _merge_adjacent_entities(results: list[dict]) -> list[dict]:
     """The ettin model card's `format_pii_entities`: merge same-label
     entities that touch or are one char apart (it repairs the sub-word
-    fragments `aggregation_strategy="simple"` leaves)."""
+    fragments `aggregation_strategy="simple"` leaves). A merged entity
+    keeps the highest score of its parts."""
     merged: list[dict] = []
     for r in sorted(results, key=lambda x: x["start"]):
         prev = merged[-1] if merged else None
         if prev and prev["entity_group"] == r["entity_group"] and r["start"] <= prev["end"] + 1:
             prev["end"] = max(prev["end"], r["end"])
+            prev["score"] = max(prev["score"], float(r["score"]))
             continue
-        merged.append({"entity_group": r["entity_group"], "start": r["start"], "end": r["end"]})
+        merged.append({"entity_group": r["entity_group"], "start": r["start"], "end": r["end"], "score": float(r["score"])})
     return merged
 
 
@@ -931,6 +1013,8 @@ def hf_token_classifier_predictor(
     *,
     device: str | None = None,
     batch_size: int = 32,
+    o_bias: float = 0.0,
+    label_cut: LabelCut | None = None,
 ) -> BatchPredictor:
     """Bare HF token classifier run the way its model card shows
     (`pipeline(..., aggregation_strategy="simple")`), with inputs cut into
@@ -953,6 +1037,7 @@ def hf_token_classifier_predictor(
     )
     native = {_strip_bioes(label) for label in pipe.model.config.id2label.values()} - {"O"}
     _check_label_coverage(native, spec.label_map, tool=spec.tool)
+    _bias_background_logit(pipe.model, o_bias)
     # Window budget excludes special tokens; the pipeline's own
     # truncation is set to the trained length as a hard ceiling.
     window = spec.max_tokens - _WINDOW_RESERVED_TOKENS
@@ -965,16 +1050,17 @@ def hf_token_classifier_predictor(
                 raise ValueError(f"[{spec.tool}] window exceeds {spec.max_tokens} tokens; raise the reserve")
         return chunks
 
-    def _decode(results: list[dict], text: str, offset: int) -> list[Span]:
+    def _decode(results: list[dict], text: str, offset: int) -> list[tuple[Span, float]]:
         entities = _merge_adjacent_entities(results) if spec.merge_adjacent else results
-        spans: list[Span] = []
+        spans: list[tuple[Span, float]] = []
         for r in entities:
             label = _map_native_label(str(r["entity_group"]), spec.label_map, tool=spec.tool)
-            if label is None:
+            score = float(r["score"])
+            if label is None or (label_cut is not None and not label_cut.keeps(label, score)):
                 continue
             start, end = _strip_span(text, int(r["start"]) + offset, int(r["end"]) + offset)
             if start < end:
-                spans.append(Span(label, start, end))
+                spans.append((Span(label, start, end), score))
         return spans
 
     def _predict_batch(texts: list[str]) -> list[ToolResult]:
@@ -988,11 +1074,11 @@ def hf_token_classifier_predictor(
         out: list[ToolResult] = []
         cursor = 0
         for text, chunks in zip(texts, per_input, strict=True):
-            collected: list[Span] = []
+            collected: list[tuple[Span, float]] = []
             for offset, _ in chunks:
                 collected.extend(_decode(flat_results[cursor], text, offset))
                 cursor += 1
-            out.append(ToolResult(_dedupe_spans_by_iou(collected), per_call))
+            out.append(_scored_result(collected, _dedupe_spans_by_iou([sp for sp, _ in collected]), per_call))
         return out
 
     return _predict_batch
@@ -1055,6 +1141,8 @@ def deberta_pii_predictor(
     device: str | None = None,
     batch_size: int = 32,
     aggregation_strategy: str = "first",
+    o_bias: float = 0.0,
+    label_cut: LabelCut | None = None,
 ) -> BatchPredictor:
     """`lakshyakh93/deberta_finetuned_pii` — DeBERTa-base English-only PII
     detector with rich label set (~50+ categories). Mapped to nullpii's
@@ -1092,6 +1180,7 @@ def deberta_pii_predictor(
         device=device,
         batch_size=batch_size,
     )
+    _bias_background_logit(pipe.model, o_bias)
 
     # The pipeline truncates each input to 512 tokens, so a long document
     # is cut into token windows first, as for the other HF classifiers.
@@ -1111,15 +1200,16 @@ def deberta_pii_predictor(
         out: list[ToolResult] = []
         cursor = 0
         for chunks in per_input:
-            spans: list[Span] = []
+            spans: list[tuple[Span, float]] = []
             for offset, _ in chunks:
                 for r in flat_results[cursor]:
                     entity = str(r.get("entity_group") or r.get("entity") or "")
                     label = _DEBERTA_LABEL_MAP.get(_strip_bioes(entity).upper())
-                    if label is not None:
-                        spans.append(Span(label, int(r["start"]) + offset, int(r["end"]) + offset))
+                    score = float(r["score"])
+                    if label is not None and (label_cut is None or label_cut.keeps(label, score)):
+                        spans.append((Span(label, int(r["start"]) + offset, int(r["end"]) + offset), score))
                 cursor += 1
-            out.append(ToolResult(_dedupe_spans_by_iou(spans), per_call))
+            out.append(_scored_result(spans, _dedupe_spans_by_iou([sp for sp, _ in spans]), per_call))
         return out
 
     return _predict_batch
@@ -2466,6 +2556,7 @@ def gliner_v2_predictor(
     overlap_chars: int = 200,
     labels: list[str] | None = None,
     label_map: dict[str, str] | None = None,
+    label_cut: LabelCut | None = None,
 ) -> Predictor:
     """Bare-mode predictor for upstream GLiNER models (Apache 2.0).
 
@@ -2490,6 +2581,9 @@ def gliner_v2_predictor(
     Loads either the PyTorch checkpoint (`onnx_file=None`) on the chosen
     device, or an exported ONNX model (`onnx_file="model_int4.onnx"`,
     forced to CPU since onnxruntime CPUExecutionProvider is what we ship).
+
+    ``threshold`` is the run threshold; ``label_cut`` then keeps a span
+    only if its score reaches its label's operating point (rule change 9).
     """
     try:
         from gliner import GLiNER
@@ -2529,10 +2623,11 @@ def gliner_v2_predictor(
     inference_labels = list(labels) if labels is not None else list(_NULLPII_LABELS)
     remap = dict(label_map) if label_map is not None else None
 
-    def _project_label(native: str) -> str | None:
-        if remap is None:
-            return native
-        return remap.get(native)
+    def _project_label(native: str, score: float) -> str | None:
+        label = native if remap is None else remap.get(native)
+        if label is None or (label_cut is not None and not label_cut.keeps(label, score)):
+            return None
+        return label
 
     def _predict(text: str) -> ToolResult:
         t0 = time.perf_counter()
@@ -2541,7 +2636,7 @@ def gliner_v2_predictor(
         text_len = len(text)
         if text_len <= chunk_chars:
             for e in model.predict_entities(text, inference_labels, threshold=threshold):
-                projected = _project_label(e["label"])
+                projected = _project_label(e["label"], float(e["score"]))
                 if projected is None:
                     continue
                 spans.append(Span(projected, int(e["start"]), int(e["end"])))
@@ -2554,7 +2649,7 @@ def gliner_v2_predictor(
                 if not chunk:
                     break
                 for e in model.predict_entities(chunk, inference_labels, threshold=threshold):
-                    projected = _project_label(e["label"])
+                    projected = _project_label(e["label"], float(e["score"]))
                     if projected is None:
                         continue
                     ns_full = int(e["start"]) + offset
@@ -2757,6 +2852,7 @@ def gliner_nemotron_pii_predictor(
     threshold: float = 0.3,
     chunk_chars: int = 1400,
     overlap_chars: int = 200,
+    label_cut: LabelCut | None = None,
 ) -> Predictor:
     """Bare-mode predictor for `nvidia/gliner-PII` (Nemotron PII).
 
@@ -2771,6 +2867,9 @@ def gliner_nemotron_pii_predictor(
     Default threshold 0.3 follows Nvidia's evaluation recipe (model card).
     Backbone is `urchade/gliner_large-v2.1` (~600M params, 2× the size
     of our backbone `urchade/gliner_multi_pii-v1` ~280M).
+
+    ``threshold`` is the run threshold; ``label_cut`` then keeps a span
+    only if its score reaches its label's operating point (rule change 9).
     """
     try:
         from gliner import GLiNER
@@ -2801,6 +2900,12 @@ def gliner_nemotron_pii_predictor(
                 out.append(s)
         return sorted(out, key=lambda s: s.start)
 
+    def _mapped(e: dict) -> str | None:
+        label = _NEMOTRON_TO_NULLPII8.get(e["label"])
+        if label is None or (label_cut is not None and not label_cut.keeps(label, float(e["score"]))):
+            return None
+        return label
+
     def _predict(text: str) -> ToolResult:
         t0 = time.perf_counter()
         spans: list[Span] = []
@@ -2811,7 +2916,7 @@ def gliner_nemotron_pii_predictor(
                 text, _NEMOTRON_PII_LABELS, threshold=threshold,
             )
             for e in entities:
-                mapped = _NEMOTRON_TO_NULLPII8.get(e["label"])
+                mapped = _mapped(e)
                 if mapped is None:
                     continue
                 spans.append(Span(mapped, int(e["start"]), int(e["end"])))
@@ -2824,7 +2929,7 @@ def gliner_nemotron_pii_predictor(
                 if not chunk:
                     break
                 for e in model.predict_entities(chunk, _NEMOTRON_PII_LABELS, threshold=threshold):
-                    mapped = _NEMOTRON_TO_NULLPII8.get(e["label"])
+                    mapped = _mapped(e)
                     if mapped is None:
                         continue
                     ns_full = int(e["start"]) + offset
@@ -3010,7 +3115,7 @@ _SCRUBADUB_LABEL_MAP = {
 }
 
 
-def presidio_predictor(*, language: str = "en") -> Predictor:
+def presidio_predictor(*, language: str = "en", label_cut: LabelCut | None = None) -> Predictor:
     """In-process Presidio analyzer (English only). Maps Presidio entities
     → our 8 categories. Use `presidio_multilang_predictor` for multilingual
     benches — this variant analyses every text under `language=en` and
@@ -3031,12 +3136,14 @@ def presidio_predictor(*, language: str = "en") -> Predictor:
         results = analyzer.analyze(text=text, language=language)
         elapsed = (time.perf_counter() - t0) * 1000
         spans: list[Span] = []
+        scores: list[float] = []
         for r in results:
             label = _map_presidio_entity(r.entity_type)
-            if label is None:
+            if label is None or (label_cut is not None and not label_cut.keeps(label, float(r.score))):
                 continue
             spans.append(Span(label, int(r.start), int(r.end)))
-        return ToolResult(spans, elapsed)
+            scores.append(float(r.score))
+        return ToolResult(spans, elapsed, scores=tuple(scores))
 
     return _predict
 
@@ -3044,6 +3151,7 @@ def presidio_predictor(*, language: str = "en") -> Predictor:
 def presidio_multilang_predictor(
     *,
     languages: tuple[str, ...] = ("en", "de", "fr", "it"),
+    label_cut: LabelCut | None = None,
 ) -> Predictor:
     """Multilingual Presidio. Loads spaCy NER per language + re-registers
     every regex-pattern recognizer under each language so the universal
@@ -3113,16 +3221,18 @@ def presidio_multilang_predictor(
 
     def _predict(text: str) -> ToolResult:
         t0 = time.perf_counter()
-        dedup: dict[tuple[int, int, str], None] = {}
+        # A span found under several languages keeps its highest score.
+        dedup: dict[tuple[int, int, str], float] = {}
         for lang in languages:
             for r in analyzer.analyze(text=text, language=lang):
                 label = _map_presidio_entity(r.entity_type)
-                if label is None:
+                if label is None or (label_cut is not None and not label_cut.keeps(label, float(r.score))):
                     continue
-                dedup.setdefault((int(r.start), int(r.end), label), None)
+                key = (int(r.start), int(r.end), label)
+                dedup[key] = max(dedup.get(key, 0.0), float(r.score))
         elapsed = (time.perf_counter() - t0) * 1000
         spans = [Span(label, start, end) for (start, end, label) in dedup]
-        return ToolResult(spans, elapsed)
+        return ToolResult(spans, elapsed, scores=tuple(dedup.values()))
 
     return _predict
 

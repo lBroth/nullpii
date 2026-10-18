@@ -1438,3 +1438,120 @@ def _load_rizzo_clean_val(max_samples: int | None) -> PublicDataset:
         ),
         samples=tuple(samples),
     )
+
+
+# ─── PIIMB `sentences` tasks for the gated report set R2 ─────────────
+# PROTOCOL rule change 9. PIIMB's gold uses each source corpus's own
+# vocabulary; it is projected onto nullpii's schema by the symmetry rule
+# of PR #47 (PROTOCOL rule 4): a gold label maps to X exactly when the
+# tool maps of `adapters.py` send the same category to X, and a category
+# every tool map drops (`None`) leaves the gold, so masking it is charged
+# to precision, never to recall. gretel and mapa-eur-lex use Nemotron-PII
+# style names (`_NEMOTRON_TOKEN_LABEL_MAP`); privy uses Presidio entity
+# names (`_PRESIDIO_TO_NULLPII`). An unlisted label raises.
+_PIIMB_GOLD_MAPS: dict[str, dict[str, str | None]] = {
+    "gretel": {
+        "account_number": "account_number",
+        "address": "private_address",
+        "api_key": "secret",
+        "bank_routing_number": "account_number",
+        "biometric_identifier": "secret",
+        "certificate_license_number": "account_number",
+        "city": "private_address",
+        "company_name": None,
+        "coordinate": "private_geolocation",
+        "country": "private_address",
+        "credit_card_number": "account_number",
+        "customer_id": "account_number",
+        "cvv": "account_number",
+        "date": "private_date",
+        "date_of_birth": "private_date",
+        "date_time": "private_date",
+        "device_identifier": "account_number",
+        "email": "private_email",
+        "employee_id": "account_number",
+        "first_name": "private_person",
+        "health_plan_beneficiary_number": "account_number",
+        "ipv4": "private_ip",
+        "ipv6": "private_ip",
+        "last_name": "private_person",
+        "license_plate": "private_vehicle_id",
+        "medical_record_number": "account_number",
+        "name": "private_person",
+        "national_id": "account_number",
+        "password": "secret",
+        "phone_number": "private_phone",
+        "pin": "secret",
+        "postcode": "private_address",
+        "ssn": "account_number",
+        "state": "private_address",
+        "street_address": "private_address",
+        "swift_bic": "account_number",
+        "tax_id": "account_number",
+        "time": "private_date",
+        "unique_identifier": None,       # as Nemotron `unique_id`
+        "url": "private_url",
+        "user_name": "private_person",
+        "vehicle_identifier": "private_vehicle_id",
+    },
+    "mapa-eur-lex": {
+        "age": None,
+        "date": "private_date",
+        "education_level": None,
+        "employer": None,                # an organisation, as `company_name`
+        "first_name": "private_person",
+        "honorific": "private_person",   # as the Isotonic / ai4privacy PREFIX
+        "last_name": "private_person",
+        "nationality": None,             # demographic, as Presidio NRP
+        "occupation": None,
+        "race_ethnicity": None,
+        "url": "private_url",
+    },
+    "privy": {
+        "AGE": None,
+        "COORDINATE": "private_geolocation",
+        "CREDIT_CARD": "account_number",
+        "DATE_TIME": "private_date",
+        "EMAIL_ADDRESS": "private_email",
+        # Routing numbers and BICs, but also currency codes: PIIMB counts
+        # the whole tag as PII and it cannot be split, so it stays gold.
+        "FINANCIAL": "account_number",
+        "IBAN_CODE": "account_number",
+        "IMEI": "account_number",        # as Isotonic PHONEIMEI
+        "IP_ADDRESS": "private_ip",
+        "LOCATION": "private_address",
+        "MAC_ADDRESS": "private_mac",
+        "NRP": None,                     # nationality, religion, politics
+        "ORGANIZATION": None,
+        "PASSWORD": "secret",
+        "PERSON": "private_person",
+        "PHONE_NUMBER": "private_phone",
+        "TITLE": "private_person",       # Mr., Dr.: the PREFIX convention
+        "URL": "private_url",
+        "US_BANK_NUMBER": "account_number",
+        "US_DRIVER_LICENSE": "private_driver_license",
+        "US_ITIN": "account_number",
+        "US_LICENSE_PLATE": "private_vehicle_id",
+        "US_PASSPORT": "private_passport",
+        "US_SSN": "account_number",
+    },
+}
+
+
+def load_piimb_task(rows: list[dict], task: str) -> list[Sample]:
+    """One PIIMB `sentences` task, in file order, with gold projected by
+    `_PIIMB_GOLD_MAPS[task]`. `rows` are the parsed file's rows."""
+    label_map = _PIIMB_GOLD_MAPS[task]
+    samples: list[Sample] = []
+    for row in rows:
+        if row["task_name"] != task:
+            continue
+        spans = []
+        for e in row["entities"]:
+            if e["label"] not in label_map:
+                raise ValueError(f"piimb {task}: gold label {e['label']!r} is not in _PIIMB_GOLD_MAPS")
+            mapped = label_map[e["label"]]
+            if mapped is not None:
+                spans.append(Span(mapped, int(e["start"]), int(e["end"])))
+        samples.append(Sample(text=row["text"], spans=tuple(spans)))
+    return samples

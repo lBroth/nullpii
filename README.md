@@ -6,7 +6,7 @@
 
 Mask personal data and secrets before they reach an LLM, and put them back on the way out. Detection runs on your machine: a fine-tuned GLiNER model plus validated recognizers, with a reversible in-memory vault.
 
-- **Measured, not claimed.** Scored on every character over eight public and synthetic test sets, nullpii is ahead of 13 of the 14 open-source detectors we compared, and every confidence interval of those differences excludes zero (macro char-F2 0.894; the next best is 0.830). The fourteenth, OpenMed's privacy-filter-multilingual-v2, ties overall. It was trained on the text of five of the eight test sets; on the three it did not see, nullpii leads 0.899 to 0.784 ([results](#benchmark)).
+- **Measured, not claimed.** Scored on every character over eight public and synthetic test sets, nullpii is ahead of each of the 14 open-source detectors we compared, and every confidence interval of the difference excludes zero (macro char-F2 0.930). The closest, OpenMed's privacy-filter-multilingual-v2 (0.898), was trained on the text of five of the eight test sets; on the three it did not see, nullpii leads 0.912 to 0.784 ([results](#benchmark)).
 - **Works with any model.** Call `sanitize()` before your LLM call and `restore()` after it. Or run the gateway in front of the Anthropic or OpenAI API, or the Claude Code mod.
 - **Built for coding agents.**
   - It masks tool output (files, logs, command results), not just prompts.
@@ -199,28 +199,30 @@ Every number here comes from the protocol in [`packages/eval/scripts/ab/PROTOCOL
 <!-- matrix:begin -->
 | Tool | Macro char-F2 | Recall | Precision | CI of nullpii − tool |
 |---|---:|---:|---:|---|
-| `nullpii` | 0.894 | 0.922 | 0.829 | — |
-| `openmed-small` | 0.830 | 0.855 | 0.803 | [+0.057, +0.071] |
-| `openmed-large` | 0.821 | 0.838 | 0.816 | [+0.064, +0.083] |
-| `gliner-stream-pii` | 0.801 | 0.825 | 0.745 | [+0.084, +0.103] |
-| `ettin-68m` | 0.789 | 0.795 | 0.814 | [+0.096, +0.113] |
-| `openai-privacy-filter` | 0.787 | 0.779 | 0.878 | [+0.097, +0.117] |
-| `pii-identifier` | 0.786 | 0.796 | 0.795 | [+0.098, +0.118] |
-| `nemotron-pii-raw` | 0.766 | 0.783 | 0.729 | [+0.117, +0.140] |
-| `gliner-pii-large-v1` | 0.686 | 0.664 | 0.836 | [+0.197, +0.219] |
-| `gliner-onnx-pii-fp32` | 0.650 | 0.682 | 0.581 | [+0.233, +0.255] |
-| `presidio` | 0.635 | 0.697 | 0.533 | [+0.249, +0.269] |
-| `rizzo-pii` | 0.544 | 0.523 | 0.723 | [+0.339, +0.362] |
-| `deberta` | 0.537 | 0.623 | 0.426 | [+0.347, +0.369] |
-| `piiranha` | 0.480 | 0.437 | 0.848 | [+0.403, +0.426] |
+| `nullpii` | 0.930 | 0.977 | 0.807 | — |
+| `openmed-pf-multi-v2` | 0.898 | 0.941 | 0.821 | [+0.023, +0.039] |
+| `openmed-small` | 0.830 | 0.855 | 0.803 | [+0.092, +0.106] |
+| `openmed-large` | 0.821 | 0.838 | 0.816 | [+0.098, +0.117] |
+| `gliner-stream-pii` | 0.801 | 0.825 | 0.745 | [+0.120, +0.137] |
+| `ettin-68m` | 0.789 | 0.795 | 0.814 | [+0.131, +0.149] |
+| `openai-privacy-filter` | 0.787 | 0.779 | 0.878 | [+0.133, +0.152] |
+| `pii-identifier` | 0.786 | 0.796 | 0.795 | [+0.133, +0.153] |
+| `nemotron-pii-raw` | 0.766 | 0.783 | 0.729 | [+0.152, +0.174] |
+| `gliner-pii-large-v1` | 0.686 | 0.664 | 0.836 | [+0.233, +0.253] |
+| `gliner-onnx-pii-fp32` | 0.650 | 0.682 | 0.581 | [+0.268, +0.290] |
+| `presidio` | 0.635 | 0.697 | 0.533 | [+0.284, +0.304] |
+| `rizzo-pii` | 0.544 | 0.523 | 0.723 | [+0.375, +0.397] |
+| `deberta` | 0.537 | 0.623 | 0.426 | [+0.384, +0.402] |
+| `piiranha` | 0.480 | 0.437 | 0.848 | [+0.438, +0.460] |
 <!-- matrix:end -->
 
 The full per-dataset matrix, and the in-distribution flags for tools trained on a test set's source, are in [`packages/eval/scripts/ab/LOG.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/scripts/ab/LOG.md).
 
 **Where nullpii is not ahead.**
-- **Test sets a competitor trained on:** OpenMed's privacy-filter-multilingual-v2 scores 0.994–0.997 on the four Isotonic sets and 0.851 on argilla-pii. All five are re-releases of ai4privacy text it lists as training data, verified verbatim. Those cells are flagged ‡ and left out of the comparison against it.
-- **`argilla-pii`:** openmed-small finds more (recall 0.944 vs 0.927, significant), and three tools score higher on F2.
-- **`claude-code-traces`:** openai-privacy-filter scores 0.840 and gliner-stream-pii 0.813, against 0.811. Neither difference is significant. nullpii leaks less there (recall 0.924, against 0.836 and 0.878) and over-masks more.
+- **Test sets a competitor trained on:** OpenMed's privacy-filter-multilingual-v2 scores 0.994–0.997 on the four Isotonic sets (nullpii 0.969–0.971) and 0.851 on argilla-pii. All five are re-releases of ai4privacy text it lists as training data, verified verbatim. Those cells are flagged ‡.
+- **`argilla-pii`:** nullpii finds more than every tool not trained on it (recall 0.961; openmed-small 0.944), but it also over-masks more (precision 0.514, against 0.606). Four tools score significantly higher on F2: openmed-small 0.849, openmed-large 0.848, pii-identifier 0.837 and ettin-68m 0.829, against 0.819.
+- **`claude-code-traces`:** nullpii 0.848 and openai-privacy-filter 0.840 are a tie; the difference is not significant. nullpii leaks less (recall 0.982, against 0.836) and over-masks more (precision 0.549, against 0.853).
+- **`tab-echr`:** nullpii is still first (0.941; next is presidio at 0.883), but down from the previous model's 0.963 at the same recall. The new model masks court, prison and ministry names that contain a place name as addresses.
 
 ### Latency
 
@@ -228,7 +230,7 @@ The full per-dataset matrix, and the in-distribution flags for tools trained on 
 
 | Tool | 2k chars | 30k chars | 100k chars | Macro char-F2 |
 |---|---:|---:|---:|---:|
-| **nullpii** (CPU) | 282 ms | 4.0 s | 14.7 s | **0.894** |
+| **nullpii** (CPU) | 286 ms | 4.3 s | 14.8 s | **0.930** |
 | nemotron-pii-raw (MPS) | 398 ms | 4.9 s | 16.1 s | 0.766 |
 | gliner-pii-large-v1 (MPS) | 420 ms | 5.6 s | 19.8 s | 0.686 |
 | openai-privacy-filter (MPS) | 3.2 s | 46.3 s | 159 s | 0.787 |

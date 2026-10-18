@@ -25,6 +25,10 @@ The detection changes come from the measured A/B loop (`packages/eval/scripts/ab
 
 ### Changed
 
+- **Retrained detection model** (run H3b, `docs/WEIGHTS_PROVENANCE.md`). Same base model and size, trained on a larger corpus: a wider Nemotron-PII slice labelled for the extended categories, plus generated secrets, financial numbers, developer records and developer hard negatives.
+  - **Report set:** macro char-F2 0.894 → 0.930. Recall rises from 0.922 to 0.977, so fewer characters leak; precision moves from 0.829 to 0.807.
+  - **Speed:** unchanged (100k characters in 14.8 s against 14.7 s, M5 Pro CPU).
+  - **Legal text is masked more:** court, prison and ministry names that contain a place name are now masked as addresses. Precision on TAB/ECHR falls from 0.932 to 0.840 at the same recall.
 - **One placeholder per value** (#50). A value that recurs in a session reaches the model as the same token, so it can still tell the same person from someone else. Values are matched exactly, case included, so `restore()` stays byte-exact.
 - **Recall-first thresholds.** The decode threshold drops to 0.05, with per-label cuts: date 0.125, email 0.075, IP and MAC 0.5. Fewer characters leak, at a small cost in over-masking.
 - **Developer content is masked less:**

@@ -12,6 +12,7 @@ externally-licensed upstream splits.
 | `nullpii-bench.jsonl` | 2,361 | ✅ project-authored, see subsets below | self-authored, Apache-2.0 |
 | `presidio-synthetic.jsonl` | 5,000 | ✅ external, member of **OOD-7** | Microsoft Presidio seed, MIT |
 | `tab-echr-test.jsonl` | 127 | ✅ EU legal test split, member of **OOD-7** | TAB ECHR test (ACL 2022), MIT |
+| `tab-echr-dev.jsonl` | 125 | ❌ legal documents of the A/B harness fingerprint corpus only | TAB ECHR dev (ACL 2022), MIT |
 
 Every file listed here is redistributed inside the `nullpii-eval` wheel via
 the per-file allowlist in [`../pyproject.toml`](../pyproject.toml). A file
@@ -112,6 +113,14 @@ fully synthetic. Used as a held-out OOD baseline.
 
 EU jurisprudence test split, 127 docs, ~3,000 chars avg. Gold spans
 cover `private_person` / `private_address` / `private_date`.
+
+## `tab-echr-dev`
+
+TAB's dev split, text only, minus the 2 documents whose first 200
+characters match a test document. The A/B harness fingerprint corpus
+(`scripts/ab/harness.mjs`) reads its legal documents from here, so no
+report-set document gates a change (PROTOCOL rule change 9, item 7).
+Not shipped in the wheel.
 
 ## Loading
 

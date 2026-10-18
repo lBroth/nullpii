@@ -209,12 +209,16 @@ _PIIRANHA_LABEL_MAP = {
 }
 
 
+# piiranha's card: "context length is 256 Deberta tokens". The overlap keeps
+# the old 1,000/200-character chunking's one-fifth ratio.
+_PIIRANHA_MAX_TOKENS = 256
+_PIIRANHA_OVERLAP_TOKENS = 48
+
+
 def piiranha_predictor(
     *,
     device: str | None = None,
     batch_size: int = 32,
-    chunk_chars: int = 1000,
-    overlap_chars: int = 200,
     o_bias: float = 0.0,
     label_cut: LabelCut | None = None,
 ) -> BatchPredictor:
@@ -222,12 +226,12 @@ def piiranha_predictor(
     DeBERTa-v3-based PII detector (en/es/fr/de/it/nl, 17 labels, 256 tok).
 
     Upstream model card: "context length is 256 Deberta tokens. If your
-    text is longer than that, just split it up". We honour that by
-    chunking the input at ~1000 chars (≈ 250-300 mDeBERTa tokens with
-    English / Romance text) with 200-char overlap, then dedupe overlap
-    boundary spans by IoU. Without this, long inputs (tab-echr ~3k chars,
-    isotonic 1-2k chars) get truncated to the first 256 tokens and the
-    model's F1 is systematically under-estimated.
+    text is longer than that, just split it up". The input is cut into
+    token windows of at most 256 tokens, special tokens included, with
+    `_PIIRANHA_OVERLAP_TOKENS` of overlap, and spans repeated in an
+    overlap are deduped by IoU. (Until 2026-10-18 the windows were 1,000
+    characters: about 250 tokens of prose, but up to 724 tokens of code,
+    which ran the model far past its trained length on trace text.)
     """
     try:
         import torch  # noqa: I001
@@ -255,6 +259,7 @@ def piiranha_predictor(
         batch_size=batch_size,
     )
     _bias_background_logit(pipe.model, o_bias)
+    window = _PIIRANHA_MAX_TOKENS - _WINDOW_RESERVED_TOKENS
 
     def _decode_spans(results: list[dict], offset: int = 0) -> list[tuple[Span, float]]:
         spans: list[tuple[Span, float]] = []
@@ -301,19 +306,10 @@ def piiranha_predictor(
         per_input_chunks: list[list[tuple[int, str]]] = []
         flat_chunks: list[str] = []
         for text in texts:
-            tlen = len(text)
-            chunks: list[tuple[int, str]] = []
-            if tlen <= chunk_chars:
-                chunks.append((0, text))
-            else:
-                stride = chunk_chars - overlap_chars
-                for off in range(0, tlen, stride):
-                    chunk = text[off : off + chunk_chars]
-                    if not chunk:
-                        break
-                    chunks.append((off, chunk))
-                    if off + chunk_chars >= tlen:
-                        break
+            chunks = _token_windows(pipe.tokenizer, text, window, _PIIRANHA_OVERLAP_TOKENS) if text else [(0, text)]
+            for _, chunk in chunks:
+                if len(pipe.tokenizer(chunk)["input_ids"]) > _PIIRANHA_MAX_TOKENS:
+                    raise ValueError(f"[piiranha] window exceeds {_PIIRANHA_MAX_TOKENS} tokens; raise the reserve")
             per_input_chunks.append(chunks)
             flat_chunks.extend(c for _, c in chunks)
 

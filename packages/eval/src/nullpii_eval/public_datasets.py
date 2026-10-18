@@ -1219,45 +1219,12 @@ def _load_oasst_dev_planted(max_samples: int | None) -> PublicDataset:
 
 
 # ─── Argilla PII (29 categories) → nullpii 12-class mapping ───────
-_ARGILLA_LABEL_MAP: dict[str, str | None] = {
-    "FIRSTNAME": "private_person",
-    "LASTNAME": "private_person",
-    "MIDDLENAME": "private_person",
-    "PREFIX": "private_person",
-    "EMAIL": "private_email",
-    "PHONEIMEI": "account_number",
-    # v0.4 schema split — dedicated labels for the new classes. Argilla
-    # native vocabulary surfaces these on the EN multi-domain split;
-    # missing maps drop competitor + nullpii gold consistently.
-    "VEHICLEVIN": "private_vehicle_id",
-    "LICENSEPLATE": "private_vehicle_id",
-    "PASSPORTNUM": "private_passport",
-    "DRIVERLICENSENUM": "private_driver_license",
-    "GPSCOORDINATES": "private_geolocation",
-    "AGE": "private_date",
-    "DOB": "private_date",
-    "DATE": "private_date",
-    "TIME": "private_date",
-    "BUILDINGNUMBER": "private_address",
-    "STREET": "private_address",
-    "COUNTY": "private_address",
-    "NEARBYGPSCOORDINATE": "private_geolocation",
-    "MASKEDNUMBER": "account_number",
-    "ACCOUNTNUMBER": "account_number",
-    "CREDITCARDNUMBER": "account_number",
-    "IPV4": "private_ip",
-    "IPV6": "private_ip",
-    "PASSWORD": "secret",
-    "PIN": "secret",
-    # Skip — not in nullpii 12-class
-    "GENDER": None,
-    "HEIGHT": None,
-    "EYECOLOR": None,
-    "JOBAREA": None,
-    "JOBTITLE": None,
-    "USERAGENT": None,
-    "CREDITCARDISSUER": None,
-}
+# `argilla/textcat-tokencat-pii-per-domain` is Isotonic-en text with
+# Isotonic's label vocabulary (1,997 of its 2,000 rows are verbatim Isotonic
+# rows), so it is scored with Isotonic's map and Isotonic's ignore list, and
+# an unknown label raises (PROTOCOL rule 4). A separate map used to drop 17
+# in-schema labels (phone, URL, IBAN, SSN, city, ZIP, IP, MAC, …), 43.5% of
+# the in-schema gold, and to map AGE to a date where Isotonic ignores it.
 
 
 def _load_argilla_pii(max_samples: int | None) -> PublicDataset:
@@ -1266,9 +1233,9 @@ def _load_argilla_pii(max_samples: int | None) -> PublicDataset:
     stores PII span annotations under the `pii` field as a list of
     `{start, end, label}` dicts.
 
-    Maps 29 Argilla labels → nullpii 12-class via `_ARGILLA_LABEL_MAP`.
-    Records whose ALL spans map to `None` (e.g. only contains GENDER /
-    HEIGHT) still count as samples with empty gold.
+    Labels go through `_map_isotonic_label`: the dataset is Isotonic-en
+    text with Isotonic's vocabulary. Records whose spans are all ignored
+    labels (e.g. only GENDER / HEIGHT) still count, with empty gold.
     """
     from datasets import load_dataset
 
@@ -1290,16 +1257,10 @@ def _load_argilla_pii(max_samples: int | None) -> PublicDataset:
         for s in items:
             if not isinstance(s, dict):
                 continue
-            label_raw = str(s.get("label", "")).upper()
-            mapped = _ARGILLA_LABEL_MAP.get(label_raw)
+            mapped = _map_isotonic_label(str(s.get("label", "")))
             if mapped is None:
                 continue
-            try:
-                start = int(s["start"])
-                end = int(s["end"])
-            except (KeyError, TypeError, ValueError):
-                continue
-            spans.append(Span(mapped, start, end))
+            spans.append(Span(mapped, int(s["start"]), int(s["end"])))
         samples.append(Sample(text=text, spans=tuple(spans)))
         if len(samples) >= n_cap:
             break

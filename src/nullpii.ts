@@ -88,6 +88,8 @@ export class NullPii {
   private disposed = false;
 
   constructor(config: NullPiiConfig = {}) {
+    // Fail on an unknown variant here, not at the first sanitize().
+    onnxCandidates(config.variant ?? DEFAULT_VARIANT, config.backend ?? DEFAULT_BACKEND);
     this.config = config;
     this.disabled = new Set(config.disabledCategories ?? []);
     this.promptLabels = GLINER_LABELS.filter((l) => !this.disabled.has(l));

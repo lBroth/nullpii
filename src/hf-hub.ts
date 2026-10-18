@@ -31,6 +31,13 @@ export function fileUrl(repo: string, revision: string, file: string): string {
  * present and verified. Idempotent. Retries transient network errors with
  * exponential backoff before surfacing `ModelNotFoundError`.
  */
+/** `true` when `<destDir>/<file>` is already cached and matches its
+ * checksum sidecar, so using it needs no network call. */
+export async function isCachedFile(destDir: string, file: string): Promise<boolean> {
+  const dest = join(destDir, file);
+  return existsSync(dest) && (await checksumMatchesSidecar(dest));
+}
+
 export async function ensureFile(
   repo: string,
   revision: string,
@@ -89,25 +96,11 @@ const RETRYABLE_ERROR_CODES = new Set([
   'UND_ERR_BODY_TIMEOUT',
 ]);
 
-const HTTP_NOT_FOUND = 404;
-
-/** HTTP status a download failure carries in its message, if any. */
-function httpStatusOf(err: ModelNotFoundError): number | undefined {
-  const httpMatch = err.message.match(/HTTP (\d+)/);
-  return httpMatch === null ? undefined : Number(httpMatch[1]);
-}
-
-/** `true` when `err` says the file does not exist at that revision (HTTP
- * 404), as opposed to a network or server failure. Callers with an
- * alternative file can try it; anything else must surface. */
-export function isMissingFile(err: unknown): boolean {
-  return err instanceof ModelNotFoundError && httpStatusOf(err) === HTTP_NOT_FOUND;
-}
-
 function isRetryable(err: unknown): boolean {
   if (err instanceof ModelNotFoundError) {
-    const status = httpStatusOf(err);
-    if (status !== undefined) return RETRYABLE_HTTP.has(status);
+    const m = err.message;
+    const httpMatch = m.match(/HTTP (\d+)/);
+    if (httpMatch !== null) return RETRYABLE_HTTP.has(Number(httpMatch[1]));
     return true;
   }
   // Network / abort errors expose either `code` or `name`; everything

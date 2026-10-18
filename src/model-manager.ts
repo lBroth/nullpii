@@ -12,7 +12,7 @@ import {
   DEFAULT_VARIANT,
 } from './defaults.js';
 import { InvalidPathError } from './errors.js';
-import { ensureFile, isMissingFile } from './hf-hub.js';
+import { ensureFile, isCachedFile } from './hf-hub.js';
 import { logf } from './log.js';
 import { onnxCandidates } from './model-variant.js';
 import { resolveSafePath } from './paths.js';
@@ -87,10 +87,8 @@ export class ModelManager {
     return this.modelDirFor(DEFAULT_MODEL);
   }
 
-  /** Ensure the model artifacts are cached: the shared files, then the
-   * first ONNX graph of the variant's candidates that the revision has.
-   * A later candidate is tried only when the earlier one is missing from
-   * the repo (HTTP 404); any other failure surfaces. */
+  /** Ensure the model artifacts are cached: the shared files, then one
+   * ONNX graph from the variant's candidates (see `pickOnnx`). */
   async ensure(options: EnsureOptions = {}): Promise<{ modelDir: string; onnxFile: string }> {
     const model = options.model ?? DEFAULT_MODEL;
     const timeoutMs = options.timeoutMs ?? MODEL_DOWNLOAD_TIMEOUT_MS;
@@ -113,27 +111,39 @@ export class ModelManager {
       done += 1;
       options.onProgress?.(done / total);
     }
-    const onnxFile = await this.fetchFirstAvailable(model, candidates, target, timeoutMs);
+    const onnxFile = await this.pickOnnx(model, candidates, target, timeoutMs);
     options.onProgress?.(1);
     return { modelDir: target, onnxFile };
   }
 
-  private async fetchFirstAvailable(
+  /** The ONNX graph to use, best candidate first.
+   *
+   * A candidate already cached and verified wins before any network call,
+   * so a warm or offline cache keeps working and init never downloads a
+   * second 0.6–1.2 GB file nobody asked for (`nullpii prefetch --variant`
+   * does that). Otherwise each candidate is downloaded in turn; when one
+   * fails for any reason the next is tried, and the last error surfaces. */
+  private async pickOnnx(
     model: ModelRef,
     candidates: readonly string[],
     target: string,
     timeoutMs: number,
   ): Promise<string> {
-    for (const [i, f] of candidates.entries()) {
+    for (const f of candidates) {
+      this.assertSafeRelative(f, target);
+      if (await isCachedFile(target, f)) return f;
+    }
+    let lastErr: unknown = new Error('model-manager: no ONNX candidate');
+    for (const f of candidates) {
       try {
         await this.fetch(model, f, target, timeoutMs);
         return f;
       } catch (err) {
-        if (i === candidates.length - 1 || !isMissingFile(err)) throw err;
+        lastErr = err;
         logf(LOG_SCOPE, 'ensure.fallback', { path: f });
       }
     }
-    throw new Error('model-manager: no ONNX candidate');
+    throw lastErr;
   }
 
   private async fetch(

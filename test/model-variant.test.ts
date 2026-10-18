@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -29,9 +30,17 @@ vi.mock('../src/hf-hub.js', async () => {
 const notFound = (file: string) =>
   new ModelNotFoundError(`https://huggingface.co/x/${file} (HTTP 404)`);
 
+const tempDirs: string[] = [];
+const tempDir = (prefix: string): string => {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+};
+
 afterEach(() => {
   hub.fail.clear();
   hub.fetched.length = 0;
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
 describe('onnxCandidates', () => {
@@ -56,7 +65,17 @@ describe('onnxCandidates', () => {
 });
 
 describe('ModelManager.ensure picks the ONNX file', () => {
-  const manager = () => new ModelManager(mkdtempSync(join(tmpdir(), 'nullpii-cache-')));
+  const manager = () => new ModelManager(tempDir('nullpii-cache-'));
+  /** A verified cache entry: the file plus its checksum sidecar. */
+  const cache = (m: ModelManager, file: string) => {
+    mkdirSync(m.modelDir, { recursive: true });
+    const body = `weights of ${file}`;
+    writeFileSync(join(m.modelDir, file), body);
+    writeFileSync(
+      join(m.modelDir, `${file}.sha256`),
+      createHash('sha256').update(body).digest('hex'),
+    );
+  };
 
   it('fetches fp16 on CUDA when the revision has it', async () => {
     const out = await manager().ensure({ backend: 'cuda', timeoutMs: 1 });
@@ -70,10 +89,38 @@ describe('ModelManager.ensure picks the ONNX file', () => {
     expect(out.onnxFile).toBe('model.onnx');
   });
 
-  it('does not fall back on a failure other than a missing file', async () => {
+  it('falls back to fp32 when the fp16 download fails for another reason', async () => {
     hub.fail.set('model_fp16.onnx', new ModelNotFoundError('https://huggingface.co/x (HTTP 503)'));
-    await expect(manager().ensure({ backend: 'cuda', timeoutMs: 1 })).rejects.toThrow(/HTTP 503/);
+    const out = await manager().ensure({ backend: 'cuda', timeoutMs: 1 });
+    expect(out.onnxFile).toBe('model.onnx');
+  });
+
+  it('uses a cached fp32 on CUDA without asking the network for fp16', async () => {
+    const m = manager();
+    cache(m, 'model.onnx');
+    hub.fail.set('model_fp16.onnx', new Error('offline'));
+    const out = await m.ensure({ backend: 'cuda', timeoutMs: 1 });
+    expect(out.onnxFile).toBe('model.onnx');
     expect(hub.fetched).not.toContain('model.onnx');
+  });
+
+  it('prefers a cached fp16 over a cached fp32 on CUDA', async () => {
+    const m = manager();
+    cache(m, 'model.onnx');
+    cache(m, 'model_fp16.onnx');
+    const out = await m.ensure({ backend: 'cuda', timeoutMs: 1 });
+    expect(out.onnxFile).toBe('model_fp16.onnx');
+  });
+
+  it('surfaces the last error when no candidate can be fetched', async () => {
+    hub.fail.set('model_fp16.onnx', new Error('offline'));
+    hub.fail.set(
+      'model.onnx',
+      new ModelNotFoundError('https://huggingface.co/x/model.onnx (download failed)'),
+    );
+    await expect(manager().ensure({ backend: 'cuda', timeoutMs: 1 })).rejects.toThrow(
+      /model\.onnx/,
+    );
   });
 
   it('fails when an explicit fp16 is missing', async () => {
@@ -121,7 +168,7 @@ describe('OrtBackend loads the first ONNX file present', () => {
     numSpans: 1,
   };
   const dirWith = (...files: string[]) => {
-    const dir = mkdtempSync(join(tmpdir(), 'nullpii-model-'));
+    const dir = tempDir('nullpii-model-');
     for (const f of files) writeFileSync(join(dir, f), '');
     return dir;
   };
@@ -157,5 +204,16 @@ describe('OrtBackend loads the first ONNX file present', () => {
       ortLoader: async () => stubOrt,
     });
     await expect(b.infer(inputs)).rejects.toThrow(join(dir, 'model_fp16.onnx'));
+  });
+
+  it('names every candidate when none is present', async () => {
+    const dir = dirWith();
+    const b = new OrtBackend(dir, {
+      onnxFiles: ['model_fp16.onnx', 'model.onnx'],
+      ortLoader: async () => stubOrt,
+    });
+    await expect(b.infer(inputs)).rejects.toThrow(
+      `${join(dir, 'model_fp16.onnx')} or ${join(dir, 'model.onnx')}`,
+    );
   });
 });

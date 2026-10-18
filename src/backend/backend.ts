@@ -81,7 +81,7 @@ export class OrtBackend {
       const path = join(this.modelDir, f);
       if (await fileExists(path)) return path;
     }
-    throw new ModelNotFoundError(join(this.modelDir, files[0] ?? MODEL_FILES.fp32));
+    throw new ModelNotFoundError(files.map((f) => join(this.modelDir, f)).join(' or '));
   }
 
   /** Run GLiNER inference against the unified ONNX. */

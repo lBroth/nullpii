@@ -25,8 +25,9 @@ subpackages that used to live under `packages/recognizers-*/` were
 folded into core defaults in v0.3.
 
 `packages/eval/` is a Python research kit — only `scripts/`, `src/`,
-`datasets/`, `published-bench/`, top-level READMEs are tracked;
-`results/`, `private/`, `tests/`, `v10-weights/` are gitignored.
+`datasets/`, `pyproject.toml` and the top-level README are tracked;
+`results/`, `private/`, `tests/` are gitignored. The evaluation protocol
+and its log are `scripts/ab/PROTOCOL.md` and `scripts/ab/LOG.md`.
 
 - **Detection**: ML model first, recognizer pack post-pass for known formats. No regex-only detection.
 - **Execution**: fully local, no cloud calls.

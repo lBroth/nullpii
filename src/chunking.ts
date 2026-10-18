@@ -122,7 +122,12 @@ export function chunkText(
 
 /** Dedupe overlapping spans by IoU. Keeps the highest-score span in each
  * overlap cluster. Spans must share `label` to be considered duplicates;
- * different labels at the same offset are kept (rare with chunking). */
+ * different labels at the same offset are kept (rare with chunking).
+ *
+ * A duplicate gives up its label and score, never its characters: the
+ * kept span grows to the union of both, so text that only the duplicate
+ * covered is not left unmasked. Fields derived from offsets (a span's
+ * `text`) are not updated here; callers re-derive them. */
 export function dedupeOverlappingSpans<T extends ScoredSpan>(
   spans: T[],
   iouThreshold = 0.5,
@@ -149,15 +154,21 @@ export function dedupeOverlappingSpans<T extends ScoredSpan>(
   );
   const kept: T[] = [];
   for (const s of sorted) {
-    let isDup = false;
-    for (const k of kept) {
-      if (!acrossLabels && k.label !== s.label) continue;
-      if (iou(s, k) >= iouThreshold) {
-        isDup = true;
-        break;
-      }
+    const i = kept.findIndex(
+      (k) => (acrossLabels || k.label === s.label) && iou(s, k) >= iouThreshold,
+    );
+    const keeper = kept[i];
+    if (keeper === undefined) {
+      kept.push(s);
+      continue;
     }
-    if (!isDup) kept.push(s);
+    if (s.start < keeper.start || s.end > keeper.end) {
+      kept[i] = {
+        ...keeper,
+        start: Math.min(keeper.start, s.start),
+        end: Math.max(keeper.end, s.end),
+      };
+    }
   }
   return kept.sort((a, b) => a.start - b.start);
 }

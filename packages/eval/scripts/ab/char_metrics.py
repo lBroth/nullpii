@@ -128,9 +128,12 @@ def dataset_arrays(
     n = len(next(iter(preds.values())))
     if any(len(v) != n for v in preds.values()):
         raise ValueError(f"{dataset}: tools have different document counts")
-    samples = spec.loader(n)
+    # The full set bench_full runs by default, not the first n: a run that
+    # crashed part-way leaves a short checkpoint, which must not be scored as
+    # if it were the dataset.
+    samples = spec.loader(spec.default_n)
     if len(samples) != n:
-        raise ValueError(f"{dataset}: loader returned {len(samples)} docs, checkpoints have {n}")
+        raise ValueError(f"{dataset}: checkpoints have {n} docs, the dataset has {len(samples)}: incomplete run")
     gold_spans = [[(s.start, s.end) for s in smp.spans] for smp in samples]
     if mask_all:
         preds[MASK_ALL] = [[(0, len(smp.text))] for smp in samples]

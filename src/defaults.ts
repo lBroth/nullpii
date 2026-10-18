@@ -28,13 +28,19 @@ import {
  * mapped at session construction in `nullpii.ts`. */
 export const DEFAULT_BACKEND: BackendName = 'auto';
 
-/** Model variant chosen when the user passes nothing (or `'auto'`).
- * Only `fp32` is shipped today; `int8` / `int4` are reserved (see
- * `PLAN.md §4`). */
+/** Model variant chosen when the user passes nothing: fp16 on CUDA when
+ * the model ships it, fp32 otherwise (`onnxCandidates` in
+ * `model-variant.ts`). */
 export const DEFAULT_VARIANT: ModelVariant = 'auto';
 
 /** Tokenizer file name within a model directory. */
 export const TOKENIZER_FILE = 'tokenizer.json';
+
+/** ONNX file of each precision within a model directory. */
+export const MODEL_FILES = {
+  fp32: 'model.onnx',
+  fp16: 'model_fp16.onnx',
+} as const;
 
 /** SHA256 sidecar suffix used by `hf-hub.ts`. */
 export const CHECKSUM_SUFFIX = '.sha256';

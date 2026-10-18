@@ -139,6 +139,40 @@ describe('dropCleanPublicUrlSpans', () => {
     ]);
   });
 
+  it('keeps text the model swept into a public URL span masked', () => {
+    // A model span is built from words, so it can cross whitespace.
+    const swept = 'https://github.com/a) and Jane Doe notes](https://acme.io/x';
+    const out = dropCleanPublicUrlSpans([urlSpan(swept, 0)]);
+    expect(out.map((s) => s.text)).toEqual([') and Jane Doe notes](', 'https://acme.io/x']);
+  });
+
+  it('keeps the trailing text of a single public URL span masked', () => {
+    const out = dropCleanPublicUrlSpans([
+      urlSpan('https://github.com/foo and the new pin 4821', 0),
+    ]);
+    expect(out.map((s) => s.text)).toEqual([' and the new pin 4821']);
+  });
+
+  it('keeps a private www. URL glued to a public one with a comma', () => {
+    const joined = 'https://github.com/a,www.private-host.io/admin,https://github.com/b';
+    const inner = { ...urlSpan('www.private-host.io/admin', 21) };
+    const out = dropCleanPublicUrlSpans([urlSpan(joined, 0), inner]);
+    expect(out.map((s) => s.text)).toEqual([
+      ',www.private-host.io/admin,',
+      'www.private-host.io/admin',
+    ]);
+  });
+
+  it('never releases a URL that carries credentials', () => {
+    const span = urlSpan('https://deploy:hunter2@github.com/org/repo.git', 0);
+    expect(dropCleanPublicUrlSpans([span])).toEqual([span]);
+  });
+
+  it('never releases a token with a second URL glued inside it', () => {
+    const span = urlSpan('https://github.com/x/www.acme-internal.io', 0);
+    expect(dropCleanPublicUrlSpans([span])).toEqual([span]);
+  });
+
   it('never judges text before the first scheme as a public URL', () => {
     const span = urlSpan('see:https://github.com/a)](https://github.com/b', 0);
     expect(dropCleanPublicUrlSpans([span]).map((s) => s.text)).toEqual([

@@ -31,6 +31,13 @@ export function fileUrl(repo: string, revision: string, file: string): string {
  * present and verified. Idempotent. Retries transient network errors with
  * exponential backoff before surfacing `ModelNotFoundError`.
  */
+/** `true` when `<destDir>/<file>` is already cached and matches its
+ * checksum sidecar, so using it needs no network call. */
+export async function isCachedFile(destDir: string, file: string): Promise<boolean> {
+  const dest = join(destDir, file);
+  return existsSync(dest) && (await checksumMatchesSidecar(dest));
+}
+
 export async function ensureFile(
   repo: string,
   revision: string,

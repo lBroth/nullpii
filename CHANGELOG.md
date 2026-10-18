@@ -9,6 +9,8 @@ The detection changes come from the measured A/B loop (`packages/eval/scripts/ab
 
 ### Added
 
+- **fp16 model on CUDA.** With `backend: 'cuda'`, the default `variant: 'auto'` loads `model_fp16.onnx` when the model ships it, and `model.onnx` otherwise. A model already in the cache is used before any download, so a warm or offline start never goes to the network; `nullpii prefetch --backend cuda` fetches the fp16 file ahead of time. On an RTX 4070 Ti that is about 15% faster (100k characters in 1.61 s against 1.89 s), with recall unchanged on the tuning and report sets. `variant: 'fp16'` requires the file; `variant: 'fp32'` always loads `model.onnx`. Every other backend stays fp32, because ORT's CPU and CoreML kernels gain nothing from fp16.
+
 - **Italian Partita IVA (VAT number)**, masked as `account_number` when it follows its keyword (`P.IVA`, `Partita IVA`, `VAT number`, …) or carries the `IT` prefix, and passes the office-code and check-digit tests. Bare 11-digit runs are left alone: a checksum alone passes about one random number in ten (#38). For a sole trader or a freelancer the number identifies a person.
 - **Extended categories:** `private_organization`, `private_occupation`, `private_demographic`, `private_sensitive` and `private_title`. They are prompted and masked by default. Turn any category off with the new `disabledCategories` config option, for example `['private_organization', 'private_occupation']` to keep company names and job titles readable.
 - **Claude Code mod (preview)** in `packages/claude-code-mod/`. Prompts and tool results are masked through the sidecar API before Claude reads them. Placeholders get their real values back only in the arguments of tools that run on this machine, never in web or MCP tools. It fails closed when the sidecar is unreachable. A band above the prompt shows the counts by type, and `/pii` prints them. In auto mode, a local tool call that contains a placeholder is refused, because Claude Code denies tool input that a hook rewrote.
@@ -25,6 +27,7 @@ The detection changes come from the measured A/B loop (`packages/eval/scripts/ab
 
 ### Changed
 
+- **Breaking: `ModelVariant` loses `'int4'`.** It was never implemented: the option was accepted and ignored, and fp32 was loaded. An unknown variant now throws when `NullPii` is constructed.
 - **Retrained detection model** (run H3b, `docs/WEIGHTS_PROVENANCE.md`). Same base model and size, trained on a larger corpus: a wider Nemotron-PII slice labelled for the extended categories, plus generated secrets, financial numbers, developer records and developer hard negatives.
   - **Report set:** macro char-F2 0.894 → 0.930. Recall rises from 0.922 to 0.977, so fewer characters leak; precision moves from 0.829 to 0.807.
   - **Speed:** unchanged (100k characters in 14.8 s against 14.7 s, M5 Pro CPU).
@@ -37,6 +40,7 @@ The detection changes come from the measured A/B loop (`packages/eval/scripts/ab
   - package-registry tarball URLs;
   - project-infrastructure hosts (badges, CI, package CDNs).
   - README badge rows: a span the model draws across two links (`[![build](https://img.shields.io/…)](https://travis-ci.org/…)`) is now judged one URL at a time, so public badge and CI links are left readable while a private URL next to them stays masked.
+- **Public-URL allowlist releases only the URL itself.** A URL span on an allowlisted host used to be released whole, including any text the model or the greedy URL recognizer swept into it: a name after a space, a private `www.` host after a comma. Now only the URL token is left readable (it ends at whitespace, quotes, brackets, commas and semicolons), and anything after it stays masked unless it is punctuation. A URL with `user:password@`, or with a second URL inside it, is never released.
 - **Geolocation:** a geolocation span that is not a coordinate is relabelled as an address instead of being dropped.
 
 ### Fixed

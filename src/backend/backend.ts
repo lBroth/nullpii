@@ -2,14 +2,13 @@
 
 import { join } from 'node:path';
 import type { InferenceSession, Tensor as TensorType } from 'onnxruntime-node';
+import { MODEL_FILES } from '../defaults.js';
 import { ModelNotFoundError, OrtNotInstalledError } from '../errors.js';
 import { logf } from '../log.js';
 import { fileExists } from '../paths.js';
 import type { InferenceInputs, InferenceOutputs } from '../types/index.js';
 
 const LOG_SCOPE = 'nullpii:backend';
-
-const ONNX_FILE = 'model.onnx';
 
 /** Reused dim tuples — `text_lengths` is always a `[1, 1]` int64 scalar,
  * and `[1]` is the dim for the scalar's data buffer. ORT clones the dim
@@ -18,6 +17,9 @@ const ONNX_FILE = 'model.onnx';
 const DIMS_SCALAR_1_1: readonly number[] = [1, 1];
 
 export interface BackendOptions {
+  /** ONNX files to load from the model directory, best first; the first
+   * that exists is used (`onnxCandidates`). Default: `['model.onnx']`. */
+  readonly onnxFiles?: readonly string[];
   /** ORT execution providers, in priority order. Default: `['cpu']`. */
   readonly executionProviders?: ReadonlyArray<
     NonNullable<InferenceSession.SessionOptions['executionProviders']>[number]
@@ -33,7 +35,8 @@ export interface BackendOptions {
 
 /** GLiNER ONNX backend.
  *
- * Loads `<modelDir>/model.onnx` lazily on first `infer()`. Every input
+ * Loads the first existing `onnxFiles` entry of `<modelDir>` (by default
+ * `model.onnx`) lazily on first `infer()`. Every input
  * runs through one unified ONNX — no per-domain dispatch.
  * `onnxruntime-node` is an optional peer; imported dynamically so
  * recognizer-only / vault-only callers never trigger the load.
@@ -54,10 +57,7 @@ export class OrtBackend {
 
   private async ensureSession(): Promise<InferenceSession> {
     if (this.session !== null) return this.session;
-    const onnxPath = join(this.modelDir, ONNX_FILE);
-    if (!(await fileExists(onnxPath))) {
-      throw new ModelNotFoundError(onnxPath);
-    }
+    const onnxPath = await this.firstExistingOnnx();
     const ort = await (this.options.ortLoader ?? loadOrt)();
     this.TensorCtor = ort.Tensor;
     logf(LOG_SCOPE, 'session.load', { path: onnxPath });
@@ -73,6 +73,15 @@ export class OrtBackend {
     }
     this.session = await ort.InferenceSession.create(onnxPath, sessionOptions);
     return this.session;
+  }
+
+  private async firstExistingOnnx(): Promise<string> {
+    const files = this.options.onnxFiles ?? [MODEL_FILES.fp32];
+    for (const f of files) {
+      const path = join(this.modelDir, f);
+      if (await fileExists(path)) return path;
+    }
+    throw new ModelNotFoundError(files.map((f) => join(this.modelDir, f)).join(' or '));
   }
 
   /** Run GLiNER inference against the unified ONNX. */

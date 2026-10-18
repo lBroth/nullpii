@@ -165,23 +165,86 @@ export function dropCleanPublicUrlSpans(spans: readonly PiiSpan[]): PiiSpan[] {
   const kept: PiiSpan[] = [];
   for (const s of spans) {
     const parts = splitAtSchemes(s);
-    const publicParts = parts.filter((p) => isCleanPublicUrl(p, spans));
-    if (publicParts.length === 0) {
+    const cuts = parts.map((p) => publicPrefixLength(p, spans));
+    if (cuts.every((n) => n === 0)) {
       kept.push(s);
       continue;
     }
-    dropped.push(...publicParts);
-    kept.push(...parts.filter((p) => !publicParts.includes(p)));
+    parts.forEach((p, i) => {
+      const n = cuts[i] ?? 0;
+      if (n > 0) dropped.push(slice(p, 0, n));
+      if (n < p.text.length) kept.push(slice(p, n, p.text.length));
+    });
   }
   if (dropped.length === 0) return [...spans];
-  // A `private_url` span inside a dropped one is a fragment of that same
+  // A `private_url` span inside a dropped range is a fragment of that same
   // public URL (the model often emits `https:/` or a path piece next to
   // the recognizer's full match). Containment dedupe used to remove it;
   // with its parent gone it would survive and split the URL. A dropped
-  // span or part carries exactly one scheme, at its start, so a nested
-  // fragment cannot be another URL.
+  // range is one URL token that contains no other scheme or `www.`, so a
+  // nested fragment cannot be another URL.
   const inside = (s: PiiSpan) => dropped.some((d) => s.start >= d.start && s.end <= d.end);
   return kept.filter((s) => !(s.label === 'private_url' && inside(s)));
+}
+
+/** The URL at the start of a `private_url` span or part: a scheme or
+ * `www.`, then characters up to the first whitespace, quote, bracket,
+ * comma or semicolon. A span the model drew across text, or across a list
+ * of URLs, is cut there, so whatever follows is judged on its own. */
+const URL_TOKEN = /^(?:https?:\/\/|www\.)[^\s<>"'`()[\]{}|\\^,;]+/i;
+
+/** Text that may follow a public URL token and still be dropped with it:
+ * whitespace and punctuation only, such as the `)](` between two links of
+ * a README badge. Anything with a letter or digit stays masked. */
+const SEPARATOR_ONLY = /^[\s)\](\[,;:.!?'"`<>]*$/;
+
+/** The scheme or `www.` a URL token starts with. */
+const URL_PREFIX = /^(?:https?:\/\/|www\.)/i;
+
+/** A second URL inside a token's body (the token minus `URL_PREFIX`): any
+ * scheme, or a `www.` that is not the body's own host. */
+const NESTED_URL_START = /[a-z][a-z0-9+.-]*:\/\/|.www\./i;
+
+/**
+ * How many leading characters of `part` may be unmasked: 0 when none.
+ *
+ * Only a public URL token at the very start qualifies (see `URL_TOKEN`),
+ * and only when it holds no credentials and no second URL, and no other
+ * PII span touches the part. The rest of the part goes with it only when
+ * it is separator punctuation; otherwise the rest stays masked. This is the fail-safe
+ * rule of the docstring above, applied to the token instead of the whole
+ * span: text that the model or the greedy recognizer swept into a URL
+ * span is never released on the strength of the URL's host.
+ */
+function publicPrefixLength(part: PiiSpan, spans: readonly PiiSpan[]): number {
+  if (part.label !== 'private_url') return 0;
+  const token = URL_TOKEN.exec(part.text)?.[0];
+  if (token === undefined || NESTED_URL_START.test(token.replace(URL_PREFIX, ''))) return 0;
+  if (!isPublicUrl(token) || hasCredentials(token)) return 0;
+  const rest = part.text.slice(token.length);
+  const n = SEPARATOR_ONLY.test(rest) ? part.text.length : token.length;
+  // Any other PII span touching the part keeps all of it masked, URL
+  // included: a reference URL that embeds anything identifying is never
+  // released, not even its public prefix.
+  const holdsPii = spans.some(
+    (t) => t !== part && t.label !== 'private_url' && t.start < part.end && t.end > part.start,
+  );
+  return holdsPii ? 0 : n;
+}
+
+/** `true` when the URL carries a user name or password (`user:pass@host`). */
+function hasCredentials(token: string): boolean {
+  try {
+    const url = new URL(/^www\./i.test(token) ? `http://${token}` : token);
+    return url.username !== '' || url.password !== '';
+  } catch {
+    return true;
+  }
+}
+
+/** The sub-span of `s` from character `from` to `to` of its text. */
+function slice(s: PiiSpan, from: number, to: number): PiiSpan {
+  return { ...s, start: s.start + from, end: s.start + to, text: s.text.slice(from, to) };
 }
 
 /**
@@ -189,27 +252,17 @@ export function dropCleanPublicUrlSpans(spans: readonly PiiSpan[]): PiiSpan[] {
  * URL, cut where each later scheme starts. The model often emits a single
  * span across a README badge, `[![ci](https://img.shields.io/…)](https://travis-ci.org/…)`,
  * and {@link isPublicUrl} refuses to judge a span with two schemes. Each
- * part is judged on its own host instead: a public part can be dropped
- * while a private one next to it stays masked. Text before the first
- * scheme stays with the first part, which then has no scheme at its start
- * and is never judged public. Any other span is returned as is.
+ * part is judged on its own (`publicPrefixLength`): a public URL can be
+ * dropped while a private one next to it stays masked. Text before the
+ * first scheme stays with the first part, which is then judged public only
+ * if it starts with a URL itself. Any other span is returned as is.
  */
 function splitAtSchemes(s: PiiSpan): PiiSpan[] {
   if (s.label !== 'private_url') return [s];
   const starts = [...s.text.matchAll(SCHEME_PATTERN)].map((m) => m.index);
   if (starts.length < 2) return [s];
   const ends = [...starts.slice(1), s.text.length];
-  return [0, ...starts.slice(1)].map((from, i) => {
-    const to = ends[i] ?? s.text.length;
-    return { ...s, start: s.start + from, end: s.start + to, text: s.text.slice(from, to) };
-  });
-}
-
-function isCleanPublicUrl(s: PiiSpan, spans: readonly PiiSpan[]): boolean {
-  if (s.label !== 'private_url' || !isPublicUrl(s.text)) return false;
-  return !spans.some(
-    (t) => t !== s && t.label !== 'private_url' && t.start >= s.start && t.end <= s.end,
-  );
+  return [0, ...starts.slice(1)].map((from, i) => slice(s, from, ends[i] ?? s.text.length));
 }
 
 function extractHost(urlText: string): string | null {

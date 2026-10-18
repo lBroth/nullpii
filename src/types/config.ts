@@ -6,9 +6,10 @@ import type { Recognizer } from './recognizer.js';
 /** Hardware/runtime backends the library can dispatch to. */
 export type BackendName = 'cpu' | 'mps' | 'cuda' | 'auto';
 
-/** ONNX variant. Reserved for future quantized-shard packs; current
- * release ships FP32 only. */
-export type ModelVariant = 'fp32' | 'int4' | 'auto';
+/** ONNX precision. `'fp16'` is for the CUDA backend, where it is faster
+ * with the same measured recall. `'auto'` picks fp16 on CUDA when the model
+ * ships it, and fp32 everywhere else. */
+export type ModelVariant = 'fp32' | 'fp16' | 'auto';
 
 /** User-facing configuration for the public `nullpii` API. Every field optional. */
 export interface NullPiiConfig {
@@ -19,7 +20,10 @@ export interface NullPiiConfig {
   readonly modelDir?: string;
   /** Hardware backend. `'auto'` picks the best available. */
   readonly backend?: BackendName;
-  /** ONNX variant. Reserved (FP32 only at present). */
+  /** ONNX precision. Default `'auto'`: `model_fp16.onnx` with
+   * `backend: 'cuda'` when the model directory or revision has it, else
+   * `model.onnx`. `'fp16'` requires `model_fp16.onnx`; `'fp32'` always loads
+   * `model.onnx`. */
   readonly variant?: ModelVariant;
   /** Cap on subword tokens fed to the GLiNER encoder per window. Default
    * 384 (matches `gliner_config.json:max_len`). A window longer than this

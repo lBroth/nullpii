@@ -27,12 +27,18 @@ DEFAULT_SUFFIX = "@default"
 
 
 def bench(tool: str, config: dict, out: Path, backend: str) -> None:
+    cfg = out / "tool-config.json"
+    wanted = json.dumps({tool: config}, sort_keys=True) + "\n" if config else None
+    found = cfg.read_text(encoding="utf-8") if cfg.exists() else None
+    if (out / "checkpoints").exists() and found != wanted:
+        # bench_full resumes from checkpoints, so a changed operating point would
+        # silently keep the old one's spans.
+        raise SystemExit(f"{out}: checkpoints come from another operating point; delete the directory to rerun")
     out.mkdir(parents=True, exist_ok=True)
     argv = [sys.executable, str(SCRIPTS / "bench_full.py"), "--tools", tool, "--backend", backend,
             "--datasets", R2_SETS, "--out-dir", str(out)]
-    if config:
-        cfg = out / "tool-config.json"
-        cfg.write_text(json.dumps({tool: config}, sort_keys=True) + "\n", encoding="utf-8")
+    if wanted:
+        cfg.write_text(wanted, encoding="utf-8")
         argv += ["--tool-config", str(cfg)]
     with (out / "bench.log").open("a", encoding="utf-8") as log:
         subprocess.run(argv, check=True, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)

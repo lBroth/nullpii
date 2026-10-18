@@ -35,12 +35,12 @@ import bench_full  # noqa: E402
 from char_metrics import scores  # noqa: E402
 
 # The values below 0.05 and above 0.7 were added during competitor tuning
-# (rule change 9), in two rounds, as tuned cuts kept settling on the edges.
+# (rule change 9), in three rounds, as tuned cuts kept settling on the edges.
 # A value below the run's own score floor keeps nothing more than the floor
-# does; 0.99 all but drops a label.
+# does. Token classifiers score near 1, so their cuts can sit above 0.99.
 GRID = [
     0.001, 0.003, 0.005, 0.01, 0.02, 0.03, 0.05, 0.075, 0.1, 0.125, 0.15, 0.2, 0.25, 0.3,
-    0.35, 0.4, 0.45, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99,
+    0.35, 0.4, 0.45, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99, 0.995, 0.999,
 ]
 BASE_THRESHOLD = 0.5
 # PROTOCOL rule change 2 (U1): extra masking of developer content, in

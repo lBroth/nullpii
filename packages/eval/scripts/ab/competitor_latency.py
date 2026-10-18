@@ -38,8 +38,10 @@ def load_inputs(path: Path) -> list[dict]:
 
 
 def make_predictor(tool: str, backend: str):
+    # No --tool-config: each tool runs at its default operating point. A tuned
+    # point moves thresholds or Viterbi biases, not the forward passes timed here.
     args = SimpleNamespace(
-        tools=tool, backend=backend, gliner_threshold=GLINER_THRESHOLD, drop_rfc1918=False
+        tools=tool, backend=backend, gliner_threshold=GLINER_THRESHOLD, drop_rfc1918=False, tool_config=None
     )
     pred = bench_full.build_tools(args)[tool]  # build_tools returns constructed predictors
     if getattr(pred, "is_batch", False):

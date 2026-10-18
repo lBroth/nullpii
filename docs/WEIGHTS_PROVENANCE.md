@@ -10,26 +10,29 @@ The model is a LoRA fine-tune of a GLiNER span model, merged into the base and e
 |---|---|---|
 | [`urchade/gliner_multi_pii-v1`](https://huggingface.co/urchade/gliner_multi_pii-v1) (GLiNER head on Microsoft `mdeberta-v3-base`; Zaratiana et al., NAACL 2024) | Apache-2.0 | `1fcf13e8` |
 
-Only LoRA adapters on the encoder's attention projections are trained. Every other weight of the base model is frozen.
+Only LoRA adapters (rank 32) on the encoder's query, key and value projections are trained. Every other weight of the base model is frozen.
 
 ## Training data
 
 Every source below allows commercial use and redistribution of a model trained on it. The licence column is the source's own licence, checked on its HuggingFace page or in its repository.
 
-| Source | Licence | What it contributes | Rows used |
+| Source | Licence | What it contributes | Training rows |
 |---|---|---|---:|
-| [`nvidia/Nemotron-PII`](https://huggingface.co/datasets/nvidia/Nemotron-PII), train split, ~10k rows from the start of the split | **CC-BY-4.0**, attribution required | Synthetic English documents in many domains, with personal data spans | ~10,000 |
-| Faker-generated US formats (`build_us_formats_corpus.py`) | Apache-2.0, project-generated | Phone numbers, SSNs, addresses and dates in US formats | 5,000 |
-| Developer pastes (`dev-paste-synth-train.jsonl`) | Apache-2.0, project-generated | Config files, logs and stack traces with personal data | 12,000 |
-| Faker baselines in en, de, fr, it, es, and long English prompts | Apache-2.0, project-generated | Short multilingual sentences | 264 |
-| [`microsoft/presidio-research`](https://github.com/microsoft/presidio-research) synthetic sentences, rows 0–3,999 | MIT | Template sentences | 4,000 |
-| [TAB, the Text Anonymization Benchmark](https://github.com/NorskRegnesentral/text-anonymization-benchmark) (ECHR court cases), train split, first annotator | MIT | Long legal documents: persons, dates, locations | up to 5,000 windows |
-| [`allenai/c4`](https://huggingface.co/datasets/allenai/c4) (English web text from Common Crawl), sampled | **ODC-BY** (with the Common Crawl terms of use) | Ordinary web text with no labelled spans, so the model learns when not to mask | up to 14,000 windows |
-| Gap corpus (`build_gap_corpus.py`): synthetic secrets, crypto and bank numbers, developer records, personal attributes, and developer hard negatives | Apache-2.0, project-generated | The classes and contexts the base corpus lacked | 26,100 |
+| [`nvidia/Nemotron-PII`](https://huggingface.co/datasets/nvidia/Nemotron-PII), train split rows 0–11,319 (10,019 documents kept; documents with an IP or MAC address, which its label map cannot express, are dropped) | **CC-BY-4.0**, attribution required | Synthetic English documents in many domains, with personal data spans, including the extended categories | 24,836 |
+| [`allenai/c4`](https://huggingface.co/datasets/allenai/c4) (English web text from Common Crawl), sampled | **ODC-BY** (with the Common Crawl terms of use) | Ordinary web text with no labelled spans, so the model learns when not to mask | 14,000 |
+| Developer pastes (`dev-paste-synth-train.jsonl`) | Apache-2.0, project-generated | Config files, logs and stack traces with personal data | 13,845 |
+| Faker-generated US formats (`build_us_formats_corpus.py`) | Apache-2.0, project-generated | Phone numbers, SSNs, addresses and dates in US formats | 5,894 |
+| [TAB, the Text Anonymization Benchmark](https://github.com/NorskRegnesentral/text-anonymization-benchmark) (ECHR court cases), train split, first annotator | MIT | Long legal documents: persons, dates, locations | 5,000 |
+| [`microsoft/presidio-research`](https://github.com/microsoft/presidio-research) synthetic sentences, rows 0–3,999 | MIT | Template sentences | 4,519 |
+| Faker baselines in en, de, fr, it, es, and long English prompts | Apache-2.0, project-generated | Short multilingual sentences | 700 |
+| Gap corpus v4 (`build_gap_corpus.py --taxonomy v2 --id-negatives`, seed 1703) | Apache-2.0, project-generated | The classes and contexts the other sources lack: secrets in prose and in code, crypto and bank numbers, developer records, personal attributes (organisation, occupation, demographic, sensitive, title), and developer hard negatives (log ids, ETags, user agents) | 32,188 |
+| **Total** | | | **100,982** |
+
+A training row is a window of at most 140 words with 30 words of overlap, cut with the runtime's word splitter, so one document can give several rows. The counts include the augmented copies described below.
 
 **Carrier text in the gap corpus.** To place generated values inside realistic code, the generator embeds short excerpts of source files from npm and PyPI packages. Only permissively licensed packages qualify (MIT, ISC, BSD, Apache-2.0, 0BSD, Unlicense, CC0, PSF); the licence is read from each package's metadata. Packages that the evaluation traces read are excluded.
 
-**Augmentation.** A quarter of the rows also appear with adversarial character perturbations (homoglyphs, zero-width characters, spacing) applied inside the personal-data spans.
+**Augmentation.** A quarter of the rows that hold personal data also appear a second time, with adversarial character perturbations (homoglyphs, zero-width characters, spacing) applied inside the personal-data spans.
 
 ## Kept out of training
 
@@ -42,6 +45,8 @@ These datasets are used to evaluate, never to train:
 | `argilla/textcat-tokencat-pii-per-domain` | Report set: evaluation only |
 | `bigcode/bigcode-pii-dataset` | Gated |
 | A held-out slice of Nemotron-PII (train rows 20,000–21,999) | Held out to measure generalisation |
+| TAB dev and test splits | Evaluation only |
+| The PIIMB benchmark | Evaluation only |
 | The `claude-code-traces` sets | Evaluation only: their tuning half is used to choose between variants, their report half only to report |
 
 How the evaluation keeps tuning and reporting apart is described in `packages/eval/scripts/ab/PROTOCOL.md`.
@@ -57,4 +62,4 @@ Most of the training text is synthetic: Nemotron-PII, presidio-research and the 
 
 ## Status
 
-This document describes the phase-F weights (training corpus v4), which are being evaluated and are not yet released. The exact dataset revisions will be pinned here when they are. The weights published today (`lBroth/nullpii`, v0.2) were trained on the same sources, except for the gap corpus.
+This document describes the run-H3b weights (training corpus v4 with the Nemotron v3 slice): 5 epochs, best epoch 5, `model.onnx` SHA-256 `58b6d795…4253313a`. They passed the evaluation protocol (`packages/eval/scripts/ab/LOG.md`) and are not yet published. The exact dataset revisions will be pinned here when they are. The weights published today (`lBroth/nullpii`, v0.2) were trained on the same kinds of sources, without the gap corpus, on an older Nemotron slice.

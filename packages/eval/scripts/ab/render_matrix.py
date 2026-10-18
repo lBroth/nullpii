@@ -2,7 +2,7 @@
 """Render a `char_metrics.py` JSON as the Markdown tables the README and
 the release notes publish, so no number is ever copied by hand.
 
-  python render_matrix.py char-report.json --baseline nullpii-T4d [--name nullpii]
+  python render_matrix.py char-report.json --baseline nullpii-T4d [--name nullpii] [--exclude nullpii-T3]
 
 Prints two tables:
 - char-F2 per dataset and tool, tools ordered by macro F2, best in bold;
@@ -42,10 +42,17 @@ def main() -> None:
     ap.add_argument("metrics", type=Path)
     ap.add_argument("--baseline", required=True)
     ap.add_argument("--name", help="display name for the baseline column")
+    ap.add_argument("--exclude", default="", help="comma list of tools to leave out, such as earlier nullpii versions")
     args = ap.parse_args()
+    excluded = {t for t in args.exclude.split(",") if t}
+    if args.baseline in excluded:
+        raise SystemExit("the baseline cannot be excluded")
     data = json.loads(args.metrics.read_text(encoding="utf-8"))
     per_dataset = {k: v for k, v in data.items() if not k.startswith("_")}
-    tools = sorted({t for v in per_dataset.values() for t in v}, key=lambda t: -macro(per_dataset, t, "f2"))
+    present = {t for v in per_dataset.values() for t in v}
+    if excluded - present:
+        raise SystemExit(f"not in the metrics: {sorted(excluded - present)}")
+    tools = sorted(present - excluded, key=lambda t: -macro(per_dataset, t, "f2"))
     label = {t: (args.name if t == args.baseline and args.name else t) for t in tools}
 
     print("| Dataset | " + " | ".join(f"`{label[t]}`" for t in tools) + " |")

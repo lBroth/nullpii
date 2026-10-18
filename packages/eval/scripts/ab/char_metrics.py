@@ -8,13 +8,16 @@ removes label-mapping asymmetries between tools.
 
   char-recall    = covered gold chars / gold chars        (1 - leak rate)
   char-precision = covered gold chars / predicted chars   (1 - over-masking)
-  char-F2        = recall-weighted F-beta, beta = 2
+  char-F2        = recall-weighted F-beta, beta = 2 (the gate)
+  char-F1, F0.5  = reported next to it (PROTOCOL rule change 9), since F2
+                   rewards over-masking
 
 Reads the per-document predictions `bench_full.py` writes
 (`<results>/checkpoints/<tool>-<dataset>.jsonl`) and reloads gold through
-the same loaders, so no model is re-run.
+the same loaders, so no model is re-run. `--mask-all` adds a pseudo-tool
+that masks every character, the floor any detector should clear.
 
-  python char_metrics.py --results <dir> --datasets a,b --baseline nullpii --out m.json
+  python char_metrics.py --results <dir> --datasets a,b --baseline nullpii --out m.json [--mask-all]
 """
 
 from __future__ import annotations
@@ -33,6 +36,9 @@ sys.path.insert(0, str(SCRIPTS.parent / "src"))
 import bench_full  # noqa: E402
 
 BETA = 2.0
+# F-beta variants reported per tool: key -> beta. "f2" is the gate.
+F_BETAS = {"f2": 2.0, "f1": 1.0, "f05": 0.5}
+MASK_ALL = "mask-all"
 BOOTSTRAP_RESAMPLES = 1000
 BOOTSTRAP_SEED = 0
 CI_LOW_PCT = 2.5
@@ -53,22 +59,33 @@ def doc_counts(text_len: int, gold: list[tuple[int, int]], pred: list[tuple[int,
     return int(g.sum()), int(p.sum()), int((g & p).sum())
 
 
+def _fbeta(precision: float, recall: float, beta: float) -> float:
+    b2 = beta * beta
+    denom = b2 * precision + recall
+    return (1 + b2) * precision * recall / denom if denom else 0.0
+
+
 def scores(gold: np.ndarray, pred: np.ndarray, hit: np.ndarray) -> dict[str, float]:
     recall = hit.sum() / gold.sum() if gold.sum() else 0.0
     precision = hit.sum() / pred.sum() if pred.sum() else 0.0
-    b2 = BETA * BETA
-    denom = b2 * precision + recall
-    f2 = (1 + b2) * precision * recall / denom if denom else 0.0
-    return {"recall": float(recall), "precision": float(precision), "f2": float(f2)}
+    out = {"recall": float(recall), "precision": float(precision)}
+    out.update({key: float(_fbeta(precision, recall, beta)) for key, beta in F_BETAS.items()})
+    return out
 
 
-def _bootstrap_f2(gold: np.ndarray, pred: np.ndarray, hit: np.ndarray, idx: np.ndarray) -> np.ndarray:
+def _bootstrap_fbeta(
+    gold: np.ndarray, pred: np.ndarray, hit: np.ndarray, idx: np.ndarray, beta: float = BETA
+) -> np.ndarray:
     g, p, h = gold[idx].sum(axis=1), pred[idx].sum(axis=1), hit[idx].sum(axis=1)
     rec = np.divide(h, g, out=np.zeros_like(h, dtype=float), where=g > 0)
     prec = np.divide(h, p, out=np.zeros_like(h, dtype=float), where=p > 0)
-    b2 = BETA * BETA
+    b2 = beta * beta
     denom = b2 * prec + rec
     return np.divide((1 + b2) * prec * rec, denom, out=np.zeros_like(rec), where=denom > 0)
+
+
+def _bootstrap_f2(gold: np.ndarray, pred: np.ndarray, hit: np.ndarray, idx: np.ndarray) -> np.ndarray:
+    return _bootstrap_fbeta(gold, pred, hit, idx, BETA)
 
 
 def _bootstrap_recall(gold: np.ndarray, hit: np.ndarray, idx: np.ndarray) -> np.ndarray:
@@ -101,7 +118,9 @@ def tools_with_checkpoints(results: Path, dataset: str) -> list[str]:
     return sorted(p.name[: -len(suffix)] for p in (results / "checkpoints").glob(f"*{suffix}"))
 
 
-def dataset_arrays(results: Path, dataset: str, tools: list[str]) -> tuple[np.ndarray, dict[str, tuple]]:
+def dataset_arrays(
+    results: Path, dataset: str, tools: list[str], mask_all: bool = False
+) -> tuple[np.ndarray, dict[str, tuple]]:
     spec = next((s for s in bench_full.DATASET_CONFIGS if s.key == dataset), None)
     if spec is None:
         raise ValueError(f"unknown dataset {dataset!r}")
@@ -113,6 +132,8 @@ def dataset_arrays(results: Path, dataset: str, tools: list[str]) -> tuple[np.nd
     if len(samples) != n:
         raise ValueError(f"{dataset}: loader returned {len(samples)} docs, checkpoints have {n}")
     gold_spans = [[(s.start, s.end) for s in smp.spans] for smp in samples]
+    if mask_all:
+        preds[MASK_ALL] = [[(0, len(smp.text))] for smp in samples]
     per_tool = {}
     per_label = {}
     for tool, tool_preds in preds.items():
@@ -172,23 +193,26 @@ def compare(
     bootstrap samples of baseline - tool char-F2 so the caller can build a
     macro CI across datasets."""
     idx = rng.integers(0, n, size=(BOOTSTRAP_RESAMPLES, n))
-    base_f2 = _bootstrap_f2(*per_tool[baseline], idx)
+    base_f = {key: _bootstrap_fbeta(*per_tool[baseline], idx, beta) for key, beta in F_BETAS.items()}
+    base_f2 = base_f["f2"]
     base_rec = _bootstrap_recall(per_tool[baseline][0], per_tool[baseline][2], idx)
     base_prec = _bootstrap_precision(per_tool[baseline][1], per_tool[baseline][2], idx)
     out = {}
-    diffs: dict[str, np.ndarray] = {}
+    diffs: dict[str, dict[str, np.ndarray]] = {}
     for tool, arrays in per_tool.items():
         entry = scores(*arrays)
         entry["leak_rate"] = 1 - entry["recall"]
         entry["over_masking"] = 1 - entry["precision"]
         entry["docs"] = n
         if tool != baseline:
-            d_f2 = base_f2 - _bootstrap_f2(*arrays, idx)
+            d_f = {key: base_f[key] - _bootstrap_fbeta(*arrays, idx, beta) for key, beta in F_BETAS.items()}
+            d_f2 = d_f["f2"]
             d_rec = base_rec - _bootstrap_recall(arrays[0], arrays[2], idx)
-            entry["baseline_minus_tool_f2_ci"] = _ci(d_f2)
+            for key in F_BETAS:
+                entry[f"baseline_minus_tool_{key}_ci"] = _ci(d_f[key])
             entry["baseline_minus_tool_recall_ci"] = _ci(d_rec)
             entry["baseline_minus_tool_precision_ci"] = _ci(base_prec - _bootstrap_precision(arrays[1], arrays[2], idx))
-            diffs[tool] = d_f2
+            diffs[tool] = d_f
         entry["per_label_recall"] = per_label_recall(
             per_label[tool], None if tool == baseline else per_label[baseline], idx
         )
@@ -196,16 +220,22 @@ def compare(
     return out, diffs
 
 
-def macro_summary(report: dict, diffs: dict[str, list[np.ndarray]], baseline: str) -> dict:
-    """Unweighted mean char-F2 over datasets; CI from per-dataset bootstrap
-    samples averaged index-wise (each dataset resampled independently)."""
+def macro_summary(report: dict, diffs: dict[str, list[dict[str, np.ndarray]]], baseline: str) -> dict:
+    """Unweighted mean of each F-beta over datasets; CI from per-dataset
+    bootstrap samples averaged index-wise (each dataset resampled
+    independently). `f2_lodo` gives the lowest and highest macro char-F2 left
+    after dropping one dataset, so one dataset cannot carry the result."""
     datasets = [d for d in report if not d.startswith("_")]
     tools = report[datasets[0]].keys()
     out = {}
     for tool in tools:
-        entry = {"f2": float(np.mean([report[d][tool]["f2"] for d in datasets]))}
+        entry: dict = {key: float(np.mean([report[d][tool][key] for d in datasets])) for key in F_BETAS}
+        if len(datasets) > 1:
+            lodo = [np.mean([report[d][tool]["f2"] for d in datasets if d != left]) for left in datasets]
+            entry["f2_lodo"] = [float(min(lodo)), float(max(lodo))]
         if tool != baseline:
-            entry["baseline_minus_tool_f2_ci"] = _ci(np.mean(np.stack(diffs[tool]), axis=0))
+            for key in F_BETAS:
+                entry[f"baseline_minus_tool_{key}_ci"] = _ci(np.mean(np.stack([d[key] for d in diffs[tool]]), axis=0))
         out[tool] = entry
     return out
 
@@ -221,6 +251,7 @@ def main() -> None:
     parser.add_argument("--baseline", default="nullpii")
     parser.add_argument("--tools", default="", help="comma list; default = every tool with checkpoints")
     parser.add_argument("--out", type=Path)
+    parser.add_argument("--mask-all", action="store_true", help=f"add the '{MASK_ALL}' floor as a pseudo-tool")
     args = parser.parse_args()
 
     rng = np.random.default_rng(BOOTSTRAP_SEED)
@@ -230,7 +261,7 @@ def main() -> None:
         tools = args.tools.split(",") if args.tools else tools_with_checkpoints(args.results, dataset)
         if args.baseline not in tools:
             raise ValueError(f"{dataset}: baseline {args.baseline!r} has no checkpoint")
-        idx, per_tool, per_label = dataset_arrays(args.results, dataset, tools)
+        idx, per_tool, per_label = dataset_arrays(args.results, dataset, tools, args.mask_all)
         report[dataset], diffs = compare(per_tool, per_label, args.baseline, len(idx), rng)
         for tool, d in diffs.items():
             all_diffs.setdefault(tool, []).append(d)

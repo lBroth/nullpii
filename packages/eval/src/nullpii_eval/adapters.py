@@ -204,6 +204,7 @@ _PIIRANHA_LABEL_MAP = {
     "EMAIL": "private_email",
     "GIVENNAME": "private_person",
     "SURNAME": "private_person",
+    "USERNAME": "private_person",  # as `_AI4PRIVACY_LABELS` USERNAME
     "TELEPHONENUM": "private_phone",
     "PASSWORD": "secret",
 }
@@ -258,19 +259,22 @@ def piiranha_predictor(
         device=device,
         batch_size=batch_size,
     )
+    native = {_strip_bioes(label) for label in pipe.model.config.id2label.values()} - {"O"}
+    _check_label_coverage(native, _PIIRANHA_LABEL_MAP, tool="piiranha")
     _bias_background_logit(pipe.model, o_bias)
     window = _PIIRANHA_MAX_TOKENS - _WINDOW_RESERVED_TOKENS
 
-    def _decode_spans(results: list[dict], offset: int = 0) -> list[tuple[Span, float]]:
+    def _decode_spans(results: list[dict], text: str, offset: int = 0) -> list[tuple[Span, float]]:
         spans: list[tuple[Span, float]] = []
         for r in results:
             entity = str(r.get("entity_group") or r.get("entity") or "")
-            key = _strip_bioes(entity).upper()
-            label = _PIIRANHA_LABEL_MAP.get(key)
+            label = _map_native_label(_strip_bioes(entity), _PIIRANHA_LABEL_MAP, tool="piiranha")
             score = float(r["score"])
             if label is None or (label_cut is not None and not label_cut.keeps(label, score)):
                 continue
-            spans.append((Span(label, int(r["start"]) + offset, int(r["end"]) + offset), score))
+            start, end = _strip_span(text, int(r["start"]) + offset, int(r["end"]) + offset)
+            if start < end:
+                spans.append((Span(label, start, end), score))
         return spans
 
     def _dedupe_by_iou(spans: list[Span]) -> list[Span]:
@@ -322,12 +326,12 @@ def piiranha_predictor(
 
         out: list[ToolResult] = []
         cursor = 0
-        for chunks in per_input_chunks:
+        for text, chunks in zip(texts, per_input_chunks, strict=True):
             collected: list[tuple[Span, float]] = []
             for off, _ in chunks:
                 results = flat_results[cursor] if cursor < len(flat_results) else []
                 cursor += 1
-                collected.extend(_decode_spans(results, offset=off))
+                collected.extend(_decode_spans(results, text, offset=off))
             out.append(_scored_result(collected, _dedupe_by_iou([sp for sp, _ in collected]), per_call))
         return out
 
@@ -378,6 +382,9 @@ _RIZZO_LABEL_MAP: dict[str, str | None] = {
     "ID_DOC": "account_number",
     # ─── Vehicle ──────────────────────────────────────────────────
     "TARGA": "private_vehicle_id",  # nullpii ships `core:plate-it` for the same format
+    # ─── Regex net only (the app's `detect_regex`; the model has no such tag)
+    "URL": "private_url",
+    "IPADDR": "private_ip",
     # ─── Dropped: no home in nullpii's 14-label schema ─────────────
     "AGE": None,        # our gold ignores AGE (`_ISOTONIC_IGNORED`)
     "GENDER": None,     # demographic attribute, not an identifier
@@ -387,163 +394,146 @@ _RIZZO_LABEL_MAP: dict[str, str | None] = {
     "CATASTO": None,    # cadastral parcel; identifies a property, not a person
 }
 
-# Classes in nullpii's schema that rizzo-pii has NO tag for, so it scores
-# a structural 0 on any dataset whose gold contains them. Report the
-# resulting macro ceiling next to its score — a cell where the ceiling
-# binds says more about taxonomy overlap than about detection.
+# Classes in nullpii's schema that neither the model nor the app's regex
+# net can emit, so rizzo-pii scores a structural 0 on gold holding them.
 _RIZZO_UNEMITTABLE = frozenset({
     "secret",
-    "private_url",
-    "private_ip",
     "private_mac",
     "private_geolocation",
 })
 
-# rizzo-pii's 120-word chunks stay under 420 tokens on prose (Isotonic,
-# ai4privacy), but a whitespace-free "word" in code or logs can run to
-# thousands of tokens: on the traces tuning set 560 chunks exceed 512 and one
-# reaches 7661, which ran a 12 GB GPU out of memory. Chunks longer than this
-# are cut into token windows; prose chunks are untouched.
-_RIZZO_MAX_TOKENS = 512
+# The app pins model release v1.5.0 (`APP_MODEL_VERSION`); this is that tag's commit.
+_RIZZO_REVISION = "a1c3c83827eca22e9675e30c1111c4641caf5901"
+# The app passes each word chunk whole and the pipeline does not truncate, so
+# a chunk runs at any length the model's positions allow. Only a chunk longer
+# than that (a whitespace-free run in code or logs, which would crash the app)
+# is cut into token windows of that length.
+_RIZZO_MAX_POSITIONS = 8192
 _RIZZO_OVERLAP_TOKENS = 64
+# Chunks are batched under a padded-token budget, so one multi-thousand-token
+# chunk is not padded out across a full batch: that ran a 12 GB GPU out of
+# memory. Batching changes padding only, never the chunks.
+_RIZZO_BATCH_TOKEN_BUDGET = 32 * 512
 
 
 def rizzo_pii_predictor(
     *,
     device: str | None = None,
     batch_size: int = 32,
-    chunk_words: int = 120,
-    overlap_words: int = 20,
-    aggregation_strategy: str = "first",
     o_bias: float = 0.0,
     label_cut: LabelCut | None = None,
 ) -> BatchPredictor:
-    """`rizzoaiacademy/rizzo-pii-0.3B` — Italian-first ModernBERT/mmBERT
-    token classifier, 22 PII tags, 0.3B dense params (fp32, ~1.23 GB).
+    """`rizzoaiacademy/rizzo-pii-0.3B` run the way its desktop app serves it
+    (`src/app/app.py` `analyze()`, vendored in `vendor/rizzo_pii_app.py`):
 
-    Chunking mirrors the VENDOR'S SHIPPED SERVING PATH (`src/app/app.py`:
-    `MAX_WORDS = 120`, `OVERLAP = 20`), not their evaluation script. A chunk
-    over `_RIZZO_MAX_TOKENS` (code or logs, never prose here) is cut further
-    into token windows.
+    1. the model over the app's word chunks (`chunk_text`: 120 words, 20 of
+       overlap) with `aggregation_strategy="simple"`;
+    2. `complete_time`, which widens the model's TIME spans to the whole time;
+    3. `detect_regex` over the full text: email, CF, IBAN, Luhn card, P.IVA,
+       Italian phone, plate, URL, IP, docket ids and numeric dates, checksum-
+       validated where a checksum exists;
+    4. `_merge`: greedy non-overlapping selection (checksum-valid, then hard
+       regex, then score, then length), whitespace trim, word-boundary
+       extension and fusion.
 
-    `aggregation_strategy` is `"first"`, NOT the `"simple"` their app
-    uses, because `"simple"` fragments this model badly and would
-    understate it: on a probe sentence it produced 33 spans of which 28
-    were <=2 chars, shredding a codice fiscale into 12 pieces and an
-    IBAN into 4. `"first"` returns 13 spans with the CF, PIVA, IBAN,
-    plate and date each recovered whole. (`"average"` and `"max"` are
-    tidier still but drop entities outright — `"average"` loses the
-    IBAN, `"max"` loses the date.) Their production stack repairs this
-    fragmentation with the regex/checksum net; since that net is not
-    exercised here, picking the aggregation that scores them best is the
-    fair substitute. Same precedent as `deberta`. Their `evaluate_pii.py` feeds the model
-    `is_split_into_words=True` with the gold word array, so word
-    segmentation and offset recovery are solved for it before inference;
-    that is not a protocol any other tool here gets, and it is not what
-    their own users run.
+    The card asks for exactly this: "always pair the model with a regex +
+    checksum safety net … This is exactly what the rizzo-pii desktop app
+    does." The app strips the text first; spans are shifted back onto the
+    original text.
 
-    The published 0.9888 micro-F1 is therefore not comparable to a cell
-    in this matrix on four independent axes: it is exact-boundary
-    word-span (stricter than IoU≥0.5), micro (not macro), over rizzo's
-    own 22 tags (not nullpii's schema), on a split of which ~18.6% of
-    gold entities were synthetically injected with template strings that
-    also appear in their training augmentation bank.
+    Operating point: `o_bias` lowers the model's `O` logit, before the
+    merge; `label_cut` filters the merged spans by score. Regex spans score
+    1.0 when their checksum passed and 0.9 otherwise, as the app records them.
 
-    Their regex + checksum network is serving-only and is NOT exercised
-    here or in their own evaluation — this row, like their number, is the
-    bare model.
+    Two departures from the app, both forced: the model runs on `device`
+    (the app picks CUDA or CPU and has no MPS path), and chunks are batched
+    under the token budget above (the app runs batch 1; spans are the same).
     """
-    try:
-        import torch  # noqa: I001
-        from transformers import pipeline
-    except ImportError as e:
-        raise ImportError("transformers + torch required") from e
+    from transformers import pipeline
 
-    if device is None:
-        device = "mps" if torch.backends.mps.is_available() else (
-            "cuda" if torch.cuda.is_available() else "cpu"
-        )
-    if device == "cpu":
-        threads = max(1, (os.cpu_count() or 8) // 2)
-        torch.set_num_threads(threads)
-        try:
-            torch.set_num_interop_threads(max(1, threads // 4))
-        except RuntimeError:
-            pass
+    from .vendor import rizzo_pii_app as app
 
+    device = _resolve_torch_device(device)
     pipe = pipeline(
         task="token-classification",
         model="rizzoaiacademy/rizzo-pii-0.3B",
-        aggregation_strategy=aggregation_strategy,
+        revision=_RIZZO_REVISION,
+        aggregation_strategy="simple",
         device=device,
-        batch_size=batch_size,
     )
+    native = {_strip_bioes(label) for label in pipe.model.config.id2label.values()} - {"O"}
+    regex_labels = {label for label, *_ in app.DETECTORS} | {"IBAN"}
+    _check_label_coverage(native | regex_labels, _RIZZO_LABEL_MAP, tool="rizzo-pii")
     _bias_background_logit(pipe.model, o_bias)
+    max_window = _RIZZO_MAX_POSITIONS - _WINDOW_RESERVED_TOKENS
 
-    def _word_chunks(text: str) -> list[tuple[int, str]]:
-        """(char_offset, chunk_text) at `chunk_words` words with overlap."""
-        words = [(m.start(), m.end()) for m in re.finditer(r"\S+", text)]
-        if len(words) <= chunk_words:
-            return [(0, text)]
-        stride = chunk_words - overlap_words
-        chunks: list[tuple[int, str]] = []
-        for i in range(0, len(words), stride):
-            window = words[i : i + chunk_words]
-            if not window:
-                break
-            start, end = window[0][0], window[-1][1]
-            chunks.append((start, text[start:end]))
-            if i + chunk_words >= len(words):
-                break
-        return chunks
-
-    window = _RIZZO_MAX_TOKENS - _WINDOW_RESERVED_TOKENS
-
-    def _chunks(text: str) -> list[tuple[int, str]]:
-        """The vendor's word chunks, each cut into token windows if it is
-        longer than the model should see at once."""
+    def _chunks(body: str) -> list[tuple[int, str]]:
+        """(offset, chunk): the app's word chunks, each cut into token windows
+        only if it is longer than the model's positions."""
         return [
             (offset + sub_offset, sub)
-            for offset, chunk in _word_chunks(text)
-            for sub_offset, sub in _token_windows(pipe.tokenizer, chunk, window, _RIZZO_OVERLAP_TOKENS)
+            for chunk, offset in app.chunk_text(body)
+            for sub_offset, sub in _token_windows(pipe.tokenizer, chunk, max_window, _RIZZO_OVERLAP_TOKENS)
         ]
 
-    def _decode(results: list[dict], offset: int) -> list[tuple[Span, float]]:
-        spans: list[tuple[Span, float]] = []
-        for r in results:
-            entity = str(r.get("entity_group") or r.get("entity") or "")
-            label = _RIZZO_LABEL_MAP.get(_strip_bioes(entity).upper())
-            score = float(r["score"])
-            if label is None or (label_cut is not None and not label_cut.keeps(label, score)):
-                continue
-            spans.append((Span(label, int(r["start"]) + offset, int(r["end"]) + offset), score))
-        return spans
+    def _run_model(chunks: list[str]) -> list[list[dict]]:
+        """Pipeline entities per chunk, in input order, shortest chunks first
+        in batches that stay under the padded-token budget."""
+        lengths = [len(ids) for ids in pipe.tokenizer(chunks)["input_ids"]]
+        order = sorted(range(len(chunks)), key=lengths.__getitem__)
+        results: list[list[dict]] = [[] for _ in chunks]
+        i = 0
+        while i < len(order):
+            j = i + 1
+            while j < len(order) and j - i < batch_size and (j - i + 1) * lengths[order[j]] <= _RIZZO_BATCH_TOKEN_BUDGET:
+                j += 1
+            group = order[i:j]
+            out = pipe([chunks[k] for k in group], batch_size=len(group))
+            for k, entities in zip(group, out, strict=True):
+                results[k] = entities
+            i = j
+        return results
+
+    def _analyze(body: str, chunks: list[tuple[int, str]], per_chunk: list[list[dict]]) -> list[dict]:
+        """The app's `analyze()` from the model's entities on: `complete_time`,
+        `detect_regex`, `_merge`. Entities are built as `detect_model` does."""
+        model_ents = [
+            {
+                "label": e["entity_group"],
+                "start": int(e["start"]) + offset,
+                "end": int(e["end"]) + offset,
+                "score": float(e["score"]),
+                "validated": False,
+                "source": "modello",
+            }
+            for (offset, _), entities in zip(chunks, per_chunk, strict=True)
+            for e in entities
+        ]
+        app.complete_time(model_ents, body)
+        return app._merge(model_ents + app.detect_regex(body), body)
 
     def _predict_batch(texts: list[str]) -> list[ToolResult]:
         t0 = time.perf_counter()
-        per_input: list[list[tuple[int, str]]] = []
-        flat: list[str] = []
-        for text in texts:
-            chunks = _chunks(text) if text else [(0, "")]
-            per_input.append(chunks)
-            flat.extend(c for _, c in chunks)
-
-        flat_results = pipe(flat) if flat else []
-        if flat_results and isinstance(flat_results[0], dict):
-            flat_results = [flat_results]  # type: ignore[list-item]
-
-        elapsed = (time.perf_counter() - t0) * 1000
-        per_call = elapsed / max(1, len(texts))
-
-        out: list[ToolResult] = []
+        bodies = [text.strip() for text in texts]
+        per_input = [_chunks(body) for body in bodies]
+        flat = [chunk for chunks in per_input for _, chunk in chunks]
+        flat_results = _run_model(flat) if flat else []
+        merged: list[list[dict]] = []
         cursor = 0
-        for chunks in per_input:
-            collected: list[tuple[Span, float]] = []
-            for offset, _ in chunks:
-                results = flat_results[cursor] if cursor < len(flat_results) else []
-                cursor += 1
-                collected.extend(_decode(results, offset))
-            out.append(_scored_result(collected, _dedupe_spans_by_iou([sp for sp, _ in collected]), per_call))
+        for body, chunks in zip(bodies, per_input, strict=True):
+            merged.append(_analyze(body, chunks, flat_results[cursor : cursor + len(chunks)]))
+            cursor += len(chunks)
+        per_call = (time.perf_counter() - t0) * 1000 / max(1, len(texts))
+        out: list[ToolResult] = []
+        for text, kept in zip(texts, merged, strict=True):
+            lead = len(text) - len(text.lstrip())
+            spans: list[tuple[Span, float]] = []
+            for e in kept:
+                label = _map_native_label(e["label"], _RIZZO_LABEL_MAP, tool="rizzo-pii")
+                if label is None or (label_cut is not None and not label_cut.keeps(label, e["score"])):
+                    continue
+                spans.append((Span(label, e["start"] + lead, e["end"] + lead), e["score"]))
+            out.append(_scored_result(spans, [sp for sp, _ in spans], per_call))
         return out
 
     return _predict_batch
@@ -1106,12 +1096,23 @@ def hf_token_classifier_predictor(
 _DEBERTA_MAX_TOKENS = 512
 _DEBERTA_OVERLAP_TOKENS = 128
 
-_DEBERTA_LABEL_MAP = {
+# Keyed by the model's own 59 native labels (`config.id2label`, BIO
+# prefix stripped), checked at load. Same SYMMETRY RULE as the other maps:
+# each label maps where `_AI4PRIVACY_LABELS` maps the same ai4privacy
+# concept, and is dropped where that gold ignores it. Until 2026-10-19 the
+# keys followed a different ai4privacy release (`PHONENUMBER`, `DOB`,
+# `GPSCOORDINATES`), so phones, full names, usernames, IPs and MACs never
+# reached scoring.
+_DEBERTA_LABEL_MAP: dict[str, str | None] = {
     "FIRSTNAME": "private_person",
     "LASTNAME": "private_person",
     "MIDDLENAME": "private_person",
-    "PREFIX": "private_person",
-    "ACCOUNTNAME": None,
+    "FULLNAME": "private_person",
+    "NAME": "private_person",
+    "DISPLAYNAME": "private_person",
+    "PREFIX": "private_person",           # gold NAMEPREFIX
+    "SUFFIX": "private_person",           # gold NAMESUFFIX
+    "USERNAME": "private_person",
     "ACCOUNTNUMBER": "account_number",
     "BIC": "account_number",
     "IBAN": "account_number",
@@ -1121,36 +1122,49 @@ _DEBERTA_LABEL_MAP = {
     "MASKEDNUMBER": "account_number",
     "CREDITCARDNUMBER": "account_number",
     "CREDITCARDCVV": "account_number",
-    # v0.3 schema split: vehicle registration mark / VIN have their own
-    # `private_vehicle_id` label (was bucketed into `account_number`).
+    "PHONEIMEI": "account_number",
+    "SSN": "account_number",
     "VEHICLEVRM": "private_vehicle_id",
     "VEHICLEVIN": "private_vehicle_id",
     "PIN": "secret",
     "PASSWORD": "secret",
-    "SSN": "account_number",
     "EMAIL": "private_email",
-    "PHONENUMBER": "private_phone",
-    "PHONEIMEI": "account_number",
+    "PHONE_NUMBER": "private_phone",
     "STREET": "private_address",
     "STREETADDRESS": "private_address",
+    "SECONDARYADDRESS": "private_address",
     "BUILDINGNUMBER": "private_address",
     "ZIPCODE": "private_address",
     "CITY": "private_address",
     "STATE": "private_address",
     "COUNTY": "private_address",
-    "COUNTRY": "private_address",
-    # v0.3 schema split: GPS coords → `private_geolocation` (was `private_address`).
-    "GPSCOORDINATES": "private_geolocation",
-    "DOB": "private_date",
+    "NEARBYGPSCOORDINATE": "private_geolocation",
     "DATE": "private_date",
     "TIME": "private_date",
     "URL": "private_url",
+    "IP": "private_ip",
+    "IPV4": "private_ip",
+    "IPV6": "private_ip",
+    "MAC": "private_mac",
+    # ─── Dropped: no gold counterpart, or ignored by the gold ─────
+    "ACCOUNTNAME": None,                  # account nickname, not a number
     "USERAGENT": None,
-    "USERNAME": None,
-    "IP": None,
-    "IPV4": None,
-    "IPV6": None,
-    "MAC": None,
+    "CREDITCARDISSUER": None,             # gold CARDISSUER is ignored
+    "COMPANY_NAME": None,
+    "AMOUNT": None,
+    "CURRENCY": None,
+    "CURRENCYCODE": None,
+    "CURRENCYNAME": None,
+    "CURRENCYSYMBOL": None,
+    "NUMBER": None,
+    "ORDINALDIRECTION": None,
+    "GENDER": None,
+    "SEX": None,                          # gold SEX is ignored
+    "SEXTYPE": None,
+    "JOBAREA": None,
+    "JOBDESCRIPTOR": None,
+    "JOBTITLE": None,
+    "JOBTYPE": None,
 }
 
 
@@ -1198,6 +1212,8 @@ def deberta_pii_predictor(
         device=device,
         batch_size=batch_size,
     )
+    native = {_strip_bioes(label) for label in pipe.model.config.id2label.values()} - {"O"}
+    _check_label_coverage(native, _DEBERTA_LABEL_MAP, tool="deberta")
     _bias_background_logit(pipe.model, o_bias)
 
     # The pipeline truncates each input to 512 tokens, so a long document
@@ -1217,15 +1233,18 @@ def deberta_pii_predictor(
         per_call = (time.perf_counter() - t0) * 1000 / max(1, len(texts))
         out: list[ToolResult] = []
         cursor = 0
-        for chunks in per_input:
+        for text, chunks in zip(texts, per_input, strict=True):
             spans: list[tuple[Span, float]] = []
             for offset, _ in chunks:
                 for r in flat_results[cursor]:
                     entity = str(r.get("entity_group") or r.get("entity") or "")
-                    label = _DEBERTA_LABEL_MAP.get(_strip_bioes(entity).upper())
+                    label = _map_native_label(_strip_bioes(entity), _DEBERTA_LABEL_MAP, tool="deberta")
                     score = float(r["score"])
-                    if label is not None and (label_cut is None or label_cut.keeps(label, score)):
-                        spans.append((Span(label, int(r["start"]) + offset, int(r["end"]) + offset), score))
+                    if label is None or (label_cut is not None and not label_cut.keeps(label, score)):
+                        continue
+                    start, end = _strip_span(text, int(r["start"]) + offset, int(r["end"]) + offset)
+                    if start < end:
+                        spans.append((Span(label, start, end), score))
                 cursor += 1
             out.append(_scored_result(spans, _dedupe_spans_by_iou([sp for sp, _ in spans]), per_call))
         return out

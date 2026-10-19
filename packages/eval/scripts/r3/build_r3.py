@@ -38,8 +38,9 @@ Gold-span rules, applied per document in this order:
 5. Ignore regions are merged into their union. Gold characters inside one
    still count (`char_metrics.doc_counts`).
 
-PIILO (Kaggle `lburleigh/piilo-dataset` v2) is gated in CRITERIA.md but not
-built here: TODO add it once the owner's Kaggle access is in place.
+PIILO (Kaggle `lburleigh/piilo-dataset` v2) has no API download without a
+Kaggle login: its one file, `train.json`, is placed by hand in
+`results/r3/sources/piilo-train.json` and checked against `PIILO_SHA256`.
 
 Run: python scripts/r3/build_r3.py   (from packages/eval, any cwd works)
 """
@@ -137,6 +138,19 @@ TONIC_LABELS: dict[str, str] = {
     "USERNAME": IGNORE,
     "EMPLOYEE_ID": IGNORE,
     "ORGANIZATION": IGNORE,
+}
+
+# ─── piilo: Kaggle PII competition essays (BIO tags per token) ───
+# Every tag the competition defines is core (CRITERIA); only students' names
+# are gold, other people's names are scored as written.
+PIILO_LABELS: dict[str, str] = {
+    "NAME_STUDENT": "private_person",
+    "USERNAME": "private_person",       # a handle naming a person, as gold USERNAME elsewhere
+    "EMAIL": "private_email",
+    "PHONE_NUM": "private_phone",
+    "STREET_ADDRESS": "private_address",
+    "URL_PERSONAL": "private_url",
+    "ID_NUM": "account_number",
 }
 
 # ─── eu-clinical (a): Greek clinical de-id benchmark ─────────────
@@ -286,6 +300,14 @@ REDACTIONBENCH_REPO = "A10Networks/RedactionBench"
 REDACTIONBENCH_REVISION = "1af44a65c4cb6f12ec62ffb55d75b7f30da82fb1"
 REDACTIONBENCH_FILE = "data/test-00000-of-00001.parquet"
 REDACTIONBENCH_LANGUAGE = "en"
+
+# Kaggle `lburleigh/piilo-dataset` v2: one file, train.json, created
+# 2024-10-03, 109,496,478 bytes, CC BY 4.0 (dataset page metadata).
+PIILO_FILE = "piilo-train.json"
+PIILO_SHA256 = "8276cd44f3b2eb357dfb405b3c5d8e9f821388e984cbf66e92e7df03f1b13117"
+PIILO_LICENCE = "CC BY 4.0: PIILO (c) 2024 by The Learning Agency Lab"
+PIILO_LANGUAGE = "en"
+PIILO_OUTSIDE = "O"
 
 MAMA_REPO = "mamahealth/mama-deid-dataset"
 MAMA_REVISION = "2277eb88cb6946bc2d4aa6a26cda85f01529d1b9"
@@ -586,6 +608,66 @@ def build_redact() -> Built:
     return Built(docs, REDACT_LABELS, [source])
 
 
+def _piilo_offsets(doc: dict) -> list[tuple[int, int]]:
+    """Each token's (start, end) in `full_text`, walking tokens and their
+    trailing whitespace; the walk must rebuild the text exactly."""
+    text, cursor, offsets = doc["full_text"], 0, []
+    for token, space in zip(doc["tokens"], doc["trailing_whitespace"], strict=True):
+        if text[cursor:cursor + len(token)] != token:
+            raise ValueError(f"piilo document {doc['document']}: tokens do not rebuild full_text")
+        offsets.append((cursor, cursor + len(token)))
+        cursor += len(token) + (1 if space else 0)
+    if cursor != len(text):
+        raise ValueError(f"piilo document {doc['document']}: tokens cover {cursor} of {len(text)} chars")
+    return offsets
+
+
+def _piilo_spans(doc: dict) -> list[NativeSpan]:
+    """BIO runs of one tag -> character spans from the first token's start
+    to the last token's end."""
+    spans: list[NativeSpan] = []
+    run: tuple[str, int, int] | None = None
+    for (start, end), tag in zip(_piilo_offsets(doc), doc["labels"], strict=True):
+        if tag == PIILO_OUTSIDE:
+            run = _close_run(run, spans)
+            continue
+        prefix, label = tag.split("-", 1)
+        if run is not None and prefix == "I" and run[0] == label:
+            run = (label, run[1], end)
+            continue
+        _close_run(run, spans)
+        run = (label, start, end)
+    _close_run(run, spans)
+    return spans
+
+
+def _close_run(run: tuple[str, int, int] | None, spans: list[NativeSpan]) -> None:
+    if run is not None:
+        spans.append(NativeSpan(run[1], run[2], run[0]))
+
+
+def build_piilo() -> Built:
+    path = SOURCES_DIR / PIILO_FILE
+    if not path.exists():
+        raise FileNotFoundError(f"{path}: place Kaggle lburleigh/piilo-dataset v2 train.json there")
+    if _sha256_file(path) != PIILO_SHA256:
+        raise ValueError(f"{path}: SHA-256 differs from PIILO v2's train.json")
+    corpus = json.loads(path.read_text(encoding="utf-8"))
+    by_id = {int(doc["document"]): doc for doc in corpus}
+    if len(by_id) != len(corpus):
+        raise ValueError("piilo: duplicate document ids")
+    # Every document: a 2,000-essay sample (CRITERIA's first text) holds 434
+    # gold spans, under C6's floor of 1,000.
+    chosen = sorted(by_id)
+    docs = [
+        RawDoc(text=by_id[i]["full_text"], language=PIILO_LANGUAGE, cluster=f"piilo/{i}", spans=_piilo_spans(by_id[i]))
+        for i in chosen
+    ]
+    source = {"source": "Kaggle lburleigh/piilo-dataset v2", "file": "train.json", "sha256": PIILO_SHA256,
+              "licence": PIILO_LICENCE, "sample": "every document"}
+    return Built(docs, PIILO_LABELS, [source])
+
+
 def _check_tonic_tag() -> None:
     refs = HfApi().list_repo_refs(TONIC_REPO, repo_type=HF_DATASET)
     tag = next((t for t in refs.tags if t.name == TONIC_TAG), None)
@@ -770,6 +852,7 @@ class Key:
 KEYS: tuple[Key, ...] = (
     Key("redact", build_redact),
     Key("tonic-human", build_tonic),
+    Key("piilo", build_piilo),
     Key("eu-clinical", build_eu_clinical),
     Key("redactionbench", build_redactionbench, frozenset({UNTYPED})),
     Key("mama-deid-val", build_mama, frozenset({CONTACT})),
@@ -861,7 +944,6 @@ def main() -> None:
         manifest[key.name] = entry
         print(f"[r3] {key.name}: {entry['rows']} rows, {entry['gold_spans']} gold spans, "
               f"{entry['ignore_regions']} ignore regions, sha256 {entry['sha256']}", flush=True)
-    manifest["_todo"] = ["piilo: Kaggle lburleigh/piilo-dataset v2, not built (owner's Kaggle access pending)"]
     (OUT_DIR / MANIFEST).write_text(json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=True) + "\n",
                                     encoding="ascii")
     print(f"[r3] manifest -> {OUT_DIR / MANIFEST}", flush=True)

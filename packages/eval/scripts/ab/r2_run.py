@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Run competitors on the gated report set R2 (PROTOCOL rule change 9).
+"""Run competitors on a gated report set: R2 (PROTOCOL rule change 9) by
+default, R3 (rule change 10) with `--datasets`.
 
 Each tool runs twice: at the operating point `tune_operating_point.py`
 froze on the tuning set, and at its default. Both land in one checkpoint
@@ -12,6 +13,8 @@ would be a second look at R2, so this script never echoes it.
 
   python r2_run.py --tools nemotron-pii-raw,openmed-small --tuning results/ab-loop/r9-tuning \\
       --work results/ab-loop/r2-report
+  python r2_run.py --tools deberta --tuning results/ab-loop/r10-tuning --work results/ab-loop/r3-report \\
+      --datasets r3-redact,r3-tonic-human,r3-eu-clinical,r3-redactionbench,r3-mama-deid-val
 """
 from __future__ import annotations
 
@@ -26,7 +29,7 @@ R2_SETS = "piimb-mapa-eur-lex,piimb-privy,piimb-gretel,traces-v2"
 DEFAULT_SUFFIX = "@default"
 
 
-def bench(tool: str, config: dict, out: Path, backend: str) -> None:
+def bench(tool: str, config: dict, out: Path, backend: str, datasets: str) -> None:
     cfg = out / "tool-config.json"
     wanted = json.dumps({tool: config}, sort_keys=True) + "\n" if config else None
     found = cfg.read_text(encoding="utf-8") if cfg.exists() else None
@@ -36,7 +39,7 @@ def bench(tool: str, config: dict, out: Path, backend: str) -> None:
         raise SystemExit(f"{out}: checkpoints come from another operating point; delete the directory to rerun")
     out.mkdir(parents=True, exist_ok=True)
     argv = [sys.executable, str(SCRIPTS / "bench_full.py"), "--tools", tool, "--backend", backend,
-            "--datasets", R2_SETS, "--out-dir", str(out)]
+            "--datasets", datasets, "--out-dir", str(out)]
     if wanted:
         cfg.write_text(wanted, encoding="utf-8")
         argv += ["--tool-config", str(cfg)]
@@ -44,10 +47,10 @@ def bench(tool: str, config: dict, out: Path, backend: str) -> None:
         subprocess.run(argv, check=True, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
 
 
-def link(src: Path, combined: Path, tool: str, name: str) -> None:
+def link(src: Path, combined: Path, tool: str, name: str, datasets: str) -> None:
     """Expose `src`'s checkpoints of `tool` under `name` in `combined`."""
     combined.mkdir(parents=True, exist_ok=True)
-    for ds in R2_SETS.split(","):
+    for ds in datasets.split(","):
         target = combined / f"{name}-{ds}.jsonl"
         target.unlink(missing_ok=True)
         target.symlink_to((src / "checkpoints" / f"{tool}-{ds}.jsonl").resolve())
@@ -59,20 +62,21 @@ def main() -> None:
     ap.add_argument("--tuning", type=Path, required=True, help="tune_operating_point.py --work dir")
     ap.add_argument("--work", type=Path, required=True)
     ap.add_argument("--backend", default="cuda")
+    ap.add_argument("--datasets", default=R2_SETS)
     args = ap.parse_args()
 
     combined = args.work / "checkpoints"
     for tool in args.tools.split(","):
         op = json.loads((args.tuning / tool / "operating-point.json").read_text(encoding="utf-8"))
         config = op["operating_point"]["config"]
-        bench(tool, {}, args.work / tool / "default", args.backend)
-        link(args.work / tool / "default", combined, tool, f"{tool}{DEFAULT_SUFFIX}")
+        bench(tool, {}, args.work / tool / "default", args.backend, args.datasets)
+        link(args.work / tool / "default", combined, tool, f"{tool}{DEFAULT_SUFFIX}", args.datasets)
         if config:
-            bench(tool, config, args.work / tool / "tuned", args.backend)
-            link(args.work / tool / "tuned", combined, tool, tool)
+            bench(tool, config, args.work / tool / "tuned", args.backend, args.datasets)
+            link(args.work / tool / "tuned", combined, tool, tool, args.datasets)
         else:
-            link(args.work / tool / "default", combined, tool, tool)
-        print(f"[r2] {tool}: done ({'tuned' if config else 'default'} operating point)", flush=True)
+            link(args.work / tool / "default", combined, tool, tool, args.datasets)
+        print(f"[report] {tool}: done ({'tuned' if config else 'default'} operating point)", flush=True)
 
 
 if __name__ == "__main__":

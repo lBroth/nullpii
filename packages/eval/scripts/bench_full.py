@@ -50,6 +50,7 @@ from typing import Callable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from nullpii_eval import public_datasets
+from nullpii_eval.adapters_presidio import presidio_predictor as presidio_docs_predictor
 from nullpii_eval.adapters import (
     DEFAULT_REGEX_PATTERNS,
     ETTIN_68M,
@@ -77,8 +78,6 @@ from nullpii_eval.adapters import (
     openmed_privacy_filter_predictor,
     piiranha_predictor,
     rizzo_pii_predictor,
-    presidio_multilang_predictor,
-    presidio_predictor,
     url_filter_predictor,
 )
 from nullpii_eval.datasets import Sample, Span
@@ -501,8 +500,10 @@ def build_tools(args) -> dict[str, Callable]:
         # processing (boundary refine / never-PII filter / regex pack /
         # `_normalize_for_detection`). Only the per-tool label remap to
         # nullpii's 12-class schema runs (cross-schema bridge).
-        "presidio":  lambda **kw: presidio_predictor(**kw),
-        "presidio-multilang": lambda **kw: presidio_multilang_predictor(**kw),
+        # Presidio per its multilingual docs (`adapters_presidio`): one engine
+        # per language, each text analysed in its own language. Runs from the
+        # presidio venv (requirements-presidio.txt) on the CPU.
+        "presidio":  lambda **kw: presidio_docs_predictor(**kw),
         "deberta":   lambda **kw: _mark_batch(deberta_pii_predictor(device=backend, batch_size=_BATCH, **kw)),
         "deberta-simple": lambda: _mark_batch(deberta_pii_predictor(device=backend, batch_size=_BATCH, aggregation_strategy="simple")),
         "piiranha":  lambda **kw: _mark_batch(piiranha_predictor(device=backend, batch_size=_BATCH, **kw)),

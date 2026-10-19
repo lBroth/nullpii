@@ -1459,7 +1459,7 @@ def _load_rizzo_clean_val(max_samples: int | None) -> PublicDataset:
 # every tool map drops (`None`) leaves the gold, so masking it is charged
 # to precision, never to recall. gretel and mapa-eur-lex use Nemotron-PII
 # style names (`_NEMOTRON_TOKEN_LABEL_MAP`); privy uses Presidio entity
-# names (`_PRESIDIO_TO_NULLPII`). An unlisted label raises.
+# names (`adapters_presidio._PRESIDIO_LABEL_MAP`). An unlisted label raises.
 _PIIMB_GOLD_MAPS: dict[str, dict[str, str | None]] = {
     "gretel": {
         "account_number": "account_number",
@@ -1564,5 +1564,5 @@ def load_piimb_task(rows: list[dict], task: str) -> list[Sample]:
             mapped = label_map[e["label"]]
             if mapped is not None:
                 spans.append(Span(mapped, int(e["start"]), int(e["end"])))
-        samples.append(Sample(text=row["text"], spans=tuple(spans)))
+        samples.append(Sample(text=row["text"], spans=tuple(spans), language=row["language"]))
     return samples

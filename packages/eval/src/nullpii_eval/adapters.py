@@ -2638,7 +2638,10 @@ _NEMOTRON_TO_NULLPII8 = {
 # GLiNER's own word splitter (`WhitespaceTokenSplitter`).
 _GLINER_WORD = re.compile(r"\w+(?:[-_]\w+)*|\S")
 # Windows of one document go to `inference` together, as the GLiNER docs
-# recommend for many texts; batching changes padding only.
+# recommend for many texts; batching changes padding only. A window is
+# capped in words, not subword tokens, so code and long strings can make
+# one of several thousand tokens: a document whose batch does not fit in
+# GPU memory is re-run with the batch halved, down to one window.
 _GLINER_BATCH_SIZE = 8
 
 
@@ -2713,7 +2716,8 @@ def gliner_v2_predictor(
 
     A text longer than the model's `max_len` words, or than
     `max_window_words` where the hardware cannot hold `max_len`, is cut into
-    word windows (`_gliner_windows`), `batch_size` at a time; spans repeated
+    word windows (`_gliner_windows`), `batch_size` at a time (halved while
+    a batch runs out of GPU memory); spans repeated
     across an overlap are collapsed. No other glue: no normalisation,
     recognizers or filters.
 
@@ -2746,12 +2750,23 @@ def gliner_v2_predictor(
             return None
         return label
 
+    def _inference(chunks: list[str]) -> list[list[dict]]:
+        import torch
+
+        size = batch_size
+        while True:
+            try:
+                return model.inference(chunks, inference_labels, threshold=threshold, batch_size=size)
+            except torch.cuda.OutOfMemoryError:
+                if size == 1:
+                    raise
+                torch.cuda.empty_cache()
+                size //= 2
+
     def _predict(text: str) -> ToolResult:
         t0 = time.perf_counter()
         windows = _gliner_windows(text, max_words, overlap_words)
-        per_window = model.inference(
-            [chunk for _, chunk in windows], inference_labels, threshold=threshold, batch_size=batch_size,
-        )
+        per_window = _inference([chunk for _, chunk in windows])
         spans_with_scores: list[tuple[Span, float]] = []
         for (offset, _), entities in zip(windows, per_window, strict=True):
             for e in entities:

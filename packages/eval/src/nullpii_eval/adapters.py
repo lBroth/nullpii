@@ -2708,6 +2708,8 @@ def gliner_v2_predictor(
     labels: list[str] | None = None,
     label_map: Mapping[str, str | None] | None = None,
     label_cut: LabelCut | None = None,
+    max_window_words: int | None = None,
+    batch_size: int = _GLINER_BATCH_SIZE,
 ) -> Predictor:
     """A GLiNER model run the way the GLiNER library documents it: the
     model's `inference` over the label strings it was trained on, at
@@ -2718,9 +2720,11 @@ def gliner_v2_predictor(
     decide every prompted label. Without `labels`, nullpii's own label set
     is prompted and returned unmapped (nullpii's merged models).
 
-    A text longer than the model's `max_len` words is cut into word windows
-    (`_gliner_windows`); spans repeated across an overlap are collapsed. No
-    other glue: no normalisation, recognizers or filters.
+    A text longer than the model's `max_len` words, or than
+    `max_window_words` where the hardware cannot hold `max_len`, is cut into
+    word windows (`_gliner_windows`), `batch_size` at a time; spans repeated
+    across an overlap are collapsed. No other glue: no normalisation,
+    recognizers or filters.
 
     `onnx_file` loads an exported ONNX model on the CPU, the library's
     default provider. `dtype` follows the card where it names one
@@ -2740,8 +2744,10 @@ def gliner_v2_predictor(
     inference_labels = list(labels) if labels is not None else list(_NULLPII_LABELS)
     if label_map is not None:
         _check_label_coverage(set(inference_labels), dict(label_map), tool=model_path)
-    max_words = int(model.config.max_len)
+    max_words = min(int(model.config.max_len), max_window_words or int(model.config.max_len))
     overlap_words = int(model.config.max_width)
+    if overlap_words >= max_words:
+        raise ValueError(f"[{model_path}] window of {max_words} words cannot overlap by max_width {overlap_words}")
 
     def _project(native: str, score: float) -> str | None:
         label = native if label_map is None else _map_native_label(native, dict(label_map), tool=model_path)
@@ -2753,7 +2759,7 @@ def gliner_v2_predictor(
         t0 = time.perf_counter()
         windows = _gliner_windows(text, max_words, overlap_words)
         per_window = model.inference(
-            [chunk for _, chunk in windows], inference_labels, threshold=threshold, batch_size=_GLINER_BATCH_SIZE,
+            [chunk for _, chunk in windows], inference_labels, threshold=threshold, batch_size=batch_size,
         )
         spans_with_scores: list[tuple[Span, float]] = []
         for (offset, _), entities in zip(windows, per_window, strict=True):

@@ -372,6 +372,10 @@ def _required_env(name: str) -> str:
 _LONG_WINDOW_BATCH = 8
 
 
+# gliner-stream-pii's window cap on the 12 GB GPU (see its registry entry).
+_GLINER_STREAM_WINDOW_WORDS = 2048
+
+
 def build_tools(args) -> dict[str, Callable]:
     backend = args.backend
     # Inner GPU batch for transformer tools. Override via env when
@@ -567,14 +571,19 @@ def build_tools(args) -> dict[str, Callable]:
             local_files_only=True,
         ),
         # knowledgator's streaming-span GLiNER on a Qwen3-0.6B causal
-        # backbone, used the card's stateless way: whole text (max_len 8192
-        # words), bf16 on CUDA, fp32 elsewhere, threshold 0.5. Same vendor
-        # vocabulary as its sibling gliner-pii-large-v1.
+        # backbone, used the card's stateless way: whole text, bf16 on CUDA,
+        # fp32 elsewhere, threshold 0.5. Same vendor vocabulary as its
+        # sibling gliner-pii-large-v1. The card's max_len is 8192 words, but
+        # a whole ~8k-word trace runs the 12 GB RTX 4070 Ti out of memory, so
+        # texts are cut into windows of at most 2048 words, run one at a time
+        # (shorter texts stay whole). Fixed for every device.
         "gliner-stream-pii": lambda **kw: gliner_v2_predictor(
             "knowledgator/gliner-stream-pii-v1.0",
             revision="e871777dc4b3b688747a0433fff8d94a36fcc7b0",
             device=backend,
             dtype="bf16" if backend == "cuda" else "fp32",
+            max_window_words=_GLINER_STREAM_WINDOW_WORDS,
+            batch_size=1,
             labels=_KNOWLEDGATOR_LABELS,
             label_map=_KNOWLEDGATOR_TO_NULLPII,
             **{"threshold": 0.5, **kw},

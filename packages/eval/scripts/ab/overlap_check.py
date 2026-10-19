@@ -25,13 +25,17 @@ from pathlib import Path
 SHINGLE_WORDS = 10
 SAMPLE_EVERY = 8
 WORD = re.compile(r"\w+")
-# HF datasets the compared tools declare as training data, and the text field.
+# HF datasets the compared tools declare as training data, or that R3's C4
+# excludes as sources, and the text field (a word list is joined by spaces).
 HF_REFERENCES = {
     "nemotron-pii-train": ("nvidia/Nemotron-PII", "text"),
     "ai4privacy-200k": ("ai4privacy/pii-masking-200k", "source_text"),
     "ai4privacy-400k": ("ai4privacy/pii-masking-400k", "source_text"),
     "ai4privacy-open-500k": ("ai4privacy/open-pii-masking-500k-ai4privacy", "source_text"),
     "isotonic-200k": ("Isotonic/pii-masking-200k", "unmasked_text"),
+    "urchade-synthetic-pii": ("urchade/synthetic-pii-ner-mistral-v1", "tokenized_text"),
+    "gretel-pii-en": ("gretelai/gretel-pii-masking-en-v1", "text"),
+    "gretel-finance-multilingual": ("gretelai/synthetic_pii_finance_multilingual", "generated_text"),
 }
 
 
@@ -69,7 +73,8 @@ def hf_texts(name: str, field: str) -> Iterator[str]:
     from datasets import load_dataset
 
     for row in load_dataset(name, split="train"):
-        yield str(row[field] or "")
+        value = row[field] or ""
+        yield " ".join(value) if isinstance(value, list) else str(value)
 
 
 def main() -> None:

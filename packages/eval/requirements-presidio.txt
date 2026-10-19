@@ -2,7 +2,7 @@
 # presidio-analyzer run per its multilingual docs, one spaCy NER model per
 # language, plus what scripts/bench_full.py needs to import and load datasets.
 # The spaCy models are pinned wheels (release 3.8.0, compatible with spaCy
-# 3.8.x) with their SHA-256, so pip verifies each download. About 8 GB.
+# 3.8.x) with their SHA-256, so pip verifies each download. About 10 GB.
 #
 # Create it (tested with Python 3.12):
 #   python3.12 -m venv ~/.cache/nullpii-eval/venv-presidio
@@ -20,6 +20,12 @@ datasets==4.8.5
 phonenumbers==9.0.41
 regex==2026.9.29
 tldextract==5.4.0
+# Tokenizers and morphology the ja, zh and ru pipelines require.
+SudachiPy==0.7.0
+sudachidict-core==20261015
+spacy-pkuseg==1.0.1
+pymorphy3==2.0.6
+pymorphy3-dicts-ru==2.4.417150.4580142
 
 # One NER model per language (adapters_presidio.SPACY_MODEL_BY_LANGUAGE).
 # Largest CPU pipeline where spaCy ships one for the language:
@@ -39,5 +45,9 @@ lt_core_news_lg @ https://github.com/explosion/spacy-models/releases/download/lt
 el_core_news_lg @ https://github.com/explosion/spacy-models/releases/download/el_core_news_lg-3.8.0/el_core_news_lg-3.8.0-py3-none-any.whl#sha256=3bf603778bda163a1770f66aadf6b9b1030d9ecb3cbdb24d690c060bbf4d598c
 hr_core_news_lg @ https://github.com/explosion/spacy-models/releases/download/hr_core_news_lg-3.8.0/hr_core_news_lg-3.8.0-py3-none-any.whl#sha256=70db4632c9fdf87b800a4956ec4d5ec56d9567ef7bcafad9f8b85af7734ada26
 sl_core_news_lg @ https://github.com/explosion/spacy-models/releases/download/sl_core_news_lg-3.8.0/sl_core_news_lg-3.8.0-py3-none-any.whl#sha256=1358fa16bcb2c1309451f748096a801688f6a2b2a251bed94a1bd170df86179f
-# Multilingual WikiNER model for bg, cs, et, ga, hu, lv, mt, sk, sr (no spaCy pipeline):
+ja_core_news_lg @ https://github.com/explosion/spacy-models/releases/download/ja_core_news_lg-3.8.0/ja_core_news_lg-3.8.0-py3-none-any.whl#sha256=4e2e9e9e5a4d58804046fa4a08153f52f705e6deb686c7e94177fddd8752b95f
+ko_core_news_lg @ https://github.com/explosion/spacy-models/releases/download/ko_core_news_lg-3.8.0/ko_core_news_lg-3.8.0-py3-none-any.whl#sha256=f703b419511ebbbe2812728708fb2dac8a6ed767871a18e87e29ce9444ead3d3
+ru_core_news_lg @ https://github.com/explosion/spacy-models/releases/download/ru_core_news_lg-3.8.0/ru_core_news_lg-3.8.0-py3-none-any.whl#sha256=90bd584be86772b647e1b15cdc62e09d3a7182284ee23da95e19c2bf71aa0189
+zh_core_web_lg @ https://github.com/explosion/spacy-models/releases/download/zh_core_web_lg-3.8.0/zh_core_web_lg-3.8.0-py3-none-any.whl#sha256=eb39f5deb382752d3faef4052fb61570b7f45441076082b2a1fdbe50a8848e7c
+# Multilingual WikiNER model for bg, cs, et, ga, hu, lv, mt, sk, sr, ar, hi, id, th, vi (no spaCy pipeline):
 xx_ent_wiki_sm @ https://github.com/explosion/spacy-models/releases/download/xx_ent_wiki_sm-3.8.0/xx_ent_wiki_sm-3.8.0-py3-none-any.whl#sha256=6f3c4b853852ea9e9d2dc76cc950dddb10a7e4c42d813308caefe6c5e8be2f0a

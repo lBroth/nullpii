@@ -17,6 +17,9 @@ Reads the per-document predictions `bench_full.py` writes
 the same loaders, so no model is re-run. `--mask-all` adds a pseudo-tool
 that masks every character, the floor any detector should clear.
 
+`--language en` keeps only the documents whose loader records that language
+(R3's English-only macro, rule change 10); a dataset with none is skipped.
+
   python char_metrics.py --results <dir> --datasets a,b --baseline nullpii --out m.json [--mask-all]
 """
 
@@ -126,8 +129,10 @@ def tools_with_checkpoints(results: Path, dataset: str) -> list[str]:
 
 
 def dataset_arrays(
-    results: Path, dataset: str, tools: list[str], mask_all: bool = False
-) -> tuple[np.ndarray, dict[str, tuple]]:
+    results: Path, dataset: str, tools: list[str], mask_all: bool = False, language: str | None = None
+) -> tuple[np.ndarray, dict[str, tuple], dict[str, dict]]:
+    """Per-tool count arrays over the dataset's documents, or over those in
+    `language`. The first value holds the kept documents' positions."""
     spec = next((s for s in bench_full.DATASET_CONFIGS if s.key == dataset), None)
     if spec is None:
         raise ValueError(f"unknown dataset {dataset!r}")
@@ -141,6 +146,11 @@ def dataset_arrays(
     samples = spec.loader(spec.default_n)
     if len(samples) != n:
         raise ValueError(f"{dataset}: checkpoints have {n} docs, the dataset has {len(samples)}: incomplete run")
+    kept = [i for i, smp in enumerate(samples) if language is None or smp.language == language]
+    if not kept:
+        return np.array([], dtype=np.int64), {}, {}
+    samples = [samples[i] for i in kept]
+    preds = {t: [p[i] for i in kept] for t, p in preds.items()}
     gold_spans = [[(s.start, s.end) for s in smp.spans] for smp in samples]
     if mask_all:
         preds[MASK_ALL] = [[(0, len(smp.text))] for smp in samples]
@@ -155,7 +165,7 @@ def dataset_arrays(
         )
         per_tool[tool] = (counts[:, 0], counts[:, 1], counts[:, 2])
         per_label[tool] = label_counts(samples, tool_preds)
-    return np.arange(n), per_tool, per_label
+    return np.array(kept, dtype=np.int64), per_tool, per_label
 
 
 def by_cluster(per_tool: dict[str, tuple], per_label: dict[str, dict], clusters: list[str]) -> tuple[dict, dict, int]:
@@ -222,7 +232,6 @@ def compare(
     macro CI across datasets."""
     idx = rng.integers(0, n, size=(BOOTSTRAP_RESAMPLES, n))
     base_f = {key: _bootstrap_fbeta(*per_tool[baseline], idx, beta) for key, beta in F_BETAS.items()}
-    base_f2 = base_f["f2"]
     base_rec = _bootstrap_recall(per_tool[baseline][0], per_tool[baseline][2], idx)
     base_prec = _bootstrap_precision(per_tool[baseline][1], per_tool[baseline][2], idx)
     out = {}
@@ -234,7 +243,6 @@ def compare(
         entry["docs"] = n
         if tool != baseline:
             d_f = {key: base_f[key] - _bootstrap_fbeta(*arrays, idx, beta) for key, beta in F_BETAS.items()}
-            d_f2 = d_f["f2"]
             d_rec = base_rec - _bootstrap_recall(arrays[0], arrays[2], idx)
             for key in F_BETAS:
                 entry[f"baseline_minus_tool_{key}_ci"] = _ci(d_f[key])
@@ -280,6 +288,7 @@ def main() -> None:
     parser.add_argument("--tools", default="", help="comma list; default = every tool with checkpoints")
     parser.add_argument("--out", type=Path)
     parser.add_argument("--mask-all", action="store_true", help=f"add the '{MASK_ALL}' floor as a pseudo-tool")
+    parser.add_argument("--language", help="score only documents in this language (ISO 639-1)")
     args = parser.parse_args()
 
     rng = np.random.default_rng(BOOTSTRAP_SEED)
@@ -289,11 +298,15 @@ def main() -> None:
         tools = args.tools.split(",") if args.tools else tools_with_checkpoints(args.results, dataset)
         if args.baseline not in tools:
             raise ValueError(f"{dataset}: baseline {args.baseline!r} has no checkpoint")
-        idx, per_tool, per_label = dataset_arrays(args.results, dataset, tools, args.mask_all)
-        docs, units = len(idx), len(idx)
+        kept, per_tool, per_label = dataset_arrays(args.results, dataset, tools, args.mask_all, args.language)
+        if not len(kept):
+            print(f"{dataset}: no document in {args.language!r}, skipped", flush=True)
+            continue
+        docs, units = len(kept), len(kept)
         cluster_ids = bench_full.DATASET_CLUSTERS.get(dataset)
         if cluster_ids is not None:
-            per_tool, per_label, units = by_cluster(per_tool, per_label, cluster_ids(docs))
+            every = cluster_ids(int(kept[-1]) + 1)
+            per_tool, per_label, units = by_cluster(per_tool, per_label, [every[i] for i in kept])
         report[dataset], diffs = compare(per_tool, per_label, args.baseline, units, rng)
         if cluster_ids is not None:
             for entry in report[dataset].values():

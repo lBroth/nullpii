@@ -29,10 +29,10 @@ conf/default.yaml and conf/default_recognizers.yaml.
 
 Model per language (spaCy 3.8 pipelines, release 3.8.0): where spaCy ships
 a trained pipeline for the language, its largest CPU one: `en_core_web_lg`
-(Presidio's own default for English) and `<lang>_core_news_lg` for de, fr,
-it, es, nl, pt, pl, ro, da, fi, sv, lt, el, hr, sl. Where spaCy ships none
-(bg, cs, et, ga, hu, lv, mt, sk, sr), spaCy's multilingual NER
-`xx_ent_wiki_sm`. The docs present spaCy and Stanza as equal routes and
+(Presidio's own default for English), `zh_core_web_lg`, and
+`<lang>_core_news_lg` for de, fr, it, es, nl, pt, pl, ro, da, fi, sv, lt,
+el, hr, sl, ja, ko, ru. Where spaCy ships none (bg, cs, et, ga, hu, lv, mt,
+sk, sr, ar, hi, id, th, vi), spaCy's multilingual NER `xx_ent_wiki_sm`. The docs present spaCy and Stanza as equal routes and
 prescribe neither for such languages; staying on spaCy keeps one framework
 and one NLP engine class across languages.
 
@@ -45,7 +45,8 @@ Disclosures:
   `SUPPORTED_LANGUAGES` raises.
 - Languages without a spaCy pipeline run on `xx_ent_wiki_sm`, a small
   WikiNER model with no lemmatizer, so the context enhancer finds no
-  context words there.
+  context words there. Its tokenizer splits on spaces and punctuation, so
+  in Thai, written without spaces between words, a token spans a phrase.
 - The default registry is what it is per language: credit cards are
   recognized for en, es, it and pl only (`CreditCardRecognizer` lists no
   other language), US / UK identifiers for en only, ES NIF / NIE for es,
@@ -61,11 +62,13 @@ Disclosures:
 - `SpacyRecognizer` returns only spaCy labels named in
   `model_to_presidio_entity_mapping`, which the docs have the user set for
   the model they configure. default.yaml's mapping covers the OntoNotes and
-  WikiNER labels; the Polish, Swedish and Romanian pipelines use other
-  names for the same entities, so those are added (`_MODEL_LABEL_MAPPING`).
-  Without them Polish would get no NER entity at all and Swedish no
-  person. Labels with no Presidio entity (WikiNER MISC, Swedish EVN/WRK,
-  Romanian PERIOD, Croatian/Slovene DERIV_PER) stay unmapped, as shipped.
+  WikiNER labels; the Polish, Swedish, Romanian, Korean and Japanese
+  pipelines use other names for the same entities, so those are added
+  (`_MODEL_LABEL_MAPPING`). Without them Polish and Korean would get no NER
+  entity at all and Swedish no person. Labels with no Presidio entity
+  (WikiNER MISC, Swedish EVN/WRK, Romanian PERIOD, Croatian/Slovene
+  DERIV_PER, Korean QT, Japanese MOVEMENT/PET_NAME/TITLE_AFFIX) stay
+  unmapped, as shipped.
 - Each engine is warmed up at build with one synthetic text, so Presidio's
   lazily loaded pieces (recognizers, and the public-suffix list tldextract
   uses for e-mail validation, fetched once per environment and cached in
@@ -78,7 +81,9 @@ Disclosures:
 - Every engine stays cached once built. Measured resident memory on CPU:
   about 0.8 GB per engine for de, fr, it, es, nl, pt, pl, ro, da, lt, el,
   0.25 GB for fi / hr / sl / sv, 0.6 GB for en, 0.3 GB per xx language;
-  13.3 GB for the whole process with all 25 loaded.
+  13.3 GB for the whole process with the first 25 loaded (ja, ko, ru, zh
+  and the xx languages ar, hi, id, th, vi were added later, for
+  mama-deid's validation split, and not measured).
 
 Label map: same SYMMETRY RULE as `_RIZZO_LABEL_MAP` in `adapters.py`. An
 entity maps to X iff our gold loaders map the equivalent gold concept to X,
@@ -130,6 +135,14 @@ _MODEL_LABEL_MAPPING: dict[str, str] = {
     "DATETIME": "DATE_TIME",
     "FACILITY": "LOCATION",
     "NAT_REL_POL": "NRP",
+    # ko_core_news_lg (KLUE)
+    "PS": "PERSON",
+    "LC": "LOCATION",
+    "OG": "ORGANIZATION",
+    "DT": "DATE_TIME",
+    "TI": "DATE_TIME",
+    # ja_core_news_lg (GSD-NE)
+    "PHONE": "PHONE_NUMBER",
 }
 
 _XX_MODEL = "xx_ent_wiki_sm"
@@ -151,10 +164,14 @@ _SPACY_PIPELINES: dict[str, str] = {
     "el": "el_core_news_lg",
     "hr": "hr_core_news_lg",
     "sl": "sl_core_news_lg",
+    "ja": "ja_core_news_lg",
+    "ko": "ko_core_news_lg",
+    "ru": "ru_core_news_lg",
+    "zh": "zh_core_web_lg",
 }
-# Languages of our datasets (PIIMB ai4privacy-multi / mapa-eur-lex) that
-# spaCy ships no pipeline for.
-_XX_LANGUAGES = ("bg", "cs", "et", "ga", "hu", "lv", "mt", "sk", "sr")
+# Languages of our datasets (PIIMB ai4privacy-multi / mapa-eur-lex, R3's
+# mama-deid-val) that spaCy ships no pipeline for.
+_XX_LANGUAGES = ("bg", "cs", "et", "ga", "hu", "lv", "mt", "sk", "sr", "ar", "hi", "id", "th", "vi")
 
 SPACY_MODEL_BY_LANGUAGE: dict[str, str] = {
     **_SPACY_PIPELINES,

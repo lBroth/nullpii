@@ -13,8 +13,15 @@ Written before R2 is scored, so the analysis cannot follow the numbers.
   default operating point (`<tool>@default`); nullpii's default config; the
   leave-one-dataset-out range of each macro.
 
+Rule change 10 (R3) with `--better-row`: S1 is tested against each
+competitor's better row, the tuned or the `@default` one with the higher
+macro char-F2; S2 and the F1 / F0.5 reversals are tested against both rows.
+`--table-only` prints the table of a reported, non-gated report.
+
   python r2_verdict.py --report char-r2.json --baseline nullpii-core \\
       --not-competitors nullpii-default
+  python r2_verdict.py --report char-r3-gated.json --baseline nullpii-core \\
+      --not-competitors nullpii-default,nullpii-default@core --better-row
 """
 from __future__ import annotations
 
@@ -31,6 +38,21 @@ def competitors(tools: list[str], baseline: str, excluded: set[str]) -> list[str
     """Tuned competitors: every tool except nullpii's rows, the floor and the
     `@default` rows, which are reported but not tested."""
     return [t for t in tools if t != baseline and t != MASK_ALL and t not in excluded and not t.endswith(DEFAULT_SUFFIX)]
+
+
+def better_rows(macro: dict, rivals: list[str]) -> list[str]:
+    """Each competitor's row with the higher macro char-F2: tuned, or its
+    `@default` row (rule change 10). A tie keeps the tuned row."""
+    out = []
+    for t in rivals:
+        default = t + DEFAULT_SUFFIX
+        out.append(default if default in macro and macro[default]["f2"] > macro[t]["f2"] else t)
+    return out
+
+
+def both_rows(rivals: list[str], tools: list[str]) -> list[str]:
+    """Each competitor's tuned row and, where it was run, its `@default` row."""
+    return [r for t in rivals for r in (t, t + DEFAULT_SUFFIX) if r in tools]
 
 
 def s1(macro: dict, rivals: list[str]) -> tuple[bool, list[str]]:
@@ -85,6 +107,9 @@ def main() -> None:
     ap.add_argument("--report", type=Path, required=True)
     ap.add_argument("--baseline", required=True, help="nullpii's core regime")
     ap.add_argument("--not-competitors", default="", help="comma list of other nullpii rows")
+    ap.add_argument("--better-row", action="store_true",
+                    help="rule change 10: S1 against each competitor's better row, S2 and reversals against both")
+    ap.add_argument("--table-only", action="store_true", help="a reported set: the table, no S1 or S2")
     args = ap.parse_args()
 
     report = json.loads(args.report.read_text(encoding="utf-8"))
@@ -95,13 +120,18 @@ def main() -> None:
         raise ValueError("the report has no mask-all row: run char_metrics.py with --mask-all")
 
     print("\n".join(table(report, datasets, tools)))
-    s1_ok, s1_lines = s1(report["_macro"], rivals)
-    print(f"\nS1 {'holds' if s1_ok else 'FAILS'} ({len(rivals)} competitors at their tuned operating point):")
+    if args.table_only:
+        return
+    s1_rows = better_rows(report["_macro"], rivals) if args.better_row else rivals
+    tested = both_rows(rivals, tools) if args.better_row else rivals
+    s1_ok, s1_lines = s1(report["_macro"], s1_rows)
+    row_kind = "better row (tuned or default)" if args.better_row else "tuned operating point"
+    print(f"\nS1 {'holds' if s1_ok else 'FAILS'} ({len(rivals)} competitors at their {row_kind}):")
     print("\n".join(s1_lines))
-    s2_ok, s2_lines = s2(report, datasets, rivals)
+    s2_ok, s2_lines = s2(report, datasets, tested)
     print(f"\nS2 {'holds' if s2_ok else 'FAILS'}" + (":" if s2_lines else ": no dataset where a competitor has significantly higher recall at matched precision"))
     print("\n".join(s2_lines))
-    rev = reversals(report, [*datasets, "_macro"], rivals)
+    rev = reversals(report, [*datasets, "_macro"], tested)
     print(f"\nF1 / F0.5 reversals against F2 ({len(rev)}):")
     print("\n".join(rev) if rev else "  none")
 

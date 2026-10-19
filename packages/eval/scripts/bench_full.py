@@ -935,6 +935,7 @@ def main() -> None:
             matrix.setdefault(ds.key, {})["_load_error"] = "loader returned 0 samples"
             matrix_path.write_text(json.dumps(matrix, indent=2))
             continue
+        matrix.get(ds.key, {}).pop("_load_error", None)
         cap_label = "full" if n_arg is None else f"cap {n_arg}"
         print(f"[bench] {ds.key}: {len(samples)} samples ({cap_label})", flush=True)
 
@@ -1038,13 +1039,17 @@ def main() -> None:
     print(f"\n[bench] matrix → {matrix_path}", flush=True)
     print(f"[bench] csv    → {csv_path}", flush=True)
 
-    # Summary: surface failures explicitly so they cannot be missed.
+    # Summary: surface failures explicitly so they cannot be missed. Only
+    # this run's cells count: matrix.json also holds earlier runs' cells.
     failures: list[str] = []
+    run_keys = {d.key for d in datasets}
     for ds_key, cells in matrix.items():
+        if ds_key not in run_keys:
+            continue
         if "_load_error" in cells:
             failures.append(f"  LOAD_FAIL  {ds_key}: {cells['_load_error']}")
         for tname, cell in cells.items():
-            if tname.startswith("_"):
+            if tname.startswith("_") or tname not in tools:
                 continue
             if cell.get("status") == "CRASHED":
                 failures.append(f"  CRASHED    {tname}/{ds_key}: {cell.get('error', '?')}")
@@ -1052,8 +1057,10 @@ def main() -> None:
         print(f"\n[bench] {len(failures)} CELLS WITH FAILURES:", flush=True)
         for line in failures:
             print(line, flush=True)
-    else:
-        print("\n[bench] no failures recorded.", flush=True)
+        # Callers (tune_operating_point, r2_run) run this with check=True: a
+        # crashed cell must stop them, not pass as a finished run.
+        raise SystemExit(f"[bench] {len(failures)} cells failed")
+    print("\n[bench] no failures recorded.", flush=True)
 
 
 if __name__ == "__main__":

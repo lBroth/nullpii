@@ -28,6 +28,10 @@ class Sample:
     # ISO 639-1 code of the text, where the source records it. Only tools
     # whose documented API takes the language per call receive it (Presidio).
     language: str | None = None
+    # Character ranges scored as neither true nor false positive: text the
+    # gold deliberately leaves out of scope (R3's non-core labels, a
+    # distractor-free traces variant). Gold characters inside one still count.
+    ignore: tuple[tuple[int, int], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

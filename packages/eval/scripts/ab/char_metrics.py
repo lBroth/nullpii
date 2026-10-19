@@ -52,10 +52,17 @@ def _covered(spans: list[tuple[int, int]], length: int) -> np.ndarray:
     return mask
 
 
-def doc_counts(text_len: int, gold: list[tuple[int, int]], pred: list[tuple[int, int]]) -> tuple[int, int, int]:
-    """(gold chars, predicted chars, overlap chars) for one document."""
+def doc_counts(
+    text_len: int,
+    gold: list[tuple[int, int]],
+    pred: list[tuple[int, int]],
+    ignore: tuple[tuple[int, int], ...] = (),
+) -> tuple[int, int, int]:
+    """(gold chars, predicted chars, overlap chars) for one document.
+    Predicted characters inside an ignore region that are not gold are not
+    counted, so masking out-of-scope text costs no precision."""
     g = _covered(gold, text_len)
-    p = _covered(pred, text_len)
+    p = _covered(pred, text_len) & ~(_covered(list(ignore), text_len) & ~g)
     return int(g.sum()), int(p.sum()), int((g & p).sum())
 
 
@@ -141,7 +148,10 @@ def dataset_arrays(
     per_label = {}
     for tool, tool_preds in preds.items():
         counts = np.array(
-            [doc_counts(len(smp.text), g, p) for smp, g, p in zip(samples, gold_spans, tool_preds, strict=True)],
+            [
+                doc_counts(len(smp.text), g, p, smp.ignore)
+                for smp, g, p in zip(samples, gold_spans, tool_preds, strict=True)
+            ],
         )
         per_tool[tool] = (counts[:, 0], counts[:, 1], counts[:, 2])
         per_label[tool] = label_counts(samples, tool_preds)

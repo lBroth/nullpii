@@ -291,6 +291,8 @@ _R3 = _RESULTS / "r3"
 _R3_REDACT_SHA256 = "57b8de63b7f41a9664ff0bcb654eeaaa7714835d353e61b1a472ecb2f03de369"
 _R3_TONIC_HUMAN_SHA256 = "bc2912a40281ddf414f0424bed9b5e64678ab3017acf35752a76c78e1a350bb9"
 _R3_PIILO_SHA256 = "7294af04eb136dccc1cf4ae4c1aac4373dce84529d4c1343cbb4f27529a5921d"
+_R3_TRACES_V3_SHA256 = "681da2b9fb551db7d510bd46546de9dfdc68bfd6df9565ffb3eb9db893c9f611"
+_R3_TRACES_V3_NODISTRACT_SHA256 = "c0c16d3376fa107209fcdbd56f1934c5bc821c12ea64ee3a8ef91f4ea9421d9f"
 _R3_EU_CLINICAL_SHA256 = "eadb0a3156df10135561d8efba3eaeab29e9bed7930af05ca0f626a098d78842"
 _R3_REDACTIONBENCH_SHA256 = "52c1b2c103d9939adb88483779e83cd5aaed46d5277d1b4c25afc6114ec0a502"
 _R3_MAMA_DEID_VAL_SHA256 = "a7dbaf4651e768d310595e71d1ff3df339224160f9af229eead89466bf631d24"
@@ -309,8 +311,17 @@ def _r3(name: str, sha256: str) -> Callable[[int | None], list[Sample]]:
     return _load
 
 
+def _r3_clusters(name: str, sha256: str) -> Callable[[int], list[str]]:
+    return lambda n: [r["cluster"] for r in _frozen_rows(_R3 / f"{name}.jsonl", sha256)[:n]]
+
+
 # Datasets resampled by cluster in `char_metrics.py`: key -> cluster id per document.
-DATASET_CLUSTERS: dict[str, Callable[[int], list[str]]] = {"traces-v2": _traces_v2_clusters}
+DATASET_CLUSTERS: dict[str, Callable[[int], list[str]]] = {
+    "traces-v2": _traces_v2_clusters,
+    # traces-v3 by generator template (rule change 9, item 5).
+    "r3-traces-v3": _r3_clusters("traces-v3", _R3_TRACES_V3_SHA256),
+    "r3-traces-v3-nodistract": _r3_clusters("traces-v3-nodistract", _R3_TRACES_V3_NODISTRACT_SHA256),
+}
 
 
 def _ai4privacy_report(n: int | None) -> list[Sample]:
@@ -371,15 +382,17 @@ DATASET_CONFIGS: list[DatasetSpec] = [
     DatasetSpec("piimb-privy",               _piimb("privy"),                                            None, total_n=5_363),
     DatasetSpec("piimb-gretel",              _piimb("gretel"),                                           None, total_n=19_601),
     DatasetSpec("traces-v2",                 _load_traces_v2,                                            None, total_n=600),
-    # ─ Report set R3 (rule change 10) — see _R3 above. traces-v3 is not
-    #   built yet ───────────────────────────────────────────────────
+    # ─ Report set R3 (rule change 10) — see _R3 above ──────────────
     DatasetSpec("r3-redact",                 _r3("redact", _R3_REDACT_SHA256),                           None, total_n=560),
     DatasetSpec("r3-tonic-human",            _r3("tonic-human", _R3_TONIC_HUMAN_SHA256),                 None, total_n=5_854),
     DatasetSpec("r3-piilo",                  _r3("piilo", _R3_PIILO_SHA256),                             None, total_n=6_807),
     DatasetSpec("r3-eu-clinical",            _r3("eu-clinical", _R3_EU_CLINICAL_SHA256),                 None, total_n=563),
+    DatasetSpec("r3-traces-v3",              _r3("traces-v3", _R3_TRACES_V3_SHA256),                     None, total_n=600),
     # Reported, not gated.
     DatasetSpec("r3-redactionbench",         _r3("redactionbench", _R3_REDACTIONBENCH_SHA256),           None, total_n=200),
     DatasetSpec("r3-mama-deid-val",          _r3("mama-deid-val", _R3_MAMA_DEID_VAL_SHA256),             None, total_n=1_714),
+    # traces-v3 with its distractor regions ignored, for precision without them.
+    DatasetSpec("r3-traces-v3-nodistract",   _r3("traces-v3-nodistract", _R3_TRACES_V3_NODISTRACT_SHA256), None, total_n=600),
 ]
 
 

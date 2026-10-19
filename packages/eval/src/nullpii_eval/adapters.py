@@ -2639,10 +2639,15 @@ _NEMOTRON_TO_NULLPII8 = {
 _GLINER_WORD = re.compile(r"\w+(?:[-_]\w+)*|\S")
 # Windows of one document go to `inference` together, as the GLiNER docs
 # recommend for many texts; batching changes padding only. A window is
-# capped in words, not subword tokens, so code and long strings can make
-# one of several thousand tokens: a document whose batch does not fit in
-# GPU memory is re-run with the batch halved, down to one window.
+# capped in words, not subword tokens, so code, long strings and unspaced
+# scripts can make one of several thousand tokens, and attention memory
+# grows with the square of the padded length. A batch is cut so that
+# windows x longest^2 stays within what 8 windows of 1,024 tokens take:
+# on the CPU running out of memory kills the process, so this bound comes
+# first. A CUDA batch that still does not fit is re-run halved, down to
+# one window.
 _GLINER_BATCH_SIZE = 8
+_GLINER_ATTENTION_BUDGET = _GLINER_BATCH_SIZE * 1024 * 1024
 
 
 def _gliner_windows(text: str, max_words: int, overlap_words: int) -> list[tuple[int, str]]:
@@ -2716,9 +2721,10 @@ def gliner_v2_predictor(
 
     A text longer than the model's `max_len` words, or than
     `max_window_words` where the hardware cannot hold `max_len`, is cut into
-    word windows (`_gliner_windows`), `batch_size` at a time (halved while
-    a batch runs out of GPU memory); spans repeated
-    across an overlap are collapsed. No other glue: no normalisation,
+    word windows (`_gliner_windows`), `batch_size` at a time (fewer where
+    long windows would exceed `_GLINER_ATTENTION_BUDGET`, halved while a
+    batch runs out of GPU memory); spans repeated across an overlap are
+    collapsed. No other glue: no normalisation,
     recognizers or filters.
 
     `onnx_file` loads an exported ONNX model on the CPU, the library's
@@ -2750,10 +2756,16 @@ def gliner_v2_predictor(
             return None
         return label
 
+    tokenizer = model.data_processor.transformer_tokenizer
+
+    def _batch_size_for(chunks: list[str]) -> int:
+        longest = max(len(ids) for ids in tokenizer(chunks, add_special_tokens=False)["input_ids"])
+        return max(1, min(batch_size, _GLINER_ATTENTION_BUDGET // max(1, longest) ** 2))
+
     def _inference(chunks: list[str]) -> list[list[dict]]:
         import torch
 
-        size = batch_size
+        size = _batch_size_for(chunks)
         while True:
             try:
                 return model.inference(chunks, inference_labels, threshold=threshold, batch_size=size)

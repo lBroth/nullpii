@@ -25,6 +25,9 @@ class Span:
 class Sample:
     text: str
     spans: tuple[Span, ...]
+    # ISO 639-1 code of the text, where the source records it. Only tools
+    # whose documented API takes the language per call receive it (Presidio).
+    language: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

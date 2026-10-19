@@ -141,7 +141,7 @@ def _load_presidio_synthetic_static(n: int | None) -> list[Sample]:
     return _load_charspan_jsonl(path, n)
 
 
-def _load_charspan_jsonl(path: Path, n: int | None) -> list[Sample]:
+def _load_charspan_jsonl(path: Path, n: int | None, *, language: str | None = None) -> list[Sample]:
     """Load `{text, spans:[{label,start,end}]}` JSONL → list[Sample]."""
     out: list[Sample] = []
     with path.open(encoding="utf-8") as f:
@@ -151,7 +151,7 @@ def _load_charspan_jsonl(path: Path, n: int | None) -> list[Sample]:
                 continue
             row = json.loads(line)
             spans = tuple(Span(s["label"], int(s["start"]), int(s["end"])) for s in row["spans"])
-            out.append(Sample(row["text"], spans))
+            out.append(Sample(row["text"], spans, language))
             if n and len(out) >= n:
                 break
     return out
@@ -216,7 +216,7 @@ _TRACES_TUNING = _TRACES_REPORT.with_name("traces-tuning.jsonl")
 def _load_traces(path: Path, n: int | None) -> list[Sample]:
     if not path.exists():
         raise FileNotFoundError(f"{path} is missing: run scripts/ab/traces_gen.py first")
-    return _load_charspan_jsonl(path, n)
+    return _load_charspan_jsonl(path, n, language="en")
 
 
 def _load_claude_code_traces(n: int | None) -> list[Sample]:
@@ -713,6 +713,9 @@ def run_combo(
     # npm subprocess, gliner-v2 chunked predictor) stay on the per-sample
     # path because their internals can't share work across inputs anyway.
     is_batch = bool(getattr(predictor, "is_batch", False))
+    # Tools whose documented API takes the text's language per call
+    # (Presidio) declare `wants_language` and get the sample's language.
+    wants_language = bool(getattr(predictor, "wants_language", False))
     # Outer chunk size for run_combo's iteration; the predictor's
     # internal `batch_size` (set in build_tools) governs the actual GPU
     # batch. 32 keeps activation memory safe even with 4 parallel tools
@@ -726,6 +729,8 @@ def run_combo(
                 if is_batch:
                     texts = [samples[k].text for k in range(batch_start, batch_end)]
                     results = list(predictor(texts))
+                elif wants_language:
+                    results = [predictor(samples[batch_start].text, language=samples[batch_start].language)]
                 else:
                     results = [predictor(samples[batch_start].text)]
             except Exception as e:

@@ -126,6 +126,17 @@ def _load_wikiann(max_samples: int | None, *, lang: str = "en") -> PublicDataset
     )
 
 
+# ai4privacy-300k records each row's language by its English name.
+_AI4PRIVACY_LANGUAGES = {"English": "en", "German": "de", "French": "fr", "Italian": "it", "Spanish": "es", "Dutch": "nl"}
+
+
+def _iso_language(name: str) -> str:
+    """ai4privacy language name → ISO 639-1 code; an unknown name raises."""
+    if name not in _AI4PRIVACY_LANGUAGES:
+        raise ValueError(f"[ai4privacy] unknown language {name!r}")
+    return _AI4PRIVACY_LANGUAGES[name]
+
+
 def _load_ai4privacy(
     max_samples: int | None, *, offset: int = 0,
 ) -> PublicDataset:
@@ -152,7 +163,7 @@ def _load_ai4privacy(
             if label is None:
                 continue
             spans.append(Span(label, int(s["start"]), int(s["end"])))
-        samples.append(Sample(text=text, spans=tuple(spans)))
+        samples.append(Sample(text=text, spans=tuple(spans), language=_iso_language(str(row["language"]))))
     citation = "ai4privacy. PII Masking 300k."
     if offset > 0:
         citation += f" Held-out slice [{offset}:{offset + (max_samples or 0)}]."
@@ -596,7 +607,7 @@ def _load_isotonic(
             if mapped is None:
                 continue  # label deliberately outside our 14-label schema
             spans.append(Span(mapped, start, end))
-        samples.append(Sample(text=text, spans=tuple(spans)))
+        samples.append(Sample(text=text, spans=tuple(spans), language=lang.lower()))
     citation = "Isotonic. PII Masking 200k (open mirror of ai4privacy)."
     if row_offset > 0:
         citation += f" Held-out slice (row_offset={row_offset})."

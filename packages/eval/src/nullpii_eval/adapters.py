@@ -751,10 +751,13 @@ _NEMOTRON_TOKEN_LABEL_MAP: dict[str, str | None] = {
     # `_authToken` values and bigcode's AUTH_TOKEN under `secret`.
     "http_cookie": "secret",
     "biometric_identifier": "secret",    # as `_NEMOTRON_TO_NULLPII8`
-    # ─── Dropped: our gold has no such category ───────────────────
-    # A generic "unique id" has no gold counterpart in any loader, and
-    # nemotron-pii-test's own gold map drops it too.
-    "unique_id": None,
+    # A generic identifier. Measured on isotonic-en tuning rows, nvidia's
+    # GLiNER puts 52% of gold account-number and 49% of gold secret
+    # characters under it, and NVIDIA's own serving masks it; dropping it
+    # (as until 2026-10-19) deleted those detections. Only the categories
+    # nullpii's core regime disables are dropped (below).
+    "unique_id": "account_number",
+    # ─── Dropped: the categories nullpii's core regime disables ──────
     "company_name": None,                # ORG is dropped by every loader
     # Isotonic ignores AGE. NB argilla's gold maps AGE → private_date, so
     # on argilla-pii this drop costs the tool any AGE chars it found;
@@ -1139,7 +1142,9 @@ _DEBERTA_LABEL_MAP: dict[str, str | None] = {
     "CURRENCYCODE": None,
     "CURRENCYNAME": None,
     "CURRENCYSYMBOL": None,
-    "NUMBER": None,
+    # A generic number label: on isotonic-en tuning rows 133 of the 146
+    # characters it covers are gold identifiers, so it masks, as unique_id.
+    "NUMBER": "account_number",
     "ORDINALDIRECTION": None,
     "GENDER": None,
     "SEX": None,                          # gold SEX is ignored
@@ -2489,15 +2494,18 @@ _URCHADE_TO_NULLPII: dict[str, str | None] = {
     "medication": None,
     "medical condition": None,
     "blood type": None,
-    "registration number": None,
-    "flight number": None,
-    "reservation number": None,
-    "digital signature": None,
-    "serial number": None,
+    # Identifiers of a person's records, documents or devices, as
+    # nemotron's unique_id / device_identifier: masked, not dropped.
+    "registration number": "account_number",
+    "reservation number": "account_number",
+    "serial number": "account_number",
+    "transaction number": "account_number",
+    "train ticket number": "account_number",
+    "digital signature": "secret",                   # a credential, as biometric_identifier
+    # ─── Dropped: no gold category, or one nullpii's core regime disables
+    "flight number": None,                           # a public timetable code, not a person's
     "credit card brand": None,                       # gold CARDISSUER is ignored
-    "insurance company": None,
-    "transaction number": None,
-    "train ticket number": None,
+    "insurance company": None,                       # an organisation
 }
 
 # Expanded inference-time prompt set. GLiNER is prompt-based (model

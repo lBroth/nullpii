@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import csv
+import fcntl
 import functools
 import hashlib
 import json
@@ -786,6 +787,13 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     ckpt_dir = Path(args.checkpoint_dir or (out_dir / "checkpoints"))
     ckpt_dir.mkdir(parents=True, exist_ok=True)
+    # One writer per checkpoint directory: two runs resuming it at once would
+    # each append every row. Held until the process exits.
+    ckpt_lock = (ckpt_dir / ".lock").open("w")
+    try:
+        fcntl.flock(ckpt_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        raise SystemExit(f"{ckpt_dir}: another bench_full run is writing these checkpoints") from None
 
     if args.datasets == "all":
         datasets = list(DATASET_CONFIGS)

@@ -50,14 +50,19 @@ from typing import Callable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from nullpii_eval import public_datasets
+from nullpii_eval.adapters_openmed import (
+    OPENMED_LARGE_MODEL,
+    OPENMED_LARGE_REVISION,
+    OPENMED_SMALL_MODEL,
+    OPENMED_SMALL_REVISION,
+    openmed_deidentify_predictor,
+)
 from nullpii_eval.adapters_presidio import presidio_predictor as presidio_docs_predictor
 from nullpii_eval.adapters import (
     DEFAULT_REGEX_PATTERNS,
     ETTIN_68M,
     MINIMAL_REGEX_PATTERNS,
     LabelCut,
-    OPENMED_LARGE,
-    OPENMED_SMALL,
     PII_IDENTIFIER,
     _KNOWLEDGATOR_LABELS,
     _KNOWLEDGATOR_TO_NULLPII,
@@ -595,13 +600,20 @@ def build_tools(args) -> dict[str, Callable]:
             device=backend, **kw,
         ),
         # ─── Token classifiers fine-tuned on nvidia/Nemotron-PII ─────
-        # Card usage (`aggregation_strategy="simple"`), inputs cut into
-        # token windows of the fine-tuning length; see `TokenClassifierSpec`.
-        # The 2048-token ModernBERT windows run at a smaller GPU batch so
-        # activations fit next to other jobs; batch size changes padding
-        # only, never the windows a document is cut into.
-        "openmed-small": lambda **kw: _mark_batch(hf_token_classifier_predictor(OPENMED_SMALL, device=backend, batch_size=_BATCH, **kw)),
-        "openmed-large": lambda **kw: _mark_batch(hf_token_classifier_predictor(OPENMED_LARGE, device=backend, batch_size=_BATCH, **kw)),
+        # OpenMed's checkpoints through OpenMed's own product call,
+        # `openmed.deidentify` (adapters_openmed.py), run from the venv of
+        # requirements-openmed.txt; one text per call, as the package takes it.
+        "openmed-small": lambda **kw: openmed_deidentify_predictor(
+            OPENMED_SMALL_MODEL, OPENMED_SMALL_REVISION, tool="openmed-small", device=backend, **kw,
+        ),
+        "openmed-large": lambda **kw: openmed_deidentify_predictor(
+            OPENMED_LARGE_MODEL, OPENMED_LARGE_REVISION, tool="openmed-large", device=backend, **kw,
+        ),
+        # The others ship no pipeline beyond their card: card usage
+        # (`aggregation_strategy="simple"`), inputs cut into token windows of
+        # the fine-tuning length; see `TokenClassifierSpec`. Long windows run
+        # at a smaller GPU batch so activations fit; batch size changes
+        # padding only, never the windows a document is cut into.
         "ettin-68m": lambda **kw: _mark_batch(hf_token_classifier_predictor(ETTIN_68M, device=backend, batch_size=min(_BATCH, _LONG_WINDOW_BATCH), **kw)),
         "pii-identifier": lambda **kw: _mark_batch(hf_token_classifier_predictor(PII_IDENTIFIER, device=backend, batch_size=min(_BATCH, _LONG_WINDOW_BATCH), **kw)),
         # OpenMed's opf fine-tune of openai/privacy-filter, served by the

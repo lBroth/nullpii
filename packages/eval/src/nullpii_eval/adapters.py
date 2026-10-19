@@ -975,23 +975,6 @@ _WINDOW_RESERVED_TOKENS = 16
 # Overlap between windows: pii-identifier's own training stride.
 _WINDOW_OVERLAP_TOKENS = 128
 
-# OpenMed cards: "Max Sequence Length: 384 tokens" at fine-tuning.
-OPENMED_SMALL = TokenClassifierSpec(
-    tool="openmed-small",
-    model_id="OpenMed/OpenMed-PII-SuperClinical-Small-44M-v1",
-    revision="a2360d3f42526fc660ac3b2b2301e1c2d94eba61",
-    label_map=_NEMOTRON_TOKEN_LABEL_MAP,
-    max_tokens=384,
-    overlap_tokens=_WINDOW_OVERLAP_TOKENS,
-)
-OPENMED_LARGE = TokenClassifierSpec(
-    tool="openmed-large",
-    model_id="OpenMed/OpenMed-PII-SuperClinical-Large-434M-v1",
-    revision="df7af994d39d358e52f929ff1b3a40d894adf022",
-    label_map=_NEMOTRON_TOKEN_LABEL_MAP,
-    max_tokens=384,
-    overlap_tokens=_WINDOW_OVERLAP_TOKENS,
-)
 # The ettin card gives no fine-tuning length (the encoder takes 8k), but its
 # shipped `tokenizer.json` truncates at 1024 tokens, a setting saved from
 # training; plus the card's own adjacent-entity merge.

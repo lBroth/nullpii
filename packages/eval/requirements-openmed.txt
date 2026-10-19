@@ -1,0 +1,41 @@
+# OpenMed venv for the bench's `openmed-*` deidentify rows
+# (src/nullpii_eval/adapters_openmed.py): openmed 3.0.0 with its `hf` extra,
+# run through `openmed.deidentify`, plus what scripts/bench_full.py needs to
+# import and load datasets. Pins are the versions pip resolved for
+# `openmed[hf]==3.0.0 numpy datasets` on 2026-10-19 (Python 3.12). Keep
+# `ftfy` and `mlx` out of this venv: the adapter raises if ftfy is
+# importable, and the backend is pinned to "hf" so mlx would be unused.
+# The checkpoints (~0.6 GB Small, ~1.7 GB Large) download on first build
+# into ~/.cache/openmed, verified against openmed's bundled registry.
+#
+# macOS (CPU / MPS), tested with Python 3.12:
+#   python3.12 -m venv ~/.cache/nullpii-eval/venv-openmed
+#   ~/.cache/nullpii-eval/venv-openmed/bin/pip install -r packages/eval/requirements-openmed.txt
+#   ~/.cache/nullpii-eval/venv-openmed/bin/pip install -e packages/eval --no-deps
+#
+# Linux + CUDA (RTX 4070 Ti, CUDA 12.8 driver): the PyPI torch 2.14.1 wheel
+# is built for CUDA 13.0 (driver >= 580) and the cu128 index stops at torch
+# 2.11, below openmed's torch>=2.13. Install the CUDA 12.6 build first; it
+# runs on any CUDA 12 driver, and `torch==2.14.1` below then accepts
+# 2.14.1+cu126 without reinstalling:
+#   python3.12 -m venv ~/.cache/nullpii-eval/venv-openmed
+#   ~/.cache/nullpii-eval/venv-openmed/bin/pip install torch==2.14.1 --index-url https://download.pytorch.org/whl/cu126
+#   ~/.cache/nullpii-eval/venv-openmed/bin/pip install -r packages/eval/requirements-openmed.txt
+#   ~/.cache/nullpii-eval/venv-openmed/bin/pip install -e packages/eval --no-deps
+#   ~/.cache/nullpii-eval/venv-openmed/bin/python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
+# (With a driver >= 580 the plain `pip install -r` gets the CUDA 13.0 wheel.)
+#
+# Run the bench with that venv's python, with no OPENMED_* variable set:
+#   ~/.cache/nullpii-eval/venv-openmed/bin/python packages/eval/scripts/bench_full.py --tools openmed-small,openmed-large ...
+
+openmed[hf]==3.0.0
+torch==2.14.1
+transformers==5.20.1
+tokenizers==0.23.3
+huggingface-hub==2.2.0
+safetensors==0.8.0
+accelerate==1.15.0
+# openmed's sentence segmenter: analyze_text drops sentence chunking without it.
+pysbd==0.3.4
+numpy==2.5.4
+datasets==5.1.0

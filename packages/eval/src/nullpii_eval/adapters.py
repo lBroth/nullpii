@@ -992,15 +992,15 @@ OPENMED_LARGE = TokenClassifierSpec(
     max_tokens=384,
     overlap_tokens=_WINDOW_OVERLAP_TOKENS,
 )
-# The ettin card gives no fine-tuning length (the encoder takes 8k); it
-# gets the 2048-token window pii-identifier published for the same
-# Nemotron-PII corpus, plus the card's own adjacent-entity merge.
+# The ettin card gives no fine-tuning length (the encoder takes 8k), but its
+# shipped `tokenizer.json` truncates at 1024 tokens, a setting saved from
+# training; plus the card's own adjacent-entity merge.
 ETTIN_68M = TokenClassifierSpec(
     tool="ettin-68m",
     model_id="kalyan-ks/ettin-68m-nemotron-pii",
     revision="500262a2aaf913825ef750ef255c3fe437cd8e64",
     label_map=_NEMOTRON_TOKEN_LABEL_MAP,
-    max_tokens=2048,
+    max_tokens=1024,
     overlap_tokens=_WINDOW_OVERLAP_TOKENS,
     merge_adjacent=True,
 )
@@ -2348,110 +2348,173 @@ _NULLPII_LABELS = [
     "private_geolocation",
 ]
 
-# Natural-language GLiNER label set for upstream models. GLiNER is
-# label-aware (the encoder embeds each label string and matches against
-# spans), so passing labels the model never saw during training under-
-# estimates F1 substantially. Both `urchade/gliner_multi_pii-v1` and
-# `knowledgator/gliner-pii-large-v1.0` are documented with natural-
-# language label examples ("person", "email", "phone number", …) — use
-# them.
-_GLINER_NATIVE_LABELS = [
-    # private_person family
-    "person", "first name", "last name", "full name", "name",
-    # private_email
-    "email", "email address",
-    # private_phone
-    "phone number", "mobile phone number", "telephone", "cell phone",
-    # private_address
-    "address", "street address", "city", "state", "country",
-    "postal code", "zip code",
-    # private_date
-    "date", "date of birth", "birth date",
-    # private_url
-    "URL", "website",
-    # account_number — numeric ids + financial
-    "credit card number", "CVV", "social security number",
-    "bank account number", "routing number", "IBAN", "SWIFT code",
-    "passport number", "driver license", "national id number",
-    "license plate", "vehicle VIN", "medical record number",
-    "health insurance number", "tax identification number",
-    # secret — credentials
-    "password", "API key", "access token", "secret key", "private key",
-    "AWS access key", "AWS secret key", "certificate",
-    # private_ip / private_mac
-    "IP address", "MAC address",
-    # private_geolocation — parity with nullpii's wrapped GLiNER prompt;
-    # absence here would deny GLiNER-native any recall on geo classes
-    # when those labels exist in gold (AI4Privacy, Isotonic, Argilla).
-    "GPS coordinate", "latitude", "longitude",
-]
+# ─── GLiNER competitors: prompted with their cards' vocabularies ───
+# GLiNER embeds each label string, so the strings matter. Rule change 10:
+# each model is prompted with the label strings its card documents, plus
+# zero-shot extras only for gold concepts that list lacks, listed apart and
+# disclosed. Each map follows the SYMMETRY RULE of `_NEMOTRON_TOKEN_LABEL_MAP`:
+# a label maps to X iff our gold loaders map the same concept to X, and to
+# None where the gold has no such category.
 
-# Project the GLiNER natural-language labels back onto nullpii's 12-class
-# taxonomy for fair F1 against the gold spans. Any label not in this map
-# is dropped (predictor returns None for `_project_label`).
-_GLINER_NATIVE_TO_NULLPII8 = {
-    # private_person family
-    "person": "private_person",
+# knowledgator/gliner-pii-large-v1.0 card, its five "predefined PII
+# categories" lists, plus the labels the sibling gliner-stream-pii-v1.0
+# card prompts with ("person", "street address", "credit card number").
+_KNOWLEDGATOR_CARD_LABELS = [
+    # personal_labels
+    "name", "first name", "last name", "name medical professional", "dob", "age", "gender", "marital status",
+    # contact_labels
+    "email address", "phone number", "ip address", "url", "location address", "location street",
+    "location city", "location state", "location country", "location zip",
+    # financial_labels
+    "account number", "bank account", "routing number", "credit card", "credit card expiration", "cvv", "ssn", "money",
+    # healthcare_labels
+    "condition", "medical process", "drug", "dose", "blood type", "injury", "organization medical facility",
+    "healthcare number", "medical code",
+    # id_labels
+    "passport number", "driver license", "username", "password", "vehicle id",
+    # gliner-stream-pii-v1.0 card
+    "person", "street address", "credit card number",
+]
+# Gold concepts the knowledgator lists lack: dates other than birth dates,
+# times, MAC addresses, API keys and GPS coordinates.
+_KNOWLEDGATOR_EXTRA_LABELS = ["date", "time", "mac address", "api key", "gps coordinate"]
+_KNOWLEDGATOR_LABELS = _KNOWLEDGATOR_CARD_LABELS + _KNOWLEDGATOR_EXTRA_LABELS
+
+_KNOWLEDGATOR_TO_NULLPII: dict[str, str | None] = {
+    "name": "private_person",
     "first name": "private_person",
     "last name": "private_person",
-    "full name": "private_person",
-    "name": "private_person",
-    # private_email
-    "email": "private_email",
-    "email address": "private_email",
-    # private_phone
-    "phone number": "private_phone",
-    "mobile phone number": "private_phone",
-    "telephone": "private_phone",
-    "cell phone": "private_phone",
-    # private_address
-    "address": "private_address",
-    "street address": "private_address",
-    "city": "private_address",
-    "state": "private_address",
-    "country": "private_address",
-    "postal code": "private_address",
-    "zip code": "private_address",
-    # private_date
+    "name medical professional": "private_person",
+    "person": "private_person",
+    "username": "private_person",           # gold USERNAME
+    "dob": "private_date",
     "date": "private_date",
-    "date of birth": "private_date",
-    "birth date": "private_date",
-    # private_url
-    "URL": "private_url",
-    "website": "private_url",
-    # account_number
-    "credit card number": "account_number",
-    "CVV": "account_number",
-    "social security number": "account_number",
-    "bank account number": "account_number",
+    "time": "private_date",                 # gold TIME
+    "credit card expiration": "private_date",
+    "email address": "private_email",
+    "phone number": "private_phone",
+    "ip address": "private_ip",
+    "mac address": "private_mac",
+    "url": "private_url",
+    "location address": "private_address",
+    "location street": "private_address",
+    "location city": "private_address",
+    "location state": "private_address",
+    "location country": "private_address",  # gold COUNTRY
+    "location zip": "private_address",
+    "street address": "private_address",
+    "gps coordinate": "private_geolocation",
+    "account number": "account_number",
+    "bank account": "account_number",
     "routing number": "account_number",
-    "IBAN": "account_number",
-    "SWIFT code": "account_number",
-    # v0.3 schema split — passport / driver / vehicle / GPS get their own labels.
+    "credit card": "account_number",
+    "credit card number": "account_number",
+    "cvv": "account_number",                # gold CREDITCARDCVV
+    "ssn": "account_number",
+    "healthcare number": "account_number",  # as health_plan_beneficiary_number
     "passport number": "private_passport",
     "driver license": "private_driver_license",
-    "national id number": "account_number",
-    "license plate": "private_vehicle_id",
-    "vehicle VIN": "private_vehicle_id",
-    "medical record number": "account_number",
-    "health insurance number": "account_number",
-    "tax identification number": "account_number",
-    # secret
+    "vehicle id": "private_vehicle_id",
     "password": "secret",
-    "API key": "secret",
-    "access token": "secret",
-    "secret key": "secret",
-    "private key": "secret",
-    "AWS access key": "secret",
-    "AWS secret key": "secret",
-    "certificate": "secret",
-    # private_ip / private_mac
-    "IP address": "private_ip",
-    "MAC address": "private_mac",
-    # private_geolocation
-    "GPS coordinate": "private_geolocation",
-    "latitude": "private_geolocation",
-    "longitude": "private_geolocation",
+    "api key": "secret",
+    # ─── Dropped: no gold category ───────────────────────────────
+    "age": None,
+    "gender": None,
+    "marital status": None,
+    "money": None,
+    "condition": None,
+    "medical process": None,
+    "drug": None,
+    "dose": None,
+    "blood type": None,
+    "injury": None,
+    "organization medical facility": None,
+    "medical code": None,
+}
+
+# urchade/gliner_multi_pii-v1 card: "including but not limited to these
+# entity types", in the card's order and spelling (its two snake_case
+# duplicates included). Served by onnx-community/gliner_multi_pii-v1.
+_URCHADE_CARD_LABELS = [
+    "person", "organization", "phone number", "address", "passport number", "email", "credit card number",
+    "social security number", "health insurance id number", "date of birth", "mobile phone number",
+    "bank account number", "medication", "cpf", "driver's license number", "tax identification number",
+    "medical condition", "identity card number", "national id number", "ip address", "email address", "iban",
+    "credit card expiration date", "username", "health insurance number", "registration number",
+    "student id number", "insurance number", "flight number", "landline phone number", "blood type", "cvv",
+    "reservation number", "digital signature", "social media handle", "license plate number", "cnpj",
+    "postal code", "passport_number", "serial number", "vehicle registration number", "credit card brand",
+    "fax number", "visa number", "insurance company", "identity document number", "transaction number",
+    "national health insurance number", "cvc", "birth certificate number", "train ticket number",
+    "passport expiration date", "social_security_number",
+]
+# Gold concepts the urchade list lacks: dates other than birth and expiry
+# dates, times, URLs, MAC addresses, passwords, API keys, GPS coordinates.
+_URCHADE_EXTRA_LABELS = ["date", "time", "url", "mac address", "password", "api key", "gps coordinate"]
+_URCHADE_LABELS = _URCHADE_CARD_LABELS + _URCHADE_EXTRA_LABELS
+
+_URCHADE_TO_NULLPII: dict[str, str | None] = {
+    "person": "private_person",
+    "username": "private_person",                    # gold USERNAME
+    "social media handle": "private_person",         # a username
+    "phone number": "private_phone",
+    "mobile phone number": "private_phone",
+    "landline phone number": "private_phone",
+    "fax number": "private_phone",                   # gold FAX
+    "address": "private_address",
+    "postal code": "private_address",
+    "email": "private_email",
+    "email address": "private_email",
+    "ip address": "private_ip",
+    "mac address": "private_mac",
+    "url": "private_url",
+    "date of birth": "private_date",
+    "date": "private_date",
+    "time": "private_date",
+    "credit card expiration date": "private_date",
+    "passport expiration date": "private_date",
+    "gps coordinate": "private_geolocation",
+    "passport number": "private_passport",
+    "passport_number": "private_passport",
+    "driver's license number": "private_driver_license",
+    "license plate number": "private_vehicle_id",
+    "vehicle registration number": "private_vehicle_id",
+    "credit card number": "account_number",
+    "social security number": "account_number",
+    "social_security_number": "account_number",
+    "health insurance id number": "account_number",
+    "health insurance number": "account_number",
+    "national health insurance number": "account_number",
+    "insurance number": "account_number",
+    "bank account number": "account_number",
+    "iban": "account_number",
+    "cvv": "account_number",
+    "cvc": "account_number",
+    "cpf": "account_number",                         # national tax id, gold TAXNUM
+    "cnpj": "account_number",
+    "tax identification number": "account_number",
+    "identity card number": "account_number",        # gold IDCARDNUM
+    "national id number": "account_number",
+    "identity document number": "account_number",
+    "visa number": "account_number",
+    "birth certificate number": "account_number",
+    "student id number": "account_number",           # as employee_id / customer_id
+    "password": "secret",
+    "api key": "secret",
+    # ─── Dropped: no gold category ───────────────────────────────
+    "organization": None,
+    "medication": None,
+    "medical condition": None,
+    "blood type": None,
+    "registration number": None,
+    "flight number": None,
+    "reservation number": None,
+    "digital signature": None,
+    "serial number": None,
+    "credit card brand": None,                       # gold CARDISSUER is ignored
+    "insurance company": None,
+    "transaction number": None,
+    "train ticket number": None,
 }
 
 # Expanded inference-time prompt set. GLiNER is prompt-based (model
@@ -2521,25 +2584,24 @@ _EXPANDED_PROMPT_TO_NULLPII8 = {
     "API key": "secret",
 }
 
-# nvidia/gliner-PII (Nemotron PII) was trained on 55+ entity types
-# (`nvidia/Nemotron-PII` dataset). Pass these labels at inference; the
-# wrapper `_NEMOTRON_TO_NULLPII8` then maps each predicted label back
-# to nullpii's 12-class schema for a fair F1 comparison.
+# nvidia/gliner-PII is prompted with the 55 Nemotron-PII types, in the order
+# of NVIDIA's own serving default (`DEFAULT_LABELS` in NeMo Guardrails,
+# examples/deployment/gliner_server/src/gliner_server/pii_utils.py @ af242f0).
+# Its predictions map through `_NEMOTRON_TOKEN_LABEL_MAP`, the map of the
+# four Nemotron-trained token classifiers, so the same type is scored the
+# same way for every Nemotron-trained tool.
 _NEMOTRON_PII_LABELS = [
-    "first_name", "last_name", "user_name",
-    "email", "phone_number",
-    "street_address", "city", "county", "state", "postcode", "country",
-    "coordinate",
-    "date", "time", "date_time", "date_of_birth", "age",
-    "url",
-    "ssn", "account_number", "bank_routing_number", "swift_bic", "cvv",
-    "credit_debit_card", "employee_id", "customer_id",
-    "medical_record_number", "health_plan_beneficiary_number",
-    "vehicle_identifier", "license_plate", "certificate_license_number",
-    "mac_address", "ipv4", "device_identifier",
-    "password", "pin", "biometric_identifier",
+    "occupation", "certificate_license_number", "first_name", "date_of_birth", "ssn", "medical_record_number",
+    "password", "unique_id", "phone_number", "national_id", "swift_bic", "company_name", "country",
+    "license_plate", "tax_id", "employee_id", "pin", "state", "email", "date_time", "api_key",
+    "biometric_identifier", "credit_debit_card", "coordinate", "device_identifier", "city", "postcode",
+    "bank_routing_number", "vehicle_identifier", "health_plan_beneficiary_number", "url", "ipv4", "last_name",
+    "cvv", "customer_id", "date", "user_name", "street_address", "ipv6", "account_number", "time", "age",
+    "fax_number", "county", "gender", "sexuality", "political_view", "race_ethnicity", "religious_belief",
+    "language", "blood_type", "mac_address", "http_cookie", "employment_status", "education_level"
 ]
 
+# Gold map of the nemotron-pii-test report set (`public_datasets.py`).
 _NEMOTRON_TO_NULLPII8 = {
     "first_name": "private_person",
     "last_name": "private_person",
@@ -2584,423 +2646,125 @@ _NEMOTRON_TO_NULLPII8 = {
 
 # GLiNER's own word splitter (`WhitespaceTokenSplitter`).
 _GLINER_WORD = re.compile(r"\w+(?:[-_]\w+)*|\S")
+# Windows of one document go to `inference` together, as the GLiNER docs
+# recommend for many texts; batching changes padding only.
+_GLINER_BATCH_SIZE = 8
 
 
-def _gliner_windows(text: str, chunk_chars: int, overlap_chars: int, max_words: int) -> list[tuple[int, str]]:
-    """(offset, chunk) windows for a GLiNER model: `chunk_chars` characters
-    with `overlap_chars` of overlap, except that a window ends at its
-    `max_words`-th word. GLiNER drops every word past its `max_len` without
-    an error, and dense code or logs reach 384 words well inside 1,400
-    characters, so a longer window would leave its tail unread. Prose
-    windows never hit the cap and are unchanged."""
+def _gliner_windows(text: str, max_words: int, overlap_words: int) -> list[tuple[int, str]]:
+    """(offset, chunk) windows of at most `max_words` GLiNER words, each
+    starting on a word, consecutive windows sharing `overlap_words` words.
+    GLiNER drops every word past its `max_len` without an error, so a longer
+    text has to be split; an overlap of the model's `max_width`, the longest
+    span it can emit, keeps an entity cut by one window whole in the next."""
+    words = [(m.start(), m.end()) for m in _GLINER_WORD.finditer(text)]
+    if len(words) <= max_words:
+        return [(0, text)]
+    stride = max_words - overlap_words
     windows: list[tuple[int, str]] = []
-    offset, n = 0, len(text)
-    while True:
-        end = min(offset + chunk_chars, n)
-        words = list(itertools.islice(_GLINER_WORD.finditer(text, offset, end), max_words + 1))
-        if len(words) > max_words:
-            end = words[max_words - 1].end()
-        windows.append((offset, text[offset:end]))
-        if end >= n:
+    for i in range(0, len(words), stride):
+        start, end = words[i][0], words[min(i + max_words, len(words)) - 1][1]
+        windows.append((start, text[start:end]))
+        if i + max_words >= len(words):
             return windows
-        offset = max(end - overlap_chars, offset + 1)
+    return windows
+
+
+def _dedupe_gliner_spans(spans_with_scores: list[tuple[Span, float]]) -> list[tuple[Span, float]]:
+    """Collapse a span repeated across window overlaps: of two overlapping
+    same-label spans the longer is kept."""
+    out: list[tuple[Span, float]] = []
+    for item in sorted(spans_with_scores, key=lambda x: (x[0].start, -x[0].end)):
+        if not _replace_overlapping_same_label(out, item):
+            out.append(item)
+    return sorted(out, key=lambda x: x[0].start)
+
+
+def _replace_overlapping_same_label(out: list[tuple[Span, float]], item: tuple[Span, float]) -> bool:
+    """True if `item` overlaps a kept same-label span; the longer of the two
+    is then the one kept. `out` is sorted by start."""
+    span = item[0]
+    for i in range(len(out) - 1, -1, -1):
+        prev = out[i][0]
+        if prev.end <= span.start:
+            return False
+        if prev.label != span.label:
+            continue
+        if (span.end - span.start) > (prev.end - prev.start):
+            out[i] = item
+        return True
+    return False
 
 
 def gliner_v2_predictor(
     model_path: str,
     *,
+    revision: str | None = None,
     onnx_file: str | None = None,
     device: str = "cuda",
+    dtype: str | None = None,
     threshold: float = 0.5,
     local_files_only: bool = False,
-    chunk_chars: int = 1400,
-    overlap_chars: int = 200,
     labels: list[str] | None = None,
-    label_map: dict[str, str] | None = None,
+    label_map: Mapping[str, str | None] | None = None,
     label_cut: LabelCut | None = None,
 ) -> Predictor:
-    """Bare-mode predictor for upstream GLiNER models (Apache 2.0).
+    """A GLiNER model run the way the GLiNER library documents it: the
+    model's `inference` over the label strings it was trained on, at
+    `threshold`, with the library's defaults otherwise (flat NER).
 
-    Caller must pass the model's NATIVE label schema via ``labels`` (GLiNER
-    is label-aware: passing labels the model never saw during training
-    materially under-estimates F1). The optional ``label_map`` projects
-    native labels onto nullpii's 12-class taxonomy for fair cross-model
-    F1 — bench gold spans are 12-class, so any model with a different
-    schema needs a bridge (same contract as the per-tool deberta /
-    piiranha / nemotron remaps).
+    `labels` are the strings to prompt (the competitors pass their card's
+    vocabulary); `label_map` projects each onto nullpii's schema and must
+    decide every prompted label. Without `labels`, nullpii's own label set
+    is prompted and returned unmapped (nullpii's merged models).
 
-    Default ``labels=None`` → falls back to nullpii's underscore_case
-    12-class set (`_NULLPII_LABELS` — 8 trained + 4 zero-shot extras,
-    matching `GLINER_LABELS` in `src/nullpii.ts`). Correct for models
-    fine-tuned on that exact schema (e.g. nullpii's own merged-LoRA ONNX).
+    A text longer than the model's `max_len` words is cut into word windows
+    (`_gliner_windows`); spans repeated across an overlap are collapsed. No
+    other glue: no normalisation, recognizers or filters.
 
-    Bare-mode contract: NO nullpii post-processing. No `_normalize_for_detection`,
-    no boundary refine, no never-PII filter, no regex pack. The chunking
-    1400/200 stride is the only adapter glue, applied uniformly across all
-    GLiNER-family bare baselines so long-doc handling is fair; a window
-    also ends at the model's `max_len` words (`_gliner_windows`).
-
-    Loads either the PyTorch checkpoint (`onnx_file=None`) on the chosen
-    device, or an exported ONNX model (`onnx_file="model_int4.onnx"`,
-    forced to CPU since onnxruntime CPUExecutionProvider is what we ship).
-
-    ``threshold`` is the run threshold; ``label_cut`` then keeps a span
-    only if its score reaches its label's operating point (rule change 9).
+    `onnx_file` loads an exported ONNX model on the CPU, the library's
+    default provider. `dtype` follows the card where it names one
+    (gliner-stream-pii: bf16 on CUDA). `threshold` is the run threshold;
+    `label_cut` then keeps a span only if its score reaches its label's
+    operating point (rule change 9).
     """
-    try:
-        from gliner import GLiNER
-    except ImportError as e:
-        raise ImportError("gliner required") from e
+    from gliner import GLiNER
 
-    kwargs: dict = {"local_files_only": local_files_only}
+    kwargs: dict = {"revision": revision, "local_files_only": local_files_only}
     if onnx_file:
-        kwargs["load_onnx_model"] = True
-        kwargs["onnx_model_file"] = onnx_file
-        model = GLiNER.from_pretrained(model_path, **kwargs)
+        model = GLiNER.from_pretrained(model_path, load_onnx_model=True, onnx_model_file=onnx_file, **kwargs)
     else:
-        model = GLiNER.from_pretrained(model_path, **kwargs).to(device)
+        model = GLiNER.from_pretrained(model_path, map_location=device, dtype=dtype, **kwargs)
         model.eval()
 
-    def _dedupe(spans: list[Span]) -> list[Span]:
-        if len(spans) <= 1:
-            return spans
-        sorted_spans = sorted(spans, key=lambda s: (s.start, -s.end))
-        out: list[Span] = []
-        for s in sorted_spans:
-            merged = False
-            for i in range(len(out) - 1, -1, -1):
-                prev = out[i]
-                if prev.end <= s.start:
-                    break
-                if prev.label != s.label:
-                    continue
-                if (s.end - s.start) > (prev.end - prev.start):
-                    out[i] = s
-                merged = True
-                break
-            if not merged:
-                out.append(s)
-        return sorted(out, key=lambda s: s.start)
-
     inference_labels = list(labels) if labels is not None else list(_NULLPII_LABELS)
-    remap = dict(label_map) if label_map is not None else None
+    if label_map is not None:
+        _check_label_coverage(set(inference_labels), dict(label_map), tool=model_path)
+    max_words = int(model.config.max_len)
+    overlap_words = int(model.config.max_width)
 
-    def _project_label(native: str, score: float) -> str | None:
-        label = native if remap is None else remap.get(native)
+    def _project(native: str, score: float) -> str | None:
+        label = native if label_map is None else _map_native_label(native, dict(label_map), tool=model_path)
         if label is None or (label_cut is not None and not label_cut.keeps(label, score)):
             return None
         return label
 
-    max_words = int(model.config.max_len)
-
     def _predict(text: str) -> ToolResult:
         t0 = time.perf_counter()
-        spans: list[Span] = []
-        scores: list[float] = []
-        windows = _gliner_windows(text, chunk_chars, overlap_chars, max_words)
-        if len(windows) == 1:
-            for e in model.predict_entities(text, inference_labels, threshold=threshold):
-                projected = _project_label(e["label"], float(e["score"]))
-                if projected is None:
-                    continue
-                spans.append(Span(projected, int(e["start"]), int(e["end"])))
-                scores.append(float(e.get("score", threshold)))
-        else:
-            spans_with_scores: list[tuple[Span, float]] = []
-            for offset, chunk in windows:
-                for e in model.predict_entities(chunk, inference_labels, threshold=threshold):
-                    projected = _project_label(e["label"], float(e["score"]))
-                    if projected is None:
-                        continue
-                    ns_full = int(e["start"]) + offset
-                    ne_full = int(e["end"]) + offset
-                    spans_with_scores.append((
-                        Span(projected, ns_full, ne_full),
-                        float(e.get("score", threshold)),
-                    ))
-            kept = _dedupe([sp for sp, _ in spans_with_scores])
-            score_by_id = {id(sp): sc for sp, sc in spans_with_scores}
-            for sp in kept:
-                spans.append(sp)
-                scores.append(score_by_id.get(id(sp), threshold))
-        elapsed = (time.perf_counter() - t0) * 1000
-        return ToolResult(spans, elapsed, scores=tuple(scores))
-
-    return _predict
-
-
-_HTML_ENTITY_RE = re.compile(r"&#(\d+);|&#x([0-9a-fA-F]+);")
-_URL_PERCENT_RE = re.compile(r"%([0-9a-fA-F]{2})")
-_ZERO_WIDTH_CHARS = frozenset("​‌‍﻿⁠­")
-# Detect whitespace-obfuscated PII (e.g. `+ 4 9   3 0   1 2 3 4 5 6 7 8`).
-# tightened from `{5,}` to `{3,}` (catches `+ 4 9 3 0`)
-# AND anchored at non-word boundary `(?<!\w)` (does not start mid-word —
-# avoids mangling "Mary J. Doe age 4 7" by chopping the suffix `y J . D
-# e 4 7`). Char class adds `:` and `/` (catches spaced URLs / IPs).
-# Post-check requires ≥4 digits OR (≥1 `@` + ≥1 letter) so prose like
-# "I a m a g i r l" still does not despace.
-_SPACED_PII_RE = re.compile(r"(?<!\w)(?:[\w@.+\-:/]\s+){3,}[\w@.+\-:/]")
-
-
-_NORMALIZE_INPUT_MAX_BYTES = 1_000_000  # -cap
-
-
-def _is_pure_ascii_no_decode_needed(text: str) -> bool:
-    """Fast-path test for `_normalize_for_detection`.
-
-    Returns True iff the input is pure ASCII AND has no triggers for
-    the despace / URL %XX / HTML entity decode paths. The narrower-
-    than-Python-proposal check matches the TS port — despace and
-    decode legitimately apply to ASCII input, so an unconditional
-    "ASCII → identity passthrough" would lose correctness.
-    """
-    if "&#" in text or "%" in text:
-        return False
-    if any(ord(c) > 127 for c in text):
-        return False
-    if _SPACED_PII_RE.search(text):
-        return False
-    return True
-
-
-def _normalize_for_detection(text: str) -> tuple[str, list[int]]:
-    """Adversarial-resistant input normalisation with offset map.
-
-    Applies, in order:
-    - HTML numeric entity decode (`&#115;` → `s`)
-    - Zero-width / soft-hyphen strip
-    - Per-char NFKC + unidecode for non-ASCII (Cyrillic homoglyphs,
-      fullwidth digits, mathematical fonts → ASCII equivalent)
-
-    Returns `(normalized_text, norm_to_orig)`. `norm_to_orig[i]` is
-    the original-text index of the i-th char in the normalized text;
-    sentinel at the end equals `len(text)` so span ends remap cleanly.
-
-    The adapter receives the normalised text; output spans are remapped
-    back to original-text offsets via the index map. Original gold
-    spans use original offsets, so this preserves bench correctness
-    while letting the model see a cleaner input.
-
-    input length cap. `_SPACED_PII_RE.match(text, i)` per
-    position is O(N²) on whitespace-rich adversarial input (100 KB
-    of `a a a a` → ~5 s in CPython). 1 MB cap matches the regex pack
-    upstream guard; oversized input falls through as identity
-    passthrough. Any realistic LLM prompt is far below this cap.
-    """
-    if len(text) > _NORMALIZE_INPUT_MAX_BYTES:
-        return text, list(range(len(text) + 1))
-    # ASCII fast-path. Per-char NFKC + Python loop costs
-    # ~100 ms on a 50 KB ASCII input (no work to do). Skip entirely
-    # if the text has no non-ASCII bytes, no `&#` (HTML entity
-    # candidate), no `%` (URL %XX candidate), and no whitespace run
-    # of length ≥ 4 single chars (despace candidate). Mirrors the TS
-    # port's `isPureAsciiNoDecodeNeeded` check.
-    if _is_pure_ascii_no_decode_needed(text):
-        return text, list(range(len(text) + 1))
-    try:
-        from unidecode import unidecode
-    except ImportError:
-        unidecode = None
-    out: list[str] = []
-    norm_to_orig: list[int] = []
-    i = 0
-    n = len(text)
-    while i < n:
-        # Whitespace-obfuscated PII collapse (e.g. "1 2 3 4 5" → "12345").
-        # gated by stricter post-check — require ≥4 digits OR
-        # (≥1 `@` + ≥1 letter). Without this guard, a sentence with sparse
-        # digits could despace into a phone-shaped string (`Mary J. Doe age
-        # 4 7` → `yJ.De47`).
-        m_sp = _SPACED_PII_RE.match(text, i)
-        if m_sp:
-            run = m_sp.group(0)
-            digit_count = sum(1 for c in run if c.isdigit())
-            has_at = "@" in run
-            has_alpha = any(c.isalpha() for c in run)
-            if digit_count >= 4 or (has_at and has_alpha):
-                for j, c in enumerate(run):
-                    if c.isspace():
-                        continue
-                    out.append(c)
-                    norm_to_orig.append(i + j)
-                i += len(run)
-                continue
-        # URL percent-encoding decode (`%40` → `@`)
-        m_url = _URL_PERCENT_RE.match(text, i)
-        if m_url:
-            try:
-                decoded_char = chr(int(m_url.group(1), 16))
-            except (ValueError, OverflowError):
-                decoded_char = ""
-            # -(mirror): preserve email-anchor chars in original
-            # form so the email regex can still match.
-            if decoded_char in ("@", ".", "+", "-"):
-                decoded_char = ""
-            if decoded_char:
-                # Map decoded char to the END of the `%XX` triplet so
-                # a span ending here remaps to the triplet's original
-                # end byte. Mapping to the start would collapse all
-                # triplets in a multi-decoded URL onto the first one.
-                out.append(decoded_char)
-                norm_to_orig.append(i + 2)
-                i += 3
-                continue
-        # HTML numeric entity decode
-        m = _HTML_ENTITY_RE.match(text, i)
-        if m:
-            try:
-                if m.group(1):
-                    decoded = chr(int(m.group(1)))
-                else:
-                    decoded = chr(int(m.group(2), 16))
-            except (ValueError, OverflowError):
-                decoded = ""
-            # do NOT decode `@` / `.` / `+` / `-` because the
-            # downstream email regex anchors on those literals; an
-            # unconditional decode of `j&#x40;ohn@example.com` produces
-            # `j@ohn@example.com` (two `@`) which the email regex
-            # rejects entirely. Keep the entity intact for those chars.
-            if decoded in ("@", ".", "+", "-"):
-                decoded = ""
-            if decoded:
-                for c in decoded:
-                    out.append(c)
-                    norm_to_orig.append(i)
-                i += len(m.group(0))
-                continue
-        c = text[i]
-        if c in _ZERO_WIDTH_CHARS:
-            i += 1
-            continue
-        nfkc = unicodedata.normalize("NFKC", c)
-        if any(ord(ch) > 127 for ch in nfkc) and unidecode is not None:
-            transliterated = unidecode(nfkc)
-            if transliterated:
-                for tc in transliterated:
-                    out.append(tc)
-                    norm_to_orig.append(i)
-                i += 1
-                continue
-        for nc in nfkc:
-            out.append(nc)
-            norm_to_orig.append(i)
-        i += 1
-    norm_to_orig.append(n)
-    return "".join(out), norm_to_orig
-
-
-def _remap_span(norm_start: int, norm_end: int, norm_to_orig: list[int]) -> tuple[int, int]:
-    """Map a normalized [start, end) span to the original text.
-
-    previous `>=` clamp truncated by one character when the
-    model predicted `end == len(normalised)`. The sentinel at index
-    `len(norm_to_orig) - 1` is exactly the valid end-exclusive
-    position, not out-of-bounds. Use strict `min(..., max_idx)` clamp.
-    """
-    max_idx = len(norm_to_orig) - 1
-    ns = max(0, min(norm_start, max_idx))
-    ne = max(0, min(norm_end, max_idx))
-    return norm_to_orig[ns], norm_to_orig[ne]
-
-
-def gliner_nemotron_pii_predictor(
-    *,
-    model_path: str = "nvidia/gliner-pii",
-    device: str = "cpu",
-    threshold: float = 0.3,
-    chunk_chars: int = 1400,
-    overlap_chars: int = 200,
-    label_cut: LabelCut | None = None,
-) -> Predictor:
-    """Bare-mode predictor for `nvidia/gliner-PII` (Nemotron PII).
-
-    Bare-mode contract: NO nullpii post-processing. No `_normalize_for_detection`,
-    no boundary refine, no never-PII filter, no regex pack. The 37→8 label
-    remap (`_NEMOTRON_TO_NULLPII8`) is the only adapter glue and is required
-    for F1 schema compatibility with the bench gold labels — every competitor
-    with a non-12-class schema has the same kind of bridge (presidio,
-    deberta, etc.). Chunking 1400/200 is shared across all GLiNER-family
-    bare baselines, with windows capped at `max_len` words (`_gliner_windows`).
-
-    Default threshold 0.3 follows Nvidia's evaluation recipe (model card).
-    Backbone is `urchade/gliner_large-v2.1` (~600M params, 2× the size
-    of our backbone `urchade/gliner_multi_pii-v1` ~280M).
-
-    ``threshold`` is the run threshold; ``label_cut`` then keeps a span
-    only if its score reaches its label's operating point (rule change 9).
-    """
-    try:
-        from gliner import GLiNER
-    except ImportError as e:
-        raise ImportError("gliner required") from e
-
-    model = GLiNER.from_pretrained(model_path, local_files_only=False).to(device)
-    model.eval()
-
-    def _dedupe(spans: list[Span]) -> list[Span]:
-        if len(spans) <= 1:
-            return spans
-        sorted_spans = sorted(spans, key=lambda s: (s.start, -s.end))
-        out: list[Span] = []
-        for s in sorted_spans:
-            merged = False
-            for i in range(len(out) - 1, -1, -1):
-                prev = out[i]
-                if prev.end <= s.start:
-                    break
-                if prev.label != s.label:
-                    continue
-                if (s.end - s.start) > (prev.end - prev.start):
-                    out[i] = s
-                merged = True
-                break
-            if not merged:
-                out.append(s)
-        return sorted(out, key=lambda s: s.start)
-
-    def _mapped(e: dict) -> str | None:
-        label = _NEMOTRON_TO_NULLPII8.get(e["label"])
-        if label is None or (label_cut is not None and not label_cut.keeps(label, float(e["score"]))):
-            return None
-        return label
-
-    max_words = int(model.config.max_len)
-
-    def _predict(text: str) -> ToolResult:
-        t0 = time.perf_counter()
-        spans: list[Span] = []
-        scores: list[float] = []
-        windows = _gliner_windows(text, chunk_chars, overlap_chars, max_words)
-        if len(windows) == 1:
-            entities = model.predict_entities(
-                text, _NEMOTRON_PII_LABELS, threshold=threshold,
-            )
+        windows = _gliner_windows(text, max_words, overlap_words)
+        per_window = model.inference(
+            [chunk for _, chunk in windows], inference_labels, threshold=threshold, batch_size=_GLINER_BATCH_SIZE,
+        )
+        spans_with_scores: list[tuple[Span, float]] = []
+        for (offset, _), entities in zip(windows, per_window, strict=True):
             for e in entities:
-                mapped = _mapped(e)
-                if mapped is None:
-                    continue
-                spans.append(Span(mapped, int(e["start"]), int(e["end"])))
-                scores.append(float(e.get("score", threshold)))
-        else:
-            spans_with_scores: list[tuple[Span, float]] = []
-            for offset, chunk in windows:
-                for e in model.predict_entities(chunk, _NEMOTRON_PII_LABELS, threshold=threshold):
-                    mapped = _mapped(e)
-                    if mapped is None:
-                        continue
-                    ns_full = int(e["start"]) + offset
-                    ne_full = int(e["end"]) + offset
-                    spans_with_scores.append((
-                        Span(mapped, ns_full, ne_full),
-                        float(e.get("score", threshold)),
-                    ))
-            kept = _dedupe([sp for sp, _ in spans_with_scores])
-            score_by_id = {id(sp): sc for sp, sc in spans_with_scores}
-            for sp in kept:
-                spans.append(sp)
-                scores.append(score_by_id.get(id(sp), threshold))
+                score = float(e["score"])
+                label = _project(e["label"], score)
+                if label is not None:
+                    spans_with_scores.append((Span(label, int(e["start"]) + offset, int(e["end"]) + offset), score))
+        kept = _dedupe_gliner_spans(spans_with_scores) if len(windows) > 1 else spans_with_scores
         elapsed = (time.perf_counter() - t0) * 1000
-        return ToolResult(spans, elapsed, scores=tuple(scores))
+        return ToolResult([sp for sp, _ in kept], elapsed, scores=tuple(sc for _, sc in kept))
 
     return _predict
 

@@ -58,13 +58,16 @@ from nullpii_eval.adapters import (
     OPENMED_LARGE,
     OPENMED_SMALL,
     PII_IDENTIFIER,
-    _GLINER_NATIVE_LABELS,
-    _GLINER_NATIVE_TO_NULLPII8,
+    _KNOWLEDGATOR_LABELS,
+    _KNOWLEDGATOR_TO_NULLPII,
+    _NEMOTRON_PII_LABELS,
+    _NEMOTRON_TOKEN_LABEL_MAP,
+    _URCHADE_LABELS,
+    _URCHADE_TO_NULLPII,
     boundary_refined_predictor,
     deberta_pii_predictor,
     domain_routed_predictor,
     gliner_lora_predictor,
-    gliner_nemotron_pii_predictor,
     gliner_v2_predictor,
     hf_token_classifier_predictor,
     multi_ensemble_predictor,
@@ -504,13 +507,20 @@ def build_tools(args) -> dict[str, Callable]:
         "deberta-simple": lambda: _mark_batch(deberta_pii_predictor(device=backend, batch_size=_BATCH, aggregation_strategy="simple")),
         "piiranha":  lambda **kw: _mark_batch(piiranha_predictor(device=backend, batch_size=_BATCH, **kw)),
         "rizzo-pii": lambda **kw: _mark_batch(rizzo_pii_predictor(device=backend, batch_size=_BATCH, **kw)),
-        # GLiNER multi PII v1 (`urchade/gliner_multi_pii-v1`) bare HF.
+        # ─── GLiNER competitors (rule change 10): each prompted with its
+        # card's label strings, at its card's threshold (the library default
+        # 0.5 where the card names none), revision pinned. They run from the
+        # gliner venv (gliner 0.2.29, transformers 5.16), a combination the
+        # gliner package supports.
+        # `urchade/gliner_multi_pii-v1` as exported by onnx-community, on the
+        # CPU provider, the library's default for ONNX.
         "gliner-onnx-pii-fp32": lambda **kw: gliner_v2_predictor(
             "onnx-community/gliner_multi_pii-v1",
+            revision="2e0397a7e8a250d76c37122232b3cbde42c8d629",
             onnx_file="onnx/model.onnx",
-            labels=_GLINER_NATIVE_LABELS,
-            label_map=_GLINER_NATIVE_TO_NULLPII8,
-            **{"threshold": args.gliner_threshold, **kw},
+            labels=_URCHADE_LABELS,
+            label_map=_URCHADE_TO_NULLPII,
+            **{"threshold": 0.5, **kw},
         ),
         # ─── nullpii bare model — the merged-LoRA ONNX
         # WITHOUT the npm runtime pipeline. Loads `model.onnx` from
@@ -527,22 +537,24 @@ def build_tools(args) -> dict[str, Callable]:
             threshold=args.gliner_threshold,
             local_files_only=True,
         ),
-        # NVIDIA Nemotron-PII (`nvidia/gliner-pii`, gliner_large-v2.1
-        # backbone, ~600 MB, 55+ PII categories). 37→8 label remap.
-        "nemotron-pii-raw": lambda **kw: gliner_nemotron_pii_predictor(
-            model_path="nvidia/gliner-pii",
+        # NVIDIA's `nvidia/gliner-PII` (gliner_large-v2.1 backbone): its 55
+        # Nemotron-PII types, at the threshold of its card's evaluation.
+        "nemotron-pii-raw": lambda **kw: gliner_v2_predictor(
+            "nvidia/gliner-PII",
+            revision="bd23e8ef4425fd04e34c5204ab49ffaa706eae79",
             device=backend,
+            labels=_NEMOTRON_PII_LABELS,
+            label_map=_NEMOTRON_TOKEN_LABEL_MAP,
             **{"threshold": 0.3, **kw},
         ),
-        # `gliner-pii-large-v1.0` (knowledgator) — PII-specialised
-        # Apache fine-tune, gliner-large backbone. Bare HF.
+        # knowledgator's PII fine-tune of gliner-large; card threshold 0.3.
         "gliner-pii-large-v1": lambda **kw: gliner_v2_predictor(
             "knowledgator/gliner-pii-large-v1.0",
+            revision="f847f54fbc97ad6e78bfa20ed9c5e5d5c43327b9",
             device=backend,
-            local_files_only=False,
-            labels=_GLINER_NATIVE_LABELS,
-            label_map=_GLINER_NATIVE_TO_NULLPII8,
-            **{"threshold": args.gliner_threshold, **kw},
+            labels=_KNOWLEDGATOR_LABELS,
+            label_map=_KNOWLEDGATOR_TO_NULLPII,
+            **{"threshold": 0.3, **kw},
         ),
         # A local merged GLiNER directory (phase-F2 bare-model A/B), prompted
         # with nullpii's 12 runtime labels. The directory comes from
@@ -553,22 +565,22 @@ def build_tools(args) -> dict[str, Callable]:
             threshold=args.gliner_threshold,
             local_files_only=True,
         ),
-        # Knowledgator's streaming-span GLiNER on a Qwen3-0.6B causal
-        # backbone (July 2026, Apache-2.0). Needs gliner>=0.2.28, newer
-        # than this venv's pin, so it runs from a separate venv; same
-        # native labels and map as its sibling gliner-pii-large-v1.
+        # knowledgator's streaming-span GLiNER on a Qwen3-0.6B causal
+        # backbone, used the card's stateless way: whole text (max_len 8192
+        # words), bf16 on CUDA, fp32 elsewhere, threshold 0.5. Same vendor
+        # vocabulary as its sibling gliner-pii-large-v1.
         "gliner-stream-pii": lambda **kw: gliner_v2_predictor(
             "knowledgator/gliner-stream-pii-v1.0",
+            revision="e871777dc4b3b688747a0433fff8d94a36fcc7b0",
             device=backend,
-            local_files_only=False,
-            labels=_GLINER_NATIVE_LABELS,
-            label_map=_GLINER_NATIVE_TO_NULLPII8,
-            **{"threshold": args.gliner_threshold, **kw},
+            dtype="bf16" if backend == "cuda" else "fp32",
+            labels=_KNOWLEDGATOR_LABELS,
+            label_map=_KNOWLEDGATOR_TO_NULLPII,
+            **{"threshold": 0.5, **kw},
         ),
-        # `openai/privacy-filter` — DeBERTa-v3 BIOES-tagged PII tagger,
-        # trained on nullpii's exact 8-class schema. Decoded via explicit
-        # BIOES walk (the HF naive aggregation drops boundary tokens for
-        # BIOES schemas). Bare HF, no nullpii post-processing.
+        # `openai/privacy-filter` through OpenAI's own `opf` runtime: one
+        # forward pass and its constrained Viterbi decoder, every option at
+        # opf's default (CPU or CUDA; opf has no MPS path).
         "openai-privacy-filter": lambda **kw: openai_privacy_filter_predictor(
             device=backend, **kw,
         ),

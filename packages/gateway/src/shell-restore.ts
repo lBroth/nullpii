@@ -14,32 +14,41 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  * the placeholder stands; otherwise it stays literal, and the command
  * works on the placeholder text, which is harmless.
  *
- * Where it stands, in order:
- * - a command that hands code to another interpreter (`bash -c`, `eval`,
- *   `ssh`, `python -c`, `| sh`, `awk`, …): the strictest rule everywhere;
+ * A command that sends data off the machine (`curl`, `wget`, `nc`, `ssh`,
+ * `git push`, …) keeps every placeholder: the tool runs here, but the value
+ * would leave through it.
+ *
+ * Otherwise, where it stands, in order:
+ * - a command that hands code to another interpreter (`bash -c`, also
+ *   after other options as in `bash -o pipefail -c`, `eval`, `ssh`,
+ *   `python -c`, `node --eval`, `| sh`, `awk`, …): the strictest rule
+ *   everywhere;
  * - the body of a heredoc fed to `cat` or `tee`: literal with a quoted
  *   delimiter (`<<'EOF'`), expanding like double quotes with a bare one;
- *   a heredoc fed to anything else may be code (`python3 - <<'EOF'`) and
- *   gets the strictest rule;
+ *   a heredoc fed to anything else may be code (`python3 - <<'EOF'`), and
+ *   so may one whose command also runs a script (`cat > run.sh <<'EOF'
+ *   … bash run.sh`): both get the strictest rule;
  * - otherwise the shell quoting: single quotes, double quotes, backslash
  *   escapes, and command substitutions (`$(…)`, backticks), which are
  *   unquoted even inside double quotes.
  *
- * Heredoc bodies are skipped by the quote lexer (an apostrophe in a body
- * does not open a quote for the rest of the command); `<<` counts only in
- * shell code, never inside quotes or as the here-string `<<<`; a heredoc
- * without its closing line gets the strictest rule; and the interpreter
- * list covers `| sh` and the awk/sed family. The Claude Code mod gets the
- * same rule through the sidecar's `restore` with `tool`.
+ * Heredoc bodies and `#` comments are skipped by the quote lexer (an
+ * apostrophe in either does not open a quote for the rest of the
+ * command); `<<` counts only in shell code, never inside quotes or as the
+ * here-string `<<<`; a heredoc without its closing line gets the strictest
+ * rule. A `command` given as an argv array (`["bash", "-lc", "…"]`) is
+ * judged by `restoreShellArgv`. The Claude Code mod gets the same rules
+ * through the sidecar's `restore` with `tool`.
  *
- * Best effort: no list names every program that runs its input as code.
+ * Best effort: no list names every program that runs its input as code or
+ * sends it out, and a value restored into a file (`Write`, `Edit`) can be
+ * run by a later command.
  */
 
-/** Anthropic tools (by exact name) whose input a shell runs. */
-export const ANTHROPIC_SHELL_TOOLS: ReadonlySet<string> = new Set(['Bash']);
-
-/** OpenAI-style agents also name their shell tool `bash` or `shell`. */
-export const OPENAI_SHELL_TOOLS: ReadonlySet<string> = new Set(['Bash', 'bash', 'shell']);
+/** Tools whose input a shell runs, as each agent names them: Claude
+ * Code's `Bash`, Anthropic's bash tool (`bash`), and the `shell` tool of
+ * OpenAI-style agents such as Codex. */
+export const SHELL_TOOLS: ReadonlySet<string> = new Set(['Bash', 'bash', 'shell']);
 
 /** The input field of a shell tool that the shell interprets. */
 export const SHELL_COMMAND_FIELD = 'command';
@@ -57,16 +66,61 @@ const SHELL_SAFE: Readonly<Record<QuoteContext, RegExp>> = {
   heredoc: /^[^\n]*$/,
 };
 
+/** The rest of one simple command, up to a bound: from an interpreter's
+ * name to its code flag, past other options and their arguments. */
+const SAME_COMMAND = String.raw`[^;&|\n]{0,256}?`;
+
 /** Programs that run part of their arguments, or what is piped to them,
  * as code: a value safe for the outer shell can still inject into them.
- * The first four alternatives are the Claude Code mod's list. */
+ * Each code flag may follow other options (`bash -o pipefail -c`,
+ * `bash --norc -c`); a flag cluster counts when it holds the code letter
+ * (`-lc`, `-ce`). */
 const NESTED_INTERPRETER = new RegExp(
   [
-    /\b(?:bash|sh|zsh|dash|ksh|fish)\s+(?:-\w+\s+)*-\w*c\b/.source,
-    /\beval\b|\bssh\b|\bsu\s+-c\b/.source,
-    /\b(?:python3?|node|perl|ruby|php|deno|bun)\s+(?:-\w+\s+)*-\w*[ce]\b/.source,
-    /\|\s*(?:sudo\s+)?(?:bash|sh|zsh|dash|ksh|fish|python3?|node|perl|ruby|php|deno|bun)\b/.source,
+    String.raw`\b(?:bash|sh|zsh|dash|ksh|fish)\b${SAME_COMMAND}\s(?:-[A-Za-z]*c[A-Za-z]*|--command)\b`,
+    String.raw`\beval\b|\bssh\b|\bsu\b${SAME_COMMAND}\s(?:-c|--command)\b`,
+    String.raw`\b(?:python[\d.]*|pypy[\d.]*)\b${SAME_COMMAND}\s-[A-Za-z]*c[A-Za-z]*\b`,
+    String.raw`\b(?:node|nodejs|bun|deno)\b${SAME_COMMAND}\s(?:-[A-Za-z]*[ep][A-Za-z]*|--eval|--print|eval)\b`,
+    String.raw`\b(?:perl|ruby|lua|Rscript|osascript)\b${SAME_COMMAND}\s-[A-Za-z]*[eE][A-Za-z]*\b`,
+    String.raw`\bphp\b${SAME_COMMAND}\s-[A-Za-z]*r[A-Za-z]*\b`,
+    /\|\s*(?:sudo\s+)?(?:bash|sh|zsh|dash|ksh|fish|python[\d.]*|node|perl|ruby|php|deno|bun)\b/
+      .source,
     /\b(?:awk|gawk|mawk|nawk|sed)\b/.source,
+  ].join('|'),
+);
+
+/** Where a command starts: the beginning, or after a separator, plus the
+ * prefixes that run the next word as the program (`sudo curl`). */
+const COMMAND_POSITION = String.raw`(?:^|[;&|(\n\x60]|\$\()\s*(?:(?:sudo|nohup|exec|time|env|command|xargs)\s+(?:-\S+\s+)*)*(?:\S*/)?`;
+
+/** Commands that send data off the machine. Names that cannot be anything
+ * else count anywhere in the command; short or common ones only where a
+ * command starts; `git` and package managers only for the subcommands that
+ * upload. Best effort: no list names every way out. */
+const NETWORK_CLIENT = new RegExp(
+  [
+    /\b(?:curl|wget|ncat|netcat|socat|ssh|scp|sftp|rsync|telnet|aria2c)\b/.source,
+    /\b(?:Invoke-WebRequest|Invoke-RestMethod)\b/.source,
+    String.raw`${COMMAND_POSITION}(?:nc|ftp|https?|xh|iwr|irm)\b`,
+    String.raw`\bgit\b${SAME_COMMAND}\s(?:push|send-email|remote\s+(?:add|set-url))\b`,
+    /\b(?:npm|pnpm|yarn)\s+publish\b/.source,
+    /\/dev\/(?:tcp|udp)\//.source,
+  ].join('|'),
+  'i',
+);
+
+/** In code handed to an interpreter: a URL or a networking library. */
+const NETWORK_IN_CODE =
+  /[a-z][a-z0-9+.-]*:\/\/|\b(?:requests|urllib|httpx|aiohttp|socket|fetch|axios|XMLHttpRequest|WebSocket|LWP|IO::Socket|Net::HTTP|http\.client|net\.connect)\b/;
+
+/** In shell code outside heredoc bodies: something that runs a script,
+ * such as one the same command just wrote from a heredoc. */
+const RUNS_SCRIPT = new RegExp(
+  [
+    /(?:^|[\s;&|(\x60])(?:bash|sh|zsh|dash|ksh|fish|source|exec|python[\d.]*|node|nodejs|perl|ruby|php|deno|bun)\b/
+      .source,
+    String.raw`${COMMAND_POSITION}(?:\.\s+\S|\.{1,2}/)`,
+    /\bchmod\b[^;&|\n]*\+x/.source,
   ].join('|'),
 );
 
@@ -80,6 +134,23 @@ const HEREDOC_DATA_COMMANDS: ReadonlySet<string> = new Set(['cat', 'tee']);
 
 /** Characters after which a new simple command starts. */
 const COMMAND_SEPARATORS: ReadonlySet<string> = new Set([';', '&', '|', '\n', '(', '{']);
+
+/** Characters after which `#` starts a comment: it must begin a word.
+ * Not `$` (`$#`) or `{` (`${#x}`). A backtick counts, so a doubtful `#`
+ * is read as a comment, which only makes the context after it stricter. */
+const COMMENT_PRECEDERS: ReadonlySet<string> = new Set([
+  ' ',
+  '\t',
+  '\n',
+  ';',
+  '&',
+  '|',
+  '(',
+  ')',
+  '<',
+  '>',
+  '`',
+]);
 
 const ENV_ASSIGNMENT = /^[A-Za-z_]\w*=/;
 const LEADING_TABS = /^\t+/;
@@ -115,9 +186,22 @@ interface Heredoc {
  * target index, or past every body to `next`. */
 type BodyScan = { readonly context: QuoteContext } | { readonly next: number };
 
-/** True when `name` is one of `shellTools`. */
-export function isShellTool(name: unknown, shellTools: ReadonlySet<string>): boolean {
-  return typeof name === 'string' && shellTools.has(name);
+/** A heredoc body's extent: from its first character to its closing line. */
+interface BodyRange {
+  readonly start: number;
+  readonly end: number;
+}
+
+/** True when `name` is one of the `SHELL_TOOLS`. */
+export function isShellTool(name: unknown): boolean {
+  return typeof name === 'string' && SHELL_TOOLS.has(name);
+}
+
+/** True when `command` sends data off the machine: a network client, an
+ * upload, or interpreter code that opens a URL or a socket. */
+export function sendsOffMachine(command: string): boolean {
+  if (NETWORK_CLIENT.test(command)) return true;
+  return NESTED_INTERPRETER.test(command) && NETWORK_IN_CODE.test(command);
 }
 
 /** True when `value` can be put back as written in `context`. Outside a
@@ -135,19 +219,46 @@ export function shellSafe(value: string, context: QuoteContext): boolean {
  */
 export function shellContextAt(command: string, index: number): QuoteContext {
   if (NESTED_INTERPRETER.test(command)) return 'none';
-  return lex(command, 0, index, { kind: 'code', depth: 0, cmdStart: 0 });
+  if (inBodyOfRunScript(command, index)) return 'none';
+  return lex(command, 0, index, codeFrame());
+}
+
+function codeFrame(): Frame {
+  return { kind: 'code', depth: 0, cmdStart: 0 };
+}
+
+/** True when `index` is in a heredoc body and the command, outside its
+ * bodies, also runs a script: the body may be that script. */
+function inBodyOfRunScript(command: string, index: number): boolean {
+  const bodies: BodyRange[] = [];
+  lex(command, 0, command.length, codeFrame(), bodies);
+  if (!bodies.some((b) => index >= b.start && index < b.end)) return false;
+  let outside = '';
+  let last = 0;
+  for (const b of bodies) {
+    outside += `${command.slice(last, b.start)}\n`;
+    last = b.end;
+  }
+  return RUNS_SCRIPT.test(outside + command.slice(last));
 }
 
 /** Lex `command` from `start` to `index`, with `base` as the nesting in
- * force at `start`, and return the context at `index`. */
-function lex(command: string, start: number, index: number, base: Frame): QuoteContext {
+ * force at `start`, and return the context at `index`. The extent of each
+ * heredoc body passed whole is added to `bodies` when given. */
+function lex(
+  command: string,
+  start: number,
+  index: number,
+  base: Frame,
+  bodies?: BodyRange[],
+): QuoteContext {
   const stack: Frame[] = [base];
   const pending: Heredoc[] = [];
   let i = start;
   while (i < index) {
     const frame = stack.at(-1) ?? base;
     if (command[i] === '\n' && pending.length > 0 && CODE_KINDS.has(frame.kind)) {
-      const scan = readHeredocBodies(command, i + 1, index, pending);
+      const scan = readHeredocBodies(command, i + 1, index, pending, bodies);
       if ('context' in scan) return scan.context;
       pending.length = 0;
       frame.cmdStart = scan.next;
@@ -202,12 +313,26 @@ function advanceCode(
   i: number,
 ): number {
   const ch = command[i];
+  if (ch === '#' && startsWord(command, i)) return commentLength(command, i);
   if (ch === '<' && command[i + 1] === '<') return readHeredocOperator(command, i, frame, pending);
   if (ch === "'") stack.push({ kind: 'single', depth: 0, cmdStart: 0 });
   else if (ch === '"') stack.push({ kind: 'double', depth: 0, cmdStart: 0 });
   else if (frame.kind === 'subst') trackParens(stack, frame, ch);
   if (ch !== undefined && COMMAND_SEPARATORS.has(ch)) frame.cmdStart = i + 1;
   return 1;
+}
+
+/** True when the character at `i` begins a word of shell code. */
+function startsWord(command: string, i: number): boolean {
+  const before = command[i - 1];
+  return before === undefined || COMMENT_PRECEDERS.has(before);
+}
+
+/** A comment runs to the end of its line; the newline is left to the
+ * caller, since heredoc bodies may start after it. */
+function commentLength(command: string, i: number): number {
+  const newline = command.indexOf('\n', i);
+  return (newline === -1 ? command.length : newline) - i;
 }
 
 function trackParens(stack: Frame[], frame: Frame, ch: string | undefined): void {
@@ -257,6 +382,7 @@ function readHeredocBodies(
   start: number,
   index: number,
   pending: readonly Heredoc[],
+  bodies?: BodyRange[],
 ): BodyScan {
   let bodyStart = start;
   for (const heredoc of pending) {
@@ -265,6 +391,7 @@ function readHeredocBodies(
     // so what follows it, is unknown.
     if (end === undefined) return { context: 'none' };
     if (index < end.bodyEnd) return { context: bodyContext(command, bodyStart, index, heredoc) };
+    bodies?.push({ start: bodyStart, end: end.bodyEnd });
     bodyStart = end.next;
   }
   return { next: bodyStart };
@@ -315,7 +442,8 @@ export interface ShellRestore {
 
 /**
  * Restore the placeholders in a shell `command`, each only when its real
- * value is safe in the context at its position (`shellContextAt`).
+ * value is safe in the context at its position (`shellContextAt`), and
+ * none in a command that sends data off the machine (`sendsOffMachine`).
  * Contexts are read on the command as received: a value restored there
  * never ends its quoting or its heredoc, so it cannot change the context
  * of a later placeholder.
@@ -327,26 +455,88 @@ export function restoreShellCommand(
   command: string,
   sessionId: string,
 ): ShellRestore {
+  const offline = !sendsOffMachine(command);
+  return restoreEach(np, command, sessionId, (value, at) =>
+    offline ? shellSafe(value, shellContextAt(command, at)) : false,
+  );
+}
+
+/** A shell `command` given as an argv array, with its safe placeholders
+ * restored. */
+export interface ShellArgvRestore {
+  readonly argv: readonly string[];
+  readonly results: readonly RestoreResult[];
+  readonly keptMasked: readonly string[];
+}
+
+/**
+ * Restore the placeholders of a `command` given as an argv array, as
+ * Codex's `shell` tool sends it (`["bash", "-lc", "…"]`). The program
+ * runs without a shell, so each argument is taken literally, unless:
+ * - the program sends data off the machine: nothing is restored;
+ * - it hands code to an interpreter (`bash -lc`, `python3 -c`, …): every
+ *   argument gets the strictest rule, as in a string command;
+ * - the value would be the program itself, or start an argument with `-`,
+ *   where it would be read as an option: the strictest rule.
+ *
+ * @param np - the engine whose vault holds `sessionId`.
+ */
+export function restoreShellArgv(
+  np: RestoreCapable,
+  argv: readonly string[],
+  sessionId: string,
+): ShellArgvRestore {
+  const joined = argv.join(' ');
+  const offline = !sendsOffMachine(joined);
+  const code = NESTED_INTERPRETER.test(joined);
+  const results: RestoreResult[] = [];
+  const keptMasked: string[] = [];
+  const restored = argv.map((word, position) => {
+    const r = restoreEach(np, word, sessionId, (value, at) => {
+      if (!offline) return false;
+      if (code || position === 0) return shellSafe(value, 'none');
+      return at > 0 || !value.startsWith('-');
+    });
+    results.push(...r.results);
+    keptMasked.push(...r.keptMasked);
+    return r.command;
+  });
+  return { argv: restored, results, keptMasked };
+}
+
+/** Restore each placeholder of `text` whose real value `safe` accepts at
+ * the placeholder's index; leave the others literal. */
+function restoreEach(
+  np: RestoreCapable,
+  text: string,
+  sessionId: string,
+  safe: (value: string, at: number) => boolean,
+): ShellRestore {
   const results: RestoreResult[] = [];
   const keptMasked: string[] = [];
   let out = '';
   let last = 0;
-  for (const match of command.matchAll(placeholderPattern())) {
+  for (const match of text.matchAll(placeholderPattern())) {
     const start = match.index;
     const placeholder = match[0];
     const r = np.restore(placeholder, sessionId);
-    const safe = r.replacements === 0 || shellSafe(r.restored, shellContextAt(command, start));
-    if (safe) results.push(r);
+    const ok = r.replacements === 0 || safe(r.restored, start);
+    if (ok) results.push(r);
     else keptMasked.push(placeholder);
-    out += command.slice(last, start) + (safe ? r.restored : placeholder);
+    out += text.slice(last, start) + (ok ? r.restored : placeholder);
     last = start + placeholder.length;
   }
-  return { command: out + command.slice(last), results, keptMasked };
+  return { command: out + text.slice(last), results, keptMasked };
 }
 
 /** How many placeholders `text` holds. */
 export function countPlaceholders(text: string): number {
-  return [...text.matchAll(placeholderPattern())].length;
+  return placeholdersIn(text).length;
+}
+
+/** The placeholders `text` holds, in order, once per occurrence. */
+export function placeholdersIn(text: string): string[] {
+  return [...text.matchAll(placeholderPattern())].map((m) => m[0]);
 }
 
 /** A fresh global copy: `matchAll` needs the `g` flag, and a shared

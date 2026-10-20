@@ -599,6 +599,17 @@ describe('sidecar · restore with tool', () => {
       expect((res.json() as ShellRestoreBody).shellKeptMasked).toEqual([secret]);
     }
   });
+
+  it('applies the shell rule to a `command` given as an argv array', async () => {
+    const { app } = await setup();
+    const [secret] = await placeholdersFor(app, INJECTION);
+    const value = { command: ['bash', '-lc', `echo ${secret}`] };
+
+    const res = await restore(app, { value, tool: 'shell' });
+
+    expect(res.json()).toMatchObject({ value, replacements: 0, shellKeptMasked: [secret] });
+    expect(res.body).not.toContain('evil.sh');
+  });
 });
 
 describe('sidecar · sanitize cache', () => {

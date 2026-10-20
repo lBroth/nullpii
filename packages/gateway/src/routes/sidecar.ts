@@ -5,7 +5,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { type NullPii, type NullPiiFileConfig, TextTooLongError } from 'nullpii';
 import { SanitizeCache } from '../sanitize-cache.js';
 import { restoreValue, sanitizeValue } from '../sanitizer.js';
-import { ANTHROPIC_SHELL_TOOLS, OPENAI_SHELL_TOOLS, countPlaceholders } from '../shell-restore.js';
+import { countPlaceholders, isShellTool } from '../shell-restore.js';
 import { SidecarSessions, isValidSessionKey } from '../sidecar-sessions.js';
 
 /**
@@ -45,8 +45,6 @@ const SWEEP_INTERVAL_MAX_MS = 60_000;
 const MAX_RESTORE_FIELDS = 64;
 /** Longest tool name `restore` accepts (`mcp__<server>__<tool>`). */
 const MAX_TOOL_NAME_LENGTH = 128;
-/** A `tool` the shell runs, under either agent's naming. */
-const SHELL_TOOLS: ReadonlySet<string> = new Set([...ANTHROPIC_SHELL_TOOLS, ...OPENAI_SHELL_TOOLS]);
 /** `hit` when a sanitize response came from the session's cache. */
 const CACHE_HEADER = 'x-nullpii-cache';
 const LOOPBACK_HOSTNAMES: ReadonlySet<string> = new Set(['127.0.0.1', 'localhost', '[::1]']);
@@ -257,7 +255,7 @@ export async function registerSidecarRoutes(
         if (tool !== undefined && !opts.restoreTools.has(tool)) {
           return sendHeld(req, reply, value);
         }
-        const shell = tool !== undefined && SHELL_TOOLS.has(tool);
+        const shell = isShellTool(tool);
         const r = restoreValue(np, value, session.vaultId, fields, shell);
         req.log.info(
           {

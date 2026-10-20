@@ -64,6 +64,8 @@ export interface RequestSummary {
   /** Images and binary documents forwarded without a scan (nullpii
    * cannot read them). Flagged so the user knows what was not checked. */
   readonly unscanned?: number;
+  /** Words the model could not read; only the recognizers scanned them. */
+  readonly modelUnscannedWords?: number;
   /** Placeholders kept masked in a shell command because their value was
    * not safe in the quoting there. */
   readonly unsafeShell?: number;
@@ -121,6 +123,11 @@ export function printRequestSummary(s: RequestSummary): void {
   const unscanned = s.unscanned ?? 0;
   const unscannedStr =
     unscanned > 0 ? `  ${c?.yellow ?? ''}⚠ ${unscanned} not scanned (image/binary)${reset}` : '';
+  const unread = s.modelUnscannedWords ?? 0;
+  const unreadStr =
+    unread > 0
+      ? `  ${c?.yellow ?? ''}⚠ ${unread} words too long for the model (recognizers only)${reset}`
+      : '';
   const unsafeShell = s.unsafeShell ?? 0;
   const unsafeShellStr =
     unsafeShell > 0
@@ -132,6 +139,6 @@ export function printRequestSummary(s: RequestSummary): void {
       ? `  ${c?.yellow ?? ''}⚠ ${heldForTool} kept masked in tools outside restoreTools${reset}`
       : '';
   process.stdout.write(
-    `${tag}${id}  ${arrow} ${capLabel}  ${back} ${restLabel}${driftStr}${unscannedStr}${unsafeShellStr}${heldForToolStr}\n`,
+    `${tag}${id}  ${arrow} ${capLabel}  ${back} ${restLabel}${driftStr}${unscannedStr}${unreadStr}${unsafeShellStr}${heldForToolStr}\n`,
   );
 }

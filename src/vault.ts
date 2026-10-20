@@ -5,12 +5,12 @@ import { SessionMismatchError, SessionNotFoundError, UnknownPlaceholderError } f
 import { logf } from './log.js';
 import { sessionPrefixOf } from './session-prefix.js';
 import {
+  type MaskResult,
   PLACEHOLDER_REGEX,
   PLACEHOLDER_TEMPLATE,
   type PiiSpan,
   type RestoreOptions,
   type RestoreResult,
-  type SanitizeResult,
 } from './types/index.js';
 
 const LOG_SCOPE = 'nullpii:vault';
@@ -64,7 +64,7 @@ export class PiiVault {
    *
    * @throws {SessionNotFoundError} if `sessionId` is unknown.
    */
-  sanitize(text: string, spans: readonly PiiSpan[], sessionId: string): SanitizeResult {
+  sanitize(text: string, spans: readonly PiiSpan[], sessionId: string): MaskResult {
     const session = this.requireSession(sessionId);
     if (spans.length === 0) {
       return { sessionId, sanitized: text, spans: [] };

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { SanitizeResult } from './types/index.js';
+import type { MaskResult } from './types/index.js';
 
 /**
  * Built-in preservation hint emitted by `wrapForLLM`. Tuned to saturate
@@ -48,13 +48,13 @@ export const LLM_PRESERVATION_HINT =
  * const out = restore(reply, safe.sessionId);
  * ```
  *
- * @param sanitized - either a `SanitizeResult` (preferred) or the raw
- *   `sanitized` string from a previous `sanitize()` call.
+ * @param sanitized - a `SanitizeResult` (any `MaskResult` works), or the
+ *   raw `sanitized` string from a previous `sanitize()` call.
  * @param task - optional task instruction inserted between the hint and the
  *   sanitized body. If omitted, the hint is followed by the body alone.
  * @returns the wrapped prompt string ready to send to the LLM.
  */
-export function wrapForLLM(sanitized: SanitizeResult | string, task?: string): string {
+export function wrapForLLM(sanitized: MaskResult | string, task?: string): string {
   const body = typeof sanitized === 'string' ? sanitized : sanitized.sanitized;
   const trimmedTask = task?.trim();
   if (trimmedTask !== undefined && trimmedTask.length > 0) {

@@ -21,6 +21,7 @@ export type {
   RestoreOptions,
   RestoreResult,
   SanitizeOptions,
+  MaskResult,
   SanitizeResult,
 } from './results.js';
 export type {

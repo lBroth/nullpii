@@ -4,18 +4,29 @@ import type { PiiLabel } from './labels.js';
 import type { PiiSpan } from './spans.js';
 
 /**
- * Result of a `sanitize(text)` call.
+ * Text with given spans replaced by placeholders: what the vault returns
+ * for `PiiVault.sanitize(text, spans, sessionId)`.
  *
  * The vault is keyed by `sessionId` server-side; callers pass `sessionId`
  * back to `restore()` to map placeholders back to originals.
  */
-export interface SanitizeResult {
+export interface MaskResult {
   /** Opaque identifier of the in-memory vault session that owns the placeholders. */
   readonly sessionId: string;
-  /** Input text with every detected PII span replaced by a placeholder. */
+  /** Input text with every given PII span replaced by a placeholder. */
   readonly sanitized: string;
-  /** Spans found in the original input, in document order. */
+  /** The masked spans, in document order. */
   readonly spans: readonly PiiSpan[];
+}
+
+/** Result of a `sanitize(text)` call: the masked text and the spans found,
+ * plus what the model could not read. */
+export interface SanitizeResult extends MaskResult {
+  /** Words the model could not read: each is longer, alone, than the
+   * model's subword budget (minified code, data blobs). The recognizer
+   * pack and the base64 detector still scanned them; only the model did
+   * not. Usually 0. */
+  readonly modelUnscannedWords: number;
 }
 
 /** Result of a `restore(text, sessionId)` call. */

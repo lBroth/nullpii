@@ -9,6 +9,7 @@ import { PROMPT_LABEL_COUNT } from './helpers.js';
 // real one behaves on dense text (logs of long hashes and tokens). Every
 // word handed to the model is recorded so the test can check coverage.
 const KEEP = 12;
+const BLOB = 'BLOB';
 const seenWords: string[] = [];
 
 vi.mock('../src/backend/backend.js', () => {
@@ -40,7 +41,11 @@ vi.mock('../src/gliner-tokenizer.js', async () => {
   class GlinerTokenizer {
     async encode(text: string) {
       const all = actual.splitWords(text);
-      const words = all.slice(0, KEEP);
+      // A word longer, alone, than the subword budget ends the window
+      // before it, as the real encoder does on a minified blob; a window
+      // that starts with one keeps no word at all.
+      const blob = all.findIndex((w) => w.text.startsWith(BLOB));
+      const words = (blob === -1 ? all : all.slice(0, blob)).slice(0, KEEP);
       for (const w of words) seenWords.push(w.text);
       return {
         inputIds: BigInt64Array.from([0n]),
@@ -63,6 +68,17 @@ describe('NullPii windowing on dense input', () => {
     const np = new NullPii({ modelDir: '/fake', backend: 'cpu', recognizers: 'none' });
     await np.sanitize(words.join(' '));
     expect(new Set(seenWords)).toEqual(new Set(words));
+    await np.dispose();
+  });
+
+  it('counts the words the model could not read, and still reads the rest', async () => {
+    seenWords.length = 0;
+    const np = new NullPii({ modelDir: '/fake', backend: 'cpu', recognizers: 'none' });
+    const plain = (await np.sanitize('alpha beta gamma')).modelUnscannedWords;
+    const result = await np.sanitize(`alpha ${BLOB}${'x'.repeat(64)} beta gamma`);
+    expect(plain).toBe(0);
+    expect(result.modelUnscannedWords).toBe(1);
+    expect(seenWords).toEqual(expect.arrayContaining(['alpha', 'beta', 'gamma']));
     await np.dispose();
   });
 

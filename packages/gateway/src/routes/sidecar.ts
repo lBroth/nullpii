@@ -260,11 +260,19 @@ export async function registerSidecarRoutes(
           return reply.header(CACHE_HEADER, 'hit').type('application/json').send(cached);
         }
         const r = await sanitizeValue(np, req.body.value, session.vaultId);
-        req.log.info({ captured: r.captured, byLabel: r.capturedByLabel }, 'sidecar.sanitize');
+        req.log.info(
+          {
+            captured: r.captured,
+            byLabel: r.capturedByLabel,
+            modelUnscannedWords: r.modelUnscannedWords,
+          },
+          'sidecar.sanitize',
+        );
         const body = cappedBody({
           value: r.value,
           captured: r.captured,
           capturedByLabel: r.capturedByLabel,
+          modelUnscannedWords: r.modelUnscannedWords,
         });
         if (body === undefined) return reply.code(413).send({ error: 'response_too_large' });
         session.cache.set(cacheKey, body);

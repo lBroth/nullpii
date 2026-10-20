@@ -42,6 +42,9 @@ export interface SanitizedRequest<TBody = AnthropicRequest> {
    * and documents sent as base64, URL or file reference. Surfaced so a
    * caller can warn, or refuse by policy; nullpii cannot see inside them. */
   readonly unscanned: number;
+  /** Words the model could not read (each longer, alone, than its subword
+   * budget); only the recognizer pack scanned them. */
+  readonly modelUnscannedWords: number;
 }
 
 /** Running sanitize counts for one request walk. Shared with the
@@ -50,6 +53,7 @@ export interface CaptureAccumulator {
   count: number;
   byLabel: Record<string, number>;
   unscanned: number;
+  modelUnscannedWords: number;
   /** Object keys sanitized in this walk, original to sanitized. Tool
    * inputs repeat the same few keys in every turn of a history, so each
    * distinct key costs one model call per request, not one per use. The
@@ -61,7 +65,7 @@ export interface CaptureAccumulator {
 
 /** A zeroed capture accumulator for one request walk. */
 export function newCaptureAccumulator(): CaptureAccumulator {
-  return { count: 0, byLabel: {}, unscanned: 0, keys: new Map() };
+  return { count: 0, byLabel: {}, unscanned: 0, modelUnscannedWords: 0, keys: new Map() };
 }
 
 /** Block and source fields that carry protocol structure, never user
@@ -174,6 +178,7 @@ async function sanitizeIntoSession(
     captured: acc.count,
     capturedByLabel: acc.byLabel,
     unscanned: acc.unscanned,
+    modelUnscannedWords: acc.modelUnscannedWords,
   };
 }
 
@@ -233,12 +238,14 @@ export async function sanitizeText(
   return r.sanitized;
 }
 
-/** Add one `sanitize()` result's spans to `acc` (counts and labels only). */
+/** Add one `sanitize()` result's spans to `acc` (counts and labels only),
+ * and the words its model could not read. */
 export function bump(
   acc: CaptureAccumulator,
-  r: { spans: ReadonlyArray<{ label: string }> },
+  r: { spans: ReadonlyArray<{ label: string }>; modelUnscannedWords?: number },
 ): void {
   acc.count += r.spans.length;
+  acc.modelUnscannedWords += r.modelUnscannedWords ?? 0;
   for (const span of r.spans) {
     acc.byLabel[span.label] = (acc.byLabel[span.label] ?? 0) + 1;
   }
@@ -437,6 +444,8 @@ export interface SanitizedValue {
   readonly value: unknown;
   readonly captured: number;
   readonly capturedByLabel: Readonly<Record<string, number>>;
+  /** Words the model could not read; only the recognizers scanned them. */
+  readonly modelUnscannedWords: number;
 }
 
 /** Sanitize every string of a parsed JSON value (a string, a tool result,
@@ -449,7 +458,12 @@ export async function sanitizeValue(
 ): Promise<SanitizedValue> {
   const acc = newCaptureAccumulator();
   const out = await sanitizeJsonValue(np, value, sessionId, acc);
-  return { value: out, captured: acc.count, capturedByLabel: acc.byLabel };
+  return {
+    value: out,
+    captured: acc.count,
+    capturedByLabel: acc.byLabel,
+    modelUnscannedWords: acc.modelUnscannedWords,
+  };
 }
 
 /** Recursively walk a JSON value that holds data (tool-call input, a tool

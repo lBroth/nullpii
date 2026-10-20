@@ -135,6 +135,7 @@ export async function sanitizeChatRequest(
     captured: acc.count,
     capturedByLabel: acc.byLabel,
     unscanned: acc.unscanned,
+    modelUnscannedWords: acc.modelUnscannedWords,
   };
 }
 

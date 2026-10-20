@@ -6,6 +6,7 @@ const fakeResult: SanitizeResult = {
   sessionId: 'sess-abc',
   sanitized: 'Email {{PII_PRIVATE_PERSON_0}} at {{PII_PRIVATE_EMAIL_0}}',
   spans: [],
+  modelUnscannedWords: 0,
 };
 
 describe('wrapForLLM', () => {

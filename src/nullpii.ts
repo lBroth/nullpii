@@ -198,9 +198,9 @@ export class NullPii {
     const { tokenizer, backend } = await this.readyModel();
     const escaped = escapePlaceholders(text);
     const surfaces: Surfaces = { escaped, ...normalizeForDetection(escaped) };
-    const mlSpans = await this.modelSpans(surfaces, tokenizer, backend);
-    const recoSpans = this.recognizerSpans(surfaces, mlSpans);
-    const spans = this.finalSpans(escaped, [...mlSpans, ...recoSpans]);
+    const ml = await this.modelSpans(surfaces, tokenizer, backend);
+    const recoSpans = this.recognizerSpans(surfaces, ml.spans);
+    const spans = this.finalSpans(escaped, [...ml.spans, ...recoSpans]);
 
     const session = sessionId ?? this.vault.createSession();
     logf(LOG_SCOPE, 'sanitize', {
@@ -209,7 +209,11 @@ export class NullPii {
       ...(options.traceId !== undefined && { traceId: options.traceId }),
     });
     const result = this.vault.sanitize(escaped, spans, session);
-    return { ...result, sanitized: unescapePlaceholders(result.sanitized) };
+    return {
+      ...result,
+      sanitized: unescapePlaceholders(result.sanitized),
+      modelUnscannedWords: ml.unscannedWords,
+    };
   }
 
   /** The tokenizer and backend, initialising them on first use. */
@@ -224,14 +228,19 @@ export class NullPii {
   }
 
   /** The model's spans on the normalised text, cut by the thresholds,
-   * deduplicated, and moved back onto the escaped text. */
+   * deduplicated, and moved back onto the escaped text, with the count of
+   * words the model could not read. */
   private async modelSpans(
     surfaces: Surfaces,
     tokenizer: GlinerTokenizer,
     backend: OrtBackend,
-  ): Promise<PiiSpan[]> {
+  ): Promise<{ spans: PiiSpan[]; unscannedWords: number }> {
     const { normalized } = surfaces;
-    const decodedRaw = await this.detectWithModel(normalized, tokenizer, backend);
+    const { spans: decodedRaw, unscannedWords } = await this.detectWithModel(
+      normalized,
+      tokenizer,
+      backend,
+    );
     // Resolve `private_geolocation` BEFORE any dedupe: the label is
     // prompted zero-shot and the head applies it to place names and
     // postcodes, which are `private_address`. Relabelling here — rather
@@ -247,7 +256,7 @@ export class NullPii {
     const decoded = dedupeOverlappingSpans(this.applyConfiguredThresholds(geoFiltered));
     // Remap span offsets from the normalised text back to the escaped
     // text so they align with the regex pack and vault output.
-    return toEscapedSpans(decoded, surfaces);
+    return { spans: toEscapedSpans(decoded, surfaces), unscannedWords };
   }
 
   /** The recognizer pack's spans on the escaped text and on the
@@ -349,12 +358,13 @@ export class NullPii {
   /** Run the model over `normalized` window by window. Windows advance by
    * what the encoder actually kept, so a window cut by the subword budget
    * never hides its tail from the model (see `forEachWindow`). Returned
-   * spans carry offsets into `normalized`. */
+   * spans carry offsets into `normalized`; `unscannedWords` counts the
+   * words too long, alone, for the encoder. */
   private async detectWithModel(
     normalized: string,
     tokenizer: GlinerTokenizer,
     backend: OrtBackend,
-  ): Promise<DecodedSpan[]> {
+  ): Promise<{ spans: DecodedSpan[]; unscannedWords: number }> {
     const minScore = this.decodeCut();
     const maxLen = this.config.maxSequenceLength ?? DEFAULT_MAX_SEQUENCE_LENGTH;
     const decoded: DecodedSpan[] = [];
@@ -401,7 +411,7 @@ export class NullPii {
     if (walk.unscannedWords > 0) {
       logf(LOG_SCOPE, 'sanitize.unscanned', { words: walk.unscannedWords, chunks: walk.windows });
     }
-    return decoded;
+    return { spans: decoded, unscannedWords: walk.unscannedWords };
   }
 
   restore(text: string, sessionId: string, options: RestoreOptions = {}): RestoreResult {

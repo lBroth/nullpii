@@ -214,7 +214,7 @@ export function register(on) {
       const kept = r.shellKeptMasked ?? [];
       if (kept.length > 0) {
         return {
-          deny: `nullpii will not put the real value of ${kept.join(', ')} into this command: in that position the shell would interpret some of its characters, and the value came from data you could not read. Pass it through a file instead, or ask the user to run the command.`,
+          deny: `nullpii will not put the real value of ${kept.join(', ')} into this command: the value came from data you could not read, and either the command sends data off this machine or, in that position, the shell would interpret some of its characters. Ask the user to run the command themselves.`,
         };
       }
       // Rewrite the call only when a placeholder was replaced: a rewritten

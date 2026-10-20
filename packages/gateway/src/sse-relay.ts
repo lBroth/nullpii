@@ -10,7 +10,7 @@ import {
   tallyRestore,
   toolMayRestore,
 } from './sanitizer.js';
-import { ANTHROPIC_SHELL_TOOLS, isShellTool } from './shell-restore.js';
+import { isShellTool } from './shell-restore.js';
 // The gateway hands `NullPii` directly to `RestoreStream` — both
 // satisfy the `RestoreCapable` structural type the stream needs. No
 // adapter / private-field reach-through required.
@@ -290,7 +290,7 @@ function noteToolBlock(
   const block = data.content_block;
   if (typeof data.index !== 'number' || !isRecord(block) || block.type !== 'tool_use') return;
   if (!toolMayRestore(block.name, acc)) toolBlocks.set(data.index, 'hold');
-  else if (isShellTool(block.name, ANTHROPIC_SHELL_TOOLS)) toolBlocks.set(data.index, 'shell');
+  else if (isShellTool(block.name)) toolBlocks.set(data.index, 'shell');
 }
 
 interface ParsedFrame {

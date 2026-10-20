@@ -7,10 +7,11 @@ import {
   type RestoreResult,
 } from 'nullpii';
 import {
-  ANTHROPIC_SHELL_TOOLS,
   SHELL_COMMAND_FIELD,
   countPlaceholders,
   isShellTool,
+  placeholdersIn,
+  restoreShellArgv,
   restoreShellCommand,
 } from './shell-restore.js';
 import type {
@@ -457,8 +458,8 @@ export function restoreResponse(
       // Mirror SSE path's `restoreJsonBuffer`: walk the tool input tree
       // and restore string leaves. Without this, non-streaming
       // tool-calling workflows leak `{{PII_*}}` placeholders verbatim
-      // to the client. A `Bash` command gets the shell-aware restore.
-      const runsInShell = isShellTool(block.name, ANTHROPIC_SHELL_TOOLS);
+      // to the client. A shell tool's command gets the shell-aware restore.
+      const runsInShell = isShellTool(block.name);
       return { ...block, input: restoreToolInput(np, block.input, sessionId, acc, runsInShell) };
     }
     return block;
@@ -482,7 +483,8 @@ export interface RestoredValue {
   readonly unknownPlaceholders: number;
   readonly foreignPlaceholders: number;
   /** With `shell`: the distinct placeholders left masked in `command`
-   * because their value was not safe there. Placeholders, never values. */
+   * because their value was not safe there, or because the command sends
+   * data off the machine. Placeholders, never values. */
   readonly shellKeptMasked?: readonly string[];
 }
 
@@ -492,8 +494,8 @@ export interface RestoredValue {
  * back into the arguments a tool writes to disk and nowhere else.
  *
  * With `shell` (the value is a shell tool's input), a top-level `command`
- * string that is restored gets the shell-aware rule of
- * `shell-restore.ts`; the placeholders it leaves masked are listed in
+ * that is restored gets the shell-aware rule of `shell-restore.ts`
+ * (`restoreShellField`); the placeholders it leaves masked are listed in
  * `shellKeptMasked`. */
 export function restoreValue(
   np: NullPii,
@@ -505,8 +507,8 @@ export function restoreValue(
   const acc = newRestoreAccumulator();
   const keptMasked: string[] = [];
   const restoreField = (key: string, field: unknown): unknown =>
-    shell && key === SHELL_COMMAND_FIELD && typeof field === 'string'
-      ? restoreShellText(np, field, sessionId, acc, keptMasked)
+    shell && key === SHELL_COMMAND_FIELD
+      ? restoreShellField(np, field, sessionId, acc, keptMasked)
       : restoreJsonValue(np, field, sessionId, acc);
   const obj = isRecord(value) ? value : undefined;
   let out: unknown;
@@ -573,10 +575,10 @@ export function restoreJsonValue(
 
 /**
  * Restore a tool call's input. For a tool a shell runs (`runsInShell`),
- * the top-level `command` string gets the shell-aware restore: each
- * placeholder is put back only when its value is safe in the quoting
- * around it. Every other field, and every field of any other tool, gets
- * its real values back as usual.
+ * the top-level `command` gets the shell-aware restore
+ * (`restoreShellField`): each placeholder is put back only when its value
+ * is safe where it stands. Every other field, and every field of any
+ * other tool, gets its real values back as usual.
  */
 export function restoreToolInput(
   np: NullPii,
@@ -589,11 +591,36 @@ export function restoreToolInput(
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(input)) {
     out[key] =
-      key === SHELL_COMMAND_FIELD && typeof value === 'string'
-        ? restoreShellText(np, value, sessionId, acc)
+      key === SHELL_COMMAND_FIELD
+        ? restoreShellField(np, value, sessionId, acc)
         : restoreJsonValue(np, value, sessionId, acc);
   }
   return out;
+}
+
+/**
+ * Shell-aware restore of a shell tool's `command`: a string is a script
+ * (`restoreShellText`), an array of strings an argv the program gets
+ * without a shell (`restoreShellArgv`). Any other shape keeps every
+ * placeholder, counted as unsafe: there is no telling how it is run.
+ */
+export function restoreShellField(
+  np: NullPii,
+  command: unknown,
+  sessionId: string,
+  acc: RestoreAccumulator,
+  keptMasked?: string[],
+): unknown {
+  if (typeof command === 'string') return restoreShellText(np, command, sessionId, acc, keptMasked);
+  if (Array.isArray(command) && command.every((w) => typeof w === 'string')) {
+    const r = restoreShellArgv(np, command, sessionId);
+    tallyShell(acc, r, keptMasked);
+    return r.argv;
+  }
+  const text = JSON.stringify(command) ?? '';
+  acc.unsafeShell += countPlaceholders(text);
+  keptMasked?.push(...placeholdersIn(text));
+  return command;
 }
 
 /** Shell-aware restore of one command string (see `shell-restore.ts`),
@@ -607,10 +634,20 @@ export function restoreShellText(
   keptMasked?: string[],
 ): string {
   const r = restoreShellCommand(np, command, sessionId);
+  tallyShell(acc, r, keptMasked);
+  return r.command;
+}
+
+/** Add a shell restore's counts to `acc`, and the placeholders it left
+ * masked to `keptMasked` when given. */
+function tallyShell(
+  acc: RestoreAccumulator,
+  r: { readonly results: readonly RestoreResult[]; readonly keptMasked: readonly string[] },
+  keptMasked?: string[],
+): void {
   for (const result of r.results) tallyRestore(acc, result);
   acc.unsafeShell += r.keptMasked.length;
   keptMasked?.push(...r.keptMasked);
-  return r.command;
 }
 
 /**

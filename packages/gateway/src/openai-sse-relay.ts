@@ -18,7 +18,7 @@ import {
   tallyRestore,
   toolMayRestore,
 } from './sanitizer.js';
-import { OPENAI_SHELL_TOOLS, isShellTool } from './shell-restore.js';
+import { isShellTool } from './shell-restore.js';
 import type { SseRelayCounters, SseRelayOptions } from './sse-relay.js';
 
 /**
@@ -277,7 +277,7 @@ class ChoiceRestorer {
    * gets the shell-aware restore. */
   private restoreArgs(args: string, name: string | undefined): string {
     if (!toolMayRestore(name, this.acc)) return holdForTool(args, this.acc);
-    const runsInShell = isShellTool(name, OPENAI_SHELL_TOOLS);
+    const runsInShell = isShellTool(name);
     return restoreJsonText(this.np, args, this.sessionId, this.acc, runsInShell);
   }
 

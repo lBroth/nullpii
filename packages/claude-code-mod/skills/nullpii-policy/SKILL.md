@@ -53,7 +53,7 @@ Examples:
 { "urlAllowlist": { "hosts": { "*.github.com": "host", "wiki.acme.internal": "full" } } }
 ```
 
-The mod asks the user before any tool call that writes this file. Tell the user what the change does before you make it.
+The mod puts every tool call it recognises as writing this file to the user (best effort: it cannot recognise every way a command reaches a file). Tell the user what the change does before you make it, and make the change with the file tools, so the user sees it.
 
 ## 3. Check it and apply it
 

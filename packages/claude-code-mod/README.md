@@ -17,6 +17,7 @@ Status: preview. Tested with Claude Code 2.1.303.
 | Your prompt | Masked before it is sent. Your prompt history stores the masked text. |
 | Your prompts and Claude's replies on screen | Drawn with the real values. What Claude reads keeps the placeholders. |
 | A tool result (file contents, command output, search results, MCP results) | Masked before Claude reads it |
+| Text a hook attaches for Claude after a tool result (for example a settings `PostToolUse` hook's context) | Passed on when it holds no personal data. Otherwise the whole result is withheld: Claude Code does not let a mod rewrite that text, so it cannot be masked. |
 | Text Claude Code adds on its own: @-mentioned files, edited-file reminders, memory, `CLAUDE.md`, your account email | Masked before Claude reads it |
 | Arguments of a tool in the policy's `restoreTools` (by default the tools that run on this machine: `Bash`, `Read`, `Edit`, `MultiEdit`, `Write`, `NotebookEdit`, `Grep`, `Glob`) | Placeholders get their real values back before the tool runs, so commands and file edits use your real data. The result is masked again. |
 | Arguments of any other tool, such as `WebFetch`, `WebSearch` or an MCP tool | Left as placeholders, so a masked value never leaves the machine through a tool call. `/pii` counts them. |
@@ -46,7 +47,7 @@ The sidecar reads the masking policy from `~/.config/nullpii/config.json`, or fr
 
 ## Fails closed
 
-If the sidecar cannot be reached, or `NULLPII_SIDECAR_TOKEN` is not set:
+If the sidecar cannot be reached, or the mod has no sidecar token:
 
 - a prompt is not sent, and goes back into the prompt box with the reason;
 - a tool call is refused, or its result is withheld;
@@ -55,24 +56,27 @@ If the sidecar cannot be reached, or `NULLPII_SIDECAR_TOKEN` is not set:
 
 ## Set up
 
-1. Start a gateway with the sidecar API on (a version whose sidecar `restore` takes `tool`):
+1. In a terminal of its own, start a gateway with the sidecar API on (a version with session secrets, whose `restore` takes `tool`):
 
    ```bash
    export NULLPII_SIDECAR_TOKEN=$(openssl rand -hex 32)
+   echo "$NULLPII_SIDECAR_TOKEN"   # you give this to the mod next
    npx -p nullpii -p @lbroth/nullpii-gateway nullpii-gateway
    ```
 
-2. Start Claude Code from the same shell, so it inherits the token, and load the mod:
+2. Give the mod the same token through its `sidecar_token` option. For an installed plugin, run `/plugin configure` on it: the dialog masks the value and keeps it in your system's secure storage, and Claude Code does not pass it to the commands Claude runs. For a session started with `--plugin-dir`, you can instead export `NULLPII_SIDECAR_TOKEN` in the shell that starts Claude Code:
 
    ```bash
    claude --plugin-dir ./packages/claude-code-mod
    ```
 
-`NULLPII_SIDECAR_URL` overrides the sidecar address (default `http://127.0.0.1:8787`).
+   A token in that shell's environment is inherited by every command Claude runs there. On its own it reads nothing: each sidecar session also has a secret, which the sidecar hands to the mod when the session opens and which the mod keeps in memory only. A command holding just the token cannot read, restore or close your session.
+
+The `sidecar_url` option, or `NULLPII_SIDECAR_URL`, sets the sidecar address (default `http://127.0.0.1:8787`).
 
 ## Limits
 
-- **The policy guard is best effort.** It recognises the file tools and shell commands that name `nullpii/config.json` or `NULLPII_CONFIG`. A command that reaches the file another way, or an MCP tool that writes files, is not caught. The change still needs a sidecar restart, and `/pii` shows the policy the sidecar loaded.
+- **The policy guard is best effort.** It recognises a file tool writing any `…/nullpii/config.json` (whatever the case, with `./`, `../` and repeated separators resolved, and relative paths taken from the session's directory) or the loaded policy file, and a shell command that names a `nullpii` directory together with a `config.json`, or `NULLPII_CONFIG`. A command that reaches the file another way (a variable, a symlink, a script it runs), or an MCP tool that writes files, is not caught. The change still needs a sidecar restart, and `/pii` shows the policy the sidecar loaded.
 - **Auto mode.** Claude Code denies a tool call whose arguments a hook changed after the model wrote them. A local tool call that contains a placeholder is therefore refused in auto mode. Calls without placeholders are passed on unchanged and run normally.
 - **Tool rows and tool results on screen show placeholders.** Prompts and replies are drawn with real values. If the sidecar is unreachable, they show placeholders too.
 - **Images and other binary attachments are not scanned.**

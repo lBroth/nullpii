@@ -1,0 +1,36 @@
+name: Bug report
+description: Something does not work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never paste real personal data or secrets here.** Replace them with made-up values of the same shape (a fake name, `alice@example.org`, `AKIAIOSFODNN7EXAMPLE`).
+        A missed or wrong detection goes in the "Detection problem" form instead.
+  - type: input
+    id: version
+    attributes:
+      label: Versions
+      description: nullpii, @lbroth/nullpii-gateway (if used), Node.js, OS, and backend (cpu, mps, cuda).
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The smallest code or command that shows it, with synthetic data only.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: "Output with `DEBUG=nullpii:*`. nullpii logs counts, never values; check before pasting anyway."
+      render: shell

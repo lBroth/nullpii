@@ -1,5 +1,7 @@
 # Contributing
 
+Taking part means following the [Code of Conduct](CODE_OF_CONDUCT.md). Report vulnerabilities privately ([SECURITY.md](SECURITY.md)), and never put real personal data in an issue, a pull request or a test: use made-up values of the same shape.
+
 ## Setup
 
 ```bash

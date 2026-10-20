@@ -1,0 +1,36 @@
+name: Detection problem
+description: nullpii missed personal data, or masked something that is not personal data.
+labels: [detection]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Use synthetic text that reproduces the problem — never the real document.** Keep the shape (format, surrounding words, language) and change every value.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options:
+        - Missed (personal data left in the clear)
+        - Over-masked (text masked that is not personal data)
+        - Wrong label
+    validations:
+      required: true
+  - type: textarea
+    id: text
+    attributes:
+      label: Synthetic input
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should and should not be masked
+    validations:
+      required: true
+  - type: input
+    id: config
+    attributes:
+      label: Configuration
+      description: nullpii version, backend, and any non-default config (disabledCategories, thresholds, urlAllowlist).

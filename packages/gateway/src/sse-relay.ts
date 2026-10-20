@@ -88,8 +88,10 @@ export interface SseRelayOptions {
    * the `Response` directly — Node's `fetch` returns a web-style
    * `ReadableStream<Uint8Array>` which is async-iterable. */
   readonly upstream: AsyncIterable<Uint8Array>;
-  /** Called with each fully-formed SSE frame to forward downstream. */
-  readonly write: (frame: string) => void;
+  /** Called with each fully-formed SSE frame to forward downstream. A
+   * returned promise is awaited before the relay reads more from the
+   * upstream, so a slow client applies backpressure (`writeFrame`). */
+  readonly write: (frame: string) => void | Promise<void>;
   /** Optional debugging hook — invoked with each decoded upstream
    * chunk BEFORE frame extraction/restore. Carries placeholders only
    * (Anthropic never sees real PII), safe to dump to stdout. */
@@ -155,7 +157,7 @@ export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCou
         acc,
         toolBlocks,
       );
-      for (const f of out) write(f);
+      for (const f of out) await write(f);
     }
   }
 
@@ -174,7 +176,7 @@ export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCou
       acc,
       toolBlocks,
     );
-    for (const f of out) write(f);
+    for (const f of out) await write(f);
   }
 
   // Drain every per-block restorer — synthesise a final text_delta for
@@ -183,7 +185,7 @@ export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCou
     const result = rs.end();
     tallyRestore(acc, result);
     if (result.restored.length > 0) {
-      write(buildTextDeltaFrame(index, result.restored));
+      await write(buildTextDeltaFrame(index, result.restored));
     }
   }
 
@@ -193,7 +195,7 @@ export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCou
   for (const index of Array.from(jsonBuffers.keys())) {
     const restored = restoreJsonBuffer(index);
     if (restored !== null && restored.length > 0) {
-      write(buildInputJsonDeltaFrame(index, restored));
+      await write(buildInputJsonDeltaFrame(index, restored));
     }
   }
 

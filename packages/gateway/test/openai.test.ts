@@ -699,7 +699,9 @@ describe('openai · SSE relay', () => {
       np,
       sessionId,
       upstream: stream(chunks),
-      write: (f) => frames.push(f),
+      write: (f) => {
+        frames.push(f);
+      },
     });
     return { body: frames.join(''), counters };
   }

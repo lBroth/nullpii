@@ -1,6 +1,6 @@
 # nullpii eval datasets
 
-Apache-2.0, no real PII (synthetic / externally-licensed test splits).
+The project's own rows are synthetic, Apache-2.0. The two TAB ECHR splits are published European Court of Human Rights judgments (from HUDOC, annotated by TAB, MIT): they name real people, as public court records do.
 
 ## Inventory
 
@@ -9,7 +9,7 @@ externally-licensed upstream splits.
 
 | File | Rows | Used in canonical bench | Origin |
 |---|---:|:---:|---|
-| `nullpii-bench.jsonl` | 2,361 | ✅ project-authored, see subsets below | self-authored, Apache-2.0 |
+| `nullpii-bench.jsonl` | 744 | ✅ project-authored, see subsets below | self-authored, Apache-2.0 |
 | `presidio-synthetic.jsonl` | 5,000 | ✅ external, member of **OOD-7** | Microsoft Presidio seed, MIT |
 | `tab-echr-test.jsonl` | 127 | ✅ EU legal test split, member of **OOD-7** | TAB ECHR test (ACL 2022), MIT |
 | `tab-echr-dev.jsonl` | 125 | ❌ legal documents of the A/B harness fingerprint corpus only | TAB ECHR dev (ACL 2022), MIT |
@@ -32,15 +32,15 @@ Loaders filter by subset to produce the bench rows.
 
 All subsets feed the `nullpii-bench` cell in the canonical bench
 (one F1 number summarises behaviour across every perturbation pattern).
-Total 2,361 rows.
+Total 744 rows. 1,617 rows that were derived from ai4privacy text (whose licence restricts commercial use) were removed on 2026-10-20.
 
 | Subset | Rows | Notes |
 |---|---:|---|
-| `clean` | 2,052 | dev paste, RFCs, long-form prompts, multilingual support tickets, code-PII, decoys |
-| `adversarial` | 219 | typo / unicode-homoglyph / zero-width / whitespace / base64-URL-HTML-entity / TextAttack perturbations |
+| `clean` | 551 | dev paste, RFCs, long-form prompts, multilingual support tickets, code-PII, decoys |
+| `adversarial` | 103 | typo / unicode-homoglyph / zero-width / whitespace / base64-URL-HTML-entity perturbations |
 | `v03_coverage` | 90 | v0.3 schema-coverage rows for `private_passport` / `private_driver_license` / `private_vehicle_id` / `private_geolocation` / `private_ip` / `private_mac` (15 each) |
 
-Sources (`source` field): `fair` (project-authored, no detector involvement) — 2,213 rows. `opf-generated` / `opf-enriched` — 148 rows re-annotated through OPF after an independent-gold audit (avoids the self-validation trap of detector-derived labels).
+Sources (`source` field): `fair` (project-authored, no detector involvement) — 596 rows. `opf-generated` / `opf-enriched` — 148 rows re-annotated through OPF after an independent-gold audit (avoids the self-validation trap of detector-derived labels).
 
 The generation scripts that produced the `clean` / `adversarial`
 subsets are not tracked in the repo — they live under

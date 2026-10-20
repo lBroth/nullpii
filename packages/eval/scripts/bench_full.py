@@ -113,13 +113,13 @@ def _ai4privacy(offset: int = 0) -> Callable[[int | None], list[Sample]]:
 
 
 def _load_nullpii_bench(n: int | None) -> list[Sample]:
-    """Load the entire `nullpii-bench.jsonl` (2361 samples: 2052 `clean` +
-    219 `adversarial` + 90 `v03_coverage`).
+    """Load the entire `nullpii-bench.jsonl` (744 samples: 551 `clean` +
+    103 `adversarial` + 90 `v03_coverage`).
 
     Single-file bench surface that covers every project-authored row:
     multilingual dev paste, long-form prompts, preprocessor regression
     slices (typo / unicode / whitespace / encoding / decoys / code-PII),
-    TextAttack perturbations, and the v0.3 schema-coverage rows
+    and the v0.3 schema-coverage rows
     (passport / driver-license / vehicle / geolocation / ip / mac).
     Mixed character is intentional: one F1 number summarises behaviour
     across every adversarial pattern the project authors.
@@ -332,9 +332,9 @@ def _ai4privacy_report(n: int | None) -> list[Sample]:
     return [every[allowed[int(k * stride)]] for k in range(count)]
 
 DATASET_CONFIGS: list[DatasetSpec] = [
-    # ─ Project-authored bench (one file, all adversarial / preprocessor /
-    #   TextAttack subsets aggregated to a single F1 number) ─────────
-    DatasetSpec("nullpii-bench",         _load_nullpii_bench,                                                  None, total_n=2361),
+    # ─ Project-authored bench (one file, all adversarial and preprocessor
+    #   subsets aggregated to a single F1 number) ─────────
+    DatasetSpec("nullpii-bench",         _load_nullpii_bench,                                                  None, total_n=744),
 
     # ─ Third-party PII benches ────────────────────────────────────
     DatasetSpec("tab-echr",              _load_tab_echr_test,                                                  None, total_n=127),

@@ -57,11 +57,12 @@ export { PiiVault } from './vault.js';
 // Streaming restore — SSE-safe placeholder buffer
 export { RestoreStream, type RestoreCapable } from './restore-stream.js';
 
-// Public engine + functional wrappers
+// Public engine
 export { NullPii } from './nullpii.js';
 
 // Shared masking-policy config file (CLI, gateway, Claude Code mod, MCP)
 export {
+  configFilePath,
   defaultConfigPath,
   loadConfigFile,
   type NullPiiFileConfig,

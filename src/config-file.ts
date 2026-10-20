@@ -49,16 +49,25 @@ export function defaultConfigPath(): string {
 }
 
 /**
- * The config every surface uses: the file at `explicitPath` (a CLI flag),
- * else at `NULLPII_CONFIG`, else at {@link defaultConfigPath} if it
- * exists. An explicit or environment path that does not exist is an
+ * The config file every surface reads: `explicitPath` (a CLI flag), else
+ * `NULLPII_CONFIG`, else {@link defaultConfigPath} if it exists, else
+ * `null` (no config file).
+ */
+export function configFilePath(explicitPath?: string): string | null {
+  const chosen = explicitPath ?? readEnvVar(NULLPII_CONFIG);
+  if (chosen !== undefined) return chosen;
+  const fallback = defaultConfigPath();
+  return isFile(fallback) ? fallback : null;
+}
+
+/**
+ * The config every surface uses: the file {@link configFilePath} picks,
+ * validated. An explicit or environment path that does not exist is an
  * error; a missing default file means no config (`null`).
  */
 export function resolveConfigFile(explicitPath?: string): NullPiiFileConfig | null {
-  const chosen = explicitPath ?? readEnvVar(NULLPII_CONFIG);
-  if (chosen !== undefined) return loadConfigFile(chosen);
-  const fallback = defaultConfigPath();
-  return isFile(fallback) ? loadConfigFile(fallback) : null;
+  const path = configFilePath(explicitPath);
+  return path === null ? null : loadConfigFile(path);
 }
 
 /** Read and validate the config file at `path`. Throws

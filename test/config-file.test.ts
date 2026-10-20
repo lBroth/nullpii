@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  configFilePath,
   defaultConfigPath,
   loadConfigFile,
   parseConfig,
@@ -84,13 +85,19 @@ describe('loadConfigFile and resolveConfigFile', () => {
   it('prefers the explicit path, then NULLPII_CONFIG, then the default location', () => {
     vi.stubEnv('XDG_CONFIG_HOME', dir);
     expect(defaultConfigPath()).toBe(join(dir, 'nullpii', 'config.json'));
+    expect(configFilePath()).toBeNull();
     expect(resolveConfigFile()).toBeNull();
     mkdirSync(join(dir, 'nullpii'));
     write('nullpii/config.json', '{"threshold": 0.3}');
+    expect(configFilePath()).toBe(defaultConfigPath());
     expect(resolveConfigFile()).toEqual({ threshold: 0.3 });
-    vi.stubEnv('NULLPII_CONFIG', write('env.json', '{"threshold": 0.2}'));
+    const env = write('env.json', '{"threshold": 0.2}');
+    vi.stubEnv('NULLPII_CONFIG', env);
+    expect(configFilePath()).toBe(env);
     expect(resolveConfigFile()).toEqual({ threshold: 0.2 });
-    expect(resolveConfigFile(write('flag.json', '{"threshold": 0.1}'))).toEqual({ threshold: 0.1 });
+    const flag = write('flag.json', '{"threshold": 0.1}');
+    expect(configFilePath(flag)).toBe(flag);
+    expect(resolveConfigFile(flag)).toEqual({ threshold: 0.1 });
   });
 
   it('fails when NULLPII_CONFIG names a file that does not exist', () => {

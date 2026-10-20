@@ -221,3 +221,34 @@ describe('nullpii doctor', () => {
     expect(exit).toHaveBeenCalled();
   });
 });
+
+describe('nullpii config', () => {
+  it('prints no file and the default restore tools when there is no config', async () => {
+    expect(await cli('config')).toBe(0);
+    const shown = JSON.parse(out);
+    expect(shown).toMatchObject({ file: null, policy: {} });
+    expect(shown.restoreTools).toContain('Bash');
+  });
+
+  it('prints the validated file and its restore-tool list', async () => {
+    mkdirSync(join(dir, 'nullpii'));
+    const file = join(dir, 'nullpii', 'config.json');
+    writeFileSync(
+      file,
+      JSON.stringify({ disabledCategories: ['private_title'], restoreTools: ['Read'] }),
+    );
+    expect(await cli('config')).toBe(0);
+    expect(JSON.parse(out)).toEqual({
+      file,
+      policy: { disabledCategories: ['private_title'], restoreTools: ['Read'] },
+      restoreTools: ['Read'],
+    });
+  });
+
+  it('fails on an invalid file, naming the problem', async () => {
+    const file = join(dir, 'bad.json');
+    writeFileSync(file, '{"disabledCategory": []}');
+    expect(await cli('config', '--config', file)).toBe(1);
+    expect(err).toContain('unknown key "disabledCategory"');
+  });
+});

@@ -20,7 +20,8 @@ services:
       dockerfile: packages/gateway/Dockerfile
     container_name: nullpii-gateway
     ports:
-      - "8787:8787"
+      # Loopback only: the gateway has no authentication of its own.
+      - "127.0.0.1:8787:8787"
     environment:
       NULLPII_HOST: 0.0.0.0
       NULLPII_PORT: 8787
@@ -29,9 +30,9 @@ services:
       NULLPII_LOG_LEVEL: info
     volumes:
       # Persist the model download across container restarts. Mount a
-      # host path instead (e.g. `./model-cache:/root/.cache/nullpii`)
+      # host path instead (e.g. `./model-cache:/home/node/.cache/nullpii`)
       # if you want to inspect the cache.
-      - nullpii-model-cache:/root/.cache/nullpii
+      - nullpii-model-cache:/home/node/.cache/nullpii
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s

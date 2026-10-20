@@ -5,8 +5,10 @@
 #
 # - Build stage compiles the `nullpii` core + the `@lbroth/nullpii-gateway`
 #   package against pinned Node + npm.
-# - Runtime stage carries only the compiled output + production
-#   `node_modules`.
+# - Runtime stage carries only the compiled output, the production
+#   dependencies (the core's, plus fastify and onnxruntime-node at the
+#   versions the lockfile pins), LICENSE and NOTICE, and runs as `node`.
+# - The base image is pinned by digest (node:22-slim); bump it on purpose.
 # - The GLiNER ONNX model is NOT baked into this image. On first boot
 #   the engine fetches it from HuggingFace and caches it under the
 #   `NULLPII_MODEL_DIR` volume (mount one in production — see
@@ -17,7 +19,9 @@
 #   docker build -t nullpii/gateway:slim -f packages/gateway/Dockerfile .
 
 # ---------- builder ----------
-FROM node:22-slim AS builder
+ARG NODE_IMAGE=node:22-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392
+
+FROM ${NODE_IMAGE} AS builder
 
 WORKDIR /app
 
@@ -46,8 +50,22 @@ RUN mkdir -p node_modules && ln -snf .. node_modules/nullpii
 # Build gateway → packages/gateway/dist/.
 RUN cd packages/gateway && npx tsc -p tsconfig.json
 
+# Production dependencies only, at the versions package-lock.json pins.
+# The gateway's runtime also needs fastify and onnxruntime-node, which the
+# root manifest lists as dev and peer dependencies: they are moved to
+# `dependencies` (lockfile versions) before pruning, so the prune keeps
+# them and every transitive dependency at its locked version. The macOS
+# and Windows builds of onnxruntime-node (160 MB) are dropped: the image
+# is Linux.
+RUN npm pkg set \
+      "dependencies.fastify=$(node -p "require('./package-lock.json').packages['node_modules/fastify'].version")" \
+      "dependencies.onnxruntime-node=$(node -p "require('./package-lock.json').packages['node_modules/onnxruntime-node'].version")" \
+ && npm pkg delete devDependencies.fastify devDependencies.onnxruntime-node \
+ && npm prune --omit=dev --no-audit --no-fund \
+ && rm -rf node_modules/onnxruntime-node/bin/napi-v*/darwin node_modules/onnxruntime-node/bin/napi-v*/win32
+
 # ---------- runtime ----------
-FROM node:22-slim AS runtime
+FROM ${NODE_IMAGE} AS runtime
 
 WORKDIR /app
 
@@ -57,9 +75,10 @@ ENV NODE_ENV=production \
     NULLPII_BACKEND=cpu \
     NULLPII_LOG_LEVEL=info
 
-# Root nullpii artifacts.
+# Root nullpii artifacts, with the licence and notices they ship under.
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/dist ./dist
+COPY LICENSE NOTICE ./
 
 # Gateway artifacts.
 COPY --from=builder /app/packages/gateway/package.json ./packages/gateway/
@@ -73,9 +92,11 @@ COPY --from=builder /app/node_modules ./node_modules
 # package at runtime as well.
 RUN mkdir -p node_modules && ln -snf .. node_modules/nullpii
 
-# Default model cache lives under the user's HOME; mount a volume here
-# so the (~1.2 GB) FP32 model survives container restarts.
-VOLUME ["/root/.cache/nullpii"]
+# Run unprivileged. The model cache lives under its HOME; mount a volume
+# there so the (~1.2 GB) FP32 model survives container restarts.
+RUN mkdir -p /home/node/.cache/nullpii && chown -R node:node /home/node/.cache
+USER node
+VOLUME ["/home/node/.cache/nullpii"]
 
 EXPOSE 8787
 

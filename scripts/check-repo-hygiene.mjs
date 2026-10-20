@@ -42,9 +42,10 @@ const FORBIDDEN_CONTENT = [
 ];
 
 /** Home paths that name no developer: placeholders that docs and tests may
- * show, and `/home/runner/`, the fixed home of GitHub-hosted CI runners. */
+ * show, `/home/runner/` (GitHub-hosted CI runners) and `/home/node/` (the
+ * official Node images' unprivileged user). */
 const HOME_PATH_EXAMPLES =
-  /\/(Users|home)\/(you|user|username|me|name|example|alice|bob)\/|\/home\/runner\//;
+  /\/(Users|home)\/(you|user|username|me|name|example|alice|bob)\/|\/home\/(?:runner|node)\//;
 
 function changedFiles(base) {
   if (base === '--all') {

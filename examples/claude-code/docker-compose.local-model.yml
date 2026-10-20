@@ -31,7 +31,8 @@ services:
       dockerfile: packages/gateway/Dockerfile
     container_name: nullpii-gateway
     ports:
-      - "8787:8787"
+      # Loopback only: the gateway has no authentication of its own.
+      - "127.0.0.1:8787:8787"
     environment:
       NULLPII_HOST: 0.0.0.0
       NULLPII_PORT: 8787

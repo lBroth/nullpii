@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ModelNotFoundError } from '../src/errors.js';
+import { InvalidPathError } from '../src/errors.js';
 import { ModelManager } from '../src/model-manager.js';
 
 // The download is stubbed: no test in this file touches the network.
@@ -47,6 +48,22 @@ describe('ModelManager', () => {
     const m = new ModelManager(cache);
     expect(m.modelDir.startsWith(cache)).toBe(true);
     expect(m.modelDir.includes('..')).toBe(false);
+  });
+
+  it('rejects a repo or revision that is not a HuggingFace id', () => {
+    const m = new ModelManager('/tmp/nullpii-cache-test');
+    for (const model of [
+      { repo: '../escape', revision: 'main' },
+      { repo: 'org/name/extra', revision: 'main' },
+      { repo: 'org/name', revision: '../../etc' },
+      { repo: 'org/name', revision: 'refs/../..' },
+      { repo: 'org/name', revision: '/abs' },
+    ]) {
+      expect(() => m.modelDirFor(model), JSON.stringify(model)).toThrow(InvalidPathError);
+    }
+    expect(m.modelDirFor({ repo: 'org/name', revision: 'refs/pr/1' })).toBe(
+      '/tmp/nullpii-cache-test/org/name/refs/pr/1',
+    );
   });
 
   it('surfaces ModelNotFoundError when the underlying download fails', async () => {

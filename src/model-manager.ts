@@ -70,6 +70,11 @@ export interface EnsureOptions {
  * Cache layout: `<root>/<repo>/<revision>/<file>`. Revisions are isolated
  * so a future bump fetches side-by-side without disturbing existing ones.
  */
+/** A HuggingFace repository id: `org/name`. */
+const HF_REPO_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
+/** A branch, tag or commit; branches may contain `/` (`refs/pr/1`). */
+const HF_REVISION = /^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/;
+
 export class ModelManager {
   private readonly cacheDir: string;
 
@@ -77,9 +82,16 @@ export class ModelManager {
     this.cacheDir = resolve(cacheDir);
   }
 
-  /** Where the artifacts for `model` (or the default) live on disk. */
+  /** Where the artifacts for `model` (or the default) live on disk. The
+   * repo and revision become path segments, so they are validated first:
+   * a HuggingFace `org/name` id and a branch, tag or commit, never a path
+   * that leaves the cache. */
   modelDirFor(model: ModelRef = DEFAULT_MODEL): string {
-    return join(this.cacheDir, model.repo, model.revision);
+    if (!HF_REPO_ID.test(model.repo)) throw new InvalidPathError(model.repo);
+    if (!HF_REVISION.test(model.revision) || model.revision.split('/').includes('..')) {
+      throw new InvalidPathError(model.revision);
+    }
+    return resolveSafePath(join(model.repo, model.revision), this.cacheDir);
   }
 
   /** Backwards-compatible accessor for the default model dir. */

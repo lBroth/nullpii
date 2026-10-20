@@ -9,6 +9,7 @@
 //   node harness.mjs fingerprint --dist <abs dist> --out <file.json>
 //   node harness.mjs cold        --dist <abs dist> --out <file.json>
 //   node harness.mjs dump-corpus --out <file.jsonl>   (inputs for competitor_latency.py)
+//   node harness.mjs dump-fingerprint --out <file.jsonl>   (the fingerprint corpus: {id, text})
 //
 // Engine config comes from the AB_CONFIG env var (JSON, merged over
 // `{ backend: 'cpu' }`), so a config-only variant needs no code change.
@@ -158,6 +159,13 @@ function dumpCorpus(args) {
   return { mode: 'dump-corpus', inputs: plan.length };
 }
 
+function dumpFingerprint(args) {
+  if (!args.out) throw new Error('dump-fingerprint needs --out <file.jsonl>');
+  const docs = fingerprintDocs(buildKinds(FINGERPRINT_LEGAL));
+  writeFileSync(args.out, `${docs.map(([id, text]) => JSON.stringify({ id, text })).join('\n')}\n`);
+  return { mode: 'dump-fingerprint', docs: docs.length };
+}
+
 async function latency(args) {
   const np = await loadEngine(args.dist);
   const plan = latencyPlan(buildKinds());
@@ -255,14 +263,14 @@ function parseArgs(argv) {
   const [mode, ...rest] = argv;
   const args = { mode };
   for (let i = 0; i < rest.length; i += 2) args[rest[i].replace(/^--/, '')] = rest[i + 1];
-  if (!args.dist && mode !== 'dump-corpus') throw new Error('--dist <abs path to dist/> is required');
+  if (!args.dist && !mode.startsWith('dump-')) throw new Error('--dist <abs path to dist/> is required');
   return args;
 }
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.mode === 'cold-child') return coldChild(args);
-  const runners = { latency, fingerprint, cold, 'dump-corpus': dumpCorpus };
+  const runners = { latency, fingerprint, cold, 'dump-corpus': dumpCorpus, 'dump-fingerprint': dumpFingerprint };
   const run = runners[args.mode];
   if (!run) throw new Error(`unknown mode ${args.mode}`);
   const result = {
@@ -274,9 +282,10 @@ async function main() {
     at: new Date().toISOString(),
   };
   const json = JSON.stringify(result, null, 2);
-  if (args.out && result.mode !== 'dump-corpus') writeFileSync(args.out, `${json}\n`);
+  const dump = result.mode.startsWith('dump-');
+  if (args.out && !dump) writeFileSync(args.out, `${json}\n`);
   const summary = result.mode === 'fingerprint' ? { sha256: result.sha256, docs: result.docs.length } : result;
-  if (result.mode === 'dump-corpus') {
+  if (dump) {
     process.stdout.write(`${JSON.stringify(summary)}\n`);
     return;
   }

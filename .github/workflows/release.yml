@@ -1,29 +1,26 @@
 name: release
 
-# Triggers when a tag matching v*.*.* is pushed (or a Release is published
-# from one). Runs the full CI gate, then publishes to npm with provenance.
+# Triggers when a tag matching v*.*.* is pushed, and only then: one
+# trigger, so a release never publishes twice. Runs the full CI gate,
+# then publishes to npm with provenance and creates the GitHub Release.
 #
 # Required repo configuration (one-time):
 #   - Settings → Secrets and variables → Actions:
-#       NPM_TOKEN  (npm automation token, "Publish" scope)
-#   - Permissions on this workflow already include `id-token: write` so
-#     `--provenance` works without extra setup.
+#       NPM_TOKEN  (npm automation token, "Publish" scope). Once npm trusted
+#       publishing is configured for both packages, drop the token: the
+#       publish jobs already have `id-token: write`.
+#
+# Permissions are granted per job, least privilege: only the publish jobs
+# get an OIDC token, only the release job may write to the repository.
+# The publish jobs do not use the npm cache.
 
 on:
   push:
     tags:
       - 'v*.*.*'
-  release:
-    types: [published]
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Tag to release (e.g. v1.0.0)'
-        required: true
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -33,6 +30,8 @@ jobs:
   verify:
     name: gate (lint + typecheck + test + build + license + circular + sbom)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -57,6 +56,9 @@ jobs:
     name: npm publish --provenance
     needs: verify
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     environment:
       name: npm
       url: https://www.npmjs.com/package/nullpii
@@ -65,7 +67,6 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24'
-          cache: npm
           registry-url: 'https://registry.npmjs.org'
       - run: npm ci
       - run: npm run build
@@ -90,6 +91,9 @@ jobs:
     name: npm publish @lbroth/nullpii-gateway --provenance
     needs: [verify, publish]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     environment:
       name: npm
       url: https://www.npmjs.com/package/@lbroth/nullpii-gateway
@@ -98,7 +102,6 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24'
-          cache: npm
           registry-url: 'https://registry.npmjs.org'
       - run: npm ci
       - run: npm run build
@@ -145,10 +148,11 @@ jobs:
   # to update `lBroth/nullpii` on HuggingFace.
 
   github-release:
-    name: create GitHub Release (if tag-only push)
+    name: create GitHub Release
     needs: publish
-    if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Extract changelog body for tag

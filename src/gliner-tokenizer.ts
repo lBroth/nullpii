@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+// Word splitting ported from the GLiNER library (Apache-2.0); see NOTICE.
 
 import { join } from 'node:path';
 import { Tokenizer } from '@anush008/tokenizers';

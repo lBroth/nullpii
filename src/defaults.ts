@@ -66,6 +66,9 @@ export const DEFAULT_MODEL_REVISION = 'main';
  *
  * Order is irrelevant — the runtime dedupes overlapping spans by
  * confidence (ML wins, then highest-confidence recognizer). */
+// The secret and token patterns below are adapted from gitleaks' default
+// rules (https://github.com/gitleaks/gitleaks, MIT, Copyright (c) 2019
+// Zachary Rice); see NOTICE.
 export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
   // ─── URL / Email ──────────────────────────────────────────────
   // URL: only http(s) + www. — bare-domain.tld dropped (FP-prone).

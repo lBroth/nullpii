@@ -18,7 +18,6 @@ useDefault = true
 description = "Self-authored synthetic benchmark (every value is generated)"
 paths = [
   '''(^|/)packages/eval/datasets/nullpii-bench\.jsonl$''',
-  '''(^|/)packages/eval/datasets/nullpii-adversarial\.jsonl$''',
 ]
 
 [[allowlists]]

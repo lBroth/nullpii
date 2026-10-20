@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+// Span decoding ported from the GLiNER library (Apache-2.0); see NOTICE.
 
 import type { Word } from './gliner-tokenizer.js';
 import { iou } from './iou.js';

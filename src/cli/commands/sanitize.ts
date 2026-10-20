@@ -1,39 +1,41 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import chalk from 'chalk';
 import type { Command } from 'commander';
 import { NullPii } from '../../nullpii.js';
-import { type CliConfigOptions, configFromOptions } from '../config-from-options.js';
+import type { SanitizeResult } from '../../types/index.js';
+import { type EngineOptions, addEngineOptions, engineConfig } from '../engine-options.js';
 
 export function registerSanitize(program: Command): void {
-  program
+  const cmd = program
     .command('sanitize [text]')
     .description('sanitize <text> (or stdin) and print the result')
     .option('--stdin', 'read input text from stdin')
-    .option('--format <fmt>', 'output format: pretty | json', 'pretty')
-    .option('--session <id>', 'reuse an existing vault session id')
-    .option('--model-dir <path>', 'use a local model directory (skip download)')
-    .option('--backend <name>', 'force backend: cpu | mps | cuda | auto')
-    .action(
-      async (
-        text: string | undefined,
-        options: { stdin?: boolean; format: string; session?: string } & CliConfigOptions,
-      ) => {
-        const input = await readInput(text, Boolean(options.stdin));
-        const engine = new NullPii(configFromOptions(options));
-        const result = await engine.sanitize(input, options.session);
+    .option('--format <fmt>', 'output format: pretty | json', 'pretty');
+  addEngineOptions(cmd).action(
+    async (
+      text: string | undefined,
+      options: { stdin?: boolean; format: string } & EngineOptions,
+    ) => {
+      const input = await readInput(text, Boolean(options.stdin));
+      const engine = new NullPii(engineConfig(options));
+      let result: SanitizeResult;
+      try {
+        result = await engine.sanitize(input);
+      } finally {
         await engine.dispose();
+      }
 
-        if (options.format === 'json') {
-          process.stdout.write(
-            `${JSON.stringify({ sessionId: result.sessionId, sanitized: result.sanitized, spans: result.spans }, null, 2)}\n`,
-          );
-          return;
-        }
-        process.stdout.write(`${chalk.dim('session:')} ${result.sessionId}\n`);
-        process.stdout.write(`${result.sanitized}\n`);
-      },
-    );
+      // The vault lives in this process only, so no session id is printed:
+      // nothing outside it could restore the placeholders.
+      if (options.format === 'json') {
+        process.stdout.write(
+          `${JSON.stringify({ sanitized: result.sanitized, spans: result.spans }, null, 2)}\n`,
+        );
+        return;
+      }
+      process.stdout.write(`${result.sanitized}\n`);
+    },
+  );
 }
 
 async function readInput(text: string | undefined, useStdin: boolean): Promise<string> {

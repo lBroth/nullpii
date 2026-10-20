@@ -10,7 +10,7 @@ import { PiiVault, TextTooLongError } from 'nullpii';
 
 import { afterEach, describe, expect, it } from 'vitest';
 import type { GatewayConfig } from '../src/config.js';
-import { SIDECAR_MAX_BYTES } from '../src/routes/sidecar.js';
+import { SESSION_SECRET_HEADER, SIDECAR_MAX_BYTES } from '../src/routes/sidecar.js';
 import {
   SANITIZE_CACHE_MAX_CHARS,
   SANITIZE_CACHE_MAX_ENTRIES,
@@ -88,6 +88,29 @@ async function setup(config: Partial<GatewayConfig> = {}, engine: Engine = build
   const app = await buildServer({ config: { ...BASE_CONFIG, ...config }, np, now: () => clock.t });
   apps.push(app);
   return { app, vault, clock, modelCalls: modelCalls ?? (() => 0) };
+}
+
+/** Session secrets handed out by `open`, by session key, per test. */
+const secrets = new Map<string, string>();
+afterEach(() => secrets.clear());
+
+/** Open (or keep alive) session `key`, keeping the secret it hands out. */
+async function open(app: FastifyInstance, key: string) {
+  const res = await app.inject({
+    method: 'PUT',
+    url: `/v1/sidecar/sessions/${key}`,
+    headers: authFor(key),
+  });
+  const body = res.json() as { secret?: string };
+  if (body.secret !== undefined) secrets.set(key, body.secret);
+  return res;
+}
+
+/** The headers of a call on session `key`: the bearer token and, once the
+ * session is open, its secret. */
+function authFor(key: string): Record<string, string> {
+  const secret = secrets.get(key);
+  return secret === undefined ? AUTH : { ...AUTH, [SESSION_SECRET_HEADER]: secret };
 }
 
 describe('sidecar · access control', () => {
@@ -170,21 +193,77 @@ describe('sidecar · status', () => {
 });
 
 describe('sidecar · sessions', () => {
-  it('creates a session once, then reports it as existing', async () => {
+  it('creates a session once with a secret, then reports it as existing to its owner', async () => {
     const { app } = await setup();
-    const first = await app.inject({
-      method: 'PUT',
-      url: '/v1/sidecar/sessions/s1',
-      headers: AUTH,
-    });
-    const second = await app.inject({
-      method: 'PUT',
-      url: '/v1/sidecar/sessions/s1',
-      headers: AUTH,
-    });
+    const first = await open(app, 's1');
+    const second = await open(app, 's1');
     expect(first.statusCode).toBe(201);
+    const { status, secret } = first.json() as { status: string; secret: string };
+    expect(status).toBe('created');
+    // 32 random bytes, base64url.
+    expect(secret).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(second.statusCode).toBe(200);
     expect(second.json()).toEqual({ status: 'exists' });
+  });
+
+  it('refuses to reopen a live session without its secret, and never hands the secret out again', async () => {
+    const { app } = await setup();
+    await open(app, 's1');
+    for (const headers of [AUTH, { ...AUTH, [SESSION_SECRET_HEADER]: 'guess' }]) {
+      const res = await app.inject({ method: 'PUT', url: '/v1/sidecar/sessions/s1', headers });
+      expect(res.statusCode).toBe(409);
+      expect(res.json()).toEqual({ error: 'session_exists' });
+    }
+  });
+
+  it('keeps real values from a caller that holds only the bearer token', async () => {
+    const { app } = await setup();
+    await open(app, 's1');
+    const masked = await app.inject({
+      method: 'POST',
+      url: '/v1/sidecar/sessions/s1/sanitize',
+      headers: authFor('s1'),
+      payload: { value: 'Mail John at john@acme.io' },
+    });
+    const value = (masked.json() as { value: string }).value;
+    const wrong = { ...AUTH, [SESSION_SECRET_HEADER]: 'x'.repeat(43) };
+    for (const headers of [AUTH, wrong]) {
+      const restore = await app.inject({
+        method: 'POST',
+        url: '/v1/sidecar/sessions/s1/restore',
+        headers,
+        payload: { value },
+      });
+      const sanitize = await app.inject({
+        method: 'POST',
+        url: '/v1/sidecar/sessions/s1/sanitize',
+        headers,
+        payload: { value: 'hi' },
+      });
+      const del = await app.inject({ method: 'DELETE', url: '/v1/sidecar/sessions/s1', headers });
+      for (const res of [restore, sanitize, del]) {
+        expect(res.statusCode).toBe(403);
+        expect(res.json()).toEqual({ error: 'bad_session_secret' });
+      }
+      expect(restore.body).not.toContain('John');
+    }
+    const owner = await app.inject({
+      method: 'POST',
+      url: '/v1/sidecar/sessions/s1/restore',
+      headers: authFor('s1'),
+      payload: { value },
+    });
+    expect((owner.json() as { value: string }).value).toBe('Mail John at john@acme.io');
+  });
+
+  it('gives a session dropped after the TTL a new secret when it is opened again', async () => {
+    const { app, clock } = await setup();
+    await open(app, 's1');
+    const before = secrets.get('s1');
+    clock.t += TTL_MS + 1;
+    const reopened = await open(app, 's1');
+    expect(reopened.statusCode).toBe(201);
+    expect(secrets.get('s1')).not.toBe(before);
   });
 
   it('rejects a malformed session key', async () => {
@@ -201,18 +280,18 @@ describe('sidecar · sessions', () => {
   it('fails with 429 instead of evicting when the table is full', async () => {
     const { app } = await setup();
     for (const key of ['s1', 's2']) {
-      await app.inject({ method: 'PUT', url: `/v1/sidecar/sessions/${key}`, headers: AUTH });
+      await open(app, key);
     }
     const third = await app.inject({
       method: 'PUT',
       url: '/v1/sidecar/sessions/s3',
-      headers: AUTH,
+      headers: authFor('s3'),
     });
     expect(third.statusCode).toBe(429);
     const stillThere = await app.inject({
       method: 'POST',
       url: '/v1/sidecar/sessions/s1/sanitize',
-      headers: AUTH,
+      headers: authFor('s1'),
       payload: { value: 'hi John' },
     });
     expect(stillThere.statusCode).toBe(200);
@@ -220,13 +299,13 @@ describe('sidecar · sessions', () => {
 
   it('drops an idle session and its vault entries after the TTL', async () => {
     const { app, vault, clock } = await setup();
-    await app.inject({ method: 'PUT', url: '/v1/sidecar/sessions/s1', headers: AUTH });
+    await open(app, 's1');
     expect(vault.sessionCount).toBe(1);
     clock.t += TTL_MS + 1;
     const res = await app.inject({
       method: 'POST',
       url: '/v1/sidecar/sessions/s1/sanitize',
-      headers: AUTH,
+      headers: authFor('s1'),
       payload: { value: 'hi John' },
     });
     expect(res.statusCode).toBe(404);
@@ -235,13 +314,13 @@ describe('sidecar · sessions', () => {
 
   it('keeps a session alive while it is used', async () => {
     const { app, clock } = await setup();
-    await app.inject({ method: 'PUT', url: '/v1/sidecar/sessions/s1', headers: AUTH });
+    await open(app, 's1');
     for (let i = 0; i < 3; i += 1) {
       clock.t += TTL_MS - 1;
       const res = await app.inject({
         method: 'POST',
         url: '/v1/sidecar/sessions/s1/sanitize',
-        headers: AUTH,
+        headers: authFor('s1'),
         payload: { value: 'hi' },
       });
       expect(res.statusCode).toBe(200);
@@ -250,16 +329,16 @@ describe('sidecar · sessions', () => {
 
   it('destroys a session on DELETE, then 404s', async () => {
     const { app, vault } = await setup();
-    await app.inject({ method: 'PUT', url: '/v1/sidecar/sessions/s1', headers: AUTH });
+    await open(app, 's1');
     const del = await app.inject({
       method: 'DELETE',
       url: '/v1/sidecar/sessions/s1',
-      headers: AUTH,
+      headers: authFor('s1'),
     });
     const again = await app.inject({
       method: 'DELETE',
       url: '/v1/sidecar/sessions/s1',
-      headers: AUTH,
+      headers: authFor('s1'),
     });
     expect(del.statusCode).toBe(204);
     expect(again.statusCode).toBe(404);
@@ -268,7 +347,7 @@ describe('sidecar · sessions', () => {
 
   it('wipes every session when the server closes', async () => {
     const { app, vault } = await setup();
-    await app.inject({ method: 'PUT', url: '/v1/sidecar/sessions/s1', headers: AUTH });
+    await open(app, 's1');
     await app.close();
     expect(vault.sessionCount).toBe(0);
   });
@@ -277,11 +356,11 @@ describe('sidecar · sessions', () => {
 describe('sidecar · sanitize and restore', () => {
   it('masks a string and returns counts, never the values', async () => {
     const { app } = await setup();
-    await app.inject({ method: 'PUT', url: '/v1/sidecar/sessions/s1', headers: AUTH });
+    await open(app, 's1');
     const res = await app.inject({
       method: 'POST',
       url: '/v1/sidecar/sessions/s1/sanitize',
-      headers: AUTH,
+      headers: authFor('s1'),
       payload: { value: 'Mail John at john@acme.io' },
     });
     expect(res.statusCode).toBe(200);
@@ -294,18 +373,18 @@ describe('sidecar · sanitize and restore', () => {
 
   it('round-trips a JSON tool result across separate calls in one session', async () => {
     const { app } = await setup();
-    await app.inject({ method: 'PUT', url: '/v1/sidecar/sessions/s1', headers: AUTH });
+    await open(app, 's1');
     const value = { stdout: 'owner: John', rows: [{ email: 'john@acme.io', n: 3 }] };
     const masked = await app.inject({
       method: 'POST',
       url: '/v1/sidecar/sessions/s1/sanitize',
-      headers: AUTH,
+      headers: authFor('s1'),
       payload: { value },
     });
     const restored = await app.inject({
       method: 'POST',
       url: '/v1/sidecar/sessions/s1/restore',
-      headers: AUTH,
+      headers: authFor('s1'),
       payload: { value: (masked.json() as { value: unknown }).value },
     });
     expect(restored.statusCode).toBe(200);
@@ -316,18 +395,18 @@ describe('sidecar · sanitize and restore', () => {
 
   it('restores only the named fields of a tool input', async () => {
     const { app } = await setup();
-    await app.inject({ method: 'PUT', url: '/v1/sidecar/sessions/s1', headers: AUTH });
+    await open(app, 's1');
     const masked = await app.inject({
       method: 'POST',
       url: '/v1/sidecar/sessions/s1/sanitize',
-      headers: AUTH,
+      headers: authFor('s1'),
       payload: { value: { new_string: 'Hi John', description: 'greet John' } },
     });
     const maskedValue = (masked.json() as { value: { description: string } }).value;
     const res = await app.inject({
       method: 'POST',
       url: '/v1/sidecar/sessions/s1/restore',
-      headers: AUTH,
+      headers: authFor('s1'),
       payload: { value: maskedValue, fields: ['new_string'] },
     });
     const out = (res.json() as { value: { new_string: string; description: string } }).value;
@@ -338,11 +417,11 @@ describe('sidecar · sanitize and restore', () => {
 
   it('rejects fields on a non-object value', async () => {
     const { app } = await setup();
-    await app.inject({ method: 'PUT', url: '/v1/sidecar/sessions/s1', headers: AUTH });
+    await open(app, 's1');
     const res = await app.inject({
       method: 'POST',
       url: '/v1/sidecar/sessions/s1/restore',
-      headers: AUTH,
+      headers: authFor('s1'),
       payload: { value: 'text', fields: ['x'] },
     });
     expect(res.statusCode).toBe(400);
@@ -351,18 +430,18 @@ describe('sidecar · sanitize and restore', () => {
   it('does not restore placeholders minted by another session', async () => {
     const { app } = await setup();
     for (const key of ['s1', 's2']) {
-      await app.inject({ method: 'PUT', url: `/v1/sidecar/sessions/${key}`, headers: AUTH });
+      await open(app, key);
     }
     const masked = await app.inject({
       method: 'POST',
       url: '/v1/sidecar/sessions/s1/sanitize',
-      headers: AUTH,
+      headers: authFor('s1'),
       payload: { value: 'hi John' },
     });
     const res = await app.inject({
       method: 'POST',
       url: '/v1/sidecar/sessions/s2/restore',
-      headers: AUTH,
+      headers: authFor('s2'),
       payload: { value: (masked.json() as { value: string }).value },
     });
     const body = res.json() as { value: string; replacements: number; foreignPlaceholders: number };
@@ -373,11 +452,11 @@ describe('sidecar · sanitize and restore', () => {
 
   it('refuses a request body over the 4 MiB limit', async () => {
     const { app } = await setup();
-    await app.inject({ method: 'PUT', url: '/v1/sidecar/sessions/s1', headers: AUTH });
+    await open(app, 's1');
     const res = await app.inject({
       method: 'POST',
       url: '/v1/sidecar/sessions/s1/sanitize',
-      headers: AUTH,
+      headers: authFor('s1'),
       payload: { value: 'x'.repeat(SIDECAR_MAX_BYTES) },
     });
     expect(res.statusCode).toBe(413);
@@ -392,11 +471,11 @@ describe('sidecar · sanitize and restore', () => {
       },
     } as unknown as NullPii;
     const { app } = await setup({}, { np: strict, vault: engine.vault });
-    await app.inject({ method: 'PUT', url: '/v1/sidecar/sessions/s1', headers: AUTH });
+    await open(app, 's1');
     const res = await app.inject({
       method: 'POST',
       url: '/v1/sidecar/sessions/s1/sanitize',
-      headers: AUTH,
+      headers: authFor('s1'),
       payload: { value: 'more than ten bytes' },
     });
     expect(res.statusCode).toBe(413);
@@ -416,11 +495,11 @@ describe('sidecar · sanitize and restore', () => {
       }),
     } as unknown as NullPii;
     const { app } = await setup({}, { np: grown, vault: engine.vault });
-    await app.inject({ method: 'PUT', url: '/v1/sidecar/sessions/s1', headers: AUTH });
+    await open(app, 's1');
     const res = await app.inject({
       method: 'POST',
       url: '/v1/sidecar/sessions/s1/sanitize',
-      headers: AUTH,
+      headers: authFor('s1'),
       payload: { value: 'small input' },
     });
     expect(res.statusCode).toBe(413);
@@ -437,11 +516,11 @@ describe('sidecar · restore with tool', () => {
 
   /** Open session `s1`, mask `text` in it, return its placeholders. */
   async function placeholdersFor(app: FastifyInstance, text: string): Promise<string[]> {
-    await app.inject({ method: 'PUT', url: '/v1/sidecar/sessions/s1', headers: AUTH });
+    await open(app, 's1');
     const res = await app.inject({
       method: 'POST',
       url: '/v1/sidecar/sessions/s1/sanitize',
-      headers: AUTH,
+      headers: authFor('s1'),
       payload: { value: text },
     });
     return (res.json() as { value: string }).value.match(PLACEHOLDER) ?? [];
@@ -451,7 +530,7 @@ describe('sidecar · restore with tool', () => {
     return app.inject({
       method: 'POST',
       url: '/v1/sidecar/sessions/s1/restore',
-      headers: AUTH,
+      headers: authFor('s1'),
       payload,
     });
   }
@@ -608,14 +687,14 @@ describe('sidecar · sanitize cache', () => {
     return app.inject({
       method: 'POST',
       url: `/v1/sidecar/sessions/${key}/sanitize`,
-      headers: AUTH,
+      headers: authFor(key),
       payload: { value },
     });
   }
 
   it('answers a repeated value from the cache, identical and without the model', async () => {
     const { app, modelCalls } = await setup();
-    await app.inject({ method: 'PUT', url: '/v1/sidecar/sessions/s1', headers: AUTH });
+    await open(app, 's1');
     const first = await sanitize(app, 's1', VALUE);
     const callsAfterFirst = modelCalls();
     const second = await sanitize(app, 's1', VALUE);
@@ -628,7 +707,7 @@ describe('sidecar · sanitize cache', () => {
   it('keeps sessions apart: another session runs the model and gets its own placeholders', async () => {
     const { app } = await setup();
     for (const key of ['s1', 's2']) {
-      await app.inject({ method: 'PUT', url: `/v1/sidecar/sessions/${key}`, headers: AUTH });
+      await open(app, key);
     }
     const a = await sanitize(app, 's1', VALUE);
     const b = await sanitize(app, 's2', VALUE);
@@ -638,13 +717,13 @@ describe('sidecar · sanitize cache', () => {
 
   it('a cached response still restores in its session', async () => {
     const { app } = await setup();
-    await app.inject({ method: 'PUT', url: '/v1/sidecar/sessions/s1', headers: AUTH });
+    await open(app, 's1');
     await sanitize(app, 's1', VALUE);
     const cached = await sanitize(app, 's1', VALUE);
     const restored = await app.inject({
       method: 'POST',
       url: '/v1/sidecar/sessions/s1/restore',
-      headers: AUTH,
+      headers: authFor('s1'),
       payload: { value: (cached.json() as { value: unknown }).value },
     });
     expect((restored.json() as { value: unknown }).value).toEqual(VALUE);
@@ -652,10 +731,10 @@ describe('sidecar · sanitize cache', () => {
 
   it('starts empty again after the session is closed and reopened', async () => {
     const { app } = await setup();
-    await app.inject({ method: 'PUT', url: '/v1/sidecar/sessions/s1', headers: AUTH });
+    await open(app, 's1');
     await sanitize(app, 's1', VALUE);
-    await app.inject({ method: 'DELETE', url: '/v1/sidecar/sessions/s1', headers: AUTH });
-    await app.inject({ method: 'PUT', url: '/v1/sidecar/sessions/s1', headers: AUTH });
+    await app.inject({ method: 'DELETE', url: '/v1/sidecar/sessions/s1', headers: authFor('s1') });
+    await open(app, 's1');
     const again = await sanitize(app, 's1', VALUE);
     expect(again.headers['x-nullpii-cache']).toBe('miss');
   });

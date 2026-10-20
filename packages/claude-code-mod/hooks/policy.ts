@@ -42,6 +42,16 @@ export function restorableArgs(call: Readonly<Record<string, unknown>>): Record<
   );
 }
 
+/** A plugin option's value when it is a non-empty string, else undefined
+ * (an unset option, or an empty one the dialog saved). */
+export function optionString(
+  options: Readonly<Record<string, unknown>> | undefined,
+  key: string,
+): string | undefined {
+  const value = options?.[key];
+  return typeof value === 'string' && value !== '' ? value : undefined;
+}
+
 /** Whether any string in `value` holds a placeholder. */
 export function hasPlaceholder(value: unknown): boolean {
   return PLACEHOLDER.test(JSON.stringify(value) ?? '');

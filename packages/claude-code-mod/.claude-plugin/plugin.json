@@ -2,7 +2,23 @@
   "name": "nullpii",
   "version": "0.1.0",
   "description": "Masks personal data and secrets in prompts and tool results before Claude reads them, using a local nullpii sidecar, and shows what it masked above the prompt",
-  "author": { "name": "nullpii contributors" },
+  "author": {
+    "name": "nullpii contributors"
+  },
   "license": "Apache-2.0",
-  "homepage": "https://github.com/lBroth/nullpii"
+  "homepage": "https://github.com/lBroth/nullpii",
+  "userConfig": {
+    "sidecar_token": {
+      "type": "string",
+      "title": "Sidecar token",
+      "description": "The NULLPII_SIDECAR_TOKEN that nullpii-gateway was started with. Stored in secure storage and not exported to the commands Claude runs.",
+      "sensitive": true
+    },
+    "sidecar_url": {
+      "type": "string",
+      "title": "Sidecar URL",
+      "description": "Where nullpii-gateway listens.",
+      "default": "http://127.0.0.1:8787"
+    }
+  }
 }

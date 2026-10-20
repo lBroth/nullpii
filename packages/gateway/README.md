@@ -205,17 +205,20 @@ export NULLPII_SIDECAR_TOKEN=$(openssl rand -hex 32)
 nullpii-gateway
 ```
 
-Every request needs `Authorization: Bearer $NULLPII_SIDECAR_TOKEN`.
+Every request needs `Authorization: Bearer $NULLPII_SIDECAR_TOKEN`. Every call on a session also needs that session's secret, `x-nullpii-session-secret`, which the `PUT` that creates the session returns once.
 
 | Method and path | Body | Response |
 |---|---|---|
 | `GET /v1/sidecar/status` | — | `{ status, sessions, policy }`, `policy` being `{ file, loaded, config, restoreTools }` |
-| `PUT /v1/sidecar/sessions/:key` | — | 201 created or 200 already open. 429 when `NULLPII_SIDECAR_MAX_SESSIONS` are open. |
+| `PUT /v1/sidecar/sessions/:key` | — | 201 `{ status: "created", secret }` for a new session. For an open one: 200 `{ status: "exists" }` with its secret, 409 `session_exists` without it. 429 when `NULLPII_SIDECAR_MAX_SESSIONS` are open. |
 | `POST /v1/sidecar/sessions/:key/sanitize` | `{ value }`: a string or any JSON | `{ value, captured, capturedByLabel }` |
 | `POST /v1/sidecar/sessions/:key/restore` | `{ value, fields?, tool? }` | `{ value, replacements, replacementsByLabel, unknownPlaceholders, foreignPlaceholders }`, plus `shellKeptMasked` for a shell tool and `heldForTool` for a tool outside `restoreTools` |
 | `DELETE /v1/sidecar/sessions/:key` | — | 204, or 404 if unknown |
 
-- **`key`** is chosen by the caller (`[A-Za-z0-9._-]`, up to 128 characters), for example the agent's conversation id. It is not a secret: the token is the gate.
+Calls on an unknown session answer 404 `session_not_found`; a missing or wrong secret answers 403 `bad_session_secret`.
+
+- **`key`** is chosen by the caller (`[A-Za-z0-9._-]`, up to 128 characters), for example the agent's conversation id. It is not a secret.
+- **The session secret** (32 random bytes, base64url) is handed out only when the session is created, and the gateway keeps only its hash. Keep it in memory. It is what separates sessions: a process that has the bearer token but not the secret, such as any command started from a shell that exported `NULLPII_SIDECAR_TOKEN`, cannot read or restore another caller's values, close its session, or take it over by opening it again. A caller that lost the secret opens a session under a new key.
 - **`value`**: every string leaf is processed. Object keys, numbers and booleans pass through.
 - **`fields`** restores only those top-level keys of an object. Use it to put real values back into the arguments a tool writes to disk, while every other argument keeps its placeholders.
 - **`tool`** names the tool whose input the value is (an object, else 400 `tool_requires_object_value`). The sidecar then applies the gateway's own rules, so a caller does not carry its own:

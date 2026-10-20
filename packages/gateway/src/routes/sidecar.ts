@@ -6,7 +6,7 @@ import { type NullPii, type NullPiiFileConfig, TextTooLongError } from 'nullpii'
 import { SanitizeCache } from '../sanitize-cache.js';
 import { restoreValue, sanitizeValue } from '../sanitizer.js';
 import { ANTHROPIC_SHELL_TOOLS, OPENAI_SHELL_TOOLS, countPlaceholders } from '../shell-restore.js';
-import { SidecarSessions, isValidSessionKey } from '../sidecar-sessions.js';
+import { type SessionRefusal, SidecarSessions, isValidSessionKey } from '../sidecar-sessions.js';
 
 /**
  * Session-scoped sanitize/restore API for local callers such as a Claude
@@ -17,6 +17,12 @@ import { SidecarSessions, isValidSessionKey } from '../sidecar-sessions.js';
  * `Origin` header (browsers always send one on these methods), is
  * refused before the token is checked: a web page reaching the port
  * through DNS rebinding never gets as far as guessing the token.
+ *
+ * Creating a session returns its secret, once. Every other call on that
+ * session (`sanitize`, `restore`, `DELETE`, and opening it again) must
+ * send it in `x-nullpii-session-secret`: the bearer token alone, which
+ * every command started from the caller's shell may inherit, does not
+ * reach another caller's real values.
  *
  * Responses carry counts, never the values that were masked. Requests
  * and responses are capped at 4 MiB, the per-call limit of a mod's
@@ -49,6 +55,13 @@ const MAX_TOOL_NAME_LENGTH = 128;
 const SHELL_TOOLS: ReadonlySet<string> = new Set([...ANTHROPIC_SHELL_TOOLS, ...OPENAI_SHELL_TOOLS]);
 /** `hit` when a sanitize response came from the session's cache. */
 const CACHE_HEADER = 'x-nullpii-cache';
+/** The header a caller proves it owns a session with (lower case, as
+ * Node presents header names). */
+export const SESSION_SECRET_HEADER = 'x-nullpii-session-secret';
+const REFUSAL_REPLIES: Readonly<Record<SessionRefusal, { status: number; error: string }>> = {
+  not_found: { status: 404, error: 'session_not_found' },
+  forbidden: { status: 403, error: 'bad_session_secret' },
+};
 const LOOPBACK_HOSTNAMES: ReadonlySet<string> = new Set(['127.0.0.1', 'localhost', '[::1]']);
 
 const SESSION_PARAMS = {
@@ -92,6 +105,18 @@ interface RestoreRequest extends SessionRequest {
 
 function sha256(value: string): Buffer {
   return createHash('sha256').update(value).digest();
+}
+
+/** The session secret the request presents; a repeated header counts as
+ * none. */
+function presentedSecret(req: FastifyRequest): string | undefined {
+  const value = req.headers[SESSION_SECRET_HEADER];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function sendRefusal(reply: FastifyReply, refusal: SessionRefusal): FastifyReply {
+  const { status, error } = REFUSAL_REPLIES[refusal];
+  return reply.code(status).send({ error });
 }
 
 function hostnameOf(host: string): string {
@@ -198,9 +223,17 @@ export async function registerSidecarRoutes(
         if (!isValidSessionKey(req.params.key)) {
           return reply.code(400).send({ error: 'invalid_session_key' });
         }
-        const opened = sessions.open(req.params.key);
-        if (opened === 'full') return reply.code(429).send({ error: 'too_many_sessions' });
-        return reply.code(opened === 'created' ? 201 : 200).send({ status: opened });
+        const opened = sessions.open(req.params.key, presentedSecret(req));
+        switch (opened.kind) {
+          case 'created':
+            return reply.code(201).send({ status: 'created', secret: opened.secret });
+          case 'exists':
+            return reply.code(200).send({ status: 'exists' });
+          case 'conflict':
+            return reply.code(409).send({ error: 'session_exists' });
+          case 'full':
+            return reply.code(429).send({ error: 'too_many_sessions' });
+        }
       },
     );
 
@@ -208,9 +241,8 @@ export async function registerSidecarRoutes(
       '/v1/sidecar/sessions/:key',
       { schema: { params: SESSION_PARAMS } },
       async (req, reply) => {
-        if (!sessions.close(req.params.key)) {
-          return reply.code(404).send({ error: 'session_not_found' });
-        }
+        const closed = sessions.close(req.params.key, presentedSecret(req));
+        if (closed !== 'closed') return sendRefusal(reply, closed);
         return reply.code(204).send();
       },
     );
@@ -219,8 +251,8 @@ export async function registerSidecarRoutes(
       '/v1/sidecar/sessions/:key/sanitize',
       { bodyLimit: SIDECAR_MAX_BYTES, schema: { params: SESSION_PARAMS, body: SANITIZE_BODY } },
       async (req, reply) => {
-        const session = sessions.use(req.params.key);
-        if (session === undefined) return reply.code(404).send({ error: 'session_not_found' });
+        const session = sessions.use(req.params.key, presentedSecret(req));
+        if (typeof session === 'string') return sendRefusal(reply, session);
         const cacheKey = SanitizeCache.keyOf(JSON.stringify(req.body.value));
         const cached = session.cache.get(cacheKey);
         if (cached !== undefined) {
@@ -244,8 +276,8 @@ export async function registerSidecarRoutes(
       '/v1/sidecar/sessions/:key/restore',
       { bodyLimit: SIDECAR_MAX_BYTES, schema: { params: SESSION_PARAMS, body: RESTORE_BODY } },
       async (req, reply) => {
-        const session = sessions.use(req.params.key);
-        if (session === undefined) return reply.code(404).send({ error: 'session_not_found' });
+        const session = sessions.use(req.params.key, presentedSecret(req));
+        if (typeof session === 'string') return sendRefusal(reply, session);
         const { value, fields, tool } = req.body;
         const isObject = value !== null && typeof value === 'object' && !Array.isArray(value);
         if (fields !== undefined && !isObject) {

@@ -10,7 +10,8 @@
 //
 // Fail closed: when the sidecar cannot be reached, a prompt is handed back
 // to the user and a tool call is refused, instead of going out unmasked.
-// The vault lives in the sidecar's memory; this mod keeps counts only.
+// The vault lives in the sidecar's memory; this mod keeps counts only, and
+// the session's secret, which never leaves this process's memory.
 
 import {
   PLACEHOLDER,
@@ -20,6 +21,7 @@ import {
   formatBand,
   formatReport,
   hasPlaceholder,
+  optionString,
   restorableArgs,
   touchesPolicyFile,
 } from './policy.ts';
@@ -28,7 +30,12 @@ const DEFAULT_SIDECAR_URL = 'http://127.0.0.1:8787';
 const SESSIONS_PATH = '/v1/sidecar/sessions/';
 const STATUS_PATH = '/v1/sidecar/status';
 const SESSION_NOT_FOUND = 404;
-const NO_TOKEN = 'NULLPII_SIDECAR_TOKEN is not set';
+const SESSION_EXISTS = 409;
+/** Proves to the sidecar that this mod opened the session. */
+const SESSION_SECRET_HEADER = 'x-nullpii-session-secret';
+const KEY_SUFFIX_RADIX = 36;
+const NO_TOKEN =
+  'no sidecar token: set it with /plugin configure (sidecar_token), or NULLPII_SIDECAR_TOKEN';
 const POLICY_ASK =
   'This call may change the nullpii masking policy (what gets masked, and which tools get real values back). Allow it only if you asked for that change.';
 
@@ -55,7 +62,13 @@ const shown = new Map<string, string>();
 const counts = emptyCounts();
 let sidecarUrl = DEFAULT_SIDECAR_URL;
 let token: string | undefined;
+// The Claude Code session id, and the sidecar key in use: the id, or the
+// id with a suffix once the mod has had to start a new sidecar session.
+let sessionBase = '';
 let sessionKey = '';
+// The secret the sidecar handed out for `sessionKey`: without it the
+// bearer token alone (which commands may inherit) reads nothing.
+let sessionSecret: string | undefined;
 // The policy the sidecar runs with, read when the session opens.
 let policy: Policy | undefined;
 // Why the mod is blocking, shown above the prompt; undefined while healthy.
@@ -67,14 +80,22 @@ class SidecarError extends Error {
   }
 }
 
-/** Send one request to the sidecar at `url` (a full URL). */
-async function request($, method: string, url: string, body?: unknown): Promise<unknown> {
+/** Send one request to the sidecar at `url` (a full URL), with the
+ * session secret when one is given. */
+async function request(
+  $,
+  method: string,
+  url: string,
+  body?: unknown,
+  secret?: string,
+): Promise<unknown> {
   if (token === undefined) throw new Error(NO_TOKEN);
   // A JSON content type with no body is a 400, so PUT and DELETE send neither.
   const json = body === undefined ? {} : { 'content-type': 'application/json' };
+  const owner = secret === undefined ? {} : { [SESSION_SECRET_HEADER]: secret };
   const res = await $.http.fetch(url, {
     method,
-    headers: { authorization: `Bearer ${token}`, ...json },
+    headers: { authorization: `Bearer ${token}`, ...json, ...owner },
     ...(body !== undefined && { body: JSON.stringify(body) }),
   });
   if (!res.ok) throw new SidecarError(res.status);
@@ -88,11 +109,29 @@ async function sidecar($, method: string, path: string, body?: unknown): Promise
     method,
     sidecarUrl + SESSIONS_PATH + encodeURIComponent(sessionKey) + path,
     body,
+    sessionSecret,
   );
 }
 
+/** Open this mod's sidecar session, or keep it alive. A live session under
+ * the key whose secret this module no longer has (it was reloaded) cannot
+ * be taken over, so a new one opens under a new key: placeholders from
+ * before stay masked, as after a sidecar restart. */
+async function putSession($): Promise<void> {
+  const opened = (await sidecar($, 'PUT', '')) as { secret?: string };
+  if (opened.secret !== undefined) sessionSecret = opened.secret;
+}
+
 async function openSession($): Promise<void> {
-  await sidecar($, 'PUT', '');
+  try {
+    await putSession($);
+  } catch (err) {
+    if (!(err instanceof SidecarError) || err.status !== SESSION_EXISTS) throw err;
+    const now = await $.clock.now();
+    sessionKey = `${sessionBase}.${Math.floor(now).toString(KEY_SUFFIX_RADIX)}`;
+    sessionSecret = undefined;
+    await putSession($);
+  }
   problem = undefined;
   const status = (await request($, 'GET', sidecarUrl + STATUS_PATH)) as { policy?: Policy };
   policy = status.policy;
@@ -133,15 +172,22 @@ async function restoredForDisplay($, text: string): Promise<string> {
   return r.value;
 }
 
-export function register(on) {
+export function register(on, options) {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'pii',
       description: 'Show what nullpii masked in this session',
     });
-    sidecarUrl = (await $.env.get('NULLPII_SIDECAR_URL')) ?? DEFAULT_SIDECAR_URL;
-    token = await $.env.get('NULLPII_SIDECAR_TOKEN');
-    sessionKey = await $.session.id();
+    // The token comes from the plugin's sensitive option (secure storage,
+    // not exported to commands), else from the environment.
+    sidecarUrl =
+      (await $.env.get('NULLPII_SIDECAR_URL')) ??
+      optionString(options, 'sidecar_url') ??
+      DEFAULT_SIDECAR_URL;
+    token = optionString(options, 'sidecar_token') ?? (await $.env.get('NULLPII_SIDECAR_TOKEN'));
+    sessionBase = await $.session.id();
+    sessionKey = sessionBase;
+    sessionSecret = undefined;
     try {
       await openSession($);
     } catch (err) {
@@ -154,6 +200,7 @@ export function register(on) {
     shown.clear();
     try {
       await sidecar($, 'DELETE', '');
+      sessionSecret = undefined;
     } catch (err) {
       // The sidecar's idle TTL drops the session anyway.
       $.ui.log(`nullpii: session not closed: ${String(err)}`, { to: 'debug' });
@@ -170,7 +217,7 @@ export function register(on) {
   }).catch(async ($, e, next) => {
     if (next.called) return next(e);
     return {
-      drop: `nullpii could not mask this prompt, so it was not sent (${blocked($, next.error.message)}). Start nullpii-gateway with NULLPII_SIDECAR_TOKEN set, or disable the nullpii mod.`,
+      drop: `nullpii could not mask this prompt, so it was not sent (${blocked($, next.error.message)}). Start nullpii-gateway with its sidecar token set, or disable the nullpii mod.`,
     };
   });
 

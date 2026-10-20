@@ -46,7 +46,7 @@ The sidecar reads the masking policy from `~/.config/nullpii/config.json`, or fr
 
 ## Fails closed
 
-If the sidecar cannot be reached, or `NULLPII_SIDECAR_TOKEN` is not set:
+If the sidecar cannot be reached, or the mod has no sidecar token:
 
 - a prompt is not sent, and goes back into the prompt box with the reason;
 - a tool call is refused, or its result is withheld;
@@ -55,20 +55,23 @@ If the sidecar cannot be reached, or `NULLPII_SIDECAR_TOKEN` is not set:
 
 ## Set up
 
-1. Start a gateway with the sidecar API on (a version whose sidecar `restore` takes `tool`):
+1. In a terminal of its own, start a gateway with the sidecar API on (a version with session secrets, whose `restore` takes `tool`):
 
    ```bash
    export NULLPII_SIDECAR_TOKEN=$(openssl rand -hex 32)
+   echo "$NULLPII_SIDECAR_TOKEN"   # you give this to the mod next
    npx -p nullpii -p @lbroth/nullpii-gateway nullpii-gateway
    ```
 
-2. Start Claude Code from the same shell, so it inherits the token, and load the mod:
+2. Give the mod the same token through its `sidecar_token` option. For an installed plugin, run `/plugin configure` on it: the dialog masks the value and keeps it in your system's secure storage, and Claude Code does not pass it to the commands Claude runs. For a session started with `--plugin-dir`, you can instead export `NULLPII_SIDECAR_TOKEN` in the shell that starts Claude Code:
 
    ```bash
    claude --plugin-dir ./packages/claude-code-mod
    ```
 
-`NULLPII_SIDECAR_URL` overrides the sidecar address (default `http://127.0.0.1:8787`).
+   A token in that shell's environment is inherited by every command Claude runs there. On its own it reads nothing: each sidecar session also has a secret, which the sidecar hands to the mod when the session opens and which the mod keeps in memory only. A command holding just the token cannot read, restore or close your session.
+
+The `sidecar_url` option, or `NULLPII_SIDECAR_URL`, sets the sidecar address (default `http://127.0.0.1:8787`).
 
 ## Limits
 

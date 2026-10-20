@@ -137,7 +137,20 @@ Disclosures:
   characters; utils/validation.py:235-259). Such a text is scored as no
   spans, since the product returns no de-identified text for it; each
   refusal is logged (code and length only) and counted in
-  `_predict.refusals`. Any other exception propagates.
+  `_predict.no_output`.
+- `deidentify` also fails on some texts with `InternalError` ("The safety
+  sweep reduced the redacted character count"; core/pipeline.py:1556, the
+  only raise with `before` / `after` details). The sweep adds no span that
+  overlaps a model span, but it ends with `resolve_overlapping_entities`
+  (core/safety_sweep.py:275), which keeps one span of each overlapping
+  pair among the model's own spans (by risk tier, then length). Where the
+  dropped span reaches past the kept one, fewer characters are redacted
+  and the stage-9 check refuses the result. Reproduced on three tuning
+  documents: each dropped span (first_name, last_name, swift_bic, date)
+  overlaps another model span. openmed 3.0.0 is the latest release. Again
+  no de-identified text comes back, so the text is scored as no spans,
+  logged and counted the same way (code `sweep_invariant`). Any other
+  exception propagates.
 - Offsets: the package reports offsets into `text.strip()` (its
   `original_text`); the adapter checks that frame and adds the stripped
   leading whitespace back. Each entity's text must equal its slice.
@@ -220,6 +233,10 @@ _REQUIRED_MODULE = "pysbd"
 _FORBIDDEN_MODULE = "ftfy"
 # `InputValidationError.code`s for inputs `deidentify` refuses to process.
 _REFUSAL_CODES = frozenset({"empty_text", "suspicious_content"})
+# The stage-9 safety-sweep invariant failure: the only `InternalError` with
+# these details (core/pipeline.py:1556).
+_SWEEP_INVARIANT_DETAILS = frozenset({"before", "after"})
+_SWEEP_INVARIANT_CODE = "sweep_invariant"
 # Unicode categories openmed's detection normalisation can drop from the
 # front of a text: format controls (zero-width chars) and lone marks.
 _DROPPED_LEADING_CATEGORIES = frozenset({"Cf", "Mn", "Me"})
@@ -373,11 +390,13 @@ def _check_loaded(pipe: TokenClassificationPipeline, revision: str, device: str,
         raise RuntimeError(f"[{tool}] pipeline on {pipe.device.type}, requested {device}")
 
 
-def _deidentify_or_refusal(
-    call: Callable[[str], DeidentificationResult], text: str, refusals: Counter, tool: str,
+def _deidentify_or_none(
+    call: Callable[[str], DeidentificationResult], text: str, no_output: Counter, tool: str,
 ) -> DeidentificationResult | None:
-    """`deidentify(text)`, or None when the package refuses the input (see
-    the module docstring); every other exception propagates."""
+    """`deidentify(text)`, or None when the package returns no
+    de-identified text: a refused input or the safety-sweep invariant
+    failure (see the module docstring). Every other exception propagates."""
+    from openmed.core.errors import InternalError
     from openmed.utils.gateway import InputValidationError
 
     try:
@@ -385,12 +404,17 @@ def _deidentify_or_refusal(
     except InputValidationError as exc:
         if exc.code not in _REFUSAL_CODES:
             raise
-        refusals[exc.code] += 1
-        _LOG.warning(
-            "[%s] deidentify refused a text (code=%s, chars=%d), scored as no spans; refusals so far: %s",
-            tool, exc.code, len(text), dict(refusals),
-        )
-        return None
+        code = exc.code
+    except InternalError as exc:
+        if type(exc) is not InternalError or exc.details.keys() != _SWEEP_INVARIANT_DETAILS:
+            raise
+        code = _SWEEP_INVARIANT_CODE
+    no_output[code] += 1
+    _LOG.warning(
+        "[%s] deidentify returned no text (code=%s, chars=%d), scored as no spans; so far: %s",
+        tool, code, len(text), dict(no_output),
+    )
+    return None
 
 
 def _shifted_by_package(body: str, config: OpenMedConfig) -> bool:
@@ -474,8 +498,9 @@ def openmed_deidentify_predictor(
     `confidence_threshold` goes to `deidentify`; `label_cut` then filters
     the mapped spans by the entity's confidence. The returned
     `_predict(text)` times the `deidentify` call plus the mapping; the model
-    is loaded, checked against the pin and warmed here. `_predict.refusals`
-    counts the texts the package refused, by refusal code;
+    is loaded, checked against the pin and warmed here. `_predict.no_output`
+    counts the texts the package returned no de-identified text for, by
+    code;
     `_predict.shifted` counts the texts whose offsets the package shifted
     (kept as shipped; the check runs after the timed section).
     """
@@ -507,12 +532,12 @@ def openmed_deidentify_predictor(
     _check_loaded(pipe, revision, resolved_device, tool)
     _require_no_detector_plugins(tool)
     _check_label_coverage(_emittable_labels(pipe), OPENMED_DEIDENTIFY_LABEL_MAP, tool=tool)
-    refusals: Counter = Counter()
+    no_output: Counter = Counter()
     shifted: Counter = Counter()
 
     def _predict(text: str) -> ToolResult:
         t0 = time.perf_counter()
-        result = _deidentify_or_refusal(call, text, refusals, tool)
+        result = _deidentify_or_none(call, text, no_output, tool)
         spans: list[Span] = []
         scores: list[float] = []
         if result is not None:
@@ -523,6 +548,6 @@ def openmed_deidentify_predictor(
             _count_shift(result.original_text, config, shifted, tool)
         return ToolResult(spans, elapsed_ms, scores=tuple(scores))
 
-    _predict.refusals = refusals  # type: ignore[attr-defined]
+    _predict.no_output = no_output  # type: ignore[attr-defined]
     _predict.shifted = shifted  # type: ignore[attr-defined]
     return _predict

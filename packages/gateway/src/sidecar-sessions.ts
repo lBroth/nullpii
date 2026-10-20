@@ -7,6 +7,7 @@ import { SanitizeCache } from './sanitize-cache.js';
  * secret (the bearer token is the gate) and never a vault id. */
 const SESSION_KEY_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
 
+/** Whether `key` can name a sidecar session (`SESSION_KEY_PATTERN`). */
 export function isValidSessionKey(key: string): boolean {
   return SESSION_KEY_PATTERN.test(key);
 }

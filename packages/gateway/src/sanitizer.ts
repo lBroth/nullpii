@@ -22,15 +22,8 @@ import type {
   AnthropicToolDef,
 } from './types.js';
 
-/**
- * Walks an Anthropic request body in place, sanitizing every `text`
- * field through the supplied `NullPii` engine and binding all
- * placeholders to a single freshly-minted vault session.
- *
- * Mutating the body in place keeps unknown fields (provider-specific
- * extensions, future params) untouched — the gateway is forward-compat
- * by default.
- */
+/** The result of a request walk: the sanitized body, the vault session
+ * its placeholders belong to, and what was masked (counts, never values). */
 export interface SanitizedRequest<TBody = AnthropicRequest> {
   /** The mutated request body — same reference as the input. */
   readonly body: TBody;
@@ -108,11 +101,19 @@ const TOOL_CALL_TYPES: ReadonlySet<string> = new Set([
 const TOOL_RESULT_TYPES: ReadonlySet<string> = new Set(['tool_result', 'mcp_tool_result']);
 
 /**
- * Sanitize an Anthropic request body in place into a new vault session.
+ * Sanitize an Anthropic request body in place into a new vault session:
+ * every field that can carry user text (see the gateway README's
+ * "Scanned" list) goes through the engine, and every placeholder is
+ * bound to that one session. Mutating the body in place keeps unknown
+ * fields (provider extensions, future parameters) as they are.
+ *
  * The caller owns the returned `sessionId` and destroys it once the
  * response is restored. If the walk throws, the session is destroyed
  * here before the error propagates: the caller never learns its id, so
  * it could not drop it.
+ *
+ * @param appendHint - append `LLM_PRESERVATION_HINT` when something was
+ *   masked (`NULLPII_DISABLE_HINT=1` turns it off in the config).
  */
 export async function sanitizeRequest(
   np: NullPii,
@@ -511,14 +512,8 @@ function sanitizeKey(
   return sanitized;
 }
 
-/**
- * Walks an Anthropic response body in place, restoring every `text`
- * field against the supplied vault session.
- *
- * Returns the (mutated) response plus the aggregated restore-counter
- * triple — caller logs the per-label counts. PII values themselves are
- * never returned in the counter (counts only).
- */
+/** The result of a response restore: the restored body and the restore
+ * counts per kind (counts only, never values). */
 export interface RestoredResponse<TBody = AnthropicResponse> {
   readonly body: TBody;
   readonly replacements: number;
@@ -575,6 +570,13 @@ export function holdForTool(text: string, acc: RestoreAccumulator): string {
   return text;
 }
 
+/**
+ * Restore an Anthropic response body in place against `sessionId`: every
+ * `text` block, and the input of each tool call to a tool in
+ * `restoreTools` (a shell tool's `command` by the shell rule). A tool
+ * outside the list keeps its placeholders, counted as held. Returns the
+ * body plus counts; the caller logs the counts, never the values.
+ */
 export function restoreResponse(
   np: NullPii,
   body: AnthropicResponse,

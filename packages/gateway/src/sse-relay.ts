@@ -15,48 +15,7 @@ import { ANTHROPIC_SHELL_TOOLS, isShellTool } from './shell-restore.js';
 // satisfy the `RestoreCapable` structural type the stream needs. No
 // adapter / private-field reach-through required.
 
-/**
- * Anthropic SSE streaming relay. The Messages API streams a response
- * as a sequence of `event: <name>\ndata: <json>\n\n` frames. Only
- * `content_block_delta` frames carrying a `text_delta` need text
- * mutation; everything else (`message_start`, `content_block_start`,
- * `content_block_stop`, `message_delta`, `message_stop`, `ping`,
- * `error`, anything we don't recognise) is forwarded byte-for-byte.
- *
- * Per-block `RestoreStream` (one per `index`): the upstream emits
- * text in small deltas (typically token-sized), and a placeholder can
- * straddle delta boundaries. `RestoreStream` holds the open `{{…`
- * prefix until the closing `}}` arrives, then flushes the restored
- * text. The mutated event re-uses the original `index` so downstream
- * SDK reassembly is unchanged.
- *
- * Edge cases handled:
- * - Multi-byte UTF-8 split across upstream chunks → `TextDecoder` with
- *   `stream:true` buffers the partial codepoint.
- * - Partial SSE frame at end of an upstream chunk → kept in `buffer`
- *   until the next chunk delivers the terminating `\n\n`.
- * - Block ends with text still buffered in `RestoreStream` → flush
- *   via `end()` and synthesise a final `text_delta` before
- *   `content_block_stop` so the SDK never sees a truncated reply.
- * - `input_json_delta` for tool calls → partial-JSON shards are buffered
- *   per block index until `content_block_stop`, then the assembled JSON
- *   is parsed, its string leaves are restored, and it is re-serialized
- *   and re-emitted as a single synthesised `input_json_delta` ahead of
- *   the stop frame. Restoring the leaves (not the raw text) re-escapes a
- *   value holding a quote, a backslash or a newline, which pasted raw
- *   would break the JSON; input that does not parse is restored as text.
- *   Buffering loses incremental progress for tool inputs but is the only
- *   safe restore strategy: placeholders may straddle shard boundaries AND
- *   sit inside JSON string values where naive substring restore can
- *   re-emit a partial-JSON shard mid-token. Tool inputs are short
- *   relative to text bodies, so the UX cost is negligible.
- * - A `Bash` tool call (named in its `content_block_start`) → its
- *   `command` gets the shell-aware restore (`shell-restore.ts`): a
- *   placeholder is put back only when its value is safe in the quoting
- *   around it, and is otherwise left literal and counted.
- * - Anything else (`message_start`, other delta types, …) → passed
- *   through byte-for-byte.
- */
+/** Restore counts of one relayed stream: counts and labels, never values. */
 export interface SseRelayCounters {
   replacements: number;
   replacementsByLabel: Record<string, number>;
@@ -106,6 +65,48 @@ type ToolRestore = 'shell' | 'hold';
 
 const FRAME_SEPARATOR = '\n\n';
 
+/**
+ * Anthropic SSE streaming relay. The Messages API streams a response
+ * as a sequence of `event: <name>\ndata: <json>\n\n` frames. Only
+ * `content_block_delta` frames carrying a `text_delta` need text
+ * mutation; everything else (`message_start`, `content_block_start`,
+ * `content_block_stop`, `message_delta`, `message_stop`, `ping`,
+ * `error`, anything we don't recognise) is forwarded byte-for-byte.
+ *
+ * Per-block `RestoreStream` (one per `index`): the upstream emits
+ * text in small deltas (typically token-sized), and a placeholder can
+ * straddle delta boundaries. `RestoreStream` holds the open `{{…`
+ * prefix until the closing `}}` arrives, then flushes the restored
+ * text. The mutated event re-uses the original `index` so downstream
+ * SDK reassembly is unchanged.
+ *
+ * Edge cases handled:
+ * - Multi-byte UTF-8 split across upstream chunks → `TextDecoder` with
+ *   `stream:true` buffers the partial codepoint.
+ * - Partial SSE frame at end of an upstream chunk → kept in `buffer`
+ *   until the next chunk delivers the terminating `\n\n`.
+ * - Block ends with text still buffered in `RestoreStream` → flush
+ *   via `end()` and synthesise a final `text_delta` before
+ *   `content_block_stop` so the SDK never sees a truncated reply.
+ * - `input_json_delta` for tool calls → partial-JSON shards are buffered
+ *   per block index until `content_block_stop`, then the assembled JSON
+ *   is parsed, its string leaves are restored, and it is re-serialized
+ *   and re-emitted as a single synthesised `input_json_delta` ahead of
+ *   the stop frame. Restoring the leaves (not the raw text) re-escapes a
+ *   value holding a quote, a backslash or a newline, which pasted raw
+ *   would break the JSON; input that does not parse is restored as text.
+ *   Buffering loses incremental progress for tool inputs but is the only
+ *   safe restore strategy: placeholders may straddle shard boundaries AND
+ *   sit inside JSON string values where naive substring restore can
+ *   re-emit a partial-JSON shard mid-token. Tool inputs are short
+ *   relative to text bodies, so the UX cost is negligible.
+ * - A `Bash` tool call (named in its `content_block_start`) → its
+ *   `command` gets the shell-aware restore (`shell-restore.ts`): a
+ *   placeholder is put back only when its value is safe in the quoting
+ *   around it, and is otherwise left literal and counted.
+ * - Anything else (`message_start`, other delta types, …) → passed
+ *   through byte-for-byte.
+ */
 export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCounters> {
   const { np, sessionId, upstream, write, onUpstreamChunk, restoreTools } = opts;
   const decoder = new TextDecoder();

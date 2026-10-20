@@ -154,6 +154,11 @@ function readSidecarToken(): string | undefined {
   return raw;
 }
 
+/**
+ * Read the gateway's configuration from the environment and the shared
+ * policy file (`configFilePath()`). Fails loud, naming the variable or the
+ * file, on any value it cannot use, rather than falling back silently.
+ */
 export function loadConfig(): GatewayConfig {
   const modelDir = readString('NULLPII_MODEL_DIR');
   const sidecarToken = readSidecarToken();

@@ -838,22 +838,27 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
 ];
 
 /** Built-in URL policy (`NullPiiConfig.urlAllowlist`): how much of a clean
- * URL on each host stays readable. A key is an exact host, or `*.` and a
+ * URL on each host stays readable (a URL with credentials, a second URL,
+ * a credential-like query parameter or another PII span inside it is
+ * never released). A key is an exact host, or `*.` and a
  * domain for the domain and every subdomain; a host matching no key is
  * masked. Hosts that serve customer consoles under a subdomain
  * (`console.aws.amazon.com`, `console.anthropic.com`) are listed exactly,
  * so those consoles stay masked. */
 export const DEFAULT_URL_RELEASES: Readonly<Record<string, UrlRelease>> = {
-  // Source hosting: paths name users and repositories, private ones
-  // included, and raw-content links can carry access tokens. Only the
-  // host stays readable.
-  '*.github.com': 'host',
-  '*.githubusercontent.com': 'host',
-  '*.gitlab.com': 'host',
-  '*.bitbucket.org': 'host',
-  '*.codeberg.org': 'host',
-  '*.sourceforge.net': 'host',
-  '*.huggingface.co': 'host',
+  // Source hosting. Paths name users and repositories, private ones
+  // included; set these to 'host' to keep only the host readable. Whole
+  // URLs are the default because links to public repositories and issues
+  // are most of what a coding agent reads, and masking their paths cost
+  // the traces 0.04 of char-F2 on the tuning set (LOG, A12). A link
+  // whose query carries a credential is never released (url-filter).
+  '*.github.com': 'full',
+  '*.githubusercontent.com': 'full',
+  '*.gitlab.com': 'full',
+  '*.bitbucket.org': 'full',
+  '*.codeberg.org': 'full',
+  '*.sourceforge.net': 'full',
+  '*.huggingface.co': 'full',
   // Package registries and the tarball hosts lockfiles cite
   // (`registry.npmjs.org`, `files.pythonhosted.org`): paths name public
   // packages.
@@ -944,6 +949,7 @@ export const MAX_CONFIG_FILE_BYTES = 64 * 1024;
  * send data elsewhere (`WebFetch`, `WebSearch`, MCP tools) keep the
  * placeholders, so a masked value never leaves through a tool call. */
 export const DEFAULT_RESTORE_TOOLS: readonly string[] = [
+  // Claude Code.
   'Bash',
   'Read',
   'Edit',
@@ -952,6 +958,10 @@ export const DEFAULT_RESTORE_TOOLS: readonly string[] = [
   'NotebookEdit',
   'Grep',
   'Glob',
+  // Local shell and patch tools of OpenAI-compatible coding agents.
+  'bash',
+  'shell',
+  'apply_patch',
 ];
 
 /** Whether `DEFAULT_RECOGNIZERS` are auto-registered on every

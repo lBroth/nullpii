@@ -15,7 +15,7 @@ function urlSpan(text: string, start = 0): PiiSpan {
 const POLICY = urlPolicy();
 
 describe('urlRelease, built-in policy', () => {
-  it('keeps only the host of a code-hosting URL readable', () => {
+  it('releases code-hosting URLs whole by default', () => {
     for (const u of [
       'https://github.com/foo/bar',
       'https://gist.github.com/alice/0123abcd',
@@ -23,7 +23,7 @@ describe('urlRelease, built-in policy', () => {
       'https://raw.githubusercontent.com/debug-js/debug/master/README.md',
       'https://huggingface.co/alice/private-model',
     ]) {
-      expect(urlRelease(u, POLICY), u).toBe('host');
+      expect(urlRelease(u, POLICY), u).toBe('full');
     }
   });
 
@@ -77,7 +77,7 @@ describe('urlRelease, built-in policy', () => {
 
   it('ignores a leading `www.`', () => {
     expect(urlRelease('https://www.wikipedia.org/wiki/Foo', POLICY)).toBe('full');
-    expect(urlRelease('www.github.com/issues', POLICY)).toBe('host');
+    expect(urlRelease('www.github.com/issues', POLICY)).toBe('full');
   });
 
   it('masks unrelated hosts and malformed input (over-redact stance)', () => {
@@ -237,23 +237,34 @@ describe('dropCleanPublicUrlSpans', () => {
     ]);
   });
 
-  it('keeps the path, query and fragment of a code-host URL masked', () => {
+  it("keeps the path, query and fragment masked on a 'host' release", () => {
+    const hostOnly = urlPolicy({
+      hosts: { '*.github.com': 'host', '*.githubusercontent.com': 'host' },
+    });
     const out = dropCleanPublicUrlSpans(
       [urlSpan('https://github.com/alice/private-repo', 4)],
-      POLICY,
+      hostOnly,
     );
     expect(out).toEqual([
       { label: 'private_url', start: 22, end: 41, text: '/alice/private-repo', score: 0.95 },
     ]);
-    const raw = 'https://raw.githubusercontent.com/a/b/main/x.env?token=GHSAT0AAAA';
-    expect(dropCleanPublicUrlSpans([urlSpan(raw, 0)], POLICY).map((s) => s.text)).toEqual([
-      '/a/b/main/x.env?token=GHSAT0AAAA',
+    const raw = 'https://raw.githubusercontent.com/a/b/main/x.env';
+    expect(dropCleanPublicUrlSpans([urlSpan(raw, 0)], hostOnly).map((s) => s.text)).toEqual([
+      '/a/b/main/x.env',
     ]);
+    expect(dropCleanPublicUrlSpans([urlSpan('https://github.com/', 0)], hostOnly)).toEqual([]);
   });
 
-  it('releases a bare code-host URL whole', () => {
-    expect(dropCleanPublicUrlSpans([urlSpan('https://github.com', 0)], POLICY)).toEqual([]);
-    expect(dropCleanPublicUrlSpans([urlSpan('https://github.com/', 0)], POLICY)).toEqual([]);
+  it('never releases a URL whose query carries a credential, on any host', () => {
+    for (const u of [
+      'https://raw.githubusercontent.com/acme/private/main/.env?token=GHSAT0AAAAAB',
+      'https://docs.python.org/3/?api_key=abc123',
+      'https://img.shields.io/badge.svg?X-Amz-Signature=abcdef',
+      'https://github.com/login/oauth/callback?state=x&code=4f2a9c',
+    ]) {
+      const span = urlSpan(u, 0);
+      expect(dropCleanPublicUrlSpans([span], POLICY), u).toEqual([span]);
+    }
   });
 
   it('passes through when no private_url spans are present', () => {

@@ -237,18 +237,15 @@ describe('NullPii e2e pipeline (mocked ONNX)', () => {
     await n.dispose();
   });
 
-  it('keeps reference URLs verbatim, code-host paths and private hosts masked', async () => {
-    // docs.python.org is released whole; github.com keeps only its host
-    // readable (DEFAULT_URL_RELEASES); acme.io is not listed.
+  it('keeps reference and code-host URLs verbatim, private hosts masked', async () => {
     const n = new NullPii({ modelDir: '/fake', backend: 'cpu' });
     const text =
       'See https://docs.python.org/3/library/re.html, https://github.com/anthropics/claude-code/issues and https://acme.io/internal';
     const out = await n.sanitize(text);
     const urlSpans = out.spans.filter((s) => s.label === 'private_url').map((s) => s.text);
-    expect(urlSpans).toEqual(['/anthropics/claude-code/issues', 'https://acme.io/internal']);
+    expect(urlSpans).toEqual(['https://acme.io/internal']);
     expect(out.sanitized).toContain('https://docs.python.org/3/library/re.html');
-    expect(out.sanitized).toContain('https://github.com{{');
-    expect(out.sanitized).not.toContain('anthropics/claude-code');
+    expect(out.sanitized).toContain('https://github.com/anthropics/claude-code/issues');
     expect(n.restore(out.sanitized, out.sessionId).restored).toBe(text);
     await n.dispose();
   });
@@ -257,14 +254,15 @@ describe('NullPii e2e pipeline (mocked ONNX)', () => {
     const n = new NullPii({
       modelDir: '/fake',
       backend: 'cpu',
-      urlAllowlist: { hosts: { '*.github.com': 'full', '*.python.org': 'mask' } },
+      urlAllowlist: { hosts: { '*.github.com': 'host', '*.python.org': 'mask' } },
     });
     const text = 'See https://github.com/foo/bar and https://docs.python.org/3/';
     const out = await n.sanitize(text);
     expect(out.spans.filter((s) => s.label === 'private_url').map((s) => s.text)).toEqual([
+      '/foo/bar',
       'https://docs.python.org/3/',
     ]);
-    expect(out.sanitized).toContain('https://github.com/foo/bar');
+    expect(out.sanitized).toContain('https://github.com{{');
     await n.dispose();
   });
 

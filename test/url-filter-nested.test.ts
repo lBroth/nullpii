@@ -70,13 +70,13 @@ describe('urlRelease — concatenated URLs', () => {
   });
 
   it('still judges a single URL', () => {
-    expect(urlRelease('https://github.com/acme/infra-gitops', POLICY)).toBe('host');
+    expect(urlRelease('https://github.com/acme/infra-gitops', POLICY)).toBe('full');
   });
 });
 
 describe('urlRelease — host extraction', () => {
   it('judges a non-default port by its hostname', () => {
-    expect(urlRelease('https://github.com:8443/foo', POLICY)).toBe('host');
+    expect(urlRelease('https://github.com:8443/foo', POLICY)).toBe('full');
   });
 
   it('still rejects the near-miss hosts', () => {

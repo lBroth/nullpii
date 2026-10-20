@@ -5,8 +5,7 @@ import type { NullPii } from 'nullpii';
 import { restoreChatResponse, sanitizeChatRequest } from '../openai-sanitizer.js';
 import { relayChatSseStream } from '../openai-sse-relay.js';
 import type { ChatCompletionRequest, ChatCompletionResponse } from '../openai-types.js';
-import { printRequestSummary } from '../pretty-log.js';
-import { type RestoredResponse, type SanitizedRequest, isRecord, parseJson } from '../sanitizer.js';
+import { type SanitizedRequest, isRecord, parseJson } from '../sanitizer.js';
 import {
   logInboundResponse,
   logInboundSseChunk,
@@ -21,6 +20,16 @@ import {
   extractQuery,
   forwardToUpstream,
 } from '../upstream.js';
+import {
+  UPSTREAM_ERROR_TYPE,
+  UPSTREAM_FAILURE_STATUS,
+  errorMessage,
+  isSuccess,
+  logRoundTrip,
+  openSseReply,
+  watchClientClose,
+  writeFrame,
+} from './common.js';
 
 /**
  * `POST /v1/chat/completions`: the OpenAI Chat Completions wire format, so
@@ -45,11 +54,10 @@ export interface OpenAiRouteOptions {
 }
 
 const CHAT_COMPLETIONS_PATH = '/v1/chat/completions';
-const UPSTREAM_ERROR_TYPE = 'nullpii_upstream_error';
 const INVALID_REQUEST_TYPE = 'invalid_request_error';
+const BAD_REQUEST_STATUS = 400;
 const TRAFFIC_TARGET = 'openai';
 const JSON_CONTENT_TYPE = 'application/json';
-const SSE_CONTENT_TYPE = 'text/event-stream';
 
 /** Upstream headers forwarded with a non-2xx response, so the client's
  * retry logic sees them: the OpenAI SDKs honour `retry-after`,
@@ -67,15 +75,6 @@ const UPSTREAM_ERROR_HEADER_PREFIXES = ['x-ratelimit-'];
 /** An upstream error `type` / `code` is logged only when it looks like an
  * identifier (`rate_limit_exceeded`), so no free text ever reaches a log. */
 const LOGGABLE_ERROR_FIELD = /^[\w.-]{1,64}$/;
-
-type RestoreCounts = Pick<
-  RestoredResponse,
-  | 'replacements'
-  | 'replacementsByLabel'
-  | 'unknownPlaceholders'
-  | 'foreignPlaceholders'
-  | 'unsafeShellPlaceholders'
->;
 
 /** Everything one proxied call needs once its request is sanitized. */
 interface ChatCall {
@@ -102,7 +101,9 @@ export async function registerOpenAiRoute(
   app.post(CHAT_COMPLETIONS_PATH, async (req, reply) => {
     const body = req.body;
     if (!isChatRequest(body)) {
-      return reply.code(400).send(errorBody(INVALID_REQUEST_TYPE, '`messages` must be an array.'));
+      return reply
+        .code(BAD_REQUEST_STATUS)
+        .send(errorBody(INVALID_REQUEST_TYPE, '`messages` must be an array.'));
     }
     const { np } = opts;
     const sessionId = np.createSession();
@@ -161,7 +162,14 @@ async function handleNonStreaming(call: ChatCall): Promise<unknown> {
   }
   const response = parsed.value as ChatCompletionResponse;
   const restored = restoreChatResponse(opts.np, response, sanitized.sessionId, opts.restoreTools);
-  logRoundTrip(call, 'JSON', restored);
+  logRoundTrip({
+    req: call.req,
+    reqId: call.reqId,
+    sanitized,
+    mode: 'JSON',
+    event: 'openai.chat.restored',
+    counts: restored,
+  });
   return restored.body;
 }
 
@@ -173,21 +181,17 @@ async function handleNonStreaming(call: ChatCall): Promise<unknown> {
  */
 async function handleStreaming(call: ChatCall): Promise<unknown> {
   // A client that goes away cancels the upstream call, which stops the
-  // upstream generating (and billing) tokens nobody reads. The signal is
-  // `reply.raw` closing: on Node 16+ `req.raw` emits 'close' as soon as
-  // the request body has been read, before this handler runs.
-  const abort = new AbortController();
-  const onClientClose = (): void => abort.abort();
-  call.reply.raw.once('close', onClientClose);
+  // upstream generating (and billing) tokens nobody reads.
+  const client = watchClientClose(call.reply);
   try {
-    return await streamFromUpstream(call, abort);
+    return await streamFromUpstream(call, client.abort);
   } finally {
-    call.reply.raw.off('close', onClientClose);
+    client.release();
   }
 }
 
 async function streamFromUpstream(call: ChatCall, abort: AbortController): Promise<unknown> {
-  const { req, reply, opts, sanitized } = call;
+  const { reply, opts, sanitized } = call;
   let upstream: Response;
   try {
     upstream = await opts.fetchImpl(`${opts.upstreamBaseUrl}${call.path}`, {
@@ -207,23 +211,36 @@ async function streamFromUpstream(call: ChatCall, abort: AbortController): Promi
     return sendUpstreamFailure(reply, 'Upstream returned 2xx without a body.');
   }
 
-  reply.raw.statusCode = 200;
-  reply.raw.setHeader('content-type', upstream.headers.get('content-type') ?? SSE_CONTENT_TYPE);
-  reply.raw.setHeader('cache-control', 'no-cache');
-  reply.raw.setHeader('connection', 'keep-alive');
-  reply.hijack();
+  openSseReply(reply, upstream.headers.get('content-type'));
+  await relayToClient(call, upstream.body as unknown as AsyncIterable<Uint8Array>, abort);
+  return reply;
+}
+
+async function relayToClient(
+  call: ChatCall,
+  upstream: AsyncIterable<Uint8Array>,
+  abort: AbortController,
+): Promise<void> {
+  const { req, reply, opts, sanitized } = call;
   try {
     const counters = await relayChatSseStream({
       np: opts.np,
       sessionId: sanitized.sessionId,
-      upstream: upstream.body as unknown as AsyncIterable<Uint8Array>,
-      write: (frame) => reply.raw.write(frame),
+      upstream,
+      write: (frame) => writeFrame(reply.raw, frame),
       ...(opts.restoreTools !== undefined && { restoreTools: opts.restoreTools }),
       ...(opts.logTraffic
         ? { onUpstreamChunk: (c: string) => logInboundSseChunk(c, call.reqId) }
         : {}),
     });
-    logRoundTrip(call, 'SSE', counters);
+    logRoundTrip({
+      req,
+      reqId: call.reqId,
+      sanitized,
+      mode: 'SSE',
+      event: 'openai.chat.streamed',
+      counts: counters,
+    });
   } catch (err) {
     // The client went away or the upstream broke off. Stop the upstream
     // call either way; only the error message is logged, never content.
@@ -233,7 +250,6 @@ async function streamFromUpstream(call: ChatCall, abort: AbortController): Promi
   } finally {
     reply.raw.end();
   }
-  return reply;
 }
 
 /**
@@ -277,55 +293,16 @@ function loggableField(value: unknown): string | null {
   return typeof value === 'string' && LOGGABLE_ERROR_FIELD.test(value) ? value : null;
 }
 
-function logRoundTrip(call: ChatCall, mode: 'JSON' | 'SSE', counts: RestoreCounts): void {
-  const { sanitized } = call;
-  // Counts and labels only. `counts` may be a whole `RestoredResponse`,
-  // whose `body` holds the real values, so its fields are picked one by
-  // one and never spread.
-  call.req.log.info(
-    {
-      captured: sanitized.captured,
-      capturedByLabel: sanitized.capturedByLabel,
-      unscanned: sanitized.unscanned,
-      replacements: counts.replacements,
-      replacementsByLabel: counts.replacementsByLabel,
-      unknownPlaceholders: counts.unknownPlaceholders,
-      foreignPlaceholders: counts.foreignPlaceholders,
-      unsafeShellPlaceholders: counts.unsafeShellPlaceholders,
-    },
-    mode === 'JSON' ? 'openai.chat.restored' : 'openai.chat.streamed',
-  );
-  const summary = {
-    mode,
-    captured: sanitized.captured,
-    capturedByLabel: sanitized.capturedByLabel,
-    unscanned: sanitized.unscanned,
-    restored: counts.replacements,
-    restoredByLabel: counts.replacementsByLabel,
-    unknownPlaceholders: counts.unknownPlaceholders,
-    foreignPlaceholders: counts.foreignPlaceholders,
-    unsafeShell: counts.unsafeShellPlaceholders,
-  };
-  printRequestSummary(call.reqId !== undefined ? { ...summary, reqId: call.reqId } : summary);
-}
-
 function isChatRequest(body: unknown): body is ChatCompletionRequest {
   return isRecord(body) && Array.isArray(body.messages);
 }
 
-function isSuccess(status: number): boolean {
-  return status >= 200 && status < 300;
-}
-
+/** The gateway's own 502, in OpenAI's error envelope. */
 function sendUpstreamFailure(reply: FastifyReply, message: string): FastifyReply {
-  return reply.code(502).send(errorBody(UPSTREAM_ERROR_TYPE, message));
+  return reply.code(UPSTREAM_FAILURE_STATUS).send(errorBody(UPSTREAM_ERROR_TYPE, message));
 }
 
 /** OpenAI-style error envelope. */
 function errorBody(type: string, message: string): { error: { type: string; message: string } } {
   return { error: { type, message } };
-}
-
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

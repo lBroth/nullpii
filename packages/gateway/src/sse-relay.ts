@@ -15,6 +15,56 @@ import { isShellTool } from './shell-restore.js';
 // satisfy the `RestoreCapable` structural type the stream needs. No
 // adapter / private-field reach-through required.
 
+/** Restore counts of one relayed stream: counts and labels, never values. */
+export interface SseRelayCounters {
+  replacements: number;
+  replacementsByLabel: Record<string, number>;
+  unknownPlaceholders: number;
+  foreignPlaceholders: number;
+  /** Placeholders left literal in a shell command (unsafe there). */
+  unsafeShellPlaceholders: number;
+  /** Placeholders kept in the input of a tool outside `restoreTools`. */
+  heldForToolPlaceholders: number;
+}
+
+interface ContentBlockDelta {
+  type: 'content_block_delta';
+  index: number;
+  delta: { type: string; text?: string; partial_json?: string; [k: string]: unknown };
+  [k: string]: unknown;
+}
+
+interface ContentBlockStop {
+  type: 'content_block_stop';
+  index: number;
+  [k: string]: unknown;
+}
+
+export interface SseRelayOptions {
+  readonly np: NullPii;
+  readonly sessionId: string;
+  /** Async iterable of upstream body chunks. Pass `upstream.body` from
+   * the `Response` directly — Node's `fetch` returns a web-style
+   * `ReadableStream<Uint8Array>` which is async-iterable. */
+  readonly upstream: AsyncIterable<Uint8Array>;
+  /** Called with each fully-formed SSE frame to forward downstream. A
+   * returned promise is awaited before the relay reads more from the
+   * upstream, so a slow client applies backpressure (`writeFrame`). */
+  readonly write: (frame: string) => void | Promise<void>;
+  /** Optional debugging hook — invoked with each decoded upstream
+   * chunk BEFORE frame extraction/restore. Carries placeholders only
+   * (Anthropic never sees real PII), safe to dump to stdout. */
+  readonly onUpstreamChunk?: (chunk: string) => void;
+  /** Tools whose arguments get real values back. Default:
+   * `DEFAULT_RESTORE_TOOLS`, the tools that run on this machine. */
+  readonly restoreTools?: ReadonlySet<string>;
+}
+
+/** How a tool call's streamed input is restored at its block's stop. */
+type ToolRestore = 'shell' | 'hold';
+
+const FRAME_SEPARATOR = '\n\n';
+
 /**
  * Anthropic SSE streaming relay. The Messages API streams a response
  * as a sequence of `event: <name>\ndata: <json>\n\n` frames. Only
@@ -57,53 +107,6 @@ import { isShellTool } from './shell-restore.js';
  * - Anything else (`message_start`, other delta types, …) → passed
  *   through byte-for-byte.
  */
-export interface SseRelayCounters {
-  replacements: number;
-  replacementsByLabel: Record<string, number>;
-  unknownPlaceholders: number;
-  foreignPlaceholders: number;
-  /** Placeholders left literal in a shell command (unsafe there). */
-  unsafeShellPlaceholders: number;
-  /** Placeholders kept in the input of a tool outside `restoreTools`. */
-  heldForToolPlaceholders: number;
-}
-
-interface ContentBlockDelta {
-  type: 'content_block_delta';
-  index: number;
-  delta: { type: string; text?: string; partial_json?: string; [k: string]: unknown };
-  [k: string]: unknown;
-}
-
-interface ContentBlockStop {
-  type: 'content_block_stop';
-  index: number;
-  [k: string]: unknown;
-}
-
-export interface SseRelayOptions {
-  readonly np: NullPii;
-  readonly sessionId: string;
-  /** Async iterable of upstream body chunks. Pass `upstream.body` from
-   * the `Response` directly — Node's `fetch` returns a web-style
-   * `ReadableStream<Uint8Array>` which is async-iterable. */
-  readonly upstream: AsyncIterable<Uint8Array>;
-  /** Called with each fully-formed SSE frame to forward downstream. */
-  readonly write: (frame: string) => void;
-  /** Optional debugging hook — invoked with each decoded upstream
-   * chunk BEFORE frame extraction/restore. Carries placeholders only
-   * (Anthropic never sees real PII), safe to dump to stdout. */
-  readonly onUpstreamChunk?: (chunk: string) => void;
-  /** Tools whose arguments get real values back. Default:
-   * `DEFAULT_RESTORE_TOOLS`, the tools that run on this machine. */
-  readonly restoreTools?: ReadonlySet<string>;
-}
-
-/** How a tool call's streamed input is restored at its block's stop. */
-type ToolRestore = 'shell' | 'hold';
-
-const FRAME_SEPARATOR = '\n\n';
-
 export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCounters> {
   const { np, sessionId, upstream, write, onUpstreamChunk, restoreTools } = opts;
   const decoder = new TextDecoder();
@@ -155,7 +158,7 @@ export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCou
         acc,
         toolBlocks,
       );
-      for (const f of out) write(f);
+      for (const f of out) await write(f);
     }
   }
 
@@ -174,7 +177,7 @@ export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCou
       acc,
       toolBlocks,
     );
-    for (const f of out) write(f);
+    for (const f of out) await write(f);
   }
 
   // Drain every per-block restorer — synthesise a final text_delta for
@@ -183,7 +186,7 @@ export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCou
     const result = rs.end();
     tallyRestore(acc, result);
     if (result.restored.length > 0) {
-      write(buildTextDeltaFrame(index, result.restored));
+      await write(buildTextDeltaFrame(index, result.restored));
     }
   }
 
@@ -193,7 +196,7 @@ export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCou
   for (const index of Array.from(jsonBuffers.keys())) {
     const restored = restoreJsonBuffer(index);
     if (restored !== null && restored.length > 0) {
-      write(buildInputJsonDeltaFrame(index, restored));
+      await write(buildInputJsonDeltaFrame(index, restored));
     }
   }
 

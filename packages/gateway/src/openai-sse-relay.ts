@@ -85,7 +85,7 @@ export async function relayChatSseStream(opts: SseRelayOptions): Promise<SseRela
     buffer += decoded;
     let sep = buffer.indexOf(FRAME_SEPARATOR);
     while (sep !== -1) {
-      for (const out of relay.processFrame(buffer.slice(0, sep))) write(out);
+      for (const out of relay.processFrame(buffer.slice(0, sep))) await write(out);
       buffer = buffer.slice(sep + FRAME_SEPARATOR.length);
       sep = buffer.indexOf(FRAME_SEPARATOR);
     }
@@ -95,9 +95,9 @@ export async function relayChatSseStream(opts: SseRelayOptions): Promise<SseRela
   // as in the Anthropic relay: strict SDKs choke on a truncated payload.
   buffer += decoder.decode();
   if (isWholeFrame(buffer)) {
-    for (const out of relay.processFrame(buffer)) write(out);
+    for (const out of relay.processFrame(buffer)) await write(out);
   }
-  for (const out of relay.flushOpenChoices()) write(out);
+  for (const out of relay.flushOpenChoices()) await write(out);
   return relay.counters();
 }
 

@@ -18,15 +18,19 @@ import {
   type RestoreAccumulator,
   type RestoredResponse,
   type SanitizedRequest,
-  bump,
   holdForTool,
   isRecord,
+  newCaptureAccumulator,
   newRestoreAccumulator,
   parseJson,
   restoreJsonText,
   restoreShellText,
   restoreString,
+  sanitizeJsonSchema,
   sanitizeJsonValue,
+  sanitizeLeaves,
+  sanitizeText,
+  sanitizeTopLevelText,
   shouldAppendHint,
   toolMayRestore,
 } from './sanitizer.js';
@@ -65,6 +69,12 @@ const TOOL_DEF_KEYS = ['function', 'custom'] as const;
 /** Role of the message that carries `LLM_PRESERVATION_HINT`. */
 const HINT_ROLE = 'system';
 
+/** Top-level fields whose string leaves are user data: the end-user id
+ * fields (often an email), `metadata` values and `stop` sequences. Every
+ * other top-level field is protocol (model, sampling, `tool_choice`,
+ * `logit_bias`, `prompt_cache_key`) and is forwarded as it is. */
+const TOP_LEVEL_TEXT_FIELDS: readonly string[] = ['user', 'safety_identifier', 'metadata', 'stop'];
+
 /**
  * Sanitize a Chat Completions request body in place, binding every
  * placeholder to `sessionId`. The caller owns the session and destroys it
@@ -74,9 +84,11 @@ const HINT_ROLE = 'system';
  * participant `name`, `refusal`, tool-call `arguments` (parsed as JSON,
  * string leaves sanitized), custom tool-call `input`, the deprecated
  * `function_call`, tool and function `description`s,
- * `prediction.content`, and a file part's `filename`. `image_url`,
- * `input_audio` and `file` payloads are forwarded untouched and counted
- * in `unscanned`.
+ * `prediction.content`, a file part's `filename`, the text and data of
+ * function `parameters` and `response_format` schemas (property names and
+ * keywords stay), `user`, `safety_identifier`, `metadata` values, `stop`,
+ * and `web_search_options.user_location`. `image_url`, `input_audio` and
+ * `file` payloads are forwarded untouched and counted in `unscanned`.
  *
  * @param np - the detection engine.
  * @param body - the client's request body; mutated and returned.
@@ -89,7 +101,7 @@ export async function sanitizeChatRequest(
   sessionId: string,
   appendHint = true,
 ): Promise<SanitizedRequest<ChatCompletionRequest>> {
-  const acc: CaptureAccumulator = { count: 0, byLabel: {}, unscanned: 0 };
+  const acc = newCaptureAccumulator();
   body.messages = await Promise.all(
     body.messages.map((m) => sanitizeMessage(np, m, sessionId, acc)),
   );
@@ -106,6 +118,9 @@ export async function sanitizeChatRequest(
     const content = await sanitizeContent(np, prediction.content, sessionId, acc);
     body.prediction = { ...prediction, content };
   }
+  await sanitizeTopLevelText(np, body, TOP_LEVEL_TEXT_FIELDS, sessionId, acc);
+  await sanitizeResponseFormat(np, body, sessionId, acc);
+  await sanitizeSearchLocation(np, body, sessionId, acc);
   // Same rules as the Anthropic walk (`sanitizeRequest`): added after
   // sanitization, so its literal `{{PII_…}}` examples are never scanned;
   // only when something was masked; and appended as the LAST message.
@@ -271,19 +286,47 @@ async function sanitizeFunctionDef(
   sessionId: string,
   acc: CaptureAccumulator,
 ): Promise<ChatFunctionDef> {
-  if (typeof def.description !== 'string') return def;
-  return { ...def, description: await sanitizeText(np, def.description, sessionId, acc) };
+  const out: ChatFunctionDef = { ...def };
+  if (typeof def.description === 'string') {
+    out.description = await sanitizeText(np, def.description, sessionId, acc);
+  }
+  if (def.parameters !== undefined) {
+    out.parameters = await sanitizeJsonSchema(np, def.parameters, sessionId, acc);
+  }
+  return out;
 }
 
-async function sanitizeText(
+/** `response_format: { type: 'json_schema', json_schema: { description,
+ * schema } }`: the description as text, the schema as a schema. */
+async function sanitizeResponseFormat(
   np: NullPii,
-  text: string,
+  body: ChatCompletionRequest,
   sessionId: string,
   acc: CaptureAccumulator,
-): Promise<string> {
-  const r = await np.sanitize(text, sessionId);
-  bump(acc, r);
-  return r.sanitized;
+): Promise<void> {
+  const format = body.response_format;
+  if (!isRecord(format) || !isRecord(format.json_schema)) return;
+  const spec: Record<string, unknown> = { ...format.json_schema };
+  if (typeof spec.description === 'string') {
+    spec.description = await sanitizeText(np, spec.description, sessionId, acc);
+  }
+  if (spec.schema !== undefined) {
+    spec.schema = await sanitizeJsonSchema(np, spec.schema, sessionId, acc);
+  }
+  body.response_format = { ...format, json_schema: spec };
+}
+
+/** `web_search_options.user_location` names where the user is. */
+async function sanitizeSearchLocation(
+  np: NullPii,
+  body: ChatCompletionRequest,
+  sessionId: string,
+  acc: CaptureAccumulator,
+): Promise<void> {
+  const options = body.web_search_options;
+  if (!isRecord(options) || options.user_location === undefined) return;
+  const location = await sanitizeLeaves(np, options.user_location, sessionId, acc);
+  body.web_search_options = { ...options, user_location: location };
 }
 
 /**

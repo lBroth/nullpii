@@ -140,7 +140,9 @@ describe('relaySseStream', () => {
       np,
       sessionId,
       upstream: chunkStream(frames),
-      write: (f) => out.push(f),
+      write: (f) => {
+        out.push(f);
+      },
     });
     const joined = out.join('');
     expect(joined).toContain('Hi Alice there');
@@ -172,7 +174,9 @@ describe('relaySseStream', () => {
       np,
       sessionId,
       upstream: chunkStream(frames),
-      write: (f) => out.push(f),
+      write: (f) => {
+        out.push(f);
+      },
     });
     // The SDK consumer accumulates `text_delta.text` per block index;
     // the relay may split a single semantic message across multiple
@@ -200,7 +204,9 @@ describe('relaySseStream', () => {
       np,
       sessionId,
       upstream: chunkStream(chunks),
-      write: (f) => out.push(f),
+      write: (f) => {
+        out.push(f);
+      },
     });
     const joined = out.join('');
     expect(joined).toContain('Reach charlie@x.io now');
@@ -229,7 +235,9 @@ describe('relaySseStream', () => {
       np,
       sessionId,
       upstream: chunkStream(frames),
-      write: (f) => out.push(f),
+      write: (f) => {
+        out.push(f);
+      },
     });
     const joined = out.join('');
     expect(joined).toContain('event: ping');
@@ -262,7 +270,9 @@ describe('relaySseStream', () => {
       np,
       sessionId,
       upstream: chunkStream(frames),
-      write: (f) => out.push(f),
+      write: (f) => {
+        out.push(f);
+      },
     });
     const joined = out.join('');
     // Original placeholder shards must NOT leak.
@@ -288,7 +298,9 @@ describe('relaySseStream', () => {
       np,
       sessionId,
       upstream: chunkStream(frames),
-      write: (f) => out.push(f),
+      write: (f) => {
+        out.push(f);
+      },
     });
     expect(out.join('')).not.toContain('{{PII_');
     const input = reassembleInputJson(out).get(1) ?? '';
@@ -309,7 +321,9 @@ describe('relaySseStream', () => {
       np,
       sessionId,
       upstream: chunkStream(frames),
-      write: (f) => out.push(f),
+      write: (f) => {
+        out.push(f);
+      },
     });
     expect(reassembleInputJson(out).get(0)).toBe('{"to":"bob@example.com');
   });
@@ -334,7 +348,9 @@ describe('relaySseStream', () => {
       np,
       sessionId,
       upstream: chunkStream(frames),
-      write: (f) => out.push(f),
+      write: (f) => {
+        out.push(f);
+      },
     });
     const joined = out.join('');
     // Restored JSON must appear EXACTLY once (drained at end-of-stream,
@@ -361,7 +377,9 @@ describe('relaySseStream', () => {
       np,
       sessionId,
       upstream: chunkStream(frames),
-      write: (f) => out.push(f),
+      write: (f) => {
+        out.push(f);
+      },
     });
     const joined = out.join('');
     expect(joined).not.toContain('{{PII_');
@@ -402,7 +420,9 @@ describe('relaySseStream', () => {
       np,
       sessionId,
       upstream: chunkStream(frames),
-      write: (f) => out.push(f),
+      write: (f) => {
+        out.push(f);
+      },
     });
     const blocks = reassembleBlocks(out);
     expect(blocks.get(0)).toBe('A:Dana end');
@@ -429,7 +449,9 @@ describe('relaySseStream', () => {
       np,
       sessionId,
       upstream: chunkStream(frames),
-      write: (f) => out.push(f),
+      write: (f) => {
+        out.push(f);
+      },
     });
     expect(out.join('')).toContain('Hi Frank');
   });

@@ -8,26 +8,8 @@ import { restoreValue, sanitizeValue } from '../sanitizer.js';
 import { countPlaceholders, isShellTool } from '../shell-restore.js';
 import { type SessionRefusal, SidecarSessions, isValidSessionKey } from '../sidecar-sessions.js';
 
-/**
- * Session-scoped sanitize/restore API for local callers such as a Claude
- * Code mod, which keeps one vault session per conversation across turns.
- *
- * Every route needs `Authorization: Bearer <NULLPII_SIDECAR_TOKEN>`. A
- * request whose `Host` is not a loopback name, or that carries an
- * `Origin` header (browsers always send one on these methods), is
- * refused before the token is checked: a web page reaching the port
- * through DNS rebinding never gets as far as guessing the token.
- *
- * Creating a session returns its secret, once. Every other call on that
- * session (`sanitize`, `restore`, `DELETE`, and opening it again) must
- * send it in `x-nullpii-session-secret`: the bearer token alone, which
- * every command started from the caller's shell may inherit, does not
- * reach another caller's real values.
- *
- * Responses carry counts, never the values that were masked. Requests
- * and responses are capped at 4 MiB, the per-call limit of a mod's
- * `$.http.fetch`.
- */
+/** What the sidecar routes need: the engine, the bearer token, session
+ * limits, and the masking policy. */
 export interface SidecarRouteOptions {
   readonly np: NullPii;
   readonly token: string;
@@ -169,6 +151,26 @@ function cappedBody(payload: Record<string, unknown>): string | undefined {
   return Buffer.byteLength(body) > SIDECAR_MAX_BYTES ? undefined : body;
 }
 
+/**
+ * Session-scoped sanitize/restore API for local callers such as a Claude
+ * Code mod, which keeps one vault session per conversation across turns.
+ *
+ * Every route needs `Authorization: Bearer <NULLPII_SIDECAR_TOKEN>`. A
+ * request whose `Host` is not a loopback name, or that carries an
+ * `Origin` header (browsers always send one on these methods), is
+ * refused before the token is checked: a web page reaching the port
+ * through DNS rebinding never gets as far as guessing the token.
+ *
+ * Creating a session returns its secret, once. Every other call on that
+ * session (`sanitize`, `restore`, `DELETE`, and opening it again) must
+ * send it in `x-nullpii-session-secret`: the bearer token alone, which
+ * every command started from the caller's shell may inherit, does not
+ * reach another caller's real values.
+ *
+ * Responses carry counts, never the values that were masked. Requests
+ * and responses are capped at 4 MiB, the per-call limit of a mod's
+ * `$.http.fetch`.
+ */
 export async function registerSidecarRoutes(
   app: FastifyInstance,
   opts: SidecarRouteOptions,

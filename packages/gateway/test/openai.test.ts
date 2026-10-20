@@ -489,6 +489,59 @@ describe('openai · request walk', () => {
   });
 });
 
+describe('openai · request fields outside messages', () => {
+  it('scrubs user, safety_identifier, metadata, stop and the web-search location', async () => {
+    const { np } = buildEngine();
+    const body = {
+      model: MODEL,
+      messages: [{ role: 'user', content: 'hi' }],
+      user: CANARY,
+      safety_identifier: CANARY,
+      metadata: { owner: CANARY },
+      stop: [`END ${CANARY}`],
+      web_search_options: { user_location: { type: 'approximate', approximate: { city: CANARY } } },
+    } as ChatCompletionRequest;
+
+    const out = await sanitizeChatRequest(np, body, np.createSession());
+
+    expect(JSON.stringify(out.body)).not.toContain(CANARY);
+    expect(Object.keys(out.body.metadata as object)).toEqual(['owner']);
+  });
+
+  it('scrubs function parameters and the response_format schema, keeping names', async () => {
+    const { np } = buildEngine();
+    const schema = {
+      type: 'object',
+      properties: { to: { type: 'string', description: `e.g. ${CANARY}`, enum: [CANARY] } },
+      required: ['to'],
+    };
+    const body = {
+      model: MODEL,
+      messages: [{ role: 'user', content: 'hi' }],
+      tools: [{ type: 'function', function: { name: 'send', parameters: schema } }],
+      functions: [{ name: 'legacy', parameters: schema }],
+      response_format: {
+        type: 'json_schema',
+        json_schema: { name: 'reply', description: `for ${CANARY}`, schema },
+      },
+    } as ChatCompletionRequest;
+
+    const out = await sanitizeChatRequest(np, body, np.createSession());
+
+    const json = JSON.stringify(out.body);
+    expect(json).not.toContain(CANARY);
+    const sent = out.body.tools?.[0]?.function?.parameters as {
+      properties: object;
+      required: string[];
+    };
+    expect(Object.keys(sent.properties)).toEqual(['to']);
+    expect(sent.required).toEqual(['to']);
+    expect((out.body.response_format as { json_schema: { name: string } }).json_schema.name).toBe(
+      'reply',
+    );
+  });
+});
+
 describe('openai · response restore', () => {
   it('restores content and tool-call arguments in a JSON response, keeping the JSON valid', async () => {
     const { app, engine } = await setup((call) => {
@@ -646,7 +699,9 @@ describe('openai · SSE relay', () => {
       np,
       sessionId,
       upstream: stream(chunks),
-      write: (f) => frames.push(f),
+      write: (f) => {
+        frames.push(f);
+      },
     });
     return { body: frames.join(''), counters };
   }

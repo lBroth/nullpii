@@ -7,8 +7,8 @@
 import type { NullPii } from 'nullpii';
 import { PiiVault } from 'nullpii';
 import { describe, expect, it } from 'vitest';
-import { sanitizeRequest } from '../src/sanitizer.js';
-import type { AnthropicRequest } from '../src/types.js';
+import { restoreResponse, sanitizeRequest } from '../src/sanitizer.js';
+import type { AnthropicRequest, AnthropicResponse } from '../src/types.js';
 
 const CANARY = 'canary.person@example.com';
 const BASE64_BODY = 'JVBERi0xLjQKJcfsj6IK';
@@ -146,5 +146,100 @@ describe('sanitizeRequest: protocol structure stays intact', () => {
     expect(json).toContain('"name":"Read"');
     expect(json).toContain('"tool_use_id":"toolu_9"');
     expect(json).not.toContain(CANARY);
+  });
+});
+
+describe('sanitizeRequest: request fields outside messages', () => {
+  it('scrubs metadata and stop sequences', async () => {
+    const body = {
+      ...request([{ type: 'text', text: 'hi' }]),
+      metadata: { user_id: CANARY },
+      stop_sequences: [`END ${CANARY}`],
+    } as AnthropicRequest;
+    const out = await sanitizeRequest(mockNullPii(), body);
+    expect(JSON.stringify(out.body)).not.toContain(CANARY);
+    expect(Object.keys(out.body.metadata as object)).toEqual(['user_id']);
+  });
+
+  it("scrubs a tool's input_schema text and data, keeping names and keywords", async () => {
+    const schema = {
+      type: 'object',
+      title: `Lookup for ${CANARY}`,
+      properties: {
+        recipient: {
+          type: 'string',
+          description: `who, e.g. ${CANARY}`,
+          enum: [CANARY, 'nobody'],
+          default: CANARY,
+          examples: [{ to: CANARY }],
+        },
+        nested: { type: 'array', items: { type: 'string', const: CANARY } },
+      },
+      $defs: { addr: { type: 'string', description: `like ${CANARY}` } },
+      required: ['recipient'],
+    };
+    const body = {
+      ...request([{ type: 'text', text: 'hi' }]),
+      tools: [{ name: 'send', description: 'Send mail', input_schema: schema }],
+    } as AnthropicRequest;
+    const out = await sanitizeRequest(mockNullPii(), body);
+    const sent = out.body.tools?.[0]?.input_schema as {
+      properties: Record<string, { type: string; enum?: string[]; examples?: object[] }>;
+      required: string[];
+      $defs: object;
+    };
+    expect(JSON.stringify(sent)).not.toContain(CANARY);
+    expect(Object.keys(sent.properties)).toEqual(['recipient', 'nested']);
+    const recipient = sent.properties.recipient;
+    expect(recipient?.type).toBe('string');
+    expect(recipient?.enum?.[1]).toBe('nobody');
+    expect(Object.keys(recipient?.examples?.[0] ?? {})).toEqual(['to']);
+    expect(sent.required).toEqual(['recipient']);
+    expect(Object.keys(sent.$defs)).toEqual(['addr']);
+  });
+
+  it('scrubs object keys inside tool_use input, each distinct key once', async () => {
+    let calls = 0;
+    const np = mockNullPii();
+    const sanitize = np.sanitize.bind(np);
+    (np as unknown as { sanitize: typeof sanitize }).sanitize = (text, sessionId) => {
+      calls += 1;
+      return sanitize(text, sessionId);
+    };
+    const toolUses = Array.from({ length: 20 }, (_, i) => ({
+      type: 'tool_use',
+      id: `t${i}`,
+      name: 'lookup',
+      input: { [CANARY]: 'owner', command: 'ls' },
+    }));
+    const { body } = await sanitizeRequest(np, {
+      model: 'claude-test',
+      messages: [{ role: 'assistant', content: toolUses }],
+    } as AnthropicRequest);
+    expect(JSON.stringify(body)).not.toContain(CANARY);
+    // 2 distinct keys + 40 values ('owner' and 'ls' twenty times each).
+    expect(calls).toBe(2 + 40);
+  });
+});
+
+describe('restoreResponse: object keys', () => {
+  it('puts the real value back into a masked key of a local tool call', async () => {
+    const np = mockNullPii();
+    const { body, sessionId } = await sanitizeRequest(
+      np,
+      request([{ type: 'text', text: CANARY }]),
+    );
+    const placeholder = (body.messages[0]?.content as Array<{ text: string }>)[0]?.text ?? '';
+    const response = {
+      id: 'msg_1',
+      type: 'message',
+      role: 'assistant',
+      content: [{ type: 'tool_use', id: 't1', name: 'Write', input: { [placeholder]: 'owner' } }],
+    } as AnthropicResponse;
+
+    const out = restoreResponse(np, response, sessionId);
+
+    expect(out.body.content[0]?.input).toEqual({ [CANARY]: 'owner' });
+    expect(out.replacements).toBe(1);
   });
 });

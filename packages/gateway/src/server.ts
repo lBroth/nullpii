@@ -24,6 +24,11 @@ export interface BuildServerOptions {
   readonly logStream?: { write(line: string): void };
 }
 
+/**
+ * Build the Fastify app: the health route, the Anthropic and OpenAI
+ * proxy routes, and the sidecar routes when `config.sidecarToken` is
+ * set. Does not listen; `startServer` does.
+ */
 export async function buildServer(opts: BuildServerOptions): Promise<FastifyInstance> {
   const { config, np } = opts;
   const fetchImpl: Fetch = opts.fetchImpl ?? ((input, init) => fetch(input, init));
@@ -70,7 +75,9 @@ export async function buildServer(opts: BuildServerOptions): Promise<FastifyInst
   return app;
 }
 
-/** Convenience: build + initialise + start. Used by the CLI. */
+/** Create the engine from `config` (its policy, backend and model
+ * directory), build the app and listen on `config.host:config.port`. Used
+ * by the `nullpii-gateway` binary. */
 export async function startServer(config: GatewayConfig): Promise<FastifyInstance> {
   const np = new NullPii({
     ...toEngineConfig(config.policy),

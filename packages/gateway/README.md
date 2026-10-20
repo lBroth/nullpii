@@ -115,11 +115,18 @@ const client = new Anthropic({
 });
 ```
 
-The gateway sanitises every `text` content block in `system` and
-`messages`, forwards to `NULLPII_UPSTREAM`, then restores placeholders
-in the response `content[].text` blocks. The vault session lives only
-for the duration of the round-trip and is destroyed before the gateway
-replies to the client.
+The gateway sanitises the request, forwards it to `NULLPII_UPSTREAM`, then restores placeholders in the response. The vault session lives only for the duration of the round-trip and is destroyed before the gateway replies to the client.
+
+**Scanned** before the request leaves:
+
+- `system` and every message's content: text, documents with a text or content source, search results, citations, tool results, and any block type the gateway does not know yet (every field but ids, names, signatures and media types);
+- tool calls in the history (`tool_use`, `server_tool_use`, `mcp_tool_use`): every string value of their `input`, and its object keys, since a tool can key data by a name or an email;
+- each tool's `description`, and its `input_schema`'s `description`, `title` and `$comment` texts and `enum`, `const`, `default` and `examples` values, at any depth. Property names and keywords stay as written, because the model needs them to call the tool; a masked `enum` value comes back restored;
+- `metadata` values (`user_id` is often an email) and `stop_sequences`.
+
+**Not scanned:** images and documents sent as base64, URL or file reference (counted as "not scanned"), `thinking` blocks (signed by the upstream, and generated from masked input anyway), and protocol fields: `model`, sampling parameters, `tool_choice`, `thinking`, and `mcp_servers`, whose URLs and credentials are meant for the upstream.
+
+**Restored** in the response: `content[].text`, and the input of a tool call to a tool in `restoreTools` (string values, and object keys that hold a placeholder).
 
 With `stream: true`, text deltas are restored as they stream, holding back only a placeholder split across deltas. Tool input (`input_json_delta`) is held per content block and sent once, restored, just before its `content_block_stop`: the assembled JSON is parsed and its string values restored, so a value holding a quote or a newline stays valid JSON. A client that disconnects mid-stream cancels the upstream call, so Anthropic stops generating (and billing) the rest of the reply.
 
@@ -146,11 +153,13 @@ The gateway appends `/v1/chat/completions` to `NULLPII_OPENAI_UPSTREAM`, so set 
 - message `content`, as a string or as `text` and `refusal` parts, for every role, `tool` results included;
 - a message's participant `name` (not the function name of a deprecated `function` message) and an assistant `refusal`;
 - `tool_calls[].function.arguments`: parsed as JSON, every string value sanitized, then re-serialized (arguments that are not valid JSON are sanitized as plain text, and arguments with nothing to mask are forwarded byte for byte); a custom tool call's `input`; the deprecated `function_call.arguments`;
-- the `description` of each tool (`function` or `custom`) and of each deprecated `functions[]` entry;
+- the `description` of each tool (`function` or `custom`) and of each deprecated `functions[]` entry, and the `parameters` schema of each: its `description`, `title` and `$comment` texts and `enum`, `const`, `default` and `examples` values, at any depth (property names and keywords stay);
+- `response_format.json_schema`: its `description`, and its `schema` as above;
 - `prediction.content`;
-- a file part's `filename`, which can name a person (`CV of …`).
+- a file part's `filename`, which can name a person (`CV of …`);
+- `user` and `safety_identifier` (often an email), `metadata` values, `stop`, and `web_search_options.user_location`.
 
-**Not scanned:** `image_url`, `input_audio` and `file` parts are forwarded untouched, apart from a file's `filename`, and counted as "not scanned" in the log and the console summary. Tool names, parameter JSON schemas, `response_format`, and the identifiers a client chooses to send (`user`, `safety_identifier`, `metadata`, `prompt_cache_key`) are forwarded as they are.
+**Not scanned:** `image_url`, `input_audio` and `file` parts are forwarded untouched, apart from a file's `filename`, and counted as "not scanned" in the log and the console summary. Tool names, protocol fields (`model`, sampling parameters, `tool_choice`, `logit_bias`) and `prompt_cache_key` are forwarded as they are.
 
 **Restored** in the response: each choice's `content`, `refusal`, `tool_calls[].function.arguments` (the string values of the parsed JSON, so a restored value holding a quote stays valid JSON), a custom tool call's `input`, and `function_call.arguments`. With `stream: true`, `delta.content` and `delta.refusal` are restored as they stream, and only a placeholder split across chunks is held back until it is complete. Tool-call arguments are held per call and sent restored, in one piece, with the chunk that carries the choice's `finish_reason` (or just before `data: [DONE]` if that never comes); each call's `id` and function name still arrive at once. Not restored: `logprobs` tokens, audio transcripts and streamed custom tool-call input keep their placeholders. In the `command` of a shell tool (`Bash`, `bash`, `shell`), a value goes back only where it is safe: see [Security](#security).
 
@@ -179,7 +188,7 @@ What gets masked comes from the shared policy file. Everything else is set with 
 | `urlAllowlist` | `"none"` masks every URL. `{ hosts, replaceDefaults }` sets, per host (`docs.python.org`, or `*.github.com` for a domain and its subdomains), how much of a clean URL stays readable: `full`, `host` or `mask`. |
 | `restoreTools` | Tools whose arguments get real values back. It replaces the default list (`DEFAULT_RESTORE_TOOLS`: the tools that run on this machine). Any other tool keeps the placeholders. |
 
-An unknown key, category, host or release stops the gateway at startup with the reason.
+An unknown key, category, host or release stops the gateway at startup with the reason. So does an integer variable that is not a whole number in its range (`30m`, `1e6` and `0` are refused rather than read as something else).
 
 **Environment variables.**
 
@@ -187,16 +196,16 @@ An unknown key, category, host or release stops the gateway at startup with the 
 |-----|---------|---------|
 | `NULLPII_CONFIG` | (default location) | Path of the policy file. If set, the file must exist. |
 | `NULLPII_HOST` | `127.0.0.1` | Bind host |
-| `NULLPII_PORT` | `8787` | Bind port |
+| `NULLPII_PORT` | `8787` | Bind port, 1 to 65535 |
 | `NULLPII_UPSTREAM` | `https://api.anthropic.com` | Upstream for `/v1/messages` (Anthropic Messages API) |
 | `NULLPII_OPENAI_UPSTREAM` | `https://api.openai.com` | Upstream for `/v1/chat/completions`: an OpenAI-compatible base URL without `/v1`, which the gateway appends. A value ending in `/v1` is refused at startup. |
-| `NULLPII_VAULT_TTL_MS` | `1800000` | Idle TTL of a sidecar session. The Messages proxy keeps one session per request and destroys it at the end. |
+| `NULLPII_VAULT_TTL_MS` | `1800000` | Idle TTL of a sidecar session, at least 1000. The Messages proxy keeps one session per request and destroys it at the end. |
 | `NULLPII_SIDECAR_TOKEN` | (off) | Enables the [sidecar API](#sidecar-api). Bearer token, at least 32 characters. |
-| `NULLPII_SIDECAR_MAX_SESSIONS` | `64` | Concurrent sidecar sessions. One more fails with 429. |
+| `NULLPII_SIDECAR_MAX_SESSIONS` | `64` | Concurrent sidecar sessions, at least 1. One more fails with 429. |
 | `NULLPII_MODEL_DIR` | (auto-fetch) | Local GLiNER ONNX dir |
 | `NULLPII_BACKEND` | `cpu` | `cpu` / `mps` / `cuda` / `auto` |
 | `NULLPII_LOG_LEVEL` | `info` | Fastify log level |
-| `NULLPII_BODY_LIMIT_BYTES` | `10485760` | Request body cap (10 MB) |
+| `NULLPII_BODY_LIMIT_BYTES` | `10485760` | Request body cap (10 MB), at least 1 |
 | `NULLPII_LOG_TRAFFIC` | (off) | Set to `wire` to dump the sanitized request body + raw upstream response (placeholder-bearing only — never real PII) to stdout for debugging. 64 KB cap per dump. |
 | `NULLPII_DISABLE_HINT` | (off) | Debug-only. Set to `1` to suppress the `LLM_PRESERVATION_HINT` system-prompt injection. Useful when an upstream proxy / cache rejects the modified system prompt; leave unset in normal operation. |
 
@@ -223,7 +232,7 @@ Calls on an unknown session answer 404 `session_not_found`; a missing or wrong s
 
 - **`key`** is chosen by the caller (`[A-Za-z0-9._-]`, up to 128 characters), for example the agent's conversation id. It is not a secret.
 - **The session secret** (32 random bytes, base64url) is handed out only when the session is created, and the gateway keeps only its hash. Keep it in memory. It is what separates sessions: a process that has the bearer token but not the secret, such as any command started from a shell that exported `NULLPII_SIDECAR_TOKEN`, cannot read or restore another caller's values, close its session, or take it over by opening it again. A caller that lost the secret opens a session under a new key.
-- **`value`**: every string leaf is processed. Object keys, numbers and booleans pass through.
+- **`value`**: every string is processed, object keys included (`sanitize` masks a key that holds personal data, `restore` puts it back). Numbers and booleans pass through.
 - **`fields`** restores only those top-level keys of an object. Use it to put real values back into the arguments a tool writes to disk, while every other argument keeps its placeholders.
 - **`tool`** names the tool whose input the value is (an object, else 400 `tool_requires_object_value`). The sidecar then applies the gateway's own rules, so a caller does not carry its own:
   - **Not in `restoreTools`** (the policy file's list, default `DEFAULT_RESTORE_TOOLS`): nothing is restored. The value comes back as sent, and `heldForTool` counts its placeholders.

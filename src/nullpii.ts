@@ -75,6 +75,36 @@ const GLINER_LABELS: readonly PiiCategory[] = [
  * `sanitize` (auto-`init`s) and later `restore` with the returned
  * `sessionId`. Call `dispose` to release native resources.
  */
+/** The text a sanitize call works on: the input with literal `{{`
+ * escaped (`escaped`, what the vault sees), its detection-normalised form
+ * (`normalized`), and the offset map between them. */
+interface Surfaces {
+  readonly escaped: string;
+  readonly normalized: string;
+  readonly normToOrig: readonly number[];
+}
+
+/** Spans found on `surfaces.normalized`, moved onto `surfaces.escaped`
+ * (unchanged when normalisation changed nothing) with their text read
+ * there. */
+function toEscapedSpans(
+  spans: ReadonlyArray<{ label: string; start: number; end: number; score: number }>,
+  surfaces: Surfaces,
+): PiiSpan[] {
+  const { escaped, normalized, normToOrig } = surfaces;
+  return spans.map((s) => {
+    const [start, end] =
+      normalized === escaped ? [s.start, s.end] : remapSpan(s.start, s.end, normToOrig);
+    return {
+      label: s.label as PiiCategory,
+      start,
+      end,
+      score: s.score,
+      text: escaped.slice(start, end),
+    };
+  });
+}
+
 export class NullPii {
   private readonly config: NullPiiConfig;
   /** `GLINER_LABELS` minus `config.disabledCategories`. */
@@ -165,16 +195,42 @@ export class NullPii {
     if (text.length > MAX_INPUT_CHARS) {
       throw new TextTooLongError(text.length, MAX_INPUT_CHARS, 'characters');
     }
+    const { tokenizer, backend } = await this.readyModel();
+    const escaped = escapePlaceholders(text);
+    const surfaces: Surfaces = { escaped, ...normalizeForDetection(escaped) };
+    const mlSpans = await this.modelSpans(surfaces, tokenizer, backend);
+    const recoSpans = this.recognizerSpans(surfaces, mlSpans);
+    const spans = this.finalSpans(escaped, [...mlSpans, ...recoSpans]);
+
+    const session = sessionId ?? this.vault.createSession();
+    logf(LOG_SCOPE, 'sanitize', {
+      spans: spans.length,
+      session: session.slice(0, 8), // log-only truncation, not the security-critical SESSION_PREFIX_LEN
+      ...(options.traceId !== undefined && { traceId: options.traceId }),
+    });
+    const result = this.vault.sanitize(escaped, spans, session);
+    return { ...result, sanitized: unescapePlaceholders(result.sanitized) };
+  }
+
+  /** The tokenizer and backend, initialising them on first use. */
+  private async readyModel(): Promise<{ tokenizer: GlinerTokenizer; backend: OrtBackend }> {
     await this.ensureInit();
     const tokenizer = this.tokenizer;
     const backend = this.backend;
     if (tokenizer === null || backend === null) {
       throw new ModelNotInitializedError();
     }
+    return { tokenizer, backend };
+  }
 
-    const escaped = escapePlaceholders(text);
-    const { normalized, normToOrig } = normalizeForDetection(escaped);
-
+  /** The model's spans on the normalised text, cut by the thresholds,
+   * deduplicated, and moved back onto the escaped text. */
+  private async modelSpans(
+    surfaces: Surfaces,
+    tokenizer: GlinerTokenizer,
+    backend: OrtBackend,
+  ): Promise<PiiSpan[]> {
+    const { normalized } = surfaces;
     const decodedRaw = await this.detectWithModel(normalized, tokenizer, backend);
     // Resolve `private_geolocation` BEFORE any dedupe: the label is
     // prompted zero-shot and the head applies it to place names and
@@ -189,29 +245,16 @@ export class NullPii {
     // `core:mac` defer to it, then fell under the 0.125 date threshold
     // and left the address in the clear.
     const decoded = dedupeOverlappingSpans(this.applyConfiguredThresholds(geoFiltered));
-
     // Remap span offsets from the normalised text back to the escaped
     // text so they align with the regex pack and vault output.
-    const mlSpans: PiiSpan[] =
-      normalized === escaped
-        ? decoded.map((s) => ({
-            label: s.label as PiiCategory,
-            start: s.start,
-            end: s.end,
-            score: s.score,
-            text: escaped.slice(s.start, s.end),
-          }))
-        : decoded.map((s) => {
-            const [origStart, origEnd] = remapSpan(s.start, s.end, normToOrig);
-            return {
-              label: s.label as PiiCategory,
-              start: origStart,
-              end: origEnd,
-              score: s.score,
-              text: escaped.slice(origStart, origEnd),
-            };
-          });
+    return toEscapedSpans(decoded, surfaces);
+  }
 
+  /** The recognizer pack's spans on the escaped text and on the
+   * normalised text (moved back onto the escaped text), plus base64-
+   * wrapped PII. */
+  private recognizerSpans(surfaces: Surfaces, mlSpans: PiiSpan[]): PiiSpan[] {
+    const { escaped, normalized } = surfaces;
     // Recognizers run on the *escaped* text so their spans align with
     // the vault output. For inputs where normalisation changed the text
     // (URL %XX, HTML entities, despace, NFKC/transliterate, …) the
@@ -223,16 +266,7 @@ export class NullPii {
     const recoSpansNorm: PiiSpan[] =
       normalized === escaped
         ? []
-        : runRecognizers(normalized, this.recognizers, []).map((s) => {
-            const [origStart, origEnd] = remapSpan(s.start, s.end, normToOrig);
-            return {
-              label: s.label as PiiCategory,
-              start: origStart,
-              end: origEnd,
-              score: s.score,
-              text: escaped.slice(origStart, origEnd),
-            } as PiiSpan;
-          });
+        : toEscapedSpans(runRecognizers(normalized, this.recognizers, []), surfaces);
     // Base64-wrapped PII: regex can't see `user.123@gmail.com` inside
     // `dXNlci4xMjNAZ21haWwuY29t` until we decode the blob. Run on the
     // escaped surface so spans land on the source base64 substring (gold
@@ -240,7 +274,13 @@ export class NullPii {
     // recognizer pack — `recognizers: 'none'` opts out of BOTH so a
     // caller wiring custom validators is not surprised by base64 hits.
     const base64Spans = this.config.recognizers === 'none' ? [] : detectBase64Pii(escaped);
-    const recoSpans: PiiSpan[] = [...recoSpansEscaped, ...recoSpansNorm, ...base64Spans];
+    return [...recoSpansEscaped, ...recoSpansNorm, ...base64Spans];
+  }
+
+  /** The spans to mask: enabled categories over their thresholds, less
+   * public digests, log timestamps and allowed URLs, deduplicated across
+   * labels, boundary-refined, with split addresses joined. */
+  private finalSpans(escaped: string, detected: PiiSpan[]): PiiSpan[] {
     // High-confidence recognizers (≥ 0.9) emit even when overlapping ML
     // output, so dedupe by IoU + score: highest score wins regardless
     // of label. Catches the common case where the GLiNER
@@ -266,7 +306,7 @@ export class NullPii {
     // `machine-timestamps.ts`.
     // Thresholds run before dedupe here too, for the same reason as above.
     const enabled = this.applyConfiguredThresholds(
-      ([...mlSpans, ...recoSpans] as PiiSpan[]).filter((s) => !this.disabled.has(s.label)),
+      detected.filter((s) => !this.disabled.has(s.label)),
     );
     const candidates = dropDatesInsideMachineTimestamps(
       dropSpansInsidePublicDigests(enabled, escaped),
@@ -282,19 +322,7 @@ export class NullPii {
     const refineOn = this.config.boundaryRefine ?? DEFAULT_BOUNDARY_REFINE;
     // One address the model split into parts is masked as one value, with
     // the separators between the parts (`address-join.ts`).
-    const spans = joinAddressParts(
-      escaped,
-      refineOn ? refineSpanBoundaries(escaped, merged) : merged,
-    );
-
-    const session = sessionId ?? this.vault.createSession();
-    logf(LOG_SCOPE, 'sanitize', {
-      spans: spans.length,
-      session: session.slice(0, 8), // log-only truncation, not the security-critical SESSION_PREFIX_LEN
-      ...(options.traceId !== undefined && { traceId: options.traceId }),
-    });
-    const result = this.vault.sanitize(escaped, spans, session);
-    return { ...result, sanitized: unescapePlaceholders(result.sanitized) };
+    return joinAddressParts(escaped, refineOn ? refineSpanBoundaries(escaped, merged) : merged);
   }
 
   /** The lowest score a model span of each label may have to survive

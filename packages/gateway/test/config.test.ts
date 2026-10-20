@@ -64,6 +64,15 @@ describe('loadConfig', () => {
   it.each([
     ['NULLPII_PORT', 'eighty'],
     ['NULLPII_PORT', '-1'],
+    ['NULLPII_PORT', '0'],
+    ['NULLPII_PORT', '65536'],
+    ['NULLPII_PORT', '80.5'],
+    ['NULLPII_VAULT_TTL_MS', '30m'],
+    ['NULLPII_VAULT_TTL_MS', '0'],
+    ['NULLPII_VAULT_TTL_MS', '999'],
+    ['NULLPII_VAULT_TTL_MS', '1e6'],
+    ['NULLPII_BODY_LIMIT_BYTES', '0'],
+    ['NULLPII_SIDECAR_MAX_SESSIONS', '0'],
     ['NULLPII_BACKEND', 'gpu'],
     ['NULLPII_LOG_LEVEL', 'loud'],
     ['NULLPII_OPENAI_UPSTREAM', 'https://api.openai.com/v1'],
@@ -71,6 +80,11 @@ describe('loadConfig', () => {
   ])('rejects %s=%s', (name, value) => {
     vi.stubEnv(name, value);
     expect(() => loadConfig()).toThrow();
+  });
+
+  it('names the variable and the allowed range in the error', () => {
+    vi.stubEnv('NULLPII_VAULT_TTL_MS', '30m');
+    expect(() => loadConfig()).toThrow(/NULLPII_VAULT_TTL_MS must be an integer of at least 1000/);
   });
 
   it('loads the shared policy file and its restoreTools', () => {

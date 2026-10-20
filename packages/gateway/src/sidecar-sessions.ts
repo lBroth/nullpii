@@ -11,6 +11,7 @@ const SESSION_KEY_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
 /** Random bytes in a session secret, sent base64url-encoded. */
 const SESSION_SECRET_BYTES = 32;
 
+/** Whether `key` can name a sidecar session (`SESSION_KEY_PATTERN`). */
 export function isValidSessionKey(key: string): boolean {
   return SESSION_KEY_PATTERN.test(key);
 }

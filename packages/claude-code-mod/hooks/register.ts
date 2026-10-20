@@ -56,6 +56,11 @@ interface Restored {
   /** For a tool outside the policy's `restoreTools`: the placeholders kept. */
   heldForTool?: number;
 }
+// Module scope is how a mod's hooks share data: the mods API passes no
+// context object between them. `$.state` would survive a reload of the
+// module, but nothing here needs to (a reloaded mod opens a new sidecar
+// session), and the session secret must stay in this process's memory.
+
 // Display-only restores, keyed by the masked text. In memory only, bounded,
 // and cleared when the session ends.
 const SHOWN_MAX = 256;

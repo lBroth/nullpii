@@ -82,6 +82,18 @@ const DEFAULT_BODY_LIMIT = 10 * 1024 * 1024;
 const DEFAULT_SIDECAR_MAX_SESSIONS = 64;
 const MIN_SIDECAR_TOKEN_LENGTH = 32;
 
+/** The range an integer variable must fall in. */
+interface IntRange {
+  readonly min: number;
+  readonly max: number;
+}
+const PORT_RANGE: IntRange = { min: 1, max: 65_535 };
+/** A TTL under a second would expire a sidecar session between two calls. */
+const VAULT_TTL_RANGE: IntRange = { min: 1_000, max: Number.MAX_SAFE_INTEGER };
+const AT_LEAST_ONE: IntRange = { min: 1, max: Number.MAX_SAFE_INTEGER };
+/** Digits only: no sign, unit, exponent or decimal point. */
+const DIGITS = /^\d+$/;
+
 const VALID_BACKENDS = new Set(['cpu', 'mps', 'cuda', 'auto']);
 const VALID_LOG_LEVELS = new Set(['fatal', 'error', 'warn', 'info', 'debug', 'trace']);
 const VALID_LOG_TRAFFIC = new Set(['wire', 'off']);
@@ -92,14 +104,18 @@ function readString(name: string): string | undefined {
   return raw === undefined || raw === '' ? undefined : raw;
 }
 
-function readInt(name: string, fallback: number): number {
-  const raw = process.env[name];
-  if (raw === undefined || raw === '') return fallback;
-  const n = Number.parseInt(raw, 10);
-  if (!Number.isFinite(n) || n < 0) {
-    throw new Error(`${name} must be a non-negative integer, got: ${raw}`);
-  }
-  return n;
+/** An integer variable, parsed whole (`30m` and `1e6` are errors, not
+ * 30 and 1), within `range`; unset or empty means `fallback`. */
+function readInt(name: string, fallback: number, range: IntRange): number {
+  const raw = readString(name);
+  if (raw === undefined) return fallback;
+  const n = DIGITS.test(raw) ? Number(raw) : Number.NaN;
+  if (Number.isSafeInteger(n) && n >= range.min && n <= range.max) return n;
+  const allowed =
+    range.max === Number.MAX_SAFE_INTEGER
+      ? `of at least ${range.min}`
+      : `from ${range.min} to ${range.max}`;
+  throw new Error(`${name} must be an integer ${allowed}, got: ${raw}`);
 }
 
 function readEnum<T extends string>(name: string, allowed: Set<string>, fallback: T): T {
@@ -145,18 +161,22 @@ export function loadConfig(): GatewayConfig {
   const policy = loadedFile === null ? {} : loadConfigFile(loadedFile);
   return {
     host: readString('NULLPII_HOST') ?? DEFAULT_HOST,
-    port: readInt('NULLPII_PORT', DEFAULT_PORT),
+    port: readInt('NULLPII_PORT', DEFAULT_PORT, PORT_RANGE),
     upstreamBaseUrl: readBaseUrl('NULLPII_UPSTREAM', DEFAULT_UPSTREAM),
     openaiUpstreamBaseUrl: readOpenAiUpstream(),
-    vaultTtlMs: readInt('NULLPII_VAULT_TTL_MS', DEFAULT_VAULT_TTL_MS),
+    vaultTtlMs: readInt('NULLPII_VAULT_TTL_MS', DEFAULT_VAULT_TTL_MS, VAULT_TTL_RANGE),
     ...(modelDir !== undefined && { modelDir }),
     backend: readEnum('NULLPII_BACKEND', VALID_BACKENDS, DEFAULT_BACKEND),
     logLevel: readEnum('NULLPII_LOG_LEVEL', VALID_LOG_LEVELS, DEFAULT_LOG_LEVEL),
-    bodyLimitBytes: readInt('NULLPII_BODY_LIMIT_BYTES', DEFAULT_BODY_LIMIT),
+    bodyLimitBytes: readInt('NULLPII_BODY_LIMIT_BYTES', DEFAULT_BODY_LIMIT, AT_LEAST_ONE),
     logTraffic:
       readEnum<'wire' | 'off'>('NULLPII_LOG_TRAFFIC', VALID_LOG_TRAFFIC, 'off') === 'wire',
     ...(sidecarToken !== undefined && { sidecarToken }),
-    sidecarMaxSessions: readInt('NULLPII_SIDECAR_MAX_SESSIONS', DEFAULT_SIDECAR_MAX_SESSIONS),
+    sidecarMaxSessions: readInt(
+      'NULLPII_SIDECAR_MAX_SESSIONS',
+      DEFAULT_SIDECAR_MAX_SESSIONS,
+      AT_LEAST_ONE,
+    ),
     policy,
     policyFile: loadedFile ?? defaultConfigPath(),
     policyLoaded: loadedFile !== null,

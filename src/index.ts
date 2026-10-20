@@ -7,6 +7,7 @@
 
 // Errors
 export {
+  EngineDisposedError,
   InvalidConfigError,
   InvalidPathError,
   ModelNotFoundError,
@@ -57,7 +58,18 @@ export { PiiVault } from './vault.js';
 export { RestoreStream, type RestoreCapable } from './restore-stream.js';
 
 // Public engine + functional wrappers
-export { NullPii, restore, sanitize } from './nullpii.js';
+export { NullPii } from './nullpii.js';
+
+// Shared masking-policy config file (CLI, gateway, Claude Code mod, MCP)
+export {
+  defaultConfigPath,
+  loadConfigFile,
+  type NullPiiFileConfig,
+  parseConfig,
+  resolveConfigFile,
+  toEngineConfig,
+} from './config-file.js';
+export { DEFAULT_RESTORE_TOOLS, DEFAULT_URL_RELEASES } from './defaults.js';
 
 // LLM-prompt helper
 export { LLM_PRESERVATION_HINT, wrapForLLM } from './wrap-for-llm.js';

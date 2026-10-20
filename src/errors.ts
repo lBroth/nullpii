@@ -85,6 +85,14 @@ export class InvalidConfigError extends NullPiiError {
   }
 }
 
+/** Thrown when an engine is used after `dispose()`. */
+export class EngineDisposedError extends NullPiiError {
+  override readonly code = 'NULLPII_DISPOSED';
+  constructor(options?: { cause?: unknown }) {
+    super('this NullPii engine was disposed — create a new one', options);
+  }
+}
+
 /** Thrown when `onnxruntime-node` is required but not installed. */
 export class OrtNotInstalledError extends NullPiiError {
   override readonly code = 'NULLPII_ORT_NOT_INSTALLED';

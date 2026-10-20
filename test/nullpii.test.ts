@@ -1,20 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  ModelNotInitializedError,
-  SessionMismatchError,
-  SessionNotFoundError,
-} from '../src/errors.js';
+import { EngineDisposedError, SessionMismatchError, SessionNotFoundError } from '../src/errors.js';
 import { InvalidConfigError } from '../src/errors.js';
 import { NullPii } from '../src/nullpii.js';
 import { GLINER_MODEL_CATEGORIES, PLACEHOLDER_REGEX } from '../src/types/index.js';
 
 describe('NullPii lifecycle', () => {
-  it('rejects sanitize after dispose with ModelNotInitializedError', async () => {
+  it('rejects sanitize after dispose with EngineDisposedError', async () => {
     const n = new NullPii({ modelDir: '/nonexistent', backend: 'cpu' });
     await n.dispose();
-    await expect(n.sanitize('hi')).rejects.toBeInstanceOf(ModelNotInitializedError);
+    await expect(n.sanitize('hi')).rejects.toBeInstanceOf(EngineDisposedError);
   });
 
   it('default-config exposes the recognizer pack', () => {
@@ -58,6 +54,8 @@ describe('NullPii lifecycle', () => {
 // with one logit column per label, as the real model does, and tests can
 // check which labels were prompted.
 const prompt = vi.hoisted(() => ({ labels: [] as readonly string[] }));
+/** Lets a test hold `infer()` open and count backend releases. */
+const gate = vi.hoisted(() => ({ hold: null as Promise<void> | null, released: 0 }));
 
 vi.mock('../src/backend/backend.js', () => {
   class OrtBackend {
@@ -67,6 +65,7 @@ vi.mock('../src/backend/backend.js', () => {
       maxWidth: number;
       numClasses: number;
     }> {
+      if (gate.hold !== null) await gate.hold;
       return {
         logits: new Float32Array(0),
         textLength: 0,
@@ -74,7 +73,9 @@ vi.mock('../src/backend/backend.js', () => {
         numClasses: prompt.labels.length,
       };
     }
-    async dispose(): Promise<void> {}
+    async dispose(): Promise<void> {
+      gate.released += 1;
+    }
   }
   return { OrtBackend };
 });
@@ -296,6 +297,27 @@ describe('NullPii e2e pipeline (mocked ONNX)', () => {
     expect(n.restore(r1.sanitized, r1.sessionId).restored).toBe('First email: a@acme.io');
     expect(n.restore(r2.sanitized, r2.sessionId).restored).toBe('Second email: c@nullpii.dev');
     await n.dispose();
+  });
+});
+
+describe('dispose() and work in flight', () => {
+  it('waits for a running sanitize() before releasing the session, and refuses new calls', async () => {
+    let release = (): void => {};
+    gate.hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const before = gate.released;
+    const n = new NullPii({ modelDir: '/fake', backend: 'cpu' });
+    const running = n.sanitize('Write to alice@acme.io about the plan for the week.');
+    const disposing = n.dispose();
+    await expect(n.sanitize('more text')).rejects.toBeInstanceOf(EngineDisposedError);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(gate.released).toBe(before);
+    release();
+    gate.hold = null;
+    await expect(running).resolves.toMatchObject({ sanitized: expect.any(String) });
+    await disposing;
+    expect(gate.released).toBe(before + 1);
   });
 });
 

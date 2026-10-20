@@ -18,7 +18,7 @@ import {
   DEFAULT_VARIANT,
   MAX_INPUT_BYTES,
 } from './defaults.js';
-import { ModelNotInitializedError, TextTooLongError } from './errors.js';
+import { EngineDisposedError, ModelNotInitializedError, TextTooLongError } from './errors.js';
 import { resolveNonCoordinateGeolocation } from './geo-filter.js';
 import { decodeGlinerLogits } from './gliner-decoder.js';
 import { buildSpanCandidates } from './gliner-spans.js';
@@ -89,6 +89,8 @@ export class NullPii {
   private modelDir: string | null = null;
   private initPromise: Promise<void> | null = null;
   private disposed = false;
+  /** `sanitize()` calls not yet settled; `dispose()` waits for them. */
+  private readonly inFlight = new Set<Promise<SanitizeResult>>();
 
   constructor(config: NullPiiConfig = {}) {
     // Fail on an unknown variant here, not at the first sanitize().
@@ -116,7 +118,7 @@ export class NullPii {
   /** Singleton-promise init, triggered automatically on the first
    * `sanitize()` call. Internal — users don't need to call this directly. */
   private ensureInit(): Promise<void> {
-    if (this.disposed) return Promise.reject(new ModelNotInitializedError());
+    if (this.disposed) return Promise.reject(new EngineDisposedError());
     if (this.initPromise === null) {
       this.initPromise = this.runInit().catch((err) => {
         this.initPromise = null;
@@ -143,10 +145,23 @@ export class NullPii {
     sessionId?: string,
     options: SanitizeOptions = {},
   ): Promise<SanitizeResult> {
-    // Hard cap. Adversarial 1 MB+ payloads cause quadratic regex behaviour
-    // and bypass both the recognizer pack and the adversarial-normalize
-    // pass. Refuse upfront so callers learn to chunk; matches the
-    // README "Inputs > 1 MB — refused upfront" contract.
+    if (this.disposed) throw new EngineDisposedError();
+    const run = this.runSanitize(text, sessionId, options);
+    this.inFlight.add(run);
+    try {
+      return await run;
+    } finally {
+      this.inFlight.delete(run);
+    }
+  }
+
+  private async runSanitize(
+    text: string,
+    sessionId: string | undefined,
+    options: SanitizeOptions,
+  ): Promise<SanitizeResult> {
+    // Hard cap: it bounds the work of every pass (`MAX_INPUT_BYTES`).
+    // Refuse upfront so callers learn to chunk.
     if (text.length > MAX_INPUT_BYTES) {
       throw new TextTooLongError(text.length, MAX_INPUT_BYTES, 'bytes');
     }
@@ -384,12 +399,17 @@ export class NullPii {
     this.vault.destroySession(sessionId);
   }
 
+  /** Release the ONNX session and clear the vault. New calls are refused
+   * at once; calls already running, and an initialisation in progress,
+   * finish first, so no session is released under a running inference
+   * or loaded after the release. */
   async dispose(): Promise<void> {
+    this.disposed = true;
+    await Promise.allSettled([...this.inFlight, this.initPromise ?? Promise.resolve()]);
     if (this.backend !== null) await this.backend.dispose();
     this.backend = null;
     this.tokenizer = null;
     this.vault.clear();
-    this.disposed = true;
   }
 
   private async runInit(): Promise<void> {
@@ -499,99 +519,4 @@ function applyThresholds<T extends ScoredSpan>(
     const t = perLabel[s.label] ?? globalThreshold;
     return s.score >= t;
   });
-}
-
-/** Engine cache for the convenience `sanitize()` / `restore()` helpers.
- * Configs without `recognizers: Recognizer[]` are cached by JSON
- * fingerprint (`recognizers: 'none'` is a fingerprintable sentinel).
- * Configs carrying a custom recognizer array can't be safely
- * fingerprinted — regex/fn flatten to `{}` and would collide distinct
- * sets — so those callers get a fresh `NullPii` plus a
- * `NullPiiOneShotWarning`. A `FinalizationRegistry` disposes leaked
- * one-shot engines on GC as a defence in depth. */
-const _cache = new Map<string, NullPii>();
-
-const _finalizer =
-  typeof FinalizationRegistry === 'undefined'
-    ? null
-    : new FinalizationRegistry<{ readonly engine: NullPii }>((held) => {
-        held.engine.dispose().catch(() => {
-          /* finalizer is best-effort; swallow errors */
-        });
-      });
-
-/** Canonical fingerprint of a `NullPiiConfig`. Returns `null` if the config
- * carries values that can't be structurally hashed (regex / function under
- * `recognizers`), signalling the caller-must-own-lifecycle path. */
-function configFingerprint(config: NullPiiConfig): string | null {
-  if (Array.isArray(config.recognizers)) return null;
-  const entries: Array<[string, unknown]> = [];
-  for (const k of Object.keys(config).sort()) {
-    const v = (config as Record<string, unknown>)[k];
-    if (v === undefined) continue;
-    entries.push([k, v]);
-  }
-  return JSON.stringify(entries);
-}
-
-function instance(config: NullPiiConfig = {}): NullPii {
-  const fp = configFingerprint(config);
-  if (fp === null) {
-    process.emitWarning(
-      'nullpii: sanitize()/restore() called with custom `recognizers` — a fresh ' +
-        'NullPii is created on each call because regex/function recognizers cannot ' +
-        'be structurally cached. The engine will NOT be disposed automatically. ' +
-        'For repeated calls, instantiate `new NullPii({ recognizers: [...] })` ' +
-        'once and call `.dispose()` yourself when done.',
-      'NullPiiOneShotWarning',
-    );
-    const np = new NullPii(config);
-    // FR rejects target === heldValue; use a weakref-style separate token.
-    _finalizer?.register(np, { engine: np });
-    return np;
-  }
-  let np = _cache.get(fp);
-  if (np === undefined) {
-    np = new NullPii(config);
-    _cache.set(fp, np);
-  }
-  return np;
-}
-
-/** Test-only escape hatch. Drops the engine cache so tests can assert on
- * fresh-cache behaviour without leaking state across describe blocks. Not
- * exported via `src/index.ts` — internal only. */
-export function __resetEngineCacheForTests(): void {
-  for (const np of _cache.values()) {
-    np.dispose().catch(() => {
-      /* test teardown */
-    });
-  }
-  _cache.clear();
-}
-
-/** Convenience: `await sanitize(text)` using a process-wide instance. */
-export async function sanitize(
-  text: string,
-  config: NullPiiConfig = {},
-  sessionId?: string,
-): Promise<SanitizeResult> {
-  return instance(config).sanitize(text, sessionId);
-}
-
-/** Convenience: `await restore(text, sessionId)` using the same shared instance. */
-export function restore(
-  text: string,
-  sessionId: string,
-  configOrOptions: NullPiiConfig | RestoreOptions = {},
-  options: RestoreOptions = {},
-): RestoreResult {
-  // Overload disambiguation: when called with 3 args and the third
-  // looks like a `RestoreOptions` bag (single `strict` key), treat it
-  // as options against the default config. Otherwise it's a config.
-  const looksLikeOptions = 'strict' in configOrOptions && Object.keys(configOrOptions).length === 1;
-  if (looksLikeOptions) {
-    return instance({}).restore(text, sessionId, configOrOptions as RestoreOptions);
-  }
-  return instance(configOrOptions as NullPiiConfig).restore(text, sessionId, options);
 }

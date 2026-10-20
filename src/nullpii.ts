@@ -279,6 +279,18 @@ export class NullPii {
     return { ...result, sanitized: unescapePlaceholders(result.sanitized) };
   }
 
+  /** The lowest score a model span of each label may have to survive
+   * decoding and the post-filter: the decode threshold, raised by the
+   * label's post-filter cut. The decoder applies it before NMS, so a span
+   * the thresholds would drop never suppresses another. */
+  private decodeCut(): (label: string) => number {
+    const decode = this.config.threshold ?? DEFAULT_DECODE_THRESHOLD;
+    const post = this.config.threshold ?? DEFAULT_POST_FILTER_THRESHOLD;
+    const perLabel: Readonly<Partial<Record<string, number>>> =
+      this.config.categoryThresholds ?? DEFAULT_CATEGORY_THRESHOLDS;
+    return (label) => Math.max(decode, perLabel[label] ?? post);
+  }
+
   /** The configured global and per-label score cuts, or their defaults. */
   private applyConfiguredThresholds<T extends ScoredSpan>(spans: T[]): T[] {
     return applyThresholds(
@@ -297,7 +309,7 @@ export class NullPii {
     tokenizer: GlinerTokenizer,
     backend: OrtBackend,
   ): Promise<DecodedSpan[]> {
-    const threshold = this.config.threshold ?? DEFAULT_DECODE_THRESHOLD;
+    const minScore = this.decodeCut();
     const maxLen = this.config.maxSequenceLength ?? DEFAULT_MAX_SEQUENCE_LENGTH;
     const decoded: DecodedSpan[] = [];
     const walk = await forEachWindow(normalized, async ({ text: chunk, offset }) => {
@@ -328,7 +340,7 @@ export class NullPii {
         out.numClasses,
         enc.words,
         this.promptLabels,
-        threshold,
+        minScore,
       );
       for (const s of spans) {
         decoded.push({

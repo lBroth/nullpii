@@ -2,9 +2,10 @@
 
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { type NullPii, TextTooLongError } from 'nullpii';
+import { type NullPii, type NullPiiFileConfig, TextTooLongError } from 'nullpii';
 import { SanitizeCache } from '../sanitize-cache.js';
 import { restoreValue, sanitizeValue } from '../sanitizer.js';
+import { ANTHROPIC_SHELL_TOOLS, OPENAI_SHELL_TOOLS, countPlaceholders } from '../shell-restore.js';
 import { SidecarSessions, isValidSessionKey } from '../sidecar-sessions.js';
 
 /**
@@ -26,6 +27,14 @@ export interface SidecarRouteOptions {
   readonly token: string;
   readonly ttlMs: number;
   readonly maxSessions: number;
+  /** Tools whose input a `restore` with `tool` may put real values into:
+   * the policy's `restoreTools`. */
+  readonly restoreTools: ReadonlySet<string>;
+  /** The policy file's contents, path, and whether it was loaded, for
+   * `GET /v1/sidecar/status`. */
+  readonly policy: NullPiiFileConfig;
+  readonly policyFile: string;
+  readonly policyLoaded: boolean;
   /** Clock, injectable for tests. */
   readonly now?: () => number;
 }
@@ -34,6 +43,10 @@ export const SIDECAR_MAX_BYTES = 4 * 1024 * 1024;
 const SWEEP_INTERVAL_MIN_MS = 1_000;
 const SWEEP_INTERVAL_MAX_MS = 60_000;
 const MAX_RESTORE_FIELDS = 64;
+/** Longest tool name `restore` accepts (`mcp__<server>__<tool>`). */
+const MAX_TOOL_NAME_LENGTH = 128;
+/** A `tool` the shell runs, under either agent's naming. */
+const SHELL_TOOLS: ReadonlySet<string> = new Set([...ANTHROPIC_SHELL_TOOLS, ...OPENAI_SHELL_TOOLS]);
 /** `hit` when a sanitize response came from the session's cache. */
 const CACHE_HEADER = 'x-nullpii-cache';
 const LOOPBACK_HOSTNAMES: ReadonlySet<string> = new Set(['127.0.0.1', 'localhost', '[::1]']);
@@ -58,7 +71,7 @@ const RESTORE_BODY = {
   properties: {
     value: {},
     fields: { type: 'array', maxItems: MAX_RESTORE_FIELDS, items: { type: 'string' } },
-    shell: { type: 'boolean' },
+    tool: { type: 'string', minLength: 1, maxLength: MAX_TOOL_NAME_LENGTH },
   },
 } as const;
 
@@ -71,9 +84,10 @@ interface SanitizeRequest extends SessionRequest {
 }
 
 interface RestoreRequest extends SessionRequest {
-  /** `shell`: the value is a shell tool's input, so its `command` gets the
+  /** `tool`: the value is that tool's input. A tool outside the policy's
+   * `restoreTools` gets nothing back; a shell tool's `command` gets the
    * shell-aware restore (see `shell-restore.ts`). */
-  Body: { value: unknown; fields?: string[]; shell?: boolean };
+  Body: { value: unknown; fields?: string[]; tool?: string };
 }
 
 function sha256(value: string): Buffer {
@@ -110,6 +124,21 @@ function sendCapped(reply: FastifyReply, payload: Record<string, unknown>): Fast
   const body = cappedBody(payload);
   if (body === undefined) return reply.code(413).send({ error: 'response_too_large' });
   return reply.type('application/json').send(body);
+}
+
+/** The answer for a tool outside the policy's `restoreTools`: the value
+ * as sent, with its placeholders counted in `heldForTool`. */
+function sendHeld(req: FastifyRequest, reply: FastifyReply, value: unknown): FastifyReply {
+  const heldForTool = countPlaceholders(JSON.stringify(value));
+  req.log.info({ heldForTool }, 'sidecar.restore');
+  return sendCapped(reply, {
+    value,
+    replacements: 0,
+    replacementsByLabel: {},
+    unknownPlaceholders: 0,
+    foreignPlaceholders: 0,
+    heldForTool,
+  });
 }
 
 function cappedBody(payload: Record<string, unknown>): string | undefined {
@@ -151,7 +180,16 @@ export async function registerSidecarRoutes(
       return undefined;
     });
 
-    scope.get('/v1/sidecar/status', async () => ({ status: 'ok', sessions: sessions.size }));
+    scope.get('/v1/sidecar/status', async () => ({
+      status: 'ok',
+      sessions: sessions.size,
+      policy: {
+        file: opts.policyFile,
+        loaded: opts.policyLoaded,
+        config: opts.policy,
+        restoreTools: [...opts.restoreTools],
+      },
+    }));
 
     scope.put<SessionRequest>(
       '/v1/sidecar/sessions/:key',
@@ -208,15 +246,18 @@ export async function registerSidecarRoutes(
       async (req, reply) => {
         const session = sessions.use(req.params.key);
         if (session === undefined) return reply.code(404).send({ error: 'session_not_found' });
-        const { value, fields } = req.body;
-        const shell = req.body.shell === true;
+        const { value, fields, tool } = req.body;
         const isObject = value !== null && typeof value === 'object' && !Array.isArray(value);
         if (fields !== undefined && !isObject) {
           return reply.code(400).send({ error: 'fields_require_object_value' });
         }
-        if (shell && !isObject) {
-          return reply.code(400).send({ error: 'shell_requires_object_value' });
+        if (tool !== undefined && !isObject) {
+          return reply.code(400).send({ error: 'tool_requires_object_value' });
         }
+        if (tool !== undefined && !opts.restoreTools.has(tool)) {
+          return sendHeld(req, reply, value);
+        }
+        const shell = tool !== undefined && SHELL_TOOLS.has(tool);
         const r = restoreValue(np, value, session.vaultId, fields, shell);
         req.log.info(
           {

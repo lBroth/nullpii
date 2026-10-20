@@ -59,6 +59,10 @@ export async function buildServer(opts: BuildServerOptions): Promise<FastifyInst
       token: config.sidecarToken,
       ttlMs: config.vaultTtlMs,
       maxSessions: config.sidecarMaxSessions,
+      restoreTools: config.restoreTools,
+      policy: config.policy,
+      policyFile: config.policyFile,
+      policyLoaded: config.policyLoaded,
       ...(opts.now !== undefined && { now: opts.now }),
     });
   }

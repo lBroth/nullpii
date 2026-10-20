@@ -3,27 +3,34 @@
 // nullpii mod: every prompt and every tool result goes through the local
 // nullpii sidecar (`nullpii-gateway` with NULLPII_SIDECAR_TOKEN set) before
 // Claude reads it, so personal data and secrets reach the model as
-// placeholders. Real values go back only into the arguments of tools that
-// run on this machine (policy.ts), so files and commands see what the user
-// has, and nothing masked leaves through a web or MCP tool.
+// placeholders. Real values go back only into the arguments of the tools
+// the sidecar's policy lists (`restoreTools` in the shared config file, by
+// default the tools that run on this machine), so files and commands see
+// what the user has, and nothing masked leaves through a web or MCP tool.
 //
 // Fail closed: when the sidecar cannot be reached, a prompt is handed back
 // to the user and a tool call is refused, instead of going out unmasked.
 // The vault lives in the sidecar's memory; this mod keeps counts only.
 
 import {
-  RESTORE_FIELDS,
-  SHELL_TOOLS,
+  PLACEHOLDER,
+  type Policy,
   addMasked,
   emptyCounts,
   formatBand,
   formatReport,
+  hasPlaceholder,
+  restorableArgs,
+  touchesPolicyFile,
 } from './policy.ts';
 
 const DEFAULT_SIDECAR_URL = 'http://127.0.0.1:8787';
 const SESSIONS_PATH = '/v1/sidecar/sessions/';
+const STATUS_PATH = '/v1/sidecar/status';
 const SESSION_NOT_FOUND = 404;
 const NO_TOKEN = 'NULLPII_SIDECAR_TOKEN is not set';
+const POLICY_ASK =
+  'This call may change the nullpii masking policy (what gets masked, and which tools get real values back). Allow it only if you asked for that change.';
 
 interface Sanitized {
   value: unknown;
@@ -34,13 +41,12 @@ interface Sanitized {
 interface Restored {
   value: Record<string, unknown>;
   replacements: number;
-  /** With `shell: true`: placeholders the sidecar left masked in
-   * `command`, because restoring them could change what the shell runs. */
+  /** For a shell tool: placeholders the sidecar left masked in `command`,
+   * because restoring them could change what the shell runs. */
   shellKeptMasked?: string[];
+  /** For a tool outside the policy's `restoreTools`: the placeholders kept. */
+  heldForTool?: number;
 }
-
-// `{{PII_<LABEL>_<index>_<session prefix>}}` (nullpii's PLACEHOLDER_TEMPLATE).
-const PLACEHOLDER = /\{\{PII_[A-Z0-9_]+\}\}/;
 // Display-only restores, keyed by the masked text. In memory only, bounded,
 // and cleared when the session ends.
 const SHOWN_MAX = 256;
@@ -50,6 +56,8 @@ const counts = emptyCounts();
 let sidecarUrl = DEFAULT_SIDECAR_URL;
 let token: string | undefined;
 let sessionKey = '';
+// The policy the sidecar runs with, read when the session opens.
+let policy: Policy | undefined;
 // Why the mod is blocking, shown above the prompt; undefined while healthy.
 let problem: string | undefined = NO_TOKEN;
 
@@ -59,25 +67,35 @@ class SidecarError extends Error {
   }
 }
 
-async function sidecar($, method: string, path: string, body?: unknown): Promise<unknown> {
+/** Send one request to the sidecar at `url` (a full URL). */
+async function request($, method: string, url: string, body?: unknown): Promise<unknown> {
   if (token === undefined) throw new Error(NO_TOKEN);
   // A JSON content type with no body is a 400, so PUT and DELETE send neither.
   const json = body === undefined ? {} : { 'content-type': 'application/json' };
-  const res = await $.http.fetch(
-    sidecarUrl + SESSIONS_PATH + encodeURIComponent(sessionKey) + path,
-    {
-      method,
-      headers: { authorization: `Bearer ${token}`, ...json },
-      ...(body !== undefined && { body: JSON.stringify(body) }),
-    },
-  );
+  const res = await $.http.fetch(url, {
+    method,
+    headers: { authorization: `Bearer ${token}`, ...json },
+    ...(body !== undefined && { body: JSON.stringify(body) }),
+  });
   if (!res.ok) throw new SidecarError(res.status);
   return res.text === '' ? {} : JSON.parse(res.text);
+}
+
+/** Call this session's sidecar route `path` (`/sanitize`, `/restore`). */
+async function sidecar($, method: string, path: string, body?: unknown): Promise<unknown> {
+  return request(
+    $,
+    method,
+    sidecarUrl + SESSIONS_PATH + encodeURIComponent(sessionKey) + path,
+    body,
+  );
 }
 
 async function openSession($): Promise<void> {
   await sidecar($, 'PUT', '');
   problem = undefined;
+  const status = (await request($, 'GET', sidecarUrl + STATUS_PATH)) as { policy?: Policy };
+  policy = status.policy;
 }
 
 /** Mask every string in `value`. A session the sidecar dropped (restart or
@@ -180,19 +198,19 @@ export function register(on) {
   });
 
   on('tool.call', async ($, e, next) => {
-    const args = Object.fromEntries(
-      (RESTORE_FIELDS[e.tool] ?? []).filter((f) => f in e).map((f) => [f, e[f]]),
-    );
+    // Known to be blocking: reach the sidecar again before the tool runs,
+    // so the call is refused up front instead of run with its result
+    // withheld, and a sidecar that is back clears the block.
+    if (problem !== undefined) await openSession($);
+    const args = restorableArgs(e);
     let call = e;
-    if (Object.keys(args).length > 0) {
-      // For a shell tool the sidecar restores `command` by the shell
-      // rule (SECURITY.md): a value Claude never saw is kept masked where
+    if (hasPlaceholder(args)) {
+      // The sidecar decides by the tool's name: nothing for a tool outside
+      // the policy's `restoreTools`, and for a shell tool the shell rule
+      // (SECURITY.md), which keeps a value Claude never saw masked where
       // the shell would interpret it.
-      const shell = SHELL_TOOLS.has(e.tool);
-      const r = (await sidecar($, 'POST', '/restore', {
-        value: args,
-        ...(shell && { shell }),
-      })) as Restored;
+      const r = (await sidecar($, 'POST', '/restore', { value: args, tool: e.tool })) as Restored;
+      counts.held += r.heldForTool ?? 0;
       const kept = r.shellKeptMasked ?? [];
       if (kept.length > 0) {
         return {
@@ -225,7 +243,19 @@ export function register(on) {
     };
   });
 
-  on('command.run', { command: 'pii' }, async () => ({ text: formatReport(counts, problem) }));
+  // A call that may change the masking policy is put to the user (or, in
+  // auto mode, to its classifier), whatever the rules would have decided.
+  on('tool.check', async ($, e, next) => {
+    const decided = await next(e);
+    if (decided.decision === 'deny' || !touchesPolicyFile(e.tool, e.input, policy?.file)) {
+      return decided;
+    }
+    return { decision: 'ask', reason: POLICY_ASK };
+  }).catch(async ($, e, next) => (next.called ? { decision: 'ask', reason: POLICY_ASK } : next(e)));
+
+  on('command.run', { command: 'pii' }, async () => ({
+    text: formatReport(counts, problem, policy),
+  }));
 
   // The transcript shows real values; what Claude reads keeps the
   // placeholders. If the sidecar fails, the hook is skipped and the row is

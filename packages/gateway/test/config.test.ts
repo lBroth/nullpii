@@ -33,6 +33,8 @@ describe('loadConfig', () => {
     });
     expect(c.sidecarToken).toBeUndefined();
     expect([...c.restoreTools]).toEqual([...DEFAULT_RESTORE_TOOLS]);
+    expect(c.policyFile).toBe(join(dir, 'nullpii', 'config.json'));
+    expect(c.policyLoaded).toBe(false);
   });
 
   it('reads every variable and treats empty ones as unset', () => {
@@ -81,5 +83,7 @@ describe('loadConfig', () => {
     const c = loadConfig();
     expect(c.policy).toEqual({ restoreTools: ['Bash'], disabledCategories: ['private_title'] });
     expect([...c.restoreTools]).toEqual(['Bash']);
+    expect(c.policyFile).toBe(file);
+    expect(c.policyLoaded).toBe(true);
   });
 });

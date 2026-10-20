@@ -1,35 +1,110 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Pure helpers for the nullpii mod: which tool arguments get real values
-// back, and how the counts are shown. No mods API calls live here, so
+// Pure helpers for the nullpii mod: which tool arguments are sent for a
+// restore, which calls touch the masking-policy file, and how the counts
+// and the policy are shown. No mods API calls live here, so
 // `claude plugin validate` reads every `$` call from register.ts.
 
 /**
- * Arguments that get their real values back before a tool runs, per tool.
- * Only tools that act on this machine are listed. A tool that sends its
- * input elsewhere (WebFetch, WebSearch, MCP tools) keeps the placeholders,
- * so a masked value never leaves the machine through a tool call.
+ * Arguments that may get their real values back, per built-in tool that
+ * acts on this machine. Whether a tool gets any is not decided here: the
+ * sidecar restores only into the tools its policy lists (`restoreTools`
+ * in the shared config file), so the mod and the gateway follow one list.
+ * A tool missing from this table sends every argument it has.
  */
 export const RESTORE_FIELDS: Readonly<Record<string, readonly string[]>> = {
   Bash: ['command'],
   Read: ['file_path'],
   Edit: ['file_path', 'old_string', 'new_string'],
+  MultiEdit: ['file_path', 'edits'],
   Write: ['file_path', 'content'],
   NotebookEdit: ['notebook_path', 'new_source'],
   Grep: ['pattern', 'path', 'glob'],
   Glob: ['pattern', 'path'],
 };
 
+/** Keys of a `tool.call` event that are not the tool's own arguments. */
+const RESERVED_KEYS: ReadonlySet<string> = new Set(['tool', 'tool_use_id', 'agentId', 'consent']);
+
+/** `{{PII_<LABEL>_<index>_<16 hex session prefix>}}`, nullpii's
+ * `PLACEHOLDER_REGEX` without the global flag. */
+export const PLACEHOLDER = /\{\{PII_[A-Z_]+_\d+_[0-9a-f]{16}\}\}/;
+
+/** The arguments of a tool call to send for a restore: the listed fields
+ * of a built-in tool, else every argument. */
+export function restorableArgs(call: Readonly<Record<string, unknown>>): Record<string, unknown> {
+  const tool = typeof call.tool === 'string' ? call.tool : '';
+  const fields = RESTORE_FIELDS[tool];
+  return Object.fromEntries(
+    Object.entries(call).filter(([key]) =>
+      fields === undefined ? !RESERVED_KEYS.has(key) : fields.includes(key),
+    ),
+  );
+}
+
+/** Whether any string in `value` holds a placeholder. */
+export function hasPlaceholder(value: unknown): boolean {
+  return PLACEHOLDER.test(JSON.stringify(value) ?? '');
+}
+
+/** File tools and the argument that names the file they write. */
+const WRITE_PATH_FIELDS: Readonly<Record<string, string>> = {
+  Write: 'file_path',
+  Edit: 'file_path',
+  MultiEdit: 'file_path',
+  NotebookEdit: 'notebook_path',
+};
+/** The default location's tail, matched whatever the home directory is. */
+const POLICY_PATH_TAIL = /[\\/]nullpii[\\/]config\.json$/;
+/** In a shell command: the default location, or the variable that names
+ * another one. Best effort, as any reading of a shell command is. */
+const POLICY_IN_COMMAND = /nullpii[\\/]config\.json|NULLPII_CONFIG/;
+
+/**
+ * Whether a tool call may change the masking-policy file: a file tool
+ * writing `policyFile` or any `…/nullpii/config.json`, or a shell command
+ * that names one of them or `NULLPII_CONFIG`. Such a call is put to the
+ * user, so text Claude read cannot quietly loosen what gets masked.
+ */
+export function touchesPolicyFile(
+  tool: string,
+  input: unknown,
+  policyFile: string | undefined,
+): boolean {
+  if (input === null || typeof input !== 'object') return false;
+  const args = input as Readonly<Record<string, unknown>>;
+  if (tool === 'Bash') {
+    const command = typeof args.command === 'string' ? args.command : '';
+    return (
+      POLICY_IN_COMMAND.test(command) || (policyFile !== undefined && command.includes(policyFile))
+    );
+  }
+  const field = WRITE_PATH_FIELDS[tool];
+  const path = field === undefined ? undefined : args[field];
+  if (typeof path !== 'string') return false;
+  return path === policyFile || POLICY_PATH_TAIL.test(path);
+}
+
+/** The masking policy the sidecar runs with (`GET /v1/sidecar/status`). */
+export interface Policy {
+  file: string;
+  loaded: boolean;
+  config: Readonly<Record<string, unknown>>;
+  restoreTools: readonly string[];
+}
+
 const LABEL_PREFIX = 'private_';
 
 export interface Counts {
   masked: number;
   restored: number;
+  /** Placeholders kept in calls to tools outside `restoreTools`. */
+  held: number;
   byLabel: Record<string, number>;
 }
 
 export function emptyCounts(): Counts {
-  return { masked: 0, restored: 0, byLabel: {} };
+  return { masked: 0, restored: 0, held: 0, byLabel: {} };
 }
 
 /** Add one sidecar sanitize response to the session's counts. */
@@ -65,17 +140,32 @@ export function formatBand(counts: Counts, problem: string | undefined): string 
   return `nullpii · ${counts.masked} masked (${labels}) · ${counts.restored} restored to local tools`;
 }
 
+/** The policy lines of the `/pii` reply. */
+export function formatPolicy(policy: Policy | undefined): string[] {
+  if (policy === undefined) return ['Policy: unknown (the sidecar has not answered)'];
+  const disabled = policy.config.disabledCategories;
+  const off = Array.isArray(disabled) && disabled.length > 0 ? disabled.join(', ') : 'none';
+  return [
+    `Policy file: ${policy.file} (${policy.loaded ? 'loaded' : 'not present: built-in defaults'})`,
+    `Categories turned off: ${off}`,
+    `Tools that get real values back: ${policy.restoreTools.join(', ')}`,
+    'Changes to the file apply when nullpii-gateway restarts.',
+  ];
+}
+
 /** The `/pii` command's reply. */
-export function formatReport(counts: Counts, problem: string | undefined): string {
+export function formatReport(
+  counts: Counts,
+  problem: string | undefined,
+  policy: Policy | undefined,
+): string {
   const lines = [
     problem === undefined ? 'Status: on' : `Status: blocking (${problem})`,
     `Masked before Claude read them: ${counts.masked}`,
     `Real values put back into local tool calls: ${counts.restored}`,
+    `Placeholders kept in calls to other tools: ${counts.held}`,
   ];
   const labels = formatLabels(counts.byLabel, Number.POSITIVE_INFINITY);
   if (labels !== '') lines.push(`By type: ${labels}`);
-  return lines.join('\n');
+  return [...lines, ...formatPolicy(policy)].join('\n');
 }
-
-/** Tools whose restored arguments a shell interprets. */
-export const SHELL_TOOLS: ReadonlySet<string> = new Set(['Bash']);

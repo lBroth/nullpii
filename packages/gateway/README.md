@@ -156,10 +156,32 @@ Upstream errors pass through with their status and body, plus `retry-after`, `re
 
 ## Config
 
-All via env vars. No file config in this preview.
+What gets masked comes from the shared policy file. Everything else is set with environment variables.
+
+**Policy file.** The gateway reads `$NULLPII_CONFIG`, else `~/.config/nullpii/config.json` (or `$XDG_CONFIG_HOME/nullpii/config.json`) if it exists. The CLI, the library and the Claude Code mod use the same file. It is read once, at startup, so restart the gateway after you change it. `nullpii config` validates it and prints it.
+
+```json
+{
+  "disabledCategories": ["private_organization", "private_occupation"],
+  "urlAllowlist": { "hosts": { "*.github.com": "host" } },
+  "restoreTools": ["Bash", "Read", "Edit", "MultiEdit", "Write", "NotebookEdit", "Grep", "Glob"]
+}
+```
+
+| Key | Effect |
+|---|---|
+| `disabledCategories` | Categories that are not masked |
+| `categoryThresholds`, `threshold` | Confidence cuts in `[0, 1]`, per category or for all. Lower masks more. |
+| `urlAllowlist` | `"none"` masks every URL. `{ hosts, replaceDefaults }` sets, per host (`docs.python.org`, or `*.github.com` for a domain and its subdomains), how much of a clean URL stays readable: `full`, `host` or `mask`. |
+| `restoreTools` | Tools whose arguments get real values back. It replaces the default list (`DEFAULT_RESTORE_TOOLS`: the tools that run on this machine). Any other tool keeps the placeholders. |
+
+An unknown key, category, host or release stops the gateway at startup with the reason.
+
+**Environment variables.**
 
 | Var | Default | Purpose |
 |-----|---------|---------|
+| `NULLPII_CONFIG` | (default location) | Path of the policy file. If set, the file must exist. |
 | `NULLPII_HOST` | `127.0.0.1` | Bind host |
 | `NULLPII_PORT` | `8787` | Bind port |
 | `NULLPII_UPSTREAM` | `https://api.anthropic.com` | Upstream for `/v1/messages` (Anthropic Messages API) |
@@ -187,16 +209,19 @@ Every request needs `Authorization: Bearer $NULLPII_SIDECAR_TOKEN`.
 
 | Method and path | Body | Response |
 |---|---|---|
-| `GET /v1/sidecar/status` | — | `{ status, sessions }` |
+| `GET /v1/sidecar/status` | — | `{ status, sessions, policy }`, `policy` being `{ file, loaded, config, restoreTools }` |
 | `PUT /v1/sidecar/sessions/:key` | — | 201 created or 200 already open. 429 when `NULLPII_SIDECAR_MAX_SESSIONS` are open. |
 | `POST /v1/sidecar/sessions/:key/sanitize` | `{ value }`: a string or any JSON | `{ value, captured, capturedByLabel }` |
-| `POST /v1/sidecar/sessions/:key/restore` | `{ value, fields?, shell? }` | `{ value, replacements, replacementsByLabel, unknownPlaceholders, foreignPlaceholders }`, plus `shellKeptMasked` with `shell` |
+| `POST /v1/sidecar/sessions/:key/restore` | `{ value, fields?, tool? }` | `{ value, replacements, replacementsByLabel, unknownPlaceholders, foreignPlaceholders }`, plus `shellKeptMasked` for a shell tool and `heldForTool` for a tool outside `restoreTools` |
 | `DELETE /v1/sidecar/sessions/:key` | — | 204, or 404 if unknown |
 
 - **`key`** is chosen by the caller (`[A-Za-z0-9._-]`, up to 128 characters), for example the agent's conversation id. It is not a secret: the token is the gate.
 - **`value`**: every string leaf is processed. Object keys, numbers and booleans pass through.
 - **`fields`** restores only those top-level keys of an object. Use it to put real values back into the arguments a tool writes to disk, while every other argument keeps its placeholders.
-- **`shell: true`** marks the value as a shell tool's input (an object, else 400 `shell_requires_object_value`). Its top-level `command`, when restored, follows the gateway's [shell rule](#security): a placeholder gets its value back only when the value is safe where it stands, with heredocs, nested interpreters (`bash -c`, `eval`, `ssh`, `python -c`, `… | sh`, `awk`, `sed`) and quoting taken into account. Every other restored field gets its values back as usual. `shellKeptMasked` lists the distinct placeholders left masked in `command`: placeholders, never values, so the caller can tell the user what was held back. Without `shell` the restore is unchanged and the field is absent. The request log carries the count only (`unsafeShell`).
+- **`tool`** names the tool whose input the value is (an object, else 400 `tool_requires_object_value`). The sidecar then applies the gateway's own rules, so a caller does not carry its own:
+  - **Not in `restoreTools`** (the policy file's list, default `DEFAULT_RESTORE_TOOLS`): nothing is restored. The value comes back as sent, and `heldForTool` counts its placeholders.
+  - **A shell tool** (`Bash`, `bash`, `shell`): the top-level `command`, when restored, follows the [shell rule](#security). A placeholder gets its value back only when the value is safe where it stands, with heredocs, nested interpreters (`bash -c`, `eval`, `ssh`, `python -c`, `… | sh`, `awk`, `sed`) and quoting taken into account. Every other restored field gets its values back as usual. `shellKeptMasked` lists the distinct placeholders left masked in `command`: placeholders, never values, so the caller can tell the user what was held back. The request log carries the count only (`unsafeShell`).
+  - **Without `tool`**, everything is restored, for example to show text on screen. The two fields are absent.
 - **Sessions** expire after `NULLPII_VAULT_TTL_MS` without a call, and their vault entries are dropped with them. A placeholder from an expired session no longer restores and is counted in `unknownPlaceholders`. All sessions are dropped when the server stops.
 - **Limits:**
   - requests and responses are capped at 4 MiB (413 `response_too_large` for the latter); placeholders are longer than most of the values they replace, so a response can exceed the cap even when its request did not;

@@ -28,6 +28,8 @@ export const BASE_TEST_CONFIG: GatewayConfig = {
   logTraffic: false,
   sidecarMaxSessions: 64,
   policy: {},
+  policyFile: '/nonexistent/nullpii/config.json',
+  policyLoaded: false,
   restoreTools: TEST_RESTORE_TOOLS,
   appendHint: true,
 };

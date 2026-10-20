@@ -147,6 +147,28 @@ describe('sidecar · access control', () => {
   });
 });
 
+describe('sidecar · status', () => {
+  it('reports the policy in effect and where its file is', async () => {
+    const { app } = await setup({
+      policy: { disabledCategories: ['private_title'], restoreTools: ['Read'] },
+      policyFile: '/home/node/.config/nullpii/config.json',
+      policyLoaded: true,
+      restoreTools: new Set(['Read']),
+    });
+    const res = await app.inject({ method: 'GET', url: '/v1/sidecar/status', headers: AUTH });
+    expect(res.json()).toEqual({
+      status: 'ok',
+      sessions: 0,
+      policy: {
+        file: '/home/node/.config/nullpii/config.json',
+        loaded: true,
+        config: { disabledCategories: ['private_title'], restoreTools: ['Read'] },
+        restoreTools: ['Read'],
+      },
+    });
+  });
+});
+
 describe('sidecar · sessions', () => {
   it('creates a session once, then reports it as existing', async () => {
     const { app } = await setup();
@@ -406,7 +428,7 @@ describe('sidecar · sanitize and restore', () => {
   });
 });
 
-describe('sidecar · restore with shell', () => {
+describe('sidecar · restore with tool', () => {
   interface ShellRestoreBody {
     value: Record<string, string>;
     replacements: number;
@@ -445,7 +467,7 @@ describe('sidecar · restore with shell', () => {
     const res = await restore(app, {
       value: { command: `echo ${secret}` },
       fields: ['command'],
-      shell: true,
+      tool: 'Bash',
     });
 
     expect(res.statusCode).toBe(200);
@@ -463,7 +485,7 @@ describe('sidecar · restore with shell', () => {
     const res = await restore(app, {
       value: { command: `echo '${secret}'` },
       fields: ['command'],
-      shell: true,
+      tool: 'Bash',
     });
 
     const body = res.json() as ShellRestoreBody;
@@ -478,7 +500,7 @@ describe('sidecar · restore with shell', () => {
     const res = await restore(app, {
       value: { command: commitWith(`Thanks ${person}`) },
       fields: ['command'],
-      shell: true,
+      tool: 'Bash',
     });
 
     const body = res.json() as ShellRestoreBody;
@@ -491,7 +513,7 @@ describe('sidecar · restore with shell', () => {
     const [person] = await placeholdersFor(app, FULL_NAME);
     const command = `python3 - <<'EOF'\nprint('${person}')\nEOF`;
 
-    const res = await restore(app, { value: { command }, fields: ['command'], shell: true });
+    const res = await restore(app, { value: { command }, fields: ['command'], tool: 'Bash' });
 
     const body = res.json() as ShellRestoreBody;
     expect(body.value.command).toBe(command);
@@ -505,7 +527,7 @@ describe('sidecar · restore with shell', () => {
 
     const res = await restore(app, {
       value: { command: `echo ${secret}`, description: `print ${secret}` },
-      shell: true,
+      tool: 'Bash',
     });
 
     const body = res.json() as ShellRestoreBody;
@@ -514,7 +536,7 @@ describe('sidecar · restore with shell', () => {
     expect(body.shellKeptMasked).toEqual([secret]);
   });
 
-  it('without `shell`: plain restore, unchanged, and no shellKeptMasked field', async () => {
+  it('without `tool`: plain restore, unchanged, and no shellKeptMasked field', async () => {
     const { app } = await setup();
     const [secret] = await placeholdersFor(app, INJECTION);
 
@@ -527,14 +549,55 @@ describe('sidecar · restore with shell', () => {
     expect(Object.hasOwn(body, 'shellKeptMasked')).toBe(false);
   });
 
-  it('rejects `shell` on a value that is not an object', async () => {
+  it('rejects `tool` on a value that is not an object', async () => {
     const { app } = await setup();
     await placeholdersFor(app, INJECTION);
 
-    const res = await restore(app, { value: 'echo hi', shell: true });
+    const res = await restore(app, { value: 'echo hi', tool: 'Bash' });
 
     expect(res.statusCode).toBe(400);
-    expect(res.json()).toEqual({ error: 'shell_requires_object_value' });
+    expect(res.json()).toEqual({ error: 'tool_requires_object_value' });
+  });
+
+  it('puts nothing back into a tool outside restoreTools, and counts what it held', async () => {
+    const { app } = await setup();
+    const [person] = await placeholdersFor(app, FULL_NAME);
+    const value = { url: `https://example.org/?q=${person}`, prompt: `about ${person}` };
+
+    const res = await restore(app, { value, tool: 'WebFetch' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      value,
+      replacements: 0,
+      replacementsByLabel: {},
+      unknownPlaceholders: 0,
+      foreignPlaceholders: 0,
+      heldForTool: 2,
+    });
+    expect(res.body).not.toContain(FULL_NAME);
+  });
+
+  it('follows the configured restoreTools, not a built-in list', async () => {
+    const { app } = await setup({ restoreTools: new Set(['mcp__files__write']) });
+    const [person] = await placeholdersFor(app, FULL_NAME);
+
+    const mcp = await restore(app, { value: { text: person }, tool: 'mcp__files__write' });
+    const bash = await restore(app, { value: { command: `echo '${person}'` }, tool: 'Bash' });
+
+    expect((mcp.json() as ShellRestoreBody).value.text).toBe(FULL_NAME);
+    expect((bash.json() as ShellRestoreBody).value.command).toBe(`echo '${person}'`);
+    expect(bash.json()).toMatchObject({ replacements: 0, heldForTool: 1 });
+  });
+
+  it('applies the shell rule to the lower-case shell tools of other agents', async () => {
+    const { app } = await setup();
+    const [secret] = await placeholdersFor(app, INJECTION);
+
+    for (const tool of ['bash', 'shell']) {
+      const res = await restore(app, { value: { command: `echo ${secret}` }, tool });
+      expect((res.json() as ShellRestoreBody).shellKeptMasked).toEqual([secret]);
+    }
   });
 });
 

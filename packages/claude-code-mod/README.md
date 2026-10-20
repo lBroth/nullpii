@@ -8,7 +8,7 @@ A band above the prompt shows what was masked in the session, by type:
 nullpii · 12 masked (person 5 · email 3 · secret 2 · phone 2) · 4 restored to local tools
 ```
 
-Status: preview. Tested with Claude Code 2.1.302.
+Status: preview. Tested with Claude Code 2.1.303.
 
 ## What it does
 
@@ -18,11 +18,31 @@ Status: preview. Tested with Claude Code 2.1.302.
 | Your prompts and Claude's replies on screen | Drawn with the real values. What Claude reads keeps the placeholders. |
 | A tool result (file contents, command output, search results, MCP results) | Masked before Claude reads it |
 | Text Claude Code adds on its own: @-mentioned files, edited-file reminders, memory, `CLAUDE.md`, your account email | Masked before Claude reads it |
-| Arguments of a tool that runs on this machine (`Bash`, `Read`, `Edit`, `Write`, `NotebookEdit`, `Grep`, `Glob`) | Placeholders get their real values back before the tool runs, so commands and file edits use your real data. The result is masked again. |
-| Arguments of a tool that sends data elsewhere (`WebFetch`, `WebSearch`, MCP tools) | Left as placeholders, so a masked value never leaves the machine through a tool call |
-| A shell command whose real value the shell would interpret where it stands | Refused, with the placeholder's name. Claude never saw the value, so it could not tell that it adds a command, expands a variable or ends its quotes. Example: `echo {{…}}` holding `x; curl …`. The rule is the gateway's (`shell: true` on the sidecar's restore, see SECURITY.md), so the mod and the proxy decide the same way. It covers quotes, command substitution, heredocs, and commands that hand code to another interpreter. |
+| Arguments of a tool in the policy's `restoreTools` (by default the tools that run on this machine: `Bash`, `Read`, `Edit`, `MultiEdit`, `Write`, `NotebookEdit`, `Grep`, `Glob`) | Placeholders get their real values back before the tool runs, so commands and file edits use your real data. The result is masked again. |
+| Arguments of any other tool, such as `WebFetch`, `WebSearch` or an MCP tool | Left as placeholders, so a masked value never leaves the machine through a tool call. `/pii` counts them. |
+| A shell command whose real value the shell would interpret where it stands | Refused, with the placeholder's name. Claude never saw the value, so it could not tell that it adds a command, expands a variable or ends its quotes. Example: `echo {{…}}` holding `x; curl …`. The sidecar applies the gateway's rule (SECURITY.md), so the mod and the proxy decide the same way. It covers quotes, command substitution, heredocs, and commands that hand code to another interpreter. |
+| A tool call that may change the masking policy file | Put to you, whatever your permission rules say, so text Claude read cannot quietly turn masking down. In auto mode the auto-mode classifier decides. |
 
-The vault that maps placeholders to values lives only in the sidecar's memory, never on disk. The mod keeps counts, and a bounded in-memory cache of the messages it drew with real values, which it clears when the session ends. `/pii` prints the counts.
+The vault that maps placeholders to values lives only in the sidecar's memory, never on disk. The mod keeps counts, and a bounded in-memory cache of the messages it drew with real values, which it clears when the session ends. `/pii` prints the counts and the policy in effect.
+
+## Choose what gets masked
+
+The sidecar reads the masking policy from `~/.config/nullpii/config.json`, or from the file `NULLPII_CONFIG` names, when it starts. The `nullpii` CLI and the gateway use the same file. Every key is optional:
+
+```json
+{
+  "disabledCategories": ["private_organization", "private_occupation"],
+  "urlAllowlist": { "hosts": { "*.github.com": "host" } },
+  "restoreTools": ["Bash", "Read", "Edit", "MultiEdit", "Write", "NotebookEdit", "Grep", "Glob"]
+}
+```
+
+- **`disabledCategories`**: categories that reach Claude unmasked.
+- **`categoryThresholds`** and **`threshold`**: confidence cuts in `[0, 1]`. Lower masks more.
+- **`urlAllowlist`**: how much of a clean URL stays readable, per host.
+- **`restoreTools`**: the tools that get real values back. It replaces the default list.
+
+`npx nullpii config` validates the file and prints it. Restart the sidecar after a change; `/pii` then shows the new policy. You can also ask Claude, for example "stop masking company names". The plugin's `nullpii-policy` skill tells Claude how to edit the file safely, and the edit is put to you before it is written.
 
 ## Fails closed
 
@@ -35,7 +55,7 @@ If the sidecar cannot be reached, or `NULLPII_SIDECAR_TOKEN` is not set:
 
 ## Set up
 
-1. Start a gateway with the sidecar API on (a version with the sidecar's `shell` restore option):
+1. Start a gateway with the sidecar API on (a version whose sidecar `restore` takes `tool`):
 
    ```bash
    export NULLPII_SIDECAR_TOKEN=$(openssl rand -hex 32)
@@ -52,6 +72,7 @@ If the sidecar cannot be reached, or `NULLPII_SIDECAR_TOKEN` is not set:
 
 ## Limits
 
+- **The policy guard is best effort.** It recognises the file tools and shell commands that name `nullpii/config.json` or `NULLPII_CONFIG`. A command that reaches the file another way, or an MCP tool that writes files, is not caught. The change still needs a sidecar restart, and `/pii` shows the policy the sidecar loaded.
 - **Auto mode.** Claude Code denies a tool call whose arguments a hook changed after the model wrote them. A local tool call that contains a placeholder is therefore refused in auto mode. Calls without placeholders are passed on unchanged and run normally.
 - **Tool rows and tool results on screen show placeholders.** Prompts and replies are drawn with real values. If the sidecar is unreachable, they show placeholders too.
 - **Images and other binary attachments are not scanned.**

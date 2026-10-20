@@ -25,13 +25,12 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  *   escapes, and command substitutions (`$(…)`, backticks), which are
  *   unquoted even inside double quotes.
  *
- * Same rule as the Claude Code mod (`shellContextAt` in its
- * `hooks/policy.ts`), with these differences: heredoc bodies are skipped
- * by the quote lexer (an apostrophe in a body does not open a quote for
- * the rest of the command); `<<` counts only in shell code, never inside
- * quotes or as the here-string `<<<`; a heredoc without its closing line
- * gets the strictest rule; only `cat` and `tee` heredocs count as data;
- * and the interpreter list also covers `| sh` and the awk/sed family.
+ * Heredoc bodies are skipped by the quote lexer (an apostrophe in a body
+ * does not open a quote for the rest of the command); `<<` counts only in
+ * shell code, never inside quotes or as the here-string `<<<`; a heredoc
+ * without its closing line gets the strictest rule; and the interpreter
+ * list covers `| sh` and the awk/sed family. The Claude Code mod gets the
+ * same rule through the sidecar's `restore` with `tool`.
  *
  * Best effort: no list names every program that runs its input as code.
  */

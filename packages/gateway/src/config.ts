@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { DEFAULT_RESTORE_TOOLS, type NullPiiFileConfig, resolveConfigFile } from 'nullpii';
+import {
+  DEFAULT_RESTORE_TOOLS,
+  type NullPiiFileConfig,
+  configFilePath,
+  defaultConfigPath,
+  loadConfigFile,
+} from 'nullpii';
 
 /**
  * Gateway runtime config — built from environment variables. Every
@@ -48,6 +54,12 @@ export interface GatewayConfig {
    * the file at `NULLPII_CONFIG`, else `~/.config/nullpii/config.json`
    * if present, else none (`{}`). */
   readonly policy: NullPiiFileConfig;
+  /** The policy file that was loaded, else the default location one would
+   * be read from at the next start. The sidecar's status reports it, so a
+   * client can show the user which file to edit. */
+  readonly policyFile: string;
+  /** Whether `policyFile` existed and was loaded. */
+  readonly policyLoaded: boolean;
   /** Tools whose arguments get real values back: the policy's
    * `restoreTools`, else `DEFAULT_RESTORE_TOOLS`. */
   readonly restoreTools: ReadonlySet<string>;
@@ -129,7 +141,8 @@ function readSidecarToken(): string | undefined {
 export function loadConfig(): GatewayConfig {
   const modelDir = readString('NULLPII_MODEL_DIR');
   const sidecarToken = readSidecarToken();
-  const policy = resolveConfigFile() ?? {};
+  const loadedFile = configFilePath();
+  const policy = loadedFile === null ? {} : loadConfigFile(loadedFile);
   return {
     host: readString('NULLPII_HOST') ?? DEFAULT_HOST,
     port: readInt('NULLPII_PORT', DEFAULT_PORT),
@@ -145,6 +158,8 @@ export function loadConfig(): GatewayConfig {
     ...(sidecarToken !== undefined && { sidecarToken }),
     sidecarMaxSessions: readInt('NULLPII_SIDECAR_MAX_SESSIONS', DEFAULT_SIDECAR_MAX_SESSIONS),
     policy,
+    policyFile: loadedFile ?? defaultConfigPath(),
+    policyLoaded: loadedFile !== null,
     restoreTools: new Set(policy.restoreTools ?? DEFAULT_RESTORE_TOOLS),
     appendHint: readString('NULLPII_DISABLE_HINT') !== '1',
   };

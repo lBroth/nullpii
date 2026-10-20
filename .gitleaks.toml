@@ -28,3 +28,12 @@ regexes = [
   '''sk_live_aBcDeFgHiJkLmNoPqRsTuVwX''',
   '''glpat-abcdefghij1234567890''',
 ]
+
+[[allowlists]]
+description = "Fake-value generators for the eval traces: PEM headers whose body is random, and a curl line whose password is generated"
+regexes = [
+  # tracegen/values.py: `head, foot = "-----BEGIN … KEY-----", "-----END …"`
+  '''^-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----", "-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"''',
+  # traces_v2_gen.py: `d.t("$ curl -sv -u ci-bot:")`, then a generated password
+  '''^ci-bot:"\)''',
+]

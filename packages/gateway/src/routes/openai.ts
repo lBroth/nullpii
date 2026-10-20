@@ -37,6 +37,11 @@ export interface OpenAiRouteOptions {
   /** When true, dump the sanitized request body + raw upstream response
    * (placeholder-bearing) to stdout. Never logs real PII. */
   readonly logTraffic: boolean;
+  /** Tools whose arguments get real values back; default
+   * `DEFAULT_RESTORE_TOOLS`. Any other tool keeps its placeholders. */
+  readonly restoreTools?: ReadonlySet<string>;
+  /** Append `LLM_PRESERVATION_HINT` when something was masked. Default true. */
+  readonly appendHint?: boolean;
 }
 
 const CHAT_COMPLETIONS_PATH = '/v1/chat/completions';
@@ -102,7 +107,7 @@ export async function registerOpenAiRoute(
     const { np } = opts;
     const sessionId = np.createSession();
     try {
-      const sanitized = await sanitizeChatRequest(np, body, sessionId);
+      const sanitized = await sanitizeChatRequest(np, body, sessionId, opts.appendHint);
       const call = prepareCall(req, reply, opts, sanitized);
       return body.stream === true ? await handleStreaming(call) : await handleNonStreaming(call);
     } finally {
@@ -155,7 +160,7 @@ async function handleNonStreaming(call: ChatCall): Promise<unknown> {
     return sendUpstreamFailure(reply, 'Upstream returned 2xx with a non-JSON body.');
   }
   const response = parsed.value as ChatCompletionResponse;
-  const restored = restoreChatResponse(opts.np, response, sanitized.sessionId);
+  const restored = restoreChatResponse(opts.np, response, sanitized.sessionId, opts.restoreTools);
   logRoundTrip(call, 'JSON', restored);
   return restored.body;
 }
@@ -213,6 +218,7 @@ async function streamFromUpstream(call: ChatCall, abort: AbortController): Promi
       sessionId: sanitized.sessionId,
       upstream: upstream.body as unknown as AsyncIterable<Uint8Array>,
       write: (frame) => reply.raw.write(frame),
+      ...(opts.restoreTools !== undefined && { restoreTools: opts.restoreTools }),
       ...(opts.logTraffic
         ? { onUpstreamChunk: (c: string) => logInboundSseChunk(c, call.reqId) }
         : {}),

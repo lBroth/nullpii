@@ -3,10 +3,12 @@
 import { type NullPii, RestoreStream } from 'nullpii';
 import {
   type RestoreAccumulator,
+  holdForTool,
   isRecord,
   newRestoreAccumulator,
   restoreJsonText,
   tallyRestore,
+  toolMayRestore,
 } from './sanitizer.js';
 import { ANTHROPIC_SHELL_TOOLS, isShellTool } from './shell-restore.js';
 // The gateway hands `NullPii` directly to `RestoreStream` — both
@@ -62,6 +64,8 @@ export interface SseRelayCounters {
   foreignPlaceholders: number;
   /** Placeholders left literal in a shell command (unsafe there). */
   unsafeShellPlaceholders: number;
+  /** Placeholders kept in the input of a tool outside `restoreTools`. */
+  heldForToolPlaceholders: number;
 }
 
 interface ContentBlockDelta {
@@ -90,18 +94,25 @@ export interface SseRelayOptions {
    * chunk BEFORE frame extraction/restore. Carries placeholders only
    * (Anthropic never sees real PII), safe to dump to stdout. */
   readonly onUpstreamChunk?: (chunk: string) => void;
+  /** Tools whose arguments get real values back. Default:
+   * `DEFAULT_RESTORE_TOOLS`, the tools that run on this machine. */
+  readonly restoreTools?: ReadonlySet<string>;
 }
+
+/** How a tool call's streamed input is restored at its block's stop. */
+type ToolRestore = 'shell' | 'hold';
 
 const FRAME_SEPARATOR = '\n\n';
 
 export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCounters> {
-  const { np, sessionId, upstream, write, onUpstreamChunk } = opts;
+  const { np, sessionId, upstream, write, onUpstreamChunk, restoreTools } = opts;
   const decoder = new TextDecoder();
   const restorers = new Map<number, RestoreStream>();
   const jsonBuffers = new Map<number, string>();
-  /** Indices of the content blocks that call a shell tool. */
-  const shellBlocks = new Set<number>();
-  const acc = newRestoreAccumulator();
+  /** Content blocks whose tool input is not restored as plain JSON: a
+   * shell tool's, or a tool's outside `restoreTools`. */
+  const toolBlocks = new Map<number, ToolRestore>();
+  const acc = newRestoreAccumulator(restoreTools);
 
   function getRestorer(index: number): RestoreStream {
     let rs = restorers.get(index);
@@ -119,8 +130,10 @@ export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCou
     // Empty buffer = upstream stop with no shards. Restoring '' is a
     // no-op but the explicit short-circuit makes the intent obvious.
     if (buf.length === 0) return '';
-    const runsInShell = shellBlocks.delete(index);
-    return restoreJsonText(np, buf, sessionId, acc, runsInShell);
+    const mode = toolBlocks.get(index);
+    toolBlocks.delete(index);
+    if (mode === 'hold') return holdForTool(buf, acc);
+    return restoreJsonText(np, buf, sessionId, acc, mode === 'shell');
   }
 
   let buffer = '';
@@ -140,7 +153,7 @@ export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCou
         jsonBuffers,
         restoreJsonBuffer,
         acc,
-        shellBlocks,
+        toolBlocks,
       );
       for (const f of out) write(f);
     }
@@ -159,7 +172,7 @@ export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCou
       jsonBuffers,
       restoreJsonBuffer,
       acc,
-      shellBlocks,
+      toolBlocks,
     );
     for (const f of out) write(f);
   }
@@ -190,6 +203,7 @@ export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCou
     unknownPlaceholders: acc.unknown,
     foreignPlaceholders: acc.foreign,
     unsafeShellPlaceholders: acc.unsafeShell,
+    heldForToolPlaceholders: acc.heldForTool,
   };
 }
 
@@ -205,7 +219,7 @@ function processFrame(
   jsonBuffers: Map<number, string>,
   restoreJsonBuffer: (index: number) => string | null,
   acc: RestoreAccumulator,
-  shellBlocks: Set<number>,
+  toolBlocks: Map<number, ToolRestore>,
 ): string[] {
   if (frame.length === 0) return [];
   const parsed = parseFrame(frame);
@@ -260,17 +274,23 @@ function processFrame(
     return out;
   }
 
-  if (data?.type === 'content_block_start') noteShellBlock(data, shellBlocks);
+  if (data?.type === 'content_block_start') noteToolBlock(data, toolBlocks, acc);
   // Everything else — passthrough.
   return [`${frame}${FRAME_SEPARATOR}`];
 }
 
-/** Remember the content blocks that call a shell tool: their input gets
- * the shell-aware restore at `content_block_stop`. */
-function noteShellBlock(data: Record<string, unknown>, shellBlocks: Set<number>): void {
+/** Remember how each tool call's input is restored at
+ * `content_block_stop`: kept masked for a tool outside `restoreTools`,
+ * shell-aware for a shell tool. */
+function noteToolBlock(
+  data: Record<string, unknown>,
+  toolBlocks: Map<number, ToolRestore>,
+  acc: RestoreAccumulator,
+): void {
   const block = data.content_block;
   if (typeof data.index !== 'number' || !isRecord(block) || block.type !== 'tool_use') return;
-  if (isShellTool(block.name, ANTHROPIC_SHELL_TOOLS)) shellBlocks.add(data.index);
+  if (!toolMayRestore(block.name, acc)) toolBlocks.set(data.index, 'hold');
+  else if (isShellTool(block.name, ANTHROPIC_SHELL_TOOLS)) toolBlocks.set(data.index, 'shell');
 }
 
 interface ParsedFrame {

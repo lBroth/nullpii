@@ -67,6 +67,8 @@ export interface RequestSummary {
   /** Placeholders kept masked in a shell command because their value was
    * not safe in the quoting there. */
   readonly unsafeShell?: number;
+  /** Placeholders kept in the input of a tool outside `restoreTools`. */
+  readonly heldForTool?: number;
   /** Optional Fastify reqId to correlate against the JSON log line. */
   readonly reqId?: string;
 }
@@ -124,7 +126,12 @@ export function printRequestSummary(s: RequestSummary): void {
     unsafeShell > 0
       ? `  ${c?.yellow ?? ''}⚠ ${unsafeShell} kept masked in shell commands${reset}`
       : '';
+  const heldForTool = s.heldForTool ?? 0;
+  const heldForToolStr =
+    heldForTool > 0
+      ? `  ${c?.yellow ?? ''}⚠ ${heldForTool} kept masked in tools outside restoreTools${reset}`
+      : '';
   process.stdout.write(
-    `${tag}${id}  ${arrow} ${capLabel}  ${back} ${restLabel}${driftStr}${unscannedStr}${unsafeShellStr}\n`,
+    `${tag}${id}  ${arrow} ${capLabel}  ${back} ${restLabel}${driftStr}${unscannedStr}${unsafeShellStr}${heldForToolStr}\n`,
   );
 }

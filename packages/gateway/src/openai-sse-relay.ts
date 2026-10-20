@@ -10,11 +10,13 @@ import type {
 } from './openai-types.js';
 import {
   type RestoreAccumulator,
+  holdForTool,
   isRecord,
   newRestoreAccumulator,
   parseJson,
   restoreJsonText,
   tallyRestore,
+  toolMayRestore,
 } from './sanitizer.js';
 import { OPENAI_SHELL_TOOLS, isShellTool } from './shell-restore.js';
 import type { SseRelayCounters, SseRelayOptions } from './sse-relay.js';
@@ -74,7 +76,7 @@ const ENVELOPE_FIELDS = [
  */
 export async function relayChatSseStream(opts: SseRelayOptions): Promise<SseRelayCounters> {
   const { upstream, write, onUpstreamChunk } = opts;
-  const relay = new ChatRelay(opts.np, opts.sessionId);
+  const relay = new ChatRelay(opts.np, opts.sessionId, opts.restoreTools);
   const decoder = new TextDecoder();
   let buffer = '';
   for await (const chunk of upstream) {
@@ -102,13 +104,16 @@ export async function relayChatSseStream(opts: SseRelayOptions): Promise<SseRela
 /** Per-stream state: one `ChoiceRestorer` per open choice. */
 class ChatRelay {
   private readonly choices = new Map<number, ChoiceRestorer>();
-  private readonly acc: RestoreAccumulator = newRestoreAccumulator();
+  private readonly acc: RestoreAccumulator;
   private envelope: Record<string, unknown> = {};
 
   constructor(
     private readonly np: NullPii,
     private readonly sessionId: string,
-  ) {}
+    restoreTools?: ReadonlySet<string>,
+  ) {
+    this.acc = newRestoreAccumulator(restoreTools);
+  }
 
   /** Frames to forward for one upstream frame, each ending with a blank line. */
   processFrame(frame: string): string[] {
@@ -144,6 +149,7 @@ class ChatRelay {
       unknownPlaceholders: this.acc.unknown,
       foreignPlaceholders: this.acc.foreign,
       unsafeShellPlaceholders: this.acc.unsafeShell,
+      heldForToolPlaceholders: this.acc.heldForTool,
     };
   }
 
@@ -270,6 +276,7 @@ class ChoiceRestorer {
   /** Restore one call's assembled arguments; a shell tool's `command`
    * gets the shell-aware restore. */
   private restoreArgs(args: string, name: string | undefined): string {
+    if (!toolMayRestore(name, this.acc)) return holdForTool(args, this.acc);
     const runsInShell = isShellTool(name, OPENAI_SHELL_TOOLS);
     return restoreJsonText(this.np, args, this.sessionId, this.acc, runsInShell);
   }

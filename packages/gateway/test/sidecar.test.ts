@@ -7,6 +7,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { NullPii } from 'nullpii';
 import { PiiVault, TextTooLongError } from 'nullpii';
+
 import { afterEach, describe, expect, it } from 'vitest';
 import type { GatewayConfig } from '../src/config.js';
 import { SIDECAR_MAX_BYTES } from '../src/routes/sidecar.js';
@@ -16,21 +17,15 @@ import {
   SanitizeCache,
 } from '../src/sanitize-cache.js';
 import { buildServer } from '../src/server.js';
+import { BASE_TEST_CONFIG } from './fixtures.js';
 
 const TOKEN = 'a'.repeat(64);
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 const TTL_MS = 60_000;
 
 const BASE_CONFIG: GatewayConfig = {
-  host: '127.0.0.1',
-  port: 0,
-  upstreamBaseUrl: 'https://upstream.test',
-  openaiUpstreamBaseUrl: 'https://openai.test',
+  ...BASE_TEST_CONFIG,
   vaultTtlMs: TTL_MS,
-  backend: 'cpu',
-  logLevel: 'fatal',
-  bodyLimitBytes: 10 * 1024 * 1024,
-  logTraffic: false,
   sidecarToken: TOKEN,
   sidecarMaxSessions: 2,
 };

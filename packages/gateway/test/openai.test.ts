@@ -8,6 +8,7 @@
 
 import type { FastifyInstance } from 'fastify';
 import { LLM_PRESERVATION_HINT, type NullPii, type PiiSpan, PiiVault } from 'nullpii';
+
 import { afterEach, describe, expect, it } from 'vitest';
 import type { GatewayConfig } from '../src/config.js';
 import { restoreChatResponse, sanitizeChatRequest } from '../src/openai-sanitizer.js';
@@ -18,22 +19,16 @@ import type {
   ChatMessage,
 } from '../src/openai-types.js';
 import { buildServer } from '../src/server.js';
+import { BASE_TEST_CONFIG, TEST_RESTORE_TOOLS } from './fixtures.js';
 
 const OPENAI_UPSTREAM = 'https://openai.test';
 const CHAT_URL = '/v1/chat/completions';
 const MODEL = 'gpt-test';
 
 const TEST_CONFIG: GatewayConfig = {
-  host: '127.0.0.1',
-  port: 0,
+  ...BASE_TEST_CONFIG,
   upstreamBaseUrl: 'https://anthropic.test',
   openaiUpstreamBaseUrl: OPENAI_UPSTREAM,
-  vaultTtlMs: 60_000,
-  backend: 'cpu',
-  logLevel: 'fatal',
-  bodyLimitBytes: 10 * 1024 * 1024,
-  logTraffic: false,
-  sidecarMaxSessions: 64,
 };
 
 const PERSON = 'John';
@@ -552,6 +547,8 @@ describe('openai · response restore', () => {
         function_call: { name: 'send', arguments: JSON.stringify({ to: email }) },
       }),
       sessionId,
+
+      TEST_RESTORE_TOOLS,
     );
 
     const message = restored.body.choices[0]?.message;
@@ -645,6 +642,7 @@ describe('openai · SSE relay', () => {
   async function relay(np: NullPii, sessionId: string, chunks: string[]) {
     const frames: string[] = [];
     const counters = await relayChatSseStream({
+      restoreTools: TEST_RESTORE_TOOLS,
       np,
       sessionId,
       upstream: stream(chunks),

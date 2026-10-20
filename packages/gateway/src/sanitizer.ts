@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { LLM_PRESERVATION_HINT, type NullPii, type RestoreResult } from 'nullpii';
+import {
+  DEFAULT_RESTORE_TOOLS,
+  LLM_PRESERVATION_HINT,
+  type NullPii,
+  type RestoreResult,
+} from 'nullpii';
 import {
   ANTHROPIC_SHELL_TOOLS,
   SHELL_COMMAND_FIELD,
@@ -100,10 +105,11 @@ const TOOL_RESULT_TYPES: ReadonlySet<string> = new Set(['tool_result', 'mcp_tool
 export async function sanitizeRequest(
   np: NullPii,
   body: AnthropicRequest,
+  appendHint = true,
 ): Promise<SanitizedRequest> {
   const sessionId = np.createSession();
   try {
-    return await sanitizeIntoSession(np, body, sessionId);
+    return await sanitizeIntoSession(np, body, sessionId, appendHint);
   } catch (err) {
     np.destroySession(sessionId);
     throw err;
@@ -114,6 +120,7 @@ async function sanitizeIntoSession(
   np: NullPii,
   body: AnthropicRequest,
   sessionId: string,
+  appendHint: boolean,
 ): Promise<SanitizedRequest> {
   const acc: CaptureAccumulator = { count: 0, byLabel: {}, unscanned: 0 };
   if (body.system !== undefined) {
@@ -142,8 +149,8 @@ async function sanitizeIntoSession(
   // 2. When no PII is in the body the hint adds nothing and just risks
   //    cache invalidation — skip it entirely.
   //
-  // Opt-out: NULLPII_DISABLE_HINT=1 (debugging hook).
-  if (shouldAppendHint(acc.count)) {
+  // Opt-out: NULLPII_DISABLE_HINT=1 (debugging hook), read by the config.
+  if (shouldAppendHint(acc.count, appendHint)) {
     injectPreservationHint(body);
   }
   return {
@@ -157,10 +164,10 @@ async function sanitizeIntoSession(
 
 /** Whether a request walk that masked `captured` spans gets
  * `LLM_PRESERVATION_HINT` appended: only when something was masked, and
- * never with `NULLPII_DISABLE_HINT=1`. Shared by the Anthropic and
- * OpenAI walks so both routes honour the same opt-out. */
-export function shouldAppendHint(captured: number): boolean {
-  return captured > 0 && process.env.NULLPII_DISABLE_HINT !== '1';
+ * only when the hint is on (`NULLPII_DISABLE_HINT=1` turns it off in the
+ * config). Shared by the Anthropic and OpenAI walks. */
+export function shouldAppendHint(captured: number, appendHint: boolean): boolean {
+  return captured > 0 && appendHint;
 }
 
 function injectPreservationHint(body: AnthropicRequest): void {
@@ -384,35 +391,69 @@ export interface RestoredResponse<TBody = AnthropicResponse> {
   /** Placeholders left literal in a shell tool's `command` because their
    * value was not safe in the quoting there (see `shell-restore.ts`). */
   readonly unsafeShellPlaceholders: number;
+  /** Placeholders left in the input of a tool outside `restoreTools`
+   * (network and MCP tools by default), so no value leaves through it. */
+  readonly heldForToolPlaceholders: number;
 }
 
 // rothunter:ignore-duplicate-interface
 // reason: short-named accumulator for the restore walks (restoreResponse, and the OpenAI walk and relay, which convert it to SseRelayCounters at the end); sse-relay's public SseRelayCounters uses long names that match the pino log-field contract — merging would force either a public API rename or verbose names in this internal struct.
 export interface RestoreAccumulator {
+  /** Tools whose arguments get real values back; any other tool keeps
+   * its placeholders. */
+  readonly restoreTools: ReadonlySet<string>;
   replacements: number;
   byLabel: Record<string, number>;
   unknown: number;
   foreign: number;
   /** Placeholders kept literal in a shell command: unsafe there. */
   unsafeShell: number;
+  /** Placeholders kept in the input of a tool outside `restoreTools`. */
+  heldForTool: number;
 }
 
-/** A zeroed restore accumulator. */
-export function newRestoreAccumulator(): RestoreAccumulator {
-  return { replacements: 0, byLabel: {}, unknown: 0, foreign: 0, unsafeShell: 0 };
+/** A zeroed restore accumulator for one request. */
+export function newRestoreAccumulator(
+  restoreTools: ReadonlySet<string> = new Set(DEFAULT_RESTORE_TOOLS),
+): RestoreAccumulator {
+  return {
+    restoreTools,
+    replacements: 0,
+    byLabel: {},
+    unknown: 0,
+    foreign: 0,
+    unsafeShell: 0,
+    heldForTool: 0,
+  };
+}
+
+/** Whether a tool call named `name` may receive real values. */
+export function toolMayRestore(name: unknown, acc: RestoreAccumulator): boolean {
+  return typeof name === 'string' && acc.restoreTools.has(name);
+}
+
+/** Keep a tool input's placeholders as they are, counting them. */
+export function holdForTool(text: string, acc: RestoreAccumulator): string {
+  acc.heldForTool += countPlaceholders(text);
+  return text;
 }
 
 export function restoreResponse(
   np: NullPii,
   body: AnthropicResponse,
   sessionId: string,
+  restoreTools?: ReadonlySet<string>,
 ): RestoredResponse {
-  const acc = newRestoreAccumulator();
+  const acc = newRestoreAccumulator(restoreTools);
   body.content = body.content.map((block) => {
     if (block.type === 'text' && typeof block.text === 'string') {
       return { ...block, text: restoreString(np, block.text, sessionId, acc) };
     }
     if (block.type === 'tool_use' && block.input !== undefined) {
+      if (!toolMayRestore(block.name, acc)) {
+        holdForTool(JSON.stringify(block.input), acc);
+        return block;
+      }
       // Mirror SSE path's `restoreJsonBuffer`: walk the tool input tree
       // and restore string leaves. Without this, non-streaming
       // tool-calling workflows leak `{{PII_*}}` placeholders verbatim
@@ -429,6 +470,7 @@ export function restoreResponse(
     unknownPlaceholders: acc.unknown,
     foreignPlaceholders: acc.foreign,
     unsafeShellPlaceholders: acc.unsafeShell,
+    heldForToolPlaceholders: acc.heldForTool,
   };
 }
 

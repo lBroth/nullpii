@@ -27,6 +27,11 @@ export interface AnthropicRouteOptions {
   /** When true, dump sanitized request body + raw upstream response
    * (placeholder-bearing) to stdout. Never logs real PII. */
   readonly logTraffic: boolean;
+  /** Tools whose arguments get real values back; default
+   * `DEFAULT_RESTORE_TOOLS`. Any other tool keeps its placeholders. */
+  readonly restoreTools?: ReadonlySet<string>;
+  /** Append `LLM_PRESERVATION_HINT` when something was masked. Default true. */
+  readonly appendHint?: boolean;
 }
 
 /** Headers from Anthropic that diagnose rate-limit / quota failures.
@@ -59,7 +64,7 @@ export async function registerAnthropicRoute(
   app: FastifyInstance,
   opts: AnthropicRouteOptions,
 ): Promise<void> {
-  const { np, upstreamBaseUrl, fetchImpl, logTraffic } = opts;
+  const { np, upstreamBaseUrl, fetchImpl } = opts;
 
   app.post('/v1/messages', async (req, reply) => {
     const body = req.body as AnthropicRequest;
@@ -73,30 +78,10 @@ export async function registerAnthropicRoute(
     // One vault session per request. `sanitizeRequest` drops it itself if
     // it throws; from here on this `finally` drops it on every path:
     // restored, upstream error, fetch failure, stream end or abort.
-    const sanitized = await sanitizeRequest(np, body);
+    const sanitized = await sanitizeRequest(np, body, opts.appendHint);
     try {
-      if (isStream) {
-        return await handleStreaming(
-          req,
-          reply,
-          sanitized,
-          np,
-          upstreamBaseUrl,
-          fetchImpl,
-          logTraffic,
-          querySuffix,
-        );
-      }
-      return await handleNonStreaming(
-        req,
-        reply,
-        sanitized,
-        np,
-        upstreamBaseUrl,
-        fetchImpl,
-        logTraffic,
-        querySuffix,
-      );
+      if (isStream) return await handleStreaming(req, reply, sanitized, opts, querySuffix);
+      return await handleNonStreaming(req, reply, sanitized, opts, querySuffix);
     } finally {
       np.destroySession(sanitized.sessionId);
     }
@@ -108,7 +93,7 @@ export async function registerAnthropicRoute(
   // if forwarded raw. Sanitise → forward → return upstream response verbatim.
   app.post('/v1/messages/count_tokens', async (req, reply) => {
     const body = req.body as AnthropicRequest;
-    const sanitized = await sanitizeRequest(np, body);
+    const sanitized = await sanitizeRequest(np, body, opts.appendHint);
     try {
       return await forwardCountTokens(req, reply, sanitized, upstreamBaseUrl, fetchImpl);
     } finally {
@@ -154,12 +139,10 @@ async function handleNonStreaming(
   req: FastifyRequest,
   reply: FastifyReply,
   sanitized: SanitizedRequest,
-  np: NullPii,
-  upstreamBaseUrl: string,
-  fetchImpl: Fetch,
-  logTraffic: boolean,
+  opts: AnthropicRouteOptions,
   querySuffix: string,
 ): Promise<unknown> {
+  const { np, upstreamBaseUrl, fetchImpl, logTraffic } = opts;
   const reqId = typeof req.id === 'string' ? req.id : undefined;
   if (logTraffic) logOutboundRequest(sanitized.body, reqId);
   const headers = buildUpstreamHeaders(
@@ -219,7 +202,7 @@ async function handleNonStreaming(
     });
   }
 
-  const restored = restoreResponse(np, parsed, sanitized.sessionId);
+  const restored = restoreResponse(np, parsed, sanitized.sessionId, opts.restoreTools);
 
   req.log.info(
     {
@@ -231,6 +214,7 @@ async function handleNonStreaming(
       unknownPlaceholders: restored.unknownPlaceholders,
       foreignPlaceholders: restored.foreignPlaceholders,
       unsafeShellPlaceholders: restored.unsafeShellPlaceholders,
+      heldForToolPlaceholders: restored.heldForToolPlaceholders,
     },
     'anthropic.messages.restored',
   );
@@ -244,6 +228,7 @@ async function handleNonStreaming(
     unknownPlaceholders: restored.unknownPlaceholders,
     foreignPlaceholders: restored.foreignPlaceholders,
     unsafeShell: restored.unsafeShellPlaceholders,
+    heldForTool: restored.heldForToolPlaceholders,
   };
   printRequestSummary(reqId !== undefined ? { ...summaryBase, reqId } : summaryBase);
 
@@ -264,12 +249,10 @@ async function handleStreaming(
   req: FastifyRequest,
   reply: FastifyReply,
   sanitized: SanitizedRequest,
-  np: NullPii,
-  upstreamBaseUrl: string,
-  fetchImpl: Fetch,
-  logTraffic: boolean,
+  opts: AnthropicRouteOptions,
   querySuffix: string,
 ): Promise<unknown> {
+  const { np, upstreamBaseUrl, fetchImpl, logTraffic } = opts;
   const reqId = typeof req.id === 'string' ? req.id : undefined;
   if (logTraffic) logOutboundRequest(sanitized.body, reqId);
   const headers = buildUpstreamHeaders(
@@ -357,6 +340,7 @@ async function handleStreaming(
       sessionId: sanitized.sessionId,
       upstream: upstreamResp.body as unknown as AsyncIterable<Uint8Array>,
       write: (frame) => reply.raw.write(frame),
+      ...(opts.restoreTools !== undefined && { restoreTools: opts.restoreTools }),
       ...(logTraffic ? { onUpstreamChunk: (c) => logInboundSseChunk(c, reqId) } : {}),
     });
     req.log.info(
@@ -369,6 +353,7 @@ async function handleStreaming(
         unknownPlaceholders: counters.unknownPlaceholders,
         foreignPlaceholders: counters.foreignPlaceholders,
         unsafeShellPlaceholders: counters.unsafeShellPlaceholders,
+        heldForToolPlaceholders: counters.heldForToolPlaceholders,
       },
       'anthropic.messages.streamed',
     );
@@ -382,6 +367,7 @@ async function handleStreaming(
       unknownPlaceholders: counters.unknownPlaceholders,
       foreignPlaceholders: counters.foreignPlaceholders,
       unsafeShell: counters.unsafeShellPlaceholders,
+      heldForTool: counters.heldForToolPlaceholders,
     };
     printRequestSummary(reqId !== undefined ? { ...sseSummary, reqId } : sseSummary);
   } catch (err) {

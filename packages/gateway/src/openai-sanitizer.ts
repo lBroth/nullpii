@@ -19,6 +19,7 @@ import {
   type RestoredResponse,
   type SanitizedRequest,
   bump,
+  holdForTool,
   isRecord,
   newRestoreAccumulator,
   parseJson,
@@ -27,6 +28,7 @@ import {
   restoreString,
   sanitizeJsonValue,
   shouldAppendHint,
+  toolMayRestore,
 } from './sanitizer.js';
 import { OPENAI_SHELL_TOOLS, isShellTool } from './shell-restore.js';
 
@@ -85,6 +87,7 @@ export async function sanitizeChatRequest(
   np: NullPii,
   body: ChatCompletionRequest,
   sessionId: string,
+  appendHint = true,
 ): Promise<SanitizedRequest<ChatCompletionRequest>> {
   const acc: CaptureAccumulator = { count: 0, byLabel: {}, unscanned: 0 };
   body.messages = await Promise.all(
@@ -108,7 +111,7 @@ export async function sanitizeChatRequest(
   // only when something was masked; and appended as the LAST message.
   // OpenAI caches prompts by prefix, so a message prepended to every
   // request would invalidate the cache on each turn.
-  if (shouldAppendHint(acc.count)) {
+  if (shouldAppendHint(acc.count, appendHint)) {
     body.messages = [...body.messages, { role: HINT_ROLE, content: LLM_PRESERVATION_HINT }];
   }
   return {
@@ -297,8 +300,9 @@ export function restoreChatResponse(
   np: NullPii,
   body: ChatCompletionResponse,
   sessionId: string,
+  restoreTools?: ReadonlySet<string>,
 ): RestoredResponse<ChatCompletionResponse> {
-  const acc = newRestoreAccumulator();
+  const acc = newRestoreAccumulator(restoreTools);
   if (Array.isArray(body.choices)) {
     body.choices = body.choices.map((choice) =>
       isRecord(choice.message)
@@ -313,6 +317,7 @@ export function restoreChatResponse(
     unknownPlaceholders: acc.unknown,
     foreignPlaceholders: acc.foreign,
     unsafeShellPlaceholders: acc.unsafeShell,
+    heldForToolPlaceholders: acc.heldForTool,
   };
 }
 
@@ -340,6 +345,11 @@ function restoreToolCall(
   sessionId: string,
   acc: RestoreAccumulator,
 ): ChatToolCall {
+  const name = isRecord(call.function) ? call.function.name : call.custom?.name;
+  if (!toolMayRestore(name, acc)) {
+    holdForTool(JSON.stringify(call), acc);
+    return call;
+  }
   const out: ChatToolCall = { ...call };
   if (isRecord(call.function)) {
     out.function = restoreFunctionCall(np, call.function, sessionId, acc);
@@ -361,6 +371,10 @@ function restoreFunctionCall(
   acc: RestoreAccumulator,
 ): ChatFunctionCall {
   if (typeof fn.arguments !== 'string') return fn;
+  if (!toolMayRestore(fn.name, acc)) {
+    holdForTool(fn.arguments, acc);
+    return fn;
+  }
   const runsInShell = isShellTool(fn.name, OPENAI_SHELL_TOOLS);
   return { ...fn, arguments: restoreJsonText(np, fn.arguments, sessionId, acc, runsInShell) };
 }

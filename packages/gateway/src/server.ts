@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import Fastify, { type FastifyInstance } from 'fastify';
-import { NullPii } from 'nullpii';
+import { NullPii, toEngineConfig } from 'nullpii';
 import type { GatewayConfig } from './config.js';
 import { registerAnthropicRoute } from './routes/anthropic.js';
 import { registerHealthRoute } from './routes/health.js';
@@ -42,12 +42,16 @@ export async function buildServer(opts: BuildServerOptions): Promise<FastifyInst
     upstreamBaseUrl: config.upstreamBaseUrl,
     fetchImpl,
     logTraffic: config.logTraffic,
+    restoreTools: config.restoreTools,
+    appendHint: config.appendHint,
   });
   await registerOpenAiRoute(app, {
     np,
     upstreamBaseUrl: config.openaiUpstreamBaseUrl,
     fetchImpl,
     logTraffic: config.logTraffic,
+    restoreTools: config.restoreTools,
+    appendHint: config.appendHint,
   });
   if (config.sidecarToken !== undefined) {
     await registerSidecarRoutes(app, {
@@ -65,6 +69,7 @@ export async function buildServer(opts: BuildServerOptions): Promise<FastifyInst
 /** Convenience: build + initialise + start. Used by the CLI. */
 export async function startServer(config: GatewayConfig): Promise<FastifyInstance> {
   const np = new NullPii({
+    ...toEngineConfig(config.policy),
     backend: config.backend,
     ...(config.modelDir !== undefined && { modelDir: config.modelDir }),
   });

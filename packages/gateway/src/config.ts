@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { DEFAULT_RESTORE_TOOLS, type NullPiiFileConfig, resolveConfigFile } from 'nullpii';
+
 /**
  * Gateway runtime config — built from environment variables. Every
  * field is typed; no `process.env` access lives outside this module.
@@ -42,6 +44,16 @@ export interface GatewayConfig {
    * instead of evicting a live session, whose placeholders would then no
    * longer restore. */
   readonly sidecarMaxSessions: number;
+  /** The masking policy shared with the CLI, the mod and the MCP server:
+   * the file at `NULLPII_CONFIG`, else `~/.config/nullpii/config.json`
+   * if present, else none (`{}`). */
+  readonly policy: NullPiiFileConfig;
+  /** Tools whose arguments get real values back: the policy's
+   * `restoreTools`, else `DEFAULT_RESTORE_TOOLS`. */
+  readonly restoreTools: ReadonlySet<string>;
+  /** Append `LLM_PRESERVATION_HINT` to requests that had PII masked;
+   * `NULLPII_DISABLE_HINT=1` turns it off. */
+  readonly appendHint: boolean;
 }
 
 const DEFAULT_HOST = '127.0.0.1';
@@ -61,6 +73,12 @@ const MIN_SIDECAR_TOKEN_LENGTH = 32;
 const VALID_BACKENDS = new Set(['cpu', 'mps', 'cuda', 'auto']);
 const VALID_LOG_LEVELS = new Set(['fatal', 'error', 'warn', 'info', 'debug', 'trace']);
 const VALID_LOG_TRAFFIC = new Set(['wire', 'off']);
+
+/** An environment variable's value, `undefined` when unset or empty. */
+function readString(name: string): string | undefined {
+  const raw = process.env[name];
+  return raw === undefined || raw === '' ? undefined : raw;
+}
 
 function readInt(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -109,15 +127,16 @@ function readSidecarToken(): string | undefined {
 }
 
 export function loadConfig(): GatewayConfig {
-  const modelDir = process.env.NULLPII_MODEL_DIR;
+  const modelDir = readString('NULLPII_MODEL_DIR');
   const sidecarToken = readSidecarToken();
+  const policy = resolveConfigFile() ?? {};
   return {
-    host: process.env.NULLPII_HOST ?? DEFAULT_HOST,
+    host: readString('NULLPII_HOST') ?? DEFAULT_HOST,
     port: readInt('NULLPII_PORT', DEFAULT_PORT),
     upstreamBaseUrl: readBaseUrl('NULLPII_UPSTREAM', DEFAULT_UPSTREAM),
     openaiUpstreamBaseUrl: readOpenAiUpstream(),
     vaultTtlMs: readInt('NULLPII_VAULT_TTL_MS', DEFAULT_VAULT_TTL_MS),
-    ...(modelDir !== undefined && modelDir !== '' ? { modelDir } : {}),
+    ...(modelDir !== undefined && { modelDir }),
     backend: readEnum('NULLPII_BACKEND', VALID_BACKENDS, DEFAULT_BACKEND),
     logLevel: readEnum('NULLPII_LOG_LEVEL', VALID_LOG_LEVELS, DEFAULT_LOG_LEVEL),
     bodyLimitBytes: readInt('NULLPII_BODY_LIMIT_BYTES', DEFAULT_BODY_LIMIT),
@@ -125,5 +144,8 @@ export function loadConfig(): GatewayConfig {
       readEnum<'wire' | 'off'>('NULLPII_LOG_TRAFFIC', VALID_LOG_TRAFFIC, 'off') === 'wire',
     ...(sidecarToken !== undefined && { sidecarToken }),
     sidecarMaxSessions: readInt('NULLPII_SIDECAR_MAX_SESSIONS', DEFAULT_SIDECAR_MAX_SESSIONS),
+    policy,
+    restoreTools: new Set(policy.restoreTools ?? DEFAULT_RESTORE_TOOLS),
+    appendHint: readString('NULLPII_DISABLE_HINT') !== '1',
   };
 }

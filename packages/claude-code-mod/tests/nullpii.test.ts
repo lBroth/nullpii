@@ -231,6 +231,32 @@ test('a tool result is masked and returned as a fresh result, without core ref',
   expect(out.text).toBeUndefined();
 });
 
+test('a result whose attached context holds personal data is withheld, since context cannot be masked', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  on('tool.call', () => ({
+    result: { stdout: 'done', stderr: '' },
+    context: ['owner: John <john@acme.io>'],
+  }));
+  await start($);
+  const out = await $.tool.call({ tool: 'Bash', command: 'make' });
+  expect(out.deny).toMatch(/withheld this tool's result/);
+  expect(JSON.stringify(out)).not.toContain('John');
+});
+
+test('a context without personal data is passed on whole, beside the masked result', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  on('tool.call', () => ({
+    result: { stdout: 'built for John', stderr: '' },
+    context: ['lint: 0 warnings'],
+  }));
+  await start($);
+  const out = await $.tool.call({ tool: 'Bash', command: 'make' });
+  expect(out.context).toEqual(['lint: 0 warnings']);
+  expect(JSON.stringify(out.result)).not.toContain('John');
+});
+
 test('placeholders in a local tool call get their real values back before it runs', async ($, on) => {
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);

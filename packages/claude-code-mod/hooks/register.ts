@@ -36,6 +36,8 @@ const SESSION_SECRET_HEADER = 'x-nullpii-session-secret';
 const KEY_SUFFIX_RADIX = 36;
 const NO_TOKEN =
   'no sidecar token: set it with /plugin configure (sidecar_token), or NULLPII_SIDECAR_TOKEN';
+const CONTEXT_WITHHELD =
+  "nullpii withheld this tool's result: a hook attached text for Claude that holds personal data, and that text cannot be masked.";
 const POLICY_ASK =
   'This call may change the nullpii masking policy (what gets masked, and which tools get real values back). Allow it only if you asked for that change.';
 
@@ -275,6 +277,12 @@ export function register(on, options) {
     // A refusal can quote the arguments, which may now hold real values.
     if (out.deny !== undefined) return { deny: String(await masked($, out.deny)) };
     if (out.isError === true) return { deny: String(await masked($, out.text ?? '')) };
+    // `context` is text a hook below attached for the model to read after
+    // the result. The mods API keeps those entries whole, so they cannot
+    // be masked: when one holds personal data, the result is withheld.
+    if (out.context !== undefined && (await sanitize($, out.context)).captured > 0) {
+      return { deny: CONTEXT_WITHHELD };
+    }
     // A new `{ result }` without `ref`: returning core's object would make
     // core send its own, unmasked messages to the model.
     return {

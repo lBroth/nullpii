@@ -7,7 +7,7 @@
 //   - Threshold screening: pass --threshold to run below the default and
 //     keep span scores (--out spans.jsonl). A simulated cut is an
 //     approximation, because a lower threshold also changes what dedupe
-//     keeps; decisions come from a confirmation run (PROTOCOL.md).
+//     keeps; decisions come from a confirmation run (METHOD.md).
 //   - Candidate evaluation without bench_full: --checkpoints <dir> --tool
 //     <name> writes bench_full-format checkpoints (<tool>-<dataset>.jsonl)
 //     for char_metrics.py, from any dist directory. A candidate can then

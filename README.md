@@ -187,7 +187,7 @@ Roughly five passes: Unicode normalisation, base64 decoding, percent + HTML-enti
 
 ## Benchmark
 
-Every number here comes from the protocol in [`packages/eval/scripts/ab/PROTOCOL.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/scripts/ab/PROTOCOL.md) and can be rerun.
+Every number here comes from the method in [`packages/eval/METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md) and can be rerun.
 
 **The metric.** Char-level F2, label-agnostic: a character of personal data counts as caught if any span covers it, whatever the label. F2 weighs recall twice as much as precision, because a missed character leaks. Confidence intervals are paired bootstrap over documents.
 
@@ -216,7 +216,7 @@ Every number here comes from the protocol in [`packages/eval/scripts/ab/PROTOCOL
 | `piiranha` | 0.480 | 0.437 | 0.848 | [+0.438, +0.460] |
 <!-- matrix:end -->
 
-The full per-dataset matrix, and the in-distribution flags for tools trained on a test set's source, are in [`packages/eval/scripts/ab/LOG.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/scripts/ab/LOG.md).
+The full per-dataset matrix, and the in-distribution flags for tools trained on a test set's source, are in [`packages/eval/METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md).
 
 **Where nullpii is not ahead.**
 - **Test sets a competitor trained on:** OpenMed's privacy-filter-multilingual-v2 scores 0.994–0.997 on the four Isotonic sets (nullpii 0.969–0.971) and 0.851 on argilla-pii. All five are re-releases of ai4privacy text it lists as training data, verified verbatim. Those cells are flagged ‡.

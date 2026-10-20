@@ -5,7 +5,7 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-The detection changes come from the measured A/B loop (`packages/eval/scripts/ab/PROTOCOL.md`, results in `LOG.md`); each one passed the protocol's checks on the tuning set before it was kept.
+The detection changes come from a measured loop on a tuning set (`packages/eval/METHOD.md`); each one passed its checks there before it was kept.
 
 ### Added
 

@@ -853,7 +853,7 @@ export const DEFAULT_URL_RELEASES: Readonly<Record<string, UrlRelease>> = {
   // included; set these to 'host' to keep only the host readable. Whole
   // URLs are the default because links to public repositories and issues
   // are most of what a coding agent reads, and masking their paths cost
-  // the traces 0.04 of char-F2 on the tuning set (LOG, A12). A link
+  // the traces 0.04 of char-F2 on the tuning set. A link
   // whose query carries a credential is never released (url-filter).
   '*.github.com': 'full',
   '*.githubusercontent.com': 'full',
@@ -989,7 +989,7 @@ export const BOUNDARY_REFINE_TRIM_CHARS = ' \t\n\r,.;:!?"\'()[]{}<>';
  * leaks while an extra one only costs context. Selected on the tuning
  * heldouts by label-agnostic char-level F2 (recall-weighted), under a
  * cap on extra masking of developer content (code, markdown, JSON);
- * see `packages/eval/scripts/ab/LOG.md`, iterations D2 and D3b. Labels
+ * see `packages/eval/METHOD.md`. Labels
  * that need a higher cut are listed in `DEFAULT_CATEGORY_THRESHOLDS`. */
 export const DEFAULT_DECODE_THRESHOLD = 0.05;
 

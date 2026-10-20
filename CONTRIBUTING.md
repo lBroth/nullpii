@@ -110,5 +110,5 @@ Before tagging a new version:
    - `tarball size` under 16 MB (sanity — model weights ship via HF, demo video is ~13 MB).
 4. **Full quality bar.** `npm run lint && npm run typecheck && npm test && npm run license-check && npm run circular-check`. All must pass on the release commit.
 5. **SBOM refresh.** `npm run sbom` regenerates `bom.json` with the current dep tree + timestamp.
-6. **Bench refresh.** If the runtime pipeline or the model changed, measure it with the protocol in `packages/eval/scripts/ab/PROTOCOL.md` and log the result in `packages/eval/scripts/ab/LOG.md`. Re-render the README tables from the metrics JSON with `packages/eval/scripts/ab/render_matrix.py`; never type a number by hand.
+6. **Bench refresh.** If the runtime pipeline or the model changed, measure it with the method in `packages/eval/METHOD.md`. Re-render the README tables from the metrics JSON with `packages/eval/scripts/ab/render_matrix.py`; never type a number by hand.
 7. **Tag + publish.** `git tag vX.Y.Z` then `npm publish --provenance` (the `publishConfig.provenance: true` in `package.json` requires running from a supported CI provider).

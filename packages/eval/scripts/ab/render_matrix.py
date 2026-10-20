@@ -20,7 +20,7 @@ from pathlib import Path
 IN_DISTRIBUTION: dict[str, set[str]] = {
     "rizzo-pii": {"isotonic-it-report"},
     # Trained on ai4privacy/pii-masking-200k, which holds the text of the
-    # Isotonic sets and of argilla-pii verbatim (LOG.md, 2026-10-18).
+    # Isotonic sets and of argilla-pii verbatim (found 2026-10-18).
     "openmed-pf-multi-v2": {"isotonic-en-report", "isotonic-de-report", "isotonic-fr-report", "isotonic-it-report", "argilla-pii"},
 }
 

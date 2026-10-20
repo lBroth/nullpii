@@ -26,8 +26,9 @@ folded into core defaults in v0.3.
 
 `packages/eval/` is a Python research kit — only `scripts/`, `src/`,
 `datasets/`, `pyproject.toml` and the top-level README are tracked;
-`results/`, `private/`, `tests/` are gitignored. The evaluation protocol
-and its log are `scripts/ab/PROTOCOL.md` and `scripts/ab/LOG.md`.
+`results/`, `private/`, `tests/` are gitignored. The public method is
+`METHOD.md`; the maintainers' working protocol and log stay in
+`private/ab/` and are not published.
 
 - **Detection**: ML model first, recognizer pack post-pass for known formats. No regex-only detection.
 - **Execution**: fully local, no cloud calls.

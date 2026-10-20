@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Screen per-label score thresholds offline (PROTOCOL.md, phase D).
+"""Screen per-label score thresholds offline (METHOD.md).
 
 Input: `score_capture.mjs` output (final spans with scores at a low
 threshold), or a competitor's `bench_full.py` checkpoints captured the

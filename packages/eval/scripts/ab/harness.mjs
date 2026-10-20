@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: Apache-2.0
 //
-// A/B harness for the loop described in PROTOCOL.md. Runs against any
+// A/B harness for the loop described in METHOD.md. Runs against any
 // built `dist/` so a baseline and a candidate are measured by the same
 // code on the same inputs.
 //

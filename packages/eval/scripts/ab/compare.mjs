@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: Apache-2.0
 //
-// Mechanical verdicts for the A/B loop (PROTOCOL.md). No judgement here:
+// Mechanical verdicts for the A/B loop (METHOD.md, rule 3). No judgement here:
 // the rules are the thresholds below, applied to two harness outputs.
 //
 //   node compare.mjs fingerprint <baseline.json> <candidate.json> [overlap|cuts|extends]

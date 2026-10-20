@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Per-call latency of competitor tools on the exact inputs harness.mjs times.
 
-PROTOCOL.md criterion S3 compares nullpii's p50 per call against every ML
+The latency comparison (METHOD.md) compares nullpii's p50 per call against every ML
 competitor on the same machine and the same inputs. `harness.mjs
 dump-corpus` writes those inputs; this script replays them through each
 tool's bench_full predictor, one text per call, because a hook masks one

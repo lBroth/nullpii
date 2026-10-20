@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Build the Claude-Code-traces report set (PROTOCOL.md report set).
+"""Build the Claude-Code-traces report set (an earlier report set).
 
 What a coding agent actually reads: source files, READMEs, package
 manifests, logs, .env files, CSV exports, SQL, stack traces, git logs.

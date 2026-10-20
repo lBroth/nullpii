@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Character-level redaction metrics with paired bootstrap CIs (PROTOCOL.md).
+"""Character-level redaction metrics with paired bootstrap CIs (METHOD.md).
 
 Label-agnostic by design: for redaction, a PII character is protected if
 *any* predicted span covers it, whatever label the tool gave it. This is

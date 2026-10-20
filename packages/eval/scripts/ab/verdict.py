@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Apply the T3 acceptance rule (PROTOCOL.md) to a candidate, from the
+"""Apply the T3 acceptance rule (METHOD.md, rule 3) to a candidate, from the
 outputs the protocol already produces, and print a verdict block.
 
   python verdict.py --metrics char-tuning-X.json --baseline nullpii-T4d \\

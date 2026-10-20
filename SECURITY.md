@@ -58,7 +58,7 @@ If you call `restore()` yourself and pass the result to a shell, an interpreter,
 ## Detection is not a guarantee
 
 nullpii lowers the amount of personal data and secrets that leave the machine. It does not bring it to zero. It is **pseudonymization with a measurable leak rate**, not anonymization. The residual risk depends on the data:
-- the README's Benchmark section and `packages/eval/scripts/ab/LOG.md` report it on public datasets;
+- the README's Benchmark section and `packages/eval/METHOD.md` report it on public datasets;
 - measure it on content like yours before you rely on it.
 
 Treat a sanitized prompt as lower-risk, not as free of personal data.

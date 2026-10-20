@@ -192,7 +192,7 @@ def _load_tab_echr_test(n: int | None) -> list[Sample]:
 _AI4_HELDOUT_OFFSET = 100_000
 _ISOTONIC_HELDOUT_ROW_OFFSET = 200_000
 
-# ─ A/B loop report set (packages/eval/scripts/ab/PROTOCOL.md) ─────
+# ─ Earlier report set (packages/eval/METHOD.md) ──────────────────
 # Read only at checkpoints to test the stop criterion, never to choose
 # between variants. Isotonic rows from 100_000 are read by no other spec
 # and by no training corpus. ai4privacy-300k is grouped by language, so

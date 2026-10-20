@@ -69,6 +69,7 @@ from nullpii_eval.adapters import (
     _URCHADE_LABELS,
     _URCHADE_TO_NULLPII,
     deberta_pii_predictor,
+    gliner_nemo_server_predictor,
     gliner_v2_predictor,
     hf_token_classifier_predictor,
     nullpii_runtime_predictor,
@@ -314,6 +315,20 @@ DATASET_CLUSTERS: dict[str, Callable[[int], list[str]]] = {
     "r3-traces-v3-nodistract": _r3_clusters("traces-v3-nodistract", _R3_TRACES_V3_NODISTRACT_SHA256),
 }
 
+# Every R3 row records its source document or conversation as `cluster`
+# (REDACT's record id, Tonic's file and conversation, mama-deid's
+# conversation). The analysis resamples only traces-v3 by cluster; the
+# other sets, resampled by row, are checked by cluster as a sensitivity
+# analysis (`char_metrics.py --cluster-rows`).
+R3_ROW_CLUSTERS: dict[str, Callable[[int], list[str]]] = {
+    "r3-redact": _r3_clusters("redact", _R3_REDACT_SHA256),
+    "r3-tonic-human": _r3_clusters("tonic-human", _R3_TONIC_HUMAN_SHA256),
+    "r3-piilo": _r3_clusters("piilo", _R3_PIILO_SHA256),
+    "r3-eu-clinical": _r3_clusters("eu-clinical", _R3_EU_CLINICAL_SHA256),
+    "r3-redactionbench": _r3_clusters("redactionbench", _R3_REDACTIONBENCH_SHA256),
+    "r3-mama-deid-val": _r3_clusters("mama-deid-val", _R3_MAMA_DEID_VAL_SHA256),
+}
+
 
 def _ai4privacy_report(n: int | None) -> list[Sample]:
     every = list(public_datasets._load_ai4privacy(None).samples)
@@ -499,6 +514,17 @@ def build_tools(args) -> dict[str, Callable]:
             labels=_NEMOTRON_PII_LABELS,
             label_map=_NEMOTRON_TOKEN_LABEL_MAP,
             **{"threshold": 0.3, **kw},
+        ),
+        # The same model as NVIDIA serves it to NeMo Guardrails' GLiNER rail:
+        # 384-character chunks, server threshold 0.5, nested entities, one
+        # entity per (label, value). S1 takes nemotron's better row.
+        "nemotron-pii-nemo": lambda **kw: gliner_nemo_server_predictor(
+            "nvidia/gliner-PII",
+            revision="bd23e8ef4425fd04e34c5204ab49ffaa706eae79",
+            device=backend,
+            labels=_NEMOTRON_PII_LABELS,
+            label_map=_NEMOTRON_TOKEN_LABEL_MAP,
+            **kw,
         ),
         # knowledgator's PII fine-tune of gliner-large; card threshold 0.3.
         "gliner-pii-large-v1": lambda **kw: gliner_v2_predictor(

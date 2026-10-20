@@ -97,6 +97,15 @@ Code adapted from third parties:
     `src/gliner-decoder.ts` are TypeScript ports of the GLiNER library
     (https://github.com/urchade/GLiNER, Apache-2.0, Copyright Urchade
     Zaratiana), modified for this runtime.
+  - Competitor serving code vendored verbatim in the research kit, so the
+    benchmark runs each tool as its authors ship it; each file keeps its
+    upstream licence notice:
+      packages/eval/src/nullpii_eval/vendor/rizzo_pii_app.py, from
+        https://github.com/Rizzo-AI-Academy/rizzo-pii, Copyright (c) 2026
+        Simone Rizzo, MIT;
+      packages/eval/src/nullpii_eval/vendor/nemo_gliner_server.py, from
+        https://github.com/NVIDIA/NeMo-Guardrails, Copyright (c) 2025-2026
+        NVIDIA CORPORATION & AFFILIATES, Apache-2.0.
 
 Evaluation data in the repository (`packages/eval/datasets/`):
   - TAB ECHR test and dev splits: Text Anonymization Benchmark, Norsk

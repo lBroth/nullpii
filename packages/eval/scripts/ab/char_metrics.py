@@ -20,6 +20,11 @@ that masks every character, the floor any detector should clear.
 `--language en` keeps only the documents whose loader records that language
 (R3's English-only macro, rule change 10); a dataset with none is skipped.
 
+Sensitivity analyses, never the gate: `--cluster-rows` resamples every R3
+set by its rows' cluster ids (source document or conversation), not only
+the sets the analysis clusters; `--exclude <file.json>` ({dataset: [idx]})
+drops those documents for every tool, so a comparison stays paired.
+
   python char_metrics.py --results <dir> --datasets a,b --baseline nullpii --out m.json [--mask-all]
 """
 
@@ -129,10 +134,16 @@ def tools_with_checkpoints(results: Path, dataset: str) -> list[str]:
 
 
 def dataset_arrays(
-    results: Path, dataset: str, tools: list[str], mask_all: bool = False, language: str | None = None
+    results: Path,
+    dataset: str,
+    tools: list[str],
+    mask_all: bool = False,
+    language: str | None = None,
+    exclude: frozenset[int] = frozenset(),
 ) -> tuple[np.ndarray, dict[str, tuple], dict[str, dict]]:
     """Per-tool count arrays over the dataset's documents, or over those in
-    `language`. The first value holds the kept documents' positions."""
+    `language`, less the positions in `exclude`. The first value holds the
+    kept documents' positions."""
     spec = next((s for s in bench_full.DATASET_CONFIGS if s.key == dataset), None)
     if spec is None:
         raise ValueError(f"unknown dataset {dataset!r}")
@@ -146,7 +157,11 @@ def dataset_arrays(
     samples = spec.loader(spec.default_n)
     if len(samples) != n:
         raise ValueError(f"{dataset}: checkpoints have {n} docs, the dataset has {len(samples)}: incomplete run")
-    kept = [i for i, smp in enumerate(samples) if language is None or smp.language == language]
+    kept = [
+        i
+        for i, smp in enumerate(samples)
+        if (language is None or smp.language == language) and i not in exclude
+    ]
     if not kept:
         return np.array([], dtype=np.int64), {}, {}
     samples = [samples[i] for i in kept]
@@ -289,7 +304,12 @@ def main() -> None:
     parser.add_argument("--out", type=Path)
     parser.add_argument("--mask-all", action="store_true", help=f"add the '{MASK_ALL}' floor as a pseudo-tool")
     parser.add_argument("--language", help="score only documents in this language (ISO 639-1)")
+    parser.add_argument(
+        "--cluster-rows", action="store_true", help="sensitivity: resample every R3 set by its rows' cluster ids"
+    )
+    parser.add_argument("--exclude", type=Path, help="sensitivity: JSON {dataset: [idx]} dropped for every tool")
     args = parser.parse_args()
+    excluded = {d: frozenset(v) for d, v in json.loads(args.exclude.read_text()).items()} if args.exclude else {}
 
     rng = np.random.default_rng(BOOTSTRAP_SEED)
     report: dict[str, dict] = {}
@@ -298,12 +318,16 @@ def main() -> None:
         tools = args.tools.split(",") if args.tools else tools_with_checkpoints(args.results, dataset)
         if args.baseline not in tools:
             raise ValueError(f"{dataset}: baseline {args.baseline!r} has no checkpoint")
-        kept, per_tool, per_label = dataset_arrays(args.results, dataset, tools, args.mask_all, args.language)
+        kept, per_tool, per_label = dataset_arrays(
+            args.results, dataset, tools, args.mask_all, args.language, excluded.get(dataset, frozenset())
+        )
         if not len(kept):
             print(f"{dataset}: no document in {args.language!r}, skipped", flush=True)
             continue
         docs, units = len(kept), len(kept)
         cluster_ids = bench_full.DATASET_CLUSTERS.get(dataset)
+        if cluster_ids is None and args.cluster_rows:
+            cluster_ids = bench_full.R3_ROW_CLUSTERS.get(dataset)
         if cluster_ids is not None:
             every = cluster_ids(int(kept[-1]) + 1)
             per_tool, per_label, units = by_cluster(per_tool, per_label, [every[i] for i in kept])

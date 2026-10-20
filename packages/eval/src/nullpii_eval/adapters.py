@@ -1691,6 +1691,66 @@ def gliner_v2_predictor(
     return _predict
 
 
+# NeMo Guardrails' GLiNER rail defaults (`library/gliner/rail_config.py`
+# @ af242f0): what the rail sends NVIDIA's reference server.
+_NEMO_GLINER_THRESHOLD = 0.5
+_NEMO_GLINER_CHUNK_LENGTH = 384
+_NEMO_GLINER_OVERLAP = 128
+
+
+def gliner_nemo_server_predictor(
+    model_path: str,
+    *,
+    revision: str | None = None,
+    device: str = "cuda",
+    threshold: float = _NEMO_GLINER_THRESHOLD,
+    labels: list[str],
+    label_map: Mapping[str, str | None],
+    label_cut: LabelCut | None = None,
+) -> Predictor:
+    """`nvidia/gliner-PII` as NVIDIA serves it: the reference server that
+    NeMo Guardrails' GLiNER rail calls (`vendor/nemo_gliner_server.py`).
+
+    The text is cut into 384-character chunks overlapping by 128 characters
+    (not words), `model.inference` runs on all of them with nested entities
+    allowed (`flat_ner=False`), and the server keeps one entity per (label,
+    lower-cased text), the highest scoring, after dropping every entity
+    another one contains. The rail masks the positions returned, so a value
+    that recurs is masked where the kept entity sits only. `threshold` is
+    the server's; `label_cut` then keeps an entity only if its score reaches
+    its label's operating point, as a client filtering the response would.
+    """
+    from gliner import GLiNER
+
+    from .vendor import nemo_gliner_server as server
+
+    model = GLiNER.from_pretrained(model_path, map_location=device, revision=revision)
+    model.eval()
+    _check_label_coverage(set(labels), dict(label_map), tool=model_path)
+
+    def _predict(text: str) -> ToolResult:
+        t0 = time.perf_counter()
+        chunks, offsets = server.create_text_chunks(text, _NEMO_GLINER_CHUNK_LENGTH, _NEMO_GLINER_OVERLAP)
+        entities: list[dict] = []
+        if chunks:
+            batch = model.inference(texts=chunks, labels=labels, threshold=threshold, flat_ner=False, relations=[])
+            for chunk_entities, offset in zip(batch, offsets, strict=True):
+                entities.extend(server.adjust_entity_positions(chunk_entities, offset))
+        kept = server.deduplicate_entities_by_score(server.remove_subset_entities(entities))
+        spans: list[Span] = []
+        scores: list[float] = []
+        for ent in sorted(kept.values(), key=lambda e: e["start_position"]):
+            label = _map_native_label(ent["suggested_label"], dict(label_map), tool=model_path)
+            if label is None or (label_cut is not None and not label_cut.keeps(label, ent["score"])):
+                continue
+            spans.append(Span(label, ent["start_position"], ent["end_position"]))
+            scores.append(ent["score"])
+        elapsed = (time.perf_counter() - t0) * 1000
+        return ToolResult(spans, elapsed, scores=tuple(scores))
+
+    return _predict
+
+
 def _strip_bioes(entity: str) -> str:
     """`B-private_email` / `I-private_email` / `private_email` → `private_email`."""
     if entity.startswith(("B-", "I-", "E-", "S-")):

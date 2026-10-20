@@ -2,17 +2,22 @@ name: release
 
 # Triggers when a tag matching v*.*.* is pushed, and only then: one
 # trigger, so a release never publishes twice. Runs the full CI gate,
-# then publishes to npm with provenance and creates the GitHub Release.
+# checks that the tagged commit is on main, then publishes to npm with
+# provenance and creates the GitHub Release.
 #
-# Required repo configuration (one-time):
-#   - Settings → Secrets and variables → Actions:
-#       NPM_TOKEN  (npm automation token, "Publish" scope). Once npm trusted
-#       publishing is configured for both packages, drop the token: the
-#       publish jobs already have `id-token: write`.
+# Publishing uses npm trusted publishing (OIDC): no npm token exists in
+# the repository. One-time configuration:
+#   - npmjs.com, for `nullpii` and for `@lbroth/nullpii-gateway`:
+#       Settings → Trusted publishing → GitHub Actions, repository
+#       lBroth/nullpii, workflow `release.yml`, environment `npm`.
+#   - GitHub, Settings → Environments → `npm`: required reviewer (the
+#     maintainer) and deployment tags `v*.*.*` only.
+#   - GitHub, Settings → Rules: protect `main` and tags `v*` (no force
+#     push or deletion; only maintainers create release tags).
 #
 # Permissions are granted per job, least privilege: only the publish jobs
 # get an OIDC token, only the release job may write to the repository.
-# The publish jobs do not use the npm cache.
+# The publish jobs use no cache and run no dependency install scripts.
 
 on:
   push:
@@ -34,6 +39,13 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - name: Tagged commit is on main
+        run: |
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+            || { echo "release tags must point at a commit on main"; exit 1; }
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24'
@@ -68,7 +80,9 @@ jobs:
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
-      - run: npm ci
+      - name: npm supports trusted publishing (>= 11.5.1)
+        run: node -e "const [a,b,c]=process.argv[1].split('.').map(Number); process.exit(a>11||(a===11&&(b>5||(b===5&&c>=1)))?0:1)" "$(npm --version)"
+      - run: npm ci --ignore-scripts
       - run: npm run build
       - name: Verify tag matches package version
         run: |
@@ -80,14 +94,10 @@ jobs:
             exit 1
           fi
       - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   publish-gateway:
-    # Publishes `@lbroth/nullpii-gateway` from packages/gateway/.
-    # Depends on `publish` so the just-released `nullpii@x.y.z` is
-    # already on the npm registry by the time we install it here for
-    # the standalone gateway build.
+    # Publishes `@lbroth/nullpii-gateway` from packages/gateway/, after
+    # `nullpii` itself, which the gateway peer-depends on.
     name: npm publish @lbroth/nullpii-gateway --provenance
     needs: [verify, publish]
     runs-on: ubuntu-latest
@@ -103,24 +113,13 @@ jobs:
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
-      - run: npm ci
+      - name: npm supports trusted publishing (>= 11.5.1)
+        run: node -e "const [a,b,c]=process.argv[1].split('.').map(Number); process.exit(a>11||(a===11&&(b>5||(b===5&&c>=1)))?0:1)" "$(npm --version)"
+      # The root build is what the gateway compiles against: its
+      # `prepublishOnly` copies ../../dist into node_modules/nullpii and
+      # runs tsc, so nothing is downloaded from the registry here.
+      - run: npm ci --ignore-scripts
       - run: npm run build
-      - name: Install just-published nullpii into the gateway dir
-        # The standalone gateway build needs `nullpii` resolvable. We
-        # install the version that the `publish` job just pushed to npm
-        # — `needs: verify` only, but the dependency on `publish` is
-        # enforced by `needs: publish` at the job level (added below).
-        run: |
-          NULLPII_VERSION=$(node -p "require('./package.json').version")
-          cd packages/gateway
-          # Use --no-save so packages/gateway/package.json isn't mutated
-          # before publish — the peer dep declaration stays intact.
-          npm install --no-save --no-package-lock "nullpii@${NULLPII_VERSION}"
-      - name: Build gateway dist
-        run: |
-          cd packages/gateway
-          rm -rf dist
-          npx tsc -p tsconfig.json
       - name: Skip if @lbroth/nullpii-gateway@<version> already published
         id: check
         run: |
@@ -134,12 +133,7 @@ jobs:
       - name: npm publish
         if: steps.check.outputs.already-published != 'true'
         working-directory: packages/gateway
-        # `prepublishOnly` re-runs `rm -rf dist && tsc` — by this point
-        # the just-installed `nullpii` is in `node_modules/`, so the
-        # standalone build resolves correctly.
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   # `hf-push` job removed from the public release pipeline. The merge +
   # stage + push script lives under `packages/eval/private/` (gitignored)

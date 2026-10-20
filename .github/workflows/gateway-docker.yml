@@ -2,8 +2,11 @@ name: gateway-docker
 
 # Multi-arch (amd64 + arm64) build + publish of the `@lbroth/nullpii-gateway`
 # Docker image to the GitHub Container Registry. The image is large
-# enough (~926 MB) that we keep the workflow off the main CI matrix —
-# this is one job, gated on changes that actually affect the image.
+# enough (about 614 MB) that we keep the workflow off the main CI matrix,
+# gated on changes that actually affect the image. Nothing is pushed
+# unless the tests pass, and a `gateway-v*` tag must point at a commit on
+# main. The publishing job uses no build cache, so a poisoned cache entry
+# cannot reach a published image.
 #
 # Triggers:
 #   - push to `main` touching gateway / core code → `:edge` tag
@@ -31,16 +34,41 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 env:
   REGISTRY: ghcr.io
   IMAGE: ${{ github.repository_owner }}/nullpii-gateway
 
 jobs:
+  test:
+    name: gate (lint + typecheck + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - name: Tagged commit is on main
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+            || { echo "image tags must point at a commit on main"; exit 1; }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+
   build:
     name: build & push (linux/amd64,linux/arm64)
+    needs: test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
@@ -77,5 +105,4 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           provenance: true
           sbom: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          no-cache: true

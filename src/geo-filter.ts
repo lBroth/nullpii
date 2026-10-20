@@ -77,7 +77,7 @@ const ADDRESS_LABEL = 'private_address';
  *   overlapping model spans) labels it `private_ip`.
  * - Anything else: relabelled `private_address`. These are the place
  *   names, streets and postcodes the zero-shot head mislabels, and they
- *   are PII: dropping them, as 0.4.0 first did, left every one unmasked
+ *   are PII: dropping them, as an earlier build did, left every one unmasked
  *   whenever no competing address candidate survived.
  *
  * Call this on raw decoder output, before cross-label dedupe — see the

@@ -94,7 +94,7 @@ The detection changes come from a measured loop on a tuning set (`packages/eval/
   Unknown blocks are now scrubbed by default: every string field except protocol structure (`type`, ids, tool names, `signature`, media types, encrypted server-tool payloads) goes through `sanitize`. `thinking` blocks stay byte-identical, because their signature covers the text and they already carry placeholders.
 - **Gateway: unscannable content is counted.** Images and documents sent as base64, URL or file reference cannot be read by nullpii. They are still forwarded, and are now counted in `SanitizedRequest.unscanned`, in the request log (`unscanned`) and in the console summary ("⚠ N not scanned"), so the user knows what was not checked.
 
-## [0.4.0] — bench correctness + detection fixes
+### Prepared as 0.4.0, never published: bench correctness and detection fixes
 
 Started as gateway hardening from a Claude Code proxy integration
 report. Two of the four filters that report motivated did not survive
@@ -102,7 +102,7 @@ measurement and were dropped; benchmarking them surfaced a defect in
 the benchmark itself that had been mis-ranking every tool in the
 published table. Public API surface unchanged.
 
-### Behavior changes
+#### Behavior changes
 
 - **Placeholder-escape PUA sentinels stripped before detection**
   (#43). User-authored `{{...}}` templates wrapped in PUA sentinels
@@ -154,7 +154,7 @@ published table. Public API surface unchanged.
   `hostname` rather than `host` so a non-default port no longer
   silently disables the allowlist.
 
-### Dropped before release
+#### Dropped before release
 
 - **Template syntax mask** (#44) — **closed, not shipped.** #43 already
   fixes the motivating case: ten template-variable probes on `main`,
@@ -175,7 +175,7 @@ published table. Public API surface unchanged.
   bare `'1938'` split off `March 17, 1938`), not the copyright footers
   it was aimed at.
 
-### Bench
+#### Bench
 
 The benchmark's ai4privacy and isotonic loaders resolved unknown
 upstream labels through `dict.get()`, which returns `None` both for
@@ -207,11 +207,11 @@ which makes it the negative control for both behavior changes.
 The 11 canonical rows the gold fix did not touch still carry v0.3.0
 numbers; the published table is not fully regenerated yet.
 
-### Config additions
+#### Config additions
 
 - `NullPiiConfig.urlAllowlist?: 'none'` — opt out of public-URL allowlist.
 
-### Internal
+#### Internal
 
 - `src/geo-filter.ts` — `isCoordinateShaped`, `resolveNonCoordinateGeolocation`. Range and null-island rejection defer to the existing `latLonPairInRange`.
 - `src/url-filter.ts` — `PUBLIC_URL_HOSTS`, `isPublicUrl`, `dropCleanPublicUrlSpans`.
@@ -219,7 +219,7 @@ numbers; the published table is not fully regenerated yet.
 - `packages/eval/scripts/ood_macro.py` — single definition of the OOD-7 set, computed from any `matrix.json`. The root README enumerated 7 datasets and `packages/eval/datasets/README.md` said 5, a 0.0128 discrepancy that would have silently blocked any regression gate. Exits non-zero if a cell is missing or `CRASHED`.
 - `packages/eval/pyproject.toml` — the wheel force-included the whole `datasets/` directory, so any file dropped there was redistributed. Now a per-file allowlist with the upstream licence annotated per line.
 
-### Detection defaults
+#### Detection defaults
 
 - **Decode threshold 0.5 → 0.05; IP and MAC 0.5, dates 0.125, emails
   0.075.** Second step (iteration D3b, after the recognizer-deferral fix
@@ -239,7 +239,7 @@ numbers; the published table is not fully regenerated yet.
   `DEFAULT_CATEGORY_THRESHOLDS` applies only when `categoryThresholds`
   is unset.
 
-### Less over-masking on developer content
+#### Less over-masking on developer content
 
 - **Package-registry tarball URLs are public.** `PUBLIC_URL_HOSTS`
   gains `npmjs.org` (the npm registry serves from `registry.npmjs.org`,
@@ -277,7 +277,7 @@ numbers; the published table is not fully regenerated yet.
   untouched. Developer content masked: 1.68% → 1.13%; tuning-set recall
   unchanged.
 
-### Fixed
+#### Fixed
 
 - **Overlapping spans no longer corrupt the restore round-trip.**
   Pre-existing in 0.3.0. `x https://github.com/users/john.doe@acme.com y`
@@ -338,7 +338,7 @@ numbers; the published table is not fully regenerated yet.
   on a secret that punctuation is part of the credential (`hunter2!`,
   `"P@ss;`) and was left unmasked. Secrets now lose only whitespace.
 
-### Test plan
+#### Test plan
 
 - 321 unit + integration tests passing (was 271 on v0.3.0); real-ONNX e2e 9/9.
 - New tests: `test/geo-filter.test.ts` (10 — coordinate shapes, the place names and postcodes the head mislabels, IPv4 not reading as a pair, range and null-island rejection), `test/url-filter-nested.test.ts` (10 — nested-secret retention, concatenated URLs, non-default ports, near-miss hosts), `test/url-filter.test.ts` (7), plus integration cases in `test/nullpii.test.ts`.

@@ -9,7 +9,10 @@ Presidio runs in-process via its Python API.
 from __future__ import annotations
 
 import atexit
+import hashlib
+import itertools
 import json
+import logging
 import os
 import re
 import subprocess
@@ -17,7 +20,7 @@ import sys
 import threading
 import time
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -26,6 +29,7 @@ from .datasets import Span
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent
 NULLPII_BIN = REPO_ROOT / "bin" / "nullpii.mjs"
 DEFAULT_MODEL_DIR = REPO_ROOT / "packages" / "convert" / "artifacts" / "model"
+_LOG = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +44,44 @@ class ToolResult:
 
 
 Predictor = Callable[[str], ToolResult]
+
+
+@dataclass(frozen=True, slots=True)
+class LabelCut:
+    """A per-label operating point (PROTOCOL rule change 9, item 3): a span
+    is kept iff its score reaches its label's threshold, or `default` for a
+    label the map does not list. Applied to a tool's own scores, after its
+    label map and before its window dedupe."""
+
+    thresholds: Mapping[str, float]
+    default: float
+
+    def keeps(self, label: str, score: float) -> bool:
+        return score >= self.thresholds.get(label, self.default)
+
+
+def _scored_result(spans_with_scores: list[tuple[Span, float]], kept: list[Span], elapsed_ms: float) -> ToolResult:
+    """The `kept` spans (a subset of the same objects) with their scores."""
+    score_by_id = {id(sp): sc for sp, sc in spans_with_scores}
+    return ToolResult(kept, elapsed_ms, scores=tuple(score_by_id[id(sp)] for sp in kept))
+
+
+def _bias_background_logit(model, bias: float) -> None:
+    """Lower the background (`O`) logit of every token by `bias`, so a
+    positive bias trades precision for recall (rule change 9, item 3: the
+    recall knob of a token classifier). A bias of 0 leaves the model
+    untouched, so the tool's default output is reproduced exactly."""
+    if bias == 0.0:
+        return
+    o_id = model.config.label2id.get("O")
+    if o_id is None:
+        raise ValueError(f"{model.config.name_or_path}: no 'O' label to bias")
+
+    def _hook(_module, _inputs, output):
+        output.logits[..., o_id] -= bias
+        return output
+
+    model.register_forward_hook(_hook)
 
 
 def _utf16_to_code_points(text: str) -> list[int]:
@@ -164,28 +206,35 @@ _PIIRANHA_LABEL_MAP = {
     "EMAIL": "private_email",
     "GIVENNAME": "private_person",
     "SURNAME": "private_person",
+    "USERNAME": "private_person",  # as `_AI4PRIVACY_LABELS` USERNAME
     "TELEPHONENUM": "private_phone",
     "PASSWORD": "secret",
 }
+
+
+# piiranha's card: "context length is 256 Deberta tokens". The overlap keeps
+# the old 1,000/200-character chunking's one-fifth ratio.
+_PIIRANHA_MAX_TOKENS = 256
+_PIIRANHA_OVERLAP_TOKENS = 48
 
 
 def piiranha_predictor(
     *,
     device: str | None = None,
     batch_size: int = 32,
-    chunk_chars: int = 1000,
-    overlap_chars: int = 200,
+    o_bias: float = 0.0,
+    label_cut: LabelCut | None = None,
 ) -> BatchPredictor:
     """`iiiorg/piiranha-v1-detect-personal-information` — multilingual
     DeBERTa-v3-based PII detector (en/es/fr/de/it/nl, 17 labels, 256 tok).
 
     Upstream model card: "context length is 256 Deberta tokens. If your
-    text is longer than that, just split it up". We honour that by
-    chunking the input at ~1000 chars (≈ 250-300 mDeBERTa tokens with
-    English / Romance text) with 200-char overlap, then dedupe overlap
-    boundary spans by IoU. Without this, long inputs (tab-echr ~3k chars,
-    isotonic 1-2k chars) get truncated to the first 256 tokens and the
-    model's F1 is systematically under-estimated.
+    text is longer than that, just split it up". The input is cut into
+    token windows of at most 256 tokens, special tokens included, with
+    `_PIIRANHA_OVERLAP_TOKENS` of overlap, and spans repeated in an
+    overlap are deduped by IoU. (Until 2026-10-18 the windows were 1,000
+    characters: about 250 tokens of prose, but up to 724 tokens of code,
+    which ran the model far past its trained length on trace text.)
     """
     try:
         import torch  # noqa: I001
@@ -212,16 +261,22 @@ def piiranha_predictor(
         device=device,
         batch_size=batch_size,
     )
+    native = {_strip_bioes(label) for label in pipe.model.config.id2label.values()} - {"O"}
+    _check_label_coverage(native, _PIIRANHA_LABEL_MAP, tool="piiranha")
+    _bias_background_logit(pipe.model, o_bias)
+    window = _PIIRANHA_MAX_TOKENS - _WINDOW_RESERVED_TOKENS
 
-    def _decode_spans(results: list[dict], offset: int = 0) -> list[Span]:
-        spans: list[Span] = []
+    def _decode_spans(results: list[dict], text: str, offset: int = 0) -> list[tuple[Span, float]]:
+        spans: list[tuple[Span, float]] = []
         for r in results:
             entity = str(r.get("entity_group") or r.get("entity") or "")
-            key = _strip_bioes(entity).upper()
-            label = _PIIRANHA_LABEL_MAP.get(key)
-            if label is None:
+            label = _map_native_label(_strip_bioes(entity), _PIIRANHA_LABEL_MAP, tool="piiranha")
+            score = float(r["score"])
+            if label is None or (label_cut is not None and not label_cut.keeps(label, score)):
                 continue
-            spans.append(Span(label, int(r["start"]) + offset, int(r["end"]) + offset))
+            start, end = _strip_span(text, int(r["start"]) + offset, int(r["end"]) + offset)
+            if start < end:
+                spans.append((Span(label, start, end), score))
         return spans
 
     def _dedupe_by_iou(spans: list[Span]) -> list[Span]:
@@ -257,19 +312,10 @@ def piiranha_predictor(
         per_input_chunks: list[list[tuple[int, str]]] = []
         flat_chunks: list[str] = []
         for text in texts:
-            tlen = len(text)
-            chunks: list[tuple[int, str]] = []
-            if tlen <= chunk_chars:
-                chunks.append((0, text))
-            else:
-                stride = chunk_chars - overlap_chars
-                for off in range(0, tlen, stride):
-                    chunk = text[off : off + chunk_chars]
-                    if not chunk:
-                        break
-                    chunks.append((off, chunk))
-                    if off + chunk_chars >= tlen:
-                        break
+            chunks = _token_windows(pipe.tokenizer, text, window, _PIIRANHA_OVERLAP_TOKENS) if text else [(0, text)]
+            for _, chunk in chunks:
+                if len(pipe.tokenizer(chunk)["input_ids"]) > _PIIRANHA_MAX_TOKENS:
+                    raise ValueError(f"[piiranha] window exceeds {_PIIRANHA_MAX_TOKENS} tokens; raise the reserve")
             per_input_chunks.append(chunks)
             flat_chunks.extend(c for _, c in chunks)
 
@@ -282,13 +328,13 @@ def piiranha_predictor(
 
         out: list[ToolResult] = []
         cursor = 0
-        for chunks in per_input_chunks:
-            collected: list[Span] = []
+        for text, chunks in zip(texts, per_input_chunks, strict=True):
+            collected: list[tuple[Span, float]] = []
             for off, _ in chunks:
                 results = flat_results[cursor] if cursor < len(flat_results) else []
                 cursor += 1
-                collected.extend(_decode_spans(results, offset=off))
-            out.append(ToolResult(_dedupe_by_iou(collected), per_call))
+                collected.extend(_decode_spans(results, text, offset=off))
+            out.append(_scored_result(collected, _dedupe_by_iou([sp for sp, _ in collected]), per_call))
         return out
 
     return _predict_batch
@@ -338,6 +384,9 @@ _RIZZO_LABEL_MAP: dict[str, str | None] = {
     "ID_DOC": "account_number",
     # ─── Vehicle ──────────────────────────────────────────────────
     "TARGA": "private_vehicle_id",  # nullpii ships `core:plate-it` for the same format
+    # ─── Regex net only (the app's `detect_regex`; the model has no such tag)
+    "URL": "private_url",
+    "IPADDR": "private_ip",
     # ─── Dropped: no home in nullpii's 14-label schema ─────────────
     "AGE": None,        # our gold ignores AGE (`_ISOTONIC_IGNORED`)
     "GENDER": None,     # demographic attribute, not an identifier
@@ -347,138 +396,146 @@ _RIZZO_LABEL_MAP: dict[str, str | None] = {
     "CATASTO": None,    # cadastral parcel; identifies a property, not a person
 }
 
-# Classes in nullpii's schema that rizzo-pii has NO tag for, so it scores
-# a structural 0 on any dataset whose gold contains them. Report the
-# resulting macro ceiling next to its score — a cell where the ceiling
-# binds says more about taxonomy overlap than about detection.
+# Classes in nullpii's schema that neither the model nor the app's regex
+# net can emit, so rizzo-pii scores a structural 0 on gold holding them.
 _RIZZO_UNEMITTABLE = frozenset({
     "secret",
-    "private_url",
-    "private_ip",
     "private_mac",
     "private_geolocation",
 })
+
+# The app pins model release v1.5.0 (`APP_MODEL_VERSION`); this is that tag's commit.
+_RIZZO_REVISION = "a1c3c83827eca22e9675e30c1111c4641caf5901"
+# The app passes each word chunk whole and the pipeline does not truncate, so
+# a chunk runs at any length the model's positions allow. Only a chunk longer
+# than that (a whitespace-free run in code or logs, which would crash the app)
+# is cut into token windows of that length.
+_RIZZO_MAX_POSITIONS = 8192
+_RIZZO_OVERLAP_TOKENS = 64
+# Chunks are batched under a padded-token budget, so one multi-thousand-token
+# chunk is not padded out across a full batch: that ran a 12 GB GPU out of
+# memory. Batching changes padding only, never the chunks.
+_RIZZO_BATCH_TOKEN_BUDGET = 32 * 512
 
 
 def rizzo_pii_predictor(
     *,
     device: str | None = None,
     batch_size: int = 32,
-    chunk_words: int = 120,
-    overlap_words: int = 20,
-    aggregation_strategy: str = "first",
+    o_bias: float = 0.0,
+    label_cut: LabelCut | None = None,
 ) -> BatchPredictor:
-    """`rizzoaiacademy/rizzo-pii-0.3B` — Italian-first ModernBERT/mmBERT
-    token classifier, 22 PII tags, 0.3B dense params (fp32, ~1.23 GB).
+    """`rizzoaiacademy/rizzo-pii-0.3B` run the way its desktop app serves it
+    (`src/app/app.py` `analyze()`, vendored in `vendor/rizzo_pii_app.py`):
 
-    Chunking mirrors the VENDOR'S SHIPPED SERVING PATH (`src/app/app.py`:
-    `MAX_WORDS = 120`, `OVERLAP = 20`), not their evaluation script.
+    1. the model over the app's word chunks (`chunk_text`: 120 words, 20 of
+       overlap) with `aggregation_strategy="simple"`;
+    2. `complete_time`, which widens the model's TIME spans to the whole time;
+    3. `detect_regex` over the full text: email, CF, IBAN, Luhn card, P.IVA,
+       Italian phone, plate, URL, IP, docket ids and numeric dates, checksum-
+       validated where a checksum exists;
+    4. `_merge`: greedy non-overlapping selection (checksum-valid, then hard
+       regex, then score, then length), whitespace trim, word-boundary
+       extension and fusion.
 
-    `aggregation_strategy` is `"first"`, NOT the `"simple"` their app
-    uses, because `"simple"` fragments this model badly and would
-    understate it: on a probe sentence it produced 33 spans of which 28
-    were <=2 chars, shredding a codice fiscale into 12 pieces and an
-    IBAN into 4. `"first"` returns 13 spans with the CF, PIVA, IBAN,
-    plate and date each recovered whole. (`"average"` and `"max"` are
-    tidier still but drop entities outright — `"average"` loses the
-    IBAN, `"max"` loses the date.) Their production stack repairs this
-    fragmentation with the regex/checksum net; since that net is not
-    exercised here, picking the aggregation that scores them best is the
-    fair substitute. Same precedent as `deberta`. Their `evaluate_pii.py` feeds the model
-    `is_split_into_words=True` with the gold word array, so word
-    segmentation and offset recovery are solved for it before inference;
-    that is not a protocol any other tool here gets, and it is not what
-    their own users run.
+    The card asks for exactly this: "always pair the model with a regex +
+    checksum safety net … This is exactly what the rizzo-pii desktop app
+    does." The app strips the text first; spans are shifted back onto the
+    original text.
 
-    The published 0.9888 micro-F1 is therefore not comparable to a cell
-    in this matrix on four independent axes: it is exact-boundary
-    word-span (stricter than IoU≥0.5), micro (not macro), over rizzo's
-    own 22 tags (not nullpii's schema), on a split of which ~18.6% of
-    gold entities were synthetically injected with template strings that
-    also appear in their training augmentation bank.
+    Operating point: `o_bias` lowers the model's `O` logit, before the
+    merge; `label_cut` filters the merged spans by score. Regex spans score
+    1.0 when their checksum passed and 0.9 otherwise, as the app records them.
 
-    Their regex + checksum network is serving-only and is NOT exercised
-    here or in their own evaluation — this row, like their number, is the
-    bare model.
+    Two departures from the app, both forced: the model runs on `device`
+    (the app picks CUDA or CPU and has no MPS path), and chunks are batched
+    under the token budget above (the app runs batch 1; spans are the same).
     """
-    try:
-        import torch  # noqa: I001
-        from transformers import pipeline
-    except ImportError as e:
-        raise ImportError("transformers + torch required") from e
+    from transformers import pipeline
 
-    if device is None:
-        device = "mps" if torch.backends.mps.is_available() else (
-            "cuda" if torch.cuda.is_available() else "cpu"
-        )
-    if device == "cpu":
-        threads = max(1, (os.cpu_count() or 8) // 2)
-        torch.set_num_threads(threads)
-        try:
-            torch.set_num_interop_threads(max(1, threads // 4))
-        except RuntimeError:
-            pass
+    from .vendor import rizzo_pii_app as app
 
+    device = _resolve_torch_device(device)
     pipe = pipeline(
         task="token-classification",
         model="rizzoaiacademy/rizzo-pii-0.3B",
-        aggregation_strategy=aggregation_strategy,
+        revision=_RIZZO_REVISION,
+        aggregation_strategy="simple",
         device=device,
-        batch_size=batch_size,
     )
+    native = {_strip_bioes(label) for label in pipe.model.config.id2label.values()} - {"O"}
+    regex_labels = {label for label, *_ in app.DETECTORS} | {"IBAN"}
+    _check_label_coverage(native | regex_labels, _RIZZO_LABEL_MAP, tool="rizzo-pii")
+    _bias_background_logit(pipe.model, o_bias)
+    max_window = _RIZZO_MAX_POSITIONS - _WINDOW_RESERVED_TOKENS
 
-    def _word_chunks(text: str) -> list[tuple[int, str]]:
-        """(char_offset, chunk_text) at `chunk_words` words with overlap."""
-        words = [(m.start(), m.end()) for m in re.finditer(r"\S+", text)]
-        if len(words) <= chunk_words:
-            return [(0, text)]
-        stride = chunk_words - overlap_words
-        chunks: list[tuple[int, str]] = []
-        for i in range(0, len(words), stride):
-            window = words[i : i + chunk_words]
-            if not window:
-                break
-            start, end = window[0][0], window[-1][1]
-            chunks.append((start, text[start:end]))
-            if i + chunk_words >= len(words):
-                break
-        return chunks
+    def _chunks(body: str) -> list[tuple[int, str]]:
+        """(offset, chunk): the app's word chunks, each cut into token windows
+        only if it is longer than the model's positions."""
+        return [
+            (offset + sub_offset, sub)
+            for chunk, offset in app.chunk_text(body)
+            for sub_offset, sub in _token_windows(pipe.tokenizer, chunk, max_window, _RIZZO_OVERLAP_TOKENS)
+        ]
 
-    def _decode(results: list[dict], offset: int) -> list[Span]:
-        spans: list[Span] = []
-        for r in results:
-            entity = str(r.get("entity_group") or r.get("entity") or "")
-            label = _RIZZO_LABEL_MAP.get(_strip_bioes(entity).upper())
-            if label is None:
-                continue
-            spans.append(Span(label, int(r["start"]) + offset, int(r["end"]) + offset))
-        return spans
+    def _run_model(chunks: list[str]) -> list[list[dict]]:
+        """Pipeline entities per chunk, in input order, shortest chunks first
+        in batches that stay under the padded-token budget."""
+        lengths = [len(ids) for ids in pipe.tokenizer(chunks)["input_ids"]]
+        order = sorted(range(len(chunks)), key=lengths.__getitem__)
+        results: list[list[dict]] = [[] for _ in chunks]
+        i = 0
+        while i < len(order):
+            j = i + 1
+            while j < len(order) and j - i < batch_size and (j - i + 1) * lengths[order[j]] <= _RIZZO_BATCH_TOKEN_BUDGET:
+                j += 1
+            group = order[i:j]
+            out = pipe([chunks[k] for k in group], batch_size=len(group))
+            for k, entities in zip(group, out, strict=True):
+                results[k] = entities
+            i = j
+        return results
+
+    def _analyze(body: str, chunks: list[tuple[int, str]], per_chunk: list[list[dict]]) -> list[dict]:
+        """The app's `analyze()` from the model's entities on: `complete_time`,
+        `detect_regex`, `_merge`. Entities are built as `detect_model` does."""
+        model_ents = [
+            {
+                "label": e["entity_group"],
+                "start": int(e["start"]) + offset,
+                "end": int(e["end"]) + offset,
+                "score": float(e["score"]),
+                "validated": False,
+                "source": "modello",
+            }
+            for (offset, _), entities in zip(chunks, per_chunk, strict=True)
+            for e in entities
+        ]
+        app.complete_time(model_ents, body)
+        return app._merge(model_ents + app.detect_regex(body), body)
 
     def _predict_batch(texts: list[str]) -> list[ToolResult]:
         t0 = time.perf_counter()
-        per_input: list[list[tuple[int, str]]] = []
-        flat: list[str] = []
-        for text in texts:
-            chunks = _word_chunks(text) if text else [(0, "")]
-            per_input.append(chunks)
-            flat.extend(c for _, c in chunks)
-
-        flat_results = pipe(flat) if flat else []
-        if flat_results and isinstance(flat_results[0], dict):
-            flat_results = [flat_results]  # type: ignore[list-item]
-
-        elapsed = (time.perf_counter() - t0) * 1000
-        per_call = elapsed / max(1, len(texts))
-
-        out: list[ToolResult] = []
+        bodies = [text.strip() for text in texts]
+        per_input = [_chunks(body) for body in bodies]
+        flat = [chunk for chunks in per_input for _, chunk in chunks]
+        flat_results = _run_model(flat) if flat else []
+        merged: list[list[dict]] = []
         cursor = 0
-        for chunks in per_input:
-            collected: list[Span] = []
-            for offset, _ in chunks:
-                results = flat_results[cursor] if cursor < len(flat_results) else []
-                cursor += 1
-                collected.extend(_decode(results, offset))
-            out.append(ToolResult(_dedupe_spans_by_iou(collected), per_call))
+        for body, chunks in zip(bodies, per_input, strict=True):
+            merged.append(_analyze(body, chunks, flat_results[cursor : cursor + len(chunks)]))
+            cursor += len(chunks)
+        per_call = (time.perf_counter() - t0) * 1000 / max(1, len(texts))
+        out: list[ToolResult] = []
+        for text, kept in zip(texts, merged, strict=True):
+            lead = len(text) - len(text.lstrip())
+            spans: list[tuple[Span, float]] = []
+            for e in kept:
+                label = _map_native_label(e["label"], _RIZZO_LABEL_MAP, tool="rizzo-pii")
+                if label is None or (label_cut is not None and not label_cut.keeps(label, e["score"])):
+                    continue
+                spans.append((Span(label, e["start"] + lead, e["end"] + lead), e["score"]))
+            out.append(_scored_result(spans, [sp for sp, _ in spans], per_call))
         return out
 
     return _predict_batch
@@ -528,6 +585,7 @@ def openai_privacy_filter_predictor(
     device: str | None = None,
     model: str | Path | None = None,
     label_map: dict[str, str | None] | None = None,
+    viterbi_biases: Mapping[str, float] | None = None,
 ) -> Predictor:
     """`openai/privacy-filter` — gpt-oss-derived bidirectional token
     classifier (1.5B params total / 50M active, 128k context). Loaded
@@ -542,9 +600,15 @@ def openai_privacy_filter_predictor(
     instead of the base model; a fine-tune with its own taxonomy then
     passes `label_map` (native upper-case label → nullpii label or None),
     and a predicted label missing from it raises.
+
+    `viterbi_biases` sets the decoder's transition biases, the operating-
+    point control the opf README documents for the precision/recall
+    trade-off (rule change 9, item 3). Keys are opf's own
+    `VITERBI_BIAS_KEYS`; an unlisted key stays 0. `None` uses the
+    checkpoint's shipped calibration.
     """
     try:
-        from opf import OPF
+        from opf import OPF, DecodeOptions
     except ImportError as e:
         raise ImportError(
             "opf required — `pip install -e git+https://github.com/openai/privacy-filter`",
@@ -574,6 +638,9 @@ def openai_privacy_filter_predictor(
         trim_whitespace=True,
         discard_overlapping_predicted_spans=False,
     )
+    decode = None
+    if viterbi_biases is not None:
+        decode = DecodeOptions(viterbi_calibration_path=str(_opf_calibration_file(viterbi_biases)))
 
     def _project(native: str) -> str | None:
         if label_map is None:
@@ -582,7 +649,7 @@ def openai_privacy_filter_predictor(
 
     def _predict(text: str) -> ToolResult:
         t0 = time.perf_counter()
-        result = runtime.redact(text)
+        result = runtime.redact(text, decode=decode)
         elapsed = (time.perf_counter() - t0) * 1000
         spans: list[Span] = []
         # OPF returns either a RedactionResult or a plain string when
@@ -595,6 +662,24 @@ def openai_privacy_filter_predictor(
         return ToolResult(spans, elapsed)
 
     return _predict
+
+
+def _opf_calibration_file(biases: Mapping[str, float]) -> Path:
+    """An opf `viterbi_calibration.json` holding `biases` as its default
+    operating point, written once under the eval cache, keyed by content."""
+    from opf._core.decoding import VITERBI_BIAS_KEYS
+
+    unknown = sorted(set(biases) - set(VITERBI_BIAS_KEYS))
+    if unknown:
+        raise ValueError(f"unknown opf Viterbi bias keys: {unknown}")
+    full = {key: float(biases.get(key, 0.0)) for key in VITERBI_BIAS_KEYS}
+    payload = json.dumps({"operating_points": {"default": {"biases": full}}}, sort_keys=True)
+    digest = hashlib.sha256(payload.encode()).hexdigest()[:16]
+    path = _OPF_CALIBRATION_CACHE / f"viterbi-{digest}.json"
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(payload + "\n", encoding="utf-8")
+    return path
 
 
 def _map_native_label(native: str, label_map: dict[str, str | None], *, tool: str) -> str | None:
@@ -668,10 +753,13 @@ _NEMOTRON_TOKEN_LABEL_MAP: dict[str, str | None] = {
     # `_authToken` values and bigcode's AUTH_TOKEN under `secret`.
     "http_cookie": "secret",
     "biometric_identifier": "secret",    # as `_NEMOTRON_TO_NULLPII8`
-    # ─── Dropped: our gold has no such category ───────────────────
-    # A generic "unique id" has no gold counterpart in any loader, and
-    # nemotron-pii-test's own gold map drops it too.
-    "unique_id": None,
+    # A generic identifier. Measured on isotonic-en tuning rows, nvidia's
+    # GLiNER puts 52% of gold account-number and 49% of gold secret
+    # characters under it, and NVIDIA's own serving masks it; dropping it
+    # (as until 2026-10-19) deleted those detections. Only the categories
+    # nullpii's core regime disables are dropped (below).
+    "unique_id": "account_number",
+    # ─── Dropped: the categories nullpii's core regime disables ──────
     "company_name": None,                # ORG is dropped by every loader
     # Isotonic ignores AGE. NB argilla's gold maps AGE → private_date, so
     # on argilla-pii this drop costs the tool any AGE chars it found;
@@ -754,9 +842,12 @@ _OPENMED_PF_LABEL_MAP: dict[str, str | None] = {
 OPENMED_PF_REPO = "OpenMed/privacy-filter-multilingual-v2"
 OPENMED_PF_REVISION = "0d0c0430fa386435ace1d9f842f0f966903a9ac8"
 _OPF_CHECKPOINT_CACHE = Path.home() / ".cache" / "nullpii-eval" / "opf-checkpoints"
+_OPF_CALIBRATION_CACHE = Path.home() / ".cache" / "nullpii-eval" / "opf-calibration"
 
 
-def openmed_privacy_filter_predictor(*, device: str | None = None) -> Predictor:
+def openmed_privacy_filter_predictor(
+    *, device: str | None = None, viterbi_biases: Mapping[str, float] | None = None
+) -> Predictor:
     """`OpenMed/privacy-filter-multilingual-v2` — full fine-tune of
     `openai/privacy-filter` (same 1.4B-total / 50M-active MoE) with
     `opf train`, 54 types × BIOES, 16 languages.
@@ -771,7 +862,9 @@ def openmed_privacy_filter_predictor(*, device: str | None = None) -> Predictor:
 
     checkpoint = ensure_opf_checkpoint(OPENMED_PF_REPO, OPENMED_PF_REVISION, _OPF_CHECKPOINT_CACHE)
     _check_label_coverage(_opf_span_labels(checkpoint), _OPENMED_PF_LABEL_MAP, tool="openmed-pf")
-    return openai_privacy_filter_predictor(device=device, model=checkpoint, label_map=_OPENMED_PF_LABEL_MAP)
+    return openai_privacy_filter_predictor(
+        device=device, model=checkpoint, label_map=_OPENMED_PF_LABEL_MAP, viterbi_biases=viterbi_biases
+    )
 
 
 def _opf_span_labels(checkpoint: Path) -> set[str]:
@@ -842,14 +935,16 @@ def _token_windows(tokenizer, text: str, window_tokens: int, overlap_tokens: int
 def _merge_adjacent_entities(results: list[dict]) -> list[dict]:
     """The ettin model card's `format_pii_entities`: merge same-label
     entities that touch or are one char apart (it repairs the sub-word
-    fragments `aggregation_strategy="simple"` leaves)."""
+    fragments `aggregation_strategy="simple"` leaves). A merged entity
+    keeps the highest score of its parts."""
     merged: list[dict] = []
     for r in sorted(results, key=lambda x: x["start"]):
         prev = merged[-1] if merged else None
         if prev and prev["entity_group"] == r["entity_group"] and r["start"] <= prev["end"] + 1:
             prev["end"] = max(prev["end"], r["end"])
+            prev["score"] = max(prev["score"], float(r["score"]))
             continue
-        merged.append({"entity_group": r["entity_group"], "start": r["start"], "end": r["end"]})
+        merged.append({"entity_group": r["entity_group"], "start": r["start"], "end": r["end"], "score": float(r["score"])})
     return merged
 
 
@@ -885,32 +980,15 @@ _WINDOW_RESERVED_TOKENS = 16
 # Overlap between windows: pii-identifier's own training stride.
 _WINDOW_OVERLAP_TOKENS = 128
 
-# OpenMed cards: "Max Sequence Length: 384 tokens" at fine-tuning.
-OPENMED_SMALL = TokenClassifierSpec(
-    tool="openmed-small",
-    model_id="OpenMed/OpenMed-PII-SuperClinical-Small-44M-v1",
-    revision="a2360d3f42526fc660ac3b2b2301e1c2d94eba61",
-    label_map=_NEMOTRON_TOKEN_LABEL_MAP,
-    max_tokens=384,
-    overlap_tokens=_WINDOW_OVERLAP_TOKENS,
-)
-OPENMED_LARGE = TokenClassifierSpec(
-    tool="openmed-large",
-    model_id="OpenMed/OpenMed-PII-SuperClinical-Large-434M-v1",
-    revision="df7af994d39d358e52f929ff1b3a40d894adf022",
-    label_map=_NEMOTRON_TOKEN_LABEL_MAP,
-    max_tokens=384,
-    overlap_tokens=_WINDOW_OVERLAP_TOKENS,
-)
-# The ettin card gives no fine-tuning length (the encoder takes 8k); it
-# gets the 2048-token window pii-identifier published for the same
-# Nemotron-PII corpus, plus the card's own adjacent-entity merge.
+# The ettin card gives no fine-tuning length (the encoder takes 8k), but its
+# shipped `tokenizer.json` truncates at 1024 tokens, a setting saved from
+# training; plus the card's own adjacent-entity merge.
 ETTIN_68M = TokenClassifierSpec(
     tool="ettin-68m",
     model_id="kalyan-ks/ettin-68m-nemotron-pii",
     revision="500262a2aaf913825ef750ef255c3fe437cd8e64",
     label_map=_NEMOTRON_TOKEN_LABEL_MAP,
-    max_tokens=2048,
+    max_tokens=1024,
     overlap_tokens=_WINDOW_OVERLAP_TOKENS,
     merge_adjacent=True,
 )
@@ -931,6 +1009,8 @@ def hf_token_classifier_predictor(
     *,
     device: str | None = None,
     batch_size: int = 32,
+    o_bias: float = 0.0,
+    label_cut: LabelCut | None = None,
 ) -> BatchPredictor:
     """Bare HF token classifier run the way its model card shows
     (`pipeline(..., aggregation_strategy="simple")`), with inputs cut into
@@ -953,6 +1033,7 @@ def hf_token_classifier_predictor(
     )
     native = {_strip_bioes(label) for label in pipe.model.config.id2label.values()} - {"O"}
     _check_label_coverage(native, spec.label_map, tool=spec.tool)
+    _bias_background_logit(pipe.model, o_bias)
     # Window budget excludes special tokens; the pipeline's own
     # truncation is set to the trained length as a hard ceiling.
     window = spec.max_tokens - _WINDOW_RESERVED_TOKENS
@@ -965,16 +1046,17 @@ def hf_token_classifier_predictor(
                 raise ValueError(f"[{spec.tool}] window exceeds {spec.max_tokens} tokens; raise the reserve")
         return chunks
 
-    def _decode(results: list[dict], text: str, offset: int) -> list[Span]:
+    def _decode(results: list[dict], text: str, offset: int) -> list[tuple[Span, float]]:
         entities = _merge_adjacent_entities(results) if spec.merge_adjacent else results
-        spans: list[Span] = []
+        spans: list[tuple[Span, float]] = []
         for r in entities:
             label = _map_native_label(str(r["entity_group"]), spec.label_map, tool=spec.tool)
-            if label is None:
+            score = float(r["score"])
+            if label is None or (label_cut is not None and not label_cut.keeps(label, score)):
                 continue
             start, end = _strip_span(text, int(r["start"]) + offset, int(r["end"]) + offset)
             if start < end:
-                spans.append(Span(label, start, end))
+                spans.append((Span(label, start, end), score))
         return spans
 
     def _predict_batch(texts: list[str]) -> list[ToolResult]:
@@ -988,11 +1070,11 @@ def hf_token_classifier_predictor(
         out: list[ToolResult] = []
         cursor = 0
         for text, chunks in zip(texts, per_input, strict=True):
-            collected: list[Span] = []
+            collected: list[tuple[Span, float]] = []
             for offset, _ in chunks:
                 collected.extend(_decode(flat_results[cursor], text, offset))
                 cursor += 1
-            out.append(ToolResult(_dedupe_spans_by_iou(collected), per_call))
+            out.append(_scored_result(collected, _dedupe_spans_by_iou([sp for sp, _ in collected]), per_call))
         return out
 
     return _predict_batch
@@ -1002,12 +1084,23 @@ def hf_token_classifier_predictor(
 _DEBERTA_MAX_TOKENS = 512
 _DEBERTA_OVERLAP_TOKENS = 128
 
-_DEBERTA_LABEL_MAP = {
+# Keyed by the model's own 59 native labels (`config.id2label`, BIO
+# prefix stripped), checked at load. Same SYMMETRY RULE as the other maps:
+# each label maps where `_AI4PRIVACY_LABELS` maps the same ai4privacy
+# concept, and is dropped where that gold ignores it. Until 2026-10-19 the
+# keys followed a different ai4privacy release (`PHONENUMBER`, `DOB`,
+# `GPSCOORDINATES`), so phones, full names, usernames, IPs and MACs never
+# reached scoring.
+_DEBERTA_LABEL_MAP: dict[str, str | None] = {
     "FIRSTNAME": "private_person",
     "LASTNAME": "private_person",
     "MIDDLENAME": "private_person",
-    "PREFIX": "private_person",
-    "ACCOUNTNAME": None,
+    "FULLNAME": "private_person",
+    "NAME": "private_person",
+    "DISPLAYNAME": "private_person",
+    "PREFIX": "private_person",           # gold NAMEPREFIX
+    "SUFFIX": "private_person",           # gold NAMESUFFIX
+    "USERNAME": "private_person",
     "ACCOUNTNUMBER": "account_number",
     "BIC": "account_number",
     "IBAN": "account_number",
@@ -1017,36 +1110,51 @@ _DEBERTA_LABEL_MAP = {
     "MASKEDNUMBER": "account_number",
     "CREDITCARDNUMBER": "account_number",
     "CREDITCARDCVV": "account_number",
-    # v0.3 schema split: vehicle registration mark / VIN have their own
-    # `private_vehicle_id` label (was bucketed into `account_number`).
+    "PHONEIMEI": "account_number",
+    "SSN": "account_number",
     "VEHICLEVRM": "private_vehicle_id",
     "VEHICLEVIN": "private_vehicle_id",
     "PIN": "secret",
     "PASSWORD": "secret",
-    "SSN": "account_number",
     "EMAIL": "private_email",
-    "PHONENUMBER": "private_phone",
-    "PHONEIMEI": "account_number",
+    "PHONE_NUMBER": "private_phone",
     "STREET": "private_address",
     "STREETADDRESS": "private_address",
+    "SECONDARYADDRESS": "private_address",
     "BUILDINGNUMBER": "private_address",
     "ZIPCODE": "private_address",
     "CITY": "private_address",
     "STATE": "private_address",
     "COUNTY": "private_address",
-    "COUNTRY": "private_address",
-    # v0.3 schema split: GPS coords → `private_geolocation` (was `private_address`).
-    "GPSCOORDINATES": "private_geolocation",
-    "DOB": "private_date",
+    "NEARBYGPSCOORDINATE": "private_geolocation",
     "DATE": "private_date",
     "TIME": "private_date",
     "URL": "private_url",
+    "IP": "private_ip",
+    "IPV4": "private_ip",
+    "IPV6": "private_ip",
+    "MAC": "private_mac",
+    # ─── Dropped: no gold counterpart, or ignored by the gold ─────
+    "ACCOUNTNAME": None,                  # account nickname, not a number
     "USERAGENT": None,
-    "USERNAME": None,
-    "IP": None,
-    "IPV4": None,
-    "IPV6": None,
-    "MAC": None,
+    "CREDITCARDISSUER": None,             # gold CARDISSUER is ignored
+    "COMPANY_NAME": None,
+    "AMOUNT": None,
+    "CURRENCY": None,
+    "CURRENCYCODE": None,
+    "CURRENCYNAME": None,
+    "CURRENCYSYMBOL": None,
+    # A generic number label: on isotonic-en tuning rows 133 of the 146
+    # characters it covers are gold identifiers, so it masks, as unique_id.
+    "NUMBER": "account_number",
+    "ORDINALDIRECTION": None,
+    "GENDER": None,
+    "SEX": None,                          # gold SEX is ignored
+    "SEXTYPE": None,
+    "JOBAREA": None,
+    "JOBDESCRIPTOR": None,
+    "JOBTITLE": None,
+    "JOBTYPE": None,
 }
 
 
@@ -1055,6 +1163,8 @@ def deberta_pii_predictor(
     device: str | None = None,
     batch_size: int = 32,
     aggregation_strategy: str = "first",
+    o_bias: float = 0.0,
+    label_cut: LabelCut | None = None,
 ) -> BatchPredictor:
     """`lakshyakh93/deberta_finetuned_pii` — DeBERTa-base English-only PII
     detector with rich label set (~50+ categories). Mapped to nullpii's
@@ -1092,6 +1202,9 @@ def deberta_pii_predictor(
         device=device,
         batch_size=batch_size,
     )
+    native = {_strip_bioes(label) for label in pipe.model.config.id2label.values()} - {"O"}
+    _check_label_coverage(native, _DEBERTA_LABEL_MAP, tool="deberta")
+    _bias_background_logit(pipe.model, o_bias)
 
     # The pipeline truncates each input to 512 tokens, so a long document
     # is cut into token windows first, as for the other HF classifiers.
@@ -1110,16 +1223,20 @@ def deberta_pii_predictor(
         per_call = (time.perf_counter() - t0) * 1000 / max(1, len(texts))
         out: list[ToolResult] = []
         cursor = 0
-        for chunks in per_input:
-            spans: list[Span] = []
+        for text, chunks in zip(texts, per_input, strict=True):
+            spans: list[tuple[Span, float]] = []
             for offset, _ in chunks:
                 for r in flat_results[cursor]:
                     entity = str(r.get("entity_group") or r.get("entity") or "")
-                    label = _DEBERTA_LABEL_MAP.get(_strip_bioes(entity).upper())
-                    if label is not None:
-                        spans.append(Span(label, int(r["start"]) + offset, int(r["end"]) + offset))
+                    label = _map_native_label(_strip_bioes(entity), _DEBERTA_LABEL_MAP, tool="deberta")
+                    score = float(r["score"])
+                    if label is None or (label_cut is not None and not label_cut.keeps(label, score)):
+                        continue
+                    start, end = _strip_span(text, int(r["start"]) + offset, int(r["end"]) + offset)
+                    if start < end:
+                        spans.append((Span(label, start, end), score))
                 cursor += 1
-            out.append(ToolResult(_dedupe_spans_by_iou(spans), per_call))
+            out.append(_scored_result(spans, _dedupe_spans_by_iou([sp for sp, _ in spans]), per_call))
         return out
 
     return _predict_batch
@@ -2221,110 +2338,176 @@ _NULLPII_LABELS = [
     "private_geolocation",
 ]
 
-# Natural-language GLiNER label set for upstream models. GLiNER is
-# label-aware (the encoder embeds each label string and matches against
-# spans), so passing labels the model never saw during training under-
-# estimates F1 substantially. Both `urchade/gliner_multi_pii-v1` and
-# `knowledgator/gliner-pii-large-v1.0` are documented with natural-
-# language label examples ("person", "email", "phone number", …) — use
-# them.
-_GLINER_NATIVE_LABELS = [
-    # private_person family
-    "person", "first name", "last name", "full name", "name",
-    # private_email
-    "email", "email address",
-    # private_phone
-    "phone number", "mobile phone number", "telephone", "cell phone",
-    # private_address
-    "address", "street address", "city", "state", "country",
-    "postal code", "zip code",
-    # private_date
-    "date", "date of birth", "birth date",
-    # private_url
-    "URL", "website",
-    # account_number — numeric ids + financial
-    "credit card number", "CVV", "social security number",
-    "bank account number", "routing number", "IBAN", "SWIFT code",
-    "passport number", "driver license", "national id number",
-    "license plate", "vehicle VIN", "medical record number",
-    "health insurance number", "tax identification number",
-    # secret — credentials
-    "password", "API key", "access token", "secret key", "private key",
-    "AWS access key", "AWS secret key", "certificate",
-    # private_ip / private_mac
-    "IP address", "MAC address",
-    # private_geolocation — parity with nullpii's wrapped GLiNER prompt;
-    # absence here would deny GLiNER-native any recall on geo classes
-    # when those labels exist in gold (AI4Privacy, Isotonic, Argilla).
-    "GPS coordinate", "latitude", "longitude",
-]
+# ─── GLiNER competitors: prompted with their cards' vocabularies ───
+# GLiNER embeds each label string, so the strings matter. Rule change 10:
+# each model is prompted with the label strings its card documents, plus
+# zero-shot extras only for gold concepts that list lacks, listed apart and
+# disclosed. Each map follows the SYMMETRY RULE of `_NEMOTRON_TOKEN_LABEL_MAP`:
+# a label maps to X iff our gold loaders map the same concept to X, and to
+# None where the gold has no such category.
 
-# Project the GLiNER natural-language labels back onto nullpii's 12-class
-# taxonomy for fair F1 against the gold spans. Any label not in this map
-# is dropped (predictor returns None for `_project_label`).
-_GLINER_NATIVE_TO_NULLPII8 = {
-    # private_person family
-    "person": "private_person",
+# knowledgator/gliner-pii-large-v1.0 card, its five "predefined PII
+# categories" lists, plus the labels the sibling gliner-stream-pii-v1.0
+# card prompts with ("person", "street address", "credit card number").
+_KNOWLEDGATOR_CARD_LABELS = [
+    # personal_labels
+    "name", "first name", "last name", "name medical professional", "dob", "age", "gender", "marital status",
+    # contact_labels
+    "email address", "phone number", "ip address", "url", "location address", "location street",
+    "location city", "location state", "location country", "location zip",
+    # financial_labels
+    "account number", "bank account", "routing number", "credit card", "credit card expiration", "cvv", "ssn", "money",
+    # healthcare_labels
+    "condition", "medical process", "drug", "dose", "blood type", "injury", "organization medical facility",
+    "healthcare number", "medical code",
+    # id_labels
+    "passport number", "driver license", "username", "password", "vehicle id",
+    # gliner-stream-pii-v1.0 card
+    "person", "street address", "credit card number",
+]
+# Gold concepts the knowledgator lists lack: dates other than birth dates,
+# times, MAC addresses, API keys and GPS coordinates.
+_KNOWLEDGATOR_EXTRA_LABELS = ["date", "time", "mac address", "api key", "gps coordinate"]
+_KNOWLEDGATOR_LABELS = _KNOWLEDGATOR_CARD_LABELS + _KNOWLEDGATOR_EXTRA_LABELS
+
+_KNOWLEDGATOR_TO_NULLPII: dict[str, str | None] = {
+    "name": "private_person",
     "first name": "private_person",
     "last name": "private_person",
-    "full name": "private_person",
-    "name": "private_person",
-    # private_email
-    "email": "private_email",
-    "email address": "private_email",
-    # private_phone
-    "phone number": "private_phone",
-    "mobile phone number": "private_phone",
-    "telephone": "private_phone",
-    "cell phone": "private_phone",
-    # private_address
-    "address": "private_address",
-    "street address": "private_address",
-    "city": "private_address",
-    "state": "private_address",
-    "country": "private_address",
-    "postal code": "private_address",
-    "zip code": "private_address",
-    # private_date
+    "name medical professional": "private_person",
+    "person": "private_person",
+    "username": "private_person",           # gold USERNAME
+    "dob": "private_date",
     "date": "private_date",
-    "date of birth": "private_date",
-    "birth date": "private_date",
-    # private_url
-    "URL": "private_url",
-    "website": "private_url",
-    # account_number
-    "credit card number": "account_number",
-    "CVV": "account_number",
-    "social security number": "account_number",
-    "bank account number": "account_number",
+    "time": "private_date",                 # gold TIME
+    "credit card expiration": "private_date",
+    "email address": "private_email",
+    "phone number": "private_phone",
+    "ip address": "private_ip",
+    "mac address": "private_mac",
+    "url": "private_url",
+    "location address": "private_address",
+    "location street": "private_address",
+    "location city": "private_address",
+    "location state": "private_address",
+    "location country": "private_address",  # gold COUNTRY
+    "location zip": "private_address",
+    "street address": "private_address",
+    "gps coordinate": "private_geolocation",
+    "account number": "account_number",
+    "bank account": "account_number",
     "routing number": "account_number",
-    "IBAN": "account_number",
-    "SWIFT code": "account_number",
-    # v0.3 schema split — passport / driver / vehicle / GPS get their own labels.
+    "credit card": "account_number",
+    "credit card number": "account_number",
+    "cvv": "account_number",                # gold CREDITCARDCVV
+    "ssn": "account_number",
+    "healthcare number": "account_number",  # as health_plan_beneficiary_number
     "passport number": "private_passport",
     "driver license": "private_driver_license",
-    "national id number": "account_number",
-    "license plate": "private_vehicle_id",
-    "vehicle VIN": "private_vehicle_id",
-    "medical record number": "account_number",
-    "health insurance number": "account_number",
-    "tax identification number": "account_number",
-    # secret
+    "vehicle id": "private_vehicle_id",
     "password": "secret",
-    "API key": "secret",
-    "access token": "secret",
-    "secret key": "secret",
-    "private key": "secret",
-    "AWS access key": "secret",
-    "AWS secret key": "secret",
-    "certificate": "secret",
-    # private_ip / private_mac
-    "IP address": "private_ip",
-    "MAC address": "private_mac",
-    # private_geolocation
-    "GPS coordinate": "private_geolocation",
-    "latitude": "private_geolocation",
-    "longitude": "private_geolocation",
+    "api key": "secret",
+    # ─── Dropped: no gold category ───────────────────────────────
+    "age": None,
+    "gender": None,
+    "marital status": None,
+    "money": None,
+    "condition": None,
+    "medical process": None,
+    "drug": None,
+    "dose": None,
+    "blood type": None,
+    "injury": None,
+    "organization medical facility": None,
+    "medical code": None,
+}
+
+# urchade/gliner_multi_pii-v1 card: "including but not limited to these
+# entity types", in the card's order and spelling (its two snake_case
+# duplicates included). Served by onnx-community/gliner_multi_pii-v1.
+_URCHADE_CARD_LABELS = [
+    "person", "organization", "phone number", "address", "passport number", "email", "credit card number",
+    "social security number", "health insurance id number", "date of birth", "mobile phone number",
+    "bank account number", "medication", "cpf", "driver's license number", "tax identification number",
+    "medical condition", "identity card number", "national id number", "ip address", "email address", "iban",
+    "credit card expiration date", "username", "health insurance number", "registration number",
+    "student id number", "insurance number", "flight number", "landline phone number", "blood type", "cvv",
+    "reservation number", "digital signature", "social media handle", "license plate number", "cnpj",
+    "postal code", "passport_number", "serial number", "vehicle registration number", "credit card brand",
+    "fax number", "visa number", "insurance company", "identity document number", "transaction number",
+    "national health insurance number", "cvc", "birth certificate number", "train ticket number",
+    "passport expiration date", "social_security_number",
+]
+# Gold concepts the urchade list lacks: dates other than birth and expiry
+# dates, times, URLs, MAC addresses, passwords, API keys, GPS coordinates.
+_URCHADE_EXTRA_LABELS = ["date", "time", "url", "mac address", "password", "api key", "gps coordinate"]
+_URCHADE_LABELS = _URCHADE_CARD_LABELS + _URCHADE_EXTRA_LABELS
+
+_URCHADE_TO_NULLPII: dict[str, str | None] = {
+    "person": "private_person",
+    "username": "private_person",                    # gold USERNAME
+    "social media handle": "private_person",         # a username
+    "phone number": "private_phone",
+    "mobile phone number": "private_phone",
+    "landline phone number": "private_phone",
+    "fax number": "private_phone",                   # gold FAX
+    "address": "private_address",
+    "postal code": "private_address",
+    "email": "private_email",
+    "email address": "private_email",
+    "ip address": "private_ip",
+    "mac address": "private_mac",
+    "url": "private_url",
+    "date of birth": "private_date",
+    "date": "private_date",
+    "time": "private_date",
+    "credit card expiration date": "private_date",
+    "passport expiration date": "private_date",
+    "gps coordinate": "private_geolocation",
+    "passport number": "private_passport",
+    "passport_number": "private_passport",
+    "driver's license number": "private_driver_license",
+    "license plate number": "private_vehicle_id",
+    "vehicle registration number": "private_vehicle_id",
+    "credit card number": "account_number",
+    "social security number": "account_number",
+    "social_security_number": "account_number",
+    "health insurance id number": "account_number",
+    "health insurance number": "account_number",
+    "national health insurance number": "account_number",
+    "insurance number": "account_number",
+    "bank account number": "account_number",
+    "iban": "account_number",
+    "cvv": "account_number",
+    "cvc": "account_number",
+    "cpf": "account_number",                         # national tax id, gold TAXNUM
+    "cnpj": "account_number",
+    "tax identification number": "account_number",
+    "identity card number": "account_number",        # gold IDCARDNUM
+    "national id number": "account_number",
+    "identity document number": "account_number",
+    "visa number": "account_number",
+    "birth certificate number": "account_number",
+    "student id number": "account_number",           # as employee_id / customer_id
+    "password": "secret",
+    "api key": "secret",
+    # ─── Dropped: no gold category ───────────────────────────────
+    "organization": None,
+    "medication": None,
+    "medical condition": None,
+    "blood type": None,
+    # Identifiers of a person's records, documents or devices, as
+    # nemotron's unique_id / device_identifier: masked, not dropped.
+    "registration number": "account_number",
+    "reservation number": "account_number",
+    "serial number": "account_number",
+    "transaction number": "account_number",
+    "train ticket number": "account_number",
+    "digital signature": "secret",                   # a credential, as biometric_identifier
+    # ─── Dropped: no gold category, or one nullpii's core regime disables
+    "flight number": None,                           # a public timetable code, not a person's
+    "credit card brand": None,                       # gold CARDISSUER is ignored
+    "insurance company": None,                       # an organisation
 }
 
 # Expanded inference-time prompt set. GLiNER is prompt-based (model
@@ -2394,25 +2577,24 @@ _EXPANDED_PROMPT_TO_NULLPII8 = {
     "API key": "secret",
 }
 
-# nvidia/gliner-PII (Nemotron PII) was trained on 55+ entity types
-# (`nvidia/Nemotron-PII` dataset). Pass these labels at inference; the
-# wrapper `_NEMOTRON_TO_NULLPII8` then maps each predicted label back
-# to nullpii's 12-class schema for a fair F1 comparison.
+# nvidia/gliner-PII is prompted with the 55 Nemotron-PII types, in the order
+# of NVIDIA's own serving default (`DEFAULT_LABELS` in NeMo Guardrails,
+# examples/deployment/gliner_server/src/gliner_server/pii_utils.py @ af242f0).
+# Its predictions map through `_NEMOTRON_TOKEN_LABEL_MAP`, the map of the
+# four Nemotron-trained token classifiers, so the same type is scored the
+# same way for every Nemotron-trained tool.
 _NEMOTRON_PII_LABELS = [
-    "first_name", "last_name", "user_name",
-    "email", "phone_number",
-    "street_address", "city", "county", "state", "postcode", "country",
-    "coordinate",
-    "date", "time", "date_time", "date_of_birth", "age",
-    "url",
-    "ssn", "account_number", "bank_routing_number", "swift_bic", "cvv",
-    "credit_debit_card", "employee_id", "customer_id",
-    "medical_record_number", "health_plan_beneficiary_number",
-    "vehicle_identifier", "license_plate", "certificate_license_number",
-    "mac_address", "ipv4", "device_identifier",
-    "password", "pin", "biometric_identifier",
+    "occupation", "certificate_license_number", "first_name", "date_of_birth", "ssn", "medical_record_number",
+    "password", "unique_id", "phone_number", "national_id", "swift_bic", "company_name", "country",
+    "license_plate", "tax_id", "employee_id", "pin", "state", "email", "date_time", "api_key",
+    "biometric_identifier", "credit_debit_card", "coordinate", "device_identifier", "city", "postcode",
+    "bank_routing_number", "vehicle_identifier", "health_plan_beneficiary_number", "url", "ipv4", "last_name",
+    "cvv", "customer_id", "date", "user_name", "street_address", "ipv6", "account_number", "time", "age",
+    "fax_number", "county", "gender", "sexuality", "political_view", "race_ethnicity", "religious_belief",
+    "language", "blood_type", "mac_address", "http_cookie", "employment_status", "education_level"
 ]
 
+# Gold map of the nemotron-pii-test report set (`public_datasets.py`).
 _NEMOTRON_TO_NULLPII8 = {
     "first_name": "private_person",
     "last_name": "private_person",
@@ -2455,394 +2637,194 @@ _NEMOTRON_TO_NULLPII8 = {
 }
 
 
+# GLiNER's own word splitter (`WhitespaceTokenSplitter`).
+_GLINER_WORD = re.compile(r"\w+(?:[-_]\w+)*|\S")
+# Windows of one document go to `inference` together, as the GLiNER docs
+# recommend for many texts; batching changes padding only. A window is
+# capped in words, not subword tokens, so code, long strings and unspaced
+# scripts can make one of several thousand tokens, and attention memory
+# grows with the square of the padded length. A batch is cut so that
+# windows x longest^2 stays within what 8 windows of 1,024 tokens take:
+# on the CPU running out of memory kills the process, so this bound comes
+# first. A GPU batch (CUDA or MPS) that still does not fit is re-run
+# halved, down to one window; a window that does not fit alone runs on the
+# CPU, with the same weights, so the model's output is kept rather than cut
+# short.
+_GLINER_BATCH_SIZE = 8
+_GLINER_ATTENTION_BUDGET = _GLINER_BATCH_SIZE * 1024 * 1024
+# PyTorch has no exception class for MPS running out of memory: it raises a
+# RuntimeError with this message (CUDA raises torch.OutOfMemoryError).
+_MPS_OUT_OF_MEMORY = "MPS backend out of memory"
+
+
+def _is_out_of_memory(exc: RuntimeError) -> bool:
+    import torch
+
+    return isinstance(exc, torch.OutOfMemoryError) or str(exc).startswith(_MPS_OUT_OF_MEMORY)
+
+
+def _empty_device_cache(device: str) -> None:
+    import torch
+
+    if device == "cuda":
+        torch.cuda.empty_cache()
+    elif device == "mps":
+        torch.mps.empty_cache()
+
+
+def _gliner_windows(text: str, max_words: int, overlap_words: int) -> list[tuple[int, str]]:
+    """(offset, chunk) windows of at most `max_words` GLiNER words, each
+    starting on a word, consecutive windows sharing `overlap_words` words.
+    GLiNER drops every word past its `max_len` without an error, so a longer
+    text has to be split; an overlap of the model's `max_width`, the longest
+    span it can emit, keeps an entity cut by one window whole in the next."""
+    words = [(m.start(), m.end()) for m in _GLINER_WORD.finditer(text)]
+    if len(words) <= max_words:
+        return [(0, text)]
+    stride = max_words - overlap_words
+    windows: list[tuple[int, str]] = []
+    for i in range(0, len(words), stride):
+        start, end = words[i][0], words[min(i + max_words, len(words)) - 1][1]
+        windows.append((start, text[start:end]))
+        if i + max_words >= len(words):
+            return windows
+    return windows
+
+
+def _dedupe_gliner_spans(spans_with_scores: list[tuple[Span, float]]) -> list[tuple[Span, float]]:
+    """Collapse a span repeated across window overlaps: of two overlapping
+    same-label spans the longer is kept."""
+    out: list[tuple[Span, float]] = []
+    for item in sorted(spans_with_scores, key=lambda x: (x[0].start, -x[0].end)):
+        if not _replace_overlapping_same_label(out, item):
+            out.append(item)
+    return sorted(out, key=lambda x: x[0].start)
+
+
+def _replace_overlapping_same_label(out: list[tuple[Span, float]], item: tuple[Span, float]) -> bool:
+    """True if `item` overlaps a kept same-label span; the longer of the two
+    is then the one kept. `out` is sorted by start."""
+    span = item[0]
+    for i in range(len(out) - 1, -1, -1):
+        prev = out[i][0]
+        if prev.end <= span.start:
+            return False
+        if prev.label != span.label:
+            continue
+        if (span.end - span.start) > (prev.end - prev.start):
+            out[i] = item
+        return True
+    return False
+
+
 def gliner_v2_predictor(
     model_path: str,
     *,
+    revision: str | None = None,
     onnx_file: str | None = None,
     device: str = "cuda",
+    dtype: str | None = None,
     threshold: float = 0.5,
     local_files_only: bool = False,
-    chunk_chars: int = 1400,
-    overlap_chars: int = 200,
     labels: list[str] | None = None,
-    label_map: dict[str, str] | None = None,
+    label_map: Mapping[str, str | None] | None = None,
+    label_cut: LabelCut | None = None,
+    max_window_words: int | None = None,
+    batch_size: int = _GLINER_BATCH_SIZE,
 ) -> Predictor:
-    """Bare-mode predictor for upstream GLiNER models (Apache 2.0).
+    """A GLiNER model run the way the GLiNER library documents it: the
+    model's `inference` over the label strings it was trained on, at
+    `threshold`, with the library's defaults otherwise (flat NER).
 
-    Caller must pass the model's NATIVE label schema via ``labels`` (GLiNER
-    is label-aware: passing labels the model never saw during training
-    materially under-estimates F1). The optional ``label_map`` projects
-    native labels onto nullpii's 12-class taxonomy for fair cross-model
-    F1 — bench gold spans are 12-class, so any model with a different
-    schema needs a bridge (same contract as the per-tool deberta /
-    piiranha / nemotron remaps).
+    `labels` are the strings to prompt (the competitors pass their card's
+    vocabulary); `label_map` projects each onto nullpii's schema and must
+    decide every prompted label. Without `labels`, nullpii's own label set
+    is prompted and returned unmapped (nullpii's merged models).
 
-    Default ``labels=None`` → falls back to nullpii's underscore_case
-    12-class set (`_NULLPII_LABELS` — 8 trained + 4 zero-shot extras,
-    matching `GLINER_LABELS` in `src/nullpii.ts`). Correct for models
-    fine-tuned on that exact schema (e.g. nullpii's own merged-LoRA ONNX).
+    A text longer than the model's `max_len` words, or than
+    `max_window_words` where the hardware cannot hold `max_len`, is cut into
+    word windows (`_gliner_windows`), `batch_size` at a time (fewer where
+    long windows would exceed `_GLINER_ATTENTION_BUDGET`, halved while a
+    batch runs out of GPU memory (CUDA or MPS), on the CPU where one window
+    alone does not fit; `_predict.cpu_fallbacks` counts those texts); spans repeated
+    across an overlap are collapsed. No other glue: no normalisation,
+    recognizers or filters.
 
-    Bare-mode contract: NO nullpii post-processing. No `_normalize_for_detection`,
-    no boundary refine, no never-PII filter, no regex pack. The chunking
-    1400/200 stride is the only adapter glue, applied uniformly across all
-    GLiNER-family bare baselines so long-doc handling is fair.
-
-    Loads either the PyTorch checkpoint (`onnx_file=None`) on the chosen
-    device, or an exported ONNX model (`onnx_file="model_int4.onnx"`,
-    forced to CPU since onnxruntime CPUExecutionProvider is what we ship).
+    `onnx_file` loads an exported ONNX model on the CPU, the library's
+    default provider. `dtype` follows the card where it names one
+    (gliner-stream-pii: bf16 on CUDA). `threshold` is the run threshold;
+    `label_cut` then keeps a span only if its score reaches its label's
+    operating point (rule change 9).
     """
-    try:
-        from gliner import GLiNER
-    except ImportError as e:
-        raise ImportError("gliner required") from e
+    from gliner import GLiNER
 
-    kwargs: dict = {"local_files_only": local_files_only}
+    kwargs: dict = {"revision": revision, "local_files_only": local_files_only}
     if onnx_file:
-        kwargs["load_onnx_model"] = True
-        kwargs["onnx_model_file"] = onnx_file
-        model = GLiNER.from_pretrained(model_path, **kwargs)
+        model = GLiNER.from_pretrained(model_path, load_onnx_model=True, onnx_model_file=onnx_file, **kwargs)
     else:
-        model = GLiNER.from_pretrained(model_path, **kwargs).to(device)
+        model = GLiNER.from_pretrained(model_path, map_location=device, dtype=dtype, **kwargs)
         model.eval()
 
-    def _dedupe(spans: list[Span]) -> list[Span]:
-        if len(spans) <= 1:
-            return spans
-        sorted_spans = sorted(spans, key=lambda s: (s.start, -s.end))
-        out: list[Span] = []
-        for s in sorted_spans:
-            merged = False
-            for i in range(len(out) - 1, -1, -1):
-                prev = out[i]
-                if prev.end <= s.start:
-                    break
-                if prev.label != s.label:
-                    continue
-                if (s.end - s.start) > (prev.end - prev.start):
-                    out[i] = s
-                merged = True
-                break
-            if not merged:
-                out.append(s)
-        return sorted(out, key=lambda s: s.start)
-
     inference_labels = list(labels) if labels is not None else list(_NULLPII_LABELS)
-    remap = dict(label_map) if label_map is not None else None
+    if label_map is not None:
+        _check_label_coverage(set(inference_labels), dict(label_map), tool=model_path)
+    max_words = min(int(model.config.max_len), max_window_words or int(model.config.max_len))
+    overlap_words = int(model.config.max_width)
+    if overlap_words >= max_words:
+        raise ValueError(f"[{model_path}] window of {max_words} words cannot overlap by max_width {overlap_words}")
 
-    def _project_label(native: str) -> str | None:
-        if remap is None:
-            return native
-        return remap.get(native)
+    def _project(native: str, score: float) -> str | None:
+        label = native if label_map is None else _map_native_label(native, dict(label_map), tool=model_path)
+        if label is None or (label_cut is not None and not label_cut.keeps(label, score)):
+            return None
+        return label
+
+    tokenizer = model.data_processor.transformer_tokenizer
+
+    def _batch_size_for(chunks: list[str]) -> int:
+        longest = max(len(ids) for ids in tokenizer(chunks, add_special_tokens=False)["input_ids"])
+        return max(1, min(batch_size, _GLINER_ATTENTION_BUDGET // max(1, longest) ** 2))
+
+    def _inference(chunks: list[str]) -> list[list[dict]]:
+        size = _batch_size_for(chunks)
+        while True:
+            try:
+                return model.inference(chunks, inference_labels, threshold=threshold, batch_size=size)
+            except RuntimeError as exc:
+                if not _is_out_of_memory(exc):
+                    raise
+                # retried below, once the failed attempt's tensors are released
+            _empty_device_cache(device)
+            if size == 1:
+                return _inference_on_cpu(chunks)
+            size //= 2
+
+    def _inference_on_cpu(chunks: list[str]) -> list[list[dict]]:
+        _predict.cpu_fallbacks += 1
+        _LOG.warning("[%s] a window does not fit in GPU memory alone; the text runs on the CPU (%d so far)",
+                     model_path, _predict.cpu_fallbacks)
+        model.to("cpu")
+        try:
+            return model.inference(chunks, inference_labels, threshold=threshold, batch_size=_batch_size_for(chunks))
+        finally:
+            model.to(device)
 
     def _predict(text: str) -> ToolResult:
         t0 = time.perf_counter()
-        spans: list[Span] = []
-        scores: list[float] = []
-        text_len = len(text)
-        if text_len <= chunk_chars:
-            for e in model.predict_entities(text, inference_labels, threshold=threshold):
-                projected = _project_label(e["label"])
-                if projected is None:
-                    continue
-                spans.append(Span(projected, int(e["start"]), int(e["end"])))
-                scores.append(float(e.get("score", threshold)))
-        else:
-            stride = chunk_chars - overlap_chars
-            spans_with_scores: list[tuple[Span, float]] = []
-            for offset in range(0, text_len, stride):
-                chunk = text[offset : offset + chunk_chars]
-                if not chunk:
-                    break
-                for e in model.predict_entities(chunk, inference_labels, threshold=threshold):
-                    projected = _project_label(e["label"])
-                    if projected is None:
-                        continue
-                    ns_full = int(e["start"]) + offset
-                    ne_full = int(e["end"]) + offset
-                    spans_with_scores.append((
-                        Span(projected, ns_full, ne_full),
-                        float(e.get("score", threshold)),
-                    ))
-                if offset + chunk_chars >= text_len:
-                    break
-            kept = _dedupe([sp for sp, _ in spans_with_scores])
-            score_by_id = {id(sp): sc for sp, sc in spans_with_scores}
-            for sp in kept:
-                spans.append(sp)
-                scores.append(score_by_id.get(id(sp), threshold))
-        elapsed = (time.perf_counter() - t0) * 1000
-        return ToolResult(spans, elapsed, scores=tuple(scores))
-
-    return _predict
-
-
-_HTML_ENTITY_RE = re.compile(r"&#(\d+);|&#x([0-9a-fA-F]+);")
-_URL_PERCENT_RE = re.compile(r"%([0-9a-fA-F]{2})")
-_ZERO_WIDTH_CHARS = frozenset("​‌‍﻿⁠­")
-# Detect whitespace-obfuscated PII (e.g. `+ 4 9   3 0   1 2 3 4 5 6 7 8`).
-# tightened from `{5,}` to `{3,}` (catches `+ 4 9 3 0`)
-# AND anchored at non-word boundary `(?<!\w)` (does not start mid-word —
-# avoids mangling "Mary J. Doe age 4 7" by chopping the suffix `y J . D
-# e 4 7`). Char class adds `:` and `/` (catches spaced URLs / IPs).
-# Post-check requires ≥4 digits OR (≥1 `@` + ≥1 letter) so prose like
-# "I a m a g i r l" still does not despace.
-_SPACED_PII_RE = re.compile(r"(?<!\w)(?:[\w@.+\-:/]\s+){3,}[\w@.+\-:/]")
-
-
-_NORMALIZE_INPUT_MAX_BYTES = 1_000_000  # -cap
-
-
-def _is_pure_ascii_no_decode_needed(text: str) -> bool:
-    """Fast-path test for `_normalize_for_detection`.
-
-    Returns True iff the input is pure ASCII AND has no triggers for
-    the despace / URL %XX / HTML entity decode paths. The narrower-
-    than-Python-proposal check matches the TS port — despace and
-    decode legitimately apply to ASCII input, so an unconditional
-    "ASCII → identity passthrough" would lose correctness.
-    """
-    if "&#" in text or "%" in text:
-        return False
-    if any(ord(c) > 127 for c in text):
-        return False
-    if _SPACED_PII_RE.search(text):
-        return False
-    return True
-
-
-def _normalize_for_detection(text: str) -> tuple[str, list[int]]:
-    """Adversarial-resistant input normalisation with offset map.
-
-    Applies, in order:
-    - HTML numeric entity decode (`&#115;` → `s`)
-    - Zero-width / soft-hyphen strip
-    - Per-char NFKC + unidecode for non-ASCII (Cyrillic homoglyphs,
-      fullwidth digits, mathematical fonts → ASCII equivalent)
-
-    Returns `(normalized_text, norm_to_orig)`. `norm_to_orig[i]` is
-    the original-text index of the i-th char in the normalized text;
-    sentinel at the end equals `len(text)` so span ends remap cleanly.
-
-    The adapter receives the normalised text; output spans are remapped
-    back to original-text offsets via the index map. Original gold
-    spans use original offsets, so this preserves bench correctness
-    while letting the model see a cleaner input.
-
-    input length cap. `_SPACED_PII_RE.match(text, i)` per
-    position is O(N²) on whitespace-rich adversarial input (100 KB
-    of `a a a a` → ~5 s in CPython). 1 MB cap matches the regex pack
-    upstream guard; oversized input falls through as identity
-    passthrough. Any realistic LLM prompt is far below this cap.
-    """
-    if len(text) > _NORMALIZE_INPUT_MAX_BYTES:
-        return text, list(range(len(text) + 1))
-    # ASCII fast-path. Per-char NFKC + Python loop costs
-    # ~100 ms on a 50 KB ASCII input (no work to do). Skip entirely
-    # if the text has no non-ASCII bytes, no `&#` (HTML entity
-    # candidate), no `%` (URL %XX candidate), and no whitespace run
-    # of length ≥ 4 single chars (despace candidate). Mirrors the TS
-    # port's `isPureAsciiNoDecodeNeeded` check.
-    if _is_pure_ascii_no_decode_needed(text):
-        return text, list(range(len(text) + 1))
-    try:
-        from unidecode import unidecode
-    except ImportError:
-        unidecode = None
-    out: list[str] = []
-    norm_to_orig: list[int] = []
-    i = 0
-    n = len(text)
-    while i < n:
-        # Whitespace-obfuscated PII collapse (e.g. "1 2 3 4 5" → "12345").
-        # gated by stricter post-check — require ≥4 digits OR
-        # (≥1 `@` + ≥1 letter). Without this guard, a sentence with sparse
-        # digits could despace into a phone-shaped string (`Mary J. Doe age
-        # 4 7` → `yJ.De47`).
-        m_sp = _SPACED_PII_RE.match(text, i)
-        if m_sp:
-            run = m_sp.group(0)
-            digit_count = sum(1 for c in run if c.isdigit())
-            has_at = "@" in run
-            has_alpha = any(c.isalpha() for c in run)
-            if digit_count >= 4 or (has_at and has_alpha):
-                for j, c in enumerate(run):
-                    if c.isspace():
-                        continue
-                    out.append(c)
-                    norm_to_orig.append(i + j)
-                i += len(run)
-                continue
-        # URL percent-encoding decode (`%40` → `@`)
-        m_url = _URL_PERCENT_RE.match(text, i)
-        if m_url:
-            try:
-                decoded_char = chr(int(m_url.group(1), 16))
-            except (ValueError, OverflowError):
-                decoded_char = ""
-            # -(mirror): preserve email-anchor chars in original
-            # form so the email regex can still match.
-            if decoded_char in ("@", ".", "+", "-"):
-                decoded_char = ""
-            if decoded_char:
-                # Map decoded char to the END of the `%XX` triplet so
-                # a span ending here remaps to the triplet's original
-                # end byte. Mapping to the start would collapse all
-                # triplets in a multi-decoded URL onto the first one.
-                out.append(decoded_char)
-                norm_to_orig.append(i + 2)
-                i += 3
-                continue
-        # HTML numeric entity decode
-        m = _HTML_ENTITY_RE.match(text, i)
-        if m:
-            try:
-                if m.group(1):
-                    decoded = chr(int(m.group(1)))
-                else:
-                    decoded = chr(int(m.group(2), 16))
-            except (ValueError, OverflowError):
-                decoded = ""
-            # do NOT decode `@` / `.` / `+` / `-` because the
-            # downstream email regex anchors on those literals; an
-            # unconditional decode of `j&#x40;ohn@example.com` produces
-            # `j@ohn@example.com` (two `@`) which the email regex
-            # rejects entirely. Keep the entity intact for those chars.
-            if decoded in ("@", ".", "+", "-"):
-                decoded = ""
-            if decoded:
-                for c in decoded:
-                    out.append(c)
-                    norm_to_orig.append(i)
-                i += len(m.group(0))
-                continue
-        c = text[i]
-        if c in _ZERO_WIDTH_CHARS:
-            i += 1
-            continue
-        nfkc = unicodedata.normalize("NFKC", c)
-        if any(ord(ch) > 127 for ch in nfkc) and unidecode is not None:
-            transliterated = unidecode(nfkc)
-            if transliterated:
-                for tc in transliterated:
-                    out.append(tc)
-                    norm_to_orig.append(i)
-                i += 1
-                continue
-        for nc in nfkc:
-            out.append(nc)
-            norm_to_orig.append(i)
-        i += 1
-    norm_to_orig.append(n)
-    return "".join(out), norm_to_orig
-
-
-def _remap_span(norm_start: int, norm_end: int, norm_to_orig: list[int]) -> tuple[int, int]:
-    """Map a normalized [start, end) span to the original text.
-
-    previous `>=` clamp truncated by one character when the
-    model predicted `end == len(normalised)`. The sentinel at index
-    `len(norm_to_orig) - 1` is exactly the valid end-exclusive
-    position, not out-of-bounds. Use strict `min(..., max_idx)` clamp.
-    """
-    max_idx = len(norm_to_orig) - 1
-    ns = max(0, min(norm_start, max_idx))
-    ne = max(0, min(norm_end, max_idx))
-    return norm_to_orig[ns], norm_to_orig[ne]
-
-
-def gliner_nemotron_pii_predictor(
-    *,
-    model_path: str = "nvidia/gliner-pii",
-    device: str = "cpu",
-    threshold: float = 0.3,
-    chunk_chars: int = 1400,
-    overlap_chars: int = 200,
-) -> Predictor:
-    """Bare-mode predictor for `nvidia/gliner-PII` (Nemotron PII).
-
-    Bare-mode contract: NO nullpii post-processing. No `_normalize_for_detection`,
-    no boundary refine, no never-PII filter, no regex pack. The 37→8 label
-    remap (`_NEMOTRON_TO_NULLPII8`) is the only adapter glue and is required
-    for F1 schema compatibility with the bench gold labels — every competitor
-    with a non-12-class schema has the same kind of bridge (presidio,
-    deberta, etc.). Chunking 1400/200 is shared across all GLiNER-family
-    bare baselines.
-
-    Default threshold 0.3 follows Nvidia's evaluation recipe (model card).
-    Backbone is `urchade/gliner_large-v2.1` (~600M params, 2× the size
-    of our backbone `urchade/gliner_multi_pii-v1` ~280M).
-    """
-    try:
-        from gliner import GLiNER
-    except ImportError as e:
-        raise ImportError("gliner required") from e
-
-    model = GLiNER.from_pretrained(model_path, local_files_only=False).to(device)
-    model.eval()
-
-    def _dedupe(spans: list[Span]) -> list[Span]:
-        if len(spans) <= 1:
-            return spans
-        sorted_spans = sorted(spans, key=lambda s: (s.start, -s.end))
-        out: list[Span] = []
-        for s in sorted_spans:
-            merged = False
-            for i in range(len(out) - 1, -1, -1):
-                prev = out[i]
-                if prev.end <= s.start:
-                    break
-                if prev.label != s.label:
-                    continue
-                if (s.end - s.start) > (prev.end - prev.start):
-                    out[i] = s
-                merged = True
-                break
-            if not merged:
-                out.append(s)
-        return sorted(out, key=lambda s: s.start)
-
-    def _predict(text: str) -> ToolResult:
-        t0 = time.perf_counter()
-        spans: list[Span] = []
-        scores: list[float] = []
-        text_len = len(text)
-        if text_len <= chunk_chars:
-            entities = model.predict_entities(
-                text, _NEMOTRON_PII_LABELS, threshold=threshold,
-            )
+        windows = _gliner_windows(text, max_words, overlap_words)
+        per_window = _inference([chunk for _, chunk in windows])
+        spans_with_scores: list[tuple[Span, float]] = []
+        for (offset, _), entities in zip(windows, per_window, strict=True):
             for e in entities:
-                mapped = _NEMOTRON_TO_NULLPII8.get(e["label"])
-                if mapped is None:
-                    continue
-                spans.append(Span(mapped, int(e["start"]), int(e["end"])))
-                scores.append(float(e.get("score", threshold)))
-        else:
-            stride = chunk_chars - overlap_chars
-            spans_with_scores: list[tuple[Span, float]] = []
-            for offset in range(0, text_len, stride):
-                chunk = text[offset:offset + chunk_chars]
-                if not chunk:
-                    break
-                for e in model.predict_entities(chunk, _NEMOTRON_PII_LABELS, threshold=threshold):
-                    mapped = _NEMOTRON_TO_NULLPII8.get(e["label"])
-                    if mapped is None:
-                        continue
-                    ns_full = int(e["start"]) + offset
-                    ne_full = int(e["end"]) + offset
-                    spans_with_scores.append((
-                        Span(mapped, ns_full, ne_full),
-                        float(e.get("score", threshold)),
-                    ))
-                if offset + chunk_chars >= text_len:
-                    break
-            kept = _dedupe([sp for sp, _ in spans_with_scores])
-            score_by_id = {id(sp): sc for sp, sc in spans_with_scores}
-            for sp in kept:
-                spans.append(sp)
-                scores.append(score_by_id.get(id(sp), threshold))
+                score = float(e["score"])
+                label = _project(e["label"], score)
+                if label is not None:
+                    spans_with_scores.append((Span(label, int(e["start"]) + offset, int(e["end"]) + offset), score))
+        kept = _dedupe_gliner_spans(spans_with_scores) if len(windows) > 1 else spans_with_scores
         elapsed = (time.perf_counter() - t0) * 1000
-        return ToolResult(spans, elapsed, scores=tuple(scores))
+        return ToolResult([sp for sp, _ in kept], elapsed, scores=tuple(sc for _, sc in kept))
 
+    _predict.cpu_fallbacks = 0
     return _predict
 
 
@@ -3008,164 +2990,6 @@ _SCRUBADUB_LABEL_MAP = {
     "url": "private_url",
     "social_security_number": "account_number",
 }
-
-
-def presidio_predictor(*, language: str = "en") -> Predictor:
-    """In-process Presidio analyzer (English only). Maps Presidio entities
-    → our 8 categories. Use `presidio_multilang_predictor` for multilingual
-    benches — this variant analyses every text under `language=en` and
-    therefore under-counts spans on non-en datasets (no German / French /
-    Italian spaCy NER, regex pack still fires).
-    """
-    try:
-        from presidio_analyzer import AnalyzerEngine  # noqa: I001
-    except ImportError as e:
-        raise ImportError(
-            "presidio not installed; run `pip install -e '.[presidio]'`",
-        ) from e
-
-    analyzer = AnalyzerEngine()
-
-    def _predict(text: str) -> ToolResult:
-        t0 = time.perf_counter()
-        results = analyzer.analyze(text=text, language=language)
-        elapsed = (time.perf_counter() - t0) * 1000
-        spans: list[Span] = []
-        for r in results:
-            label = _map_presidio_entity(r.entity_type)
-            if label is None:
-                continue
-            spans.append(Span(label, int(r.start), int(r.end)))
-        return ToolResult(spans, elapsed)
-
-    return _predict
-
-
-def presidio_multilang_predictor(
-    *,
-    languages: tuple[str, ...] = ("en", "de", "fr", "it"),
-) -> Predictor:
-    """Multilingual Presidio. Loads spaCy NER per language + re-registers
-    every regex-pattern recognizer under each language so the universal
-    pack (CREDIT_CARD / IBAN / US_SSN / EMAIL / URL / AWS_*) fires on
-    every text regardless of locale, then adds the per-locale spaCy
-    PER / LOCATION tagger on top.
-
-    Per call: analyses the text under every language and takes the union
-    of detections, deduped by (start, end, label). 4 spaCy passes
-    per text — ~4× slower than the en-only variant; on the bench host
-    presidio still completes at ~30 samp/s.
-
-    spaCy models required (auto-installed by `pip install -e .[presidio]`
-    if listed in extras; otherwise `python -m spacy download <name>`):
-      - en_core_web_lg
-      - de_core_news_lg
-      - fr_core_news_lg
-      - it_core_news_lg
-    """
-    try:
-        from presidio_analyzer import AnalyzerEngine, PatternRecognizer  # noqa: I001
-        from presidio_analyzer.nlp_engine import NlpEngineProvider
-    except ImportError as e:
-        raise ImportError(
-            "presidio not installed; run `pip install -e '.[presidio]'`",
-        ) from e
-
-    spacy_models = {
-        "en": "en_core_web_lg",
-        "de": "de_core_news_lg",
-        "fr": "fr_core_news_lg",
-        "it": "it_core_news_lg",
-    }
-    configuration = {
-        "nlp_engine_name": "spacy",
-        "models": [
-            {"lang_code": lang, "model_name": spacy_models[lang]}
-            for lang in languages
-            if lang in spacy_models
-        ],
-    }
-    provider = NlpEngineProvider(nlp_configuration=configuration)
-    nlp_engine = provider.create_engine()
-    analyzer = AnalyzerEngine(nlp_engine=nlp_engine, supported_languages=list(languages))
-
-    # Re-register every pattern-only recognizer (regex; language-agnostic)
-    # under every language so the universal pack fires regardless of
-    # detected locale. Skip non-pattern recognizers (spaCy NER models —
-    # those are language-specific by design).
-    existing = list(analyzer.registry.recognizers)
-    seen: set[tuple[str, str]] = {(r.name, r.supported_language) for r in existing}
-    for r in existing:
-        if not isinstance(r, PatternRecognizer):
-            continue
-        for lang in languages:
-            if (r.name, lang) in seen:
-                continue
-            clone = PatternRecognizer(
-                supported_entity=r.supported_entities[0],
-                name=r.name,
-                supported_language=lang,
-                patterns=r.patterns,
-                context=getattr(r, "context", None),
-            )
-            analyzer.registry.add_recognizer(clone)
-            seen.add((r.name, lang))
-
-    def _predict(text: str) -> ToolResult:
-        t0 = time.perf_counter()
-        dedup: dict[tuple[int, int, str], None] = {}
-        for lang in languages:
-            for r in analyzer.analyze(text=text, language=lang):
-                label = _map_presidio_entity(r.entity_type)
-                if label is None:
-                    continue
-                dedup.setdefault((int(r.start), int(r.end), label), None)
-        elapsed = (time.perf_counter() - t0) * 1000
-        spans = [Span(label, start, end) for (start, end, label) in dedup]
-        return ToolResult(spans, elapsed)
-
-    return _predict
-
-
-_PRESIDIO_TO_NULLPII = {
-    "PERSON": "private_person",
-    "EMAIL_ADDRESS": "private_email",
-    "PHONE_NUMBER": "private_phone",
-    "LOCATION": "private_address",
-    "STREET_ADDRESS": "private_address",
-    "DATE_TIME": "private_date",
-    "URL": "private_url",
-    "IBAN_CODE": "account_number",
-    "CREDIT_CARD": "account_number",
-    "US_SSN": "account_number",
-    # v0.4 schema split.
-    "US_PASSPORT": "private_passport",
-    "US_DRIVER_LICENSE": "private_driver_license",
-    "UK_NHS": "account_number",
-    "MEDICAL_LICENSE": "account_number",
-    # Presidio recognizers that surface on non-US public splits — without
-    # these the corresponding gold spans get dropped as unmapped,
-    # silently penalizing Presidio on AI4Privacy / multilingual sets.
-    "US_ITIN": "account_number",
-    "US_BANK_NUMBER": "account_number",
-    "IN_AADHAAR": "account_number",
-    "IN_PAN": "account_number",
-    "IN_VOTER": "account_number",
-    "IN_PASSPORT": "private_passport",
-    "SG_NRIC_FIN": "account_number",
-    "AU_ABN": "account_number",
-    "AU_ACN": "account_number",
-    "AU_TFN": "account_number",
-    "AU_MEDICARE": "account_number",
-    "API_KEY": "secret",
-    "AWS_ACCESS_KEY": "secret",
-    "AWS_SECRET_KEY": "secret",
-    "IP_ADDRESS": "private_ip",
-}
-
-
-def _map_presidio_entity(entity_type: str) -> str | None:
-    return _PRESIDIO_TO_NULLPII.get(entity_type)
 
 
 # ─── Cloud-API competitor predictors (Tier 1, paid) ────────────────

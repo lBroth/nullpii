@@ -65,15 +65,21 @@ function jsonlTexts(file) {
     .map((l) => JSON.parse(l).text);
 }
 
+/** Legal text of the latency corpus (kept stable so timings stay comparable). */
+const LATENCY_LEGAL = 'tab-echr-test.jsonl';
+/** Legal text of the fingerprint corpus: TAB dev, never a report document
+ * (PROTOCOL rule change 9, item 7). */
+const FINGERPRINT_LEGAL = 'tab-echr-dev.jsonl';
+
 /** Claude-Code-shaped corpora: what Read / Bash / Grep / MCP put in context. */
-export function buildKinds() {
+export function buildKinds(legalFile = LATENCY_LEGAL) {
   return {
     code: concatFiles(filesAt(['src', 'packages/gateway/src'], '.ts'), '//'),
     python: concatFiles(filesAt(['packages/eval'], '.py'), '#'),
     markdown: concatFiles(filesAt([], '.md'), '<!--'),
     json: git(['show', `${CORPUS_COMMIT}:package-lock.json`]),
     gitlog: git(['log', '--stat', '-400', CORPUS_COMMIT]),
-    legal: jsonlTexts('tab-echr-test.jsonl').join('\n\n'),
+    legal: jsonlTexts(legalFile).join('\n\n'),
   };
 }
 
@@ -178,7 +184,7 @@ async function latency(args) {
 function fingerprintDocs(kinds) {
   const bench = jsonlTexts('nullpii-bench.jsonl').slice(0, FP_BENCH_ROWS);
   const presidio = jsonlTexts('presidio-synthetic.jsonl').slice(0, FP_PRESIDIO_ROWS);
-  const legal = jsonlTexts('tab-echr-test.jsonl').slice(0, FP_LEGAL_DOCS);
+  const legal = jsonlTexts(FINGERPRINT_LEGAL).slice(0, FP_LEGAL_DOCS);
   const shaped = Object.entries(kinds).map(([k, t]) => [`shaped:${k}`, windowOf(t, FP_SHAPED_CHARS, FP_SHAPED_WINDOW)]);
   return [
     ...bench.map((t, i) => [`bench:${i}`, t]),
@@ -212,7 +218,7 @@ async function fingerprint(args) {
   const np = await loadEngine(args.dist);
   const docs = [];
   const hash = createHash('sha256');
-  for (const [id, text] of fingerprintDocs(buildKinds())) {
+  for (const [id, text] of fingerprintDocs(buildKinds(FINGERPRINT_LEGAL))) {
     counter.cuts = 0;
     const r = await np.sanitize(text);
     np.destroySession(r.sessionId);

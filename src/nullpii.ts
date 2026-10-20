@@ -256,9 +256,11 @@ export class NullPii {
     );
     const allowlisted =
       this.config.urlAllowlist === 'none' ? candidates : dropCleanPublicUrlSpans(candidates);
-    const merged = dedupeOverlappingSpans(allowlisted, DEFAULT_DEDUPE_IOU, {
-      acrossLabels: true,
-    }) as PiiSpan[];
+    // Dedupe can grow a kept span to absorb a duplicate's characters, so
+    // `text` is re-derived from the offsets.
+    const merged = (
+      dedupeOverlappingSpans(allowlisted, DEFAULT_DEDUPE_IOU, { acrossLabels: true }) as PiiSpan[]
+    ).map((s) => ({ ...s, text: escaped.slice(s.start, s.end) }));
     const refineOn = this.config.boundaryRefine ?? DEFAULT_BOUNDARY_REFINE;
     // One address the model split into parts is masked as one value, with
     // the separators between the parts (`address-join.ts`).

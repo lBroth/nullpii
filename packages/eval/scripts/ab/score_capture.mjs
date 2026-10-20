@@ -33,7 +33,6 @@ import {
   truncateSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 
 function parseArgs(argv) {
@@ -62,6 +61,19 @@ function completedKeys(path, dataset) {
     keys.add(`${row.dataset ?? dataset}:${row.idx}`);
   }
   return keys;
+}
+
+/** Lines of a JSONL file, split on '\n' only. readline also ends a line at
+ * U+2028 and U+2029, which JSON leaves unescaped inside strings, and would
+ * cut a row holding one in two. */
+async function* jsonlLines(path) {
+  let rest = '';
+  for await (const chunk of createReadStream(path, { encoding: 'utf8' })) {
+    const lines = (rest + chunk).split('\n');
+    rest = lines.pop();
+    yield* lines;
+  }
+  yield rest;
 }
 
 /** Maps a UTF-16 offset of `text` to its code-point offset. Span offsets
@@ -139,7 +151,7 @@ const resume = args.resume === '1';
 const sink = args.out ? spanSink(args.out, resume) : checkpointSink(args.checkpoints, args.tool, resume);
 let n = 0;
 let skipped = 0;
-for await (const line of createInterface({ input: createReadStream(args.texts) })) {
+for await (const line of jsonlLines(args.texts)) {
   if (line.trim() === '') continue;
   const row = JSON.parse(line);
   if (sink.isDone(row)) {

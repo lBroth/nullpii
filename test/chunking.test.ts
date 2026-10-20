@@ -70,6 +70,26 @@ describe('dedupeOverlappingSpans', () => {
     expect(dedupeOverlappingSpans(spans)).toHaveLength(2);
   });
 
+  it('grows the kept span to absorb a partial duplicate, so no character is dropped', () => {
+    const spans = [
+      { label: 'private_person', start: 0, end: 10, score: 0.9 },
+      { label: 'private_person', start: 2, end: 14, score: 0.6 },
+    ];
+    expect(dedupeOverlappingSpans(spans)).toEqual([
+      { label: 'private_person', start: 0, end: 14, score: 0.9 },
+    ]);
+  });
+
+  it('absorbs a cross-label duplicate under the higher-scoring label', () => {
+    const spans = [
+      { label: 'private_address', start: 5, end: 20, score: 0.7 },
+      { label: 'private_person', start: 0, end: 15, score: 0.8 },
+    ];
+    expect(dedupeOverlappingSpans(spans, 0.5, { acrossLabels: true })).toEqual([
+      { label: 'private_person', start: 0, end: 20, score: 0.8 },
+    ]);
+  });
+
   it('returns empty for empty input', () => {
     expect(dedupeOverlappingSpans([])).toEqual([]);
   });

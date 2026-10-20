@@ -36,6 +36,9 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import csv
+import fcntl
+import functools
+import hashlib
 import json
 import os
 import sys
@@ -47,20 +50,30 @@ from typing import Callable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from nullpii_eval import public_datasets
+from nullpii_eval.adapters_openmed import (
+    OPENMED_LARGE_MODEL,
+    OPENMED_LARGE_REVISION,
+    OPENMED_SMALL_MODEL,
+    OPENMED_SMALL_REVISION,
+    openmed_deidentify_predictor,
+)
+from nullpii_eval.adapters_presidio import presidio_predictor as presidio_docs_predictor
 from nullpii_eval.adapters import (
     DEFAULT_REGEX_PATTERNS,
     ETTIN_68M,
     MINIMAL_REGEX_PATTERNS,
-    OPENMED_LARGE,
-    OPENMED_SMALL,
+    LabelCut,
     PII_IDENTIFIER,
-    _GLINER_NATIVE_LABELS,
-    _GLINER_NATIVE_TO_NULLPII8,
+    _KNOWLEDGATOR_LABELS,
+    _KNOWLEDGATOR_TO_NULLPII,
+    _NEMOTRON_PII_LABELS,
+    _NEMOTRON_TOKEN_LABEL_MAP,
+    _URCHADE_LABELS,
+    _URCHADE_TO_NULLPII,
     boundary_refined_predictor,
     deberta_pii_predictor,
     domain_routed_predictor,
     gliner_lora_predictor,
-    gliner_nemotron_pii_predictor,
     gliner_v2_predictor,
     hf_token_classifier_predictor,
     multi_ensemble_predictor,
@@ -70,8 +83,6 @@ from nullpii_eval.adapters import (
     openmed_privacy_filter_predictor,
     piiranha_predictor,
     rizzo_pii_predictor,
-    presidio_multilang_predictor,
-    presidio_predictor,
     url_filter_predictor,
 )
 from nullpii_eval.datasets import Sample, Span
@@ -137,7 +148,7 @@ def _load_presidio_synthetic_static(n: int | None) -> list[Sample]:
     return _load_charspan_jsonl(path, n)
 
 
-def _load_charspan_jsonl(path: Path, n: int | None) -> list[Sample]:
+def _load_charspan_jsonl(path: Path, n: int | None, *, language: str | None = None) -> list[Sample]:
     """Load `{text, spans:[{label,start,end}]}` JSONL → list[Sample]."""
     out: list[Sample] = []
     with path.open(encoding="utf-8") as f:
@@ -147,7 +158,7 @@ def _load_charspan_jsonl(path: Path, n: int | None) -> list[Sample]:
                 continue
             row = json.loads(line)
             spans = tuple(Span(s["label"], int(s["start"]), int(s["end"])) for s in row["spans"])
-            out.append(Sample(row["text"], spans))
+            out.append(Sample(row["text"], spans, language))
             if n and len(out) >= n:
                 break
     return out
@@ -212,7 +223,7 @@ _TRACES_TUNING = _TRACES_REPORT.with_name("traces-tuning.jsonl")
 def _load_traces(path: Path, n: int | None) -> list[Sample]:
     if not path.exists():
         raise FileNotFoundError(f"{path} is missing: run scripts/ab/traces_gen.py first")
-    return _load_charspan_jsonl(path, n)
+    return _load_charspan_jsonl(path, n, language="en")
 
 
 def _load_claude_code_traces(n: int | None) -> list[Sample]:
@@ -221,6 +232,96 @@ def _load_claude_code_traces(n: int | None) -> list[Sample]:
 
 def _load_claude_code_traces_tuning(n: int | None) -> list[Sample]:
     return _load_traces(_TRACES_TUNING, n)
+
+
+# ─ Gated report set R2 (PROTOCOL rule change 9) ─────────────────
+# Each file is frozen by SHA-256 before any tool runs on it; a changed
+# file fails loud instead of being scored. traces-v2 comes from
+# scripts/r2/traces_v2_gen.py (default seed); the PIIMB file is the
+# `sentences` test split of piimb/pii-masking-benchmark (CC-BY-NC-4.0,
+# evaluation only, never redistributed).
+_RESULTS = Path(__file__).resolve().parent.parent / "results"
+_TRACES_V2 = _RESULTS / "r2" / "traces-v2.jsonl"
+_TRACES_V2_SHA256 = "3a741e9a58e3446f0742296f26d5cee7df0bd8e3a59a188140ccc1739313951f"
+_PIIMB_SENTENCES = _RESULTS / "ab-loop" / "piimb" / "test_sentences.jsonl"
+_PIIMB_SENTENCES_SHA256 = "5ff46f3a80316318794f94596fa374060d70f2f32a85909f958cbabc70bae41f"
+
+
+def _frozen_rows(path: Path, sha256: str) -> list[dict]:
+    if not path.exists():
+        raise FileNotFoundError(f"{path} is missing")
+    data = path.read_bytes()
+    digest = hashlib.sha256(data).hexdigest()
+    if digest != sha256:
+        raise ValueError(f"{path}: SHA-256 {digest} is not the frozen {sha256}")
+    return [json.loads(line) for line in data.decode("utf-8").splitlines() if line.strip()]
+
+
+@functools.cache
+def _piimb_rows() -> tuple[dict, ...]:
+    return tuple(_frozen_rows(_PIIMB_SENTENCES, _PIIMB_SENTENCES_SHA256))
+
+
+def _piimb(task: str) -> Callable[[int | None], list[Sample]]:
+    def _load(n: int | None) -> list[Sample]:
+        samples = public_datasets.load_piimb_task(list(_piimb_rows()), task)
+        return samples[:n] if n else samples
+    return _load
+
+
+def _load_traces_v2(n: int | None) -> list[Sample]:
+    rows = _frozen_rows(_TRACES_V2, _TRACES_V2_SHA256)
+    samples = [Sample(r["text"], tuple(Span(s["label"], int(s["start"]), int(s["end"])) for s in r["spans"])) for r in rows]
+    return samples[:n] if n else samples
+
+
+def _traces_v2_clusters(n: int) -> list[str]:
+    """The template skeleton of each traces-v2 document: rule change 9
+    resamples this set by template cluster, not by document."""
+    return [r["template"] for r in _frozen_rows(_TRACES_V2, _TRACES_V2_SHA256)[:n]]
+
+
+# ─ Report set R3 (rule change 10) ───────────────────────────────
+# Built by scripts/r3/build_r3.py from the sources pinned in
+# scripts/r3/CRITERIA.md, into the gitignored results tree; each file is
+# frozen by SHA-256 (results/r3/MANIFEST.json). Rows carry the text's
+# language and ignore regions (non-core labels, undisclosed or misaligned
+# entities). redactionbench and mama-deid-val are reported, not gated.
+_R3 = _RESULTS / "r3"
+_R3_REDACT_SHA256 = "57b8de63b7f41a9664ff0bcb654eeaaa7714835d353e61b1a472ecb2f03de369"
+_R3_TONIC_HUMAN_SHA256 = "bc2912a40281ddf414f0424bed9b5e64678ab3017acf35752a76c78e1a350bb9"
+_R3_PIILO_SHA256 = "7294af04eb136dccc1cf4ae4c1aac4373dce84529d4c1343cbb4f27529a5921d"
+_R3_TRACES_V3_SHA256 = "681da2b9fb551db7d510bd46546de9dfdc68bfd6df9565ffb3eb9db893c9f611"
+_R3_TRACES_V3_NODISTRACT_SHA256 = "c0c16d3376fa107209fcdbd56f1934c5bc821c12ea64ee3a8ef91f4ea9421d9f"
+_R3_EU_CLINICAL_SHA256 = "eadb0a3156df10135561d8efba3eaeab29e9bed7930af05ca0f626a098d78842"
+_R3_REDACTIONBENCH_SHA256 = "52c1b2c103d9939adb88483779e83cd5aaed46d5277d1b4c25afc6114ec0a502"
+_R3_MAMA_DEID_VAL_SHA256 = "a7dbaf4651e768d310595e71d1ff3df339224160f9af229eead89466bf631d24"
+
+
+def _r3_sample(row: dict) -> Sample:
+    spans = tuple(Span(s["label"], int(s["start"]), int(s["end"])) for s in row["spans"])
+    ignore = tuple((int(start), int(end)) for start, end in row["ignore"])
+    return Sample(row["text"], spans, row["language"], ignore)
+
+
+def _r3(name: str, sha256: str) -> Callable[[int | None], list[Sample]]:
+    def _load(n: int | None) -> list[Sample]:
+        samples = [_r3_sample(r) for r in _frozen_rows(_R3 / f"{name}.jsonl", sha256)]
+        return samples[:n] if n else samples
+    return _load
+
+
+def _r3_clusters(name: str, sha256: str) -> Callable[[int], list[str]]:
+    return lambda n: [r["cluster"] for r in _frozen_rows(_R3 / f"{name}.jsonl", sha256)[:n]]
+
+
+# Datasets resampled by cluster in `char_metrics.py`: key -> cluster id per document.
+DATASET_CLUSTERS: dict[str, Callable[[int], list[str]]] = {
+    "traces-v2": _traces_v2_clusters,
+    # traces-v3 by generator template (rule change 9, item 5).
+    "r3-traces-v3": _r3_clusters("traces-v3", _R3_TRACES_V3_SHA256),
+    "r3-traces-v3-nodistract": _r3_clusters("traces-v3-nodistract", _R3_TRACES_V3_NODISTRACT_SHA256),
+}
 
 
 def _ai4privacy_report(n: int | None) -> list[Sample]:
@@ -276,6 +377,22 @@ DATASET_CONFIGS: list[DatasetSpec] = [
     DatasetSpec("claude-code-traces",        _load_claude_code_traces,                                   None, total_n=440),
     # Tuning twin (seed 777, carrier files disjoint from the report set).
     DatasetSpec("claude-code-traces-tuning", _load_claude_code_traces_tuning,                            None, total_n=440),
+    # ─ Gated report set R2 (rule change 9) — see _TRACES_V2 above ──
+    DatasetSpec("piimb-mapa-eur-lex",        _piimb("mapa-eur-lex"),                                     None, total_n=12_200),
+    DatasetSpec("piimb-privy",               _piimb("privy"),                                            None, total_n=5_363),
+    DatasetSpec("piimb-gretel",              _piimb("gretel"),                                           None, total_n=19_601),
+    DatasetSpec("traces-v2",                 _load_traces_v2,                                            None, total_n=600),
+    # ─ Report set R3 (rule change 10) — see _R3 above ──────────────
+    DatasetSpec("r3-redact",                 _r3("redact", _R3_REDACT_SHA256),                           None, total_n=560),
+    DatasetSpec("r3-tonic-human",            _r3("tonic-human", _R3_TONIC_HUMAN_SHA256),                 None, total_n=5_854),
+    DatasetSpec("r3-piilo",                  _r3("piilo", _R3_PIILO_SHA256),                             None, total_n=6_807),
+    DatasetSpec("r3-eu-clinical",            _r3("eu-clinical", _R3_EU_CLINICAL_SHA256),                 None, total_n=563),
+    DatasetSpec("r3-traces-v3",              _r3("traces-v3", _R3_TRACES_V3_SHA256),                     None, total_n=600),
+    # Reported, not gated.
+    DatasetSpec("r3-redactionbench",         _r3("redactionbench", _R3_REDACTIONBENCH_SHA256),           None, total_n=200),
+    DatasetSpec("r3-mama-deid-val",          _r3("mama-deid-val", _R3_MAMA_DEID_VAL_SHA256),             None, total_n=1_714),
+    # traces-v3 with its distractor regions ignored, for precision without them.
+    DatasetSpec("r3-traces-v3-nodistract",   _r3("traces-v3-nodistract", _R3_TRACES_V3_NODISTRACT_SHA256), None, total_n=600),
 ]
 
 
@@ -308,6 +425,10 @@ def _required_env(name: str) -> str:
 
 # GPU batch cap for tools whose windows reach 2048 tokens (see below).
 _LONG_WINDOW_BATCH = 8
+
+
+# gliner-stream-pii's window cap on the 12 GB GPU (see its registry entry).
+_GLINER_STREAM_WINDOW_WORDS = 2048
 
 
 def build_tools(args) -> dict[str, Callable]:
@@ -438,19 +559,28 @@ def build_tools(args) -> dict[str, Callable]:
         # processing (boundary refine / never-PII filter / regex pack /
         # `_normalize_for_detection`). Only the per-tool label remap to
         # nullpii's 12-class schema runs (cross-schema bridge).
-        "presidio":  lambda: presidio_predictor(),
-        "presidio-multilang": lambda: presidio_multilang_predictor(),
-        "deberta":   lambda: _mark_batch(deberta_pii_predictor(device=backend, batch_size=_BATCH)),
+        # Presidio per its multilingual docs (`adapters_presidio`): one engine
+        # per language, each text analysed in its own language. Runs from the
+        # presidio venv (requirements-presidio.txt) on the CPU.
+        "presidio":  lambda **kw: presidio_docs_predictor(**kw),
+        "deberta":   lambda **kw: _mark_batch(deberta_pii_predictor(device=backend, batch_size=_BATCH, **kw)),
         "deberta-simple": lambda: _mark_batch(deberta_pii_predictor(device=backend, batch_size=_BATCH, aggregation_strategy="simple")),
-        "piiranha":  lambda: _mark_batch(piiranha_predictor(device=backend, batch_size=_BATCH)),
-        "rizzo-pii": lambda: _mark_batch(rizzo_pii_predictor(device=backend, batch_size=_BATCH)),
-        # GLiNER multi PII v1 (`urchade/gliner_multi_pii-v1`) bare HF.
-        "gliner-onnx-pii-fp32": lambda: gliner_v2_predictor(
+        "piiranha":  lambda **kw: _mark_batch(piiranha_predictor(device=backend, batch_size=_BATCH, **kw)),
+        "rizzo-pii": lambda **kw: _mark_batch(rizzo_pii_predictor(device=backend, batch_size=_BATCH, **kw)),
+        # ─── GLiNER competitors (rule change 10): each prompted with its
+        # card's label strings, at its card's threshold (the library default
+        # 0.5 where the card names none), revision pinned. They run from the
+        # gliner venv (gliner 0.2.29, transformers 5.16), a combination the
+        # gliner package supports.
+        # `urchade/gliner_multi_pii-v1` as exported by onnx-community, on the
+        # CPU provider, the library's default for ONNX.
+        "gliner-onnx-pii-fp32": lambda **kw: gliner_v2_predictor(
             "onnx-community/gliner_multi_pii-v1",
+            revision="2e0397a7e8a250d76c37122232b3cbde42c8d629",
             onnx_file="onnx/model.onnx",
-            threshold=args.gliner_threshold,
-            labels=_GLINER_NATIVE_LABELS,
-            label_map=_GLINER_NATIVE_TO_NULLPII8,
+            labels=_URCHADE_LABELS,
+            label_map=_URCHADE_TO_NULLPII,
+            **{"threshold": 0.5, **kw},
         ),
         # ─── nullpii bare model — the merged-LoRA ONNX
         # WITHOUT the npm runtime pipeline. Loads `model.onnx` from
@@ -467,22 +597,24 @@ def build_tools(args) -> dict[str, Callable]:
             threshold=args.gliner_threshold,
             local_files_only=True,
         ),
-        # NVIDIA Nemotron-PII (`nvidia/gliner-pii`, gliner_large-v2.1
-        # backbone, ~600 MB, 55+ PII categories). 37→8 label remap.
-        "nemotron-pii-raw": lambda: gliner_nemotron_pii_predictor(
-            model_path="nvidia/gliner-pii",
+        # NVIDIA's `nvidia/gliner-PII` (gliner_large-v2.1 backbone): its 55
+        # Nemotron-PII types, at the threshold of its card's evaluation.
+        "nemotron-pii-raw": lambda **kw: gliner_v2_predictor(
+            "nvidia/gliner-PII",
+            revision="bd23e8ef4425fd04e34c5204ab49ffaa706eae79",
             device=backend,
-            threshold=0.3,
+            labels=_NEMOTRON_PII_LABELS,
+            label_map=_NEMOTRON_TOKEN_LABEL_MAP,
+            **{"threshold": 0.3, **kw},
         ),
-        # `gliner-pii-large-v1.0` (knowledgator) — PII-specialised
-        # Apache fine-tune, gliner-large backbone. Bare HF.
-        "gliner-pii-large-v1": lambda: gliner_v2_predictor(
+        # knowledgator's PII fine-tune of gliner-large; card threshold 0.3.
+        "gliner-pii-large-v1": lambda **kw: gliner_v2_predictor(
             "knowledgator/gliner-pii-large-v1.0",
+            revision="f847f54fbc97ad6e78bfa20ed9c5e5d5c43327b9",
             device=backend,
-            threshold=args.gliner_threshold,
-            local_files_only=False,
-            labels=_GLINER_NATIVE_LABELS,
-            label_map=_GLINER_NATIVE_TO_NULLPII8,
+            labels=_KNOWLEDGATOR_LABELS,
+            label_map=_KNOWLEDGATOR_TO_NULLPII,
+            **{"threshold": 0.3, **kw},
         ),
         # A local merged GLiNER directory (phase-F2 bare-model A/B), prompted
         # with nullpii's 12 runtime labels. The directory comes from
@@ -493,47 +625,80 @@ def build_tools(args) -> dict[str, Callable]:
             threshold=args.gliner_threshold,
             local_files_only=True,
         ),
-        # Knowledgator's streaming-span GLiNER on a Qwen3-0.6B causal
-        # backbone (July 2026, Apache-2.0). Needs gliner>=0.2.28, newer
-        # than this venv's pin, so it runs from a separate venv; same
-        # native labels and map as its sibling gliner-pii-large-v1.
-        "gliner-stream-pii": lambda: gliner_v2_predictor(
+        # knowledgator's streaming-span GLiNER on a Qwen3-0.6B causal
+        # backbone, used the card's stateless way: whole text, bf16 on CUDA,
+        # fp32 elsewhere, threshold 0.5. Same vendor vocabulary as its
+        # sibling gliner-pii-large-v1. The card's max_len is 8192 words, but
+        # a whole ~8k-word trace runs the 12 GB RTX 4070 Ti out of memory, so
+        # texts are cut into windows of at most 2048 words, run one at a time
+        # (shorter texts stay whole). Fixed for every device.
+        "gliner-stream-pii": lambda **kw: gliner_v2_predictor(
             "knowledgator/gliner-stream-pii-v1.0",
+            revision="e871777dc4b3b688747a0433fff8d94a36fcc7b0",
             device=backend,
-            threshold=args.gliner_threshold,
-            local_files_only=False,
-            labels=_GLINER_NATIVE_LABELS,
-            label_map=_GLINER_NATIVE_TO_NULLPII8,
+            dtype="bf16" if backend == "cuda" else "fp32",
+            max_window_words=_GLINER_STREAM_WINDOW_WORDS,
+            batch_size=1,
+            labels=_KNOWLEDGATOR_LABELS,
+            label_map=_KNOWLEDGATOR_TO_NULLPII,
+            **{"threshold": 0.5, **kw},
         ),
-        # `openai/privacy-filter` — DeBERTa-v3 BIOES-tagged PII tagger,
-        # trained on nullpii's exact 8-class schema. Decoded via explicit
-        # BIOES walk (the HF naive aggregation drops boundary tokens for
-        # BIOES schemas). Bare HF, no nullpii post-processing.
-        "openai-privacy-filter": lambda: openai_privacy_filter_predictor(
-            device=backend,
+        # `openai/privacy-filter` through OpenAI's own `opf` runtime: one
+        # forward pass and its constrained Viterbi decoder, every option at
+        # opf's default (CPU or CUDA; opf has no MPS path).
+        "openai-privacy-filter": lambda **kw: openai_privacy_filter_predictor(
+            device=backend, **kw,
         ),
         # ─── Token classifiers fine-tuned on nvidia/Nemotron-PII ─────
-        # Card usage (`aggregation_strategy="simple"`), inputs cut into
-        # token windows of the fine-tuning length; see `TokenClassifierSpec`.
-        # The 2048-token ModernBERT windows run at a smaller GPU batch so
-        # activations fit next to other jobs; batch size changes padding
-        # only, never the windows a document is cut into.
-        "openmed-small": lambda: _mark_batch(hf_token_classifier_predictor(OPENMED_SMALL, device=backend, batch_size=_BATCH)),
-        "openmed-large": lambda: _mark_batch(hf_token_classifier_predictor(OPENMED_LARGE, device=backend, batch_size=_BATCH)),
-        "ettin-68m": lambda: _mark_batch(hf_token_classifier_predictor(ETTIN_68M, device=backend, batch_size=min(_BATCH, _LONG_WINDOW_BATCH))),
-        "pii-identifier": lambda: _mark_batch(hf_token_classifier_predictor(PII_IDENTIFIER, device=backend, batch_size=min(_BATCH, _LONG_WINDOW_BATCH))),
+        # OpenMed's checkpoints through OpenMed's own product call,
+        # `openmed.deidentify` (adapters_openmed.py), run from the venv of
+        # requirements-openmed.txt; one text per call, as the package takes it.
+        "openmed-small": lambda **kw: openmed_deidentify_predictor(
+            OPENMED_SMALL_MODEL, OPENMED_SMALL_REVISION, tool="openmed-small", device=backend, **kw,
+        ),
+        "openmed-large": lambda **kw: openmed_deidentify_predictor(
+            OPENMED_LARGE_MODEL, OPENMED_LARGE_REVISION, tool="openmed-large", device=backend, **kw,
+        ),
+        # The others ship no pipeline beyond their card: card usage
+        # (`aggregation_strategy="simple"`), inputs cut into token windows of
+        # the fine-tuning length; see `TokenClassifierSpec`. Long windows run
+        # at a smaller GPU batch so activations fit; batch size changes
+        # padding only, never the windows a document is cut into.
+        "ettin-68m": lambda **kw: _mark_batch(hf_token_classifier_predictor(ETTIN_68M, device=backend, batch_size=min(_BATCH, _LONG_WINDOW_BATCH), **kw)),
+        "pii-identifier": lambda **kw: _mark_batch(hf_token_classifier_predictor(PII_IDENTIFIER, device=backend, batch_size=min(_BATCH, _LONG_WINDOW_BATCH), **kw)),
         # OpenMed's opf fine-tune of openai/privacy-filter, served by the
         # same opf runtime as the row above (CPU: opf has no MPS path).
-        "openmed-pf-multi-v2": lambda: openmed_privacy_filter_predictor(device=backend),
+        "openmed-pf-multi-v2": lambda **kw: openmed_privacy_filter_predictor(device=backend, **kw),
     }
     requested = [t.strip() for t in args.tools.split(",") if t.strip()]
+    configs = _tool_configs(args.tool_config)
+    unknown = sorted(set(configs) - set(requested))
+    if unknown:
+        raise SystemExit(f"--tool-config names tools not requested: {unknown}")
     out: dict[str, Callable] = {}
     for t in requested:
         if t not in builders:
             raise SystemExit(f"unknown tool: {t}")
-        print(f"[bench] loading {t} ({backend})…", flush=True)
-        out[t] = builders[t]()
+        print(f"[bench] loading {t} ({backend}) {sorted(configs.get(t, {}))}…", flush=True)
+        out[t] = builders[t](**configs.get(t, {}))
     return out
+
+
+def _tool_configs(path: str) -> dict[str, dict]:
+    """Per-tool builder overrides from `--tool-config` (rule change 9: a
+    competitor's tuned operating point). `{"tool": {"threshold": 0.05,
+    "label_cut": {"default": 0.5, "thresholds": {...}}, "o_bias": 2.0,
+    "viterbi_biases": {...}}}`; a `label_cut` object becomes a `LabelCut`."""
+    if not path:
+        return {}
+    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    configs: dict[str, dict] = {}
+    for tool, kwargs in raw.items():
+        cut = kwargs.get("label_cut")
+        if cut is not None:
+            kwargs = {**kwargs, "label_cut": LabelCut(thresholds=dict(cut["thresholds"]), default=float(cut["default"]))}
+        configs[tool] = kwargs
+    return configs
 
 
 # ─── Checkpointed worker ─────────────────────────────────────────
@@ -544,6 +709,16 @@ def _checkpoint_paths(ckpt_dir: Path, tool: str, dataset: str) -> tuple[Path, Pa
     )
 
 
+def _checkpoint_spans(result) -> list[tuple]:
+    """(start, end, label), plus the tool's score where it emits one, so
+    `threshold_sim.py` can screen operating points from the checkpoint."""
+    if not result.scores:
+        return [(s.start, s.end, s.label) for s in result.spans]
+    if len(result.scores) != len(result.spans):
+        raise ValueError(f"{len(result.spans)} spans but {len(result.scores)} scores")
+    return [(s.start, s.end, s.label, round(sc, 6)) for s, sc in zip(result.spans, result.scores, strict=True)]
+
+
 def _load_done_idx(state_path: Path) -> int:
     if not state_path.exists():
         return -1
@@ -551,6 +726,19 @@ def _load_done_idx(state_path: Path) -> int:
         return int(state_path.read_text().strip())
     except ValueError:
         return -1
+
+
+def _resume_rows(pred_path: Path, state_path: Path) -> list[str]:
+    """The checkpoint rows `.state` vouches for. A killed run can leave
+    rows written after its last state update; they are cut from the file,
+    so the resumed run writes them again instead of appending duplicates."""
+    if not pred_path.exists():
+        return []
+    rows = pred_path.read_text(encoding="utf-8").splitlines(keepends=True)[: _load_done_idx(state_path) + 1]
+    tmp = pred_path.with_suffix(".tmp")
+    tmp.write_text("".join(rows), encoding="utf-8")
+    os.replace(tmp, pred_path)
+    return rows
 
 
 def _iou(a: Span, b: Span) -> float:
@@ -598,19 +786,13 @@ def run_combo(
     cell as CRASHED in the matrix and moves on to the next combo.
     """
     pred_path, state_path = _checkpoint_paths(ckpt_dir, tool_name, dataset.key)
-    done_idx = _load_done_idx(state_path)
+    rows = _resume_rows(pred_path, state_path)
+    done_idx = len(rows) - 1
 
     truths = [list(s.spans) for s in samples]
-    preds: list[list[Span]] = []
-    if done_idx >= 0 and pred_path.exists():
-        with pred_path.open(encoding="utf-8") as f:
-            for line in f:
-                row = json.loads(line)
-                preds.append([Span(s[2], int(s[0]), int(s[1])) for s in row["spans"]])
-        if len(preds) > done_idx + 1:
-            preds = preds[: done_idx + 1]
-        elif len(preds) < done_idx + 1:
-            done_idx = len(preds) - 1
+    preds: list[list[Span]] = [
+        [Span(s[2], int(s[0]), int(s[1])) for s in json.loads(line)["spans"]] for line in rows
+    ]
     print(f"  [{tool_name}/{dataset.key}] resume idx={done_idx + 1}/{len(samples)}", flush=True)
 
     t0 = time.perf_counter()
@@ -622,6 +804,9 @@ def run_combo(
     # npm subprocess, gliner-v2 chunked predictor) stay on the per-sample
     # path because their internals can't share work across inputs anyway.
     is_batch = bool(getattr(predictor, "is_batch", False))
+    # Tools whose documented API takes the text's language per call
+    # (Presidio) declare `wants_language` and get the sample's language.
+    wants_language = bool(getattr(predictor, "wants_language", False))
     # Outer chunk size for run_combo's iteration; the predictor's
     # internal `batch_size` (set in build_tools) governs the actual GPU
     # batch. 32 keeps activation memory safe even with 4 parallel tools
@@ -634,10 +819,11 @@ def run_combo(
             try:
                 if is_batch:
                     texts = [samples[k].text for k in range(batch_start, batch_end)]
-                    results = predictor(texts)
-                    batch_spans = [list(r.spans) for r in results]
+                    results = list(predictor(texts))
+                elif wants_language:
+                    results = [predictor(samples[batch_start].text, language=samples[batch_start].language)]
                 else:
-                    batch_spans = [list(predictor(samples[batch_start].text).spans)]
+                    results = [predictor(samples[batch_start].text)]
             except Exception as e:
                 f.flush()
                 state_path.write_text(str(batch_start - 1))
@@ -646,10 +832,10 @@ def run_combo(
                 raise RuntimeError(
                     f"{tool_name}/{dataset.key} failed at idx={batch_start}: {msg}",
                 ) from e
-            for offset, spans in enumerate(batch_spans):
+            for offset, result in enumerate(results):
                 i = batch_start + offset
-                preds.append(spans)
-                f.write(json.dumps({"idx": i, "spans": [(s.start, s.end, s.label) for s in spans]}) + "\n")
+                preds.append(list(result.spans))
+                f.write(json.dumps({"idx": i, "spans": _checkpoint_spans(result)}) + "\n")
             i = batch_end - 1
             if ((i + 1) // flush_every) > (batch_start // flush_every) or i + 1 == len(samples):
                 f.flush()
@@ -681,6 +867,8 @@ def main() -> None:
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--checkpoint-dir", default="")
     parser.add_argument("--gliner-threshold", type=float, default=0.5)
+    parser.add_argument("--tool-config", default="",
+                        help="JSON file of per-tool builder overrides (operating points); see _tool_configs")
     parser.add_argument(
         "--drop-rfc1918", action="store_true",
         help="Enable nullpii's never_pii_filter to drop RFC1918 + link-local IPs. "
@@ -695,6 +883,13 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     ckpt_dir = Path(args.checkpoint_dir or (out_dir / "checkpoints"))
     ckpt_dir.mkdir(parents=True, exist_ok=True)
+    # One writer per checkpoint directory: two runs resuming it at once would
+    # each append every row. Held until the process exits.
+    ckpt_lock = (ckpt_dir / ".lock").open("w")
+    try:
+        fcntl.flock(ckpt_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        raise SystemExit(f"{ckpt_dir}: another bench_full run is writing these checkpoints") from None
 
     if args.datasets == "all":
         datasets = list(DATASET_CONFIGS)
@@ -747,6 +942,7 @@ def main() -> None:
             matrix.setdefault(ds.key, {})["_load_error"] = "loader returned 0 samples"
             matrix_path.write_text(json.dumps(matrix, indent=2))
             continue
+        matrix.get(ds.key, {}).pop("_load_error", None)
         cap_label = "full" if n_arg is None else f"cap {n_arg}"
         print(f"[bench] {ds.key}: {len(samples)} samples ({cap_label})", flush=True)
 
@@ -850,13 +1046,17 @@ def main() -> None:
     print(f"\n[bench] matrix → {matrix_path}", flush=True)
     print(f"[bench] csv    → {csv_path}", flush=True)
 
-    # Summary: surface failures explicitly so they cannot be missed.
+    # Summary: surface failures explicitly so they cannot be missed. Only
+    # this run's cells count: matrix.json also holds earlier runs' cells.
     failures: list[str] = []
+    run_keys = {d.key for d in datasets}
     for ds_key, cells in matrix.items():
+        if ds_key not in run_keys:
+            continue
         if "_load_error" in cells:
             failures.append(f"  LOAD_FAIL  {ds_key}: {cells['_load_error']}")
         for tname, cell in cells.items():
-            if tname.startswith("_"):
+            if tname.startswith("_") or tname not in tools:
                 continue
             if cell.get("status") == "CRASHED":
                 failures.append(f"  CRASHED    {tname}/{ds_key}: {cell.get('error', '?')}")
@@ -864,8 +1064,10 @@ def main() -> None:
         print(f"\n[bench] {len(failures)} CELLS WITH FAILURES:", flush=True)
         for line in failures:
             print(line, flush=True)
-    else:
-        print("\n[bench] no failures recorded.", flush=True)
+        # Callers (tune_operating_point, r2_run) run this with check=True: a
+        # crashed cell must stop them, not pass as a finished run.
+        raise SystemExit(f"[bench] {len(failures)} cells failed")
+    print("\n[bench] no failures recorded.", flush=True)
 
 
 if __name__ == "__main__":

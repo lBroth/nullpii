@@ -71,10 +71,15 @@ const stubSession = {
   async release(): Promise<void> {},
 };
 
+const sessionLoads = { count: 0 };
+
 const stubOrt = {
   Tensor: StubTensor,
   InferenceSession: {
     async create(): Promise<typeof stubSession> {
+      sessionLoads.count += 1;
+      // Yield like a real load, so a second first call can race this one.
+      await new Promise((r) => setImmediate(r));
       return stubSession;
     },
   },
@@ -123,5 +128,35 @@ describe('F-05 · OrtBackend concurrency', () => {
     const lengthsSeen = new Set(snapshots.map((s) => s.enterTextLength));
     expect(lengthsSeen.has(7n)).toBe(true);
     expect(lengthsSeen.has(42n)).toBe(true);
+  });
+
+  it('concurrent first infer() calls load one ORT session, not one each', async () => {
+    sessionLoads.count = 0;
+    const backend = new OrtBackend('/fake', { ortLoader: async () => stubOrt });
+    await Promise.all([
+      backend.infer(inputs(3, 1)),
+      backend.infer(inputs(5, 0)),
+      backend.infer(inputs(9, 1)),
+    ]);
+    expect(sessionLoads.count).toBe(1);
+    await backend.dispose();
+  });
+
+  it('a failed load is retried by the next call', async () => {
+    let fail = true;
+    const flaky = {
+      ...stubOrt,
+      InferenceSession: {
+        async create() {
+          if (fail) throw new Error('load failed');
+          return stubSession;
+        },
+      },
+    } as unknown as typeof import('onnxruntime-node');
+    const backend = new OrtBackend('/fake', { ortLoader: async () => flaky });
+    await expect(backend.infer(inputs(3, 1))).rejects.toThrow('load failed');
+    fail = false;
+    await expect(backend.infer(inputs(3, 1))).resolves.toBeDefined();
+    await backend.dispose();
   });
 });

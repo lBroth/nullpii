@@ -45,9 +45,10 @@ export interface BackendOptions {
  * tensors per call. Required for safety under
  * `Promise.all([np.sanitize(a), np.sanitize(b)])` — pooled scratch
  * would be clobbered by the second caller before ORT consumed the
- * first. Cost is one `BigInt64Array(1)` + `Uint8Array(N)` per inference. */
+ * first. Cost is one `BigInt64Array(1)` + `Uint8Array(N)` per inference.
+ * The session itself loads once: concurrent first calls share one load. */
 export class OrtBackend {
-  private session: InferenceSession | null = null;
+  private sessionLoad: Promise<InferenceSession> | null = null;
   private TensorCtor: typeof TensorType | null = null;
 
   constructor(
@@ -55,8 +56,19 @@ export class OrtBackend {
     private readonly options: BackendOptions = {},
   ) {}
 
-  private async ensureSession(): Promise<InferenceSession> {
-    if (this.session !== null) return this.session;
+  /** One load per backend. A failed load is forgotten, so the next call
+   * retries instead of replaying the error. */
+  private ensureSession(): Promise<InferenceSession> {
+    if (this.sessionLoad === null) {
+      this.sessionLoad = this.loadSession().catch((err: unknown) => {
+        this.sessionLoad = null;
+        throw err;
+      });
+    }
+    return this.sessionLoad;
+  }
+
+  private async loadSession(): Promise<InferenceSession> {
     const onnxPath = await this.firstExistingOnnx();
     const ort = await (this.options.ortLoader ?? loadOrt)();
     this.TensorCtor = ort.Tensor;
@@ -71,8 +83,7 @@ export class OrtBackend {
     if (this.options.interOpNumThreads !== undefined && this.options.interOpNumThreads > 0) {
       sessionOptions.interOpNumThreads = this.options.interOpNumThreads;
     }
-    this.session = await ort.InferenceSession.create(onnxPath, sessionOptions);
-    return this.session;
+    return ort.InferenceSession.create(onnxPath, sessionOptions);
   }
 
   private async firstExistingOnnx(): Promise<string> {
@@ -129,12 +140,16 @@ export class OrtBackend {
   }
 
   async dispose(): Promise<void> {
-    if (this.session !== null) {
-      logf(LOG_SCOPE, 'session.release');
-      await this.session.release();
-      this.session = null;
-      this.TensorCtor = null;
-    }
+    const load = this.sessionLoad;
+    if (load === null) return;
+    this.sessionLoad = null;
+    this.TensorCtor = null;
+    // A load that failed has no session to release; its error already
+    // reached the `infer()` call that started it.
+    const session = await load.catch(() => null);
+    if (session === null) return;
+    logf(LOG_SCOPE, 'session.release');
+    await session.release();
   }
 }
 

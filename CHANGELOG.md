@@ -57,6 +57,8 @@ The detection changes come from the measured A/B loop (`packages/eval/scripts/ab
 - A recognizer deferred to any overlapping model span. It now defers only when the model span covers its whole match.
 - A model span below its label's score threshold could silence or absorb another span before the threshold dropped it, leaving both unmasked. A MAC or IP address the model guessed as a date at a low score went out in the clear. Thresholds now run before deduplication and before recognizers defer to the model.
 - Edge punctuation was trimmed off `secret` spans, leaving part of the credential unmasked.
+- When two detections of one value overlapped by half or more, the lower-scoring one was dropped with its characters, so text only it covered went out unmasked. The kept span now grows to cover both.
+- Two `sanitize()` calls racing on a cold engine each loaded an ONNX session, and one was never released. The session now loads once.
 - **Italian codice fiscale:** omocodic codes (digits replaced by the letters L–V, as the tax office does to tell apart two people) and codes written in lowercase were not recognized. Both are now. The validator also checks the day of birth, and rejects mixed case, which is a code identifier rather than a written code.
 
 ### Security

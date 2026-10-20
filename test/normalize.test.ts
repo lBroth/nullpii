@@ -94,6 +94,33 @@ describe('normalizeForDetection', () => {
     expect(origEnd).toBe(text.length);
   });
 
+  it('remaps a span starting on an escape to the start of that escape', () => {
+    // A name whose first letters are encoded: the span must cover the
+    // first escape too, or `&#74;` (J) stays readable.
+    for (const text of ['&#74;&#111;hn Smith', '%4A%6Fhn Smith']) {
+      const r = normalizeForDetection(text);
+      expect(r.normalized).toBe('John Smith');
+      expect(remapSpan(0, r.normalized.length, r.normToOrig)).toEqual([0, text.length]);
+    }
+  });
+
+  it('remaps a span ending inside a run of escapes at the next escape', () => {
+    const text = '&#74;&#111;&#104;&#110;';
+    const r = normalizeForDetection(text);
+    expect(r.normalized).toBe('John');
+    // `Jo` ends where `&#104;` begins.
+    expect(remapSpan(0, 2, r.normToOrig)).toEqual([0, text.indexOf('&#104;')]);
+  });
+
+  it('keeps offsets aligned after an entity that decodes to an astral code point', () => {
+    const text = '&#x1F600; John';
+    const r = normalizeForDetection(text);
+    expect(r.normalized).toBe('\u{1F600} John');
+    expect(r.normToOrig).toHaveLength(r.normalized.length + 1);
+    const start = r.normalized.indexOf('John');
+    expect(remapSpan(start, start + 4, r.normToOrig)).toEqual([text.indexOf('John'), text.length]);
+  });
+
   it('decodes HTML numeric entities for email anchors', () => {
     // `&#64;` = @, `&#46;` = .
     const text = 'user&#64;example&#46;com';

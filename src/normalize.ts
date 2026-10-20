@@ -150,8 +150,9 @@ function tryUrlDecode(text: string, i: number, out: string[], normToOrig: number
   }
   if (decoded === null || consumed === 0) return 0;
   out.push(decoded);
-  // map decoded char to END of the consumed run.
-  normToOrig.push(i + consumed - 1);
+  // The decoded char maps to the START of its escape, so a span that
+  // begins on it covers the whole escape in the original text.
+  normToOrig.push(i);
   return consumed;
 }
 
@@ -179,9 +180,12 @@ function tryHtmlDecode(text: string, i: number, out: string[], normToOrig: numbe
     decoded = null;
   }
   if (decoded === null || consumed === 0) return 0;
-  for (const ch of decoded) {
-    out.push(ch);
-    normToOrig.push(i + consumed - 1);
+  // One entry per UTF-16 unit, as the normalised string is indexed: an
+  // astral code point (`&#x1F600;`) is two units. Both map to the START
+  // of the entity, as in the URL decode.
+  for (let k = 0; k < decoded.length; k++) {
+    out.push(decoded.charAt(k));
+    normToOrig.push(i);
   }
   return consumed;
 }

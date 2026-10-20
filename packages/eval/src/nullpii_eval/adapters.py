@@ -12,6 +12,7 @@ import atexit
 import hashlib
 import itertools
 import json
+import logging
 import os
 import re
 import subprocess
@@ -28,6 +29,7 @@ from .datasets import Span
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent
 NULLPII_BIN = REPO_ROOT / "bin" / "nullpii.mjs"
 DEFAULT_MODEL_DIR = REPO_ROOT / "packages" / "convert" / "artifacts" / "model"
+_LOG = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -2645,7 +2647,8 @@ _GLINER_WORD = re.compile(r"\w+(?:[-_]\w+)*|\S")
 # windows x longest^2 stays within what 8 windows of 1,024 tokens take:
 # on the CPU running out of memory kills the process, so this bound comes
 # first. A CUDA batch that still does not fit is re-run halved, down to
-# one window.
+# one window; a window that does not fit alone runs on the CPU, with the
+# same weights, so the model's output is kept rather than cut short.
 _GLINER_BATCH_SIZE = 8
 _GLINER_ATTENTION_BUDGET = _GLINER_BATCH_SIZE * 1024 * 1024
 
@@ -2723,8 +2726,9 @@ def gliner_v2_predictor(
     `max_window_words` where the hardware cannot hold `max_len`, is cut into
     word windows (`_gliner_windows`), `batch_size` at a time (fewer where
     long windows would exceed `_GLINER_ATTENTION_BUDGET`, halved while a
-    batch runs out of GPU memory); spans repeated across an overlap are
-    collapsed. No other glue: no normalisation,
+    batch runs out of GPU memory, on the CPU where one window alone does
+    not fit; `_predict.cpu_fallbacks` counts those texts); spans repeated
+    across an overlap are collapsed. No other glue: no normalisation,
     recognizers or filters.
 
     `onnx_file` loads an exported ONNX model on the CPU, the library's
@@ -2770,10 +2774,21 @@ def gliner_v2_predictor(
             try:
                 return model.inference(chunks, inference_labels, threshold=threshold, batch_size=size)
             except torch.cuda.OutOfMemoryError:
-                if size == 1:
-                    raise
-                torch.cuda.empty_cache()
-                size //= 2
+                pass  # retried below, once the failed attempt's tensors are released
+            torch.cuda.empty_cache()
+            if size == 1:
+                return _inference_on_cpu(chunks)
+            size //= 2
+
+    def _inference_on_cpu(chunks: list[str]) -> list[list[dict]]:
+        _predict.cpu_fallbacks += 1
+        _LOG.warning("[%s] a window does not fit in GPU memory alone; the text runs on the CPU (%d so far)",
+                     model_path, _predict.cpu_fallbacks)
+        model.to("cpu")
+        try:
+            return model.inference(chunks, inference_labels, threshold=threshold, batch_size=_batch_size_for(chunks))
+        finally:
+            model.to(device)
 
     def _predict(text: str) -> ToolResult:
         t0 = time.perf_counter()
@@ -2790,6 +2805,7 @@ def gliner_v2_predictor(
         elapsed = (time.perf_counter() - t0) * 1000
         return ToolResult([sp for sp, _ in kept], elapsed, scores=tuple(sc for _, sc in kept))
 
+    _predict.cpu_fallbacks = 0
     return _predict
 
 

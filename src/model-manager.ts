@@ -11,7 +11,7 @@ import {
   DEFAULT_MODEL_REVISION,
   DEFAULT_VARIANT,
 } from './defaults.js';
-import { InvalidPathError } from './errors.js';
+import { InvalidConfigError, InvalidPathError } from './errors.js';
 import { ensureFile, isCachedFile } from './hf-hub.js';
 import { logf } from './log.js';
 import { onnxCandidates } from './model-variant.js';
@@ -39,12 +39,27 @@ export interface ModelRef {
   readonly repo: string;
   /** Pinned commit SHA. Use `'main'` ONLY for development. */
   readonly revision: string;
+  /** Expected SHA-256 of each file, by name. When given, every file
+   * fetched must be listed, and a download or cached copy with another
+   * hash is refused. */
+  readonly sha256?: Readonly<Record<string, string>>;
 }
 
 export const DEFAULT_MODEL: ModelRef = {
   repo: DEFAULT_MODEL_REPO,
   revision: DEFAULT_MODEL_REVISION,
 };
+
+/** The SHA-256 `model` pins for `file`; `undefined` when it pins none.
+ * A model that pins hashes must pin every file it fetches. */
+function expectedSha(model: ModelRef, file: string): string | undefined {
+  if (model.sha256 === undefined) return undefined;
+  const sha = model.sha256[file];
+  if (sha === undefined) {
+    throw new InvalidConfigError(`${model.repo}@${model.revision} pins no SHA-256 for ${file}`);
+  }
+  return sha;
+}
 
 /** XDG-style default cache: `$XDG_CACHE_HOME/nullpii/models/` if set,
  * else `~/.cache/nullpii/models/`. Shared across projects on the same host. */
@@ -143,7 +158,7 @@ export class ModelManager {
   ): Promise<string> {
     for (const f of candidates) {
       this.assertSafeRelative(f, target);
-      if (await isCachedFile(target, f)) return f;
+      if (await isCachedFile(target, f, expectedSha(model, f))) return f;
     }
     let lastErr: unknown = new Error('model-manager: no ONNX candidate');
     for (const f of candidates) {
@@ -165,7 +180,11 @@ export class ModelManager {
     timeoutMs: number,
   ): Promise<void> {
     this.assertSafeRelative(file, target);
-    await ensureFile(model.repo, model.revision, file, target, { timeoutMs });
+    const sha = expectedSha(model, file);
+    await ensureFile(model.repo, model.revision, file, target, {
+      timeoutMs,
+      ...(sha !== undefined && { expectedSha: sha }),
+    });
   }
 
   private assertSafeRelative(relative: string, base: string): void {

@@ -230,6 +230,11 @@ describe('shell restore · quoting context', () => {
     [FULL_NAME, 'heredoc', true],
     [EXPANSION, 'heredoc', true],
     ['two\nlines', 'heredoc', false],
+    // A leading dash would read as an option to the command.
+    ['-rf', 'none', false],
+    ['--output=/tmp/x', 'single', false],
+    ['-v', 'double', false],
+    ['-- a list item', 'heredoc', true],
   ])('shellSafe(%j, %s) is %s', (value, context, safe) => {
     expect(shellSafe(value, context)).toBe(safe);
   });

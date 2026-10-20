@@ -121,8 +121,11 @@ export function isShellTool(name: unknown, shellTools: ReadonlySet<string>): boo
   return typeof name === 'string' && shellTools.has(name);
 }
 
-/** True when `value` can be put back as written in `context`. */
+/** True when `value` can be put back as written in `context`. Outside a
+ * heredoc body, a value starting with `-` is never safe: quoted or not,
+ * the command it lands in would read it as an option (`rm '-rf'`). */
 export function shellSafe(value: string, context: QuoteContext): boolean {
+  if (context !== 'heredoc' && value.startsWith('-')) return false;
   return SHELL_SAFE[context].test(value);
 }
 

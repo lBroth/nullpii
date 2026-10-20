@@ -80,7 +80,7 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
   },
   {
     id: 'core:email',
-    pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
+    pattern: /\b[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,63}\b/g,
     label: 'private_email',
     confidence: 0.95,
   },
@@ -514,7 +514,7 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
   {
     id: 'core:piva-italy-context',
     pattern:
-      /(?<=\b(?:p\.?\s?iva|partita\s+iva|vat(?:\s*(?:no|number|nr|n°|id|reg(?:istration)?))?|ust-?id(?:nr)?)[\s:.#n°]*)(?:IT\s?)?\d{11}\b/gi,
+      /(?<=\b(?:p\.?\s?iva|partita\s{1,3}iva|vat(?:\s{0,3}(?:no|number|nr|n°|id|reg(?:istration)?))?|ust-?id(?:nr)?)[\s:.#n°]{0,8})(?:IT\s?)?\d{11}\b/gi,
     label: 'account_number',
     confidence: 0.95,
     validate: partitaIvaValid,
@@ -596,7 +596,7 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     // collides with `id_card:` / `License:` / generic ID-number
     // formats (measured precision ~14% on nullpii-bench standalone).
     id: 'core:passport-us-context',
-    pattern: /(?<=\bpassport(?:\s*(?:no|number|nbr|#))?[\s:.]+)[A-HJ-NPR-Z]\d{8}\b/gi,
+    pattern: /(?<=\bpassport(?:\s{0,3}(?:no|number|nbr|#))?[\s:.]{1,8})[A-HJ-NPR-Z]\d{8}\b/gi,
     label: 'private_passport',
     confidence: 0.97,
   },
@@ -606,14 +606,14 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     // model numbers, ISBNs on free text. Generic context fallback
     // (`core:passport-generic-context`) covers prose with the keyword.
     id: 'core:passport-it-context',
-    pattern: /(?<=\b(?:passaporto|passport)[\s:.n°]+)[A-Z]{2}\d{7}\b/gi,
+    pattern: /(?<=\b(?:passaporto|passport)[\s:.n°]{1,8})[A-Z]{2}\d{7}\b/gi,
     label: 'private_passport',
     confidence: 0.97,
   },
   {
     // UK passport: 9 digits. Pure digits — context REQUIRED.
     id: 'core:passport-uk-context',
-    pattern: /(?<=\bpassport(?:\s*(?:no|number))?[\s:.#]+)\d{9}\b/gi,
+    pattern: /(?<=\bpassport(?:\s{0,3}(?:no|number))?[\s:.#]{1,8})\d{9}\b/gi,
     label: 'private_passport',
     confidence: 0.95,
   },
@@ -622,14 +622,14 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     // Uncontexted variant dropped — `[CFGRPT][0-9A-Z]{9}` collides
     // with serial numbers and product codes on free text.
     id: 'core:passport-de-context',
-    pattern: /(?<=\b(?:passnummer|reisepass|passport)[\s:.#]+)[CFGRPT][0-9A-Z]{9}\b/gi,
+    pattern: /(?<=\b(?:passnummer|reisepass|passport)[\s:.#]{1,8})[CFGRPT][0-9A-Z]{9}\b/gi,
     label: 'private_passport',
     confidence: 0.95,
   },
   {
     // French passport: 9 alphanumeric chars, typically 2 digit + 2 letter + 5 digit.
     id: 'core:passport-fr-context',
-    pattern: /(?<=\b(?:passeport|passport)[\s:.n°]+)[0-9]{2}[A-Z]{2}[0-9]{5}\b/gi,
+    pattern: /(?<=\b(?:passeport|passport)[\s:.n°]{1,8})[0-9]{2}[A-Z]{2}[0-9]{5}\b/gi,
     label: 'private_passport',
     confidence: 0.95,
   },
@@ -638,7 +638,7 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     // Uncontexted variant dropped — overlaps with airline locators,
     // booking refs, ISBN-like sequences. Keep context-anchored only.
     id: 'core:passport-es-context',
-    pattern: /(?<=\b(?:pasaporte|passport)[\s:.n°#]+)[A-Z]{3}\d{6}\b/gi,
+    pattern: /(?<=\b(?:pasaporte|passport)[\s:.n°#]{1,8})[A-Z]{3}\d{6}\b/gi,
     label: 'private_passport',
     confidence: 0.95,
   },
@@ -648,7 +648,7 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     // after a passport keyword; required context keeps FP low.
     id: 'core:passport-generic-context',
     pattern:
-      /(?<=\b(?:passport|passeport|passaporto|passnummer|reisepass|pasaporte|paszport|paspoort)[\s:.n°#-]+)[A-Z0-9]{6,12}\b/gi,
+      /(?<=\b(?:passport|passeport|passaporto|passnummer|reisepass|pasaporte|paszport|paspoort)[\s:.n°#-]{1,8})[A-Z0-9]{6,12}\b/gi,
     label: 'private_passport',
     confidence: 0.9,
   },
@@ -660,28 +660,29 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
   {
     id: 'core:driver-license-generic-context',
     pattern:
-      /(?<=\b(?:driver(?:'s|s)?\s*(?:lic(?:ence|ense)|dl)|dln|dl#|patente|permis(?:\s*de\s*conduire)?|f[üu]hrerschein|carnet\s*de\s*conducir|rijbewijs|cnh|c[aá]rt[ae]\s*de\s*condu[çc][ãa]o)[\s:.#]+)[A-Z0-9][A-Z0-9\-]{4,18}[A-Z0-9]\b/gi,
+      /(?<=\b(?:driver(?:'s|s)?\s{0,3}(?:lic(?:ence|ense)|dl)|dln|dl#|patente|permis(?:\s{0,3}de\s{0,3}conduire)?|f[üu]hrerschein|carnet\s{0,3}de\s{0,3}conducir|rijbewijs|cnh|c[aá]rt[ae]\s{0,3}de\s{0,3}condu[çc][ãa]o)[\s:.#]{1,8})[A-Z0-9][A-Z0-9\-]{4,18}[A-Z0-9]\b/gi,
     label: 'private_driver_license',
     confidence: 0.95,
   },
   {
     // California: letter + 7 digits.
     id: 'core:driver-license-ca-context',
-    pattern: /(?<=\b(?:DL|driver\s*license)[\s:.#]+)[A-Z]\d{7}\b/gi,
+    pattern: /(?<=\b(?:DL|driver\s{0,3}license)[\s:.#]{1,8})[A-Z]\d{7}\b/gi,
     label: 'private_driver_license',
     confidence: 0.95,
   },
   {
     // New York: 9 digits OR 1 letter + 18 digits.
     id: 'core:driver-license-ny-context',
-    pattern: /(?<=\b(?:NY\s*DL|driver\s*license)[\s:.#]+)(?:\d{9}|[A-Z]\d{18})\b/gi,
+    pattern: /(?<=\b(?:NY\s{0,3}DL|driver\s{0,3}license)[\s:.#]{1,8})(?:\d{9}|[A-Z]\d{18})\b/gi,
     label: 'private_driver_license',
     confidence: 0.95,
   },
   {
     // Italian patente: 1 letter + 1 alpha + 7 digits + 1 letter (10 chars).
     id: 'core:driver-license-it-context',
-    pattern: /(?<=\b(?:patente(?:\s*di\s*guida)?|n\.?\s*patente)[\s:.#]+)[A-Z]{1,2}\d{7}[A-Z]\b/gi,
+    pattern:
+      /(?<=\b(?:patente(?:\s{0,3}di\s{0,3}guida)?|n\.?\s{0,3}patente)[\s:.#]{1,8})[A-Z]{1,2}\d{7}[A-Z]\b/gi,
     label: 'private_driver_license',
     confidence: 0.95,
   },
@@ -735,7 +736,8 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
   {
     // US plates — too varied per state; context-anchored only.
     id: 'core:plate-us-context',
-    pattern: /(?<=\b(?:license\s*plate|plate(?:\s*number)?|tag)[\s:.#]+)[A-Z0-9\-]{3,8}\b/gi,
+    pattern:
+      /(?<=\b(?:license\s{0,3}plate|plate(?:\s{0,3}number)?|tag)[\s:.#]{1,8})[A-Z0-9\-]{3,8}\b/gi,
     label: 'private_vehicle_id',
     confidence: 0.9,
   },
@@ -764,7 +766,7 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     // requirement when the user explicitly says "latitude: X").
     id: 'core:geo-context',
     pattern:
-      /(?<=\b(?:lat(?:itude)?|lon(?:gitude)?|lng|gps|coord(?:inate)?s?)[\s:=]+)-?\d{1,3}\.\d{2,8}\b/gi,
+      /(?<=\b(?:lat(?:itude)?|lon(?:gitude)?|lng|gps|coord(?:inate)?s?)[\s:=]{1,8})-?\d{1,3}\.\d{2,8}\b/gi,
     label: 'private_geolocation',
     confidence: 0.9,
   },
@@ -794,7 +796,7 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     // (CMS-spec NPI Luhn requires prefixing `80840` for the full
     // 15-digit check — not implemented here; context anchor is enough.)
     id: 'core:npi-us-context',
-    pattern: /(?<=\b(?:npi|provider(?:\s*(?:id|number|#))?)[\s:.#]+)\d{10}\b/gi,
+    pattern: /(?<=\b(?:npi|provider(?:\s{0,3}(?:id|number|#))?)[\s:.#]{1,8})\d{10}\b/gi,
     label: 'account_number',
     confidence: 0.9,
   },
@@ -802,7 +804,7 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     // Insurance policy / member number (context-anchored).
     id: 'core:insurance-policy-context',
     pattern:
-      /(?<=\b(?:policy(?:\s*(?:no|number|#))?|member(?:\s*id)?|subscriber(?:\s*id)?|group(?:\s*(?:no|#))?)[\s:.#]+)[A-Z0-9][A-Z0-9\-]{5,18}[A-Z0-9]\b/gi,
+      /(?<=\b(?:policy(?:\s{0,3}(?:no|number|#))?|member(?:\s{0,3}id)?|subscriber(?:\s{0,3}id)?|group(?:\s{0,3}(?:no|#))?)[\s:.#]{1,8})[A-Z0-9][A-Z0-9\-]{5,18}[A-Z0-9]\b/gi,
     label: 'account_number',
     confidence: 0.9,
   },
@@ -810,7 +812,7 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     // Professional / certificate licence (context-anchored).
     id: 'core:certificate-context',
     pattern:
-      /(?<=\b(?:cert(?:ificate)?(?:\s*(?:no|number|#))?|licen[cs]e(?:\s*(?:no|number|#))?(?!\s*plate)|registration(?:\s*(?:no|#))?)[\s:.#]+)[A-Z0-9][A-Z0-9\-]{4,18}[A-Z0-9]\b/gi,
+      /(?<=\b(?:cert(?:ificate)?(?:\s{0,3}(?:no|number|#))?|licen[cs]e(?:\s{0,3}(?:no|number|#))?(?!\s{0,8}plate)|registration(?:\s{0,3}(?:no|#))?)[\s:.#]{1,8})[A-Z0-9][A-Z0-9\-]{4,18}[A-Z0-9]\b/gi,
     label: 'account_number',
     confidence: 0.85,
   },
@@ -818,7 +820,7 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     // Device serial (context-anchored — generic device IDs).
     id: 'core:device-serial-context',
     pattern:
-      /(?<=\b(?:s\/?n|serial(?:\s*(?:no|number|#))?|imei|udid|device\s*id)[\s:.#]+)[A-Z0-9][A-Z0-9\-]{6,30}[A-Z0-9]\b/gi,
+      /(?<=\b(?:s\/?n|serial(?:\s{0,3}(?:no|number|#))?|imei|udid|device\s{0,3}id)[\s:.#]{1,8})[A-Z0-9][A-Z0-9\-]{6,30}[A-Z0-9]\b/gi,
     label: 'account_number',
     confidence: 0.85,
   },
@@ -828,7 +830,7 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     // anchor on an explicit IMEI / device keyword to avoid asymmetric
     // FPs vs competitors that don't ship a standalone IMEI rule.
     id: 'core:imei-context',
-    pattern: /(?<=\b(?:imei|device(?:\s*(?:id|imei|#))?)[\s:.#]+)\d{15}\b/gi,
+    pattern: /(?<=\b(?:imei|device(?:\s{0,3}(?:id|imei|#))?)[\s:.#]{1,8})\d{15}\b/gi,
     label: 'account_number',
     confidence: 0.95,
     validate: luhnValid,
@@ -884,8 +886,10 @@ export const DEFAULT_POST_FILTER_THRESHOLD = 0;
  * treated as duplicates; higher-scoring one wins. */
 export const DEFAULT_DEDUPE_IOU = 0.5;
 
-/** Hard byte cap for `normalizeForDetection` and `runRecognizers`.
- * Inputs above this fall back to passthrough (normalize) or refuse
- * to scan (recognizers) so adversarial 1 MB+ payloads with quadratic
- * regex behaviour are not a DoS vector. */
+/** Hard cap on `sanitize()` input, in UTF-16 code units. It bounds the
+ * work of every pass: the model windows, normalisation, and the
+ * recognizer pack, whose patterns are all linear-time (bounded
+ * quantifiers, `test/recognizers-linear.test.ts`). Normalised text can be
+ * longer than the input (transliteration), and the recognizers scan it
+ * whole. */
 export const MAX_INPUT_BYTES = 1_000_000;

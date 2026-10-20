@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { MAX_INPUT_BYTES } from './defaults.js';
 import type { PiiSpan, Recognizer } from './types/index.js';
 
 /** Score assigned to a recognizer match whose `validate()` returned true.
@@ -24,9 +23,10 @@ export const VALIDATED_RECOGNIZER_SCORE = 0.99998;
  * Used as a regex post-pass after the ML detector. ML spans take priority
  * on overlap; recognizer spans only fill gaps.
  *
- * Refuses inputs above `MAX_INPUT_BYTES` (1 MB): unbounded `{N,}`
- * quantifiers in upstream secret patterns are quadratic on adversarial
- * padding, well above any realistic LLM prompt.
+ * Scans `text` whole, at any length: every default pattern is
+ * linear-time (bounded quantifiers; `test/recognizers-linear.test.ts`),
+ * and `sanitize()` caps its input at `MAX_INPUT_BYTES`. A custom
+ * recognizer must be linear-time too.
  *
  * Two scan paths:
  *
@@ -50,9 +50,6 @@ export function runRecognizers(
   recognizers: readonly Recognizer[],
   existing: readonly PiiSpan[],
 ): PiiSpan[] {
-  if (text.length > MAX_INPUT_BYTES) {
-    return [];
-  }
   const out: PiiSpan[] = [];
   const { fast, slow } = partitionRecognizers(recognizers);
   if (fast.size > 0) {

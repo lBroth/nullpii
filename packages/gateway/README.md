@@ -34,14 +34,16 @@ sanitises the request body before forwarding. `POST /v1/chat/completions` takes 
 ### Docker (recommended)
 
 ```bash
-# Build the image (slim variant — model fetched on first boot, ~926 MB image)
+# Build the image (the model is fetched on first boot; the image is about 614 MB)
 docker build -t nullpii/gateway:slim -f packages/gateway/Dockerfile .
 
-# Run it
-docker run --rm -p 8787:8787 \
-  -v nullpii-cache:/root/.cache/nullpii \
+# Run it, reachable from this machine only
+docker run --rm -p 127.0.0.1:8787:8787 \
+  -v nullpii-cache:/home/node/.cache/nullpii \
   nullpii/gateway:slim
 ```
+
+The gateway has no authentication of its own: anyone who can reach its port can send requests through it with your upstream credentials. Inside the container it listens on all interfaces, so publish the port on `127.0.0.1` as above, not with a bare `-p 8787:8787`. The image runs as the unprivileged `node` user; its model cache is `/home/node/.cache/nullpii`.
 
 A worked `docker-compose.yml` plus a Claude Code integration walk-through
 lives at [`examples/claude-code/`](https://github.com/lBroth/nullpii/tree/main/examples/claude-code).
@@ -96,9 +98,11 @@ post-reload first-request latency stays sub-second.
 # from the gateway package after `npm install` + `npm run build`
 NULLPII_MODEL_DIR=/path/to/local/gliner-onnx \
 NULLPII_UPSTREAM=https://api.anthropic.com \
-NULLPII_HOST=0.0.0.0 NULLPII_PORT=8787 \
+NULLPII_PORT=8787 \
 node bin/nullpii-gateway.mjs
 ```
+
+It listens on `127.0.0.1` by default. Set `NULLPII_HOST` to another interface only behind a reverse proxy that authenticates callers.
 
 Anthropic SDK setup (Node):
 

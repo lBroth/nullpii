@@ -127,7 +127,7 @@ The directory must contain `model.onnx`, `tokenizer.json`,
   `docker compose down`:
   ```yaml
   volumes:
-    - ./nullpii-model-cache:/root/.cache/nullpii
+    - ./nullpii-model-cache:/home/node/.cache/nullpii
   ```
 - **Air-gapped deployment / pre-release.** Pre-fetch the model on a
   connected machine (`npx nullpii prefetch` from the repo root with

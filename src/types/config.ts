@@ -78,10 +78,28 @@ export interface NullPiiConfig {
   /** Trim whitespace + common punctuation from span edges as a final
    * post-pass. Default: `true`. */
   readonly boundaryRefine?: boolean;
-  /** Public-URL allowlist mode. Default: built-in {@link
-   * src/url-filter.PUBLIC_URL_HOSTS} drops URLs to well-known reference
-   * domains (github.com, anthropic.com, docs.python.org, …) from the
-   * `private_url` output. Pass `'none'` to disable and have every URL
-   * the recognizer pack and model emit treated as PII. */
-  readonly urlAllowlist?: 'none';
+  /** Which URLs stay readable. A URL is released only when it holds no
+   * credentials, no second URL and no other PII span. Default: the
+   * built-in policy (`DEFAULT_URL_RELEASES`): code hosts such as
+   * github.com keep only their host readable, reference and package
+   * hosts the whole URL. Pass `'none'` to mask every URL, or a
+   * {@link UrlAllowlistConfig} to change hosts. */
+  readonly urlAllowlist?: 'none' | UrlAllowlistConfig;
+}
+
+/** How much of a URL on a listed host stays readable:
+ * - `'full'`: the whole URL;
+ * - `'host'`: the scheme and host; the path, query and fragment are masked;
+ * - `'mask'`: nothing (use it to switch off a built-in host). */
+export type UrlRelease = 'full' | 'host' | 'mask';
+
+/** Per-host URL policy. */
+export interface UrlAllowlistConfig {
+  /** Host → release, merged over the built-in policy. A key is a
+   * lowercase host (`docs.python.org`), or `*.` and a domain for the
+   * domain and every subdomain (`*.github.com`). The most specific key
+   * wins: an exact host, then the nearest wildcard. */
+  readonly hosts?: Readonly<Record<string, UrlRelease>>;
+  /** `true`: use only `hosts`, without the built-in policy. Default `false`. */
+  readonly replaceDefaults?: boolean;
 }

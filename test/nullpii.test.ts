@@ -6,6 +6,7 @@ import {
   SessionMismatchError,
   SessionNotFoundError,
 } from '../src/errors.js';
+import { InvalidConfigError } from '../src/errors.js';
 import { NullPii } from '../src/nullpii.js';
 import { GLINER_MODEL_CATEGORIES, PLACEHOLDER_REGEX } from '../src/types/index.js';
 
@@ -235,23 +236,46 @@ describe('NullPii e2e pipeline (mocked ONNX)', () => {
     await n.dispose();
   });
 
-  it('keeps public-host URLs verbatim, redacts private hosts', async () => {
-    // github.com / docs.python.org are in PUBLIC_URL_HOSTS — they should
-    // survive the round-trip untouched. A URL on an unknown host stays
-    // redacted as `private_url`.
+  it('keeps reference URLs verbatim, code-host paths and private hosts masked', async () => {
+    // docs.python.org is released whole; github.com keeps only its host
+    // readable (DEFAULT_URL_RELEASES); acme.io is not listed.
     const n = new NullPii({ modelDir: '/fake', backend: 'cpu' });
     const text =
-      'See https://github.com/anthropics/claude-code/issues and https://acme.io/internal';
+      'See https://docs.python.org/3/library/re.html, https://github.com/anthropics/claude-code/issues and https://acme.io/internal';
     const out = await n.sanitize(text);
-    // Only the acme.io URL is redacted.
-    const urlSpans = out.spans.filter((s) => s.label === 'private_url');
-    expect(urlSpans).toHaveLength(1);
-    expect(urlSpans[0]?.text).toBe('https://acme.io/internal');
-    expect(out.sanitized).toContain('https://github.com/anthropics/claude-code/issues');
-    expect(out.sanitized).not.toContain('https://acme.io/internal');
-    const restored = n.restore(out.sanitized, out.sessionId);
-    expect(restored.restored).toBe(text);
+    const urlSpans = out.spans.filter((s) => s.label === 'private_url').map((s) => s.text);
+    expect(urlSpans).toEqual(['/anthropics/claude-code/issues', 'https://acme.io/internal']);
+    expect(out.sanitized).toContain('https://docs.python.org/3/library/re.html');
+    expect(out.sanitized).toContain('https://github.com{{');
+    expect(out.sanitized).not.toContain('anthropics/claude-code');
+    expect(n.restore(out.sanitized, out.sessionId).restored).toBe(text);
     await n.dispose();
+  });
+
+  it('urlAllowlist.hosts changes how much of a URL stays readable', async () => {
+    const n = new NullPii({
+      modelDir: '/fake',
+      backend: 'cpu',
+      urlAllowlist: { hosts: { '*.github.com': 'full', '*.python.org': 'mask' } },
+    });
+    const text = 'See https://github.com/foo/bar and https://docs.python.org/3/';
+    const out = await n.sanitize(text);
+    expect(out.spans.filter((s) => s.label === 'private_url').map((s) => s.text)).toEqual([
+      'https://docs.python.org/3/',
+    ]);
+    expect(out.sanitized).toContain('https://github.com/foo/bar');
+    await n.dispose();
+  });
+
+  it('rejects an invalid urlAllowlist at construction', () => {
+    expect(
+      () =>
+        new NullPii({
+          modelDir: '/fake',
+          backend: 'cpu',
+          urlAllowlist: { hosts: { 'https://x.io': 'full' } },
+        }),
+    ).toThrow(InvalidConfigError);
   });
 
   it('urlAllowlist: "none" redacts every URL including public hosts', async () => {

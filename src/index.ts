@@ -7,6 +7,7 @@
 
 // Errors
 export {
+  InvalidConfigError,
   InvalidPathError,
   ModelNotFoundError,
   ModelNotInitializedError,
@@ -41,6 +42,8 @@ export {
   type RestoreResult,
   type SanitizeOptions,
   type SanitizeResult,
+  type UrlAllowlistConfig,
+  type UrlRelease,
   type VaultToken,
 } from './types/index.js';
 

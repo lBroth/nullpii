@@ -49,7 +49,7 @@ import {
   type SanitizeResult,
 } from './types/index.js';
 import type { ScoredSpan } from './types/scored-span.js';
-import { dropCleanPublicUrlSpans } from './url-filter.js';
+import { type UrlPolicy, dropCleanPublicUrlSpans, urlPolicy } from './url-filter.js';
 import { PiiVault } from './vault.js';
 
 const LOG_SCOPE = 'nullpii';
@@ -80,6 +80,8 @@ export class NullPii {
   /** `GLINER_LABELS` minus `config.disabledCategories`. */
   private readonly promptLabels: readonly string[];
   private readonly disabled: ReadonlySet<string>;
+  /** How much of a clean URL stays readable; `null` masks every URL. */
+  private readonly urlPolicy: UrlPolicy | null;
   private readonly vault = new PiiVault();
   private readonly recognizers: Recognizer[] = [];
   private backend: OrtBackend | null = null;
@@ -94,6 +96,7 @@ export class NullPii {
     this.config = config;
     this.disabled = new Set(config.disabledCategories ?? []);
     this.promptLabels = GLINER_LABELS.filter((l) => !this.disabled.has(l));
+    this.urlPolicy = config.urlAllowlist === 'none' ? null : urlPolicy(config.urlAllowlist);
     if (config.recognizers === 'none') return;
     if (Array.isArray(config.recognizers)) {
       this.recognizers.push(...(config.recognizers as readonly Recognizer[]));
@@ -255,7 +258,7 @@ export class NullPii {
       escaped,
     );
     const allowlisted =
-      this.config.urlAllowlist === 'none' ? candidates : dropCleanPublicUrlSpans(candidates);
+      this.urlPolicy === null ? candidates : dropCleanPublicUrlSpans(candidates, this.urlPolicy);
     // Dedupe can grow a kept span to absorb a duplicate's characters, so
     // `text` is re-derived from the offsets.
     const merged = (

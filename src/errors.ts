@@ -75,6 +75,16 @@ export class InvalidPathError extends NullPiiError {
   }
 }
 
+/** Thrown when a configuration value is invalid: an unknown key, a value of
+ * the wrong type, or a malformed host. */
+export class InvalidConfigError extends NullPiiError {
+  override readonly code = 'NULLPII_INVALID_CONFIG';
+  /** @param message what is wrong and where */
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(`invalid nullpii config: ${message}`, options);
+  }
+}
+
 /** Thrown when `onnxruntime-node` is required but not installed. */
 export class OrtNotInstalledError extends NullPiiError {
   override readonly code = 'NULLPII_ORT_NOT_INSTALLED';

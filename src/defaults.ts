@@ -8,7 +8,7 @@
 // Strict TS index-access fallbacks (e.g. `arr[i] ?? 0` under
 // `noUncheckedIndexedAccess`) are NOT user-facing defaults and stay inline.
 
-import type { BackendName, ModelVariant } from './types/index.js';
+import type { BackendName, ModelVariant, UrlRelease } from './types/index.js';
 import type { Recognizer } from './types/recognizer.js';
 import {
   base58CheckValid,
@@ -69,7 +69,7 @@ export const DEFAULT_MODEL_REVISION = 'main';
 export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
   // ─── URL / Email ──────────────────────────────────────────────
   // URL: only http(s) + www. — bare-domain.tld dropped (FP-prone).
-  // The public-host allowlist (`PUBLIC_URL_HOSTS` in `src/url-filter.ts`)
+  // The URL policy (`DEFAULT_URL_RELEASES`, applied in `src/url-filter.ts`)
   // runs as a post-filter and is on by default; opt out via
   // `NullPiiConfig.urlAllowlist: 'none'`.
   {
@@ -836,6 +836,99 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     validate: luhnValid,
   },
 ];
+
+/** Built-in URL policy (`NullPiiConfig.urlAllowlist`): how much of a clean
+ * URL on each host stays readable. A key is an exact host, or `*.` and a
+ * domain for the domain and every subdomain; a host matching no key is
+ * masked. Hosts that serve customer consoles under a subdomain
+ * (`console.aws.amazon.com`, `console.anthropic.com`) are listed exactly,
+ * so those consoles stay masked. */
+export const DEFAULT_URL_RELEASES: Readonly<Record<string, UrlRelease>> = {
+  // Source hosting: paths name users and repositories, private ones
+  // included, and raw-content links can carry access tokens. Only the
+  // host stays readable.
+  '*.github.com': 'host',
+  '*.githubusercontent.com': 'host',
+  '*.gitlab.com': 'host',
+  '*.bitbucket.org': 'host',
+  '*.codeberg.org': 'host',
+  '*.sourceforge.net': 'host',
+  '*.huggingface.co': 'host',
+  // Package registries and the tarball hosts lockfiles cite
+  // (`registry.npmjs.org`, `files.pythonhosted.org`): paths name public
+  // packages.
+  '*.npmjs.com': 'full',
+  '*.npmjs.org': 'full',
+  '*.yarnpkg.com': 'full',
+  '*.pypi.org': 'full',
+  '*.pythonhosted.org': 'full',
+  '*.crates.io': 'full',
+  '*.rubygems.org': 'full',
+  '*.packagist.org': 'full',
+  '*.nuget.org': 'full',
+  '*.maven.org': 'full',
+  // Reference, standards and language documentation.
+  '*.wikipedia.org': 'full',
+  '*.wikimedia.org': 'full',
+  '*.mozilla.org': 'full',
+  '*.w3.org': 'full',
+  '*.whatwg.org': 'full',
+  '*.rfc-editor.org': 'full',
+  '*.ietf.org': 'full',
+  '*.iso.org': 'full',
+  '*.unicode.org': 'full',
+  '*.iana.org': 'full',
+  '*.apache.org': 'full',
+  '*.python.org': 'full',
+  '*.nodejs.org': 'full',
+  '*.rust-lang.org': 'full',
+  '*.golang.org': 'full',
+  '*.go.dev': 'full',
+  '*.kotlinlang.org': 'full',
+  '*.scala-lang.org': 'full',
+  '*.typescriptlang.org': 'full',
+  // Vendor sites: the public site and its documentation only.
+  'anthropic.com': 'full',
+  'docs.anthropic.com': 'full',
+  'openai.com': 'full',
+  'deepmind.com': 'full',
+  'mistral.ai': 'full',
+  'docs.mistral.ai': 'full',
+  'oracle.com': 'full',
+  'docs.oracle.com': 'full',
+  'aws.amazon.com': 'full',
+  'docs.aws.amazon.com': 'full',
+  'cloud.google.com': 'full',
+  'azure.microsoft.com': 'full',
+  'docs.microsoft.com': 'full',
+  'learn.microsoft.com': 'full',
+  // Q&A.
+  '*.stackoverflow.com': 'full',
+  '*.stackexchange.com': 'full',
+  '*.serverfault.com': 'full',
+  '*.superuser.com': 'full',
+  // Project infrastructure READMEs link to: status badges, CI, coverage,
+  // dependency and funding pages, public package CDNs.
+  '*.shields.io': 'full',
+  '*.badgen.net': 'full',
+  '*.fury.io': 'full',
+  '*.nodei.co': 'full',
+  '*.npm.im': 'full',
+  '*.packagequality.com': 'full',
+  '*.travis-ci.org': 'full',
+  '*.travis-ci.com': 'full',
+  '*.circleci.com': 'full',
+  '*.appveyor.com': 'full',
+  '*.coveralls.io': 'full',
+  '*.codecov.io': 'full',
+  '*.david-dm.org': 'full',
+  '*.snyk.io': 'full',
+  '*.tidelift.com': 'full',
+  '*.opencollective.com': 'full',
+  '*.jsdelivr.com': 'full',
+  '*.jsdelivr.net': 'full',
+  '*.unpkg.com': 'full',
+};
 
 /** Whether `DEFAULT_RECOGNIZERS` are auto-registered on every
  * `NullPii` instance. Override with `new NullPii({ recognizers: 'none' })`

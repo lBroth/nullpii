@@ -25,6 +25,12 @@ export type {
   SanitizeOptions,
   SanitizeResult,
 } from './results.js';
-export type { BackendName, ModelVariant, NullPiiConfig } from './config.js';
+export type {
+  BackendName,
+  ModelVariant,
+  NullPiiConfig,
+  UrlAllowlistConfig,
+  UrlRelease,
+} from './config.js';
 export type { InferenceInputs, InferenceOutputs } from './backend.js';
 export type { Recognizer } from './recognizer.js';

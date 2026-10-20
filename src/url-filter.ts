@@ -1,136 +1,74 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { PiiSpan } from './types/index.js';
+import { DEFAULT_URL_RELEASES } from './defaults.js';
+import { InvalidConfigError } from './errors.js';
+import type { PiiSpan, UrlAllowlistConfig, UrlRelease } from './types/index.js';
+
+/** How much of a clean URL on a host stays readable (see `UrlRelease`). */
+export type UrlPolicy = (host: string) => UrlRelease;
+
+/** A policy key: a lowercase host, or `*.` and a domain. */
+const HOST_KEY = /^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9-]{2,63}$/;
+const RELEASES: ReadonlySet<string> = new Set<UrlRelease>(['full', 'host', 'mask']);
 
 /**
- * Hosts whose URLs are public reference / documentation surfaces and
- * are never PII on their own. Matching `private_url` spans are dropped
- * from the final span set so that, e.g., a link to
- * `https://github.com/anthropics/claude-code/issues` in a system prompt
- * stays verbatim instead of becoming `{{PII_PRIVATE_URL_*}}`.
- *
- * Match is on the URL's host (case-insensitive). A leading `www.` is
- * stripped before lookup. Subdomains of an allowlisted host also match
- * (`docs.python.org` is covered by `python.org`).
+ * The URL policy for `config`: the built-in {@link DEFAULT_URL_RELEASES},
+ * with `config.hosts` merged over it (or alone, with `replaceDefaults`).
+ * Throws {@link InvalidConfigError} on a malformed host key or an unknown
+ * release, so a typo never silently releases or masks a host.
  */
-export const PUBLIC_URL_HOSTS: ReadonlySet<string> = new Set([
-  // Source hosting
-  'github.com',
-  'gitlab.com',
-  'bitbucket.org',
-  'codeberg.org',
-  'sourceforge.net',
-  // Package registries. Lockfiles (`package-lock.json`, `yarn.lock`,
-  // `poetry.lock`) cite a tarball URL per dependency on these hosts —
-  // the npm registry serves from `registry.npmjs.org`, not `npmjs.com`.
-  'npmjs.com',
-  'npmjs.org',
-  'yarnpkg.com',
-  'pypi.org',
-  'pythonhosted.org',
-  'crates.io',
-  'rubygems.org',
-  'packagist.org',
-  'nuget.org',
-  'maven.org',
-  // Docs / encyclopedias
-  'wikipedia.org',
-  'wikimedia.org',
-  'mozilla.org',
-  'developer.mozilla.org',
-  'w3.org',
-  'whatwg.org',
-  'rfc-editor.org',
-  'ietf.org',
-  // AI / ML vendors (public marketing / docs surfaces)
-  'anthropic.com',
-  'openai.com',
-  'huggingface.co',
-  'deepmind.com',
-  'mistral.ai',
-  // Language / runtime official sites
-  'python.org',
-  'nodejs.org',
-  'rust-lang.org',
-  'golang.org',
-  'go.dev',
-  'oracle.com',
-  'kotlinlang.org',
-  'scala-lang.org',
-  // Cloud vendor docs (the marketing top-level — not customer subdomains)
-  'aws.amazon.com',
-  'cloud.google.com',
-  'azure.microsoft.com',
-  'docs.microsoft.com',
-  'learn.microsoft.com',
-  // Q&A
-  'stackoverflow.com',
-  'stackexchange.com',
-  'serverfault.com',
-  'superuser.com',
-  // Standards bodies and licences
-  'iso.org',
-  'unicode.org',
-  'iana.org',
-  'apache.org',
-  'typescriptlang.org',
-  // Project-infrastructure services READMEs link to: status badges,
-  // CI, coverage, dependency and funding pages, public package CDNs.
-  // Every URL on these hosts describes a public project, never a person.
-  'shields.io',
-  'badgen.net',
-  'fury.io',
-  'nodei.co',
-  'npm.im',
-  'packagequality.com',
-  'travis-ci.org',
-  'travis-ci.com',
-  'circleci.com',
-  'appveyor.com',
-  'coveralls.io',
-  'codecov.io',
-  'david-dm.org',
-  'snyk.io',
-  'tidelift.com',
-  'opencollective.com',
-  'jsdelivr.com',
-  'jsdelivr.net',
-  'unpkg.com',
-  // Raw and avatar content of public GitHub repositories, consistent
-  // with `github.com` above.
-  'githubusercontent.com',
-]);
+export function urlPolicy(config: UrlAllowlistConfig = {}): UrlPolicy {
+  const hosts = config.hosts ?? {};
+  for (const [key, release] of Object.entries(hosts)) {
+    if (!HOST_KEY.test(key)) {
+      throw new InvalidConfigError(
+        `urlAllowlist.hosts key ${JSON.stringify(key)} is not a lowercase host or *.domain`,
+      );
+    }
+    if (!RELEASES.has(release)) {
+      throw new InvalidConfigError(
+        `urlAllowlist.hosts[${JSON.stringify(key)}] must be 'full', 'host' or 'mask', got ${JSON.stringify(release)}`,
+      );
+    }
+  }
+  const table = new Map(
+    Object.entries(config.replaceDefaults === true ? hosts : { ...DEFAULT_URL_RELEASES, ...hosts }),
+  );
+  return (host) => releaseFor(table, host);
+}
+
+/** The most specific entry for `host`: the exact host, then `*.` keys
+ * from the host itself up through its parent domains. A leading `www.`
+ * is ignored. No entry: `'mask'`. */
+function releaseFor(table: ReadonlyMap<string, UrlRelease>, host: string): UrlRelease {
+  const lower = host.toLowerCase();
+  const bare = lower.startsWith('www.') ? lower.slice(4) : lower;
+  const exact = table.get(bare);
+  if (exact !== undefined) return exact;
+  for (let domain = bare; domain.includes('.'); domain = domain.slice(domain.indexOf('.') + 1)) {
+    const wildcard = table.get(`*.${domain}`);
+    if (wildcard !== undefined) return wildcard;
+  }
+  return 'mask';
+}
 
 /**
- * Returns `true` when `urlText` (a substring matched by the URL
- * recognizer) targets one of the {@link PUBLIC_URL_HOSTS}, OR a
- * subdomain of one. Returns `false` on malformed input — over-redact
- * rather than under-redact.
+ * How much of `urlText` (a substring matched by the URL recognizer) the
+ * policy releases. `'mask'` on malformed input and on a span carrying
+ * more than one scheme — over-redact rather than under-redact.
  */
-export function isPublicUrl(urlText: string): boolean {
+export function urlRelease(urlText: string, policy: UrlPolicy): UrlRelease {
   // `core:url` is greedy (`[^\s<>"]+`) and does not stop at `,` or `#`,
   // so a single span can cover several concatenated URLs:
   // `https://github.com/foo,https://acme.io/internal`. `extractHost`
-  // only ever reads the first one, which would allowlist the whole
-  // blob on the strength of a host the later URLs do not share. Refuse
-  // to judge a span carrying more than one scheme — over-redact.
-  if ((urlText.match(SCHEME_PATTERN) ?? []).length > 1) return false;
+  // only ever reads the first one, which would release the whole blob
+  // on the strength of a host the later URLs do not share.
+  if ((urlText.match(SCHEME_PATTERN) ?? []).length > 1) return 'mask';
   const host = extractHost(urlText);
-  if (host === null) return false;
-  const lower = host.toLowerCase();
-  const stripped = lower.startsWith('www.') ? lower.slice(4) : lower;
-  if (PUBLIC_URL_HOSTS.has(stripped)) return true;
-  // Subdomain match: walk parents (`docs.python.org` → `python.org`).
-  let cursor = stripped;
-  while (cursor.includes('.')) {
-    const dot = cursor.indexOf('.');
-    cursor = cursor.slice(dot + 1);
-    if (PUBLIC_URL_HOSTS.has(cursor)) return true;
-  }
-  return false;
+  return host === null ? 'mask' : policy(host);
 }
 
-/** Matches every URL scheme occurrence in a span — see {@link isPublicUrl}. */
+/** Matches every URL scheme occurrence in a span — see {@link urlRelease}. */
 const SCHEME_PATTERN = /https?:\/\//gi;
 
 /**
@@ -159,13 +97,14 @@ const SCHEME_PATTERN = /https?:\/\//gi;
  * exist to be seen.
  *
  * @param spans - candidate spans, ML and recognizer, pre-dedupe
+ * @param policy - how much of a clean URL on each host is released
  */
-export function dropCleanPublicUrlSpans(spans: readonly PiiSpan[]): PiiSpan[] {
+export function dropCleanPublicUrlSpans(spans: readonly PiiSpan[], policy: UrlPolicy): PiiSpan[] {
   const dropped: PiiSpan[] = [];
   const kept: PiiSpan[] = [];
   for (const s of spans) {
     const parts = splitAtSchemes(s);
-    const cuts = parts.map((p) => publicPrefixLength(p, spans));
+    const cuts = parts.map((p) => publicPrefixLength(p, spans, policy));
     if (cuts.every((n) => n === 0)) {
       kept.push(s);
       continue;
@@ -198,6 +137,9 @@ const URL_TOKEN = /^(?:https?:\/\/|www\.)[^\s<>"'`()[\]{}|\\^,;]+/i;
  * a README badge. Anything with a letter or digit stays masked. */
 const SEPARATOR_ONLY = /^[\s)\](\[,;:.!?'"`<>]*$/;
 
+/** A URL token's scheme (or `www.`) and host, up to its path, query or fragment. */
+const URL_ORIGIN = /^(?:https?:\/\/|www\.)[^/?#]*/i;
+
 /** The scheme or `www.` a URL token starts with. */
 const URL_PREFIX = /^(?:https?:\/\/|www\.)/i;
 
@@ -216,13 +158,20 @@ const NESTED_URL_START = /[a-z][a-z0-9+.-]*:\/\/|.www\./i;
  * span: text that the model or the greedy recognizer swept into a URL
  * span is never released on the strength of the URL's host.
  */
-function publicPrefixLength(part: PiiSpan, spans: readonly PiiSpan[]): number {
+function publicPrefixLength(part: PiiSpan, spans: readonly PiiSpan[], policy: UrlPolicy): number {
   if (part.label !== 'private_url') return 0;
   const token = URL_TOKEN.exec(part.text)?.[0];
   if (token === undefined || NESTED_URL_START.test(token.replace(URL_PREFIX, ''))) return 0;
-  if (!isPublicUrl(token) || hasCredentials(token)) return 0;
+  const release = urlRelease(token, policy);
+  if (release === 'mask' || hasCredentials(token)) return 0;
+  const origin = URL_ORIGIN.exec(token)?.[0].length ?? token.length;
   const rest = part.text.slice(token.length);
-  const n = SEPARATOR_ONLY.test(rest) ? part.text.length : token.length;
+  // A `'host'` release keeps the path, query and fragment masked, unless
+  // there is none (a bare `https://github.com/`).
+  const pathless = token.length - origin <= 1;
+  let n: number;
+  if (release === 'host' && !pathless) n = origin;
+  else n = SEPARATOR_ONLY.test(rest) ? part.text.length : token.length;
   // Any other PII span touching the part keeps all of it masked, URL
   // included: a reference URL that embeds anything identifying is never
   // released, not even its public prefix.
@@ -251,7 +200,7 @@ function slice(s: PiiSpan, from: number, to: number): PiiSpan {
  * Splits a `private_url` span that covers several URLs into one part per
  * URL, cut where each later scheme starts. The model often emits a single
  * span across a README badge, `[![ci](https://img.shields.io/…)](https://travis-ci.org/…)`,
- * and {@link isPublicUrl} refuses to judge a span with two schemes. Each
+ * and {@link urlRelease} refuses to judge a span with two schemes. Each
  * part is judged on its own (`publicPrefixLength`): a public URL can be
  * dropped while a private one next to it stays masked. Text before the
  * first scheme stays with the first part, which is then judged public only

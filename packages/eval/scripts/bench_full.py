@@ -728,6 +728,19 @@ def _load_done_idx(state_path: Path) -> int:
         return -1
 
 
+def _resume_rows(pred_path: Path, state_path: Path) -> list[str]:
+    """The checkpoint rows `.state` vouches for. A killed run can leave
+    rows written after its last state update; they are cut from the file,
+    so the resumed run writes them again instead of appending duplicates."""
+    if not pred_path.exists():
+        return []
+    rows = pred_path.read_text(encoding="utf-8").splitlines(keepends=True)[: _load_done_idx(state_path) + 1]
+    tmp = pred_path.with_suffix(".tmp")
+    tmp.write_text("".join(rows), encoding="utf-8")
+    os.replace(tmp, pred_path)
+    return rows
+
+
 def _iou(a: Span, b: Span) -> float:
     inter = max(0, min(a.end, b.end) - max(a.start, b.start))
     union = (a.end - a.start) + (b.end - b.start) - inter
@@ -773,19 +786,13 @@ def run_combo(
     cell as CRASHED in the matrix and moves on to the next combo.
     """
     pred_path, state_path = _checkpoint_paths(ckpt_dir, tool_name, dataset.key)
-    done_idx = _load_done_idx(state_path)
+    rows = _resume_rows(pred_path, state_path)
+    done_idx = len(rows) - 1
 
     truths = [list(s.spans) for s in samples]
-    preds: list[list[Span]] = []
-    if done_idx >= 0 and pred_path.exists():
-        with pred_path.open(encoding="utf-8") as f:
-            for line in f:
-                row = json.loads(line)
-                preds.append([Span(s[2], int(s[0]), int(s[1])) for s in row["spans"]])
-        if len(preds) > done_idx + 1:
-            preds = preds[: done_idx + 1]
-        elif len(preds) < done_idx + 1:
-            done_idx = len(preds) - 1
+    preds: list[list[Span]] = [
+        [Span(s[2], int(s[0]), int(s[1])) for s in json.loads(line)["spans"]] for line in rows
+    ]
     print(f"  [{tool_name}/{dataset.key}] resume idx={done_idx + 1}/{len(samples)}", flush=True)
 
     t0 = time.perf_counter()

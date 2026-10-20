@@ -79,10 +79,15 @@ async function checkOrt(): Promise<boolean> {
   try {
     await import('onnxruntime-node');
     return ok('onnxruntime-node', 'installed');
-  } catch {
-    return fail(
-      'onnxruntime-node',
-      'not installed — run `npm install onnxruntime-node` to enable inference',
-    );
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ERR_MODULE_NOT_FOUND' || code === 'MODULE_NOT_FOUND') {
+      return fail(
+        'onnxruntime-node',
+        'not installed — run `npm install onnxruntime-node` to enable inference',
+      );
+    }
+    // Installed but unloadable (wrong platform, ABI or missing library).
+    return fail('onnxruntime-node', `installed but failed to load: ${(err as Error).message}`);
   }
 }

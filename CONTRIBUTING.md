@@ -29,7 +29,7 @@ Non-negotiable — PRs that violate these will not be merged.
 
 - TDD — tests before implementation.
 - Public function = happy path + edge case + error case.
-- Coverage thresholds (CI-enforced): 85% lines, 80% branches.
+- Coverage thresholds (CI-enforced on the Ubuntu / Node 24 leg, over the core, its CLI and the gateway): 85% lines, statements and functions, 80% branches.
 - Hardware-gated tests (CUDA/MPS) auto-skip when probe fails.
 
 ### Real-ONNX end-to-end (`npm run test:e2e`)

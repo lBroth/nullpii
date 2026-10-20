@@ -4,17 +4,12 @@ import { existsSync } from 'node:fs';
 import { opendir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import chalk from 'chalk';
-import cliProgress from 'cli-progress';
 import type { Command } from 'commander';
-import { ModelManager, defaultCacheDir } from '../../model-manager.js';
+import { defaultCacheDir } from '../../model-manager.js';
 
 export function registerModels(program: Command): void {
   const models = program.command('models').description('manage cached model artifacts');
   models.command('list').description('list cached model files with sizes').action(listModels);
-  models
-    .command('download')
-    .description('download model files into the local cache')
-    .action(downloadModel);
 }
 
 async function listModels(): Promise<void> {
@@ -28,18 +23,6 @@ async function listModels(): Promise<void> {
     const size = (st.size / 1024 / 1024).toFixed(1);
     process.stdout.write(`${chalk.cyan(`${size.padStart(8)} MB`)}  ${f.slice(dir.length + 1)}\n`);
   }
-}
-
-async function downloadModel(): Promise<void> {
-  const bar = new cliProgress.SingleBar({
-    format: 'download |{bar}| {percentage}% | {value}/{total}',
-    hideCursor: true,
-  });
-  bar.start(100, 0);
-  const result = await new ModelManager().ensure();
-  bar.update(100);
-  bar.stop();
-  process.stdout.write(`${chalk.green('cached at:')} ${result.modelDir}\n`);
 }
 
 async function* walk(dir: string): AsyncIterableIterator<string> {

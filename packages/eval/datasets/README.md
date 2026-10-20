@@ -4,8 +4,8 @@ The project's own rows are synthetic, Apache-2.0. The two TAB ECHR splits are pu
 
 ## Inventory
 
-Three files at HEAD: the project's canonical `nullpii-bench.jsonl` plus two
-externally-licensed upstream splits.
+Four files at HEAD: the project's canonical `nullpii-bench.jsonl` plus three
+externally licensed upstream files.
 
 | File | Rows | Used in canonical bench | Origin |
 |---|---:|:---:|---|

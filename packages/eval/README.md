@@ -79,7 +79,7 @@ python -u scripts/bench_latency.py \
 
 ## Bundled datasets
 
-`datasets/` — Apache 2.0, no real PII. See [`datasets/README.md`](datasets/README.md) for schema. Three files live there at HEAD: `nullpii-bench.jsonl` (project-authored), `presidio-synthetic.jsonl` (external, MIT), `tab-echr-test.jsonl` (external, MIT). All other bench rows (`ai4privacy-*`, `isotonic-*`, `nemotron-pii-*`, `argilla-pii`) are fetched from HuggingFace at bench time.
+`datasets/`: see [`datasets/README.md`](datasets/README.md) for the schema and licences. Four files live there at HEAD: `nullpii-bench.jsonl` (project-authored, synthetic, Apache-2.0), `presidio-synthetic.jsonl` (external, MIT), and the TAB ECHR `tab-echr-test.jsonl` and `tab-echr-dev.jsonl` (external, MIT; published court judgments that name real people). All other bench rows (`ai4privacy-*`, `isotonic-*`, `nemotron-pii-*`, `argilla-pii`) are fetched from HuggingFace at bench time.
 
 ## Model card
 

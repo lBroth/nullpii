@@ -6,7 +6,7 @@ Privately — open a [Security Advisory](https://github.com/lBroth/nullpii/secur
 
 ## What nullpii protects
 
-- Detection runs entirely local — no network calls.
+- Detection runs locally: nullpii sends your text nowhere. Its one network call is the model download from Hugging Face on first use, at a pinned revision whose files are checked by SHA-256; set `NULLPII_MODEL_DIR` to a pre-fetched copy to avoid even that.
 - Vault is in-memory only; `destroySession()` purges it.
 - Logs never contain PII values (counts and short ids only).
 - Placeholders carry a 16-hex prefix of the minting session id (64-bit collision-resistant). `restore()` surfaces foreign-prefix placeholders via `RestoreResult.foreignPlaceholders`; `{ strict: true }` throws `SessionMismatchError` instead.

@@ -1,7 +1,7 @@
 {
   "name": "nullpii",
   "version": "0.3.0",
-  "description": "Sanitize PII from text locally with a reversible vault. Zero cloud calls. GLiNER ONNX (CPU/CUDA/CoreML via onnxruntime).",
+  "description": "Mask PII and secrets in text locally, with a reversible in-memory vault. Detection runs on your machine (GLiNER ONNX on CPU, CUDA or CoreML via onnxruntime).",
   "license": "Apache-2.0",
   "type": "module",
   "sideEffects": false,

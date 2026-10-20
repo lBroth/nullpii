@@ -930,6 +930,30 @@ export const DEFAULT_URL_RELEASES: Readonly<Record<string, UrlRelease>> = {
   '*.unpkg.com': 'full',
 };
 
+/** Directory and file name of the shared config file under the XDG config
+ * home (`~/.config/nullpii/config.json`). */
+export const CONFIG_DIR_NAME = 'nullpii';
+export const CONFIG_FILE_NAME = 'config.json';
+
+/** Largest config file accepted. The policy is a few hundred bytes; a
+ * larger file is a mistake, not a policy. */
+export const MAX_CONFIG_FILE_BYTES = 64 * 1024;
+
+/** Tools whose arguments get real values back when no `restoreTools` is
+ * configured: Claude Code's tools that run on this machine. Tools that
+ * send data elsewhere (`WebFetch`, `WebSearch`, MCP tools) keep the
+ * placeholders, so a masked value never leaves through a tool call. */
+export const DEFAULT_RESTORE_TOOLS: readonly string[] = [
+  'Bash',
+  'Read',
+  'Edit',
+  'MultiEdit',
+  'Write',
+  'NotebookEdit',
+  'Grep',
+  'Glob',
+];
+
 /** Whether `DEFAULT_RECOGNIZERS` are auto-registered on every
  * `NullPii` instance. Override with `new NullPii({ recognizers: 'none' })`
  * or supply a custom list via `recognizers: [...]`. */

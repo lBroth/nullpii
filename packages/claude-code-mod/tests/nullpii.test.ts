@@ -180,9 +180,11 @@ function stubSession(
   on,
   sidecar: ReturnType<typeof fakeSidecar>,
   env: Record<string, string> = { NULLPII_SIDECAR_TOKEN: TOKEN },
+  cwd = '/work',
 ) {
   mock.env(on, env);
-  on('session.start', () => ({ cwd: '/work' }));
+  on('session.start', () => ({ cwd }));
+  on('session.cwd', () => ({ value: cwd }));
   on('command.register', () => ({ value: undefined }));
   on('session.id', () => ({ value: 'session-1' }));
   on('ui.toast', () => ({ value: undefined }));
@@ -574,6 +576,35 @@ test('a call that may change the policy file is put to the user', async ($, on) 
   ];
   for (const call of allows) {
     expect((await $.tool.check(call)).decision).toBe('allow');
+  }
+});
+
+test('the policy guard sees through case, dot segments, repeated slashes and relative paths', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar, { NULLPII_SIDECAR_TOKEN: TOKEN }, '/home/node/.config/nullpii');
+  on('tool.check', () => ({ decision: 'allow' }));
+  await start($);
+  const asks = [
+    { tool: 'Write', input: { file_path: '~/.config/NULLPII/config.json', content: '{}' } },
+    { tool: 'Write', input: { file_path: '/home/node/.config/nullpii/./config.json' } },
+    { tool: 'Edit', input: { file_path: '/home/node/.config/nullpii//config.json' } },
+    { tool: 'Edit', input: { file_path: '/home/node/.config/other/../nullpii/Config.JSON' } },
+    { tool: 'Write', input: { file_path: 'config.json', content: '{}' } },
+    { tool: 'Write', input: { file_path: 'C:\\Users\\me\\.config\\nullpii\\config.json' } },
+    { tool: 'Bash', input: { command: "cd ~/.config/nullpii && echo '{}' > config.json" } },
+    { tool: 'Bash', input: { command: 'echo {} > ~/.config/NullPii/Config.json' } },
+    { tool: 'Bash', input: { command: 'export nullpii_config=/tmp/loose.json' } },
+  ];
+  for (const call of asks) {
+    expect((await $.tool.check(call)).decision, JSON.stringify(call)).toBe('ask');
+  }
+  const allows = [
+    { tool: 'Write', input: { file_path: '/work/nullpii-notes/config.json' } },
+    { tool: 'Write', input: { file_path: '../notes.md' } },
+    { tool: 'Bash', input: { command: 'cat package.json' } },
+  ];
+  for (const call of allows) {
+    expect((await $.tool.check(call)).decision, JSON.stringify(call)).toBe('allow');
   }
 });
 

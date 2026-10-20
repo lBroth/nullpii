@@ -294,9 +294,9 @@ export function register(on, options) {
   // auto mode, to its classifier), whatever the rules would have decided.
   on('tool.check', async ($, e, next) => {
     const decided = await next(e);
-    if (decided.decision === 'deny' || !touchesPolicyFile(e.tool, e.input, policy?.file)) {
-      return decided;
-    }
+    if (decided.decision === 'deny') return decided;
+    const cwd = await $.session.cwd();
+    if (!touchesPolicyFile(e.tool, e.input, policy?.file, cwd)) return decided;
     return { decision: 'ask', reason: POLICY_ASK };
   }).catch(async ($, e, next) => (next.called ? { decision: 'ask', reason: POLICY_ASK } : next(e)));
 

@@ -64,35 +64,69 @@ const WRITE_PATH_FIELDS: Readonly<Record<string, string>> = {
   MultiEdit: 'file_path',
   NotebookEdit: 'notebook_path',
 };
-/** The default location's tail, matched whatever the home directory is. */
-const POLICY_PATH_TAIL = /[\\/]nullpii[\\/]config\.json$/;
-/** In a shell command: the default location, or the variable that names
- * another one. Best effort, as any reading of a shell command is. */
-const POLICY_IN_COMMAND = /nullpii[\\/]config\.json|NULLPII_CONFIG/;
+/** The default location's tail, on a path `normalizePath` produced. */
+const POLICY_PATH_TAIL = '/nullpii/config.json';
+/** In a shell command: a `nullpii` directory, a `config.json`, the
+ * variable that names another policy file. Best effort, as any reading of
+ * a shell command is. */
+const NULLPII_WORD = /nullpii/i;
+const CONFIG_FILE_WORD = /config\.json/i;
+const POLICY_VARIABLE = /NULLPII_CONFIG/i;
+/** A path that starts at a root: `/`, `~`, or a Windows drive. */
+const ABSOLUTE_PATH = /^(?:[\\/~]|[A-Za-z]:)/;
+
+/**
+ * `path` in one comparable form: forward slashes, `.` and `..` segments
+ * and repeated separators resolved, lower case (macOS and Windows disks
+ * ignore case by default). A relative path is resolved against `cwd`.
+ */
+export function normalizePath(path: string, cwd: string | undefined): string {
+  const joined = ABSOLUTE_PATH.test(path) || cwd === undefined ? path : `${cwd}/${path}`;
+  const segments: string[] = [];
+  for (const segment of joined.replace(/\\/g, '/').split('/')) {
+    if (segment === '..') segments.pop();
+    else if (segment !== '' && segment !== '.') segments.push(segment);
+  }
+  const lead = joined.startsWith('/') || joined.startsWith('\\') ? '/' : '';
+  return (lead + segments.join('/')).toLowerCase();
+}
 
 /**
  * Whether a tool call may change the masking-policy file: a file tool
- * writing `policyFile` or any `…/nullpii/config.json`, or a shell command
- * that names one of them or `NULLPII_CONFIG`. Such a call is put to the
- * user, so text Claude read cannot quietly loosen what gets masked.
+ * writing `policyFile` or any `…/nullpii/config.json` (case, `./`, `../`
+ * and repeated separators ignored; a relative path is resolved against
+ * `cwd`), or a shell command that names a `nullpii` directory together
+ * with a `config.json`, the policy file, or `NULLPII_CONFIG`. Such a call
+ * is put to the user, so text Claude read cannot quietly loosen what gets
+ * masked. Best effort: a command can reach the file in ways no pattern
+ * names.
  */
 export function touchesPolicyFile(
   tool: string,
   input: unknown,
   policyFile: string | undefined,
+  cwd?: string,
 ): boolean {
   if (input === null || typeof input !== 'object') return false;
   const args = input as Readonly<Record<string, unknown>>;
   if (tool === 'Bash') {
     const command = typeof args.command === 'string' ? args.command : '';
-    return (
-      POLICY_IN_COMMAND.test(command) || (policyFile !== undefined && command.includes(policyFile))
-    );
+    return commandNamesPolicy(command, policyFile);
   }
   const field = WRITE_PATH_FIELDS[tool];
   const path = field === undefined ? undefined : args[field];
   if (typeof path !== 'string') return false;
-  return path === policyFile || POLICY_PATH_TAIL.test(path);
+  const target = normalizePath(path, cwd);
+  return (
+    target.endsWith(POLICY_PATH_TAIL) ||
+    (policyFile !== undefined && target === normalizePath(policyFile, undefined))
+  );
+}
+
+function commandNamesPolicy(command: string, policyFile: string | undefined): boolean {
+  if (POLICY_VARIABLE.test(command)) return true;
+  if (NULLPII_WORD.test(command) && CONFIG_FILE_WORD.test(command)) return true;
+  return policyFile !== undefined && command.toLowerCase().includes(policyFile.toLowerCase());
 }
 
 /** The masking policy the sidecar runs with (`GET /v1/sidecar/status`). */

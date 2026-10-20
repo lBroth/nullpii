@@ -2646,11 +2646,30 @@ _GLINER_WORD = re.compile(r"\w+(?:[-_]\w+)*|\S")
 # grows with the square of the padded length. A batch is cut so that
 # windows x longest^2 stays within what 8 windows of 1,024 tokens take:
 # on the CPU running out of memory kills the process, so this bound comes
-# first. A CUDA batch that still does not fit is re-run halved, down to
-# one window; a window that does not fit alone runs on the CPU, with the
-# same weights, so the model's output is kept rather than cut short.
+# first. A GPU batch (CUDA or MPS) that still does not fit is re-run
+# halved, down to one window; a window that does not fit alone runs on the
+# CPU, with the same weights, so the model's output is kept rather than cut
+# short.
 _GLINER_BATCH_SIZE = 8
 _GLINER_ATTENTION_BUDGET = _GLINER_BATCH_SIZE * 1024 * 1024
+# PyTorch has no exception class for MPS running out of memory: it raises a
+# RuntimeError with this message (CUDA raises torch.OutOfMemoryError).
+_MPS_OUT_OF_MEMORY = "MPS backend out of memory"
+
+
+def _is_out_of_memory(exc: RuntimeError) -> bool:
+    import torch
+
+    return isinstance(exc, torch.OutOfMemoryError) or str(exc).startswith(_MPS_OUT_OF_MEMORY)
+
+
+def _empty_device_cache(device: str) -> None:
+    import torch
+
+    if device == "cuda":
+        torch.cuda.empty_cache()
+    elif device == "mps":
+        torch.mps.empty_cache()
 
 
 def _gliner_windows(text: str, max_words: int, overlap_words: int) -> list[tuple[int, str]]:
@@ -2726,8 +2745,8 @@ def gliner_v2_predictor(
     `max_window_words` where the hardware cannot hold `max_len`, is cut into
     word windows (`_gliner_windows`), `batch_size` at a time (fewer where
     long windows would exceed `_GLINER_ATTENTION_BUDGET`, halved while a
-    batch runs out of GPU memory, on the CPU where one window alone does
-    not fit; `_predict.cpu_fallbacks` counts those texts); spans repeated
+    batch runs out of GPU memory (CUDA or MPS), on the CPU where one window
+    alone does not fit; `_predict.cpu_fallbacks` counts those texts); spans repeated
     across an overlap are collapsed. No other glue: no normalisation,
     recognizers or filters.
 
@@ -2767,15 +2786,15 @@ def gliner_v2_predictor(
         return max(1, min(batch_size, _GLINER_ATTENTION_BUDGET // max(1, longest) ** 2))
 
     def _inference(chunks: list[str]) -> list[list[dict]]:
-        import torch
-
         size = _batch_size_for(chunks)
         while True:
             try:
                 return model.inference(chunks, inference_labels, threshold=threshold, batch_size=size)
-            except torch.cuda.OutOfMemoryError:
-                pass  # retried below, once the failed attempt's tensors are released
-            torch.cuda.empty_cache()
+            except RuntimeError as exc:
+                if not _is_out_of_memory(exc):
+                    raise
+                # retried below, once the failed attempt's tensors are released
+            _empty_device_cache(device)
             if size == 1:
                 return _inference_on_cpu(chunks)
             size //= 2

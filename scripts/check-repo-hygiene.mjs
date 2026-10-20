@@ -41,8 +41,10 @@ const FORBIDDEN_CONTENT = [
   { rule: 'registry auth token', re: /^\s*(\/\/\S+:)?_auth(Token)?\s*=/m },
 ];
 
-/** Placeholder home paths that docs and tests may show. */
-const HOME_PATH_EXAMPLES = /\/(Users|home)\/(you|user|username|me|name|example|alice|bob)\//;
+/** Home paths that name no developer: placeholders that docs and tests may
+ * show, and `/home/runner/`, the fixed home of GitHub-hosted CI runners. */
+const HOME_PATH_EXAMPLES =
+  /\/(Users|home)\/(you|user|username|me|name|example|alice|bob)\/|\/home\/runner\//;
 
 function changedFiles(base) {
   if (base === '--all') {

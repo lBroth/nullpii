@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import anyAscii from 'any-ascii';
-import { MAX_INPUT_BYTES } from './defaults.js';
+import { MAX_INPUT_CHARS } from './defaults.js';
 import { PLACEHOLDER_SENTINEL_LEFT, PLACEHOLDER_SENTINEL_RIGHT } from './placeholder-escape.js';
 
 /** Adversarial-resistant input normalisation with offset map.
@@ -66,8 +66,8 @@ const HTML_ENTITY_MAX_LEN = 12;
 export function normalizeForDetection(text: string): NormalizeResult {
   // Refuse pathological input. Quadratic behaviour on
   // SPACED_PII_RE / per-char loops makes adversarial 1 MB+ payloads
-  // a DoS vector. Same cap as the regex pack (`MAX_INPUT_BYTES`).
-  if (text.length > MAX_INPUT_BYTES || isPureAsciiNoDecodeNeeded(text)) {
+  // a DoS vector. Same cap as the regex pack (`MAX_INPUT_CHARS`).
+  if (text.length > MAX_INPUT_CHARS || isPureAsciiNoDecodeNeeded(text)) {
     return passthroughResult(text);
   }
 

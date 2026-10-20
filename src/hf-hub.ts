@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { createHash, randomBytes } from 'node:crypto';
-import { createWriteStream, existsSync } from 'node:fs';
+import { createReadStream, createWriteStream, existsSync } from 'node:fs';
 import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -26,18 +26,26 @@ export function fileUrl(repo: string, revision: string, file: string): string {
   return `${HF_HOST}/${repo}/resolve/${revision}/${encodeURI(file)}`;
 }
 
-/**
- * Download `file` from `repo@revision` into `<destDir>/<file>` if not already
- * present and verified. Idempotent. Retries transient network errors with
- * exponential backoff before surfacing `ModelNotFoundError`.
- */
-/** `true` when `<destDir>/<file>` is already cached and matches its
- * checksum sidecar, so using it needs no network call. */
-export async function isCachedFile(destDir: string, file: string): Promise<boolean> {
-  const dest = join(destDir, file);
-  return existsSync(dest) && (await checksumMatchesSidecar(dest));
+/** `true` when `<destDir>/<file>` is already cached, matches its checksum
+ * sidecar and, when `expectedSha` is given, has that SHA-256, so using it
+ * needs no network call. */
+export async function isCachedFile(
+  destDir: string,
+  file: string,
+  expectedSha?: string,
+): Promise<boolean> {
+  const verified = await verifiedSha(join(destDir, file));
+  return verified !== null && (expectedSha === undefined || verified === expectedSha);
 }
 
+/**
+ * Download `file` from `repo@revision` into `<destDir>/<file>` if not already
+ * present and verified. Idempotent. A cached copy is used only when it
+ * matches its sidecar and, when `expectedSha` is given, that SHA-256; a
+ * cached copy with another hash is downloaded again. Retries transient
+ * network errors with exponential backoff before surfacing
+ * `ModelNotFoundError`.
+ */
 export async function ensureFile(
   repo: string,
   revision: string,
@@ -48,7 +56,7 @@ export async function ensureFile(
   const dest = join(destDir, file);
   await mkdir(dirname(dest), { recursive: true });
 
-  if (existsSync(dest) && (await checksumMatchesSidecar(dest))) {
+  if (await isCachedFile(destDir, file, options.expectedSha)) {
     logf(LOG_SCOPE, 'cache.hit', { path: dest });
     return dest;
   }
@@ -139,25 +147,41 @@ async function downloadWithTimeout(url: string, dest: string, timeoutMs: number)
     await rename(tmp, dest);
     return hash.digest('hex');
   } catch (err) {
-    await unlink(tmp).catch(() => {});
+    await removePartial(tmp);
     throw err;
   } finally {
     clearTimeout(timer);
   }
 }
 
-async function checksumMatchesSidecar(file: string): Promise<boolean> {
-  const sidecar = `${file}${SHA_SUFFIX}`;
-  if (!existsSync(sidecar)) return false;
-  const expected = (await readFile(sidecar, 'utf-8')).trim().split(/\s+/)[0] ?? '';
-  if (expected.length !== 64) return false;
-  const actual = await sha256File(file);
-  return actual === expected;
+/** Delete a partial download after a failed attempt. A missing file is
+ * fine; any other failure is logged, and the download error that led
+ * here is what the caller sees. */
+async function removePartial(path: string): Promise<void> {
+  try {
+    await unlink(path);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT')
+      logf(LOG_SCOPE, 'download.cleanup_failed', { path, errorCode: code ?? 'unknown' });
+  }
 }
 
+/** The SHA-256 of `file` when it exists and matches its checksum sidecar,
+ * else `null`. */
+async function verifiedSha(file: string): Promise<string | null> {
+  const sidecar = `${file}${SHA_SUFFIX}`;
+  if (!existsSync(file) || !existsSync(sidecar)) return null;
+  const expected = (await readFile(sidecar, 'utf-8')).trim().split(/\s+/)[0] ?? '';
+  if (expected.length !== 64) return null;
+  return (await sha256File(file)) === expected ? expected : null;
+}
+
+/** SHA-256 of a file, streamed: the ONNX graphs are 0.6–1.2 GB. */
 export async function sha256File(file: string): Promise<string> {
-  const buf = await readFile(file);
-  return createHash('sha256').update(buf).digest('hex');
+  const hash = createHash('sha256');
+  await pipeline(createReadStream(file), hash);
+  return hash.digest('hex');
 }
 
 async function writeSidecar(file: string, sha: string): Promise<void> {

@@ -73,6 +73,9 @@ export interface LogFields {
   // Filesystem / artifact metadata (paths come from the caller — never
   // synthesised from input text).
   readonly path?: string;
+  /** A system error code (`EACCES`, `EBUSY`): never a message, which can
+   * quote a path or input. */
+  readonly errorCode?: string;
   readonly modelDir?: string;
   readonly url?: string;
   readonly repo?: string;

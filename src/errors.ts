@@ -37,7 +37,8 @@ export class ModelNotInitializedError extends NullPiiError {
 
 /** Thrown when input exceeds a configured size cap. Two raise sites today:
  *  - tokenizer subword cap (`MAX_SEQUENCE_LENGTH`, unit = "tokens")
- *  - upfront byte cap on `sanitize()` input (`MAX_INPUT_BYTES`, unit = "bytes")
+ *  - upfront cap on `sanitize()` input (`MAX_INPUT_CHARS`, unit = "characters",
+ *    counted in UTF-16 code units as `string.length` counts them)
  *
  * `unit` defaults to "tokens" for backwards-compatible message shape. */
 export class TextTooLongError extends NullPiiError {
@@ -50,7 +51,7 @@ export class TextTooLongError extends NullPiiError {
   constructor(
     observed: number,
     limit: number,
-    unit: 'tokens' | 'bytes' = 'tokens',
+    unit: 'tokens' | 'characters' = 'tokens',
     options?: { cause?: unknown },
   ) {
     super(`input too long: ${observed} ${unit} > limit ${limit}`, options);

@@ -25,7 +25,7 @@ export const VALIDATED_RECOGNIZER_SCORE = 0.99998;
  *
  * Scans `text` whole, at any length: every default pattern is
  * linear-time (bounded quantifiers; `test/recognizers-linear.test.ts`),
- * and `sanitize()` caps its input at `MAX_INPUT_BYTES`. A custom
+ * and `sanitize()` caps its input at `MAX_INPUT_CHARS`. A custom
  * recognizer must be linear-time too.
  *
  * Two scan paths:

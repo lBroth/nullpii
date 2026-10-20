@@ -9,8 +9,6 @@ export {
   type PiiLabel,
 } from './labels.js';
 export {
-  CHUNK_OVERLAP_TOKENS,
-  MAX_INPUT_TOKENS,
   MAX_SEQUENCE_LENGTH,
   MODEL_DOWNLOAD_TIMEOUT_MS,
   PLACEHOLDER_REGEX,

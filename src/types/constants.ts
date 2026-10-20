@@ -1,29 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * Per-chunk cap on tokens fed into the model in a single forward pass.
- * Set to 384 to match `gliner_config.json:max_len` on the shipped
- * ONNX model — the runtime rejects sequences longer than this, so the
- * public constant matches what `sanitize()` actually accepts. Inputs
- * longer than this are split into overlapping chunks (see
- * `CHUNK_OVERLAP_TOKENS`) unless `strictLength` is set.
+ * Subword tokens fed to the model in one forward pass, prompt included:
+ * `gliner_config.json:max_len` of the shipped ONNX model. A longer text is
+ * read window by window, each window starting at the first word the
+ * previous one did not keep (`forEachWindow`), unless `strictLength` is
+ * set, which throws `TextTooLongError` instead.
  */
 export const MAX_SEQUENCE_LENGTH = 384;
-
-/**
- * Token overlap between consecutive chunks. Spans straddling a chunk
- * boundary appear in both chunks (full coverage if shorter than overlap)
- * and are deduped post-decode.
- */
-export const CHUNK_OVERLAP_TOKENS = 64;
-
-/**
- * Hard upper bound on total input tokens after tokenization. Inputs above
- * this are truncated with a debug warning to prevent pathological memory
- * use. ~32k tokens ≈ 128k chars of plain text — far beyond any normal
- * Claude prompt.
- */
-export const MAX_INPUT_TOKENS = 32_768;
 
 /** Maximum time spent downloading model artifacts before aborting. */
 export const MODEL_DOWNLOAD_TIMEOUT_MS = 300_000;

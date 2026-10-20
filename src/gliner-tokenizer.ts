@@ -6,6 +6,7 @@ import { TOKENIZER_FILE } from './defaults.js';
 import { ModelNotFoundError } from './errors.js';
 import { logf } from './log.js';
 import { fileExists } from './paths.js';
+import { MAX_SEQUENCE_LENGTH } from './types/constants.js';
 
 const LOG_SCOPE = 'nullpii:gliner-tokenizer';
 
@@ -21,7 +22,7 @@ const SEP_TOKEN_CANDIDATES = ['[SEP]', '</s>'] as const;
 
 /** From `gliner_config.json`: max_width=12, max_len=384. */
 export const DEFAULT_MAX_SPAN_WIDTH = 12;
-export const DEFAULT_MAX_SEQUENCE_LENGTH = 384;
+export const DEFAULT_MAX_SEQUENCE_LENGTH = MAX_SEQUENCE_LENGTH;
 
 /** Defence-in-depth word cap; chunker is the primary bound. */
 export const MAX_TEXT_WORDS = 500;
@@ -57,10 +58,6 @@ export interface GlinerEncodeResult {
   readonly seqLen: number;
   readonly words: readonly Word[];
   readonly numWords: number;
-  /** Number of "prompt" input tokens before the actual text words.
-   * Equals `2 * labels.length + 1` (each label has its `<<ENT>>` token,
-   * plus the final `<<SEP>>`). Used for `words_mask` `seen_words` skip. */
-  readonly promptLength: number;
   /** True if the encoder hit the configured `maxSequenceLength` and
    * truncated subwords. Caller may want to chunk the input or warn. */
   readonly truncated: boolean;
@@ -232,7 +229,6 @@ export class GlinerTokenizer {
       });
     }
 
-    const promptLength = 2 * labels.length + 1; // ENT-per-label + final SEP-token
     const truncatedWords = words.slice(0, numTextWords);
 
     return {
@@ -242,7 +238,6 @@ export class GlinerTokenizer {
       seqLen,
       words: truncatedWords,
       numWords: numTextWords,
-      promptLength,
       truncated: truncatedSubwords,
     };
   }

@@ -366,7 +366,7 @@ describe('sidecar · sanitize and restore', () => {
     const strict = {
       ...(engine.np as object),
       sanitize: async (text: string) => {
-        throw new TextTooLongError(text.length, 10, 'bytes');
+        throw new TextTooLongError(text.length, 10, 'characters');
       },
     } as unknown as NullPii;
     const { app } = await setup({}, { np: strict, vault: engine.vault });

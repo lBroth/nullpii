@@ -16,7 +16,7 @@ import {
   DEFAULT_RECOGNIZERS,
   DEFAULT_RECOGNIZERS_ENABLED,
   DEFAULT_VARIANT,
-  MAX_INPUT_BYTES,
+  MAX_INPUT_CHARS,
 } from './defaults.js';
 import { EngineDisposedError, ModelNotInitializedError, TextTooLongError } from './errors.js';
 import { resolveNonCoordinateGeolocation } from './geo-filter.js';
@@ -160,10 +160,10 @@ export class NullPii {
     sessionId: string | undefined,
     options: SanitizeOptions,
   ): Promise<SanitizeResult> {
-    // Hard cap: it bounds the work of every pass (`MAX_INPUT_BYTES`).
+    // Hard cap: it bounds the work of every pass (`MAX_INPUT_CHARS`).
     // Refuse upfront so callers learn to chunk.
-    if (text.length > MAX_INPUT_BYTES) {
-      throw new TextTooLongError(text.length, MAX_INPUT_BYTES, 'bytes');
+    if (text.length > MAX_INPUT_CHARS) {
+      throw new TextTooLongError(text.length, MAX_INPUT_CHARS, 'characters');
     }
     await this.ensureInit();
     const tokenizer = this.tokenizer;

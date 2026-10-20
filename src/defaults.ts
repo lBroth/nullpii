@@ -1019,4 +1019,4 @@ export const DEFAULT_DEDUPE_IOU = 0.5;
  * quantifiers, `test/recognizers-linear.test.ts`). Normalised text can be
  * longer than the input (transliteration), and the recognizers scan it
  * whole. */
-export const MAX_INPUT_BYTES = 1_000_000;
+export const MAX_INPUT_CHARS = 1_000_000;

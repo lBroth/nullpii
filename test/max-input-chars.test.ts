@@ -2,7 +2,7 @@
 //
 // F-06 regression test. README states inputs over 1 MB are "refused
 // upfront", but `normalizeForDetection` + `runRecognizers` silently
-// return passthrough / empty when `text.length > MAX_INPUT_BYTES`.
+// return passthrough / empty when `text.length > MAX_INPUT_CHARS`.
 // Result: ML runs alone, regex pack + adversarial-normalize disabled,
 // no error, no signal — silent recall collapse.
 //
@@ -62,7 +62,7 @@ vi.mock('../src/gliner-tokenizer.js', async () => {
 
 const { NullPii } = await import('../src/nullpii.js');
 const { TextTooLongError } = await import('../src/errors.js');
-const { MAX_INPUT_BYTES } = await import('../src/defaults.js');
+const { MAX_INPUT_CHARS } = await import('../src/defaults.js');
 
 let np: InstanceType<typeof NullPii>;
 
@@ -74,27 +74,27 @@ afterEach(async () => {
   await np.dispose();
 });
 
-describe('F-06 · MAX_INPUT_BYTES refuses oversized input', () => {
-  it('throws TextTooLongError when text.length > MAX_INPUT_BYTES', async () => {
-    const huge = 'a'.repeat(MAX_INPUT_BYTES + 1);
+describe('F-06 · MAX_INPUT_CHARS refuses oversized input', () => {
+  it('throws TextTooLongError when text.length > MAX_INPUT_CHARS', async () => {
+    const huge = 'a'.repeat(MAX_INPUT_CHARS + 1);
     await expect(np.sanitize(huge)).rejects.toBeInstanceOf(TextTooLongError);
   });
 
   it('error message carries observed length and limit', async () => {
-    const huge = 'a'.repeat(MAX_INPUT_BYTES + 1);
+    const huge = 'a'.repeat(MAX_INPUT_CHARS + 1);
     try {
       await np.sanitize(huge);
       throw new Error('expected throw');
     } catch (err) {
       expect(err).toBeInstanceOf(TextTooLongError);
       const msg = (err as Error).message;
-      expect(msg).toContain(String(MAX_INPUT_BYTES + 1));
-      expect(msg).toContain(String(MAX_INPUT_BYTES));
+      expect(msg).toContain(String(MAX_INPUT_CHARS + 1));
+      expect(msg).toContain(String(MAX_INPUT_CHARS));
     }
   });
 
-  it('accepts input at exactly MAX_INPUT_BYTES', async () => {
-    const ok = 'a'.repeat(MAX_INPUT_BYTES);
+  it('accepts input at exactly MAX_INPUT_CHARS', async () => {
+    const ok = 'a'.repeat(MAX_INPUT_CHARS);
     await expect(np.sanitize(ok)).resolves.toBeTruthy();
   });
 

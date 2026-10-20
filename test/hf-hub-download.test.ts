@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -60,12 +60,25 @@ describe('ensureFile', () => {
     expect(readdirSync(dir).filter((f) => f.includes('.partial'))).toEqual([]);
   });
 
-  it('deletes a download whose hash is not the expected one', async () => {
+  it('deletes a download whose hash is not the expected one, without retrying', async () => {
+    serve(200, 200, 200);
+    await expect(
+      ensureFile('org/name', 'main', 'model.onnx', dir, { ...OPTS, expectedSha: 'f'.repeat(64) }),
+    ).rejects.toBeInstanceOf(ModelNotFoundError);
+    expect(calls).toHaveLength(1);
+    expect(readdirSync(dir)).toEqual([]);
+  });
+
+  it('keeps a verified copy in place when a new download has the wrong hash', async () => {
+    const verified = 'verified weights';
+    writeFileSync(join(dir, 'model.onnx'), verified);
+    writeFileSync(join(dir, 'model.onnx.sha256'), await sha256File(join(dir, 'model.onnx')));
     serve(200);
     await expect(
       ensureFile('org/name', 'main', 'model.onnx', dir, { ...OPTS, expectedSha: 'f'.repeat(64) }),
     ).rejects.toBeInstanceOf(ModelNotFoundError);
-    expect(existsSync(join(dir, 'model.onnx'))).toBe(false);
+    expect(readFileSync(join(dir, 'model.onnx'), 'utf8')).toBe(verified);
+    expect(await isCachedFile(dir, 'model.onnx')).toBe(true);
   });
 
   it('downloads again when the cached file has another hash than expected', async () => {

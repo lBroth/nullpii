@@ -62,21 +62,22 @@ export async function ensureFile(
   }
 
   const url = fileUrl(repo, revision, file);
-  const sha = await retryDownload(url, dest, options.timeoutMs);
-  if (options.expectedSha !== undefined && options.expectedSha !== sha) {
-    await unlink(dest);
-    throw new ModelNotFoundError(`${dest} (sha mismatch)`);
-  }
+  const sha = await retryDownload(url, dest, options.timeoutMs, options.expectedSha);
   await writeSidecar(dest, sha);
   return dest;
 }
 
-async function retryDownload(url: string, dest: string, timeoutMs: number): Promise<string> {
+async function retryDownload(
+  url: string,
+  dest: string,
+  timeoutMs: number,
+  expectedSha: string | undefined,
+): Promise<string> {
   let lastErr: unknown;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
       logf(LOG_SCOPE, 'download.start', { url, attempt, maxAttempts: MAX_ATTEMPTS });
-      return await downloadWithTimeout(url, dest, timeoutMs);
+      return await downloadWithTimeout(url, dest, timeoutMs, expectedSha);
     } catch (err) {
       lastErr = err;
       if (!isRetryable(err) || attempt === MAX_ATTEMPTS) break;
@@ -105,6 +106,9 @@ const RETRYABLE_ERROR_CODES = new Set([
 ]);
 
 function isRetryable(err: unknown): boolean {
+  // The server sent other bytes than the pinned ones: asking again gets
+  // the same file.
+  if (err instanceof ShaMismatchError) return false;
   if (err instanceof ModelNotFoundError) {
     const m = err.message;
     const httpMatch = m.match(/HTTP (\d+)/);
@@ -122,7 +126,22 @@ function isRetryable(err: unknown): boolean {
   return false;
 }
 
-async function downloadWithTimeout(url: string, dest: string, timeoutMs: number): Promise<string> {
+/** A download whose SHA-256 is not the one pinned for the file. */
+class ShaMismatchError extends ModelNotFoundError {
+  constructor(url: string) {
+    super(`${url} (sha mismatch)`);
+  }
+}
+
+/** Download `url` to a temporary file, hashing it on the way, and move it
+ * to `dest` only once its hash is known to be `expectedSha` (when given),
+ * so a verified copy already at `dest` is never replaced by a bad one. */
+async function downloadWithTimeout(
+  url: string,
+  dest: string,
+  timeoutMs: number,
+  expectedSha: string | undefined,
+): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   // Per-process, per-attempt temp name: two concurrent `sanitize()` calls on
@@ -144,8 +163,10 @@ async function downloadWithTimeout(url: string, dest: string, timeoutMs: number)
       },
       createWriteStream(tmp),
     );
+    const sha = hash.digest('hex');
+    if (expectedSha !== undefined && sha !== expectedSha) throw new ShaMismatchError(url);
     await rename(tmp, dest);
-    return hash.digest('hex');
+    return sha;
   } catch (err) {
     await removePartial(tmp);
     throw err;

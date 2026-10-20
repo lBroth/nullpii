@@ -6,7 +6,7 @@ from __future__ import annotations
 import datetime as dt
 
 from .. import values as V
-from ..core import F, J, T, Seg, esc_json, grid, lines, numbered, table
+from ..core import F, J, T, Seg, numbered
 from ..phrases import say
 from . import template
 
@@ -231,11 +231,11 @@ def jest_snapshot_user(d):
     street, cityline = _addr(d, p, "street_full"), _addr(d, p, "city_line")
     joined = g.date(V.random_date(r, 2017, 2025), "iso", p)
     d.user(d.L(
-        en=f"The ProfileCard snapshot test broke after I touched the address formatting. Should I just update the snapshot or is it a real bug?",
-        it=f"Il test snapshot di ProfileCard si è rotto dopo che ho toccato la formattazione dell'indirizzo. Aggiorno lo snapshot o è un bug vero?",
-        de=f"Der Snapshot-Test von ProfileCard ist kaputt, seit ich die Adressformatierung angefasst habe. Snapshot einfach aktualisieren oder ist das ein echter Bug?",
-        fr=f"Le test snapshot de ProfileCard a cassé après ma modif du formatage d'adresse. Je mets juste à jour le snapshot ou c'est un vrai bug ?",
-        es=f"El test de snapshot de ProfileCard se rompió al tocar el formato de la dirección. ¿Actualizo el snapshot o es un bug de verdad?"))
+        en="The ProfileCard snapshot test broke after I touched the address formatting. Should I just update the snapshot or is it a real bug?",
+        it="Il test snapshot di ProfileCard si è rotto dopo che ho toccato la formattazione dell'indirizzo. Aggiorno lo snapshot o è un bug vero?",
+        de="Der Snapshot-Test von ProfileCard ist kaputt, seit ich die Adressformatierung angefasst habe. Snapshot einfach aktualisieren oder ist das ein echter Bug?",
+        fr="Le test snapshot de ProfileCard a cassé après ma modif du formatage d'adresse. Je mets juste à jour le snapshot ou c'est un vrai bug ?",
+        es="El test de snapshot de ProfileCard se rompió al tocar el formato de la dirección. ¿Actualizo el snapshot o es un bug de verdad?"))
     d.agent(d.L(en="Let me run that suite and read the diff first.", it="Lancio la suite e leggo prima il diff.",
                 de="Ich lasse die Suite laufen und lese zuerst den Diff.", fr="Je lance la suite et je lis d'abord le diff.",
                 es="Lanzo la suite y leo primero el diff."))
@@ -398,7 +398,8 @@ def java_spring_exception_mdc(d):
         return F("[uid=", u, " email=", e, " ip=", ip, "]")
 
     log = []
-    thread = lambda: f"[nio-8080-exec-{r.randint(1, 10)}]"
+    def thread() -> str:
+        return f"[nio-8080-exec-{r.randint(1, 10)}]"
     for _ in range(r.randint(12, 34) if r.random() < 0.25 else r.randint(2, 9)):
         q = d.person()
         log.append(F(ts(), "  INFO 1 --- [", app, "] ", thread(), " ", pkg[:1], ".", d.slug[:1], ".signup.SignupController   : ",
@@ -1024,8 +1025,7 @@ def android_crash_location(d):
     pkg = f"com.{d.slug}.{r.choice(['fleet', 'driver', 'courier', 'field'])}"
     ver = r.choice(["3.14.0", "3.14.1", "4.2.0", "2.9.3"])
     code = ver.replace(".", "") + "0"
-    pid, tid = r.randint(2000, 32000), 0
-    tid = pid
+    pid = r.randint(2000, 32000)
     driver = d.person()
     line = r.randint(50, 140)
     d.user(d.L(

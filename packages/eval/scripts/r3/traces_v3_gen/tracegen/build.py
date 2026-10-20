@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 from .core import GOLD_SET, Assembled, InvariantError, assemble, check_document
 from .doc import Doc, Mode
-from .templates import REGISTRY, Template, load_all
+from .templates import Template, load_all
 
 MIN_LEN = 300
 MAX_LEN = 20_000
@@ -102,7 +102,7 @@ def assign_modes(slots: list[str], rng: random.Random) -> list[str]:
 
 
 def assign_langs(n_docs: int, rng: random.Random) -> list[str]:
-    langs = [l for l, _ in LANG_WEIGHTS]
+    langs = [lang for lang, _ in LANG_WEIGHTS]
     weights = [w for _, w in LANG_WEIGHTS]
     return rng.choices(langs, weights=weights, k=n_docs)
 

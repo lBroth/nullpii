@@ -8,7 +8,7 @@ import datetime as dt
 import json
 
 from .. import values as V
-from ..core import F, J, T, Seg, esc_json, grid, lines, numbered, table
+from ..core import F, J, T, Seg, esc_json, lines, numbered
 from ..phrases import say
 from . import template
 
@@ -563,7 +563,7 @@ def har_cookie_analysis(d):
                 es=f"La entrada {idx} es el POST de vuelta desde la página de pago. Completa:"))
     d.tool("sh", f"jq '.log.entries[{idx}]' debug/logout.har", _js(entry))
     prev = {"name": "connect.sid", "value": old_sid}
-    d.tool("sh", f"jq '.log.entries[0].request.cookies[] | select(.name==\"connect.sid\")' debug/logout.har", _js(prev))
+    d.tool("sh", "jq '.log.entries[0].request.cookies[] | select(.name==\"connect.sid\")' debug/logout.har", _js(prev))
     d.agent(say(d, "explain"), "\n\n",
             d.L(en="The session cookie is present on the first-party requests but missing on the cross-site POST coming back from the payment page. With no SameSite attribute the browser treats it as `Lax`, and Lax cookies are not sent on cross-site POST navigations. The server sees no session, issues a fresh `connect.sid` and redirects to /login.",
                 it="Il cookie di sessione c'è nelle richieste first-party ma manca nel POST cross-site che torna dalla pagina di pagamento. Senza attributo SameSite il browser lo tratta come `Lax`, e i cookie Lax non vengono inviati nelle navigazioni POST cross-site. Il server non vede sessione, ne crea una nuova e redirige su /login.",

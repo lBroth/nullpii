@@ -4,8 +4,7 @@ style (consistent within a template); styles differ across templates."""
 
 from __future__ import annotations
 
-from .core import F, Seg, T, esc_json, ensure_nl, lstrip_nl, merge_plain, prefix_lines, rstrip_nl
-from .distract import fmt_ts
+from .core import F, esc_json, ensure_nl, lstrip_nl, prefix_lines, rstrip_nl
 from .values import HEX, rand_str
 
 TOOLS = ("sh", "read", "edit", "write", "grep", "glob", "fetch")

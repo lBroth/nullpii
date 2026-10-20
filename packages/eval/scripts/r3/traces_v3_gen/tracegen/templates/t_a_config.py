@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import base64
 
-from ..core import F, J, T, Seg, esc_json, grid, lines, numbered, table
+from ..core import F, J, T, Seg, grid, lines, numbered, table
 from ..phrases import say
 from . import template
 
@@ -95,7 +95,7 @@ def k8s_manifests(d):
                   fr="le Deployment référence la clé `⟦w⟧`, mais secret.yaml définit `⟦k⟧`. Le `secretKeyRef` ne se résout pas et l'appli s'arrête avant la readiness probe.",
                   es="el Deployment referencia la clave `⟦w⟧`, pero secret.yaml define `⟦k⟧`. El `secretKeyRef` no se resuelve y la app termina antes de la readiness probe."), w=wrong, k=right))
     d.tool("edit", "k8s/deployment.yaml",
-           lines(f"@@ env:", f"             - name: {right}", "               valueFrom:", "                 secretKeyRef:",
+           lines("@@ env:", f"             - name: {right}", "               valueFrom:", "                 secretKeyRef:",
                  f"                   name: {app}-env", f"-                  key: {wrong}", f"+                  key: {right}"))
     d.tool("sh", f"kubectl apply -f k8s/ && kubectl -n {ns} rollout status deploy/{app} --timeout=120s",
            lines(f"deployment.apps/{app} configured", f"service/{app} unchanged", f"secret/{app}-env unchanged",
@@ -607,7 +607,7 @@ def ssh_config_hosts(d):
         hosts.append(T("Host nas\n  HostName ⟦ip⟧\n  User ⟦u⟧\n  # MAC for wake-on-lan: ⟦mac⟧\n", ip=g.ip("private"), u=g.user(me), mac=g.mac()))
     r.shuffle(hosts)
     d.tool("read", "~/.ssh/config", J("\n", hosts))
-    fp = x.id("SHA256:" + x.short(43).text)
+    _fp = x.id("SHA256:" + x.short(43).text)
     dbg = [
         "OpenSSH_9.6p1, LibreSSL 3.3.6",
         T("debug1: Reading configuration data ⟦h⟧/.ssh/config", h=home),

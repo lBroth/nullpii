@@ -7,7 +7,7 @@ import base64 as _b64
 import datetime as _dt
 
 from .. import values as V
-from ..core import F, J, T, Seg, esc_json, grid, lines, numbered, table
+from ..core import F, J, T, Seg, grid, lines, numbered, table
 from ..phrases import say
 from . import template
 
@@ -263,7 +263,7 @@ def postgres_slow_query_log(d):
                        db=db, mig=mig, m=target_mail),
                lines("CREATE INDEX", "                                   QUERY PLAN",
                      "-------------------------------------------------------------------------------",
-                     f" Index Scan using customers_lower_email_idx on customers  (cost=0.43..8.45 rows=1 width=8) (actual time=0.031..0.033 rows=1 loops=1)"))
+                     " Index Scan using customers_lower_email_idx on customers  (cost=0.43..8.45 rows=1 width=8) (actual time=0.031..0.033 rows=1 loops=1)"))
     d.agent(d.L(en="One more thing: the log is full of customer e-mails and phone numbers in plain text (statements and bind parameters). I'd turn that off on the server:",
                 it="Un'altra cosa: il log è pieno di e-mail e numeri di telefono dei clienti in chiaro (statement e parametri). Lo disattiverei sul server:",
                 de="Noch etwas: Das Log ist voller Kunden-E-Mails und Telefonnummern im Klartext (Statements und Bind-Parameter). Das würde ich serverseitig abstellen:",
@@ -1148,7 +1148,7 @@ def k8s_events_ingress(d):
             status, up, svc = 404, F("-"), "[]"
         else:
             path = r.choice(["/v1/orders?page=2", "/v1/health", "/v1/catalog", "/v1/me"])
-            status, up, svc = r.choice([200, 200, 200, 304]), F(r.choice(upstream), ":", x.port(8080)), f"[api-api-svc-8080]"
+            status, up, svc = r.choice([200, 200, 200, 304]), F(r.choice(upstream), ":", x.port(8080)), "[api-api-svc-8080]"
         rows.append(T('⟦ip⟧ - - [⟦t⟧] "GET ⟦p⟧ HTTP/2.0" ⟦s⟧ ⟦b⟧ "-" "⟦ua⟧" ⟦rl⟧ ⟦rt⟧ ⟦svc⟧ [] ⟦up⟧ ⟦ub⟧ ⟦urt⟧ ⟦us⟧ ⟦rid⟧',
                       ip=r.choice(clients), t=x.ts("clf", tick=(0.1, 20)), p=path, s=str(status),
                       b=str(r.randint(146, 548) if status == 404 else r.randint(100, 9000)),

@@ -138,7 +138,7 @@ def main() -> None:
     parser.add_argument("--max-spans-existing", type=int, default=1)
     args = parser.parse_args()
 
-    rows = [json.loads(l) for l in args.input.open()]
+    rows = [json.loads(line) for line in args.input.open()]
     report_lines: list[str] = []
     enriched_count = 0
     new_span_count = 0

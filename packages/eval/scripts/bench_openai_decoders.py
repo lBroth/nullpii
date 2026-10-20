@@ -19,6 +19,9 @@ sys.path.insert(0, str(ROOT / "packages" / "eval" / "src"))
 sys.path.insert(0, str(ROOT / "packages" / "eval" / "scripts" / "train"))
 
 from nullpii_eval import metrics, public_datasets  # noqa: E402
+
+# openai/privacy-filter on the hub, 2026-10-20.
+OPF_REVISION = "7ffa9a043d54d1be65afb281eddf0ffbe629385b"
 from nullpii_eval.datasets import Span as MetricSpan  # noqa: E402
 from qualitative_compare import _strip_bioes  # noqa: E402
 
@@ -84,7 +87,7 @@ def predict_bioes(model, tok, text: str, device: str) -> list[tuple[str, int, in
 
 
 def to_metric(spans):
-    return [MetricSpan(label=l, start=s, end=e) for l, s, e in spans]
+    return [MetricSpan(label=label, start=s, end=e) for label, s, e in spans]
 
 
 def f1(samples, predict_fn) -> tuple[dict, float]:
@@ -130,16 +133,18 @@ def main() -> None:
 
     print("[load] openai/privacy-filter (HF pipeline + raw model)…")
     from transformers import AutoModelForTokenClassification, AutoTokenizer, pipeline
+    # Remote code runs only at a pinned, reviewed revision.
     pipe = pipeline(
         task="token-classification",
         model="openai/privacy-filter",
+        revision=OPF_REVISION,
         aggregation_strategy="simple",
         device=0 if args.device == "cuda" else -1,
         trust_remote_code=True,
     )
-    tok = AutoTokenizer.from_pretrained("openai/privacy-filter", trust_remote_code=True)
+    tok = AutoTokenizer.from_pretrained("openai/privacy-filter", revision=OPF_REVISION, trust_remote_code=True)
     model = AutoModelForTokenClassification.from_pretrained(
-        "openai/privacy-filter", trust_remote_code=True,
+        "openai/privacy-filter", revision=OPF_REVISION, trust_remote_code=True,
     ).to(args.device).eval()
     print()
 

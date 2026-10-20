@@ -9,7 +9,7 @@ import random
 
 from . import distract as X
 from . import values as V
-from .core import F, Seg, T, merge_plain
+from .core import F, Seg, merge_plain
 from .lists import (COMPANIES, COUNTRY_OF, HOSTS, LOCALES, PLACEHOLDER_PEOPLE, PROJECTS, PUBLIC_ENTITIES,
                     PUBLIC_FIGURES, PUBLIC_URLS)
 from .styles import STYLES

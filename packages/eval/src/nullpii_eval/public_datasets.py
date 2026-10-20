@@ -4,8 +4,6 @@ Each loader returns `(samples, citation)` where samples is a list of
 `(text, [Span, ...])` and citation is a stable string for the report.
 
 Datasets:
-- `conll2003`     — open. PER / LOC / ORG / MISC. Limited PII coverage,
-                    used as a NER sanity check.
 - `wikiann`       — open, multi-lingual. PER / LOC / ORG.
 - `ai4privacy/pii-masking-300k` — gated; needs `HF_TOKEN`.
 - `ai4privacy/pii-masking-400k` — newer ai4privacy release.
@@ -16,13 +14,14 @@ Datasets:
 """
 from __future__ import annotations
 
+import re
+
 from dataclasses import dataclass
 from typing import Literal
 
 from .datasets import Sample, Span
 
 DatasetName = Literal[
-    "conll2003",
     "wikiann",
     "ai4privacy/pii-masking-300k",
     "ai4privacy/pii-masking-400k",
@@ -61,8 +60,6 @@ _NER_LABEL_MAP = {
 def load(
     name: DatasetName, *, max_samples: int | None = None, locale: str = "en",
 ) -> PublicDataset:
-    if name == "conll2003":
-        return _load_conll(max_samples)
     if name == "wikiann":
         return _load_wikiann(max_samples, lang=locale)
     if name == "ai4privacy/pii-masking-300k":
@@ -88,24 +85,6 @@ def load(
     if name == "oasst-dev-planted":
         return _load_oasst_dev_planted(max_samples)
     raise ValueError(f"unknown public dataset: {name}")
-
-
-def _load_conll(max_samples: int | None) -> PublicDataset:
-    from datasets import load_dataset
-
-    ds = load_dataset("conll2003", split="test", trust_remote_code=True)
-    samples: list[Sample] = []
-    for row in ds:
-        if max_samples is not None and len(samples) >= max_samples:
-            break
-        sample = _row_to_sample(row, label_field="ner_tags", tokens_field="tokens", schema="bio_conll")
-        if sample is not None:
-            samples.append(sample)
-    return PublicDataset(
-        name="conll2003",
-        citation="Tjong Kim Sang & De Meulder, 2003. CoNLL-2003 NER (test split).",
-        samples=tuple(samples),
-    )
 
 
 def _load_wikiann(max_samples: int | None, *, lang: str = "en") -> PublicDataset:
@@ -553,7 +532,6 @@ def _load_isotonic(
     cap, so pass `row_offset=200000` for a clean held-out split.
     """
     import ast
-    import sys
 
     from datasets import load_dataset
 
@@ -1104,18 +1082,17 @@ def _load_thestack_planted(max_samples: int | None) -> PublicDataset:
 # prompt distribution + ground truth — closest thing to "what users
 # actually paste into LLMs" with annotated PII.
 
-import re as _re_lmsys
 
-_DEV_HEURISTICS: tuple[_re_lmsys.Pattern, ...] = (
-    _re_lmsys.compile(r"```[\w+-]*\n"),                 # fenced code block
-    _re_lmsys.compile(r"^\s*(?:File|at)\s+[\w./]+:\d+", _re_lmsys.MULTILINE),  # stack trace
-    _re_lmsys.compile(r"^\s*[A-Z_]{3,}=[\w\-./:]+", _re_lmsys.MULTILINE),       # env var
-    _re_lmsys.compile(r"\b(?:npm install|pip install|cargo build|go run|docker run)\b"),
-    _re_lmsys.compile(r"\b(?:Traceback|Error|Exception|panic|undefined reference)\b"),
-    _re_lmsys.compile(r"^\s*(?:#|//|--|<!--)\s+\w+", _re_lmsys.MULTILINE),  # code comment
-    _re_lmsys.compile(r"\b(?:SELECT|INSERT|UPDATE|DELETE|CREATE TABLE)\b"),  # SQL
-    _re_lmsys.compile(r"\b(?:GET|POST|PUT|DELETE)\s+/[\w/-]+\s+HTTP/"),      # HTTP
-    _re_lmsys.compile(r"\b(?:function|def|class|impl|interface|struct)\s+\w+"),  # code def
+_DEV_HEURISTICS: tuple[re.Pattern, ...] = (
+    re.compile(r"```[\w+-]*\n"),                 # fenced code block
+    re.compile(r"^\s*(?:File|at)\s+[\w./]+:\d+", re.MULTILINE),  # stack trace
+    re.compile(r"^\s*[A-Z_]{3,}=[\w\-./:]+", re.MULTILINE),       # env var
+    re.compile(r"\b(?:npm install|pip install|cargo build|go run|docker run)\b"),
+    re.compile(r"\b(?:Traceback|Error|Exception|panic|undefined reference)\b"),
+    re.compile(r"^\s*(?:#|//|--|<!--)\s+\w+", re.MULTILINE),  # code comment
+    re.compile(r"\b(?:SELECT|INSERT|UPDATE|DELETE|CREATE TABLE)\b"),  # SQL
+    re.compile(r"\b(?:GET|POST|PUT|DELETE)\s+/[\w/-]+\s+HTTP/"),      # HTTP
+    re.compile(r"\b(?:function|def|class|impl|interface|struct)\s+\w+"),  # code def
 )
 
 

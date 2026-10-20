@@ -68,7 +68,7 @@ def compute(docs: list) -> dict:
         "documents_per_template": {t: {"count": per_tpl[t], "style": REGISTRY[t].style, "types": list(REGISTRY[t].types)}
                                    for t in sorted(per_tpl)},
         "max_template_share": max(per_tpl.values()) / n,
-        "spans_per_category": {l: {"spans": span_counts[l], "documents": span_docs[l]} for l in GOLD_LABELS},
+        "spans_per_category": {label: {"spans": span_counts[label], "documents": span_docs[label]} for label in GOLD_LABELS},
         "distractors_per_class": {c: {"regions": reg_counts[c], "documents": reg_docs[c]} for c in DISTRACTOR_CLASSES},
         "total_gold_spans": sum(span_counts.values()),
         "total_distractor_regions": sum(reg_counts.values()),

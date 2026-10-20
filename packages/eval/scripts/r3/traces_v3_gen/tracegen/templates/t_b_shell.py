@@ -8,7 +8,7 @@ import base64
 import datetime as dt
 
 from .. import values as V
-from ..core import F, J, T, Seg, esc_json, grid, lines, numbered, table
+from ..core import F, J, T, Seg, grid, lines, numbered, table
 from ..phrases import say
 from . import template
 
@@ -1517,7 +1517,7 @@ def mysql_dump_restore(d):
     if mariadb:
         out = F("ERROR 1273 (HY000) at line 25: Unknown collation: 'utf8mb4_0900_ai_ci'\n")
     d.tool("sh", F("mysql -u root -p", pw, f" -e 'CREATE DATABASE IF NOT EXISTS {db}_dev' && zcat ~/dumps/", fname,
-                   f" | mysql -u root -p", pw, f" {db}_dev"), out)
+                   " | mysql -u root -p", pw, f" {db}_dev"), out)
     if mariadb:
         d.agent(d.L(en="Your local server is MariaDB, which doesn't know MySQL 8's default collation. Rewriting it on the fly.",
                     it="Il server locale è MariaDB, che non conosce la collation di default di MySQL 8. La riscrivo al volo.",

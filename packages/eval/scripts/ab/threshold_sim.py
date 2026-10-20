@@ -205,7 +205,7 @@ def main() -> None:
     start = json.loads(args.start)
     dev = None
     if args.dev_scores:
-        lengths = {json.loads(l)["dataset"]: len(json.loads(l)["text"]) for l in args.dev_texts.read_text().splitlines() if l.strip()}
+        lengths = {json.loads(line)["dataset"]: len(json.loads(line)["text"]) for line in args.dev_texts.read_text().splitlines() if line.strip()}
         dev = [(lengths[r["dataset"]], r["spans"]) for r in map(json.loads, args.dev_scores.read_text().splitlines()) if r]
 
     if args.checkpoints:

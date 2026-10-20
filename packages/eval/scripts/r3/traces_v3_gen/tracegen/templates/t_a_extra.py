@@ -6,7 +6,7 @@ from __future__ import annotations
 import datetime as dt
 
 from .. import values as V
-from ..core import F, J, T, Seg, grid, lines, numbered, table
+from ..core import F, J, T, Seg, lines, numbered, table
 from ..phrases import say
 from . import template
 

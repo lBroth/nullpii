@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from ..core import F, J, T, esc_json, grid, lines, numbered, table
+from ..core import F, T, lines, table
 from ..phrases import say
 from . import template
 

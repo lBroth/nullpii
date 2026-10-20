@@ -335,7 +335,7 @@ def support_email_thread(d):
     g, x, r = d.g, d.x, d.rng
     cust = d.person()
     sup = d.person(d.locale)
-    cl = d.lang_of(cust)
+    _cl = d.lang_of(cust)
     order = x.id(f"#{r.randint(10000, 99999)}")
     old_addr = g.addr(cust)
     moved = d.person(cust.locale)  # used only for a fresh address
@@ -1041,7 +1041,7 @@ def secret_scanner_triage(d):
         verdict.append(T("- false positive `⟦r⟧` in ⟦p⟧:⟦l⟧ (documentation/test placeholder)", r=rid, p=path, l=x.num(line)))
     d.agent(d.L(en="Triage:", it="Triage:", de="Triage:", fr="Tri :", es="Triaje:"), "\n", J("\n", verdict))
     if fps:
-        d.tool("write", ".gitleaksignore", lines(*[F(sha, ":", p, ":", rid, ":", x.num(l)) for rid, p, l, _, sha, _p in fps]))
+        d.tool("write", ".gitleaksignore", lines(*[F(sha, ":", p, ":", rid, ":", x.num(length)) for rid, p, length, _, sha, _p in fps]))
     if real:
         d.agent(say(d, "secret_warning", x=real[0][1]), "\n", d.L(
             en="Rewriting history does not revoke a key, so rotation comes first.",
@@ -1411,9 +1411,9 @@ def insurance_claim_parser(d):
         es="Las regex solo conocen las etiquetas en inglés y la fecha ISO. Este parte usa " + ("etiquetas localizadas" if lang != "en" else "una fecha no ISO") + ". Mapeo las etiquetas por idioma, acepto los formatos de fecha habituales y guiones en las matrículas."))
     d.tool("edit", "claims/parser.py", lines(
         "+LABELS = {",
-        f'+    "policyholder": ["Policyholder", "Contraente", "Versicherungsnehmer", "Assuré", "Tomador"],',
-        f'+    "licence": ["Driving licence no.", "N. patente", "Führerscheinnummer", "N° de permis", "N.º de permiso"],',
-        f'+    "plate": ["Registration", "Targa", "Kennzeichen", "Immatriculation", "Matrícula"],',
+        '+    "policyholder": ["Policyholder", "Contraente", "Versicherungsnehmer", "Assuré", "Tomador"],',
+        '+    "licence": ["Driving licence no.", "N. patente", "Führerscheinnummer", "N° de permis", "N.º de permiso"],',
+        '+    "plate": ["Registration", "Targa", "Kennzeichen", "Immatriculation", "Matrícula"],',
         "+    ...",
         "+}",
         '+DATE_FORMATS = ["%Y-%m-%d", "%d/%m/%Y", "%d.%m.%Y", "%m/%d/%Y", "%B %d, %Y"]',

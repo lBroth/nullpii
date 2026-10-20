@@ -59,9 +59,7 @@ from nullpii_eval.adapters_openmed import (
 )
 from nullpii_eval.adapters_presidio import presidio_predictor as presidio_docs_predictor
 from nullpii_eval.adapters import (
-    DEFAULT_REGEX_PATTERNS,
     ETTIN_68M,
-    MINIMAL_REGEX_PATTERNS,
     LabelCut,
     PII_IDENTIFIER,
     _KNOWLEDGATOR_LABELS,
@@ -70,24 +68,17 @@ from nullpii_eval.adapters import (
     _NEMOTRON_TOKEN_LABEL_MAP,
     _URCHADE_LABELS,
     _URCHADE_TO_NULLPII,
-    boundary_refined_predictor,
     deberta_pii_predictor,
-    domain_routed_predictor,
-    gliner_lora_predictor,
     gliner_v2_predictor,
     hf_token_classifier_predictor,
-    multi_ensemble_predictor,
-    never_pii_filter_predictor,
     nullpii_runtime_predictor,
     openai_privacy_filter_predictor,
     openmed_privacy_filter_predictor,
     piiranha_predictor,
     rizzo_pii_predictor,
-    url_filter_predictor,
 )
 from nullpii_eval.datasets import Sample, Span
 from nullpii_eval.metrics import evaluate, macro_f1
-from nullpii_eval.router import make_embedding_detector as _make_embedding_detector
 
 
 # ─── Dataset registry ────────────────────────────────────────────
@@ -440,77 +431,13 @@ def build_tools(args) -> dict[str, Callable]:
     global _BATCH
     _BATCH = int(os.environ.get("NULLPII_BENCH_BATCH", "32"))
 
-    # ─── LoRA per-domain adapter helper ──────────────────────────
-    # Loaded internally by router-embedding only. The
-    # individual per-domain adapters are NOT exposed as user-facing
-    # tools — release scope is the two routers.
-    def _adapter(
-        profile: str,
-        *,
-        regex_pack=DEFAULT_REGEX_PATTERNS,
-        drop_rfc1918: bool,
-        use_expanded_prompts: bool = False,
-    ):
-        # KEEP `primary`, do NOT switch to `score_ranked`.
-        # The audit (2026-05-04) recommended `score_ranked` to prevent
-        # CF/IBAN regex matches overlapping with model `private_person`
-        # spans from being dropped. Empirically tested 2026-05-05 on
-        # 9-dataset subset; `score_ranked` regressed adversarial-typo
-        # 0.940 → 0.635 (−0.30), argilla-pii 0.600 → 0.572 (−0.029),
-        # nullpii-bench 0.728 → 0.725 (−0.003). regex pack is
-        # already high-precision (BTC validated, IDN reverted, F09
-        # context-anchored phones); letting ML scores override correct
-        # regex matches lowered F1 net. Audit-F11 closed as
-        # "investigated, recommendation rejected based on bench
-        # evidence".
-        return never_pii_filter_predictor(
-            inner=boundary_refined_predictor(
-                inner=multi_ensemble_predictor(
-                    predictors=[
-                        url_filter_predictor(patterns=regex_pack),
-                        gliner_lora_predictor(
-                            "urchade/gliner_multi_pii-v1",
-                            f"packages/eval/results/train/adapters/{profile}/adapter",
-                            device=backend,
-                            threshold=args.gliner_threshold,
-                            normalize_input=True,
-                            use_expanded_prompts=use_expanded_prompts,
-                        ),
-                    ],
-                    strategy="primary",
-                ),
-            ),
-            drop_rfc1918=drop_rfc1918,
-        )
-
-    def _routes(*, with_enterprise: bool) -> dict[str, Callable]:
-        routes = {
-            "devops":    _adapter("devops",               regex_pack=DEFAULT_REGEX_PATTERNS, drop_rfc1918=args.drop_rfc1918),
-            "legal":     _adapter("legal",                regex_pack=MINIMAL_REGEX_PATTERNS, drop_rfc1918=False),
-            "medical":   _adapter("medical", regex_pack=MINIMAL_REGEX_PATTERNS, drop_rfc1918=False),
-            "narrative": _adapter("narrative",            regex_pack=MINIMAL_REGEX_PATTERNS, drop_rfc1918=False),
-        }
-        if with_enterprise:
-            # 5th route — Nemotron-aug-trained enterprise adapter,
-            # gated at margin=0.10 in the embedding detector.
-            routes["enterprise"] = _adapter(
-                "enterprise",
-                regex_pack=DEFAULT_REGEX_PATTERNS,
-                drop_rfc1918=args.drop_rfc1918,
-                use_expanded_prompts=True,
-            )
-        return routes
-
     builders: dict[str, Callable[[], Callable]] = {
         # ─── nullpii — local npm runtime (canonical user-facing row) ──
         # Spawns `node bin/nullpii.mjs scan --ndjson` from the local
-        # build (`dist/cli/index.js`). One model load, NDJSON streaming.
-        # This is the row that bench-as-published: identical pipeline
-        # to what `npm i nullpii` users get (distiluse encoder +
-        # embedding router + 5 merged-LoRA GLiNER + recognizer pack +
-        # vault). Requires `npm run build` and a populated model dir
-        # (env `NULLPII_MODEL_DIR`, default falls through to npm's
-        # default download cache).
+        # build (`dist/cli/index.js`). One model load, NDJSON streaming:
+        # the same pipeline `npm i nullpii` users get. Requires
+        # `npm run build` and a populated model dir (env
+        # `NULLPII_MODEL_DIR`, else npm's default download cache).
         # Force nullpii to CPU regardless of the global `--backend`. On
         # the 5090 (SM_120) onnxruntime's CUDA EP can't run the GLiNER
         # MoE node (`Non-zero status code returned while running MoE`),
@@ -520,40 +447,6 @@ def build_tools(args) -> dict[str, Callable]:
             backend="cpu",
             model_dir=os.environ.get("NULLPII_MODEL_DIR"),
         ),
-        # ─── Python re-impl (sanity check vs the npm subprocess) ────
-        # Composes the router stack from individual library calls
-        # (gliner + peft for LoRA + Python ports of boundary refine /
-        # never-PII / URL filter / regex pack). Not byte-for-byte
-        # identical to the `nullpii` row.
-        "nullpii-router-embedding": lambda: (lambda r: domain_routed_predictor(
-            detector=_make_embedding_detector(
-                device=backend,
-            ),
-            routes=r,
-            fallback=r["narrative"],
-        ))(_routes(with_enterprise=True)),
-        # ─── Model-only — what someone gets running just the HF
-        # `lBroth/nullpii` artifacts (distiluse routing + LoRA-merged
-        # GLiNER inference + adversarial-input normalisation) without the
-        # npm runtime's regex pack / url_filter / never_pii_filter /
-        # boundary refinement. Honest representation of the HF model
-        # card's published F1: what the model alone delivers.
-        "nullpii-model-only": lambda: (lambda r: domain_routed_predictor(
-            detector=_make_embedding_detector(
-                device=backend,
-            ),
-            routes=r,
-            fallback=r["narrative"],
-        ))({
-            d: gliner_lora_predictor(
-                "urchade/gliner_multi_pii-v1",
-                f"packages/eval/results/train/adapters/{d}/adapter",
-                device=backend,
-                threshold=args.gliner_threshold,
-                normalize_input=True,
-            )
-            for d in ("devops", "legal", "medical", "narrative", "enterprise")
-        }),
         # ─── Bare third-party baselines (no nullpii pipeline overlay) ─
         # Each runs upstream library directly. NONE wraps nullpii post-
         # processing (boundary refine / never-PII filter / regex pack /
@@ -869,11 +762,6 @@ def main() -> None:
     parser.add_argument("--gliner-threshold", type=float, default=0.5)
     parser.add_argument("--tool-config", default="",
                         help="JSON file of per-tool builder overrides (operating points); see _tool_configs")
-    parser.add_argument(
-        "--drop-rfc1918", action="store_true",
-        help="Enable nullpii's never_pii_filter to drop RFC1918 + link-local IPs. "
-             "Off by default — those ranges can carry internal-network PII.",
-    )
     parser.add_argument("--parallel-tools", type=int, default=1,
                         help="run N tools concurrently within each dataset (1=serial). "
                              "32GB 5090 fits 4-6 ML tools simultaneously.")

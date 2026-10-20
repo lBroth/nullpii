@@ -34,7 +34,9 @@ def main() -> None:
         spec = next(s for s in bench_full.DATASET_CONFIGS if s.key == ds)
         preds = load_predictions(results, tool, ds)
         samples = spec.loader(len(preds))
-        tot = collections.Counter(); miss = collections.Counter(); shapes = collections.defaultdict(collections.Counter)
+        tot = collections.Counter()
+        miss = collections.Counter()
+        shapes = collections.defaultdict(collections.Counter)
         for smp, pr in zip(samples, preds):
             cov = bytearray(len(smp.text))
             for a, b in pr:
@@ -51,7 +53,8 @@ def main() -> None:
                     shapes[g.label][shape(smp.text[g.start:g.end])] += 1
         print(f"\n== {ds}")
         for lab in sorted(tot):
-            m = miss[(lab, "missed")]; p = miss[(lab, "partial")]
+            m = miss[(lab, "missed")]
+            p = miss[(lab, "partial")]
             print(f"  {lab:24s} spans {tot[lab]:5d}  missed {m:4d}  partial {p:4d}  top shapes {shapes[lab].most_common(5)}")
 
 

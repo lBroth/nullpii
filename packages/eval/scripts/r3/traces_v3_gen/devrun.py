@@ -11,7 +11,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from tracegen.build import MAX_LEN, MIN_LEN, build_one
+from tracegen.build import build_one
 from tracegen.doc import Mode
 from tracegen.templates import load_all
 

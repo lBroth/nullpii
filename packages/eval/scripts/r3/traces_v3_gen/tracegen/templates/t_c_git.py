@@ -6,7 +6,7 @@ rewriting and mailing-list patches."""
 from __future__ import annotations
 
 from .. import values as V
-from ..core import F, J, T, Seg, esc_json, grid, lines, numbered, table
+from ..core import F, J, T, Seg, lines, numbered, table
 from ..phrases import say
 from . import template
 
@@ -486,7 +486,7 @@ def git_diff_staged_secret(d):
 
 @template("git_bisect_session", "plain", "git", "trace")
 def git_bisect_session(d):
-    g, x, r = d.g, d.x, d.rng
+    _g, x, r = d.g, d.x, d.rng
     devs = _team(d, r.randint(2, 5))
     good = f"v{r.randint(1, 3)}.{r.randint(0, 19)}.0"
     test_name = r.choice(["test_export_csv_header", "test_orders_csv_columns", "test_export_matches_public_format"])

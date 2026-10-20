@@ -96,7 +96,7 @@ def main() -> None:
     ap.add_argument("--out", type=Path, required=True)
     args = ap.parse_args()
 
-    print(f"[per-class] loading dataset registry from bench_full…")
+    print("[per-class] loading dataset registry from bench_full…")
     bf = _load_bench_module()
     spec_by_key = {s.key: s for s in bf.DATASET_CONFIGS}
 

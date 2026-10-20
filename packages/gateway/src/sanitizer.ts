@@ -56,6 +56,18 @@ export interface CaptureAccumulator {
   count: number;
   byLabel: Record<string, number>;
   unscanned: number;
+  /** Object keys sanitized in this walk, original to sanitized. Tool
+   * inputs repeat the same few keys in every turn of a history, so each
+   * distinct key costs one model call per request, not one per use. The
+   * promise is kept, so blocks walked concurrently share one call. The
+   * vault mints one placeholder per value, so the memo returns what a
+   * second call would. */
+  readonly keys: Map<string, Promise<string>>;
+}
+
+/** A zeroed capture accumulator for one request walk. */
+export function newCaptureAccumulator(): CaptureAccumulator {
+  return { count: 0, byLabel: {}, unscanned: 0, keys: new Map() };
 }
 
 /** Block and source fields that carry protocol structure, never user
@@ -122,7 +134,7 @@ async function sanitizeIntoSession(
   sessionId: string,
   appendHint: boolean,
 ): Promise<SanitizedRequest> {
-  const acc: CaptureAccumulator = { count: 0, byLabel: {}, unscanned: 0 };
+  const acc = newCaptureAccumulator();
   if (body.system !== undefined) {
     body.system = await sanitizeSystem(np, body.system, sessionId, acc);
   }
@@ -132,6 +144,7 @@ async function sanitizeIntoSession(
   if (Array.isArray(body.tools)) {
     body.tools = await Promise.all(body.tools.map((t) => sanitizeToolDef(np, t, sessionId, acc)));
   }
+  await sanitizeTopLevelText(np, body, TOP_LEVEL_TEXT_FIELDS, sessionId, acc);
   // Append the preservation hint AFTER sanitization (and only when we
   // actually replaced something) so the assistant treats placeholders
   // literally and doesn't "tidy" them into realistic-looking values
@@ -182,6 +195,42 @@ function injectPreservationHint(body: AnthropicRequest): void {
   body.system = [...body.system, { type: 'text', text: LLM_PRESERVATION_HINT }];
 }
 
+/** Top-level request fields that can carry user text besides `system`,
+ * `messages` and `tools`: `metadata` (`user_id` is often an email) and
+ * `stop_sequences`. Every other top-level field is protocol (model,
+ * sampling, `tool_choice`, `thinking`) or meant for the upstream itself
+ * (`mcp_servers` URLs and credentials), and is forwarded as it is. */
+const TOP_LEVEL_TEXT_FIELDS: readonly string[] = ['metadata', 'stop_sequences'];
+
+/** Sanitize the string leaves of the named top-level fields of `body`, in
+ * place; their object keys are API-defined (`user_id`) and stay. Shared
+ * with the OpenAI walk. */
+export async function sanitizeTopLevelText(
+  np: NullPii,
+  body: Record<string, unknown>,
+  fields: readonly string[],
+  sessionId: string,
+  acc: CaptureAccumulator,
+): Promise<void> {
+  for (const field of fields) {
+    if (body[field] !== undefined) {
+      body[field] = await sanitizeLeaves(np, body[field], sessionId, acc);
+    }
+  }
+}
+
+/** Sanitize one string into the session, tallying its spans into `acc`. */
+export async function sanitizeText(
+  np: NullPii,
+  text: string,
+  sessionId: string,
+  acc: CaptureAccumulator,
+): Promise<string> {
+  const r = await np.sanitize(text, sessionId);
+  bump(acc, r);
+  return r.sanitized;
+}
+
 /** Add one `sanitize()` result's spans to `acc` (counts and labels only). */
 export function bump(
   acc: CaptureAccumulator,
@@ -199,11 +248,7 @@ async function sanitizeSystem(
   sessionId: string,
   acc: CaptureAccumulator,
 ): Promise<AnthropicSystem> {
-  if (typeof system === 'string') {
-    const r = await np.sanitize(system, sessionId);
-    bump(acc, r);
-    return r.sanitized;
-  }
+  if (typeof system === 'string') return sanitizeText(np, system, sessionId, acc);
   return Promise.all(system.map((b) => sanitizeBlock(np, b, sessionId, acc)));
 }
 
@@ -214,9 +259,7 @@ async function sanitizeMessage(
   acc: CaptureAccumulator,
 ): Promise<AnthropicMessage> {
   if (typeof msg.content === 'string') {
-    const r = await np.sanitize(msg.content, sessionId);
-    bump(acc, r);
-    return { ...msg, content: r.sanitized };
+    return { ...msg, content: await sanitizeText(np, msg.content, sessionId, acc) };
   }
   return {
     ...msg,
@@ -230,10 +273,77 @@ async function sanitizeToolDef(
   sessionId: string,
   acc: CaptureAccumulator,
 ): Promise<AnthropicToolDef> {
-  if (typeof tool.description !== 'string') return tool;
-  const r = await np.sanitize(tool.description, sessionId);
-  bump(acc, r);
-  return { ...tool, description: r.sanitized };
+  const out: AnthropicToolDef = { ...tool };
+  if (typeof tool.description === 'string') {
+    out.description = await sanitizeText(np, tool.description, sessionId, acc);
+  }
+  if (tool.input_schema !== undefined) {
+    out.input_schema = await sanitizeJsonSchema(np, tool.input_schema, sessionId, acc);
+  }
+  return out;
+}
+
+/** JSON-schema keywords whose value is free text the model reads. */
+const SCHEMA_TEXT_KEYWORDS: ReadonlySet<string> = new Set(['description', 'title', '$comment']);
+
+/** JSON-schema keywords whose value is example or allowed data. */
+const SCHEMA_DATA_KEYWORDS: ReadonlySet<string> = new Set(['enum', 'const', 'default', 'examples']);
+
+/** JSON-schema keywords whose value maps names to subschemas. */
+const SCHEMA_NAMED_KEYWORDS: ReadonlySet<string> = new Set([
+  'properties',
+  'patternProperties',
+  '$defs',
+  'definitions',
+  'dependentSchemas',
+]);
+
+/**
+ * Sanitize a JSON schema (a tool's `input_schema`, an OpenAI function's
+ * `parameters`, a `response_format` schema) without changing what it
+ * validates: descriptions, titles and comments are sanitized as text, and
+ * `enum`, `const`, `default` and `examples` values as data. Property names
+ * and every keyword are the developer's identifiers, which the model must
+ * see as written to call the tool, so they stay; so do `pattern` and
+ * `format`. A masked `enum` value is what the model then answers with, and
+ * the response restore puts the real value back.
+ */
+export async function sanitizeJsonSchema(
+  np: NullPii,
+  schema: unknown,
+  sessionId: string,
+  acc: CaptureAccumulator,
+): Promise<unknown> {
+  if (Array.isArray(schema)) {
+    return Promise.all(schema.map((s) => sanitizeJsonSchema(np, s, sessionId, acc)));
+  }
+  if (!isRecord(schema)) return schema;
+  const out: Record<string, unknown> = {};
+  for (const [keyword, value] of Object.entries(schema)) {
+    out[keyword] = await sanitizeSchemaKeyword(np, keyword, value, sessionId, acc);
+  }
+  return out;
+}
+
+async function sanitizeSchemaKeyword(
+  np: NullPii,
+  keyword: string,
+  value: unknown,
+  sessionId: string,
+  acc: CaptureAccumulator,
+): Promise<unknown> {
+  if (SCHEMA_TEXT_KEYWORDS.has(keyword) && typeof value === 'string') {
+    return sanitizeText(np, value, sessionId, acc);
+  }
+  if (SCHEMA_DATA_KEYWORDS.has(keyword)) return sanitizeLeaves(np, value, sessionId, acc);
+  if (SCHEMA_NAMED_KEYWORDS.has(keyword) && isRecord(value)) {
+    const out: Record<string, unknown> = {};
+    for (const [name, sub] of Object.entries(value)) {
+      out[name] = await sanitizeJsonSchema(np, sub, sessionId, acc);
+    }
+    return out;
+  }
+  return sanitizeJsonSchema(np, value, sessionId, acc);
 }
 
 async function sanitizeBlock(
@@ -261,9 +371,7 @@ async function sanitizeBlock(
   if (TOOL_RESULT_TYPES.has(block.type)) {
     const content = block.content;
     if (typeof content === 'string') {
-      const r = await np.sanitize(content, sessionId);
-      bump(acc, r);
-      return { ...block, content: r.sanitized };
+      return { ...block, content: await sanitizeText(np, content, sessionId, acc) };
     }
     if (Array.isArray(content)) {
       const next = await Promise.all(
@@ -289,11 +397,7 @@ async function sanitizeFields(
   sessionId: string,
   acc: CaptureAccumulator,
 ): Promise<unknown> {
-  if (typeof value === 'string') {
-    const r = await np.sanitize(value, sessionId);
-    bump(acc, r);
-    return r.sanitized;
-  }
+  if (typeof value === 'string') return sanitizeText(np, value, sessionId, acc);
   if (Array.isArray(value)) {
     return Promise.all(value.map((v) => sanitizeChild(np, v, sessionId, acc)));
   }
@@ -333,45 +437,78 @@ export interface SanitizedValue {
   readonly capturedByLabel: Readonly<Record<string, number>>;
 }
 
-/** Sanitize every string leaf of a parsed JSON value (a string, a tool
- * result, a prompt) into an existing vault session. Object keys are left
- * as they are. Used by the sidecar routes. */
+/** Sanitize every string of a parsed JSON value (a string, a tool result,
+ * a prompt) into an existing vault session, object keys included (see
+ * `sanitizeJsonValue`). Used by the sidecar routes. */
 export async function sanitizeValue(
   np: NullPii,
   value: unknown,
   sessionId: string,
 ): Promise<SanitizedValue> {
-  const acc: CaptureAccumulator = { count: 0, byLabel: {}, unscanned: 0 };
+  const acc = newCaptureAccumulator();
   const out = await sanitizeJsonValue(np, value, sessionId, acc);
   return { value: out, captured: acc.count, capturedByLabel: acc.byLabel };
 }
 
-/** Recursively walk a JSON value (the result of `JSON.parse` on tool
- * input), sanitising every string leaf. Numbers / booleans / null pass
- * through. Arrays + plain objects recurse. Cycles are not possible on
- * JSON.parse output, so no visited-set is needed. */
+/** Recursively walk a JSON value that holds data (tool-call input, a tool
+ * result, the result of `JSON.parse` on tool arguments), sanitizing every
+ * string leaf and every object key: a tool's input can key data by a
+ * name or an email (`{ "ada@acme.io": "owner" }`). Numbers, booleans and
+ * null pass through. Cycles are not possible on JSON.parse output, so no
+ * visited-set is needed. */
 export async function sanitizeJsonValue(
   np: NullPii,
   value: unknown,
   sessionId: string,
   acc: CaptureAccumulator,
 ): Promise<unknown> {
-  if (typeof value === 'string') {
-    const r = await np.sanitize(value, sessionId);
-    bump(acc, r);
-    return r.sanitized;
-  }
+  return walkJson(np, value, sessionId, acc, true);
+}
+
+/** As `sanitizeJsonValue`, but object keys stay: for values whose keys
+ * are defined by an API or a schema (`metadata.user_id`, a schema's
+ * `examples`). */
+export async function sanitizeLeaves(
+  np: NullPii,
+  value: unknown,
+  sessionId: string,
+  acc: CaptureAccumulator,
+): Promise<unknown> {
+  return walkJson(np, value, sessionId, acc, false);
+}
+
+async function walkJson(
+  np: NullPii,
+  value: unknown,
+  sessionId: string,
+  acc: CaptureAccumulator,
+  keys: boolean,
+): Promise<unknown> {
+  if (typeof value === 'string') return sanitizeText(np, value, sessionId, acc);
   if (Array.isArray(value)) {
-    return Promise.all(value.map((v) => sanitizeJsonValue(np, v, sessionId, acc)));
+    return Promise.all(value.map((v) => walkJson(np, v, sessionId, acc, keys)));
   }
-  if (value !== null && typeof value === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = await sanitizeJsonValue(np, v, sessionId, acc);
-    }
-    return out;
+  if (!isRecord(value)) return value;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value)) {
+    const key = keys ? await sanitizeKey(np, k, sessionId, acc) : k;
+    out[key] = await walkJson(np, v, sessionId, acc, keys);
   }
-  return value;
+  return out;
+}
+
+/** Sanitize an object key once per walk (see `CaptureAccumulator.keys`). */
+function sanitizeKey(
+  np: NullPii,
+  key: string,
+  sessionId: string,
+  acc: CaptureAccumulator,
+): Promise<string> {
+  const known = acc.keys.get(key);
+  if (known !== undefined) return known;
+  const sanitized = sanitizeText(np, key, sessionId, acc);
+  acc.keys.set(key, sanitized);
+  return sanitized;
 }
 
 /**
@@ -552,7 +689,8 @@ export function restoreString(
   return r.restored;
 }
 
-/** Restore every string leaf of a parsed JSON value (object keys untouched). */
+/** Restore every string leaf of a parsed JSON value, and every object key
+ * that holds a placeholder (the request walk masks keys too). */
 export function restoreJsonValue(
   np: NullPii,
   value: unknown,
@@ -561,14 +699,13 @@ export function restoreJsonValue(
 ): unknown {
   if (typeof value === 'string') return restoreString(np, value, sessionId, acc);
   if (Array.isArray(value)) return value.map((v) => restoreJsonValue(np, v, sessionId, acc));
-  if (value !== null && typeof value === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = restoreJsonValue(np, v, sessionId, acc);
-    }
-    return out;
+  if (!isRecord(value)) return value;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value)) {
+    const key = countPlaceholders(k) > 0 ? restoreString(np, k, sessionId, acc) : k;
+    out[key] = restoreJsonValue(np, v, sessionId, acc);
   }
-  return value;
+  return out;
 }
 
 /**

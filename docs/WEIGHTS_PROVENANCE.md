@@ -2,7 +2,7 @@
 
 What the nullpii detection model was trained on, under which licence, and what was kept out. Read this before you approve the model for use in your organisation.
 
-The model is a LoRA fine-tune of a GLiNER span model, merged into the base and exported to ONNX. nullpii downloads it from the HuggingFace Hub on first use; it is not part of the npm package.
+The model is a fine-tune of a GLiNER span model, exported to ONNX. nullpii downloads it from the Hugging Face Hub on first use, at a pinned revision whose files it checks by SHA-256; it is not part of the npm package.
 
 ## Base model
 
@@ -10,29 +10,19 @@ The model is a LoRA fine-tune of a GLiNER span model, merged into the base and e
 |---|---|---|
 | [`urchade/gliner_multi_pii-v1`](https://huggingface.co/urchade/gliner_multi_pii-v1) (GLiNER head on Microsoft `mdeberta-v3-base`; Zaratiana et al., NAACL 2024) | Apache-2.0 | `1fcf13e8` |
 
-Only LoRA adapters (rank 32) on the encoder's query, key and value projections are trained. Every other weight of the base model is frozen.
-
 ## Training data
 
-Every source below allows commercial use and redistribution of a model trained on it. The licence column is the source's own licence, checked on its HuggingFace page or in its repository.
+Every source below allows commercial use and redistribution of a model trained on it. The licence column is the source's own licence, checked on its Hugging Face page or in its repository.
 
-| Source | Licence | What it contributes | Training rows |
-|---|---|---|---:|
-| [`nvidia/Nemotron-PII`](https://huggingface.co/datasets/nvidia/Nemotron-PII), train split rows 0–11,319 (10,019 documents kept; documents with an IP or MAC address, which its label map cannot express, are dropped) | **CC-BY-4.0**, attribution required | Synthetic English documents in many domains, with personal data spans, including the extended categories | 24,836 |
-| [`allenai/c4`](https://huggingface.co/datasets/allenai/c4) (English web text from Common Crawl), sampled | **ODC-BY** (with the Common Crawl terms of use) | Ordinary web text with no labelled spans, so the model learns when not to mask | 14,000 |
-| Developer pastes (`dev-paste-synth-train.jsonl`) | Apache-2.0, project-generated | Config files, logs and stack traces with personal data | 13,845 |
-| Faker-generated US formats (`build_us_formats_corpus.py`) | Apache-2.0, project-generated | Phone numbers, SSNs, addresses and dates in US formats | 5,894 |
-| [TAB, the Text Anonymization Benchmark](https://github.com/NorskRegnesentral/text-anonymization-benchmark) (ECHR court cases), train split, first annotator | MIT | Long legal documents: persons, dates, locations | 5,000 |
-| [`microsoft/presidio-research`](https://github.com/microsoft/presidio-research) synthetic sentences, rows 0–3,999 | MIT | Template sentences | 4,519 |
-| Faker baselines in en, de, fr, it, es, and long English prompts | Apache-2.0, project-generated | Short multilingual sentences | 700 |
-| Gap corpus v4 (`build_gap_corpus.py --taxonomy v2 --id-negatives`, seed 1703) | Apache-2.0, project-generated | The classes and contexts the other sources lack: secrets in prose and in code, crypto and bank numbers, developer records, personal attributes (organisation, occupation, demographic, sensitive, title), and developer hard negatives (log ids, ETags, user agents) | 32,188 |
-| **Total** | | | **100,982** |
+| Source | Licence | What it contributes |
+|---|---|---|
+| [`nvidia/Nemotron-PII`](https://huggingface.co/datasets/nvidia/Nemotron-PII), a slice of the train split | **CC-BY-4.0**, attribution required | Synthetic English documents in many domains, with personal data spans, including the extended categories |
+| [`allenai/c4`](https://huggingface.co/datasets/allenai/c4) (English web text from Common Crawl), sampled | **ODC-BY** (with the Common Crawl terms of use) | Ordinary web text with no labelled spans, so the model learns when not to mask |
+| [TAB, the Text Anonymization Benchmark](https://github.com/NorskRegnesentral/text-anonymization-benchmark) (ECHR court cases), train split | MIT | Long legal documents: persons, dates, locations |
+| [`microsoft/presidio-research`](https://github.com/microsoft/presidio-research) synthetic sentences | MIT | Template sentences |
+| Project-generated synthetic data | Apache-2.0 | Multilingual sentences, developer pastes (config files, logs, stack traces), US formats, secrets in prose and code, financial and developer identifiers, personal attributes, and developer text that must stay unmasked |
 
-A training row is a window of at most 140 words with 30 words of overlap, cut with the runtime's word splitter, so one document can give several rows. The counts include the augmented copies described below.
-
-**Carrier text in the gap corpus.** To place generated values inside realistic code, the generator embeds short excerpts of source files from npm and PyPI packages. Only permissively licensed packages qualify (MIT, ISC, BSD, Apache-2.0, 0BSD, Unlicense, CC0, PSF); the licence is read from each package's metadata. Packages that the evaluation traces read are excluded.
-
-**Augmentation.** A quarter of the rows that hold personal data also appear a second time, with adversarial character perturbations (homoglyphs, zero-width characters, spacing) applied inside the personal-data spans.
+**Carrier text in the generated data.** To place generated values inside realistic code, the generator embeds short excerpts of source files from npm and PyPI packages. Only permissively licensed packages qualify (MIT, ISC, BSD, Apache-2.0, 0BSD, Unlicense, CC0, PSF); the licence is read from each package's metadata.
 
 ## Kept out of training
 
@@ -42,14 +32,10 @@ These datasets are used to evaluate, never to train:
 |---|---|
 | `ai4privacy/pii-masking-300k` and `-400k` | Custom licence, with commercial use gated |
 | `Isotonic/pii-masking-200k` | CC-BY-NC-4.0 (non-commercial) |
-| `argilla/textcat-tokencat-pii-per-domain` | Report set: evaluation only |
 | `bigcode/bigcode-pii-dataset` | Gated |
-| A held-out slice of Nemotron-PII (train rows 20,000–21,999) | Held out to measure generalisation |
+| A held-out slice of Nemotron-PII | Held out to measure generalisation |
 | TAB dev and test splits | Evaluation only |
-| The PIIMB benchmark | Evaluation only |
-| The `claude-code-traces` sets | Evaluation only: their tuning half is used to choose between variants, their report half only to report |
-
-How the evaluation keeps tuning and reporting apart is described in `packages/eval/scripts/ab/PROTOCOL.md`.
+| Every benchmark set nullpii reports on, including PIIMB | Evaluation only |
 
 ## Your obligations as a redistributor
 
@@ -58,8 +44,8 @@ If you redistribute the weights:
 - Keep the Apache-2.0 licence and the `NOTICE` file.
 - Keep the attributions to NVIDIA (Nemotron-PII, CC-BY-4.0) and to the Allen Institute for AI and Common Crawl (C4, ODC-BY) that `NOTICE` carries.
 
-Most of the training text is synthetic: Nemotron-PII, presidio-research and the project's own generators. Two sources are real text: TAB is published judgments of the European Court of Human Rights, which name the people involved as the Court published them, and C4 is web text. Both are public, and both are used under their published licences.
+Most of the training text is synthetic. Two sources are real text: TAB is published judgments of the European Court of Human Rights, which name the people involved as the Court published them, and C4 is web text. Both are public, and both are used under their published licences.
 
 ## Status
 
-This document describes the run-H3b weights (training corpus v4 with the Nemotron v3 slice): 5 epochs, best epoch 5, `model.onnx` SHA-256 `58b6d795…4253313a`. They passed the evaluation protocol (`packages/eval/scripts/ab/LOG.md`) and are not yet published. The exact dataset revisions will be pinned here when they are. The weights published today (`lBroth/nullpii`, v0.2) were trained on the same kinds of sources, without the gap corpus, on an older Nemotron slice.
+This document describes the weights published with nullpii 0.5 (`model.onnx` SHA-256 `58b6d795…4253313a`, `model_fp16.onnx` `900b2b02…1ae2065`). The weights published before them (v0.3.0) came from the same kinds of sources, with fewer generated categories, and are withdrawn.

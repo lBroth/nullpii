@@ -183,11 +183,12 @@ def _load_tab_echr_test(n: int | None) -> list[Sample]:
     return out
 
 
-# Held-out offsets: training default caps were ai4privacy=100000 and
-# Isotonic prefetched 200000 train rows for the 20k-per-locale cap. To
-# benchmark on data the model never saw, slice ABOVE those indices.
-# ai4privacy: rows [100000:105000]. Isotonic: row_offset=200000 so the
-# entire prefetch window is past the training slice.
+# Held-out offsets, kept from early experimental training runs (May
+# 2026), which read ai4privacy rows [0:100000] and Isotonic's first
+# 200000 rows. No published model is trained on either dataset
+# (docs/WEIGHTS_PROVENANCE.md); the slices stay above those indices so
+# scores remain comparable. ai4privacy: rows [100000:105000]. Isotonic:
+# row_offset=200000.
 _AI4_HELDOUT_OFFSET = 100_000
 _ISOTONIC_HELDOUT_ROW_OFFSET = 200_000
 

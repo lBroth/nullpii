@@ -644,7 +644,7 @@ describe('sidecar · restore with tool', () => {
     expect(res.body).not.toContain(INJECTION);
   });
 
-  it('restores a name with a space inside single quotes', async () => {
+  it('keeps a name with a space masked even inside single quotes: only one plain word comes back', async () => {
     const { app } = await setup();
     const [person] = await placeholdersFor(app, FULL_NAME);
 
@@ -655,8 +655,8 @@ describe('sidecar · restore with tool', () => {
     });
 
     const body = res.json() as ShellRestoreBody;
-    expect(body.value.command).toBe(`echo '${FULL_NAME}'`);
-    expect(body.shellKeptMasked).toEqual([]);
+    expect(body.value.command).toBe(`echo '${person}'`);
+    expect(body.shellKeptMasked).toEqual([person]);
   });
 
   it('restores a two-word name in a quoted heredoc (Claude Code commit message)', async () => {

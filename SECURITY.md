@@ -33,31 +33,23 @@ Masking hides a value from the model, so the model cannot judge it. Suppose a fi
 
 The rule covers every tool a shell runs, under each agent's name: `Bash` (Claude Code), `bash` (Anthropic's bash tool) and `shell` (OpenAI-style agents such as Codex).
 
-**A command that sends data out keeps every placeholder,** whatever the value: a network client (`curl`, `wget`, `nc`, `ssh`, `scp`, `rsync`, `gh`, `dig`, `ping`, `mail`, `aws`, `kubectl`, …), an upload or a fetch (`git push`, `git clone`, `git fetch`, `docker push`, `npm publish`, …), `/dev/tcp`, any of them behind `sudo`, `env`, `timeout` or a path, and code run by an interpreter that opens a URL or a socket. The tool runs on this machine, but a restored value would leave through it.
+**A command that sends data out keeps every placeholder,** whatever the value: a network client (`curl`, `wget`, `nc`, `ssh`, `scp`, `rsync`, `gh`, `dig`, `ping`, `mail`, `aws`, `kubectl`, …), an upload or a fetch (`git push`, `git clone`, `git fetch`, `docker push`, `npm publish`, …), `/dev/tcp`, a URL handed to a program other than the data ones listed below (`open https://…`, `python3 -m webbrowser https://…`), any of them behind `sudo`, `env`, `timeout` or a path, and code run by an interpreter that opens a URL or a socket. The tool runs on this machine, but a restored value would leave through it. **So does a command that runs `sed` or `perl`** (by name, behind a wrapper or inside quoted code): their substitution takes any character as its delimiter, letters included, and has a flag that runs the result (`s/a/b/e`), so not even a plain word is safe in their code. These checks skip the body of a heredoc written out as data, so a commit message that mentions `ssh` is not a network call; a body that expands is still read for its substitutions.
 
-Otherwise, two rules hold everywhere, because no list names every program that reads its input again as code (a here-string fed to `python3`, `watch "…"`, a script the same command writes and then runs):
-
-- **The value must be inert:** no quote, backslash, `$`, backtick, `;`, `&`, `|`, `<`, `>`, parenthesis, brace, line break or other control character. Such a value cannot end the string it lands in or start a command, in the shell or in any program the shell hands it to.
-- **No word of it may read as an option** (`-rf`, `--upload-pack=…`), a comment (`#`) or a home directory (`~`) once a shell splits it.
-
-Then the position decides:
+Otherwise **a value comes back only as one plain word:** letters, digits and `@%+:,./_=-`, not starting with `-` (an option), `=` (zsh's `=cmd`) or `~` (a home directory). Such a word means the same thing to a shell wherever it stands, quoted or not, and to any program the shell hands it to, so the rule does not depend on a list of programs that read their input again as code (a here-string fed to `python3`, `watch "…"`, a script the same command writes and then runs). And **never as the program:** a placeholder that is, or is part of, the program a simple command runs (also behind `sudo`, `env`, `timeout`, …, after an assignment or an operator, in a substitution or a `case` branch, or named by a path such as `./{{…}}`) stays masked, so a value cannot choose what runs.
 
 | Position | What the value may contain |
 |---|---|
-| Anywhere in a command that runs an interpreter or a program that evaluates its arguments (`bash`, `sh`, `python3`, `node`, `perl`, `ruby`, `php`, `awk`, `sed`, `eval`, `source`, `xargs`, `watch`, `make`, …, by name, by path or behind `sudo`, `env`, `nohup`, `timeout`), a program named by an expansion (`$PY`), or code handed on inside an argument (`docker run img sh -c "…"`) | One plain word: letters, digits and `@%+=:,./_-` |
-| Unquoted, or inside a command substitution (`$(…)`, backticks) | One plain word |
-| Single quotes, `$'…'` | Inert |
-| Double quotes | Inert, and no `!` |
-| Heredoc body that `cat` or `tee` writes out, in a command that runs nothing but `cat`, `tee`, `echo`, `printf`, `mkdir`, `cd`, `touch`, `ls`, `pwd`, `true` or `git commit`, each by name | Literal body (`<<'EOF'`): no line break. Bare delimiter (`<<EOF`): no line break, `$`, backtick or backslash |
-| Such a body in a command that runs anything else | Inert, and no `!` |
-| Heredoc body fed to anything else, piped on, without its closing line, or in a command that runs a program by path (`./run.sh`, `/usr/bin/cat`) or makes a file executable (`chmod`) | One plain word |
+| The program of a simple command, or part of it | Nothing: it stays masked |
+| Anywhere else in shell code, quoted or not | One plain word |
+| Heredoc body that `cat` or `tee` writes out, in a command that runs nothing but `cat`, `tee`, `echo`, `printf`, `mkdir`, `cd`, `touch`, `ls`, `pwd`, `true` or `git` `commit`, `add`, `rm`, `mv`, `status`, `diff`, `log` or `show`, each by name, with its quoting and substitutions closed | Literal body (`<<'EOF'`): no line break. Bare delimiter (`<<EOF`): no line break, `$`, backtick or backslash |
+| Any other heredoc body: fed to anything else, piped on, without its closing line, in a command that runs a program that evaluates code, by path (`./run.sh`, `/usr/bin/cat`), or that makes a file executable (`chmod`) | One plain word |
 | A `#` comment | Its quotes and heredoc markers are ignored, so they cannot change the position of what follows |
 
-So a name like `Mary Ann` comes back in quotes, and a name with an apostrophe (`D'Amico`) comes back only in a heredoc body written out as data, such as Claude Code's usual commit form `git commit -m "$(cat <<'EOF' … EOF)"`.
+So an email or a single-word name comes back, a name like `Mary Ann` or `D'Amico` comes back only in a heredoc body written out as data, such as Claude Code's usual commit form `git commit -m "$(cat <<'EOF' … EOF)"`, and stays masked anywhere else.
 
-A `command` sent as an argv array (`["bash", "-lc", "…"]`, as Codex does) runs without a shell, so each argument is taken literally and needs only to be inert. The exceptions are a program that runs code, however it is named (every argument: one plain word), a value that would be the program itself, and one that would start an argument with `-` and be read as an option.
+A `command` sent as an argv array (`["bash", "-lc", "…"]`, as Codex does) follows the same rules: one plain word, never the program, and the script a shell runs with `-c` is judged as a string command.
 
-The lists of interpreters and network clients are best effort: no list names every program that runs code or every way out of the machine. The inert rule does not depend on them.
+The command is read once, in time linear in its length. A command longer than 256 KiB keeps every placeholder. The lists of interpreters and network clients are best effort: no list names every program that runs code or every way out of the machine. The plain-word rule does not depend on them. Program positions are judged at the shell level; inside code handed to an interpreter (`bash -c "…"`, `python3 -c "…"`) only the plain-word rule applies.
 
 **A limit by design.** `Write`, `Edit` and the other file tools get real values back whenever they are in `restoreTools`, as they are by default, since writing your data to your files is what they are for. A later command can still run such a file (`bash run.sh` after `Write run.sh`); the rule judges each call on its own and does not follow what a file holds.
 

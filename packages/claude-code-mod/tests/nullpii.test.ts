@@ -176,17 +176,13 @@ function fakeSidecar(
     }
     let replacements = 0;
     // Stand-in for the gateway's shell rule on a shell tool (tested there):
-    // in `command`, a value is restored only if it is a plain word, or sits
-    // inside single quotes and is inert (no quote, operator or expansion).
+    // in `command`, a value is restored only if it is one plain word.
     const kept: string[] = [];
     const restoreIn = (text: string, shellRule: boolean) =>
       text.replace(/\{\{PII_[A-Z]+_\d+_[0-9a-f]{16}\}\}/g, (placeholder, at: number) => {
         const real = vault.get(placeholder);
         if (real === undefined) return placeholder;
-        const end = at + placeholder.length;
-        const inert = /^[^'"`\\$;&|<>(){}\n]*$/.test(real);
-        const quoted = text[at - 1] === "'" && text[end] === "'" && inert;
-        if (shellRule && !/^[A-Za-z0-9@%+=:,./_-]+$/.test(real) && !quoted) {
+        if (shellRule && !/^(?![-=~])[A-Za-z0-9@%+=:,./_-]+$/.test(real)) {
           if (!kept.includes(placeholder)) kept.push(placeholder);
           return placeholder;
         }
@@ -571,7 +567,7 @@ test('inside single quotes the same value is refused too: a program could read i
   expect(ran).toEqual([]);
 });
 
-test('inside single quotes a name with a space is restored', async ($, on) => {
+test('inside single quotes a name with a space stays masked: only one plain word comes back', async ($, on) => {
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);
   const ran: string[] = [];
@@ -582,8 +578,12 @@ test('inside single quotes a name with a space is restored', async ($, on) => {
   });
   await start($);
   await $.prompt.submit({ text: 'write to Mary Ann', wait: false, origin: COMPOSER });
-  await $.tool.call({ tool: 'Bash', command: `printf '%s' '${ph('PERSON', 0)}' > to.txt` });
-  expect(ran).toEqual(["printf '%s' 'Mary Ann' > to.txt"]);
+  const out = await $.tool.call({
+    tool: 'Bash',
+    command: `printf '%s' '${ph('PERSON', 0)}' > to.txt`,
+  });
+  expect(out.deny).toContain(`will not put the real value of ${ph('PERSON', 0)}`);
+  expect(ran).toEqual([]);
 });
 
 test('each restore names its tool, and sends only the arguments that can take values', async ($, on) => {

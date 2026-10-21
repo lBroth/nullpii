@@ -142,10 +142,11 @@ The directory must contain `model.onnx`, `tokenizer.json`,
 - **Higher throughput.** Switch to a GPU host with the CUDA backend:
   `NULLPII_BACKEND=cuda` plus the matching `onnxruntime-node` build.
   See the root [README §Backends](../../README.md).
-- **Multi-replica.** The current in-memory vault assumes
-  sticky-session load balancing — every conversation's response must
-  return to the replica that sanitized the request. A pluggable
-  `VaultStore` (Redis HA) is something I'd write next if the project survives that long — no commitment, hobby project.
+- **Multi-replica.** The vault lives in each replica's memory and is
+  not shared. The Messages and Chat Completions routes keep a session
+  for one request only, so any load balancer works for them. The
+  sidecar API keeps sessions across calls: send each sidecar client to
+  the same replica every time (sticky sessions).
 
 ## Limitations
 

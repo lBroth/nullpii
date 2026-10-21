@@ -133,19 +133,23 @@ function tryDespace(text: string, i: number, out: string[], normToOrig: number[]
 function tryUrlDecode(text: string, i: number, out: string[], normToOrig: number[]): number {
   let consumed = 0;
   let decoded: string | null = null;
+  // The `%` a round decodes to starts the next round's triplet, completed
+  // by the two characters after the escape: `%25` + `40` reads as `%40`.
+  let carried = '';
   for (let depth = 0; depth < URL_DECODE_MAX_DEPTH; depth++) {
+    const start = i + consumed;
     const innerMatch = URL_PERCENT_RE.exec(
-      text.slice(i + consumed, i + consumed + URL_PERCENT_LEN),
+      carried + text.slice(start, start + URL_PERCENT_LEN - carried.length),
     );
     if (innerMatch === null || innerMatch[1] === undefined) break;
     const code = Number.parseInt(innerMatch[1], 16);
     if (!Number.isFinite(code)) break;
     decoded = String.fromCharCode(code);
-    consumed += URL_PERCENT_LEN;
-    // Stop unless the decoded byte is itself `%` and a deeper %XX
-    // triplet immediately follows — only then is another pass
-    // meaningful. This keeps single-encoded inputs O(1).
+    consumed += URL_PERCENT_LEN - carried.length;
+    // Stop unless the decoded byte is itself `%`: only then can another
+    // round apply. This keeps single-encoded inputs O(1).
     if (decoded !== '%') break;
+    carried = decoded;
     decoded = null;
   }
   if (decoded === null || consumed === 0) return 0;
@@ -162,8 +166,12 @@ function tryUrlDecode(text: string, i: number, out: string[], normToOrig: number
 function tryHtmlDecode(text: string, i: number, out: string[], normToOrig: number[]): number {
   let consumed = 0;
   let decoded: string | null = null;
+  // As in the URL decode, the `&` a round decodes to starts the next
+  // round's entity: `&#x26;` + `#64;` reads as `&#64;`.
+  let carried = '';
   for (let depth = 0; depth < HTML_DECODE_MAX_DEPTH; depth++) {
-    const slice = text.slice(i + consumed, i + consumed + HTML_ENTITY_MAX_LEN);
+    const start = i + consumed;
+    const slice = carried + text.slice(start, start + HTML_ENTITY_MAX_LEN - carried.length);
     const inner = HTML_ENTITY_RE.exec(slice);
     if (inner === null) break;
     const dec = inner[1];
@@ -173,10 +181,10 @@ function tryHtmlDecode(text: string, i: number, out: string[], normToOrig: numbe
     else if (hex !== undefined) code = Number.parseInt(hex, 16);
     if (!Number.isFinite(code)) break;
     decoded = String.fromCodePoint(code);
-    consumed += inner[0].length;
-    // Only re-iterate if the decoded byte is `&` AND the next chars
-    // begin another `&#…;` triplet — otherwise we'd waste cycles.
+    consumed += inner[0].length - carried.length;
+    // Only another `&` can start a further round.
     if (decoded !== '&') break;
+    carried = decoded;
     decoded = null;
   }
   if (decoded === null || consumed === 0) return 0;

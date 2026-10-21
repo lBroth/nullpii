@@ -77,6 +77,8 @@ export interface LogFields {
    * quote a path or input. */
   readonly errorCode?: string;
   readonly modelDir?: string;
+  /** ONNX Runtime execution providers, from the configured backend. */
+  readonly providers?: readonly string[];
   readonly url?: string;
   readonly repo?: string;
   readonly revision?: string;

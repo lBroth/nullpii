@@ -128,6 +128,24 @@ describe('normalizeForDetection', () => {
     expect(r.normalized).toBe('user@example.com');
   });
 
+  it('decodes a double encoding, whose second round is completed by the text after the escape', () => {
+    // `%25` decodes to `%`, which with the following `40` reads `%40`.
+    for (const text of ['bob.jones%2540company.io', 'bob.jones&#x26;#64;company.io']) {
+      const r = normalizeForDetection(text);
+      expect(r.normalized).toBe('bob.jones@company.io');
+      expect(remapSpan(0, r.normalized.length, r.normToOrig)).toEqual([0, text.length]);
+    }
+  });
+
+  it.each([
+    ['a%252540b', 'a%252540b'],
+    ['a%25%40b', 'a%25@b'],
+    ['a%25 b', 'a%25 b'],
+    ['a&#38; b', 'a&#38; b'],
+  ])('stops after two rounds and leaves an escaped lone introducer: %s', (text, normalized) => {
+    expect(normalizeForDetection(text).normalized).toBe(normalized);
+  });
+
   it('decodes HTML numeric entities', () => {
     // &#115; = 's', &#x73; = 's'
     const text = '&#115;ecret &#x73;tring';

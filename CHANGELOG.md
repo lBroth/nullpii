@@ -52,6 +52,8 @@ On five datasets chosen before any tool ran on them (four public sets and a synt
 - Overlapping spans broke the byte-exact restore; they are merged before masking, and a kept span grows to cover what its duplicates covered.
 - A low-scoring model span could silence a recognizer or another span before the threshold dropped it; thresholds now run first, and recognizers defer only to a model span that covers their whole match.
 - Decoded `%XX` and HTML escapes mapped to the end of their sequence, leaving the first escaped character visible.
+- A double encoding (`%2540`, `&#x26;#64;`) was not decoded, so a double-encoded email was masked only in part: the escape's second round is now completed by the characters after it, as a decoder reads it (#49).
+- `backend: 'cuda'` (and `'mps'`) threw when its provider library could not be loaded: ONNX Runtime fails the whole session, so the CPU listed after it was never used. The session is now retried on the CPU, with a `NULLPII_BACKEND_FALLBACK` process warning naming the cause; the README names the CUDA and cuDNN versions `onnxruntime-node` 1.30 needs (#52).
 - Empty input, whitespace, and words longer than the model's budget crashed `sanitize()`.
 - Punctuation was trimmed off `secret` spans; two cold calls each loaded an ONNX session; some recognizer patterns could backtrack quadratically on long input (all are bounded now).
 - Gateway: a client disconnecting mid-stream did not cancel the upstream call; streams ignored backpressure; a failed request leaked its vault session; streamed tool input could come back as invalid JSON.

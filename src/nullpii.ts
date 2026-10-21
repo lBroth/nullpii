@@ -483,6 +483,9 @@ export class NullPii {
     // first encode.
     this.backend = new OrtBackend(this.modelDir, {
       onnxFiles,
+      // On the CPU the precision it is measured in comes first; a model
+      // downloaded for CUDA may hold only fp16, which the CPU runs too.
+      cpuFallbackOnnxFiles: [...new Set([...onnxCandidates(variant, 'cpu'), ...onnxFiles])],
       executionProviders: backendToProviders(this.config.backend),
       ...(this.config.intraOpNumThreads !== undefined && {
         intraOpNumThreads: this.config.intraOpNumThreads,
@@ -500,9 +503,9 @@ export class NullPii {
 }
 
 /** Map the public {@link BackendName} to an ORT execution-provider list.
- * Order matters — ORT tries each provider in turn and falls back. CPU is
- * always appended last so the runtime never throws purely because the
- * preferred accelerator is unavailable. */
+ * CPU comes last so ORT runs on it the operators the accelerator lacks;
+ * an accelerator whose library cannot be loaded is handled by
+ * `OrtBackend`, which retries on the CPU alone. */
 function backendToProviders(
   backend: NullPiiConfig['backend'],
 ): ReadonlyArray<'cpu' | 'cuda' | 'coreml'> {

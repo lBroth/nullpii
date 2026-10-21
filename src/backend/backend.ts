@@ -16,14 +16,24 @@ const LOG_SCOPE = 'nullpii:backend';
  * micro-optimisation (no aliasing concerns). */
 const DIMS_SCALAR_1_1: readonly number[] = [1, 1];
 
+type ExecutionProvider = NonNullable<InferenceSession.SessionOptions['executionProviders']>[number];
+
+const CPU_PROVIDER = 'cpu';
+
+/** `code` of the process warning emitted when an accelerator fails to
+ * load and the session runs on the CPU instead. */
+export const BACKEND_FALLBACK_WARNING = 'NULLPII_BACKEND_FALLBACK';
+
 export interface BackendOptions {
   /** ONNX files to load from the model directory, best first; the first
    * that exists is used (`onnxCandidates`). Default: `['model.onnx']`. */
   readonly onnxFiles?: readonly string[];
+  /** ONNX files to load, best first, when the accelerator in
+   * `executionProviders` fails to load and the session falls back to the
+   * CPU. Default: `onnxFiles`. */
+  readonly cpuFallbackOnnxFiles?: readonly string[];
   /** ORT execution providers, in priority order. Default: `['cpu']`. */
-  readonly executionProviders?: ReadonlyArray<
-    NonNullable<InferenceSession.SessionOptions['executionProviders']>[number]
-  >;
+  readonly executionProviders?: ReadonlyArray<ExecutionProvider>;
   /** ORT intra-op thread count. `0` (default) = ORT picks based on host. */
   readonly intraOpNumThreads?: number;
   /** ORT inter-op thread count. `0` (default) = ORT picks based on host. */
@@ -68,13 +78,38 @@ export class OrtBackend {
     return this.sessionLoad;
   }
 
+  /** ORT fails the whole session when an execution provider's library
+   * cannot be loaded (a missing CUDA or cuDNN library), so listing `cpu`
+   * after it is no fallback. A failed accelerator load is retried on the
+   * CPU alone, with a process warning naming the cause. */
   private async loadSession(): Promise<InferenceSession> {
-    const onnxPath = await this.firstExistingOnnx();
+    const files = this.options.onnxFiles ?? [MODEL_FILES.fp32];
+    const onnxPath = await this.firstExistingOnnx(files);
     const ort = await (this.options.ortLoader ?? loadOrt)();
     this.TensorCtor = ort.Tensor;
-    logf(LOG_SCOPE, 'session.load', { path: onnxPath });
+    const providers = this.options.executionProviders ?? [CPU_PROVIDER];
+    try {
+      return await this.createSession(ort, onnxPath, providers);
+    } catch (err) {
+      const accelerators = providers.filter((p) => providerName(p) !== CPU_PROVIDER);
+      if (accelerators.length === 0) throw err;
+      const cpuPath = await this.firstExistingOnnx(this.options.cpuFallbackOnnxFiles ?? files);
+      process.emitWarning(
+        `nullpii: the ${accelerators.map(providerName).join('/')} execution provider failed to load, so the model runs on the CPU: ${errorMessage(err)}`,
+        { code: BACKEND_FALLBACK_WARNING },
+      );
+      return this.createSession(ort, cpuPath, [CPU_PROVIDER]);
+    }
+  }
+
+  private createSession(
+    ort: typeof import('onnxruntime-node'),
+    onnxPath: string,
+    providers: ReadonlyArray<ExecutionProvider>,
+  ): Promise<InferenceSession> {
+    logf(LOG_SCOPE, 'session.load', { path: onnxPath, providers: providers.map(providerName) });
     const sessionOptions: InferenceSession.SessionOptions = {
-      executionProviders: [...(this.options.executionProviders ?? ['cpu'])],
+      executionProviders: [...providers],
       graphOptimizationLevel: 'all',
     };
     if (this.options.intraOpNumThreads !== undefined && this.options.intraOpNumThreads > 0) {
@@ -86,8 +121,7 @@ export class OrtBackend {
     return ort.InferenceSession.create(onnxPath, sessionOptions);
   }
 
-  private async firstExistingOnnx(): Promise<string> {
-    const files = this.options.onnxFiles ?? [MODEL_FILES.fp32];
+  private async firstExistingOnnx(files: readonly string[]): Promise<string> {
     for (const f of files) {
       const path = join(this.modelDir, f);
       if (await fileExists(path)) return path;
@@ -151,6 +185,14 @@ export class OrtBackend {
     logf(LOG_SCOPE, 'session.release');
     await session.release();
   }
+}
+
+function providerName(provider: ExecutionProvider): string {
+  return typeof provider === 'string' ? provider : provider.name;
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 async function loadOrt(): Promise<typeof import('onnxruntime-node')> {

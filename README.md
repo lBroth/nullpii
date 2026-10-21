@@ -22,7 +22,7 @@ npm install nullpii onnxruntime-node
 
 Node 22 or later. The first run downloads the model from Hugging Face into `~/.cache/nullpii/` (1.2 GB in fp32; on CUDA, 0.6 GB in fp16), at a pinned revision whose files are checked by SHA-256. Pre-fetch it with `npx nullpii prefetch`, or point `NULLPII_MODEL_DIR` at a copy you staged.
 
-On Linux x64, `onnxruntime-node`'s install script also downloads its CUDA 12 libraries from NuGet, without checking a hash. The CPU runtime is already in the npm package, so on a machine without an NVIDIA GPU skip that download:
+On Linux x64, `onnxruntime-node`'s install script also downloads its CUDA execution provider from NuGet, without checking a hash. The CPU runtime is already in the npm package, so on a machine without an NVIDIA GPU skip that download:
 
 ```bash
 ONNXRUNTIME_NODE_INSTALL=skip npm install nullpii onnxruntime-node
@@ -248,6 +248,8 @@ new NullPii({ backend: 'cpu' });   // ONNX Runtime on the CPU (the default)
 new NullPii({ backend: 'cuda' });  // NVIDIA GPU, fp16 when the model ships it; falls back to the CPU
 new NullPii({ backend: 'mps' });   // Apple Silicon through CoreML
 ```
+
+`backend: 'cuda'` needs the CUDA libraries the installed `onnxruntime-node` was built against: for 1.30 on Linux x64, CUDA 13 (`libcudart.so.13`, `libcublas.so.13`, `libcublasLt.so.13`) and cuDNN 9, although its installer calls the build `cuda12`. When the CUDA or CoreML provider cannot be loaded, nullpii runs on the CPU instead and emits a process warning with code `NULLPII_BACKEND_FALLBACK` that names the cause (listen with `process.on('warning', …)`). A model downloaded for CUDA holds only the fp16 file; the CPU runs it too, but the benchmark measures fp32 on the CPU.
 
 `intraOpNumThreads` and `interOpNumThreads` are passed to ONNX Runtime.
 

@@ -52,13 +52,35 @@ export const DEFAULT_MODEL: ModelRef = {
 
 /** The SHA-256 `model` pins for `file`; `undefined` when it pins none.
  * A model that pins hashes must pin every file it fetches. */
+/** A pinned SHA-256: 64 lower-case hex digits, as `sha256File` prints. */
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
 function expectedSha(model: ModelRef, file: string): string | undefined {
   if (model.sha256 === undefined) return undefined;
   const sha = model.sha256[file];
   if (sha === undefined) {
     throw new InvalidConfigError(`${model.repo}@${model.revision} pins no SHA-256 for ${file}`);
   }
+  if (!SHA256_HEX.test(sha)) {
+    throw new InvalidConfigError(
+      `${model.repo}@${model.revision} pins ${file} to a SHA-256 that is not 64 lower-case hex digits`,
+    );
+  }
   return sha;
+}
+
+/** The candidates a model can load: with pins, only the pinned files, so
+ * a variant the pins leave out (`fp16`) falls back to one they cover. */
+function pinnedCandidates(model: ModelRef, candidates: readonly string[]): readonly string[] {
+  const pins = model.sha256;
+  if (pins === undefined) return candidates;
+  const pinned = candidates.filter((f) => pins[f] !== undefined);
+  if (pinned.length === 0) {
+    throw new InvalidConfigError(
+      `${model.repo}@${model.revision} pins none of ${candidates.join(', ')}`,
+    );
+  }
+  return pinned;
 }
 
 /** XDG-style default cache: `$XDG_CACHE_HOME/nullpii/models/` if set,
@@ -156,12 +178,13 @@ export class ModelManager {
     target: string,
     timeoutMs: number,
   ): Promise<string> {
-    for (const f of candidates) {
+    const usable = pinnedCandidates(model, candidates);
+    for (const f of usable) {
       this.assertSafeRelative(f, target);
       if (await isCachedFile(target, f, expectedSha(model, f))) return f;
     }
-    let lastErr: unknown = new Error('model-manager: no ONNX candidate');
-    for (const f of candidates) {
+    let lastErr: unknown;
+    for (const f of usable) {
       try {
         await this.fetch(model, f, target, timeoutMs);
         return f;

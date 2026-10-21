@@ -77,6 +77,25 @@ const DEFAULT_OPENAI_UPSTREAM = 'https://api.openai.com';
 const API_VERSION_SUFFIX = /\/v1$/;
 const TRAILING_SLASHES = /\/+$/;
 const UPSTREAM_PROTOCOLS: ReadonlySet<string> = new Set(['http:', 'https:']);
+const PLAIN_HTTP = 'http:';
+/** Hosts a plain `http:` upstream may name: the request carries the API
+ * key and the masked conversation, so it crosses no network unencrypted. */
+const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['127.0.0.1', 'localhost', '[::1]']);
+
+/** The environment variables the gateway reads. */
+export const NULLPII_HOST = 'NULLPII_HOST';
+export const NULLPII_PORT = 'NULLPII_PORT';
+export const NULLPII_UPSTREAM = 'NULLPII_UPSTREAM';
+export const NULLPII_OPENAI_UPSTREAM = 'NULLPII_OPENAI_UPSTREAM';
+export const NULLPII_VAULT_TTL_MS = 'NULLPII_VAULT_TTL_MS';
+export const NULLPII_MODEL_DIR = 'NULLPII_MODEL_DIR';
+export const NULLPII_BACKEND = 'NULLPII_BACKEND';
+export const NULLPII_LOG_LEVEL = 'NULLPII_LOG_LEVEL';
+export const NULLPII_BODY_LIMIT_BYTES = 'NULLPII_BODY_LIMIT_BYTES';
+export const NULLPII_LOG_TRAFFIC = 'NULLPII_LOG_TRAFFIC';
+export const NULLPII_SIDECAR_TOKEN = 'NULLPII_SIDECAR_TOKEN';
+export const NULLPII_SIDECAR_MAX_SESSIONS = 'NULLPII_SIDECAR_MAX_SESSIONS';
+export const NULLPII_DISABLE_HINT = 'NULLPII_DISABLE_HINT';
 
 /** An upstream variable and the path its route appends to it. */
 interface UpstreamVar {
@@ -85,12 +104,12 @@ interface UpstreamVar {
   readonly appendedPath: string;
 }
 const ANTHROPIC_UPSTREAM: UpstreamVar = {
-  name: 'NULLPII_UPSTREAM',
+  name: NULLPII_UPSTREAM,
   fallback: DEFAULT_UPSTREAM,
   appendedPath: '/v1/messages',
 };
 const OPENAI_UPSTREAM: UpstreamVar = {
-  name: 'NULLPII_OPENAI_UPSTREAM',
+  name: NULLPII_OPENAI_UPSTREAM,
   fallback: DEFAULT_OPENAI_UPSTREAM,
   appendedPath: '/v1/chat/completions',
 };
@@ -121,7 +140,8 @@ const HINT_OFF = '1';
 const HINT_ON = '0';
 const VALID_DISABLE_HINT = new Set([HINT_OFF, HINT_ON]);
 
-/** An environment variable's value, `undefined` when unset or empty. */
+/** An environment variable's value, `undefined` when unset or empty: the
+ * gateway's one read of `process.env`. */
 function readString(name: string): string | undefined {
   const raw = process.env[name];
   return raw === undefined || raw === '' ? undefined : raw;
@@ -142,8 +162,8 @@ function readInt(name: string, fallback: number, range: IntRange): number {
 }
 
 function readEnum<T extends string>(name: string, allowed: Set<string>, fallback: T): T {
-  const raw = process.env[name];
-  if (raw === undefined || raw === '') return fallback;
+  const raw = readString(name);
+  if (raw === undefined) return fallback;
   if (!allowed.has(raw)) {
     throw new Error(`${name} must be one of ${[...allowed].join('|')}, got: ${raw}`);
   }
@@ -166,6 +186,11 @@ function readUpstreamUrl(v: UpstreamVar): string {
   if (!UPSTREAM_PROTOCOLS.has(url.protocol)) {
     throw new Error(`${v.name} must be an http: or https: URL, got protocol: ${url.protocol}`);
   }
+  if (url.protocol === PLAIN_HTTP && !LOOPBACK_HOSTS.has(url.hostname)) {
+    throw new Error(
+      `${v.name} must use https: unless it is on this machine (127.0.0.1, localhost or [::1]): the API key and the conversation would cross the network unencrypted`,
+    );
+  }
   if (url.username !== '' || url.password !== '') {
     throw new Error(
       `${v.name} must not embed credentials (user:password@); the client's own auth headers are forwarded`,
@@ -184,11 +209,11 @@ function readUpstreamUrl(v: UpstreamVar): string {
 }
 
 function readSidecarToken(): string | undefined {
-  const raw = process.env.NULLPII_SIDECAR_TOKEN;
-  if (raw === undefined || raw === '') return undefined;
+  const raw = readString(NULLPII_SIDECAR_TOKEN);
+  if (raw === undefined) return undefined;
   if (raw.length < MIN_SIDECAR_TOKEN_LENGTH) {
     throw new Error(
-      `NULLPII_SIDECAR_TOKEN must be at least ${MIN_SIDECAR_TOKEN_LENGTH} characters`,
+      `${NULLPII_SIDECAR_TOKEN} must be at least ${MIN_SIDECAR_TOKEN_LENGTH} characters`,
     );
   }
   return raw;
@@ -200,25 +225,24 @@ function readSidecarToken(): string | undefined {
  * file, on any value it cannot use, rather than falling back silently.
  */
 export function loadConfig(): GatewayConfig {
-  const modelDir = readString('NULLPII_MODEL_DIR');
+  const modelDir = readString(NULLPII_MODEL_DIR);
   const sidecarToken = readSidecarToken();
   const loadedFile = configFilePath();
   const policy = loadedFile === null ? {} : loadConfigFile(loadedFile);
   return {
-    host: readString('NULLPII_HOST') ?? DEFAULT_HOST,
-    port: readInt('NULLPII_PORT', DEFAULT_PORT, PORT_RANGE),
+    host: readString(NULLPII_HOST) ?? DEFAULT_HOST,
+    port: readInt(NULLPII_PORT, DEFAULT_PORT, PORT_RANGE),
     upstreamBaseUrl: readUpstreamUrl(ANTHROPIC_UPSTREAM),
     openaiUpstreamBaseUrl: readUpstreamUrl(OPENAI_UPSTREAM),
-    vaultTtlMs: readInt('NULLPII_VAULT_TTL_MS', DEFAULT_VAULT_TTL_MS, VAULT_TTL_RANGE),
+    vaultTtlMs: readInt(NULLPII_VAULT_TTL_MS, DEFAULT_VAULT_TTL_MS, VAULT_TTL_RANGE),
     ...(modelDir !== undefined && { modelDir }),
-    backend: readEnum('NULLPII_BACKEND', VALID_BACKENDS, DEFAULT_BACKEND),
-    logLevel: readEnum('NULLPII_LOG_LEVEL', VALID_LOG_LEVELS, DEFAULT_LOG_LEVEL),
-    bodyLimitBytes: readInt('NULLPII_BODY_LIMIT_BYTES', DEFAULT_BODY_LIMIT, AT_LEAST_ONE),
-    logTraffic:
-      readEnum<'wire' | 'off'>('NULLPII_LOG_TRAFFIC', VALID_LOG_TRAFFIC, 'off') === 'wire',
+    backend: readEnum(NULLPII_BACKEND, VALID_BACKENDS, DEFAULT_BACKEND),
+    logLevel: readEnum(NULLPII_LOG_LEVEL, VALID_LOG_LEVELS, DEFAULT_LOG_LEVEL),
+    bodyLimitBytes: readInt(NULLPII_BODY_LIMIT_BYTES, DEFAULT_BODY_LIMIT, AT_LEAST_ONE),
+    logTraffic: readEnum<'wire' | 'off'>(NULLPII_LOG_TRAFFIC, VALID_LOG_TRAFFIC, 'off') === 'wire',
     ...(sidecarToken !== undefined && { sidecarToken }),
     sidecarMaxSessions: readInt(
-      'NULLPII_SIDECAR_MAX_SESSIONS',
+      NULLPII_SIDECAR_MAX_SESSIONS,
       DEFAULT_SIDECAR_MAX_SESSIONS,
       AT_LEAST_ONE,
     ),
@@ -228,7 +252,7 @@ export function loadConfig(): GatewayConfig {
     restoreTools: new Set(policy.restoreTools ?? DEFAULT_RESTORE_TOOLS),
     appendHint:
       readEnum<typeof HINT_OFF | typeof HINT_ON>(
-        'NULLPII_DISABLE_HINT',
+        NULLPII_DISABLE_HINT,
         VALID_DISABLE_HINT,
         HINT_ON,
       ) !== HINT_OFF,

@@ -121,6 +121,32 @@ describe('ModelManager', () => {
     ).rejects.toBeInstanceOf(InvalidConfigError);
   });
 
+  it('skips an ONNX candidate the pins leave out, for one they cover', async () => {
+    const m = new ModelManager(tempCache());
+    hub.fail = false;
+    const { 'model_fp16.onnx': _dropped, ...fp32Only } = PINNED.sha256;
+    const r = await m.ensure({
+      model: { ...PINNED, sha256: fp32Only },
+      variant: 'auto',
+      backend: 'cuda',
+      timeoutMs: 1,
+    });
+    expect(r.onnxFile).toBe('model.onnx');
+    expect(hub.expected['model.onnx']).toBe(PINNED.sha256['model.onnx']);
+  });
+
+  it.each(['A'.repeat(64), '4'.repeat(63), `${'4'.repeat(63)}g`])(
+    'refuses a pin that is not 64 lower-case hex digits: %s',
+    async (sha) => {
+      const m = new ModelManager(tempCache());
+      hub.fail = false;
+      const model = { ...PINNED, sha256: { ...PINNED.sha256, 'model.onnx': sha } };
+      await expect(m.ensure({ model, variant: 'fp32', timeoutMs: 1 })).rejects.toBeInstanceOf(
+        InvalidConfigError,
+      );
+    },
+  );
+
   it('verifies nothing for a model that pins no hashes', async () => {
     const m = new ModelManager(tempCache());
     hub.fail = false;

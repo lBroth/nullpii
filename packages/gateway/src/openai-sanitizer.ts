@@ -29,6 +29,7 @@ import {
   sanitizeJsonSchema,
   sanitizeJsonValue,
   sanitizeLeaves,
+  sanitizeSchemaSpec,
   sanitizeText,
   sanitizeTopLevelText,
   shouldAppendHint,
@@ -298,7 +299,8 @@ async function sanitizeFunctionDef(
 }
 
 /** `response_format: { type: 'json_schema', json_schema: { description,
- * schema } }`: the description as text, the schema as a schema. */
+ * schema } }`: the description as text, the schema as a schema
+ * (`sanitizeSchemaSpec`, shared with the Anthropic `output_config.format`). */
 async function sanitizeResponseFormat(
   np: NullPii,
   body: ChatCompletionRequest,
@@ -307,13 +309,7 @@ async function sanitizeResponseFormat(
 ): Promise<void> {
   const format = body.response_format;
   if (!isRecord(format) || !isRecord(format.json_schema)) return;
-  const spec: Record<string, unknown> = { ...format.json_schema };
-  if (typeof spec.description === 'string') {
-    spec.description = await sanitizeText(np, spec.description, sessionId, acc);
-  }
-  if (spec.schema !== undefined) {
-    spec.schema = await sanitizeJsonSchema(np, spec.schema, sessionId, acc);
-  }
+  const spec = await sanitizeSchemaSpec(np, format.json_schema, sessionId, acc);
   body.response_format = { ...format, json_schema: spec };
 }
 

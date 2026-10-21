@@ -22,7 +22,7 @@ Every source below allows commercial use and redistribution of a model trained o
 | [`microsoft/presidio-research`](https://github.com/microsoft/presidio-research) synthetic sentences | MIT | Template sentences |
 | Project-generated synthetic data | Apache-2.0 | Multilingual sentences, developer pastes (config files, logs, stack traces), US formats, secrets in prose and code, financial and developer identifiers, personal attributes, and developer text that must stay unmasked |
 
-**Carrier text in the generated data.** To place generated values inside realistic code, the generator embeds short excerpts of source files from npm and PyPI packages. Only permissively licensed packages qualify (MIT, ISC, BSD, Apache-2.0, 0BSD, Unlicense, CC0, PSF); the licence is read from each package's metadata.
+**Carrier text in the generated data.** To place generated values inside realistic code, the generator embeds short excerpts of source files from npm and PyPI packages. Only permissively licensed packages qualify (MIT, ISC, BSD, Apache-2.0, 0BSD, Unlicense, CC0, PSF); the licence is read from each package's metadata. 419 such files are used, from scoped npm packages and installed Python packages, none from the packages the benchmark's trace sets read.
 
 ## Kept out of training
 
@@ -44,7 +44,7 @@ If you redistribute the weights:
 - Keep the Apache-2.0 licence and the `NOTICE` file.
 - Keep the attributions to NVIDIA (Nemotron-PII, CC-BY-4.0) and to the Allen Institute for AI and Common Crawl (C4, ODC-BY) that `NOTICE` carries.
 
-Most of the training text is synthetic. Two sources are real text: TAB is published judgments of the European Court of Human Rights, which name the people involved as the Court published them, and C4 is web text. Both are public, and both are used under their published licences.
+Most of the training text is synthetic. Three sources are real text: the package source excerpts above; TAB, published judgments of the European Court of Human Rights, which name the people involved as the Court published them; and C4, web text. All three are public and used under their published licences.
 
 ## Status
 

@@ -73,7 +73,7 @@ Treat a sanitized prompt as lower-risk, not as free of personal data.
 
 ## CI-enforced rules
 
-- Apache-2.0 / MIT / BSD / ISC / CC0 deps only.
+- Dependencies under Apache-2.0, MIT, BSD-2/3-Clause, ISC, CC0-1.0, BlueOak-1.0.0, Unlicense or 0BSD only (checked by the dependency review in `security.yml`).
 - npm releases use `--provenance`.
 - File paths sandboxed to a cache root (`InvalidPathError` on traversal).
 

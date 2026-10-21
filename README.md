@@ -6,9 +6,9 @@
 
 Mask personal data and secrets before they reach an LLM, and put them back on the way out. Detection runs on your machine: a fine-tuned GLiNER model plus validated recognizers, with a reversible in-memory vault.
 
-- **Measured on data it never saw.** On five public datasets chosen before any tool was run on them, nullpii ranks second on macro char-F2 (0.756) among 15 open-source detectors run the way their authors ship them, behind rizzo-pii (0.770), and lets less personal data through than any other tool's best-scoring configuration (recall 0.960). It is first on the PIIMB leaderboard (36 tools, average F2 0.851). It gets there by masking generously: on precision-weighted scores most tools rank above it. [Results](#benchmark).
+- **Measured on held-out data.** On five public datasets chosen before any tool was run on them, and absent from the training data nullpii and the compared tools declare, nullpii ranks second on macro char-F2 (0.756) among 15 open-source detectors, behind rizzo-pii (0.770), and lets less personal data through than any other tool's best-scoring configuration (recall 0.960). Its margin over the other 13 rests on one of the five datasets, clinical notes in Greek and German. Scored with the PIIMB leaderboard's own method, it would rank first of 36 (average F2 0.851). It gets there by masking generously: on precision-weighted scores most tools rank above it. [Results](#benchmark).
 - **Works with any model.** Mask before your LLM call and restore after it. Or run the gateway in front of the Anthropic or OpenAI API, or the Claude Code mod.
-- **Built for coding agents.** It masks tool output (files, logs, command results), not just prompts; it keeps public links to code hosts and documentation readable; and it will not put a hidden value back where a shell would run it, or into a command that sends data off the machine.
+- **Built for coding agents.** It masks tool output (files, logs, command results), not just prompts; it keeps public links to code hosts and documentation readable; and it keeps a hidden value masked where a shell could run it, or in a command that sends data off the machine (best effort: see SECURITY.md).
 
 Status: pre-1.0. The API can still change between minor versions. nullpii pseudonymizes with a measured leak rate; it is not anonymization and not a compliance certification.
 
@@ -34,6 +34,7 @@ const prompt = wrapForLLM(safe, 'Translate to Italian');
 
 // … your LLM call: OpenAI, Anthropic, Gemini, Ollama, anything …
 
+const reply = await yourLlm(prompt);            // returns text with the placeholders
 const back = np.restore(reply, safe.sessionId);
 // back.restored → the reply with the real values
 
@@ -48,8 +49,8 @@ Streaming restore, for replies that arrive in chunks:
 ```ts
 import { RestoreStream } from 'nullpii';
 const stream = new RestoreStream(np, safe.sessionId);
-for await (const chunk of upstream) emit(stream.push(chunk));
-emit(stream.end().restored);
+for await (const chunk of yourLlmStream(prompt)) process.stdout.write(stream.push(chunk));
+process.stdout.write(stream.end().restored);
 ```
 
 `safe.modelUnscannedWords` counts words the model could not read (a single word longer than its input budget, such as a minified blob); the recognizers still scanned them.
@@ -82,7 +83,7 @@ export ANTHROPIC_BASE_URL=http://localhost:8787
 claude
 ```
 
-Your API key or Claude subscription login is passed through unchanged. For OpenAI-compatible clients (the OpenAI SDKs, Codex, Aider, LiteLLM), set `OPENAI_BASE_URL=http://localhost:8787/v1`.
+Your API key or Claude subscription login is passed through unchanged. For clients of the OpenAI Chat Completions API (the OpenAI SDKs, Aider, LiteLLM), set `OPENAI_BASE_URL=http://localhost:8787/v1`. The Responses API is not proxied.
 
 - Real values go back only into tools that run on your machine (`Bash`, `Read`, `Edit`, `Write`, …). Web and MCP tools keep the placeholders.
 - The request log carries counts, never values.
@@ -134,7 +135,7 @@ Obfuscated input is decoded before detection: Unicode look-alikes and fullwidth 
 How the numbers are produced, and every rule that keeps them honest: [`packages/eval/METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md).
 
 - **Metric:** character level and label-agnostic. A character of personal data counts as protected if any span covers it, whatever the label. F2 counts recall as twice as important as precision (β = 2), because a missed character leaks; F0.5, which favours precision, is shown next to it.
-- **Data:** five public datasets, chosen by written criteria and frozen before any tool ran on them, none used by nullpii or the compared tools for training or tuning: REDACT, TonicAI's human-annotated Privacy-Bench, PIILO student essays, Greek and German clinical notes, and synthetic coding-agent traces from an independent generator.
+- **Data:** five public datasets, chosen by written criteria and frozen before any tool ran on them, none in the training or tuning data nullpii and the compared tools declare (measured overlap with the known sets under 1%): REDACT, TonicAI's human-annotated Privacy-Bench, PIILO student essays, Greek and German clinical notes, and synthetic coding-agent traces from an independent generator.
 - **Competitors:** each runs as its authors ship it, at its default and at an operating point tuned on the same tuning set as nullpii; each is shown at its better row.
 - **Confidence:** paired bootstrap, 95% intervals of nullpii minus the tool.
 
@@ -143,7 +144,7 @@ How the numbers are produced, and every rule that keeps them honest: [`packages/
 |---|---:|---:|---:|---:|---|
 | rizzo-pii (default) | 0.770 | 0.633 | 0.869 | 0.608 | [−0.021, −0.005] |
 | **nullpii** | **0.756** | 0.529 | **0.960** | 0.485 | — |
-| nemotron-pii (`nvidia/gliner-PII`) | 0.720 | 0.612 | 0.808 | 0.591 | [+0.024, +0.050] |
+| nemotron-pii (`nvidia/gliner-PII`, library) | 0.720 | 0.612 | 0.808 | 0.591 | [+0.024, +0.050] |
 | OpenMed privacy-filter-multilingual-v2 | 0.717 | 0.585 | 0.841 | 0.560 | [+0.030, +0.048] |
 | pii-identifier | 0.701 | 0.583 | 0.809 | 0.569 | [+0.043, +0.069] |
 | ettin-68m | 0.699 | 0.563 | 0.825 | 0.545 | [+0.049, +0.067] |
@@ -159,13 +160,15 @@ How the numbers are produced, and every rule that keeps them honest: [`packages/
 | mask everything | 0.260 | | | | |
 <!-- matrix:end -->
 
-nullpii is measured with its five extended categories off, as the datasets do not label them; with its default configuration, filtered to the same labels, it scores 0.747.
+nullpii is measured with its five extended categories off, as the datasets do not label them. Its default configuration, which masks them too, scores 0.747 counted on the same labels and 0.653 as shipped, since masking organisations, occupations and the like counts as over-masking here.
 
 **Where nullpii is not ahead.**
-- **rizzo-pii is significantly ahead, on student essays.** On PIILO, nullpii masks more than the gold labels mark (names, dates and places the gold leaves out): 0.407 against rizzo-pii's 0.623. On the other four datasets nullpii is ahead.
+- **One dataset carries the margin over the rest.** Without the Greek and German clinical notes, nullpii is third (0.724): openai's privacy-filter (+0.032) and rizzo-pii (+0.029) are ahead, and pii-identifier, OpenMed privacy-filter-multilingual-v2 and ettin-68m come within 0.012. Without the student essays, nullpii is first (0.844, rizzo-pii 0.037 behind).
+- **rizzo-pii is significantly ahead, on student essays.** On PIILO nullpii scores 0.407 against rizzo-pii's 0.623, with higher recall and much lower precision: it masks a lot the gold does not label. On the other four datasets nullpii is ahead of rizzo-pii.
 - **Precision.** nullpii's recall is the highest of any tool's best-scoring row (only rizzo-pii tuned for recall goes higher, 0.967, at F2 0.583), and its precision is among the lowest. Ranked by F0.5, most tools are ahead of it.
-- **English documents only.** nullpii is fifth (0.713), behind openai's privacy-filter (0.746), rizzo-pii (0.743), OpenMed's privacy-filter-multilingual-v2 (0.718) and pii-identifier (0.714).
-- **PIIMB** ([leaderboard](https://huggingface.co/spaces/piimb/pii-masking-benchmark-leaderboard), `sentences` subset, its own scoring): nullpii is first of 36 with an average F2 of 0.851; OpenMed's privacy-filter-multilingual-v2 is next at 0.836. nullpii trails it on the ai4privacy and Gretel tasks, and on privy, where it over-masks.
+- **Per dataset.** On PIILO, 8 of the 14 tools are ahead of nullpii; on Tonic, three are, by up to 0.008; on the clinical notes, gliner_multi_pii (0.913 against 0.887).
+- **English documents only.** nullpii is fifth (0.713), behind openai's privacy-filter (0.746), rizzo-pii (0.742), OpenMed's privacy-filter-multilingual-v2 (0.717) and pii-identifier (0.714).
+- **PIIMB** ([leaderboard](https://huggingface.co/spaces/piimb/pii-masking-benchmark-leaderboard), `sentences` subset, scored by us with the leaderboard's method, not a submitted entry): average F2 0.851, above all 35 listed tools; OpenMed's privacy-filter-multilingual-v2 is next at 0.836. One of the six tasks, nemotron-pii, is from nullpii's training family; without it nullpii averages 0.831, against gliner-stream-pii's 0.826 and privacy-filter-multilingual-v2's 0.822, a lead the leaderboard's lack of intervals cannot call significant. nullpii trails on the ai4privacy and Gretel tasks, and on privy, where it over-masks.
 
 The three reported (not gated) sets, the per-dataset numbers and the sensitivity checks are in [`METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md).
 
@@ -197,7 +200,7 @@ new NullPii({ backend: 'mps' });   // Apple Silicon through CoreML
 - Detection runs on your machine. nullpii sends your text nowhere; its one network call is the model download.
 - The vault lives in memory and is never written to disk.
 - Logs carry counts and short ids, never values.
-- Restoring a value into a shell command can inject, because the model never saw the value. The mod and the gateway refuse unsafe positions and commands that send data off the machine; if you call `restore()` yourself, read [SECURITY.md](https://github.com/lBroth/nullpii/blob/main/SECURITY.md).
+- Restoring a value into a shell command can inject, because the model never saw the value. The gateway keeps the placeholder, and the mod refuses the call, where the value is unsafe or the command sends data off the machine. This is best effort; if you call `restore()` yourself, read [SECURITY.md](https://github.com/lBroth/nullpii/blob/main/SECURITY.md).
 
 Report a vulnerability privately: [security advisories](https://github.com/lBroth/nullpii/security/advisories/new).
 

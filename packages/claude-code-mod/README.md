@@ -34,7 +34,7 @@ The sidecar reads the masking policy from `~/.config/nullpii/config.json`, or fr
 {
   "disabledCategories": ["private_organization", "private_occupation"],
   "urlAllowlist": { "hosts": { "*.github.com": "host" } },
-  "restoreTools": ["Bash", "Read", "Edit", "MultiEdit", "Write", "NotebookEdit", "Grep", "Glob"]
+  "restoreTools": ["Bash", "Read", "Edit", "MultiEdit", "Write", "NotebookEdit", "Grep", "Glob", "bash", "shell", "apply_patch"]
 }
 ```
 
@@ -61,7 +61,7 @@ If the sidecar cannot be reached, or the mod has no sidecar token:
    ```bash
    export NULLPII_SIDECAR_TOKEN=$(openssl rand -hex 32)
    echo "$NULLPII_SIDECAR_TOKEN"   # you give this to the mod next
-   npx -p nullpii -p @lbroth/nullpii-gateway nullpii-gateway
+   npx -p nullpii -p onnxruntime-node -p @lbroth/nullpii-gateway nullpii-gateway
    ```
 
 2. Give the mod the same token through its `sidecar_token` option. For an installed plugin, run `/plugin configure` on it: the dialog masks the value and keeps it in your system's secure storage, and Claude Code does not pass it to the commands Claude runs. For a session started with `--plugin-dir`, you can instead export `NULLPII_SIDECAR_TOKEN` in the shell that starts Claude Code:

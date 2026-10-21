@@ -21,7 +21,7 @@ restores the placeholders in the response. Drop-in: clients change
 
 ## Status
 
-**v0.0.3 — preview.** `POST /v1/messages` works end-to-end, both
+**0.5 — preview.** `POST /v1/messages` works end-to-end, both
 non-streaming and streaming (`stream: true`). For streaming, the
 gateway parses upstream SSE frames, buffers `{{...}}` placeholders that
 straddle delta boundaries via `RestoreStream`, then re-emits restored
@@ -54,20 +54,15 @@ If you don't want to clone the repo or run Docker, install both
 packages from npm and run the gateway as a one-shot binary:
 
 ```bash
-# install once
-npm install -g nullpii @lbroth/nullpii-gateway
+# install once (onnxruntime-node is nullpii's optional peer: install it too)
+npm install -g nullpii onnxruntime-node @lbroth/nullpii-gateway
+nullpii-gateway
 
-# run
-NULLPII_MODEL_DIR=/path/to/gliner-onnx \
-ANTHROPIC_API_KEY=sk-ant-…  # OR be logged into Claude Code subscription
-  nullpii-gateway
-
-# or without global install
-npx -p nullpii -p @lbroth/nullpii-gateway nullpii-gateway
+# or without a global install
+npx -p nullpii -p onnxruntime-node -p @lbroth/nullpii-gateway nullpii-gateway
 ```
 
-Pre-warm the GLiNER model once with `npx nullpii prefetch` so the
-first request doesn't pay the ~1.2 GB download.
+The gateway holds no API key: it forwards the `x-api-key` or `authorization` header your client sends (an API key, or a Claude subscription login). Pre-warm the model once with `npx nullpii prefetch` so the first request doesn't pay the ~1.2 GB download, or point `NULLPII_MODEL_DIR` at a model directory you staged.
 
 ### From source (dev mode, hot reload)
 
@@ -177,7 +172,7 @@ What gets masked comes from the shared policy file. Everything else is set with 
 {
   "disabledCategories": ["private_organization", "private_occupation"],
   "urlAllowlist": { "hosts": { "*.github.com": "host" } },
-  "restoreTools": ["Bash", "Read", "Edit", "MultiEdit", "Write", "NotebookEdit", "Grep", "Glob"]
+  "restoreTools": ["Bash", "Read", "Edit", "MultiEdit", "Write", "NotebookEdit", "Grep", "Glob", "bash", "shell", "apply_patch"]
 }
 ```
 
@@ -206,7 +201,7 @@ An unknown key, category, host or release stops the gateway at startup with the 
 | `NULLPII_BACKEND` | `cpu` | `cpu` / `mps` / `cuda` / `auto` |
 | `NULLPII_LOG_LEVEL` | `info` | Fastify log level |
 | `NULLPII_BODY_LIMIT_BYTES` | `10485760` | Request body cap (10 MB), at least 1 |
-| `NULLPII_LOG_TRAFFIC` | (off) | Set to `wire` to dump the sanitized request body + raw upstream response (placeholder-bearing only — never real PII) to stdout for debugging. 64 KB cap per dump. |
+| `NULLPII_LOG_TRAFFIC` | (off) | Set to `wire` to dump the sanitized request body and the raw upstream response to stdout for debugging, 64 KB per dump. They hold placeholders where nullpii found personal data, and anything it missed as written, so keep these dumps local. |
 | `NULLPII_DISABLE_HINT` | (off) | Debug-only. Set to `1` to suppress the `LLM_PRESERVATION_HINT` system-prompt injection. Useful when an upstream proxy / cache rejects the modified system prompt; leave unset in normal operation. |
 
 ## Sidecar API
@@ -280,9 +275,10 @@ The interpreter list is best effort: a program it does not name that runs its qu
 ## Privacy
 
 - Vault stays in-process. No persistence.
-- Counts + label histograms are logged per request; **PII values
-  never appear in logs**, enforced at the type level by `LogFields` in
-  the `nullpii` core.
+- Counts and label histograms are logged per request; the request log
+  never carries the values that were masked (the gateway logs counts
+  and labels only, field by field). `NULLPII_LOG_TRAFFIC=wire` is the
+  exception, for debugging: see Config.
 - No telemetry / phone-home.
 
 License: Apache-2.0.

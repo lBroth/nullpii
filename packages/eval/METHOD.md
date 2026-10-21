@@ -1,6 +1,6 @@
 # How nullpii is measured
 
-This page says how the numbers in the README are produced and what they do and do not show. The scripts are in `scripts/`; the dataset selection rules for the report set are in [`scripts/r3/CRITERIA.md`](scripts/r3/CRITERIA.md), committed before any of its texts was opened (it cites the maintainers' working protocol and log, which are not published; this page is their public summary).
+This page says how the numbers in the README are produced and what they do and do not show. The scripts are in `scripts/`; the dataset selection rules for the report set are in [`scripts/r3/CRITERIA.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/scripts/r3/CRITERIA.md), committed before any of its texts was opened (it cites the maintainers' working protocol and log, which are not published; this page is their public summary).
 
 ## What is tested
 
@@ -14,9 +14,9 @@ nullpii masks personal data and secrets before text reaches an LLM, so the main 
   - TonicAI's human-annotated Privacy-Bench;
   - PIILO (student essays);
   - eu-clinical (Greek clinical notes and German letters);
-  - traces-v3: coding-agent transcripts from a generator written by an agent that saw only a written spec, never this project's generators, corpora or tuning sets.
+  - traces-v3: coding-agent transcripts from a generator written by an agent that saw only a written spec, never this project's generators, corpora or tuning sets. The spec itself was written by the maintainers: it uses nullpii's label names and treats public URLs, placeholders and similar text as distractors, as nullpii's product scope does.
 - **Reported, not gated:** RedactionBench (untyped gold), mama-deid's validation split (gold checked only by models), and traces-v3 with its distractor regions ignored.
-- **Overlap check.** Before any tool was scored, each set was compared, with 10-word shingles, with nullpii's training corpus and tuning texts and with the public datasets the compared tools declare as training data (Nemotron-PII, the ai4privacy sets, Isotonic, and the synthetic sets named in their cards). No set reaches 1% overlap with any of them.
+- **Overlap check.** Before any tool was scored, each set was compared with nullpii's training corpus and tuning texts, the earlier trace sets, Nemotron-PII, the ai4privacy 200k, 400k and open-500k sets, Isotonic, urchade's synthetic PII set and both Gretel PII sets, using one in eight 10-word shingles. No set reaches 1% overlap with any of them. The check covers declared, public training data only: some tools declare none or not all (openai's privacy-filter; rizzo-pii names two of its four sources), and openpii-1m, the Privy-style data on OpenMed privacy-filter-multilingual-v2's card and the Italian sets behind rizzo-pii were not compared.
 - **PIIMB.** The public PIIMB leaderboard's `sentences` subset, scored with the leaderboard's own protocol, is reported separately.
 
 ## Metric
@@ -27,35 +27,42 @@ nullpii masks personal data and secrets before text reaches an LLM, so the main 
 - **F2 decides; F1 and F0.5 are reported next to it.** F2 counts recall as twice as important as precision (β = 2), the product's priority, and it rewards over-masking. A mask-everything row shows the floor.
 - **Core label space.** Scores use the categories every dataset labels (persons, contact details, addresses, dates, identifiers, URLs, IPs, secrets). nullpii's extended categories (organisations, occupations, demographic and sensitive attributes, titles) are on by default; its default configuration is reported both raw and filtered to the core labels.
 - **Macro over datasets**, with a leave-one-dataset-out range so one dataset cannot carry the result.
-- **Paired bootstrap, 95% CIs** of nullpii minus each tool, resampled by source document or conversation where several rows share one. As a sensitivity check every set is also resampled by its recorded clusters.
+- **Paired bootstrap, 95% CIs** of nullpii minus each tool, 1,000 resamples: by document, except traces-v3, resampled by generator template. As a sensitivity check every set is also resampled by its recorded source document or conversation. The 15 comparisons are not corrected for multiplicity.
 
 ## Competitors, run as shipped
 
-- Each tool runs through its authors' inference path: their library or app pipeline, chunker, decoder and rule layers, the label strings of their card, and their recommended device and precision. Where the authors ship a product-level call it is used (rizzo-pii's app `analyze()`, OpenMed's `deidentify`, Presidio's multilingual engine with each text's language, the reference server NVIDIA's NeMo Guardrails calls for `nvidia/gliner-PII`). Third-party code is vendored verbatim where needed, with its licence.
-- Model revisions are pinned.
-- Every tool is shown at its default operating point and at one tuned on the tuning set with the same procedure nullpii's thresholds went through, using only the knobs its pipeline exposes. A claim against a tool is tested against its better row.
+- Each tool runs through its authors' inference path: their library or app pipeline, chunker, decoder and rule layers, the label strings of their card, and their recommended device and precision. Where the authors ship a product-level call it is used (rizzo-pii's app `analyze()`, OpenMed's `deidentify`, Presidio's multilingual engine with each text's language). Third-party code is vendored verbatim where needed, with its licence.
+- Departures from that path, each so that every tool reads the whole text:
+  - the token classifiers (piiranha, deberta, ettin, pii-identifier, and rizzo-pii's model inside its app) run over token windows of their trained length, stitched by overlap, where their pipelines would truncate;
+  - the GLiNER tools run over word windows of the model's `max_len`, where the library drops the words past it; on dense code a window can reach several thousand subword tokens, beyond the trained length;
+  - gliner-stream-pii runs in 2,048-word windows, one at a time, because its card's whole-text mode ran out of GPU memory;
+  - OpenMed runs with `lang='en'` on every text, because another language silently swaps its Small model;
+  - `nvidia/gliner-PII` is shown as run through the GLiNER library with its card's labels and threshold. NVIDIA's reference server (the one NeMo Guardrails calls: 384-character chunks, one entity kept per value) was added after the first R3 look and scores lower (0.591).
+- Model revisions are pinned. The pins were set after the runs; a rerun of 20 documents reproduced every tool's spans, except two tools whose spans differ only through how texts are batched.
+- Every tool is run at its default operating point and at one tuned on the tuning set for macro char-F2: the threshold, a bias against the model's "no entity" class for token classifiers, and per-label score cuts, all applied by the kit, not by the tools' own options. nullpii's changes were also held to a per-label recall guard and an over-masking cap, which the competitors' tuning was not. The tuned values are in `published-bench/r3/operating-points.json`.
+- Tables show each tool at its better row, chosen on R3 itself; a claim against a tool is tested against that row, which can only favour the tool.
 - Texts a tool refuses or fails on score as no output, and are counted. As a sensitivity check, scores are recomputed for every tool without those texts.
 
 ## Rules that keep the numbers honest
 
 1. The report set never drives a decision. It is scored once, after every adapter and every candidate is frozen. A later re-measurement (for example after review fixes) is labelled as such.
-2. No training on any benchmark row; training data comes only from permissively licensed sources ([`docs/WEIGHTS_PROVENANCE.md`](../../docs/WEIGHTS_PROVENANCE.md)).
+2. No training on any benchmark row; training data comes only from permissively licensed sources ([`docs/WEIGHTS_PROVENANCE.md`](https://github.com/lBroth/nullpii/blob/main/docs/WEIGHTS_PROVENANCE.md)).
 3. A change to nullpii is kept only if, on the tuning set, it raises macro char-F2 with a CI above zero, lowers no label's recall, and keeps over-masking within a fixed cap; a correctness fix is kept when the property it targets holds and the output changes only where it was wrong.
 4. Competitor settings change only symmetrically, and every change is disclosed.
-5. Same hardware and inputs for every tool; raw per-document outputs are kept.
+5. Same inputs for every tool, and for latency the same machine; raw per-document outputs are kept.
 
 ## Results
 
-nullpii 0.5 (H3b weights, the release build) in its core regime, measured on CUDA (output identical to the CPU's). Competitors at their default and tuned operating points; each row shows a tool's better one. The R3 sets were first scored on 20 October with the candidate build; these numbers are the re-measurement after the pre-release fixes, which moved nullpii's macro by −0.001.
+nullpii 0.5 (the release build and the published weights, in fp32) in its core regime, measured on CUDA; its CUDA and CPU outputs agree on all but a few documents in a thousand. Competitors at their default and tuned operating points; each row shows a tool's better one. The R3 sets were first scored on 20 October with the candidate build; these numbers are the re-measurement after the pre-release fixes, which moved nullpii's macro by −0.001.
 
-**Gated sets** (macro char-F2; each tool at its better row, `(default)` where that is its default)
+**Gated sets** (char-F2; each tool at its better row, `(default)` where that is its default)
 
 | Tool | REDACT | Tonic | PIILO | eu-clinical | traces-v3 | Macro | LODO |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | rizzo-pii (default) | 0.818 | 0.849 | 0.623 | 0.840 | 0.718 | 0.770 | 0.750–0.806 |
 | **nullpii** | 0.847 | 0.871 | 0.407 | 0.887 | 0.769 | 0.756 | 0.723–0.844 |
-| nullpii, default configuration on the core labels | 0.827 | 0.872 | 0.402 | 0.880 | 0.757 | 0.747 | 0.714–0.834 |
-| nemotron-pii (adapter) | 0.779 | 0.833 | 0.442 | 0.875 | 0.672 | 0.720 | 0.681–0.790 |
+| nullpii, default configuration, core labels only | 0.827 | 0.872 | 0.402 | 0.880 | 0.757 | 0.747 | 0.714–0.834 |
+| nvidia/gliner-PII (library) | 0.779 | 0.833 | 0.442 | 0.875 | 0.672 | 0.720 | 0.681–0.790 |
 | OpenMed privacy-filter-multilingual-v2 | 0.784 | 0.874 | 0.480 | 0.725 | 0.725 | 0.717 | 0.678–0.777 |
 | pii-identifier | 0.796 | 0.879 | 0.492 | 0.632 | 0.706 | 0.701 | 0.657–0.753 |
 | ettin-68m | 0.805 | 0.844 | 0.483 | 0.647 | 0.713 | 0.699 | 0.662–0.752 |
@@ -63,38 +70,40 @@ nullpii 0.5 (H3b weights, the release build) in its core regime, measured on CUD
 | OpenMed PII Large | 0.784 | 0.869 | 0.528 | 0.589 | 0.642 | 0.682 | 0.635–0.721 |
 | OpenMed PII Small | 0.777 | 0.866 | 0.478 | 0.609 | 0.635 | 0.673 | 0.625–0.722 |
 | gliner-pii-large | 0.844 | 0.801 | 0.191 | 0.863 | 0.582 | 0.656 | 0.604–0.772 |
+| nullpii, default configuration as shipped | 0.786 | 0.793 | 0.136 | 0.796 | 0.753 | 0.653 | 0.617–0.782 |
 | piiranha | 0.784 | 0.760 | 0.239 | 0.857 | 0.617 | 0.651 | 0.600–0.755 |
 | gliner_multi_pii (ONNX) | 0.817 | 0.795 | 0.163 | 0.913 | 0.551 | 0.648 | 0.581–0.769 |
 | Presidio | 0.706 | 0.779 | 0.280 | 0.729 | 0.645 | 0.628 | 0.590–0.715 |
-| nemotron-pii (NVIDIA server) | 0.651 | 0.755 | 0.252 | 0.801 | 0.498 | 0.591 | 0.539–0.676 |
+| nvidia/gliner-PII (NVIDIA server) | 0.651 | 0.755 | 0.252 | 0.801 | 0.498 | 0.591 | 0.539–0.676 |
 | gliner-stream-pii | 0.732 | 0.769 | 0.141 | 0.559 | 0.640 | 0.568 | 0.518–0.675 |
 | deberta PII (default) | 0.507 | 0.761 | 0.260 | 0.298 | 0.493 | 0.464 | 0.389–0.515 |
 | mask everything | 0.370 | 0.278 | 0.004 | 0.272 | 0.374 | 0.260 | 0.231–0.324 |
 
-**Reported sets** (macro char-F2; each tool at its better row, `(default)` where that is its default)
+**Reported sets** (char-F2; each tool at its better row, `(default)` where that is its default)
 
 | Tool | RedactionBench | mama-deid | traces-v3, distractors ignored | Macro | LODO |
 |---|---:|---:|---:|---:|---:|
 | **nullpii** | 0.735 | 0.715 | 0.880 | 0.777 | 0.725–0.807 |
-| nullpii, default configuration on the core labels | 0.717 | 0.666 | 0.870 | 0.751 | 0.692–0.793 |
+| nullpii, default configuration, core labels only | 0.717 | 0.666 | 0.870 | 0.751 | 0.692–0.793 |
 | openai privacy-filter | 0.727 | 0.701 | 0.804 | 0.744 | 0.714–0.765 |
+| nullpii, default configuration as shipped | 0.693 | 0.655 | 0.865 | 0.738 | 0.674–0.779 |
 | ettin-68m | 0.738 | 0.591 | 0.818 | 0.716 | 0.665–0.778 |
 | rizzo-pii | 0.632 | 0.648 | 0.824 | 0.701 | 0.640–0.736 |
 | OpenMed privacy-filter-multilingual-v2 | 0.691 | 0.591 | 0.821 | 0.701 | 0.641–0.756 |
 | pii-identifier | 0.753 | 0.541 | 0.808 | 0.700 | 0.647–0.780 |
-| nemotron-pii (adapter) | 0.658 | 0.610 | 0.746 | 0.671 | 0.634–0.702 |
+| nvidia/gliner-PII (library) | 0.658 | 0.610 | 0.746 | 0.671 | 0.634–0.702 |
 | gliner-stream-pii | 0.561 | 0.605 | 0.697 | 0.621 | 0.583–0.651 |
 | gliner_multi_pii (ONNX) | 0.426 | 0.768 | 0.602 | 0.599 | 0.514–0.685 |
 | gliner-pii-large | 0.419 | 0.729 | 0.604 | 0.584 | 0.512–0.667 |
 | piiranha | 0.380 | 0.696 | 0.651 | 0.576 | 0.516–0.674 |
 | OpenMed PII Small | 0.456 | 0.571 | 0.700 | 0.576 | 0.514–0.635 |
 | OpenMed PII Large | 0.437 | 0.584 | 0.705 | 0.575 | 0.510–0.644 |
-| nemotron-pii (NVIDIA server) | 0.490 | 0.645 | 0.562 | 0.565 | 0.526–0.603 |
+| nvidia/gliner-PII (NVIDIA server) | 0.490 | 0.645 | 0.562 | 0.565 | 0.526–0.603 |
 | Presidio (default) | 0.353 | 0.414 | 0.682 | 0.483 | 0.384–0.548 |
 | deberta PII (default) | 0.344 | 0.429 | 0.546 | 0.440 | 0.386–0.488 |
 | mask everything | 0.266 | 0.364 | 0.407 | 0.346 | 0.315–0.386 |
 
-**Gated sets, English documents only** (macro char-F2; each tool at its better row, `(default)` where that is its default)
+**Gated sets, English documents only** (char-F2; each tool at its better row, `(default)` where that is its default)
 
 | Tool | REDACT | Tonic | PIILO | traces-v3 | Macro | LODO |
 |---|---:|---:|---:|---:|---:|---:|
@@ -104,29 +113,47 @@ nullpii 0.5 (H3b weights, the release build) in its core regime, measured on CUD
 | pii-identifier (default) | 0.771 | 0.858 | 0.575 | 0.654 | 0.714 | 0.667–0.761 |
 | **nullpii** | 0.790 | 0.871 | 0.407 | 0.784 | 0.713 | 0.661–0.815 |
 | ettin-68m | 0.783 | 0.844 | 0.483 | 0.712 | 0.706 | 0.659–0.780 |
-| nullpii, default configuration on the core labels | 0.768 | 0.872 | 0.402 | 0.773 | 0.704 | 0.648–0.804 |
+| nullpii, default configuration, core labels only | 0.768 | 0.872 | 0.402 | 0.773 | 0.704 | 0.648–0.804 |
 | OpenMed PII Large | 0.772 | 0.869 | 0.528 | 0.630 | 0.700 | 0.643–0.757 |
 | OpenMed PII Small | 0.766 | 0.866 | 0.478 | 0.623 | 0.683 | 0.622–0.751 |
-| nemotron-pii (adapter) | 0.746 | 0.833 | 0.442 | 0.666 | 0.672 | 0.618–0.748 |
+| nvidia/gliner-PII (library) | 0.746 | 0.833 | 0.442 | 0.666 | 0.672 | 0.618–0.748 |
+| nullpii, default configuration as shipped | 0.717 | 0.793 | 0.136 | 0.769 | 0.604 | 0.541–0.760 |
 | Presidio | 0.688 | 0.779 | 0.280 | 0.646 | 0.598 | 0.538–0.705 |
 | piiranha | 0.770 | 0.760 | 0.239 | 0.605 | 0.593 | 0.534–0.711 |
 | gliner-pii-large | 0.792 | 0.801 | 0.191 | 0.577 | 0.590 | 0.520–0.723 |
 | gliner_multi_pii (ONNX) | 0.798 | 0.795 | 0.163 | 0.552 | 0.577 | 0.503–0.715 |
 | gliner-stream-pii | 0.724 | 0.769 | 0.141 | 0.637 | 0.568 | 0.501–0.710 |
 | deberta PII (default) | 0.646 | 0.761 | 0.260 | 0.505 | 0.543 | 0.470–0.638 |
-| nemotron-pii (NVIDIA server) (default) | 0.619 | 0.751 | 0.291 | 0.501 | 0.540 | 0.470–0.624 |
+| nvidia/gliner-PII (NVIDIA server) (default) | 0.619 | 0.751 | 0.291 | 0.501 | 0.540 | 0.470–0.624 |
 | mask everything | 0.323 | 0.278 | 0.004 | 0.393 | 0.249 | 0.202–0.331 |
 
-**Comparisons (gated sets, F2).** nullpii is significantly ahead of every tool but one, at that tool's better row: the narrowest margins are nemotron-pii [+0.024, +0.050] and OpenMed privacy-filter-multilingual-v2 [+0.030, +0.048]. rizzo-pii at its default is significantly ahead of nullpii, [−0.021, −0.005], all of it on PIILO. No dataset has a tool with significantly higher recall at matched or better precision. At F0.5 the order largely reverses.
+nullpii's default configuration also masks five categories outside the core labels these datasets are scored on (organisations, occupations, demographic and sensitive attributes, titles), so as shipped it scores lower here: 0.653 on the gated sets, 0.136 on PIILO. Turning those five off gives the core regime above.
+
+**Comparisons (gated sets, F2).** On all five sets, nullpii is significantly ahead of every tool but one, at that tool's better row: the narrowest margins are nvidia/gliner-PII [+0.024, +0.050] and OpenMed privacy-filter-multilingual-v2 [+0.030, +0.048]. rizzo-pii at its default is significantly ahead of nullpii, [−0.021, −0.005], all of it on PIILO. No dataset has a tool with significantly higher recall at matched or better precision. At F0.5 the order largely reverses.
+
+**One dataset carries the margin.** Leaving each set out in turn (paired, point estimates):
+
+| Left out | nullpii | Tools ahead of nullpii | Closest behind |
+|---|---:|---|---|
+| REDACT | 0.734 | rizzo-pii (default) +0.024 | nvidia/gliner-PII −0.028 |
+| Tonic | 0.728 | rizzo-pii (default) +0.022 | nvidia/gliner-PII −0.036 |
+| PIILO | 0.844 | none | rizzo-pii (default) −0.037 |
+| eu-clinical | 0.724 | openai privacy-filter +0.032, rizzo-pii (default) +0.029 | pii-identifier −0.005, privacy-filter-multilingual-v2 −0.008, ettin-68m −0.012 |
+| traces-v3 | 0.753 | rizzo-pii (default) +0.029 | nvidia/gliner-PII −0.021 |
+
+Without the clinical notes, the lead over everyone but rizzo-pii is gone. They are the only medical text, and the only Greek, in the gated sets.
 
 **Sensitivity checks** (reported, none decides):
 - without the documents any OpenMed row returned no output for (77 gated documents, for every tool): conclusions unchanged;
 - every set resampled by its recorded clusters: conclusions unchanged (rizzo-pii [−0.022, −0.004]);
 - nullpii's default configuration on the core labels (0.747) as the baseline: ahead of the same 13 tools, behind rizzo-pii.
 
-**OpenMed's texts with no output.** `deidentify` refused or failed on 7 traces-v3 transcripts (refusals) and, at the tuned points, on up to 84 mama-deid and 41 Tonic texts (the package's own safety-sweep check); they score as no spans.
+**OpenMed's texts with no output.** `deidentify` refuses some texts as suspicious content (7 traces-v3 transcripts, 2 PIILO essays, 2 RedactionBench documents and 1 mama-deid text, for both models at both points) and fails its own safety-sweep check on others, more at the tuned points' lower thresholds (Small tuned: 7 REDACT, 41 Tonic, 11 PIILO, 1 eu-clinical, 83 mama-deid; Large tuned: 9 REDACT, 3 Tonic, 1 PIILO, 59 mama-deid). They score as no spans. The package logs no text, so each failure is matched to its document by length and empty output (`scripts/ab/openmed_no_output.py`).
 
-**PIIMB** (`sentences` subset, 150,022 texts, the leaderboard's own scoring; nullpii's default configuration): average F2 0.851, first of 36; OpenMed privacy-filter-multilingual-v2 0.836, OpenMed PII SuperClinical Large 0.835. Per task, nullpii's F2: ai4privacy-en 0.960, ai4privacy-multilingual 0.940, nemotron-pii 0.953 (in nullpii's training family), Gretel 0.962, privy 0.713, mapa-eur-lex 0.580.
+**PIIMB** (`sentences` subset, 150,022 texts, nullpii's default configuration), scored by us with the leaderboard's method (`scripts/ab/piimb_score.py`), not a submitted entry: average F2 0.851, above all 35 listed tools; OpenMed privacy-filter-multilingual-v2 0.836, OpenMed PII SuperClinical Large 0.835. Per task, nullpii's F2: ai4privacy-en 0.960, ai4privacy-multilingual 0.940, nemotron-pii 0.953, Gretel 0.962, privy 0.713, mapa-eur-lex 0.580. Caveats:
+- the nemotron-pii task is in nullpii's training family; without it nullpii averages 0.831, against gliner-stream-pii's 0.826 and privacy-filter-multilingual-v2's 0.822, and the leaderboard gives no intervals;
+- the ai4privacy tasks come from the same family as part of the tuning set;
+- PIIMB shaped a design decision: an earlier result, on which nullpii missed every category it did not mask then, is why the five extended categories exist and are on by default. PIIMB has not been used to tune anything.
 
 **Latency** is in the README; it is measured on idle machines, every tool on the same corpus of coding-agent text.
 
@@ -134,7 +161,7 @@ nullpii 0.5 (H3b weights, the release build) in its core regime, measured on CUD
 
 - F2 rewards over-masking. nullpii ranks on recall: at F0.5 most compared tools rank above it.
 - Five gated datasets is a small sample of the world, and only English, the main EU languages and Greek are covered.
-- Gold labels differ in scope between datasets. PIILO leaves many names, dates and places unlabelled, so masking them counts against a tool.
+- Gold labels differ in scope between datasets. PIILO labels only students' names, contact details, addresses, URLs and ids, so another person's name, a date or a place that a tool masks counts against it. Tonic's gold does not include city, state or postcode, which affects every precision figure on it.
 - The tuning set is close to nullpii's training distribution and partly to some competitors' (it is used to choose, never to claim).
 - Latency depends on hardware and load; it is measured on idle machines, every tool on the same corpus.
 

@@ -15,11 +15,10 @@ npx -y nullpii config
 
 It validates the file and prints `{ "file", "policy", "restoreTools" }`. `file` is `null` when there is none. The user can also run `/pii`, which shows the policy the running sidecar loaded.
 
-Where the file is read from, first match wins:
+Where the file is read from:
 
-1. the path in `NULLPII_CONFIG`;
-2. `$XDG_CONFIG_HOME/nullpii/config.json`;
-3. `~/.config/nullpii/config.json`.
+1. the path in `NULLPII_CONFIG`, when it is set (the file must exist);
+2. otherwise `$XDG_CONFIG_HOME/nullpii/config.json` when `XDG_CONFIG_HOME` is set, and `~/.config/nullpii/config.json` when it is not.
 
 ## 2. Edit it
 

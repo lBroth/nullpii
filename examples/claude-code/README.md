@@ -59,13 +59,15 @@ direct API use.
 
 ## What gets sanitized
 
-The model recognizes 12 categories: person, email, phone, address,
-date, URL, IP, MAC, passport, driver license, vehicle ID, geolocation,
-plus account number (incl. IBAN / credit card / SSN / MRN) and
-"secret" (AWS / GitHub / OpenAI / Anthropic / 30+ API keys, JWT,
-base64-wrapped PII). Recognizer packs catch structurally-valid
-tokens (IBAN mod-97, Luhn, VIN ISO 3779, lat/lon ranges, etc). See
-the root [`README.md`](../../README.md) for the full label table.
+nullpii masks 19 categories: person, email, phone, address, date, URL,
+IP, MAC, passport, driving licence, vehicle id, geolocation, account
+number (IBAN, cards, SSN, MRN, national and tax ids) and secret (API
+keys, JWTs, private keys, base64-wrapped values), plus, by default,
+organisation, occupation, demographic and sensitive attributes, and
+titles. Validated recognizers catch structured values (IBAN mod-97,
+Luhn, VIN, coordinate ranges). The full label table, and how to turn
+categories off, is in the root
+[`README.md`](https://github.com/lBroth/nullpii#what-gets-caught).
 
 ## Verify the redaction is working
 
@@ -103,13 +105,12 @@ on disk, use the local-model compose variant instead of the default
 HuggingFace download path:
 
 ```bash
-# 1. Prefetch the model on a host with network access. Drops files
-#    into the default cache path.
-NULLPII_MODEL_DIR=~/.cache/nullpii/models/lBroth/nullpii/main \
-  npx nullpii prefetch
+# 1. Prefetch the model on a host with network access. It goes into the
+#    cache, and the command prints the directory ("cached at: …").
+npx -p nullpii -p onnxruntime-node nullpii prefetch
 
 # 2. Point the compose at that directory and boot
-export MODEL_DIR_HOST=~/.cache/nullpii/models/lBroth/nullpii/main
+export MODEL_DIR_HOST=<the directory prefetch printed>
 docker compose -f examples/claude-code/docker-compose.local-model.yml up -d
 
 # 3. Same setup as the quickstart from here on
@@ -129,9 +130,9 @@ The directory must contain `model.onnx`, `tokenizer.json`,
   volumes:
     - ./nullpii-model-cache:/home/node/.cache/nullpii
   ```
-- **Air-gapped deployment / pre-release.** Pre-fetch the model on a
-  connected machine (`npx nullpii prefetch` from the repo root with
-  `NULLPII_MODEL_DIR=…` set), then mount it into the container:
+- **Air-gapped deployment.** Pre-fetch the model on a connected
+  machine (`npx nullpii prefetch` prints the directory it filled), copy
+  that directory over, then mount it into the container:
   ```yaml
   environment:
     NULLPII_MODEL_DIR: /models/gliner
@@ -148,9 +149,9 @@ The directory must contain `model.onnx`, `tokenizer.json`,
 
 ## Limitations
 
-- **Anthropic only.** OpenAI compat (`/v1/chat/completions`) is
-  not in v0.3. For other backends, use the core `nullpii` library
-  directly — see the root README.
+- **Two APIs.** The gateway serves the Anthropic Messages API and the
+  OpenAI Chat Completions API (`/v1/chat/completions`). For anything
+  else, use the core `nullpii` library directly: see the root README.
 - **No auth on the gateway itself.** Put your own mTLS / API-key
   layer in front (typical enterprise pattern). The gateway speaks
   plain HTTP because operators add the TLS termination they trust.

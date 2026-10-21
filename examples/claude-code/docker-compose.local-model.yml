@@ -11,14 +11,11 @@
 #
 # Prep:
 #
-#   # Option A — npx prefetch (network host, then copy to target)
-#   NULLPII_MODEL_DIR=~/.cache/nullpii/models/lBroth/nullpii/main \
-#     npx nullpii prefetch
+#   # On a host with network access: prefetch into the cache. The command
+#   # prints the directory it filled ("cached at: …"); copy it to the target.
+#   npx -p nullpii -p onnxruntime-node nullpii prefetch
 #
-#   # Option B — already exported via `packages/eval/scripts/release/export_onnx.py`
-#   #            on a build host; just point MODEL_DIR_HOST at the output dir.
-#
-#   export MODEL_DIR_HOST=~/.cache/nullpii/models/lBroth/nullpii/main
+#   export MODEL_DIR_HOST=<that directory>
 #   docker compose -f examples/claude-code/docker-compose.local-model.yml up -d
 #
 # The model dir must contain: model.onnx, tokenizer.json, gliner_config.json,

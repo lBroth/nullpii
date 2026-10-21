@@ -39,8 +39,8 @@ Otherwise, the rule decides by where the placeholder sits, and restores a value 
 | Position | What the value may contain |
 |---|---|
 | Unquoted | Plain characters only |
-| Single quotes | No `'` |
-| Double quotes | Nothing the shell expands |
+| Single quotes | No `'`, no newline |
+| Double quotes | None of `"`, `$`, `` ` ``, `\`, `!`, no newline |
 | Command substitution (`$(…)`, backticks) | Treated as unquoted |
 | Literal heredoc | No newline |
 | Heredoc fed to anything but `cat` or `tee`, or in a command that also runs a script (`cat > run.sh <<'EOF'` … `bash run.sh`) | Plain characters only |
@@ -82,4 +82,4 @@ Treat a sanitized prompt as lower-risk, not as free of personal data.
 
 The same secret and hygiene checks run locally through `lefthook`. Every workflow pins its actions and container images by digest, and Dependabot keeps the pins current. CI tokens default to read-only.
 
-Test fixtures follow the reserved-value policy in [CONTRIBUTING.md](CONTRIBUTING.md#test-data).
+Test fixtures follow the reserved-value policy in [CONTRIBUTING.md](https://github.com/lBroth/nullpii/blob/main/CONTRIBUTING.md#test-data).

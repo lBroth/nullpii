@@ -7,12 +7,14 @@ The project's own rows are synthetic, Apache-2.0. The two TAB ECHR splits are pu
 Four files at HEAD: the project's canonical `nullpii-bench.jsonl` plus three
 externally licensed upstream files.
 
-| File | Rows | Used in canonical bench | Origin |
-|---|---:|:---:|---|
-| `nullpii-bench.jsonl` | 744 | ✅ project-authored, see subsets below | self-authored, Apache-2.0 |
-| `presidio-synthetic.jsonl` | 5,000 | ✅ external, member of **OOD-7** | Microsoft Presidio seed, MIT |
-| `tab-echr-test.jsonl` | 127 | ✅ EU legal test split, member of **OOD-7** | TAB ECHR test (ACL 2022), MIT |
-| `tab-echr-dev.jsonl` | 125 | ❌ legal documents of the A/B harness fingerprint corpus only | TAB ECHR dev (ACL 2022), MIT |
+| File | Rows | Use | Origin |
+|---|---:|---|---|
+| `nullpii-bench.jsonl` | 744 | regression test of the runtime (preprocessor, recognizers, base64 decoder); see subsets below | self-authored, Apache-2.0 |
+| `presidio-synthetic.jsonl` | 5,000 | earlier benchmark versions; partly in nullpii's training data, so never a claim | Microsoft Presidio seed, MIT |
+| `tab-echr-test.jsonl` | 127 | earlier benchmark versions | TAB ECHR test (ACL 2022), MIT |
+| `tab-echr-dev.jsonl` | 125 | legal documents of the change-check fingerprint corpus only | TAB ECHR dev (ACL 2022), MIT |
+
+The published benchmark (`../METHOD.md`) uses none of these files: its datasets are fetched from their publishers and frozen by SHA-256.
 
 Every file listed here is redistributed inside the `nullpii-eval` wheel via
 the per-file allowlist in [`../pyproject.toml`](../pyproject.toml). A file
@@ -56,9 +58,9 @@ re-fetching the upstream pool from internal storage.
 
 ```jsonc
 {
-  "id": "bundled-it-0023",
+  "id": "…",
   "locale": "it",
-  "subset": "bundled",                            // bundled | adversarial | long-prompts | typo_pii | …
+  "subset": "clean",                              // clean | adversarial | v03_coverage
   "text": "Inoltrare a Maria Rossi (maria.rossi@example.it) entro venerdì.",
   "spans": [
     { "label": "private_person", "start": 11, "end": 22 },
@@ -73,41 +75,11 @@ re-fetching the upstream pool from internal storage.
 this dataset is a regression test for the runtime (preprocessor,
 recognizer pack, base64 decoder), not an OOD generalisation claim.
 
-### OOD-7 — the held-out headline set
-
-The OOD headline reported in the top-level README is the macro over
-**seven** external datasets, named **OOD-7** here and in the root README:
-
-```
-presidio-synthetic
-isotonic-en-heldout   isotonic-de-heldout
-isotonic-fr-heldout   isotonic-it-heldout
-ai4privacy-300k-heldout
-tab-echr
-```
-
-Membership criterion: the dataset is externally authored **and** no part
-of it entered nullpii's training distribution. The `-heldout` suffix means
-rows sliced above nullpii's own training offsets
-(`_AI4_HELDOUT_OFFSET` / `_ISOTONIC_HELDOUT_ROW_OFFSET`,
-[`../scripts/bench_full.py`](../scripts/bench_full.py)) — it carries **no**
-held-out guarantee for any other tool in the matrix.
-
-Do not restate this number by hand. Compute it from `matrix.json`:
-
-```bash
-python packages/eval/scripts/ood_macro.py <bench_full output dir>/matrix.json
-```
-
-An earlier revision of this file described the headline as a macro over
-five datasets; that was wrong and disagreed with the root README by
-0.0128 F1 (OOD-5 = 0.7656 vs OOD-7 = 0.7784 at v0.3.0). The root README
-figure was the correct one.
-
 ## `presidio-synthetic`
 
 Microsoft Presidio's templated test set (5,000 rows). MIT-licensed,
-fully synthetic. Used as a held-out OOD baseline.
+fully synthetic. Rows 0–3,999 were in nullpii's training data, so it is
+not a held-out set for nullpii.
 
 ## `tab-echr-test`
 
@@ -119,7 +91,7 @@ cover `private_person` / `private_address` / `private_date`.
 TAB's dev split, text only, minus the 2 documents whose first 200
 characters match a test document. The A/B harness fingerprint corpus
 (`scripts/ab/harness.mjs`) reads its legal documents from here, so no
-report-set document gates a change (PROTOCOL rule change 9, item 7).
+report-set document gates a change (`../METHOD.md`, rule 3).
 Not shipped in the wheel.
 
 ## Loading
@@ -127,7 +99,7 @@ Not shipped in the wheel.
 ```python
 from datasets import Dataset
 ds = Dataset.from_json("packages/eval/datasets/nullpii-bench.jsonl")
-bundled_it = ds.filter(lambda r: r["subset"] == "bundled" and r["locale"] == "it")
+clean_it = ds.filter(lambda r: r["subset"] == "clean" and r["locale"] == "it")
 ```
 
 ## License + citation

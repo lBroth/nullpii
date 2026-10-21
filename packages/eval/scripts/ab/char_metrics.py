@@ -49,8 +49,7 @@ F_BETAS = {"f2": 2.0, "f1": 1.0, "f05": 0.5}
 MASK_ALL = "mask-all"
 BOOTSTRAP_RESAMPLES = 1000
 BOOTSTRAP_SEED = 0
-CI_LOW_PCT = 2.5
-CI_HIGH_PCT = 97.5
+CI_LEVEL = 95.0
 
 
 def _covered(spans: list[tuple[int, int]], length: int) -> np.ndarray:
@@ -271,7 +270,9 @@ def compare(
     return out, diffs
 
 
-def macro_summary(report: dict, diffs: dict[str, list[dict[str, np.ndarray]]], baseline: str) -> dict:
+def macro_summary(
+    report: dict, diffs: dict[str, list[dict[str, np.ndarray]]], baseline: str, ci_level: float = CI_LEVEL
+) -> dict:
     """Unweighted mean of each F-beta over datasets; CI from per-dataset
     bootstrap samples averaged index-wise (each dataset resampled
     independently). `f2_lodo` gives the lowest and highest macro char-F2 left
@@ -286,13 +287,16 @@ def macro_summary(report: dict, diffs: dict[str, list[dict[str, np.ndarray]]], b
             entry["f2_lodo"] = [float(min(lodo)), float(max(lodo))]
         if tool != baseline:
             for key in F_BETAS:
-                entry[f"baseline_minus_tool_{key}_ci"] = _ci(np.mean(np.stack([d[key] for d in diffs[tool]]), axis=0))
+                entry[f"baseline_minus_tool_{key}_ci"] = _ci(
+                    np.mean(np.stack([d[key] for d in diffs[tool]]), axis=0), ci_level
+                )
         out[tool] = entry
     return out
 
 
-def _ci(samples: np.ndarray) -> list[float]:
-    return [float(np.percentile(samples, CI_LOW_PCT)), float(np.percentile(samples, CI_HIGH_PCT))]
+def _ci(samples: np.ndarray, level: float = CI_LEVEL) -> list[float]:
+    tail = (100.0 - level) / 2
+    return [float(np.percentile(samples, tail)), float(np.percentile(samples, 100.0 - tail))]
 
 
 def main() -> None:
@@ -308,6 +312,12 @@ def main() -> None:
         "--cluster-rows", action="store_true", help="sensitivity: resample every R3 set by its rows' cluster ids"
     )
     parser.add_argument("--exclude", type=Path, help="sensitivity: JSON {dataset: [idx]} dropped for every tool")
+    parser.add_argument(
+        "--macro-ci-level",
+        type=float,
+        default=CI_LEVEL,
+        help="confidence level of the macro CIs, e.g. 99.67 for a Bonferroni correction over 15 comparisons",
+    )
     args = parser.parse_args()
     excluded = {d: frozenset(v) for d, v in json.loads(args.exclude.read_text()).items()} if args.exclude else {}
 
@@ -340,7 +350,7 @@ def main() -> None:
         row = {t: round(v["f2"], 4) for t, v in report[dataset].items()}
         print(f"{dataset}: char-F2 {row}", flush=True)
 
-    report["_macro"] = macro_summary(report, all_diffs, args.baseline)
+    report["_macro"] = macro_summary(report, all_diffs, args.baseline, args.macro_ci_level)
     for tool, entry in report["_macro"].items():
         print(f"macro {tool}: char-F2 {entry['f2']:.4f} baseline-minus-tool CI {entry.get('baseline_minus_tool_f2_ci')}")
 

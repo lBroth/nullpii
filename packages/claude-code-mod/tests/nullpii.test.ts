@@ -43,6 +43,8 @@ function fakeSidecar(
     liveKeys?: string[];
     /** Answer the challenge as a process without the token would. */
     impostor?: boolean;
+    /** The policy file the status reports. */
+    policyFile?: string;
   } = {},
 ) {
   const restoreTools = opts.restoreTools ?? DEFAULT_RESTORE_TOOLS;
@@ -149,7 +151,7 @@ function fakeSidecar(
       return respond(200, {
         status: 'ok',
         sessions: 1,
-        policy: { file: POLICY_FILE, loaded: true, config: {}, restoreTools },
+        policy: { file: opts.policyFile ?? POLICY_FILE, loaded: true, config: {}, restoreTools },
       });
     }
     const body = JSON.parse(e.init?.body ?? '{}') as { value: unknown; tool?: string };
@@ -676,6 +678,31 @@ test('a call that may change the policy file is put to the user', async ($, on) 
   for (const call of allows) {
     expect((await $.tool.check(call)).decision).toBe('allow');
   }
+});
+
+test('a policy path that shows only once real values are back is refused before the tool runs', async ($, on) => {
+  const sidecar = fakeSidecar({ policyFile: '/srv/John/nullpii.json' });
+  stubSession(on, sidecar);
+  const ran: string[] = [];
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.check', () => ({ decision: 'allow' }));
+  on('tool.call', ($, e) => {
+    ran.push(e.file_path);
+    return { result: 'ok' };
+  });
+  await start($);
+  await $.prompt.submit({ text: 'the home of John', wait: false, origin: COMPOSER });
+  const call = {
+    tool: 'Write',
+    file_path: `/srv/${ph('PERSON', 0)}/nullpii.json`,
+    content: '{}',
+  };
+  // The masked path names no policy file, so the check lets it through...
+  expect((await $.tool.check({ tool: 'Write', input: call })).decision).toBe('allow');
+  // ...and the restored one does, so the call does not run.
+  const out = await $.tool.call(call);
+  expect(out.deny).toContain('would change the nullpii masking policy file');
+  expect(ran).toEqual([]);
 });
 
 test('the policy guard sees through case, dot segments, repeated slashes and relative paths', async ($, on) => {

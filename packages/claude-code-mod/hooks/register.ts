@@ -75,6 +75,8 @@ const RESULT_WITHHELD =
   "nullpii could not mask this tool's result, so it was withheld. The user sees why above the prompt and in /pii.";
 const CONTEXT_WITHHELD =
   "nullpii withheld this tool's result: a hook attached text for Claude that holds personal data, and that text cannot be masked.";
+const POLICY_DENIED =
+  'nullpii refused this call: with the real values put back it would change the nullpii masking policy file, which the user was not asked about. Ask the user to make that change themselves.';
 const POLICY_ASK =
   'This call may change the nullpii masking policy (what gets masked, and which tools get real values back). Allow it only if you asked for that change.';
 
@@ -413,8 +415,19 @@ export function register(on, options) {
       // Rewrite the call only when a placeholder was replaced: a rewritten
       // call is denied in auto mode, so untouched calls must stay as written.
       if (r.replacements > 0) {
+        const restored = { ...e, ...r.value };
+        // `tool.check` judged the masked call: a policy path with a masked
+        // segment (`NULLPII_CONFIG=/Users/<name>/…`) shows only now.
+        const cwd = await $.session.cwd();
+        const file = policy?.file;
+        if (
+          touchesPolicyFile(e.tool, restored, file, cwd) &&
+          !touchesPolicyFile(e.tool, e, file, cwd)
+        ) {
+          return { deny: POLICY_DENIED };
+        }
         counts.restored += r.replacements;
-        call = { ...e, ...r.value };
+        call = restored;
       }
     }
     const out = await next(call);

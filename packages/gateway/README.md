@@ -33,34 +33,65 @@ sanitises the request body before forwarding. `POST /v1/chat/completions` takes 
 
 ### Docker (recommended)
 
-```bash
-# Build the image (the model is fetched on first boot; the image is about 614 MB)
-docker build -t nullpii/gateway:slim -f packages/gateway/Dockerfile .
+Each release publishes the image to the GitHub Container Registry as `ghcr.io/lbroth/nullpii-gateway`, for linux/amd64 and linux/arm64. It runs the CPU backend.
 
+| Tag | Image |
+|---|---|
+| `0.5.0` | that release |
+| `0.5` | the newest `0.5.x` release |
+| `latest` | the newest release |
+| `edge` | the last build of `main`, unreleased |
+| `sha-<commit>` | the build of that commit |
+
+Pin a minor line (`0.5`) or an exact version: before 1.0, a minor release can break compatibility. To run exactly the image you reviewed, pin its digest (`ghcr.io/lbroth/nullpii-gateway@sha256:…`).
+
+```bash
 # Run it, reachable from this machine only
 docker run --rm -p 127.0.0.1:8787:8787 \
   -v nullpii-cache:/home/node/.cache/nullpii \
-  nullpii/gateway:slim
+  ghcr.io/lbroth/nullpii-gateway:0.5
+```
+
+To build the image yourself, from a clone of the repository (the build context is the repository root):
+
+```bash
+docker build -t nullpii-gateway:local -f packages/gateway/Dockerfile .
+docker run --rm -p 127.0.0.1:8787:8787 \
+  -v nullpii-cache:/home/node/.cache/nullpii \
+  nullpii-gateway:local
 ```
 
 The gateway has no authentication of its own: anyone who can reach its port can send requests through it with your upstream credentials. Inside the container it listens on all interfaces, so publish the port on `127.0.0.1` as above, not with a bare `-p 8787:8787`. The image runs as the unprivileged `node` user; its model cache is `/home/node/.cache/nullpii`.
+
+The model is not in the image. The first request that needs it downloads it (about 1.2 GB) into the cache volume and waits for the download. To fetch it beforehand, run the nullpii CLI the image carries against the same volume:
+
+```bash
+docker run --rm -v nullpii-cache:/home/node/.cache/nullpii \
+  ghcr.io/lbroth/nullpii-gateway:0.5 node bin/nullpii.mjs prefetch --backend cpu
+```
+
+The image's health check calls `/health`, which answers as soon as the server listens: it does not wait for the model.
 
 A worked `docker-compose.yml` plus a Claude Code integration walk-through
 lives at [`examples/claude-code/`](https://github.com/lBroth/nullpii/tree/main/examples/claude-code).
 
 ### Standalone via `npx` (no clone)
 
-If you don't want to clone the repo or run Docker, install both
-packages from npm and run the gateway as a one-shot binary:
+If you don't want to clone the repo or run Docker, install the gateway
+from npm with its two peer dependencies, `nullpii` (the detection
+library) and `onnxruntime-node` (the runtime it runs the model with),
+and run it as a one-shot binary:
 
 ```bash
-# install once (onnxruntime-node is nullpii's optional peer: install it too)
+# install once; listing the peers also puts the `nullpii` CLI on your PATH
 npm install -g nullpii onnxruntime-node @lbroth/nullpii-gateway
 nullpii-gateway
 
 # or without a global install
 npx -p nullpii -p onnxruntime-node -p @lbroth/nullpii-gateway nullpii-gateway
 ```
+
+On Linux x64 without an NVIDIA GPU, run the install with `ONNXRUNTIME_NODE_INSTALL=skip` in its environment: otherwise `onnxruntime-node`'s install script downloads its CUDA 12 libraries from NuGet, which the CPU backend does not use (its CPU runtime ships in the npm package).
 
 The gateway holds no API key: it forwards the `x-api-key` or `authorization` header your client sends (an API key, or a Claude subscription login). Pre-warm the model once with `npx nullpii prefetch` so the first request doesn't pay the ~1.2 GB download, or point `NULLPII_MODEL_DIR` at a model directory you staged.
 

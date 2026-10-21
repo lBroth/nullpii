@@ -12,8 +12,8 @@ import { urlPolicy } from './url-filter.js';
 
 /**
  * The masking policy one JSON file holds for every nullpii surface: the
- * library (`toEngineConfig`), the CLI (`--config`), the gateway and the
- * Claude Code mod it serves, and the MCP server. Every key is optional;
+ * library (`toEngineConfig`), the CLI (`--config`), and the gateway and
+ * the Claude Code mod it serves. Every key is optional;
  * an unknown key is an error, so a typo never silently changes nothing.
  */
 export interface NullPiiFileConfig {

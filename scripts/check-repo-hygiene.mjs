@@ -18,8 +18,9 @@ import { readFileSync, statSync } from 'node:fs';
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
-/** Tracked on purpose despite their size; extend only in review. */
-const LARGE_FILE_ALLOWLIST = new Set(['assets/claude-code-demo.m4v']);
+/** Tracked on purpose despite their size (none at present); extend only in
+ * review. */
+const LARGE_FILE_ALLOWLIST = new Set([]);
 
 const FORBIDDEN_PATHS = [
   { rule: 'private research notes', re: /^packages\/eval\/private\// },

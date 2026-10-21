@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Same as `docker-compose.yml` but with the GLiNER model mounted from
-# the host instead of fetched from HuggingFace on first boot. Use this
+# the host instead of downloaded from Hugging Face on first use. Use this
 # variant when:
 #
 #   - the host has no outbound network reach (air-gapped deploy)
@@ -38,6 +38,10 @@ services:
       NULLPII_LOG_LEVEL: info
       # Points the engine at the mounted dir. Skips HF entirely.
       NULLPII_MODEL_DIR: /models
+      # The sidecar API the Claude Code mod talks to: on when
+      # NULLPII_SIDECAR_TOKEN is set in the shell that runs `docker compose`,
+      # passed through as it is; off when that shell does not set it.
+      NULLPII_SIDECAR_TOKEN:
     volumes:
       # Host model dir → container /models. Read-only so a buggy
       # container can't corrupt the cache. The path on the host is set

@@ -1,20 +1,26 @@
 name: gateway-docker
 
-# Multi-arch (amd64 + arm64) build + publish of the `@lbroth/nullpii-gateway`
-# Docker image to the GitHub Container Registry. The image is large
-# enough (about 614 MB) that we keep the workflow off the main CI matrix,
-# gated on changes that actually affect the image. Nothing is pushed
-# unless the tests pass, and a `gateway-v*` tag must point at a commit on
-# main. The publishing job uses no build cache, so a poisoned cache entry
-# cannot reach a published image.
+# Multi-arch (amd64 + arm64) build of the `@lbroth/nullpii-gateway` Docker
+# image, published to the GitHub Container Registry as
+# ghcr.io/lbroth/nullpii-gateway. Kept off the main CI matrix and gated on
+# changes that affect the image. Nothing is pushed unless the tests pass,
+# and a release tag must point at a commit on main. The publishing job
+# uses no build cache, so a poisoned cache entry cannot reach a published
+# image.
 #
-# Triggers:
-#   - push to `main` touching gateway / core code → `:edge` tag
-#   - push of a tag matching `gateway-v*` → `:vX.Y.Z` + `:latest`
-#   - manual `workflow_dispatch` for ad-hoc rebuilds
+# Triggers and the image tags they push:
+#   - a release tag `vX.Y.Z` (the tag release.yml publishes npm from) →
+#     `X.Y.Z`, `X.Y` and `latest`; a pre-release tag such as
+#     `v0.6.0-rc.1` → only `0.6.0-rc.1`
+#   - a push to `main` touching what goes into the image → `edge`
+#   - every pushed build also gets `sha-<short commit>`
+#   - a manual `workflow_dispatch` on `main` or on a release tag rebuilds
+#     and pushes as above; on any other branch it builds without pushing
 #
-# The ONNX model is NOT baked in. The image pulls it from HuggingFace
-# on first boot; air-gapped deploys mount a pre-fetched dir.
+# The ONNX model is NOT baked in: the gateway downloads it into the
+# image's cache volume the first time it needs it, unless it is
+# prefetched or a pre-fetched directory is mounted (packages/gateway
+# README).
 
 on:
   push:
@@ -22,22 +28,26 @@ on:
     paths:
       - 'packages/gateway/**'
       - 'src/**'
+      - 'bin/**'
       - 'package.json'
       - 'package-lock.json'
       - 'tsconfig*.json'
       - 'biome.json'
+      - 'LICENSE'
+      - 'NOTICE'
       - '.dockerignore'
       - '.github/workflows/gateway-docker.yml'
+    # Path filters are not applied to tag pushes: every release tag builds.
     tags:
-      - 'gateway-v*'
+      - 'v*.*.*'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE: ${{ github.repository_owner }}/nullpii-gateway
+  # GHCR names are lowercase; the owner's account is lBroth.
+  IMAGE: ghcr.io/lbroth/nullpii-gateway
 
 jobs:
   test:
@@ -71,12 +81,22 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Push only from main or a release tag
+        id: target
+        run: |
+          case "$GITHUB_REF" in
+            refs/heads/main | refs/tags/v*.*.*) push=true ;;
+            *) push=false ;;
+          esac
+          echo "push=$push" >> "$GITHUB_OUTPUT"
+          echo "$GITHUB_REF: push=$push"
       - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
       - name: Log in to GHCR
+        if: steps.target.outputs.push == 'true'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
@@ -84,23 +104,27 @@ jobs:
         id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE }}
+          images: ${{ env.IMAGE }}
+          # `latest` follows a stable release tag only: with latest=auto,
+          # metadata-action adds it for `type=semver` and skips pre-releases.
+          flavor: |
+            latest=auto
           tags: |
-            # gateway-vX.Y.Z tag → vX.Y.Z + latest
-            type=match,pattern=gateway-v(.*),group=1
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/gateway-v') }}
-            # main push → edge
+            # release tag vX.Y.Z → X.Y.Z and X.Y (pre-releases: X.Y.Z-pre only)
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            # main → edge
             type=raw,value=edge,enable={{is_default_branch}}
-            # always include the short sha for traceability
+            # every build → sha-<short commit>, for traceability
             type=sha,prefix=sha-,format=short
 
-      - name: Build & push
+      - name: Build, and push from main or a release tag
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           file: packages/gateway/Dockerfile
           platforms: linux/amd64,linux/arm64
-          push: true
+          push: ${{ steps.target.outputs.push == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           provenance: true

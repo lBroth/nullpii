@@ -12,6 +12,8 @@ Mask personal data and secrets before they reach an LLM, and put them back on th
 
 Status: pre-1.0. The API can still change between minor versions. nullpii pseudonymizes with a measured leak rate; it is not anonymization and not a compliance certification.
 
+Documentation: [lbroth.github.io/nullpii](https://lbroth.github.io/nullpii/).
+
 ## Install
 
 ```bash
@@ -19,6 +21,12 @@ npm install nullpii onnxruntime-node
 ```
 
 Node 22 or later. The first run downloads the model from Hugging Face into `~/.cache/nullpii/` (1.2 GB in fp32; on CUDA, 0.6 GB in fp16), at a pinned revision whose files are checked by SHA-256. Pre-fetch it with `npx nullpii prefetch`, or point `NULLPII_MODEL_DIR` at a copy you staged.
+
+On Linux x64, `onnxruntime-node`'s install script also downloads its CUDA 12 libraries from NuGet, without checking a hash. The CPU runtime is already in the npm package, so on a machine without an NVIDIA GPU skip that download:
+
+```bash
+ONNXRUNTIME_NODE_INSTALL=skip npm install nullpii onnxruntime-node
+```
 
 ## Usage
 
@@ -78,10 +86,13 @@ One JSON file sets the policy for the library, the CLI, the gateway and the Clau
 An HTTP proxy for the Anthropic Messages API (`/v1/messages`) and the OpenAI Chat Completions API (`/v1/chat/completions`). Point your client's base URL at it and work as before: requests are masked before they leave your machine, and responses, streaming included, are restored before they reach you.
 
 ```bash
+git clone https://github.com/lBroth/nullpii.git && cd nullpii
 docker compose -f examples/claude-code/docker-compose.yml up -d   # listens on 127.0.0.1:8787
 export ANTHROPIC_BASE_URL=http://localhost:8787
 claude
 ```
+
+The first request downloads the model (1.2 GB) into the container's cache volume and waits for it; [`examples/claude-code`](https://github.com/lBroth/nullpii/tree/main/examples/claude-code) shows how to fetch it beforehand. The image is also published as `ghcr.io/lbroth/nullpii-gateway`.
 
 Your API key or Claude subscription login is passed through unchanged. For clients of the OpenAI Chat Completions API (the OpenAI SDKs, Aider, LiteLLM), set `OPENAI_BASE_URL=http://localhost:8787/v1`. The Responses API is not proxied.
 

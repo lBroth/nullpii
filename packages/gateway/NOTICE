@@ -19,6 +19,10 @@ Runtime (npm):
                                            NOTICE lists its dependencies
                                            and the attributions below in
                                            full)
+  - onnxruntime-node            MIT       (peer dependency, the ONNX
+                                           Runtime nullpii runs the model
+                                           with; Copyright (c) Microsoft
+                                           Corporation)
 
 Model artifacts, downloaded at runtime by nullpii from the Hugging Face
 Hub and not part of this package:

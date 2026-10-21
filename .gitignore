@@ -73,7 +73,7 @@ bom.xml
 # generated test artifacts
 .nullpii-test-artifacts/
 
-# large demo source — only the compressed .m4v + thumb are tracked.
+# Demo recording source: large, kept out of the repository.
 assets/claude-code-demo.mov
 
 # Documentation site build output

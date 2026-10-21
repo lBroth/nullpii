@@ -8,15 +8,49 @@
 // peer dependencies, so this walks package-lock.json from those roots
 // instead. Every package must carry an allowed licence (CLAUDE.md); an SPDX
 // `OR` expression passes when one of its terms is allowed.
+//
+// The gateway image also ships onnxruntime's licence and third-party
+// notices, which onnxruntime-node's npm package lacks, from
+// packages/gateway/third_party/onnxruntime/ (copied from the onnxruntime
+// release tag of ORT_NOTICES_VERSION). The check fails when the locked
+// onnxruntime-node moves to another version, so the notices move with it.
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 const ALLOWED = new Set(['MIT', 'ISC', 'BSD-2-Clause', 'BSD-3-Clause', 'Apache-2.0', 'CC0-1.0']);
 const EXTRA_ROOTS = ['fastify', 'onnxruntime-node'];
+const ORT_NOTICES_DIR = 'packages/gateway/third_party/onnxruntime';
+const ORT_NOTICES_FILES = ['LICENSE', 'ThirdPartyNotices.txt'];
+const ORT_NOTICES_VERSION = '1.30.0';
 
 const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'));
 const pkgs = lock.packages;
 const rootDeps = Object.keys(pkgs[''].dependencies ?? {});
+
+/** What is wrong with the onnxruntime notices the gateway image ships. */
+function ortNoticeProblems() {
+  const problems = ORT_NOTICES_FILES.filter((f) => !existsSync(`${ORT_NOTICES_DIR}/${f}`)).map(
+    (f) => `${ORT_NOTICES_DIR}/${f} is missing`,
+  );
+  const locked = pkgs['node_modules/onnxruntime-node']?.version;
+  if (locked !== ORT_NOTICES_VERSION) {
+    problems.push(
+      [
+        `onnxruntime-node is locked at ${locked}, but ${ORT_NOTICES_DIR}`,
+        `holds the notices of ${ORT_NOTICES_VERSION}: copy LICENSE and ThirdPartyNotices.txt`,
+        `from https://github.com/microsoft/onnxruntime at tag v${locked}, then update`,
+        'ORT_NOTICES_VERSION here and the tag named in packages/gateway/Dockerfile',
+      ].join(' '),
+    );
+  }
+  return problems;
+}
+
+const noticeProblems = ortNoticeProblems();
+if (noticeProblems.length > 0) {
+  process.stderr.write(`runtime licences: ${noticeProblems.join('\n  ')}\n`);
+  process.exit(1);
+}
 
 /** The lockfile path a dependency named `name` resolves to from the
  * package at `from`, the way Node resolves it: nearest `node_modules`

@@ -69,52 +69,57 @@ jobs:
       - run: python -m pytest -q packages/eval/scripts/r3/traces_v3_gen/tests
 
   e2e-onnx:
-    # Real-ONNX end-to-end smoke test (F-18). Loads the GLiNER model
-    # from HuggingFace and runs a small fixture set through the real
-    # inference path so CI catches regressions the mocked unit suite cannot
-    # (ScatterND clamping, decoder index math, chunk-boundary dedupe,
-    # recognizer/ML reconciliation, base64 layer).
+    # Real-ONNX end-to-end suite (test/e2e/). Loads the GLiNER model and
+    # runs a small fixture set through the real inference path, so CI
+    # catches regressions the mocked unit suite cannot (ScatterND clamping,
+    # decoder index math, chunk-boundary dedupe, recognizer/ML
+    # reconciliation, base64 layer).
     #
-    # Opt-in via the repo variable `NULLPII_E2E_ENABLED=true`. Flip
-    # it once the HuggingFace repo `lBroth/nullpii` is fully public
-    # (currently 401 on anonymous fetch — gated on HF account). Add
-    # an `HF_TOKEN` secret + set the env if you want the job to run
-    # against a private HF mirror in the meantime.
+    # The model is the one the library pins (DEFAULT_MODEL_REPO and
+    # DEFAULT_MODEL_REVISION in src/defaults.ts, DEFAULT_MODEL in
+    # src/model-manager.ts), fetched by `nullpii prefetch` exactly as a
+    # user's install fetches it, hash checks included. The job fails
+    # unless that revision is a commit SHA, so it never tests a moving
+    # `main`.
+    #
+    # Opt-in via the repository variable `NULLPII_E2E_ENABLED=true`: set
+    # it once the pinned revision downloads anonymously from Hugging Face.
     name: e2e (real ONNX)
     if: ${{ vars.NULLPII_E2E_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     env:
-      # The HF model repo. Override via repo variable if you need to
-      # point at a fork or a pre-release staging repo.
-      NULLPII_E2E_HF_REPO: ${{ vars.NULLPII_E2E_HF_REPO != '' && vars.NULLPII_E2E_HF_REPO || 'lBroth/nullpii' }}
-      NULLPII_E2E_HF_REVISION: ${{ vars.NULLPII_E2E_HF_REVISION != '' && vars.NULLPII_E2E_HF_REVISION || 'main' }}
+      # The model cache, inside the workspace so actions/cache keeps it.
+      XDG_CACHE_HOME: ${{ github.workspace }}/.nullpii-e2e-cache
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24'
           cache: npm
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
-        with:
-          python-version: '3.12'
-      - name: Install huggingface-cli
-        run: python -m pip install -q huggingface_hub==0.36.2
-      - name: Restore cached model artifacts
-        id: model-cache
+      - run: npm ci
+      - run: npm run build
+      - name: The model the library pins
+        id: model
+        run: |
+          node --input-type=module -e '
+            import { appendFileSync } from "node:fs";
+            const { DEFAULT_MODEL, ModelManager } = await import("./dist/model-manager.js");
+            const ref = `${DEFAULT_MODEL.repo}@${DEFAULT_MODEL.revision}`;
+            if (!/^[0-9a-f]{40}$/.test(DEFAULT_MODEL.revision)) {
+              console.error(`The library pins ${ref}, not a commit: pin DEFAULT_MODEL_REVISION first.`);
+              process.exit(1);
+            }
+            const dir = new ModelManager().modelDir;
+            appendFileSync(process.env.GITHUB_OUTPUT, `ref=${ref}\ndir=${dir}\n`);
+          '
+      - name: Restore the cached model
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
-          path: ./.nullpii-e2e-model
-          key: nullpii-e2e-${{ env.NULLPII_E2E_HF_REPO }}-${{ env.NULLPII_E2E_HF_REVISION }}-v1
-      - name: Download ONNX model from HuggingFace
-        if: steps.model-cache.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p .nullpii-e2e-model
-          huggingface-cli download "$NULLPII_E2E_HF_REPO" \
-            --revision "$NULLPII_E2E_HF_REVISION" \
-            --local-dir .nullpii-e2e-model \
-            --include "model.onnx" "tokenizer.json" "gliner_config.json" "tokenizer_config.json"
-      - run: npm ci
+          path: ${{ steps.model.outputs.dir }}
+          key: nullpii-e2e-model-${{ steps.model.outputs.ref }}
+      - name: Fetch the pinned model as a user's install does
+        run: node bin/nullpii.mjs prefetch --backend cpu
       - name: Run real-ONNX E2E suite
         env:
-          NULLPII_MODEL_DIR: ${{ github.workspace }}/.nullpii-e2e-model
+          NULLPII_MODEL_DIR: ${{ steps.model.outputs.dir }}
         run: npm run test:e2e

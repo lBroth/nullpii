@@ -4,7 +4,7 @@
 // answered from the `http.fetch` stub. No model, tool or network runs.
 
 import { expect, mock, test } from 'claude-code/testing';
-import { sidecarOrigin } from '../hooks/policy.ts';
+import { expectedProof, hmacSha256Hex, sidecarOrigin } from '../hooks/policy.ts';
 
 const TOKEN = 't'.repeat(64);
 /** The fake sidecar's one session prefix, as nullpii mints them. */
@@ -36,7 +36,15 @@ const SESSIONS_PREFIX = '/v1/sidecar/sessions/';
  * Sessions carry secrets as the gateway's do: handed out once on
  * creation, required on every later call. `liveKeys` are sessions some
  * earlier module instance opened, whose secrets this mod does not have. */
-function fakeSidecar(opts: { down?: boolean; restoreTools?: string[]; liveKeys?: string[] } = {}) {
+function fakeSidecar(
+  opts: {
+    down?: boolean;
+    restoreTools?: string[];
+    liveKeys?: string[];
+    /** Answer the challenge as a process without the token would. */
+    impostor?: boolean;
+  } = {},
+) {
   const restoreTools = opts.restoreTools ?? DEFAULT_RESTORE_TOOLS;
   const vault = new Map<string, string>();
   const sessions = new Map<string, string>(
@@ -44,6 +52,9 @@ function fakeSidecar(opts: { down?: boolean; restoreTools?: string[]; liveKeys?:
   );
   let minted = 0;
   const calls: string[] = [];
+  /** Challenges answered, and whether each request carried the token. */
+  const challenges: string[] = [];
+  const tokensSent: boolean[] = [];
   /** `host:port` of every request, wherever it was sent. */
   const hosts: string[] = [];
   const secretsSent: Array<string | undefined> = [];
@@ -87,16 +98,23 @@ function fakeSidecar(opts: { down?: boolean; restoreTools?: string[]; liveKeys?:
       text: body === undefined ? '' : JSON.stringify(body),
     },
   });
-  const handler = (
+  const handler = async (
     $: unknown,
     e: { url: string; init?: { method?: string; body?: string; headers?: Record<string, string> } },
   ) => {
     const method = e.init?.method ?? 'GET';
     const url = new URL(e.url);
     const path = url.pathname;
+    if (opts.down) return { deny: 'connect ECONNREFUSED 127.0.0.1:8787' };
+    tokensSent.push(e.init?.headers?.authorization !== undefined);
+    if (path === '/v1/sidecar/challenge') {
+      const { nonce } = JSON.parse(e.init?.body ?? '{}') as { nonce: string };
+      challenges.push(nonce);
+      const proof = await expectedProof(opts.impostor ? 'f'.repeat(64) : TOKEN, nonce);
+      return answer(200, { proof });
+    }
     calls.push(`${method} ${path}`);
     hosts.push(url.host);
-    if (opts.down) return { deny: 'connect ECONNREFUSED 127.0.0.1:8787' };
     if (state.garbage !== undefined && /\/(sanitize|restore)$/.test(path)) {
       return { value: { status: 200, ok: true, headers: {}, text: state.garbage } };
     }
@@ -192,7 +210,19 @@ function fakeSidecar(opts: { down?: boolean; restoreTools?: string[]; liveKeys?:
       ...(shellBody && { shellKeptMasked: kept }),
     });
   };
-  return { handler, calls, hosts, logs, restoreBodies, secretsSent, sessions, state, statuses };
+  return {
+    handler,
+    calls,
+    challenges,
+    hosts,
+    logs,
+    restoreBodies,
+    secretsSent,
+    sessions,
+    state,
+    statuses,
+    tokensSent,
+  };
 }
 
 function stubSession(
@@ -895,4 +925,45 @@ test('hooks that find the session gone at once reopen it once, under one key', a
   expect([...sidecar.sessions.keys()]).toEqual(['session-1']);
   expect(sidecar.statuses).not.toContain(403);
   expect(sidecar.statuses).not.toContain(409);
+});
+
+test('HMAC-SHA256 matches the reference', async () => {
+  // RFC 4231, test case 2.
+  expect(await hmacSha256Hex('Jefe', 'what do ya want for nothing?')).toBe(
+    '5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843',
+  );
+  // A key longer than the block size is hashed first (reference: Python's hmac).
+  expect(
+    await hmacSha256Hex('k'.repeat(100), 'Test Using Larger Than Block-Size Key - Hash Key First'),
+  ).toBe('2bc51c04a41032b5f44910acdb471c67a7b1de64e91089e052761fe59a9dac4b');
+});
+
+test('every request follows a fresh challenge, and the challenge carries no token', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  await start($);
+  await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  expect(sidecar.calls.length).toBeGreaterThan(0);
+  expect(sidecar.challenges.length).toBe(sidecar.calls.length);
+  expect(new Set(sidecar.challenges).size).toBe(sidecar.challenges.length);
+  // Requests alternate: a challenge without the token, then the call with it.
+  expect(sidecar.tokensSent).toEqual(sidecar.calls.flatMap(() => [false, true]));
+});
+
+test('a process that cannot prove the token gets neither the token nor the prompt', async ($, on) => {
+  const sidecar = fakeSidecar({ impostor: true });
+  stubSession(on, sidecar);
+  const seen: string[] = [];
+  on('prompt.submit', ($, e) => {
+    seen.push(e.text);
+    return { text: e.text };
+  });
+  await start($);
+  await $.prompt.submit({ text: 'Mail John at john@acme.io', wait: false, origin: COMPOSER });
+  expect(seen).toEqual([]);
+  expect(sidecar.calls).toEqual([]);
+  expect(sidecar.tokensSent.every((sent) => !sent)).toBe(true);
+  const status = await $.command.run({ command: 'pii', args: '' });
+  expect(status.text).toContain('did not prove it holds the sidecar token');
 });

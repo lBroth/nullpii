@@ -249,10 +249,13 @@ export NULLPII_SIDECAR_TOKEN=$(openssl rand -hex 32)
 nullpii-gateway
 ```
 
-Every request needs `Authorization: Bearer $NULLPII_SIDECAR_TOKEN`. Every call on a session also needs that session's secret, `x-nullpii-session-secret`, which the `PUT` that creates the session returns once.
+Before sending the token, a caller can check that the process on the port is this sidecar: `POST /v1/sidecar/challenge` with `{ nonce }` (32 random bytes, lower-case hex) answers `{ proof }`, the HMAC-SHA256 of `nullpii-sidecar-challenge-v1\n` followed by the nonce, keyed by the token. It needs no token, so a process that took the port while the gateway was down learns nothing from it, and cannot answer it. The Claude Code mod checks before every request.
+
+Every other request needs `Authorization: Bearer $NULLPII_SIDECAR_TOKEN`. Every call on a session also needs that session's secret, `x-nullpii-session-secret`, which the `PUT` that creates the session returns once.
 
 | Method and path | Body | Response |
 |---|---|---|
+| `POST /v1/sidecar/challenge` | `{ nonce }` | `{ proof }`; no token needed |
 | `GET /v1/sidecar/status` | — | `{ status, sessions, policy }`, `policy` being `{ file, loaded, config, restoreTools }` |
 | `PUT /v1/sidecar/sessions/:key` | — | 201 `{ status: "created", secret }` for a new session. For an open one: 200 `{ status: "exists" }` with its secret, 409 `session_exists` without it. 429 when `NULLPII_SIDECAR_MAX_SESSIONS` are open. |
 | `POST /v1/sidecar/sessions/:key/sanitize` | `{ value }`: a string or any JSON | `{ value, captured, capturedByLabel }` |

@@ -17,12 +17,15 @@ import {
   PLACEHOLDER,
   type Policy,
   addMasked,
+  challengeNonce,
   emptyCounts,
+  expectedProof,
   formatBand,
   formatReport,
   hasPlaceholder,
   optionString,
   restorableArgs,
+  sameText,
   sidecarOrigin,
   touchesPolicyFile,
 } from './policy.ts';
@@ -31,6 +34,8 @@ import {
 const DEFAULT_SIDECAR_URL = 'http://127.0.0.1:8787';
 const SESSIONS_PATH = '/v1/sidecar/sessions/';
 const STATUS_PATH = '/v1/sidecar/status';
+const CHALLENGE_PATH = '/v1/sidecar/challenge';
+const JSON_TYPE = { 'content-type': 'application/json' };
 const SESSION_NOT_FOUND = 404;
 const SESSION_EXISTS = 409;
 /** Proves to the sidecar that this mod opened the session. */
@@ -43,13 +48,21 @@ const NOT_LOOPBACK =
 const UNREACHABLE =
   'nullpii-gateway did not answer at the sidecar address: start it with NULLPII_SIDECAR_TOKEN set';
 const NOT_JSON = 'the sidecar answered with something that is not JSON';
+const NOT_SIDECAR =
+  'the process at the sidecar address did not prove it holds the sidecar token, so nothing was sent to it: run nullpii-gateway 0.5 or later there, with the same NULLPII_SIDECAR_TOKEN';
 const TIMED_OUT = 'the sidecar took too long to answer';
 /** Shown in place of an error text this mod did not write (a tool's, a
  * hook's, the host's): such a text can quote a value restored into a tool
  * call, or a sidecar answer. */
 const HIDDEN_REASON = 'an unexpected error, whose text is not shown as it may hold personal data';
 /** The error texts this mod writes, which hold no value: the only ones shown. */
-const OWN_REASONS: ReadonlySet<string> = new Set([NO_TOKEN, NOT_LOOPBACK, UNREACHABLE, NOT_JSON]);
+const OWN_REASONS: ReadonlySet<string> = new Set([
+  NO_TOKEN,
+  NOT_LOOPBACK,
+  UNREACHABLE,
+  NOT_JSON,
+  NOT_SIDECAR,
+]);
 /** SidecarError's text, the one with a variable part. */
 const SIDECAR_STATUS = /^nullpii sidecar answered \d{3}$/;
 const TIMEOUT_KIND = 'timeout';
@@ -123,7 +136,9 @@ class SidecarError extends Error {
 
 /** Send one request to the sidecar's route `path`, with the session
  * secret when one is given. Nothing is sent, the token included, unless
- * the sidecar's address is a loopback one. */
+ * the sidecar's address is a loopback one and the process there has just
+ * proved it holds the token: another process could have taken the port
+ * since the last request (the gateway stopped, or restarted). */
 async function request(
   $,
   method: string,
@@ -133,8 +148,9 @@ async function request(
 ): Promise<unknown> {
   if (sidecarUrl === undefined) throw new Error(NOT_LOOPBACK);
   if (token === undefined) throw new Error(NO_TOKEN);
+  await checkSidecar($, sidecarUrl, token);
   // A JSON content type with no body is a 400, so PUT and DELETE send neither.
-  const json = body === undefined ? {} : { 'content-type': 'application/json' };
+  const json = body === undefined ? {} : JSON_TYPE;
   const owner = secret === undefined ? {} : { [SESSION_SECRET_HEADER]: secret };
   const res = await fetchSidecar($, sidecarUrl + path, {
     method,
@@ -143,6 +159,21 @@ async function request(
   });
   if (!res.ok) throw new SidecarError(res.status);
   return parseAnswer(res.text);
+}
+
+/** Ask the process at `origin` to sign a fresh nonce with the token,
+ * which is not sent: only the sidecar holding the same token answers the
+ * expected proof. */
+async function checkSidecar($, origin: string, secretToken: string): Promise<void> {
+  const nonce = challengeNonce();
+  const res = await fetchSidecar($, origin + CHALLENGE_PATH, {
+    method: 'POST',
+    headers: JSON_TYPE,
+    body: JSON.stringify({ nonce }),
+  });
+  const answer = res.ok ? (parseAnswer(res.text) as { proof?: unknown }) : {};
+  const proof = typeof answer.proof === 'string' ? answer.proof : '';
+  if (!sameText(proof, await expectedProof(secretToken, nonce))) throw new Error(NOT_SIDECAR);
 }
 
 /** `$.http.fetch`, failing with the mod's own text: the host's can carry

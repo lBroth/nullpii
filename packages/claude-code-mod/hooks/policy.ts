@@ -86,6 +86,64 @@ export function sidecarOrigin(raw: string): string | undefined {
   return loopback && bare ? url.origin : undefined;
 }
 
+/** Prefixed to the nonce the sidecar signs; the gateway's
+ * `CHALLENGE_CONTEXT`. */
+const CHALLENGE_CONTEXT = 'nullpii-sidecar-challenge-v1\n';
+/** SHA-256 block size in bytes, the HMAC key length. */
+const SHA256_BLOCK_BYTES = 64;
+const HMAC_INNER_PAD = 0x36;
+const HMAC_OUTER_PAD = 0x5c;
+const NONCE_BYTES = 32;
+const HEX_RADIX = 16;
+const HEX_BYTE_WIDTH = 2;
+
+function toHex(bytes: Uint8Array): string {
+  return Array.from(bytes, (b) => b.toString(HEX_RADIX).padStart(HEX_BYTE_WIDTH, '0')).join('');
+}
+
+async function sha256(...parts: Uint8Array[]): Promise<Uint8Array> {
+  const joined = new Uint8Array(parts.reduce((n, part) => n + part.length, 0));
+  let at = 0;
+  for (const part of parts) {
+    joined.set(part, at);
+    at += part.length;
+  }
+  return new Uint8Array(await crypto.subtle.digest('SHA-256', joined));
+}
+
+/** HMAC-SHA256 (RFC 2104) in lower-case hex. A mod has only
+ * `crypto.subtle.digest`, so the construction is spelled out. */
+export async function hmacSha256Hex(key: string, message: string): Promise<string> {
+  const encoder = new TextEncoder();
+  let keyBytes = encoder.encode(key);
+  if (keyBytes.length > SHA256_BLOCK_BYTES) keyBytes = await sha256(keyBytes);
+  const inner = new Uint8Array(SHA256_BLOCK_BYTES).map(
+    (_, i) => (keyBytes[i] ?? 0) ^ HMAC_INNER_PAD,
+  );
+  const outer = new Uint8Array(SHA256_BLOCK_BYTES).map(
+    (_, i) => (keyBytes[i] ?? 0) ^ HMAC_OUTER_PAD,
+  );
+  return toHex(await sha256(outer, await sha256(inner, encoder.encode(message))));
+}
+
+/** A fresh challenge nonce: 32 random bytes in lower-case hex. */
+export function challengeNonce(): string {
+  return toHex(crypto.getRandomValues(new Uint8Array(NONCE_BYTES)));
+}
+
+/** The proof a sidecar holding `token` answers for `nonce`. */
+export function expectedProof(token: string, nonce: string): Promise<string> {
+  return hmacSha256Hex(token, CHALLENGE_CONTEXT + nonce);
+}
+
+/** Compare two strings in time that depends only on their length. */
+export function sameText(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
 /** Whether any string in `value` holds a placeholder. */
 export function hasPlaceholder(value: unknown): boolean {
   return PLACEHOLDER.test(JSON.stringify(value) ?? '');

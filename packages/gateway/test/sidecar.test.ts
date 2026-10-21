@@ -8,9 +8,15 @@ import type { FastifyInstance } from 'fastify';
 import type { NullPii } from 'nullpii';
 import { PiiVault, TextTooLongError } from 'nullpii';
 
+import { createHmac } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { GatewayConfig } from '../src/config.js';
-import { SESSION_SECRET_HEADER, SIDECAR_MAX_BYTES } from '../src/routes/sidecar.js';
+import {
+  CHALLENGE_CONTEXT,
+  CHALLENGE_PATH,
+  SESSION_SECRET_HEADER,
+  SIDECAR_MAX_BYTES,
+} from '../src/routes/sidecar.js';
 import {
   SANITIZE_CACHE_MAX_CHARS,
   SANITIZE_CACHE_MAX_ENTRIES,
@@ -171,6 +177,67 @@ describe('sidecar · access control', () => {
       });
       expect(res.statusCode).toBe(200);
     }
+  });
+});
+
+describe('sidecar · challenge', () => {
+  const NONCE = '0f'.repeat(32);
+
+  it('proves it holds the token without being sent it', async () => {
+    const { app } = await setup();
+    const res = await app.inject({
+      method: 'POST',
+      url: CHALLENGE_PATH,
+      payload: { nonce: NONCE },
+    });
+    expect(res.statusCode).toBe(200);
+    const expected = createHmac('sha256', TOKEN)
+      .update(CHALLENGE_CONTEXT + NONCE)
+      .digest('hex');
+    expect(res.json()).toEqual({ proof: expected });
+  });
+
+  it('answers a different proof for a different nonce', async () => {
+    const { app } = await setup();
+    const proofOf = async (nonce: string) =>
+      (await app.inject({ method: 'POST', url: CHALLENGE_PATH, payload: { nonce } })).json();
+    expect(await proofOf(NONCE)).not.toEqual(await proofOf('a0'.repeat(32)));
+  });
+
+  it('refuses a nonce that is not 32 bytes of lower-case hex', async () => {
+    const { app } = await setup();
+    for (const nonce of ['', 'ab', NONCE.toUpperCase(), `${NONCE}00`, 'zz'.repeat(32)]) {
+      const res = await app.inject({ method: 'POST', url: CHALLENGE_PATH, payload: { nonce } });
+      expect(res.statusCode).toBe(400);
+    }
+  });
+
+  it('keeps the loopback Host and Origin checks', async () => {
+    const { app } = await setup();
+    const rebound = await app.inject({
+      method: 'POST',
+      url: CHALLENGE_PATH,
+      headers: { host: 'attacker.example:8787' },
+      payload: { nonce: NONCE },
+    });
+    const browser = await app.inject({
+      method: 'POST',
+      url: CHALLENGE_PATH,
+      headers: { origin: 'http://127.0.0.1:8787' },
+      payload: { nonce: NONCE },
+    });
+    expect(rebound.statusCode).toBe(403);
+    expect(browser.statusCode).toBe(403);
+  });
+
+  it('opens nothing else without the token', async () => {
+    const { app } = await setup();
+    const res = await app.inject({
+      method: 'POST',
+      url: `${CHALLENGE_PATH}?x=1`,
+      payload: { nonce: NONCE },
+    });
+    expect(res.statusCode).toBe(401);
   });
 });
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { type NullPii, type NullPiiFileConfig, TextTooLongError } from 'nullpii';
 import { SanitizeCache } from '../sanitize-cache.js';
@@ -43,6 +43,19 @@ const REFUSAL_REPLIES: Readonly<Record<SessionRefusal, { status: number; error: 
   forbidden: { status: 403, error: 'bad_session_secret' },
 };
 const LOOPBACK_HOSTNAMES: ReadonlySet<string> = new Set(['127.0.0.1', 'localhost', '[::1]']);
+/** The route a caller checks the sidecar knows the token on, before it
+ * sends the token or any text. */
+export const CHALLENGE_PATH = '/v1/sidecar/challenge';
+/** Prefixed to the nonce before it is signed, so a proof answers this
+ * challenge and nothing else the token could be asked to sign. */
+export const CHALLENGE_CONTEXT = 'nullpii-sidecar-challenge-v1\n';
+
+const CHALLENGE_BODY = {
+  type: 'object',
+  required: ['nonce'],
+  additionalProperties: false,
+  properties: { nonce: { type: 'string', pattern: '^[0-9a-f]{64}$' } },
+} as const;
 
 const SESSION_PARAMS = {
   type: 'object',
@@ -67,6 +80,10 @@ const RESTORE_BODY = {
     tool: { type: 'string', minLength: 1, maxLength: MAX_TOOL_NAME_LENGTH },
   },
 } as const;
+
+interface ChallengeRequest {
+  Body: { nonce: string };
+}
 
 interface SessionRequest {
   Params: { key: string };
@@ -105,7 +122,17 @@ function hostnameOf(host: string): string {
   return colon === -1 ? host : host.slice(0, colon);
 }
 
-/** `null` when the request may proceed, else the status and error code. */
+/** The proof that the sidecar holds `token`, for a caller's `nonce`:
+ * HMAC-SHA256 keyed by the token, in lower-case hex. */
+export function challengeProof(token: string, nonce: string): string {
+  return createHmac('sha256', token)
+    .update(CHALLENGE_CONTEXT + nonce)
+    .digest('hex');
+}
+
+/** `null` when the request may proceed, else the status and error code.
+ * The challenge needs no token: it is how a caller checks the sidecar
+ * before sending the token. */
 function rejectReason(
   req: FastifyRequest,
   tokenDigest: Buffer,
@@ -114,6 +141,7 @@ function rejectReason(
     return { status: 403, error: 'host_not_allowed' };
   }
   if (req.headers.origin !== undefined) return { status: 403, error: 'origin_not_allowed' };
+  if (req.url === CHALLENGE_PATH) return null;
   const auth = req.headers.authorization ?? '';
   const presented = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : '';
   if (!timingSafeEqual(sha256(presented), tokenDigest)) {
@@ -155,7 +183,13 @@ function cappedBody(payload: Record<string, unknown>): string | undefined {
  * Session-scoped sanitize/restore API for local callers such as a Claude
  * Code mod, which keeps one vault session per conversation across turns.
  *
- * Every route needs `Authorization: Bearer <NULLPII_SIDECAR_TOKEN>`. A
+ * A caller first checks that the sidecar holds the token, without
+ * sending it: `POST /v1/sidecar/challenge` with a random `nonce` answers
+ * `proof`, the HMAC-SHA256 of the nonce keyed by the token
+ * (`challengeProof`). A process that took the port while the gateway was
+ * down cannot answer it, so it gets neither the token nor any text.
+ *
+ * Every other route needs `Authorization: Bearer <NULLPII_SIDECAR_TOKEN>`. A
  * request whose `Host` is not a loopback name, or that carries an
  * `Origin` header (browsers always send one on these methods), is
  * refused before the token is checked: a web page reaching the port
@@ -204,6 +238,14 @@ export async function registerSidecarRoutes(
       if (rejected !== null) return reply.code(rejected.status).send({ error: rejected.error });
       return undefined;
     });
+
+    scope.post<ChallengeRequest>(
+      CHALLENGE_PATH,
+      { schema: { body: CHALLENGE_BODY } },
+      async (req) => ({
+        proof: challengeProof(opts.token, req.body.nonce),
+      }),
+    );
 
     scope.get('/v1/sidecar/status', async () => ({
       status: 'ok',

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { NullPii } from '../src/index.js';
 
 const np = new NullPii({ backend: 'cpu' });

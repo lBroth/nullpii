@@ -40,8 +40,9 @@ export interface AnthropicRouteOptions {
   readonly np: NullPii;
   readonly upstreamBaseUrl: string;
   readonly fetchImpl: Fetch;
-  /** When true, dump sanitized request body + raw upstream response
-   * (placeholder-bearing) to stdout. Never logs real PII. */
+  /** When true, dump the request as forwarded and the raw upstream
+   * response to stdout (`traffic-log.ts`). Not free of personal data:
+   * they hold whatever nullpii did not mask. */
   readonly logTraffic: boolean;
   /** Tools whose arguments get real values back; default
    * `DEFAULT_RESTORE_TOOLS`. Any other tool keeps its placeholders. */

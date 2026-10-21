@@ -52,8 +52,10 @@ export interface SseRelayOptions {
    * upstream, so a slow client applies backpressure (`writeFrame`). */
   readonly write: (frame: string) => void | Promise<void>;
   /** Optional debugging hook — invoked with each decoded upstream
-   * chunk BEFORE frame extraction/restore. Carries placeholders only
-   * (Anthropic never sees real PII), safe to dump to stdout. */
+   * chunk BEFORE frame extraction/restore (`NULLPII_LOG_TRAFFIC=wire`).
+   * Placeholders stay masked in it, but it is not free of personal data:
+   * it holds whatever the upstream wrote, including anything nullpii did
+   * not mask in the request. */
   readonly onUpstreamChunk?: (chunk: string) => void;
   /** Tools whose arguments get real values back. Default:
    * `DEFAULT_RESTORE_TOOLS`, the tools that run on this machine. */

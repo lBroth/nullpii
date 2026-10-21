@@ -201,7 +201,7 @@ An unknown key, category, host or release stops the gateway at startup with the 
 | `NULLPII_BACKEND` | `cpu` | `cpu` / `mps` / `cuda` / `auto` |
 | `NULLPII_LOG_LEVEL` | `info` | Fastify log level |
 | `NULLPII_BODY_LIMIT_BYTES` | `10485760` | Request body cap (10 MB), at least 1 |
-| `NULLPII_LOG_TRAFFIC` | (off) | Set to `wire` to dump the sanitized request body and the raw upstream response to stdout for debugging, 64 KB per dump. They hold placeholders where nullpii found personal data, and anything it missed as written, so keep these dumps local. |
+| `NULLPII_LOG_TRAFFIC` | (off) | Set to `wire` to dump to stdout, for debugging, the request body as forwarded, its headers (auth headers as their last 6 characters and length) and the raw upstream response before restore, 64 KB per dump. They hold placeholders where nullpii found personal data, and everything else as it was sent or written: values it missed, fields it does not scan (images, documents, `mcp_servers` and their credentials) and the model's output. Keep these dumps local. |
 | `NULLPII_DISABLE_HINT` | `0` | `1` suppresses the `LLM_PRESERVATION_HINT` system-prompt injection; `0` keeps it. Useful when an upstream proxy / cache rejects the modified system prompt; leave unset in normal operation. |
 
 Both upstreams must be `http:` or `https:` base URLs, without credentials (`user:password@`: the gateway forwards the client's own auth headers), a query string, a fragment or a trailing `/v1`; anything else is refused at startup. Trailing slashes are dropped.
@@ -279,8 +279,9 @@ The interpreter list is best effort: a program it does not name that runs its qu
 - Vault stays in-process. No persistence.
 - Counts and label histograms are logged per request; the request log
   never carries the values that were masked (the gateway logs counts
-  and labels only, field by field). `NULLPII_LOG_TRAFFIC=wire` is the
-  exception, for debugging: see Config.
+  and labels only, field by field), nor an upstream error's body (its
+  status, length and error type only). `NULLPII_LOG_TRAFFIC=wire` is
+  the exception, for debugging: see Config.
 - No telemetry / phone-home.
 
 License: Apache-2.0.

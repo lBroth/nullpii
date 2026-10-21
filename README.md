@@ -199,7 +199,7 @@ new NullPii({ backend: 'mps' });   // Apple Silicon through CoreML
 
 - Detection runs on your machine. nullpii sends your text nowhere; its one network call is the model download.
 - The vault lives in memory and is never written to disk.
-- Logs carry counts and short ids, never values.
+- Logs carry counts and short ids, never values. The exception is the gateway's `NULLPII_LOG_TRAFFIC=wire` debugging dump, which prints what was sent upstream, including anything the detector missed (see SECURITY.md).
 - Restoring a value into a shell command can inject, because the model never saw the value. The gateway keeps the placeholder, and the mod refuses the call, where the value is unsafe or the command sends data off the machine. This is best effort; if you call `restore()` yourself, read [SECURITY.md](https://github.com/lBroth/nullpii/blob/main/SECURITY.md).
 
 Report a vulnerability privately: [security advisories](https://github.com/lBroth/nullpii/security/advisories/new).

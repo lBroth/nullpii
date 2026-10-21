@@ -8,7 +8,8 @@ Privately — open a [Security Advisory](https://github.com/lBroth/nullpii/secur
 
 - Detection runs locally: nullpii sends your text nowhere. Its one network call is the model download from Hugging Face on first use, at a pinned revision whose files are checked by SHA-256; set `NULLPII_MODEL_DIR` to a pre-fetched copy to avoid even that.
 - Vault is in-memory only; `destroySession()` purges it.
-- Logs never contain PII values (counts and short ids only).
+- Logs carry counts, labels and short ids, never a value nullpii masked or restored: the library's `debug` output, and the gateway's request log and console summary (an upstream error is logged by its status, length and error type, not its body).
+- **Except the gateway's `NULLPII_LOG_TRAFFIC=wire`,** a debugging dump to stdout of each request as forwarded and of each upstream response before restore. Placeholders stay masked in it, but everything else is printed as it was sent or written: values the detector missed, fields the gateway forwards unscanned (images, documents, `mcp_servers` with its credentials) and the model's output. Auth headers appear as their last six characters and length. Keep such a dump local and short-lived.
 - Placeholders carry a 16-hex prefix of the minting session id (64-bit collision-resistant). `restore()` surfaces foreign-prefix placeholders via `RestoreResult.foreignPlaceholders`; `{ strict: true }` throws `SessionMismatchError` instead.
 
 ## What it does NOT protect

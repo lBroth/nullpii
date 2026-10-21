@@ -44,7 +44,7 @@ class PublicDataset:
     samples: tuple[Sample, ...]
 
 
-# Map upstream NER labels → our 8 categories. Coarse: CoNLL `PER` is a
+# Map upstream NER labels → nullpii's categories. Coarse: CoNLL `PER` is a
 # person, `LOC` is treated as private_address (loose mapping for sanity).
 _NER_LABEL_MAP = {
     "PER": "private_person",

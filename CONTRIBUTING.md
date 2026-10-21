@@ -12,7 +12,7 @@ npm test
 npm run lint && npm run typecheck
 ```
 
-Eval kit (Python 3.12, gitignored from npm publish): `cd packages/eval && python3.12 -m venv .venv && pip install -e ".[presidio]"`. See `packages/eval/README.md`.
+Eval kit (Python 3.12, gitignored from npm publish): `cd packages/eval && python3.12 -m venv .venv && .venv/bin/pip install -e ".[presidio]"`. See `packages/eval/README.md`.
 
 ## Architecture rules
 

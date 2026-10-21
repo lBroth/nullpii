@@ -9,7 +9,7 @@ import { ModelManager, defaultCacheDir } from '../../model-manager.js';
 export function registerDoctor(program: Command): void {
   program
     .command('doctor')
-    .description('probe environment + model cache; exit 0 if healthy')
+    .description('probe environment + model cache; exit 1 if a check fails (warnings do not)')
     .action(runDoctor);
 }
 

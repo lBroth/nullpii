@@ -115,8 +115,9 @@ npm run dev
 
 Edits under `packages/gateway/src/**` or the root `src/**` (the
 `nullpii` core, aliased via `tsconfig.dev.json`) trigger a respawn.
-Pre-cache the GLiNER model once (`npx nullpii prefetch`) so the
-post-reload first-request latency stays sub-second.
+Pre-cache the GLiNER model once (`npx nullpii prefetch`) so a reload
+does not download it again; the first request after a reload still
+loads the model, which took 1.7 to 2.2 seconds in our measurements.
 
 ### From source (production)
 

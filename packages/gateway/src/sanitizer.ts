@@ -646,8 +646,11 @@ export interface RestoredResponse<TBody = AnthropicResponse> {
   readonly heldForToolPlaceholders: number;
 }
 
-// rothunter:ignore-duplicate-interface
-// reason: short-named accumulator for the restore walks (restoreResponse, and the OpenAI walk and relay, which convert it to SseRelayCounters at the end); sse-relay's public SseRelayCounters uses long names that match the pino log-field contract — merging would force either a public API rename or verbose names in this internal struct.
+// A short-named accumulator for the restore walks (restoreResponse, and
+// the OpenAI walk and relay, which convert it to SseRelayCounters at the
+// end). sse-relay's public SseRelayCounters uses long names that match the
+// pino log fields; merging the two would rename a public API or make this
+// internal struct verbose.
 export interface RestoreAccumulator {
   /** Tools whose arguments get real values back; any other tool keeps
    * its placeholders. */

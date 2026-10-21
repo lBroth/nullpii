@@ -62,9 +62,6 @@ packages/eval/v10-weights/
 # Claude Code session state
 .claude/
 
-# rothunter audit tool state (local finding cache + ack hashes)
-.rothunter/
-.rothunterignore
 
 # generated SBOM
 bom.json

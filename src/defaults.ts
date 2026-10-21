@@ -60,12 +60,12 @@ export const DEFAULT_MODEL_REVISION = 'main';
  * unless the user passes `recognizers: 'none'` or supplies their own
  * array via config.
  *
- * These are the regex patterns proved necessary in the iter-N eval loop
- * (high precision, low FP rate). The ML model alone misses ~66% of URLs
- * and most secrets even when they are surrounded by clear context.
+ * Patterns for formats with a fixed shape (URLs, emails, keys and tokens
+ * with a known prefix, IBANs, cards, national ids, …), run after the
+ * model.
  *
- * Order is irrelevant — the runtime dedupes overlapping spans by
- * confidence (ML wins, then highest-confidence recognizer). */
+ * Order is irrelevant: overlapping spans are deduplicated, and a
+ * recognizer defers only to a model span that covers its whole match. */
 // The secret and token patterns below are adapted from gitleaks' default
 // rules (https://github.com/gitleaks/gitleaks, MIT, Copyright (c) 2019
 // Zachary Rice); see NOTICE.

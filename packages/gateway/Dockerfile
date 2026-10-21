@@ -22,10 +22,16 @@
 #   f2c39fe2f838cf35ce7da92824f5a5e3ee6e88a7), the version the lockfile
 #   pins. `npm run license-check` fails when the two versions drift.
 # - The base image is pinned by digest (node:22-slim); bump it on purpose.
-# - The GLiNER ONNX model is NOT baked into this image. On first boot
-#   the engine fetches it from HuggingFace and caches it under the
-#   `NULLPII_MODEL_DIR` volume (mount one in production — see
-#   `examples/claude-code/docker-compose.yml`).
+# - The GLiNER ONNX model is NOT baked into this image. The gateway loads
+#   it on the first request that needs it, downloading it from Hugging
+#   Face (about 1.2 GB) into /home/node/.cache/nullpii, a volume. Fetch it
+#   beforehand with the nullpii CLI the image carries, in a container that
+#   mounts the same volume:
+#     node bin/nullpii.mjs prefetch --backend cpu
+#   or set NULLPII_MODEL_DIR to a model directory you mount (see
+#   examples/claude-code/).
+# - /health answers as soon as the server listens; it does not wait for
+#   the model.
 #
 # Build context: REPO ROOT (the gateway needs the `nullpii` core).
 #
@@ -88,9 +94,11 @@ ENV NODE_ENV=production \
     NULLPII_BACKEND=cpu \
     NULLPII_LOG_LEVEL=info
 
-# Root nullpii artifacts, with the licence and notices they ship under.
+# Root nullpii artifacts, with the licence and notices they ship under, and
+# its CLI (`node bin/nullpii.mjs prefetch` fills the model cache).
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/dist ./dist
+COPY bin ./bin
 COPY LICENSE NOTICE ./
 
 # Gateway artifacts, with the gateway's own licence and notices.
@@ -118,7 +126,8 @@ VOLUME ["/home/node/.cache/nullpii"]
 
 EXPOSE 8787
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=120s --retries=3 \
+# Liveness only: the server listens within seconds of starting, model or not.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=30s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.NULLPII_PORT||8787)+'/health').then(r=>{process.exit(r.ok?0:1)}).catch(()=>process.exit(1))"
 
 CMD ["node", "packages/gateway/bin/nullpii-gateway.mjs"]

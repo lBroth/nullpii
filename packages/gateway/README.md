@@ -63,6 +63,15 @@ docker run --rm -p 127.0.0.1:8787:8787 \
 
 The gateway has no authentication of its own: anyone who can reach its port can send requests through it with your upstream credentials. Inside the container it listens on all interfaces, so publish the port on `127.0.0.1` as above, not with a bare `-p 8787:8787`. The image runs as the unprivileged `node` user; its model cache is `/home/node/.cache/nullpii`.
 
+The model is not in the image. The first request that needs it downloads it (about 1.2 GB) into the cache volume and waits for the download. To fetch it beforehand, run the nullpii CLI the image carries against the same volume:
+
+```bash
+docker run --rm -v nullpii-cache:/home/node/.cache/nullpii \
+  ghcr.io/lbroth/nullpii-gateway:0.5 node bin/nullpii.mjs prefetch --backend cpu
+```
+
+The image's health check calls `/health`, which answers as soon as the server listens: it does not wait for the model.
+
 A worked `docker-compose.yml` plus a Claude Code integration walk-through
 lives at [`examples/claude-code/`](https://github.com/lBroth/nullpii/tree/main/examples/claude-code).
 

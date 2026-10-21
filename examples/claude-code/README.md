@@ -8,24 +8,43 @@ leave your machine; placeholders are restored in the response. Apache-
 ## Quickstart
 
 ```bash
-# 1. Boot the gateway (first run: ~1.2 GB GLiNER model download)
+# 1. Clone the repository: the compose file builds the image from it
+git clone https://github.com/lBroth/nullpii.git
+cd nullpii
+
+# 2. Download the model (~1.2 GB) into the gateway's cache volume, once
+docker compose -f examples/claude-code/docker-compose.yml run --rm gateway \
+  node bin/nullpii.mjs prefetch --backend cpu
+
+# 3. Start the gateway
 docker compose -f examples/claude-code/docker-compose.yml up -d
 
-# 2. Wait for it to be healthy
+# 4. Wait for it to be healthy
 docker compose -f examples/claude-code/docker-compose.yml ps
-# STATUS should show "healthy" (takes ~30-90s after image build / boot)
+# STATUS shows "healthy" within about 30 seconds
 
-# 3. Smoke test
+# 5. Smoke test
 curl -fsS http://localhost:8787/health
 # {"status":"ok"}
 
-# 4. Point Claude Code at it
+# 6. Point Claude Code at it
 export ANTHROPIC_BASE_URL=http://localhost:8787
 export ANTHROPIC_API_KEY=sk-ant-…   # your real key, passed through
 
-# 5. Run Claude Code normally
+# 7. Run Claude Code normally
 claude "summarise the email I just wrote to John Doe at john@acme.io"
 ```
+
+The health check is a liveness probe: `/health` answers as soon as the server listens, and does not wait for the model. If you skip step 2, the first request that needs the model downloads it into the volume and waits for the download, which can take minutes on a slow link. The `nullpii-model-cache` volume keeps the model across restarts and `docker compose down` (not `down -v`).
+
+To use the gateway as the sidecar of the [Claude Code mod](https://github.com/lBroth/nullpii/tree/main/packages/claude-code-mod), set `NULLPII_SIDECAR_TOKEN` in the shell that starts it: the compose file passes it through to the container, and without it the sidecar API stays off.
+
+```bash
+export NULLPII_SIDECAR_TOKEN=$(openssl rand -hex 32)
+docker compose -f examples/claude-code/docker-compose.yml up -d
+```
+
+Give the mod the same token; its default sidecar URL, `http://127.0.0.1:8787`, is the port this compose file publishes.
 
 ### Alternative: persist via Claude Code settings
 
@@ -124,8 +143,9 @@ The directory must contain `model.onnx`, `tokenizer.json`,
 
 ## Going further
 
-- **Use a host-mounted model cache** so the model survives a
-  `docker compose down`:
+- **A host directory for the model cache**, to see the files: replace
+  the named volume with a bind mount. The container runs as the `node`
+  user (uid 1000), so the directory must be writable by that uid.
   ```yaml
   volumes:
     - ./nullpii-model-cache:/home/node/.cache/nullpii
@@ -164,7 +184,9 @@ The directory must contain `model.onnx`, `tokenizer.json`,
 
 | Symptom | Cause / fix |
 |---|---|
-| Container stuck in `health: starting` for > 2 min | Applies to the **default** `docker-compose.yml` only (`start_period: 120s` covers the cold HF download). Tail logs and check HF reachability. The local-model variant uses `start_period: 30s` because the model is already on disk; if it's stuck there, the volume mount or `NULLPII_MODEL_DIR` path is wrong. |
+| Container in `health: starting` for more than a minute, or `unhealthy` | The server is not listening. `docker compose -f examples/claude-code/docker-compose.yml logs gateway` shows why: an invalid variable or policy file stops the gateway at startup, with the reason. The model plays no part here, since `/health` does not wait for it. |
+| The first request hangs | The model was not prefetched, so that request is downloading it (~1.2 GB). Let it finish, or run step 2 of the quickstart beforehand next time. The container needs to reach `huggingface.co`. |
+| Requests fail with the local-model variant | `MODEL_DIR_HOST` is not a directory holding `model.onnx`, `tokenizer.json`, `gliner_config.json` and `tokenizer_config.json`. The gateway reads the model on the first request, not at startup, so the health check passes either way. |
 | `502 nullpii_upstream_error` | Gateway couldn't reach `api.anthropic.com`. Check `NULLPII_UPSTREAM` and outbound DNS. |
 | Claude Code prints placeholders instead of names | The LLM moved a placeholder across token boundaries in a way the streaming restorer can't reassemble. File a bug with a redacted repro — these are usually fixable. |
 | `unknownPlaceholders > 0` in logs | The LLM made up a placeholder. Usually fine (Claude is told via `LLM_PRESERVATION_HINT` to keep them, but occasionally fabricates). |

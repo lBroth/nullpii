@@ -113,6 +113,7 @@ Evaluation data in the repository (`packages/eval/datasets/`):
     judgments from HUDOC and name real people, as public court records
     do.
   - presidio-synthetic: Microsoft Presidio, MIT.
+  Their licence texts are in `packages/eval/datasets/licenses/`.
 
 License posture:
   - 100% permissive runtime tree (MIT / Apache-2.0 / BSD / ISC / CC0).

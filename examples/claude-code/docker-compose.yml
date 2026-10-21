@@ -41,6 +41,11 @@ services:
       # host path instead (e.g. `./model-cache:/home/node/.cache/nullpii`)
       # if you want to inspect the cache.
       - nullpii-model-cache:/home/node/.cache/nullpii
+      # The masking policy: the container reads
+      # /home/node/.config/nullpii/config.json, not the file on the host.
+      # To give the gateway the policy you use elsewhere (the mod reads it
+      # from the sidecar), uncomment this; the directory must exist.
+      # - ${HOME}/.config/nullpii:/home/node/.config/nullpii:ro
     healthcheck:
       # Liveness only: /health answers once the server listens, which takes
       # seconds; it does not wait for the model.

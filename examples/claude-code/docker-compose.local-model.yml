@@ -47,6 +47,11 @@ services:
       # container can't corrupt the cache. The path on the host is set
       # via `$MODEL_DIR_HOST` — fail loud if it isn't.
       - ${MODEL_DIR_HOST:?MODEL_DIR_HOST must point at a dir containing model.onnx + tokenizer.json}:/models:ro
+      # The masking policy: the container reads
+      # /home/node/.config/nullpii/config.json, not the file on the host.
+      # To give the gateway the policy you use elsewhere (the mod reads it
+      # from the sidecar), uncomment this; the directory must exist.
+      # - ${HOME}/.config/nullpii:/home/node/.config/nullpii:ro
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s

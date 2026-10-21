@@ -21,7 +21,16 @@
 #   https://github.com/microsoft/onnxruntime at tag v1.30.0 (commit
 #   f2c39fe2f838cf35ce7da92824f5a5e3ee6e88a7), the version the lockfile
 #   pins. `npm run license-check` fails when the two versions drift.
-# - The base image is pinned by digest (node:22-slim); bump it on purpose.
+# - abstract-logging (a fastify dependency) and onnxruntime-common ship no
+#   licence file either; the image adds abstract-logging's MIT text (from
+#   https://jsumners.mit-license.org, the licence its README names) and
+#   onnxruntime's LICENSE, which covers onnxruntime-common, a package of
+#   the same repository.
+# - The runtime stage removes npm and corepack: the gateway and the
+#   `nullpii` CLI run on node alone, and a package manager in the image
+#   is only attack surface.
+# - The base image is pinned by digest (node:22-slim) on each FROM line,
+#   where Dependabot can bump it; bump it on purpose.
 # - The GLiNER ONNX model is NOT baked into this image. The gateway loads
 #   it on the first request that needs it, downloading it from Hugging
 #   Face (about 1.2 GB) into /home/node/.cache/nullpii, a volume. Fetch it
@@ -38,9 +47,7 @@
 #   docker build -t nullpii-gateway:local -f packages/gateway/Dockerfile .
 
 # ---------- builder ----------
-ARG NODE_IMAGE=node:22-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392
-
-FROM ${NODE_IMAGE} AS builder
+FROM node:22-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS builder
 
 WORKDIR /app
 
@@ -84,7 +91,7 @@ RUN npm pkg set \
  && rm -rf node_modules/onnxruntime-node/bin/napi-v*/darwin node_modules/onnxruntime-node/bin/napi-v*/win32
 
 # ---------- runtime ----------
-FROM ${NODE_IMAGE} AS runtime
+FROM node:22-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS runtime
 
 WORKDIR /app
 
@@ -113,6 +120,12 @@ COPY --from=builder /app/node_modules ./node_modules
 # onnxruntime's licence and third-party notices, next to the native
 # library they cover (see the header).
 COPY packages/gateway/third_party/onnxruntime/ ./node_modules/onnxruntime-node/
+COPY packages/gateway/third_party/onnxruntime/LICENSE ./node_modules/onnxruntime-common/LICENSE
+COPY packages/gateway/third_party/abstract-logging/LICENSE ./node_modules/abstract-logging/LICENSE
+
+# No package manager at run time (see the header).
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+      /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 
 # Self-link so the gateway's `import 'nullpii'` resolves to the root
 # package at runtime as well.

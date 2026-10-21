@@ -62,6 +62,8 @@ nullpii-gateway
 npx -p nullpii -p onnxruntime-node -p @lbroth/nullpii-gateway nullpii-gateway
 ```
 
+On Linux x64 without an NVIDIA GPU, run the install with `ONNXRUNTIME_NODE_INSTALL=skip` in its environment: otherwise `onnxruntime-node`'s install script downloads its CUDA 12 libraries from NuGet, which the CPU backend does not use (its CPU runtime ships in the npm package).
+
 The gateway holds no API key: it forwards the `x-api-key` or `authorization` header your client sends (an API key, or a Claude subscription login). Pre-warm the model once with `npx nullpii prefetch` so the first request doesn't pay the ~1.2 GB download, or point `NULLPII_MODEL_DIR` at a model directory you staged.
 
 ### From source (dev mode, hot reload)

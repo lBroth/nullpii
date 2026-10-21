@@ -5,9 +5,21 @@
 #
 # - Build stage compiles the `nullpii` core + the `@lbroth/nullpii-gateway`
 #   package against pinned Node + npm.
+# - No dependency install script runs: the build needs none, and
+#   onnxruntime-node's would download its CUDA 12 provider from NuGet,
+#   unverified, into a CPU-only image. The CPU runtime it needs ships in
+#   the npm package itself (bin/napi-v6/linux/{x64,arm64}).
 # - Runtime stage carries only the compiled output, the production
 #   dependencies (the core's, plus fastify and onnxruntime-node at the
-#   versions the lockfile pins), LICENSE and NOTICE, and runs as `node`.
+#   versions the lockfile pins), the LICENSE and NOTICE of nullpii and of
+#   the gateway, and runs as `node`.
+# - onnxruntime-node's npm package carries neither the licence nor the
+#   third-party notices of the native library it ships. The image adds
+#   both next to it, from packages/gateway/third_party/onnxruntime/:
+#   LICENSE (MIT) and ThirdPartyNotices.txt, taken verbatim from
+#   https://github.com/microsoft/onnxruntime at tag v1.30.0 (commit
+#   f2c39fe2f838cf35ce7da92824f5a5e3ee6e88a7), the version the lockfile
+#   pins. `npm run license-check` fails when the two versions drift.
 # - The base image is pinned by digest (node:22-slim); bump it on purpose.
 # - The GLiNER ONNX model is NOT baked into this image. On first boot
 #   the engine fetches it from HuggingFace and caches it under the
@@ -30,7 +42,7 @@ COPY package.json package-lock.json tsconfig.base.json tsconfig.build.json biome
 COPY tsconfig.json ./
 
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci --no-audit --no-fund
+    npm ci --ignore-scripts --no-audit --no-fund
 
 # Root nullpii source.
 COPY src ./src
@@ -61,7 +73,7 @@ RUN npm pkg set \
       "dependencies.fastify=$(node -p "require('./package-lock.json').packages['node_modules/fastify'].version")" \
       "dependencies.onnxruntime-node=$(node -p "require('./package-lock.json').packages['node_modules/onnxruntime-node'].version")" \
  && npm pkg delete devDependencies.fastify devDependencies.onnxruntime-node \
- && npm prune --omit=dev --no-audit --no-fund \
+ && npm prune --omit=dev --ignore-scripts --no-audit --no-fund \
  && rm -rf node_modules/onnxruntime-node/bin/napi-v*/darwin node_modules/onnxruntime-node/bin/napi-v*/win32
 
 # ---------- runtime ----------
@@ -80,13 +92,18 @@ COPY --from=builder /app/package.json ./
 COPY --from=builder /app/dist ./dist
 COPY LICENSE NOTICE ./
 
-# Gateway artifacts.
+# Gateway artifacts, with the gateway's own licence and notices.
 COPY --from=builder /app/packages/gateway/package.json ./packages/gateway/
 COPY --from=builder /app/packages/gateway/dist ./packages/gateway/dist
 COPY --from=builder /app/packages/gateway/bin ./packages/gateway/bin
+COPY packages/gateway/LICENSE packages/gateway/NOTICE ./packages/gateway/
 
 # Production node_modules — Fastify + ORT prebuilds + transitive deps.
 COPY --from=builder /app/node_modules ./node_modules
+
+# onnxruntime's licence and third-party notices, next to the native
+# library they cover (see the header).
+COPY packages/gateway/third_party/onnxruntime/ ./node_modules/onnxruntime-node/
 
 # Self-link so the gateway's `import 'nullpii'` resolves to the root
 # package at runtime as well.

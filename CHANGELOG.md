@@ -41,8 +41,7 @@ On five public datasets chosen before any tool ran on them (`packages/eval/METHO
 - **Recall first:** a lower decode threshold (0.05) with per-label cuts; fewer characters leak, at some cost in over-masking.
 - **Less over-masking on developer content:** log-record timestamps, subresource-integrity digests, package-registry, CI and badge URLs, and code-host and documentation links stay readable; a span across two links is judged one URL at a time; only the URL token itself is ever released.
 - **One address, one placeholder:** parts of an address split by the model are joined across short separators; a geolocation that is not a coordinate is masked as an address.
-- **Gateway image:** runs as the unprivileged `node` user with production dependencies only, `LICENSE` and `NOTICE`, a base pinned by digest, and examples that publish the port on `127.0.0.1` only.
-- **Eval kit:** competitors run as their authors ship them, at pinned revisions (`packages/eval/METHOD.md`); the bench file drops 1,617 rows derived from ai4privacy text, whose licence restricts commercial use.
+- **Gateway image:** runs as the unprivileged `node` user with production dependencies only, `LICENSE` and `NOTICE`, a base pinned by digest, and examples that publish the port on `127.0.0.1` only. No dependency install script runs while it is built, so it no longer carries the CUDA 12 libraries `onnxruntime-node` downloaded from NuGet on x64, which the CPU image never used; onnxruntime's licence and third-party notices ship next to its native library.- **Eval kit:** competitors run as their authors ship them, at pinned revisions (`packages/eval/METHOD.md`); the bench file drops 1,617 rows derived from ai4privacy text, whose licence restricts commercial use.
 
 ### Fixed
 

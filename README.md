@@ -20,6 +20,12 @@ npm install nullpii onnxruntime-node
 
 Node 22 or later. The first run downloads the model from Hugging Face into `~/.cache/nullpii/` (1.2 GB in fp32; on CUDA, 0.6 GB in fp16), at a pinned revision whose files are checked by SHA-256. Pre-fetch it with `npx nullpii prefetch`, or point `NULLPII_MODEL_DIR` at a copy you staged.
 
+On Linux x64, `onnxruntime-node`'s install script also downloads its CUDA 12 libraries from NuGet, without checking a hash. The CPU runtime is already in the npm package, so on a machine without an NVIDIA GPU skip that download:
+
+```bash
+ONNXRUNTIME_NODE_INSTALL=skip npm install nullpii onnxruntime-node
+```
+
 ## Usage
 
 ```ts

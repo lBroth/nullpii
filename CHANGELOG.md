@@ -36,6 +36,7 @@ On five datasets chosen before any tool ran on them (four public sets and a synt
 - **`SanitizeResult.modelUnscannedWords`** counts words the model could not read (a single word longer than its input budget); the gateway reports them too.
 - **Italian Partita IVA** next to its keyword or with the `IT` prefix, and omocodic and lowercase codici fiscali.
 - **One placeholder per value** in a session, so the model can still tell one person from another.
+- **Known values stay masked in a session:** every whole-word occurrence (three characters or more) of a value an earlier call on the session masked is masked again, even where the detector misses it, such as a value restored into a tool call and echoed back in its result. The gateway's session is one request, whose content blocks are masked in order; the sidecar's is the conversation. A single `sanitize()` without a session, as the benchmark runs it, is unchanged.
 
 ### Changed
 

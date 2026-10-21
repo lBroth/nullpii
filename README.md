@@ -50,7 +50,7 @@ np.destroySession(safe.sessionId); // drop the session's values from memory
 await np.dispose();                // when you are done with the engine
 ```
 
-Keep one engine for the life of your process: loading the model takes about two seconds. The vault lives in memory only. A placeholder is bound to the session that minted it, so a placeholder from one conversation cannot be restored in another, and one value always gets the same placeholder within a session.
+Keep one engine for the life of your process: loading the model takes about two seconds. The vault lives in memory only. A placeholder is bound to the session that minted it, so a placeholder from one conversation cannot be restored in another, and one value always gets the same placeholder within a session. Once a session has masked a value, every occurrence of it in that session's later calls is masked too, as a whole word of three characters or more, even where the detector misses it: a value restored into a tool call and echoed back in the tool's output stays masked.
 
 Streaming restore, for replies that arrive in chunks:
 

@@ -110,6 +110,37 @@ describe('PiiVault.sanitize', () => {
     expect(v.restore(result.sanitized, id).restored).toBe(text);
   });
 
+  it('masks a value the session masked before, where the detector missed it', () => {
+    const v = new PiiVault();
+    const id = v.createSession();
+    const p = expectedPrefix(id);
+    v.sanitize('Write to Mario', [span('private_person', 9, 14, 'Mario')], id);
+    // A tool result echoing the value, which the detector did not flag.
+    const echoed = v.sanitize('error: no user Mario.', [], id);
+    expect(echoed.sanitized).toBe(`error: no user {{PII_PRIVATE_PERSON_0_${p}}}.`);
+    expect(v.restore(echoed.sanitized, id).restored).toBe('error: no user Mario.');
+  });
+
+  it('does not search a text for the values detected in it', () => {
+    const v = new PiiVault();
+    const id = v.createSession();
+    const r = v.sanitize('Mario wrote; Mario left', [span('private_person', 0, 5, 'Mario')], id);
+    expect(r.spans).toHaveLength(1);
+  });
+
+  it('matches known values only as whole words, and not when shorter than three characters', () => {
+    const v = new PiiVault();
+    const id = v.createSession();
+    v.sanitize(
+      'Ann and Li',
+      [span('private_person', 0, 3, 'Ann'), span('private_person', 8, 10, 'Li')],
+      id,
+    );
+    const r = v.sanitize('Annual Lisbon_Ann, Li.', [], id);
+    expect(r.sanitized).toBe('Annual Lisbon_Ann, Li.');
+    expect(v.sanitize('(Ann)', [], id).spans).toHaveLength(1);
+  });
+
   it('does not reuse a placeholder across sessions', () => {
     const v = new PiiVault();
     const a = v.createSession();

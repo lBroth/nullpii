@@ -102,6 +102,14 @@ Details, the full list of scanned fields, and the sidecar API: [`packages/gatewa
 
 It talks to the gateway's local sidecar and fails closed when the sidecar is down: nothing is sent unmasked.
 
+With the gateway running and its sidecar token at hand ([set up](https://github.com/lBroth/nullpii/tree/main/packages/claude-code-mod#set-up)), install it at the prompt of a Claude Code session:
+
+```text
+/plugin install nullpii --marketplace lBroth/nullpii
+```
+
+or from a shell with `claude plugin marketplace add lBroth/nullpii`, then `claude plugin install nullpii@nullpii`.
+
 ## What gets caught
 
 | Label | Examples | Source |

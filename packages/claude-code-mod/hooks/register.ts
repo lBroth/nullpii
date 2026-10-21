@@ -112,6 +112,8 @@ let sessionSecret: string | undefined;
 let policy: Policy | undefined;
 // Why the mod is blocking, shown above the prompt; undefined while healthy.
 let problem: string | undefined = NO_TOKEN;
+// The session (re)opening in flight, which every hook that needs one awaits.
+let opening: Promise<void> | undefined;
 
 class SidecarError extends Error {
   constructor(readonly status: number) {
@@ -184,25 +186,43 @@ async function sidecar($, method: string, path: string, body?: unknown): Promise
   );
 }
 
-/** Open this mod's sidecar session, or keep it alive. A live session under
- * the key whose secret this module no longer has (it was reloaded) cannot
- * be taken over, so a new one opens under a new key: placeholders from
- * before stay masked, as after a sidecar restart. */
-async function putSession($): Promise<void> {
-  const opened = (await sidecar($, 'PUT', '')) as { secret?: string };
-  if (opened.secret !== undefined) sessionSecret = opened.secret;
+/** PUT the session `key`, presenting `secret` when there is one; resolves
+ * with the secret that now holds it: a new one when the sidecar created
+ * the session, else the one presented. */
+async function putSession($, key: string, secret: string | undefined): Promise<string | undefined> {
+  const path = SESSIONS_PATH + encodeURIComponent(key);
+  const opened = (await request($, 'PUT', path, undefined, secret)) as { secret?: string };
+  return opened.secret ?? secret;
 }
 
-async function openSession($): Promise<void> {
+/** Open this mod's sidecar session, or keep it alive, once for every hook
+ * that asks while it runs: hooks that each found the session gone (a
+ * sidecar restart, its idle TTL) would otherwise each open it, and one
+ * would move to a new key while the others still used the old one. */
+function openSession($): Promise<void> {
+  opening ??= openSessionOnce($).finally(() => {
+    opening = undefined;
+  });
+  return opening;
+}
+
+/** A live session under the key whose secret this module no longer has
+ * (it was reloaded) cannot be taken over, so a new one opens under a new
+ * key: placeholders from before stay masked, as after a sidecar restart.
+ * The key and its secret change together, once the sidecar holds both. */
+async function openSessionOnce($): Promise<void> {
+  let key = sessionKey;
+  let secret: string | undefined;
   try {
-    await putSession($);
+    secret = await putSession($, key, sessionSecret);
   } catch (err) {
     if (!(err instanceof SidecarError) || err.status !== SESSION_EXISTS) throw err;
     const now = await $.clock.now();
-    sessionKey = `${sessionBase}.${Math.floor(now).toString(KEY_SUFFIX_RADIX)}`;
-    sessionSecret = undefined;
-    await putSession($);
+    key = `${sessionBase}.${Math.floor(now).toString(KEY_SUFFIX_RADIX)}`;
+    secret = await putSession($, key, undefined);
   }
+  sessionKey = key;
+  sessionSecret = secret;
   problem = undefined;
   const status = (await request($, 'GET', STATUS_PATH)) as { policy?: Policy };
   policy = status.policy;

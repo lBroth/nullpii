@@ -52,6 +52,8 @@ function fakeSidecar(opts: { down?: boolean; restoreTools?: string[]; liveKeys?:
   const state: { garbage?: string } = {};
   /** Every `$.ui.log` line the mod wrote. */
   const logs: string[] = [];
+  /** The status of every answer. */
+  const statuses: number[] = [];
   let next = 0;
   const maskString = (s: string, byLabel: Record<string, number>) => {
     let out = s;
@@ -73,7 +75,11 @@ function fakeSidecar(opts: { down?: boolean; restoreTools?: string[]; liveKeys?:
     }
     return v;
   };
-  const respond = (status: number, body: unknown) => ({
+  const respond = (status: number, body: unknown) => {
+    statuses.push(status);
+    return answer(status, body);
+  };
+  const answer = (status: number, body: unknown) => ({
     value: {
       status,
       ok: status < 300,
@@ -185,7 +191,7 @@ function fakeSidecar(opts: { down?: boolean; restoreTools?: string[]; liveKeys?:
       ...(shellBody && { shellKeptMasked: kept }),
     });
   };
-  return { handler, calls, hosts, logs, restoreBodies, secretsSent, sessions, state };
+  return { handler, calls, hosts, logs, restoreBodies, secretsSent, sessions, state, statuses };
 }
 
 function stubSession(
@@ -843,4 +849,30 @@ test('a prompt the sidecar cannot mask is handed back without the error text', a
   const prompt = await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
   expect(prompt.drop).toContain('(the sidecar answered with something that is not JSON)');
   expect(prompt.drop).not.toContain('John');
+});
+
+test('hooks that find the session gone at once reopen it once, under one key', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  mock.clock(on, { now: 1_700_000_000_000 });
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', () => ({ result: { stdout: 'owner: John', stderr: '' } }));
+  await start($);
+  // A sidecar restart, or its idle TTL: every hook in flight gets a 404.
+  sidecar.sessions.clear();
+  const before = sidecar.calls.length;
+  const answers = await Promise.all([
+    $.tool.call({ tool: 'Bash', command: 'cat a.txt' }),
+    $.tool.call({ tool: 'Bash', command: 'cat b.txt' }),
+    $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER }),
+  ]);
+  for (const answer of answers) {
+    expect(JSON.stringify(answer)).not.toContain('John');
+    expect('deny' in answer || 'drop' in answer, JSON.stringify(answer)).toBe(false);
+  }
+  const puts = sidecar.calls.slice(before).filter((c) => c.startsWith('PUT '));
+  expect(puts).toEqual(['PUT /v1/sidecar/sessions/session-1']);
+  expect([...sidecar.sessions.keys()]).toEqual(['session-1']);
+  expect(sidecar.statuses).not.toContain(403);
+  expect(sidecar.statuses).not.toContain(409);
 });

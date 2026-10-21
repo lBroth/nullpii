@@ -5,8 +5,8 @@ import type { MaskResult } from './types/index.js';
 /**
  * Built-in preservation hint emitted by `wrapForLLM`. Tuned to saturate
  * round-trip preservation across translate / summarise / rewrite-formal /
- * json-extract / markdown-format / adversarial "ignore-syntax" scenarios
- * (see `packages/eval/private/scripts/placeholder_llm_with_hint.py`).
+ * json-extract / markdown-format / adversarial "ignore-syntax" scenarios,
+ * in the maintainers' own measurements (the harness is not published).
  *
  * The runtime placeholder shape is 4 segments: `{{PII_<TYPE>_<N>_<HEX>}}`
  * (see `src/types/constants.ts:PLACEHOLDER_TEMPLATE`). The trailing hex

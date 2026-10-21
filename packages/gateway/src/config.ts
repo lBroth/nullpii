@@ -50,7 +50,7 @@ export interface GatewayConfig {
    * instead of evicting a live session, whose placeholders would then no
    * longer restore. */
   readonly sidecarMaxSessions: number;
-  /** The masking policy shared with the CLI, the mod and the MCP server:
+  /** The masking policy shared with the library, the CLI and the mod:
    * the file at `NULLPII_CONFIG`, else `~/.config/nullpii/config.json`
    * if present, else none (`{}`). */
   readonly policy: NullPiiFileConfig;

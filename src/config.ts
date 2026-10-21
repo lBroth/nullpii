@@ -22,8 +22,8 @@ export const NULLPII_MODEL_DIR = 'NULLPII_MODEL_DIR';
 export const XDG_CONFIG_HOME = 'XDG_CONFIG_HOME';
 
 /** NULLPII_CONFIG — path of the masking-policy config file shared by the
- * CLI, the gateway and its Claude Code mod, and the MCP server. A path
- * given here must exist; the default location is optional. */
+ * library, the CLI, and the gateway and its Claude Code mod. A path given
+ * here must exist; the default location is optional. */
 export const NULLPII_CONFIG = 'NULLPII_CONFIG';
 
 /** Read an env var, returning `undefined` for both unset AND empty-string. */

@@ -61,7 +61,7 @@ export { RestoreStream, type RestoreCapable } from './restore-stream.js';
 // Public engine
 export { NullPii } from './nullpii.js';
 
-// Shared masking-policy config file (CLI, gateway, Claude Code mod, MCP)
+// Shared masking-policy config file (library, CLI, gateway, Claude Code mod)
 export {
   configFilePath,
   defaultConfigPath,

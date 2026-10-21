@@ -35,11 +35,11 @@ export const SESSION_PREFIX_LEN = 16;
  *
  * The Mustache `{{var}}` syntax is universal in prompt-engineering tooling
  * (Anthropic prompts, LangChain `PromptTemplate`, Jinja2, Handlebars, Vue,
- * Django) — LLMs are deeply trained to leave such tokens untouched, which
- * gives the highest round-trip preservation rate of the formats tested
- * (see `packages/eval/private/PLACEHOLDER_FORMAT_ANALYSIS.md`). Token cost
- * is also lower than the previous `[[NULLPII:type:i]]` format (-20% under
- * the cl100k_base tokenizer).
+ * Django) — LLMs are deeply trained to leave such tokens untouched. It had
+ * the highest round-trip preservation rate of the formats the maintainers
+ * tested (an internal comparison, not published). Token cost is also
+ * lower than the previous `[[NULLPII:type:i]]` format (-20% under the
+ * cl100k_base tokenizer).
  */
 export const PLACEHOLDER_REGEX = /\{\{PII_([A-Z_]+)_(\d+)_([0-9a-f]{16})\}\}/g;
 

@@ -75,3 +75,7 @@ bom.xml
 
 # large demo source — only the compressed .m4v + thumb are tracked.
 assets/claude-code-demo.mov
+
+# Documentation site build output
+docs/.vitepress/dist/
+docs/.vitepress/cache/

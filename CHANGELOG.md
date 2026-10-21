@@ -21,6 +21,7 @@ On five public datasets chosen before any tool ran on them (`packages/eval/METHO
 - **`PiiVault.sanitize` returns `MaskResult`;** `SanitizeResult` extends it with `modelUnscannedWords`.
 - **CLI:** `nullpii models download` is removed (use `nullpii prefetch --backend --variant`); `nullpii sanitize` no longer takes `--session` or prints a session id.
 - **Gateway:** real values go back only into the tools in `restoreTools` (by default the tools that run on this machine); web and MCP tools keep the placeholders. Numeric environment variables are parsed strictly, with a minimum per variable.
+- **`onnxruntime-node` 1.30 or later** is required (peer `^1.30.0`): the version nullpii is measured with, and the first whose installer carries no known advisory.
 - **Sidecar API:** `restore` takes `tool` instead of `shell`, and every call on a session needs the session's secret (`x-nullpii-session-secret`), returned once when it is created.
 
 ### Added
@@ -61,6 +62,7 @@ On five public datasets chosen before any tool ran on them (`packages/eval/METHO
 - **Sidecar sessions need their own secret,** so a command that inherited the bearer token cannot read another session's values. The mod keeps the secret in memory and its token in a sensitive plugin option.
 - **Release pipeline:** npm trusted publishing (no token in the repository), no dependency install scripts in publish jobs, release tags only from main, and image pushes only after tests.
 - **Paths:** user-supplied paths are sandboxed with a separator-aware check, and model repository and revision names are validated.
+- **Dependencies:** the gateway's fastify is 5.12.5, with its URI and router dependencies pinned to patched releases (advisories in 5.8: schema and header validation bypasses, request body replacement); `npm audit --omit=dev` reports nothing. Development tools (vitest, vite, cyclonedx) are on patched releases too.
 
 ## [0.3.0] — withdrawn
 

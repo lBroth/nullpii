@@ -20,7 +20,7 @@ On five public datasets chosen before any tool ran on them (`packages/eval/METHO
 - **`ModelVariant` is `'fp32' | 'fp16' | 'auto'`.** `'int4'`, which was accepted and ignored, is gone; an unknown variant throws.
 - **`PiiVault.sanitize` returns `MaskResult`;** `SanitizeResult` extends it with `modelUnscannedWords`.
 - **CLI:** `nullpii models download` is removed (use `nullpii prefetch --backend --variant`); `nullpii sanitize` no longer takes `--session` or prints a session id.
-- **Gateway:** real values go back only into the tools in `restoreTools` (by default the tools that run on this machine); web and MCP tools keep the placeholders. Numeric environment variables are parsed strictly, with a minimum per variable.
+- **Gateway:** real values go back only into the tools in `restoreTools` (by default the tools that run on this machine); web and MCP tools keep the placeholders. Environment variables are parsed strictly, and a value outside the documented ones stops the gateway at startup: integers must be whole and in range, `NULLPII_DISABLE_HINT` is `0` or `1` (`true` used to be ignored), and `NULLPII_UPSTREAM` and `NULLPII_OPENAI_UPSTREAM` must be `http:` or `https:` base URLs without credentials, query string, fragment or trailing `/v1`.
 - **`onnxruntime-node` 1.30 or later** is required (peer `^1.30.0`): the version nullpii is measured with, and the first whose installer carries no known advisory.
 - **Sidecar API:** `restore` takes `tool` instead of `shell`, and every call on a session needs the session's secret (`x-nullpii-session-secret`), returned once when it is created.
 

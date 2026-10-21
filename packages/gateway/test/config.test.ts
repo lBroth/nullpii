@@ -87,6 +87,63 @@ describe('loadConfig', () => {
     expect(() => loadConfig()).toThrow(/NULLPII_VAULT_TTL_MS must be an integer of at least 1000/);
   });
 
+  it.each([
+    ['1', false],
+    ['0', true],
+  ])('reads NULLPII_DISABLE_HINT=%s', (value, appendHint) => {
+    vi.stubEnv('NULLPII_DISABLE_HINT', value);
+    expect(loadConfig().appendHint).toBe(appendHint);
+  });
+
+  it.each(['true', 'false', 'yes', 'on', ' 1'])(
+    'refuses NULLPII_DISABLE_HINT=%j instead of ignoring it',
+    (value) => {
+      vi.stubEnv('NULLPII_DISABLE_HINT', value);
+      expect(() => loadConfig()).toThrow(/NULLPII_DISABLE_HINT must be one of 1\|0/);
+    },
+  );
+
+  it.each([
+    ['https://proxy.test///', 'https://proxy.test'],
+    ['https://OpenRouter.ai/api/', 'https://openrouter.ai/api'],
+    ['http://localhost:11434', 'http://localhost:11434'],
+  ])('normalizes the upstream base URL %s', (value, expected) => {
+    vi.stubEnv('NULLPII_UPSTREAM', value);
+    vi.stubEnv('NULLPII_OPENAI_UPSTREAM', value);
+    const c = loadConfig();
+    expect(c.upstreamBaseUrl).toBe(expected);
+    expect(c.openaiUpstreamBaseUrl).toBe(expected);
+  });
+
+  describe.each(['NULLPII_UPSTREAM', 'NULLPII_OPENAI_UPSTREAM'])('%s', (name) => {
+    it.each([
+      ['not a URL', 'api.anthropic.com', /must be an http: or https: URL$/],
+      ['another protocol', 'ftp://proxy.test', /got protocol: ftp:/],
+      ['a trailing /v1', 'https://proxy.test/v1', /must not end with \/v1 \(the gateway appends/],
+      ['a trailing /v1/', 'https://proxy.test/api/v1/', /must not end with \/v1/],
+    ])('refuses %s', (_case, value, message) => {
+      vi.stubEnv(name, value);
+      expect(() => loadConfig()).toThrow(message);
+      expect(() => loadConfig()).toThrow(new RegExp(`^${name} `));
+    });
+
+    it.each([
+      ['credentials', 'https://user:s3cr3t-token@proxy.test', /must not embed credentials/],
+      ['a query string', 'https://proxy.test/?key=s3cr3t-token', /without a query string/],
+      ['a fragment', 'https://proxy.test/#s3cr3t-token', /without a query string or a fragment/],
+    ])('refuses %s without echoing the value', (_case, value, message) => {
+      vi.stubEnv(name, value);
+      expect(() => loadConfig()).toThrow(message);
+      let error = '';
+      try {
+        loadConfig();
+      } catch (err) {
+        error = (err as Error).message;
+      }
+      expect(error).not.toContain('s3cr3t-token');
+    });
+  });
+
   it('loads the shared policy file and its restoreTools', () => {
     const file = join(dir, 'policy.json');
     writeFileSync(

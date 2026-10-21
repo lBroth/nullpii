@@ -21,7 +21,8 @@ export interface GatewayConfig {
   readonly host: string;
   /** Bind port. */
   readonly port: number;
-  /** Upstream LLM provider base URL (no trailing slash). */
+  /** Upstream for `POST /v1/messages`: an Anthropic-compatible base URL
+   * without the `/v1` segment, which the route appends (`NULLPII_UPSTREAM`). */
   readonly upstreamBaseUrl: string;
   /** Upstream for `POST /v1/chat/completions`: an OpenAI-compatible base
    * URL without the `/v1` segment, which the route appends
@@ -37,9 +38,9 @@ export interface GatewayConfig {
   readonly logLevel: 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace';
   /** Request body size cap in bytes (Fastify default 1 MB raised to 10 MB). */
   readonly bodyLimitBytes: number;
-  /** When true, dump sanitized request body + upstream response (still
-   * carrying placeholders, never real PII) to stdout for debugging.
-   * Enabled via `NULLPII_LOG_TRAFFIC=wire`. */
+  /** When true, dump to stdout, for debugging, the request as forwarded
+   * and the upstream response before restore (`NULLPII_LOG_TRAFFIC=wire`).
+   * Not free of personal data: they hold whatever nullpii did not mask. */
   readonly logTraffic: boolean;
   /** Bearer token for the `/v1/sidecar/*` routes (`NULLPII_SIDECAR_TOKEN`,
    * at least 32 characters). Unset: the sidecar routes are not
@@ -64,7 +65,7 @@ export interface GatewayConfig {
    * `restoreTools`, else `DEFAULT_RESTORE_TOOLS`. */
   readonly restoreTools: ReadonlySet<string>;
   /** Append `LLM_PRESERVATION_HINT` to requests that had PII masked;
-   * `NULLPII_DISABLE_HINT=1` turns it off. */
+   * `NULLPII_DISABLE_HINT=1` turns it off, `0` (the default) leaves it on. */
   readonly appendHint: boolean;
 }
 
@@ -72,9 +73,27 @@ const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PORT = 8787;
 const DEFAULT_UPSTREAM = 'https://api.anthropic.com';
 const DEFAULT_OPENAI_UPSTREAM = 'https://api.openai.com';
-/** The OpenAI route appends `/v1/chat/completions` itself. */
+/** Both routes append their `/v1/…` path to the upstream base URL. */
 const API_VERSION_SUFFIX = /\/v1$/;
 const TRAILING_SLASHES = /\/+$/;
+const UPSTREAM_PROTOCOLS: ReadonlySet<string> = new Set(['http:', 'https:']);
+
+/** An upstream variable and the path its route appends to it. */
+interface UpstreamVar {
+  readonly name: string;
+  readonly fallback: string;
+  readonly appendedPath: string;
+}
+const ANTHROPIC_UPSTREAM: UpstreamVar = {
+  name: 'NULLPII_UPSTREAM',
+  fallback: DEFAULT_UPSTREAM,
+  appendedPath: '/v1/messages',
+};
+const OPENAI_UPSTREAM: UpstreamVar = {
+  name: 'NULLPII_OPENAI_UPSTREAM',
+  fallback: DEFAULT_OPENAI_UPSTREAM,
+  appendedPath: '/v1/chat/completions',
+};
 const DEFAULT_VAULT_TTL_MS = 30 * 60 * 1000;
 const DEFAULT_BACKEND = 'cpu' as const;
 const DEFAULT_LOG_LEVEL = 'info' as const;
@@ -97,6 +116,10 @@ const DIGITS = /^\d+$/;
 const VALID_BACKENDS = new Set(['cpu', 'mps', 'cuda', 'auto']);
 const VALID_LOG_LEVELS = new Set(['fatal', 'error', 'warn', 'info', 'debug', 'trace']);
 const VALID_LOG_TRAFFIC = new Set(['wire', 'off']);
+/** `NULLPII_DISABLE_HINT` values: `1` turns the hint off, `0` leaves it on. */
+const HINT_OFF = '1';
+const HINT_ON = '0';
+const VALID_DISABLE_HINT = new Set([HINT_OFF, HINT_ON]);
 
 /** An environment variable's value, `undefined` when unset or empty. */
 function readString(name: string): string | undefined {
@@ -127,20 +150,37 @@ function readEnum<T extends string>(name: string, allowed: Set<string>, fallback
   return raw as T;
 }
 
-/** A base URL with trailing slashes stripped; unset or empty → `fallback`. */
-function readBaseUrl(name: string, fallback: string): string {
-  const raw = process.env[name];
-  return (raw === undefined || raw === '' ? fallback : raw).replace(TRAILING_SLASHES, '');
-}
-
-function readOpenAiUpstream(): string {
-  const url = readBaseUrl('NULLPII_OPENAI_UPSTREAM', DEFAULT_OPENAI_UPSTREAM);
-  if (API_VERSION_SUFFIX.test(url)) {
+/**
+ * An upstream base URL, as `origin` plus path without trailing slashes;
+ * unset or empty means `fallback`. It must be an `http:` or `https:` URL
+ * with no credentials, query or fragment (the route appends its path, and
+ * the URL is printed in the startup banner), and must not end with `/v1`,
+ * which the route appends itself. An error never echoes a value that
+ * could hold a secret: only the protocol, or the URL once it is known to
+ * carry no credentials and no query.
+ */
+function readUpstreamUrl(v: UpstreamVar): string {
+  const raw = readString(v.name) ?? v.fallback;
+  if (!URL.canParse(raw)) throw new Error(`${v.name} must be an http: or https: URL`);
+  const url = new URL(raw);
+  if (!UPSTREAM_PROTOCOLS.has(url.protocol)) {
+    throw new Error(`${v.name} must be an http: or https: URL, got protocol: ${url.protocol}`);
+  }
+  if (url.username !== '' || url.password !== '') {
     throw new Error(
-      `NULLPII_OPENAI_UPSTREAM must not end with /v1 (the gateway appends /v1/chat/completions), got: ${url}`,
+      `${v.name} must not embed credentials (user:password@); the client's own auth headers are forwarded`,
     );
   }
-  return url;
+  if (url.search !== '' || url.hash !== '') {
+    throw new Error(`${v.name} must be a base URL, without a query string or a fragment`);
+  }
+  const base = `${url.origin}${url.pathname}`.replace(TRAILING_SLASHES, '');
+  if (API_VERSION_SUFFIX.test(base)) {
+    throw new Error(
+      `${v.name} must not end with /v1 (the gateway appends ${v.appendedPath}), got: ${base}`,
+    );
+  }
+  return base;
 }
 
 function readSidecarToken(): string | undefined {
@@ -167,8 +207,8 @@ export function loadConfig(): GatewayConfig {
   return {
     host: readString('NULLPII_HOST') ?? DEFAULT_HOST,
     port: readInt('NULLPII_PORT', DEFAULT_PORT, PORT_RANGE),
-    upstreamBaseUrl: readBaseUrl('NULLPII_UPSTREAM', DEFAULT_UPSTREAM),
-    openaiUpstreamBaseUrl: readOpenAiUpstream(),
+    upstreamBaseUrl: readUpstreamUrl(ANTHROPIC_UPSTREAM),
+    openaiUpstreamBaseUrl: readUpstreamUrl(OPENAI_UPSTREAM),
     vaultTtlMs: readInt('NULLPII_VAULT_TTL_MS', DEFAULT_VAULT_TTL_MS, VAULT_TTL_RANGE),
     ...(modelDir !== undefined && { modelDir }),
     backend: readEnum('NULLPII_BACKEND', VALID_BACKENDS, DEFAULT_BACKEND),
@@ -186,6 +226,11 @@ export function loadConfig(): GatewayConfig {
     policyFile: loadedFile ?? defaultConfigPath(),
     policyLoaded: loadedFile !== null,
     restoreTools: new Set(policy.restoreTools ?? DEFAULT_RESTORE_TOOLS),
-    appendHint: readString('NULLPII_DISABLE_HINT') !== '1',
+    appendHint:
+      readEnum<typeof HINT_OFF | typeof HINT_ON>(
+        'NULLPII_DISABLE_HINT',
+        VALID_DISABLE_HINT,
+        HINT_ON,
+      ) !== HINT_OFF,
   };
 }

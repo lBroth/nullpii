@@ -183,7 +183,7 @@ What gets masked comes from the shared policy file. Everything else is set with 
 | `urlAllowlist` | `"none"` masks every URL. `{ hosts, replaceDefaults }` sets, per host (`docs.python.org`, or `*.github.com` for a domain and its subdomains), how much of a clean URL stays readable: `full`, `host` or `mask`. |
 | `restoreTools` | Tools whose arguments get real values back. It replaces the default list (`DEFAULT_RESTORE_TOOLS`: the tools that run on this machine). Any other tool keeps the placeholders. |
 
-An unknown key, category, host or release stops the gateway at startup with the reason. So does an integer variable that is not a whole number in its range (`30m`, `1e6` and `0` are refused rather than read as something else).
+An unknown key, category, host or release stops the gateway at startup with the reason. So does an environment variable outside its documented values: an integer that is not a whole number in its range (`30m`, `1e6` and `0` are refused rather than read as something else), a `NULLPII_DISABLE_HINT` other than `0` or `1`, or an upstream that is not a base URL as described below. The error names the variable. It never repeats the sidecar token, and repeats an upstream URL only once it is known to carry no credentials or query string.
 
 **Environment variables.**
 
@@ -192,8 +192,8 @@ An unknown key, category, host or release stops the gateway at startup with the 
 | `NULLPII_CONFIG` | (default location) | Path of the policy file. If set, the file must exist. |
 | `NULLPII_HOST` | `127.0.0.1` | Bind host |
 | `NULLPII_PORT` | `8787` | Bind port, 1 to 65535 |
-| `NULLPII_UPSTREAM` | `https://api.anthropic.com` | Upstream for `/v1/messages` (Anthropic Messages API) |
-| `NULLPII_OPENAI_UPSTREAM` | `https://api.openai.com` | Upstream for `/v1/chat/completions`: an OpenAI-compatible base URL without `/v1`, which the gateway appends. A value ending in `/v1` is refused at startup. |
+| `NULLPII_UPSTREAM` | `https://api.anthropic.com` | Upstream for `/v1/messages` (Anthropic Messages API): a base URL without `/v1`, which the gateway appends. |
+| `NULLPII_OPENAI_UPSTREAM` | `https://api.openai.com` | Upstream for `/v1/chat/completions`: an OpenAI-compatible base URL without `/v1`, which the gateway appends. |
 | `NULLPII_VAULT_TTL_MS` | `1800000` | Idle TTL of a sidecar session, at least 1000. The Messages proxy keeps one session per request and destroys it at the end. |
 | `NULLPII_SIDECAR_TOKEN` | (off) | Enables the [sidecar API](#sidecar-api). Bearer token, at least 32 characters. |
 | `NULLPII_SIDECAR_MAX_SESSIONS` | `64` | Concurrent sidecar sessions, at least 1. One more fails with 429. |
@@ -202,7 +202,9 @@ An unknown key, category, host or release stops the gateway at startup with the 
 | `NULLPII_LOG_LEVEL` | `info` | Fastify log level |
 | `NULLPII_BODY_LIMIT_BYTES` | `10485760` | Request body cap (10 MB), at least 1 |
 | `NULLPII_LOG_TRAFFIC` | (off) | Set to `wire` to dump the sanitized request body and the raw upstream response to stdout for debugging, 64 KB per dump. They hold placeholders where nullpii found personal data, and anything it missed as written, so keep these dumps local. |
-| `NULLPII_DISABLE_HINT` | (off) | Debug-only. Set to `1` to suppress the `LLM_PRESERVATION_HINT` system-prompt injection. Useful when an upstream proxy / cache rejects the modified system prompt; leave unset in normal operation. |
+| `NULLPII_DISABLE_HINT` | `0` | `1` suppresses the `LLM_PRESERVATION_HINT` system-prompt injection; `0` keeps it. Useful when an upstream proxy / cache rejects the modified system prompt; leave unset in normal operation. |
+
+Both upstreams must be `http:` or `https:` base URLs, without credentials (`user:password@`: the gateway forwards the client's own auth headers), a query string, a fragment or a trailing `/v1`; anything else is refused at startup. Trailing slashes are dropped.
 
 ## Sidecar API
 

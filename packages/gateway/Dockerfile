@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
 # SPDX-License-Identifier: Apache-2.0
 #
-# nullpii/gateway:slim — multi-stage image.
+# The @lbroth/nullpii-gateway image, multi-stage. Published as
+# ghcr.io/lbroth/nullpii-gateway by .github/workflows/gateway-docker.yml.
 #
 # - Build stage compiles the `nullpii` core + the `@lbroth/nullpii-gateway`
 #   package against pinned Node + npm.
@@ -28,7 +29,7 @@
 #
 # Build context: REPO ROOT (the gateway needs the `nullpii` core).
 #
-#   docker build -t nullpii/gateway:slim -f packages/gateway/Dockerfile .
+#   docker build -t nullpii-gateway:local -f packages/gateway/Dockerfile .
 
 # ---------- builder ----------
 ARG NODE_IMAGE=node:22-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392

@@ -13,8 +13,9 @@
 
 services:
   gateway:
-    # Build the image from the repo. To use a pre-built tag instead:
-    #   image: nullpii/gateway:slim
+    # Build the image from the repo. To run the published image instead,
+    # replace the `build:` block with:
+    #   image: ghcr.io/lbroth/nullpii-gateway:0.5
     build:
       context: ../..
       dockerfile: packages/gateway/Dockerfile

@@ -1,17 +1,14 @@
 <p align="center">
-  <img src="./assets/logo.png" alt="nullpii" width="128" height="128" />
+  <img src="https://raw.githubusercontent.com/lBroth/nullpii/main/assets/logo.png" alt="nullpii" width="128" height="128" />
 </p>
 
 # nullpii
 
 Mask personal data and secrets before they reach an LLM, and put them back on the way out. Detection runs on your machine: a fine-tuned GLiNER model plus validated recognizers, with a reversible in-memory vault.
 
-- **Measured, not claimed.** Scored on every character over eight public and synthetic test sets, nullpii is ahead of each of the 14 open-source detectors we compared, and every confidence interval of the difference excludes zero (macro char-F2 0.930). The closest, OpenMed's privacy-filter-multilingual-v2 (0.898), was trained on the text of five of the eight test sets; on the three it did not see, nullpii leads 0.912 to 0.784 ([results](#benchmark)).
-- **Works with any model.** Call `sanitize()` before your LLM call and `restore()` after it. Or run the gateway in front of the Anthropic or OpenAI API, or the Claude Code mod.
-- **Built for coding agents.**
-  - It masks tool output (files, logs, command results), not just prompts.
-  - It masks less on code, where false positives cost the agent.
-  - It will not restore a hidden value where a shell would run it.
+- **Measured on data it never saw.** On five public datasets chosen before any tool was run on them, nullpii ranks second on macro char-F2 (0.756) among 15 open-source detectors run the way their authors ship them, behind rizzo-pii (0.770), and lets less personal data through than any other tool's best-scoring configuration (recall 0.960). It is first on the PIIMB leaderboard (36 tools, average F2 0.851). It gets there by masking generously: on precision-weighted scores most tools rank above it. [Results](#benchmark).
+- **Works with any model.** Mask before your LLM call and restore after it. Or run the gateway in front of the Anthropic or OpenAI API, or the Claude Code mod.
+- **Built for coding agents.** It masks tool output (files, logs, command results), not just prompts; it keeps public links to code hosts and documentation readable; and it will not put a hidden value back where a shell would run it, or into a command that sends data off the machine.
 
 Status: pre-1.0. The API can still change between minor versions. nullpii pseudonymizes with a measured leak rate; it is not anonymization and not a compliance certification.
 
@@ -21,123 +18,88 @@ Status: pre-1.0. The API can still change between minor versions. nullpii pseudo
 npm install nullpii onnxruntime-node
 ```
 
-Node ≥ 22. First run downloads the model (~1.2 GB) into `~/.cache/nullpii/`. Pre-warm with `npx nullpii prefetch`.
+Node 22 or later. The first run downloads the model from Hugging Face into `~/.cache/nullpii/` (1.2 GB in fp32; on CUDA, 0.6 GB in fp16), at a pinned revision whose files are checked by SHA-256. Pre-fetch it with `npx nullpii prefetch`, or point `NULLPII_MODEL_DIR` at a copy you staged.
 
 ## Usage
 
 ```ts
-import { sanitize, restore, wrapForLLM } from 'nullpii';
+import { NullPii, wrapForLLM } from 'nullpii';
 
-const safe = await sanitize('Email John Smith at john@acme.io about SSN 123-45-6789');
+const np = new NullPii();
+const safe = await np.sanitize('Email John Smith at john@acme.io about SSN 123-45-6789');
 // safe.sanitized → 'Email {{PII_PRIVATE_PERSON_0_…}} at {{PII_PRIVATE_EMAIL_0_…}} about SSN {{PII_ACCOUNT_NUMBER_0_…}}'
 
-// Optional: prefix prompt with the built-in preservation hint
+// Optional: tell the model to keep the placeholders as they are
 const prompt = wrapForLLM(safe, 'Translate to Italian');
 
-// … your LLM call here — OpenAI, Anthropic, Gemini, Ollama, anything …
-// The model only ever sees placeholders. Your real PII never leaves the box.
+// … your LLM call: OpenAI, Anthropic, Gemini, Ollama, anything …
 
-const back = restore(reply, safe.sessionId);
-// back.restored → original text
+const back = np.restore(reply, safe.sessionId);
+// back.restored → the reply with the real values
+
+np.destroySession(safe.sessionId); // drop the session's values from memory
+await np.dispose();                // when you are done with the engine
 ```
 
-Long-lived engine (e.g. gateway):
+Keep one engine for the life of your process: loading the model takes about two seconds. The vault lives in memory only. A placeholder is bound to the session that minted it, so a placeholder from one conversation cannot be restored in another, and one value always gets the same placeholder within a session.
 
-```ts
-import { NullPii } from 'nullpii';
-const np = new NullPii({ backend: 'auto' });
-const { sessionId, sanitized } = await np.sanitize(text);
-const { restored } = np.restore(reply, sessionId);
-await np.dispose();
-```
-
-Streaming restore — buffers placeholders that straddle SSE chunk boundaries:
+Streaming restore, for replies that arrive in chunks:
 
 ```ts
 import { RestoreStream } from 'nullpii';
-const stream = new RestoreStream(np, sessionId);
-for await (const chunk of upstreamSse) emit(stream.push(chunk));
+const stream = new RestoreStream(np, safe.sessionId);
+for await (const chunk of upstream) emit(stream.push(chunk));
 emit(stream.end().restored);
 ```
 
-Placeholders look like `{{PII_PRIVATE_PERSON_0_…}}`. Each one is bound to the session that minted it, so a placeholder from one conversation can't be restored against another.
+`safe.modelUnscannedWords` counts words the model could not read (a single word longer than its input budget, such as a minified blob); the recognizers still scanned them.
 
-## Gateway
+## Choose what gets masked
 
-An HTTP proxy for the Anthropic Messages API (`/v1/messages`) and the OpenAI Chat Completions API (`/v1/chat/completions`). Your client points its base URL at the gateway and works as before: requests are masked before they leave your machine, and responses, streaming included, are restored before they reach you.
-
-<!-- Demo: Claude Code through the nullpii gateway. GitHub renders the
-     <video> tag inline; npmjs.com falls back to the clickable PNG. -->
-<p align="center">
-  <a href="./assets/claude-code-demo.m4v">
-    <video src="./assets/claude-code-demo.m4v" poster="./assets/claude-code-demo-thumb.png" controls muted playsinline width="720">
-      <img src="./assets/claude-code-demo-thumb.png" alt="Claude Code through the nullpii gateway — demo" width="720" />
-    </video>
-  </a>
-</p>
-
-### Claude Code quickstart
-
-```bash
-# 1. boot the gateway (first run downloads the GLiNER model into a named volume)
-docker compose -f examples/claude-code/docker-compose.yml up -d
-
-# 2. point Claude Code at it (or any Anthropic SDK)
-export ANTHROPIC_BASE_URL=http://localhost:8787
-export ANTHROPIC_API_KEY=sk-ant-…   # your real key, passed through
-
-# 3. use Claude Code normally
-claude "summarise the email I just wrote to John Doe at john@acme.io"
-```
-
-**Subscription works too:** with a Pro / Max login (`claude /login`) the OAuth token is forwarded verbatim. Set `ANTHROPIC_BASE_URL` and skip `ANTHROPIC_API_KEY`.
-
-#### Alternative: persist via Claude Code settings
-
-Prefer a per-project or per-user config file over `export`s? Drop the
-same vars into Claude Code's settings file — they're picked up
-automatically on every `claude` invocation, no shell wiring needed.
-
-Project-local (checked into the repo, or git-ignored if it holds the key) — `.claude/settings.local.json`:
+One JSON file sets the policy for the library, the CLI, the gateway and the Claude Code mod: `~/.config/nullpii/config.json`, or the file `NULLPII_CONFIG` names.
 
 ```json
 {
-  "env": {
-    "ANTHROPIC_BASE_URL": "http://localhost:8787",
-    "ANTHROPIC_API_KEY": "sk-ant-…"
-  }
+  "disabledCategories": ["private_organization", "private_occupation"],
+  "urlAllowlist": { "hosts": { "*.github.com": "host" } }
 }
 ```
 
-User-global — `~/.claude/settings.json` uses the same shape. Project-local wins on conflict. Add `.claude/settings.local.json` to `.gitignore` if you keep the API key inline.
+- `disabledCategories`: categories left readable.
+- `categoryThresholds`, `threshold`: confidence cuts in `[0, 1]`; lower masks more.
+- `urlAllowlist`: how much of a clean URL stays readable on each host (`full`, `host` or `mask`), or `"none"` to mask every URL. Code hosts, package registries and documentation stay readable by default; a URL with a credential in its query never does.
+- `restoreTools`: the tools whose arguments get real values back (gateway and mod).
 
-The gateway sees the raw prompt, replaces names and emails with placeholders, forwards the cleaned text to `api.anthropic.com`, then puts the originals back in the response before Claude Code prints them.
+`npx nullpii config` validates the file and prints it. In code, `resolveConfigFile()` and `toEngineConfig()` load it, or pass the same options to `new NullPii({...})`.
 
-Verify it's working by tailing the log — counts only, never PII values:
+## Gateway
 
-```bash
-docker compose -f examples/claude-code/docker-compose.yml logs -f gateway
-# {"msg":"anthropic.messages.streamed","replacements":3,"replacementsByLabel":{"private_person":1,"private_email":1,"private_address":1},...}
-```
-
-Full walk-through (host-mounted-model variant for air-gapped / pre-release, GPU notes, troubleshooting, multi-replica caveats): [`examples/claude-code/`](https://github.com/lBroth/nullpii/tree/main/examples/claude-code).
-
-### OpenAI-compatible clients
+An HTTP proxy for the Anthropic Messages API (`/v1/messages`) and the OpenAI Chat Completions API (`/v1/chat/completions`). Point your client's base URL at it and work as before: requests are masked before they leave your machine, and responses, streaming included, are restored before they reach you.
 
 ```bash
-export OPENAI_BASE_URL=http://localhost:8787/v1
+docker compose -f examples/claude-code/docker-compose.yml up -d   # listens on 127.0.0.1:8787
+export ANTHROPIC_BASE_URL=http://localhost:8787
+claude
 ```
 
-Cursor, Codex, Aider, LiteLLM and the OpenAI SDKs then go through the gateway. What is and is not scanned on that route: [`packages/gateway/README.md`](https://github.com/lBroth/nullpii/tree/main/packages/gateway).
+Your API key or Claude subscription login is passed through unchanged. For OpenAI-compatible clients (the OpenAI SDKs, Codex, Aider, LiteLLM), set `OPENAI_BASE_URL=http://localhost:8787/v1`.
+
+- Real values go back only into tools that run on your machine (`Bash`, `Read`, `Edit`, `Write`, …). Web and MCP tools keep the placeholders.
+- The request log carries counts, never values.
+- The gateway has no authentication of its own: keep it on `127.0.0.1`.
+
+Details, the full list of scanned fields, and the sidecar API: [`packages/gateway`](https://github.com/lBroth/nullpii/tree/main/packages/gateway). A worked Claude Code setup: [`examples/claude-code`](https://github.com/lBroth/nullpii/tree/main/examples/claude-code).
 
 ## Claude Code mod
 
-[`packages/claude-code-mod/`](https://github.com/lBroth/nullpii/tree/main/packages/claude-code-mod) masks inside Claude Code itself:
-- prompts, tool results, @-mentioned files and `CLAUDE.md` are masked before Claude reads them;
-- real values go back only into tools that run on your machine;
-- a band above the prompt shows what was masked, by type.
+[`packages/claude-code-mod`](https://github.com/lBroth/nullpii/tree/main/packages/claude-code-mod) masks inside Claude Code itself:
 
-It talks to the gateway's local sidecar API and fails closed when the sidecar is down.
+- prompts, tool results, @-mentioned files and `CLAUDE.md` are masked before Claude reads them;
+- your prompts and Claude's replies are drawn on screen with the real values;
+- real values go back only into the tools the policy lists;
+- a band above the prompt shows what was masked, by type, and `/pii` shows the counts and the policy in effect.
+
+It talks to the gateway's local sidecar and fails closed when the sidecar is down: nothing is sent unmasked.
 
 ## What gets caught
 
@@ -145,137 +107,104 @@ It talks to the gateway's local sidecar API and fails closed when the sidecar is
 |---|---|---|
 | `private_person` | names | model |
 | `private_email` | emails | model + regex |
-| `private_phone` | int'l + IT / FR / ES / HIPAA-fax domestic | model + regex |
-| `private_address` | street, city, ZIP | model |
-| `private_date` | birth / hire dates | model |
+| `private_phone` | international and IT / FR / ES / US formats | model + regex |
+| `private_address` | street, city, postcode | model |
+| `private_date` | birth and other personal dates | model |
 | `private_url` | `http(s)://`, `www.` | model + regex |
-| `private_ip` | IPv4, IPv6 (RFC 1918 / 5737 / loopback filtered) | regex post-pass |
-| `private_mac` | MAC addresses (broadcast / multicast filtered) | regex post-pass |
-| `private_passport` | US / IT / FR / ES / DE / UK + context-anchored generic (30 countries) | model (zero-shot) + regex post-pass |
-| `private_driver_license` | US per-state + IT / EU per-country (context-anchored) | model (zero-shot) + regex post-pass |
-| `private_vehicle_id` | VIN (ISO 3779 mod-11), plates IT / FR / DE / UK / ES / US | model (zero-shot) + regex (validated) |
-| `private_geolocation` | lat/lon decimal pairs (range-validated) + DMS notation | model (zero-shot) + regex (validated) |
-| `account_number` | IBAN mod-97, cards (Luhn), SSN, MRN, BTC / ETH, DNI / CPF / EIN, Italian codice fiscale (omocodic and lowercase included) and Partita IVA (next to its keyword), Medicare MBI / HIC, NPI, insurance policy, IMEI | model + regex (validated) |
-| `secret` | API keys (AWS / GitHub / OpenAI / Anthropic / Stripe / 30+), JWT, PEM, passwords and PINs in context, base64-wrapped PII | model + regex (50+) + base64 |
-| `private_organization` | employer, company names | model |
+| `private_ip` | IPv4, IPv6 (private, documentation and loopback ranges left alone) | regex |
+| `private_mac` | MAC addresses (broadcast and multicast left alone) | regex |
+| `private_passport` | US / IT / FR / ES / DE / UK, and a context-anchored generic form | model + regex |
+| `private_driver_license` | US states, IT and EU countries, context-anchored | model + regex |
+| `private_vehicle_id` | VIN (checksum), plates IT / FR / DE / UK / ES / US | model + regex |
+| `private_geolocation` | coordinate pairs (range-checked), DMS notation | model + regex |
+| `account_number` | IBAN (mod-97), cards (Luhn), SSN, MRN, crypto addresses, national and tax ids (DNI, CPF, EIN, codice fiscale, Partita IVA), Medicare, NPI, insurance policy, IMEI | model + regex (validated) |
+| `secret` | API keys (AWS, GitHub, OpenAI, Anthropic, Stripe and 30+ more), JWTs, private keys, passwords and PINs in context, base64-wrapped values | model + regex + base64 |
+| `private_organization` | employers, company names | model |
 | `private_occupation` | job titles, employment status, education | model |
 | `private_demographic` | gender, age, ethnicity, nationality, language | model |
-| `private_sensitive` | religion, political views, sexual orientation, health and blood type, when stated | model |
+| `private_sensitive` | religion, political views, sexual orientation, health, when stated | model |
 | `private_title` | honorifics and titles before a name | model |
 
-The last five categories are on by default. Turn off the ones your text needs readable with `new NullPii({ disabledCategories: ['private_organization', 'private_occupation'] })`. They only find what is written out: nullpii does not infer a health condition or a belief from indirect wording.
+The last five categories are on by default; turn off the ones your text needs readable (`disabledCategories`). They find what is written out: nullpii does not infer a health condition or a belief from indirect wording. Add your own patterns with `np.addRecognizer({ id, pattern, label, confidence, validate? })`.
 
-Add your own via `np.addRecognizer({ id, pattern, label, confidence, validate? })`. Validator-passing matches (`iban97`, `luhn`, `base58check`, `cpf`, `codiceFiscale`, `vin`, `latLonPair`) win cross-label dedupe over ML mislabels.
-
-### Tricky inputs it still catches
-
-Where the preprocessor + recognizer pack pulls PII the model alone would miss:
-
-| Surface | Input | Detected as |
-|---|---|---|
-| base64-wrapped secret | `(base64-encoded) c2stYW50LWFwaTAzLWFCY0RlRmcw…` | `sk-ant-api03-aBcDeFg012345…` (Anthropic key) |
-| HTML-entity-encoded secret | `&#115;&#107;&#45;&#97;&#110;&#116;…` | `sk-ant-…` (Anthropic key) |
-| double-URL-encoded email | `bob.jones%2540company.io` | `bob.jones@company.io` (email) |
-| zero-width-obfuscated address | `221B Baker St`U+200B`re`U+200B`et `U+200B`London` | `221B Baker Street London` (address) |
-| spaced-out email | `u s e r . 1 2 3 @ g m a i l . c o m` | `user.123@gmail.com` (email) |
-| Cyrillic-homoglyph email | `pаyments@bank.com` (`а` = U+0430) | `payments@bank.com` (email) |
-| fullwidth ASCII email | `ＵＳＥＲ．ＮＡＭＥ＠ｅｘａｍｐｌｅ．ｃｏｍ` | `USER.NAME@example.com` (email) |
-| Italian IBAN in prose | `IT60X0542811101000001023456` | `IT60X0542811101000001023456` (account_number, mod-97 verified) |
-| Stripe live key in code | `api_key = 'sk_live_<24+ alphanumeric chars>'` | flagged as `secret` (Stripe `sk_live_` prefix + length check). Real example omitted to avoid tripping GitHub push-protection scanners on the docs themselves. |
-
-Roughly five passes: Unicode normalisation, base64 decoding, percent + HTML-entity decoding, zero-width strip, regex pack.
+Obfuscated input is decoded before detection: Unicode look-alikes and fullwidth characters, zero-width characters, spaced-out text, percent-encoding (two levels deep), HTML entities, and base64 blobs.
 
 ## Benchmark
 
-Every number here comes from the method in [`packages/eval/METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md) and can be rerun.
+How the numbers are produced, and every rule that keeps them honest: [`packages/eval/METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md).
 
-**The metric.** Char-level F2, label-agnostic: a character of personal data counts as caught if any span covers it, whatever the label. F2 weighs recall twice as much as precision, because a missed character leaks. Confidence intervals are paired bootstrap over documents.
-
-**The test sets.**
-- Seven public test splits: TAB/ECHR, argilla-pii, the four Isotonic languages and ai4privacy-300k.
-- `claude-code-traces`: synthetic Claude Code sessions with tool output.
-- A separate tuning split chose every setting. These report sets were never used to choose anything.
+- **Metric:** character level and label-agnostic. A character of personal data counts as protected if any span covers it, whatever the label. F2 counts recall as twice as important as precision (β = 2), because a missed character leaks; F0.5, which favours precision, is shown next to it.
+- **Data:** five public datasets, chosen by written criteria and frozen before any tool ran on them, none used by nullpii or the compared tools for training or tuning: REDACT, TonicAI's human-annotated Privacy-Bench, PIILO student essays, Greek and German clinical notes, and synthetic coding-agent traces from an independent generator.
+- **Competitors:** each runs as its authors ship it, at its default and at an operating point tuned on the same tuning set as nullpii; each is shown at its better row.
+- **Confidence:** paired bootstrap, 95% intervals of nullpii minus the tool.
 
 <!-- matrix:begin -->
-| Tool | Macro char-F2 | Recall | Precision | CI of nullpii − tool |
-|---|---:|---:|---:|---|
-| `nullpii` | 0.930 | 0.977 | 0.807 | — |
-| `openmed-pf-multi-v2` | 0.898 | 0.941 | 0.821 | [+0.023, +0.039] |
-| `openmed-small` | 0.830 | 0.855 | 0.803 | [+0.092, +0.106] |
-| `openmed-large` | 0.821 | 0.838 | 0.816 | [+0.098, +0.117] |
-| `gliner-stream-pii` | 0.801 | 0.825 | 0.745 | [+0.120, +0.137] |
-| `ettin-68m` | 0.789 | 0.795 | 0.814 | [+0.131, +0.149] |
-| `openai-privacy-filter` | 0.787 | 0.779 | 0.878 | [+0.133, +0.152] |
-| `pii-identifier` | 0.786 | 0.796 | 0.795 | [+0.133, +0.153] |
-| `nemotron-pii-raw` | 0.766 | 0.783 | 0.729 | [+0.152, +0.174] |
-| `gliner-pii-large-v1` | 0.686 | 0.664 | 0.836 | [+0.233, +0.253] |
-| `gliner-onnx-pii-fp32` | 0.650 | 0.682 | 0.581 | [+0.268, +0.290] |
-| `presidio` | 0.635 | 0.697 | 0.533 | [+0.284, +0.304] |
-| `rizzo-pii` | 0.544 | 0.523 | 0.723 | [+0.375, +0.397] |
-| `deberta` | 0.537 | 0.623 | 0.426 | [+0.384, +0.402] |
-| `piiranha` | 0.480 | 0.437 | 0.848 | [+0.438, +0.460] |
+| Tool | Macro char-F2 | F0.5 | Recall | Precision | CI of nullpii − tool (F2) |
+|---|---:|---:|---:|---:|---|
+| rizzo-pii (default) | 0.770 | 0.633 | 0.869 | 0.608 | [−0.021, −0.005] |
+| **nullpii** | **0.756** | 0.529 | **0.960** | 0.485 | — |
+| nemotron-pii (`nvidia/gliner-PII`) | 0.720 | 0.612 | 0.808 | 0.591 | [+0.024, +0.050] |
+| OpenMed privacy-filter-multilingual-v2 | 0.717 | 0.585 | 0.841 | 0.560 | [+0.030, +0.048] |
+| pii-identifier | 0.701 | 0.583 | 0.809 | 0.569 | [+0.043, +0.069] |
+| ettin-68m | 0.699 | 0.563 | 0.825 | 0.545 | [+0.049, +0.067] |
+| openai privacy-filter | 0.693 | 0.591 | 0.767 | 0.587 | [+0.051, +0.077] |
+| OpenMed PII Large | 0.682 | 0.587 | 0.783 | 0.578 | [+0.059, +0.088] |
+| OpenMed PII Small | 0.673 | 0.512 | 0.807 | 0.478 | [+0.068, +0.098] |
+| gliner-pii-large | 0.656 | 0.571 | 0.811 | 0.555 | [+0.084, +0.118] |
+| piiranha | 0.651 | 0.465 | 0.840 | 0.428 | [+0.091, +0.119] |
+| gliner_multi_pii (ONNX) | 0.648 | 0.495 | 0.845 | 0.462 | [+0.097, +0.120] |
+| Presidio | 0.628 | 0.492 | 0.790 | 0.465 | [+0.115, +0.141] |
+| gliner-stream-pii | 0.568 | 0.522 | 0.714 | 0.528 | [+0.174, +0.202] |
+| deberta PII (default) | 0.464 | 0.254 | 0.802 | 0.225 | [+0.281, +0.303] |
+| mask everything | 0.260 | | | | |
 <!-- matrix:end -->
 
-The full per-dataset matrix, and the in-distribution flags for tools trained on a test set's source, are in [`packages/eval/METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md).
+nullpii is measured with its five extended categories off, as the datasets do not label them; with its default configuration, filtered to the same labels, it scores 0.747.
 
 **Where nullpii is not ahead.**
-- **Test sets a competitor trained on:** OpenMed's privacy-filter-multilingual-v2 scores 0.994–0.997 on the four Isotonic sets (nullpii 0.969–0.971) and 0.851 on argilla-pii. All five are re-releases of ai4privacy text it lists as training data, verified verbatim. Those cells are flagged ‡.
-- **`argilla-pii`:** nullpii finds more than every tool not trained on it (recall 0.961; openmed-small 0.944), but it also over-masks more (precision 0.514, against 0.606). Four tools score significantly higher on F2: openmed-small 0.849, openmed-large 0.848, pii-identifier 0.837 and ettin-68m 0.829, against 0.819.
-- **`claude-code-traces`:** nullpii 0.848 and openai-privacy-filter 0.840 are a tie; the difference is not significant. nullpii leaks less (recall 0.982, against 0.836) and over-masks more (precision 0.549, against 0.853).
-- **`tab-echr`:** nullpii is still first (0.941; next is presidio at 0.883), but down from the previous model's 0.963 at the same recall. The new model masks court, prison and ministry names that contain a place name as addresses.
+- **rizzo-pii is significantly ahead, on student essays.** On PIILO, nullpii masks more than the gold labels mark (names, dates and places the gold leaves out): 0.407 against rizzo-pii's 0.623. On the other four datasets nullpii is ahead.
+- **Precision.** nullpii's recall is the highest of any tool's best-scoring row (only rizzo-pii tuned for recall goes higher, 0.967, at F2 0.583), and its precision is among the lowest. Ranked by F0.5, most tools are ahead of it.
+- **English documents only.** nullpii is fifth (0.713), behind openai's privacy-filter (0.746), rizzo-pii (0.743), OpenMed's privacy-filter-multilingual-v2 (0.718) and pii-identifier (0.714).
+- **PIIMB** ([leaderboard](https://huggingface.co/spaces/piimb/pii-masking-benchmark-leaderboard), `sentences` subset, its own scoring): nullpii is first of 36 with an average F2 of 0.851; OpenMed's privacy-filter-multilingual-v2 is next at 0.836. nullpii trails it on the ai4privacy and Gretel tasks, and on privy, where it over-masks.
+
+The three reported (not gated) sets, the per-dataset numbers and the sensitivity checks are in [`METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md).
 
 ### Latency
 
-`sanitize()` p50 on Claude-Code-shaped input (code, JSON, logs), M5 Pro, idle machine. nullpii runs ONNX on CPU. The other GLiNER tools run PyTorch on the GPU (MPS), the device their maintainers target.
-
-| Tool | 2k chars | 30k chars | 100k chars | Macro char-F2 |
-|---|---:|---:|---:|---:|
-| **nullpii** (CPU) | 286 ms | 4.3 s | 14.8 s | **0.930** |
-| nemotron-pii-raw (MPS) | 398 ms | 4.9 s | 16.1 s | 0.766 |
-| gliner-pii-large-v1 (MPS) | 420 ms | 5.6 s | 19.8 s | 0.686 |
-| openai-privacy-filter (MPS) | 3.2 s | 46.3 s | 159 s | 0.787 |
-
-Some smaller token classifiers are faster, for example openmed-small at about 2 s per 100k characters on MPS. None of them is as accurate: see the benchmark above.
-
-At about 7k characters per second, a large tool result costs seconds. The gateway's sidecar caches each session's masked results, so a file read again is not run through the model again.
+<!-- latency:begin -->
+Latency tables are added from the final runs.
+<!-- latency:end -->
 
 ## Backends
 
 ```ts
-new NullPii({ backend: 'cpu' });   // ['cpu']
-new NullPii({ backend: 'cuda' });  // ['cuda', 'cpu']  — NVIDIA, falls back on CPU
-new NullPii({ backend: 'mps' });   // ['coreml', 'cpu'] — Apple Silicon
-new NullPii({ backend: 'auto' });  // currently 'cpu'
+new NullPii({ backend: 'cpu' });   // ONNX Runtime on the CPU (the default)
+new NullPii({ backend: 'cuda' });  // NVIDIA GPU, fp16 when the model ships it; falls back to the CPU
+new NullPii({ backend: 'mps' });   // Apple Silicon through CoreML
 ```
 
-CPU thread tuning: pass `intraOpNumThreads` (parallelism inside a single op) and `interOpNumThreads` (parallelism across ops) to `new NullPii({...})`. Both are forwarded to the underlying ONNX Runtime session config.
+`intraOpNumThreads` and `interOpNumThreads` are passed to ONNX Runtime.
 
 ## What it doesn't do
 
-- **It does not catch everything.** Detection is statistical: the benchmark above shows the leak rate per test set. Don't make it your only privacy control.
-- **It is not a HIPAA tool.** It finds explicit spans, not diagnoses inferred from context.
-- **Some data stays visible:**
-  - IP and MAC addresses are caught by validated regex, not the model;
-  - images and other binary attachments pass through unscanned and are counted.
-- **Inputs over 1 MB are refused.** Chunk them yourself.
+- **It does not catch everything.** Detection is statistical; the benchmark shows the leak rate. Don't make it your only privacy control.
+- **It is not a HIPAA or GDPR tool.** It finds explicit spans, not facts inferred from context.
+- **Images and other binary attachments** pass through the gateway unscanned, and are counted.
+- **Inputs over 1,000,000 characters are refused.** Split them yourself.
 
 ## Privacy and security
 
-- Detection runs entirely on your machine. The only network call is the one-time model download.
-- The vault lives in memory and goes away when you call `dispose()`; it is never written to disk.
+- Detection runs on your machine. nullpii sends your text nowhere; its one network call is the model download.
+- The vault lives in memory and is never written to disk.
 - Logs carry counts and short ids, never values.
-- Restoring a value into a shell command can inject, because the model never saw it. The mod and the gateway refuse unsafe positions; if you call `restore()` yourself, see [SECURITY.md](https://github.com/lBroth/nullpii/blob/main/SECURITY.md).
+- Restoring a value into a shell command can inject, because the model never saw the value. The mod and the gateway refuse unsafe positions and commands that send data off the machine; if you call `restore()` yourself, read [SECURITY.md](https://github.com/lBroth/nullpii/blob/main/SECURITY.md).
+
+Report a vulnerability privately: [security advisories](https://github.com/lBroth/nullpii/security/advisories/new).
 
 ## License
 
 Apache-2.0: see [LICENSE](https://github.com/lBroth/nullpii/blob/main/LICENSE) and [NOTICE](https://github.com/lBroth/nullpii/blob/main/NOTICE). What the model was trained on, and the attributions it carries: [`docs/WEIGHTS_PROVENANCE.md`](https://github.com/lBroth/nullpii/blob/main/docs/WEIGHTS_PROVENANCE.md).
 
-## Further reading
-
-- [`CHANGELOG.md`](https://github.com/lBroth/nullpii/blob/main/CHANGELOG.md): release notes
-- [`CONTRIBUTING.md`](https://github.com/lBroth/nullpii/blob/main/CONTRIBUTING.md): dev setup, architecture rules, test-data policy
-- [`packages/eval/`](https://github.com/lBroth/nullpii/tree/main/packages/eval): the benchmark harness and protocol
-
 ## Credits
 
-The detection model builds on [`urchade/gliner_multi_pii-v1`](https://huggingface.co/urchade/gliner_multi_pii-v1) (GLiNER, Zaratiana et al., NAACL 2024, on Microsoft mDeBERTa-v3 base). Training data credits: NVIDIA (Nemotron-PII), the Allen Institute for AI and Common Crawl (C4), Microsoft (presidio-research) and Norsk Regnesentral (TAB). See [NOTICE](https://github.com/lBroth/nullpii/blob/main/NOTICE).
+The detection model builds on [`urchade/gliner_multi_pii-v1`](https://huggingface.co/urchade/gliner_multi_pii-v1) (GLiNER, Zaratiana et al., NAACL 2024, on Microsoft mDeBERTa-v3 base). Training data credits: NVIDIA (Nemotron-PII), the Allen Institute for AI and Common Crawl (C4), Microsoft (presidio-research) and Norsk Regnesentral (TAB).

@@ -129,19 +129,19 @@ nullpii 0.5 (the release build and the published weights, in fp32) in its core r
 
 nullpii's default configuration also masks five categories outside the core labels these datasets are scored on (organisations, occupations, demographic and sensitive attributes, titles), so as shipped it scores lower here: 0.653 on the gated sets, 0.136 on PIILO. Turning those five off gives the core regime above.
 
-**Comparisons (gated sets, F2).** On all five sets, nullpii is significantly ahead of every tool but one, at that tool's better row: the narrowest margins are nvidia/gliner-PII [+0.024, +0.050] and OpenMed privacy-filter-multilingual-v2 [+0.030, +0.048]. rizzo-pii at its default is significantly ahead of nullpii, [−0.021, −0.005], all of it on PIILO. No dataset has a tool with significantly higher recall at matched or better precision. At F0.5 the order largely reverses.
+**Comparisons (gated sets, F2).** On all five sets, nullpii is significantly ahead of every tool but one, at that tool's better row: the narrowest margins are nvidia/gliner-PII [+0.024, +0.050] and OpenMed privacy-filter-multilingual-v2 [+0.030, +0.048]. rizzo-pii at its default is significantly ahead of nullpii, [−0.021, −0.005], all of it on PIILO. With 99.67% intervals (a Bonferroni correction for 15 comparisons, slightly stricter than the 14 tools need), the 13 leads hold (narrowest nvidia/gliner-PII [+0.018, +0.056]) and the gap to rizzo-pii, −0.013, is no longer significant, [−0.025, +0.001]. No dataset has a tool with significantly higher recall at matched or better precision. At F0.5 the order largely reverses.
 
-**One dataset carries the margin.** Leaving each set out in turn (paired, point estimates):
+**One dataset carries the margin.** Leaving each set out in turn (each tool at its better row; the tool's score minus nullpii's, with the paired 95% CI):
 
 | Left out | nullpii | Tools ahead of nullpii | Closest behind |
 |---|---:|---|---|
-| REDACT | 0.734 | rizzo-pii (default) +0.024 | nvidia/gliner-PII −0.028 |
-| Tonic | 0.728 | rizzo-pii (default) +0.022 | nvidia/gliner-PII −0.036 |
-| PIILO | 0.844 | none | rizzo-pii (default) −0.037 |
-| eu-clinical | 0.724 | openai privacy-filter +0.032, rizzo-pii (default) +0.029 | pii-identifier −0.005, privacy-filter-multilingual-v2 −0.008, ettin-68m −0.012 |
-| traces-v3 | 0.753 | rizzo-pii (default) +0.029 | nvidia/gliner-PII −0.021 |
+| REDACT | 0.734 | rizzo-pii (default) +0.024 [+0.014, +0.033] | nvidia/gliner-PII −0.028 [−0.044, −0.012] |
+| Tonic | 0.728 | rizzo-pii (default) +0.022 [+0.012, +0.031] | nvidia/gliner-PII −0.036 [−0.053, −0.020] |
+| PIILO | 0.844 | none | rizzo-pii (default) −0.037 [−0.048, −0.029] |
+| eu-clinical | 0.724 | openai privacy-filter +0.032 [+0.015, +0.047], rizzo-pii (default) +0.028 [+0.018, +0.038] | pii-identifier −0.005 [−0.021, +0.010], privacy-filter-multilingual-v2 (default) −0.008 [−0.020, +0.004], ettin-68m −0.012 [−0.022, −0.002], OpenMed large −0.018 [−0.035, +0.001] |
+| traces-v3 | 0.753 | rizzo-pii (default) +0.029 [+0.024, +0.035] | nvidia/gliner-PII −0.021 [−0.029, −0.013] |
 
-Without the clinical notes, the lead over everyone but rizzo-pii is gone. They are the only medical text, and the only Greek, in the gated sets.
+Without the clinical notes, the lead over everyone but rizzo-pii is gone: two tools are significantly ahead, and pii-identifier, privacy-filter-multilingual-v2 and OpenMed large are within the interval. They are the only medical text, and the only Greek, in the gated sets.
 
 **Sensitivity checks** (reported, none decides):
 - without the documents any OpenMed row returned no output for (77 gated documents, for every tool): conclusions unchanged;

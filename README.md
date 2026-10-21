@@ -145,7 +145,7 @@ How the numbers are produced, and every rule that keeps them honest: [`packages/
 - **Metric:** character level and label-agnostic. A character of personal data counts as protected if any span covers it, whatever the label. F2 counts recall as twice as important as precision (β = 2), because a missed character leaks; F0.5, which favours precision, is shown next to it.
 - **Data:** five public datasets, chosen by written criteria and frozen before any tool ran on them, none in the training or tuning data nullpii and the compared tools declare (measured overlap with the known sets under 1%): REDACT, TonicAI's human-annotated Privacy-Bench, PIILO student essays, Greek and German clinical notes, and synthetic coding-agent traces from an independent generator.
 - **Competitors:** each runs as its authors ship it, at its default and at an operating point tuned on the same tuning set as nullpii; each is shown at its better row.
-- **Confidence:** paired bootstrap, 95% intervals of nullpii minus the tool.
+- **Confidence:** paired bootstrap, 95% intervals of nullpii minus the tool; intervals corrected for multiple comparisons (Bonferroni, 99.67%) are in METHOD.md.
 
 <!-- matrix:begin -->
 | Tool | Macro char-F2 | F0.5 | Recall | Precision | CI of nullpii − tool (F2) |
@@ -171,8 +171,8 @@ How the numbers are produced, and every rule that keeps them honest: [`packages/
 nullpii is measured with its five extended categories off, as the datasets do not label them. Its default configuration, which masks them too, scores 0.747 counted on the same labels and 0.653 as shipped, since masking organisations, occupations and the like counts as over-masking here.
 
 **Where nullpii is not ahead.**
-- **One dataset carries the margin over the rest.** Without the Greek and German clinical notes, nullpii is third (0.724): openai's privacy-filter (+0.032) and rizzo-pii (+0.029) are ahead, and pii-identifier, OpenMed privacy-filter-multilingual-v2 and ettin-68m come within 0.012. Without the student essays, nullpii is first (0.844, rizzo-pii 0.037 behind).
-- **rizzo-pii is significantly ahead, on student essays.** On PIILO nullpii scores 0.407 against rizzo-pii's 0.623, with higher recall and much lower precision: it masks a lot the gold does not label. On the other four datasets nullpii is ahead of rizzo-pii.
+- **One dataset carries the margin over the rest.** Without the Greek and German clinical notes, nullpii is third (0.724): openai's privacy-filter (+0.032) and rizzo-pii (+0.028) are significantly ahead, and pii-identifier, OpenMed privacy-filter-multilingual-v2 and OpenMed large are within the confidence interval. Without the student essays, nullpii is first (0.844, rizzo-pii 0.037 behind).
+- **rizzo-pii is ahead, on student essays.** On PIILO nullpii scores 0.407 against rizzo-pii's 0.623, with higher recall and much lower precision: it masks a lot the gold does not label. On the other four datasets nullpii is ahead of rizzo-pii. Over all five the gap, −0.013, is significant at 95% but not once corrected for multiple comparisons (Bonferroni, 99.67%: [−0.025, +0.001]); the 13 leads hold under that correction.
 - **Precision.** nullpii's recall is the highest of any tool's best-scoring row (only rizzo-pii tuned for recall goes higher, 0.967, at F2 0.583), and its precision is among the lowest. Ranked by F0.5, most tools are ahead of it.
 - **Per dataset.** On PIILO, 8 of the 14 tools are ahead of nullpii; on Tonic, three are, by up to 0.008; on the clinical notes, gliner_multi_pii (0.913 against 0.887).
 - **English documents only.** nullpii is fifth (0.713), behind openai's privacy-filter (0.746), rizzo-pii (0.742), OpenMed's privacy-filter-multilingual-v2 (0.717) and pii-identifier (0.714).

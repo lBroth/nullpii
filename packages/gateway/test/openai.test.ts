@@ -861,6 +861,42 @@ describe('openai · SSE relay', () => {
     expect(frames.at(-2)).toContain('"object":"chat.completion.chunk"');
   });
 
+  it('keeps streamed tool arguments masked once a frame is not JSON', async () => {
+    const { np, sessionId, bake } = harness();
+    const ph = bake(EMAIL, 'private_email');
+    const start = { index: 0, id: 'call_1', type: 'function', function: { name: 'send' } };
+
+    const { body, counters } = await relay(np, sessionId, [
+      chunkFrame([{ index: 0, delta: { tool_calls: [start] } }]),
+      'data: {"choices":[{"index":0,"delta":\n\n',
+      chunkFrame([
+        {
+          index: 0,
+          delta: { tool_calls: [{ index: 0, function: { arguments: `{"to":"${ph}"}` } }] },
+        },
+      ]),
+      chunkFrame([{ index: 0, delta: {}, finish_reason: 'tool_calls' }]),
+      DONE_FRAME,
+    ]);
+
+    expect(body).not.toContain(EMAIL);
+    expect(counters.heldForToolPlaceholders).toBe(1);
+  });
+
+  it('reads a CRLF stream as an LF one', async () => {
+    const { np, sessionId, bake } = harness();
+    const ph = bake(PERSON, 'private_person');
+    const frames = [
+      chunkFrame([{ index: 0, delta: { content: `Hi ${ph}` } }]),
+      chunkFrame([{ index: 0, delta: {}, finish_reason: 'stop' }]),
+      DONE_FRAME,
+    ].map((f) => f.replaceAll('\n', '\r\n'));
+
+    const { body } = await relay(np, sessionId, frames);
+
+    expect(reassemble(body).content.get(0)).toBe(`Hi ${PERSON}`);
+  });
+
   it('forwards chunks it does not change byte for byte', async () => {
     const { np, sessionId } = harness();
     const frames = [

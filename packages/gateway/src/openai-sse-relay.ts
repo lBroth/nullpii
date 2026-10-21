@@ -11,11 +11,13 @@ import type {
 } from './openai-types.js';
 import {
   type RestoreAccumulator,
+  holdForTool,
   isRecord,
   newRestoreAccumulator,
   parseJson,
   tallyRestore,
 } from './sanitizer.js';
+import { FRAME_SEPARATOR, SseFrameSplitter, parseSseFields, serialiseFrame } from './sse-frames.js';
 import type { SseRelayCounters, SseRelayOptions } from './sse-relay.js';
 
 /**
@@ -50,9 +52,6 @@ import type { SseRelayCounters, SseRelayOptions } from './sse-relay.js';
  *   `usage`, provider extensions) is never lost.
  */
 
-const FRAME_SEPARATOR = '\n\n';
-const EVENT_PREFIX = 'event:';
-const DATA_PREFIX = 'data:';
 const DONE_SENTINEL = '[DONE]';
 
 /** Delta fields that stream free text. */
@@ -94,24 +93,21 @@ export async function relayChatSseStream(opts: SseRelayOptions): Promise<SseRela
   const { upstream, write, onUpstreamChunk } = opts;
   const relay = new ChatRelay(opts.np, opts.sessionId, opts.restoreTools);
   const decoder = new TextDecoder();
-  let buffer = '';
+  const splitter = new SseFrameSplitter();
   for await (const chunk of upstream) {
     const decoded = decoder.decode(chunk, { stream: true });
     if (onUpstreamChunk !== undefined && decoded.length > 0) onUpstreamChunk(decoded);
-    buffer += decoded;
-    let sep = buffer.indexOf(FRAME_SEPARATOR);
-    while (sep !== -1) {
-      for (const out of relay.processFrame(buffer.slice(0, sep))) await write(out);
-      buffer = buffer.slice(sep + FRAME_SEPARATOR.length);
-      sep = buffer.indexOf(FRAME_SEPARATOR);
+    for (const frame of splitter.push(decoded)) {
+      for (const out of relay.processFrame(frame)) await write(out);
     }
   }
   // A last frame without its blank line is still relayed when it is
   // whole (`[DONE]` or a complete JSON payload). A half frame is dropped,
   // as in the Anthropic relay: strict SDKs choke on a truncated payload.
-  buffer += decoder.decode();
-  if (isWholeFrame(buffer)) {
-    for (const out of relay.processFrame(buffer)) await write(out);
+  for (const frame of splitter.push(decoder.decode()).concat(splitter.end())) {
+    if (isWholeFrame(frame)) {
+      for (const out of relay.processFrame(frame)) await write(out);
+    }
   }
   for (const out of relay.flushOpenChoices()) await write(out);
   return relay.counters();
@@ -122,6 +118,10 @@ class ChatRelay {
   private readonly choices = new Map<number, ChoiceRestorer>();
   private readonly acc: RestoreAccumulator;
   private envelope: Record<string, unknown> = {};
+  /** A frame's `data` was neither JSON nor `[DONE]`: from then on, which
+   * call a shard belongs to is no longer certain, so every tool call
+   * keeps its placeholders. */
+  private readonly state = { degraded: false };
 
   constructor(
     private readonly np: NullPii,
@@ -135,8 +135,9 @@ class ChatRelay {
   processFrame(frame: string): string[] {
     if (frame.length === 0) return [];
     const passthrough = `${frame}${FRAME_SEPARATOR}`;
-    const { event, data } = splitFrame(frame);
+    const { event, data } = parseSseFields(frame);
     if (data === DONE_SENTINEL) return [...this.flushOpenChoices(), passthrough];
+    if (data !== null && parseJson(data) === undefined) this.state.degraded = true;
     const chunk = data === null ? null : parseChunk(data);
     if (chunk === null) return [passthrough];
     this.envelope = pickEnvelope(chunk);
@@ -188,7 +189,7 @@ class ChatRelay {
   private restorerFor(index: number): ChoiceRestorer {
     let restorer = this.choices.get(index);
     if (restorer === undefined) {
-      restorer = new ChoiceRestorer(this.np, this.sessionId, this.acc);
+      restorer = new ChoiceRestorer(this.np, this.sessionId, this.acc, this.state);
       this.choices.set(index, restorer);
     }
     return restorer;
@@ -209,6 +210,7 @@ class ChoiceRestorer {
     private readonly np: NullPii,
     private readonly sessionId: string,
     private readonly acc: RestoreAccumulator,
+    private readonly state: { readonly degraded: boolean },
   ) {}
 
   /** Restore `delta` in place: text as far as it is safe, argument shards
@@ -300,13 +302,15 @@ class ChoiceRestorer {
     }
     this.calls.clear();
     if (this.functionArgs !== null) {
-      const args = restoreFunctionArguments(
-        this.np,
-        this.functionName,
-        this.functionArgs,
-        this.sessionId,
-        this.acc,
-      );
+      const args = this.state.degraded
+        ? holdForTool(this.functionArgs, this.acc)
+        : restoreFunctionArguments(
+            this.np,
+            this.functionName,
+            this.functionArgs,
+            this.sessionId,
+            this.acc,
+          );
       delta.function_call = { ...delta.function_call, arguments: args };
       this.functionArgs = null;
       added = true;
@@ -317,6 +321,7 @@ class ChoiceRestorer {
   /** Restore one call's assembled text with the helper the JSON restore
    * uses for that kind of call. */
   private restoreCall(held: HeldCall, text: string): string {
+    if (this.state.degraded) return holdForTool(text, this.acc);
     const restore = held.kind === 'function' ? restoreFunctionArguments : restoreCustomInput;
     return restore(this.np, held.name, text, this.sessionId, this.acc);
   }
@@ -346,19 +351,8 @@ function setCallText(delta: ChatDelta, index: number, kind: CallKind, text: stri
 
 /** True when a trailing frame (no blank line after it) is complete. */
 function isWholeFrame(frame: string): boolean {
-  const { data } = splitFrame(frame);
+  const { data } = parseSseFields(frame);
   return data !== null && (data === DONE_SENTINEL || parseJson(data) !== undefined);
-}
-
-/** The `event:` name and the joined `data:` payload of one SSE frame. */
-function splitFrame(frame: string): { event: string | null; data: string | null } {
-  let event: string | null = null;
-  const data: string[] = [];
-  for (const line of frame.split('\n')) {
-    if (line.startsWith(EVENT_PREFIX)) event = line.slice(EVENT_PREFIX.length).trim();
-    else if (line.startsWith(DATA_PREFIX)) data.push(line.slice(DATA_PREFIX.length).trim());
-  }
-  return { event, data: data.length > 0 ? data.join('\n') : null };
 }
 
 /** The chunk in a `data:` payload, or null for anything that is not a
@@ -376,9 +370,4 @@ function pickEnvelope(chunk: ChatCompletionChunk): Record<string, unknown> {
     if (chunk[key] !== undefined) out[key] = chunk[key];
   }
   return out;
-}
-
-function serialiseFrame(event: string | null, data: Record<string, unknown>): string {
-  const prefix = event !== null ? `event: ${event}\n` : '';
-  return `${prefix}data: ${JSON.stringify(data)}${FRAME_SEPARATOR}`;
 }

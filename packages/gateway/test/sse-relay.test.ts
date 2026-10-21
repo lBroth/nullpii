@@ -128,6 +128,55 @@ function inputJsonFrame(index: number, partialJson: string): string {
   });
 }
 
+describe('relaySseStream · framing', () => {
+  async function relay(chunks: string[]): Promise<string> {
+    const { np, vault, sessionId } = buildHarness();
+    const ph = bake(vault, sessionId, 'IT60X0542811101000001023456', 'account_number');
+    const out: string[] = [];
+    await relaySseStream({
+      np,
+      sessionId,
+      upstream: chunkStream(chunks.map((c) => c.replaceAll('PH', ph))),
+      write: (f) => {
+        out.push(f);
+      },
+    });
+    return out.join('');
+  }
+
+  it('restores tool input in a CRLF stream', async () => {
+    const frames = [
+      toolStartFrame(1, LOCAL_TOOL),
+      inputJsonFrame(1, '{"iban":"PH"}'),
+      sseFrame('content_block_stop', { type: 'content_block_stop', index: 1 }),
+    ].map((f) => f.replaceAll('\n', '\r\n'));
+
+    expect(await relay(frames)).toContain('IT60X0542811101000001023456');
+  });
+
+  it('keeps every later tool input masked once a frame is not JSON', async () => {
+    const joined = await relay([
+      'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,\n\n',
+      toolStartFrame(1, LOCAL_TOOL),
+      inputJsonFrame(1, '{"iban":"PH"}'),
+      sseFrame('content_block_stop', { type: 'content_block_stop', index: 1 }),
+    ]);
+
+    expect(joined).not.toContain('IT60X0542811101000001023456');
+    expect(joined).toContain('{{PII_ACCOUNT_NUMBER_0_');
+  });
+
+  it('forwards the content_block_start it judged, re-serialised', async () => {
+    // A duplicate key: JSON.parse keeps the last, a lax client might keep the first.
+    const start =
+      'event: content_block_start\ndata: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"t","name":"WebFetch","name":"Write","input":{}}}\n\n';
+    const joined = await relay([start]);
+
+    expect(joined).toContain('"name":"Write"');
+    expect(joined).not.toContain('"name":"WebFetch"');
+  });
+});
+
 describe('relaySseStream', () => {
   it('restores a placeholder that arrives in a single delta', async () => {
     const { np, vault, sessionId } = buildHarness();

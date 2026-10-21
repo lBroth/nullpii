@@ -11,6 +11,7 @@ import {
   toolCallMayRestore,
 } from './sanitizer.js';
 import { isShellTool } from './shell-restore.js';
+import { FRAME_SEPARATOR, SseFrameSplitter, parseSseFields, serialiseFrame } from './sse-frames.js';
 // The gateway hands `NullPii` directly to `RestoreStream` — both
 // satisfy the `RestoreCapable` structural type the stream needs. No
 // adapter / private-field reach-through required.
@@ -67,7 +68,13 @@ export interface SseRelayOptions {
  * no entry keeps its placeholders. */
 type ToolRestore = 'json' | 'shell';
 
-const FRAME_SEPARATOR = '\n\n';
+/** State of one stream beyond its blocks. */
+interface StreamState {
+  /** A frame's `data` was not JSON: from then on, the relay can no longer
+   * be sure which block a tool input belongs to, so every tool input
+   * keeps its placeholders. */
+  degraded: boolean;
+}
 
 /**
  * Anthropic SSE streaming relay. The Messages API streams a response
@@ -87,8 +94,11 @@ const FRAME_SEPARATOR = '\n\n';
  * Edge cases handled:
  * - Multi-byte UTF-8 split across upstream chunks → `TextDecoder` with
  *   `stream:true` buffers the partial codepoint.
- * - Partial SSE frame at end of an upstream chunk → kept in `buffer`
- *   until the next chunk delivers the terminating `\n\n`.
+ * - Frames are read as the SSE specification defines them
+ *   (`sse-frames.ts`): CRLF, LF or CR line ends, comments, several
+ *   `data:` lines; a partial frame waits for the rest of it.
+ * - A frame whose `data` is not JSON is forwarded as it came, and from
+ *   then on every tool input keeps its placeholders.
  * - Block ends with text still buffered in `RestoreStream` → flush
  *   via `end()` and synthesise a final `text_delta` before
  *   `content_block_stop` so the SDK never sees a truncated reply.
@@ -126,6 +136,7 @@ export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCou
    * Input of any other block keeps its placeholders. */
   const toolBlocks = new Map<number, ToolRestore>();
   const acc = newRestoreAccumulator(restoreTools);
+  const state: StreamState = { degraded: false };
 
   function getRestorer(index: number): RestoreStream {
     let rs = restorers.get(index);
@@ -149,26 +160,23 @@ export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCou
     return restoreJsonText(np, buf, sessionId, acc, mode === 'shell');
   }
 
-  let buffer = '';
+  const relay = (frame: string): string[] =>
+    processFrame(
+      frame,
+      getRestorer,
+      restorers,
+      jsonBuffers,
+      restoreJsonBuffer,
+      acc,
+      toolBlocks,
+      state,
+    );
+  const splitter = new SseFrameSplitter();
   for await (const chunk of upstream) {
     const decoded = decoder.decode(chunk, { stream: true });
     if (onUpstreamChunk !== undefined && decoded.length > 0) onUpstreamChunk(decoded);
-    buffer += decoded;
-    while (true) {
-      const sep = buffer.indexOf(FRAME_SEPARATOR);
-      if (sep === -1) break;
-      const frame = buffer.slice(0, sep);
-      buffer = buffer.slice(sep + FRAME_SEPARATOR.length);
-      const out = processFrame(
-        frame,
-        getRestorer,
-        restorers,
-        jsonBuffers,
-        restoreJsonBuffer,
-        acc,
-        toolBlocks,
-      );
-      for (const f of out) await write(f);
+    for (const frame of splitter.push(decoded)) {
+      for (const f of relay(frame)) await write(f);
     }
   }
 
@@ -176,18 +184,11 @@ export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCou
   // actually parses into an SSE frame — a half-frame (e.g.
   // `event: ping\n` with no `data:` line) returned with a synthesised
   // `\n\n` terminator would confuse strict SDKs.
-  buffer += decoder.decode();
-  if (buffer.length > 0 && parseFrame(buffer) !== null) {
-    const out = processFrame(
-      buffer,
-      getRestorer,
-      restorers,
-      jsonBuffers,
-      restoreJsonBuffer,
-      acc,
-      toolBlocks,
-    );
-    for (const f of out) await write(f);
+  const rest = splitter.push(decoder.decode()).concat(splitter.end());
+  for (const frame of rest) {
+    if (frame.length > 0 && parseFrame(frame).kind === 'json') {
+      for (const f of relay(frame)) await write(f);
+    }
   }
 
   // Drain every per-block restorer — synthesise a final text_delta for
@@ -233,13 +234,18 @@ function processFrame(
   restoreJsonBuffer: (index: number) => string | null,
   acc: RestoreAccumulator,
   toolBlocks: Map<number, ToolRestore>,
+  state: StreamState,
 ): string[] {
   if (frame.length === 0) return [];
   const parsed = parseFrame(frame);
-  if (parsed === null) return [`${frame}${FRAME_SEPARATOR}`];
+  if (parsed.kind === 'invalid') {
+    state.degraded = true;
+    toolBlocks.clear();
+  }
+  if (parsed.kind !== 'json') return [`${frame}${FRAME_SEPARATOR}`];
 
   const data = parsed.data;
-  if (data?.type === 'content_block_delta' && isTextDelta(data)) {
+  if (data.type === 'content_block_delta' && isTextDelta(data)) {
     const rs = getRestorer(data.index);
     const incoming = data.delta.text ?? '';
     const restoredHead = rs.push(incoming);
@@ -257,7 +263,7 @@ function processFrame(
     return [serialiseFrame(parsed.event, out)];
   }
 
-  if (data?.type === 'content_block_delta' && isInputJsonDelta(data)) {
+  if (data.type === 'content_block_delta' && isInputJsonDelta(data)) {
     // Buffer the partial-JSON shard. Restore happens at
     // `content_block_stop` (or end-of-stream drain) to keep placeholder
     // tokens intact across shard boundaries.
@@ -266,7 +272,7 @@ function processFrame(
     return [];
   }
 
-  if (data?.type === 'content_block_stop' && typeof (data as ContentBlockStop).index === 'number') {
+  if (data.type === 'content_block_stop' && typeof (data as ContentBlockStop).index === 'number') {
     const index = (data as ContentBlockStop).index;
     const rs = restorers.get(index);
     const out: string[] = [];
@@ -287,7 +293,11 @@ function processFrame(
     return out;
   }
 
-  if (data?.type === 'content_block_start') noteToolBlock(data, toolBlocks, acc);
+  if (data.type === 'content_block_start') {
+    if (!state.degraded) noteToolBlock(data, toolBlocks, acc);
+    // Re-serialised, so the client reads the block the relay judged.
+    return [serialiseFrame(parsed.event, data)];
+  }
   // Everything else — passthrough.
   return [`${frame}${FRAME_SEPARATOR}`];
 }
@@ -308,31 +318,25 @@ function noteToolBlock(
   toolBlocks.set(data.index, isShellTool(block.name) ? 'shell' : 'json');
 }
 
-interface ParsedFrame {
-  event: string | null;
-  data: Record<string, unknown> | null;
-}
+/** A frame with no `data` (a comment, a keep-alive), one whose `data` is
+ * not a JSON object, or a JSON event. */
+type ParsedFrame =
+  | { kind: 'none' }
+  | { kind: 'invalid' }
+  | { kind: 'json'; event: string | null; data: Record<string, unknown> };
 
-function parseFrame(frame: string): ParsedFrame | null {
-  let event: string | null = null;
-  let dataRaw = '';
-  for (const line of frame.split('\n')) {
-    if (line.startsWith('event:')) {
-      event = line.slice('event:'.length).trim();
-    } else if (line.startsWith('data:')) {
-      dataRaw += line.slice('data:'.length).trim();
-    }
-  }
-  if (dataRaw.length === 0) return null;
+function parseFrame(frame: string): ParsedFrame {
+  const { event, data } = parseSseFields(frame);
+  if (data === null) return { kind: 'none' };
+  let value: unknown;
   try {
-    return { event, data: JSON.parse(dataRaw) as Record<string, unknown> };
+    value = JSON.parse(data);
   } catch {
-    // Deliberate swallow: a non-JSON `data:` payload is a normal SSE
-    // occurrence (heartbeat comments, provider-injected envelopes that
-    // lose framing on chunk boundaries). Returning null signals the
-    // caller to forward the raw frame verbatim — the safe default.
-    return null;
+    // Not swallowed: the caller forwards the frame as it came and stops
+    // restoring tool input for the rest of the stream.
+    return { kind: 'invalid' };
   }
+  return isRecord(value) ? { kind: 'json', event, data: value } : { kind: 'invalid' };
 }
 
 function isTextDelta(data: Record<string, unknown>): data is ContentBlockDelta {
@@ -355,11 +359,6 @@ function isInputJsonDelta(data: Record<string, unknown>): data is ContentBlockDe
     d.delta.type === 'input_json_delta' &&
     typeof d.delta.partial_json === 'string'
   );
-}
-
-function serialiseFrame(event: string | null, data: Record<string, unknown>): string {
-  const prefix = event !== null ? `event: ${event}\n` : '';
-  return `${prefix}data: ${JSON.stringify(data)}${FRAME_SEPARATOR}`;
 }
 
 function buildTextDeltaFrame(index: number, text: string): string {

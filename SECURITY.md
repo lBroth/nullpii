@@ -52,7 +52,7 @@ A `command` sent as an argv array (`["bash", "-lc", "…"]`, as Codex does) runs
 
 These lists are best effort: no list names every interpreter or every way out of the machine.
 
-**A limit by design.** `Write`, `Edit` and the other file tools always get real values back, since writing your data to your files is what they are for. A later command can still run such a file (`bash run.sh` after `Write run.sh`); the rule judges each call on its own and does not follow what a file holds.
+**A limit by design.** `Write`, `Edit` and the other file tools get real values back whenever they are in `restoreTools`, as they are by default, since writing your data to your files is what they are for. A later command can still run such a file (`bash run.sh` after `Write run.sh`); the rule judges each call on its own and does not follow what a file holds.
 
 If you call `restore()` yourself and pass the result to a shell, an interpreter, a query or a template, apply the same care. A restored value is data you did not show the model, and it can come from content an attacker controls.
 

@@ -85,7 +85,7 @@ claude
 
 Your API key or Claude subscription login is passed through unchanged. For clients of the OpenAI Chat Completions API (the OpenAI SDKs, Aider, LiteLLM), set `OPENAI_BASE_URL=http://localhost:8787/v1`. The Responses API is not proxied.
 
-- Real values go back only into tools that run on your machine (`Bash`, `Read`, `Edit`, `Write`, …). Web and MCP tools keep the placeholders.
+- Real values go back only into the tools listed in the policy's `restoreTools`, by default the tools that run on your machine (`Bash`, `Read`, `Edit`, `Write`, …). Web and MCP tools, and tools the upstream runs itself, keep the placeholders.
 - The request log carries counts, never values.
 - The gateway has no authentication of its own: keep it on `127.0.0.1`.
 

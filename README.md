@@ -12,6 +12,8 @@ Mask personal data and secrets before they reach an LLM, and put them back on th
 
 Status: pre-1.0. The API can still change between minor versions. nullpii pseudonymizes with a measured leak rate; it is not anonymization and not a compliance certification.
 
+Documentation: [lbroth.github.io/nullpii](https://lbroth.github.io/nullpii/).
+
 ## Install
 
 ```bash

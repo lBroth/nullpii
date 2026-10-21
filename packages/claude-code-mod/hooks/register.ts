@@ -40,6 +40,26 @@ const NO_TOKEN =
   'no sidecar token: set it with /plugin configure (sidecar_token), or NULLPII_SIDECAR_TOKEN';
 const NOT_LOOPBACK =
   'sidecar_url is not a local sidecar address (http:// on 127.0.0.1, localhost or [::1], with an optional port and nothing after it): fix it with /plugin configure';
+const UNREACHABLE =
+  'nullpii-gateway did not answer at the sidecar address: start it with NULLPII_SIDECAR_TOKEN set';
+const NOT_JSON = 'the sidecar answered with something that is not JSON';
+const TIMED_OUT = 'the sidecar took too long to answer';
+/** Shown in place of an error text this mod did not write (a tool's, a
+ * hook's, the host's): such a text can quote a value restored into a tool
+ * call, or a sidecar answer. */
+const HIDDEN_REASON = 'an unexpected error, whose text is not shown as it may hold personal data';
+/** The error texts this mod writes, which hold no value: the only ones shown. */
+const OWN_REASONS: ReadonlySet<string> = new Set([NO_TOKEN, NOT_LOOPBACK, UNREACHABLE, NOT_JSON]);
+/** SidecarError's text, the one with a variable part. */
+const SIDECAR_STATUS = /^nullpii sidecar answered \d{3}$/;
+const TIMEOUT_KIND = 'timeout';
+const THROW_KIND = 'throw';
+// What Claude reads when the mod refuses a call: fixed text, never the
+// failure's own, which can quote real values. The reason is the user's.
+const CALL_NOT_RUN =
+  'nullpii could not prepare this tool call through its sidecar, so it was not run. The user sees why above the prompt and in /pii.';
+const RESULT_WITHHELD =
+  "nullpii could not mask this tool's result, so it was withheld. The user sees why above the prompt and in /pii.";
 const CONTEXT_WITHHELD =
   "nullpii withheld this tool's result: a hook attached text for Claude that holds personal data, and that text cannot be masked.";
 const POLICY_ASK =
@@ -59,6 +79,12 @@ interface Restored {
   shellKeptMasked?: string[];
   /** For a tool outside the policy's `restoreTools`: the placeholders kept. */
   heldForTool?: number;
+}
+
+/** Why a hook failed: what a `.catch` handler reads as `next.error`. */
+interface Failure {
+  readonly kind: string;
+  readonly message?: string;
 }
 // Module scope is how a mod's hooks share data: the mods API passes no
 // context object between them. `$.state` would survive a reload of the
@@ -108,13 +134,43 @@ async function request(
   // A JSON content type with no body is a 400, so PUT and DELETE send neither.
   const json = body === undefined ? {} : { 'content-type': 'application/json' };
   const owner = secret === undefined ? {} : { [SESSION_SECRET_HEADER]: secret };
-  const res = await $.http.fetch(sidecarUrl + path, {
+  const res = await fetchSidecar($, sidecarUrl + path, {
     method,
     headers: { authorization: `Bearer ${token}`, ...json, ...owner },
     ...(body !== undefined && { body: JSON.stringify(body) }),
   });
   if (!res.ok) throw new SidecarError(res.status);
-  return res.text === '' ? {} : JSON.parse(res.text);
+  return parseAnswer(res.text);
+}
+
+/** `$.http.fetch`, failing with the mod's own text: the host's can carry
+ * what another hook on the request answered. Its kind goes to the debug log. */
+async function fetchSidecar(
+  $,
+  url: string,
+  init: Record<string, unknown>,
+): Promise<{ ok: boolean; status: number; text: string }> {
+  try {
+    return await $.http.fetch(url, init);
+  } catch (err) {
+    $.ui.log(`nullpii: sidecar request failed (${errorName(err)})`, { to: 'debug' });
+    throw new Error(UNREACHABLE);
+  }
+}
+
+/** A sidecar answer as JSON. A parse error quotes the text it read, which
+ * can hold real values, so it is replaced by the mod's own. */
+function parseAnswer(text: string): unknown {
+  if (text === '') return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(NOT_JSON);
+  }
+}
+
+function errorName(err: unknown): string {
+  return err instanceof Error ? err.name : typeof err;
 }
 
 /** Call this session's sidecar route `path` (`/sanitize`, `/restore`). */
@@ -171,10 +227,31 @@ async function masked($, value: unknown): Promise<unknown> {
   return r.value;
 }
 
-function blocked($, err: unknown): string {
-  problem = err instanceof Error ? err.message : String(err);
+/** A caught error as a Failure, as a `.catch` handler would read it. */
+function failureOf(err: unknown): Failure {
+  return { kind: THROW_KIND, message: err instanceof Error ? err.message : undefined };
+}
+
+/** The text shown for a failure: the mod's own error texts as written, any
+ * other replaced, since it can quote personal data. */
+function shownReason(failure: Failure): string {
+  const { message } = failure;
+  if (message === undefined) return failure.kind === TIMEOUT_KIND ? TIMED_OUT : HIDDEN_REASON;
+  return OWN_REASONS.has(message) || SIDECAR_STATUS.test(message) ? message : HIDDEN_REASON;
+}
+
+/** Turn the band red with why `event` failed, and log the same to the
+ * debug log, with only the length of a text that is not shown. */
+function blocked($, event: string, failure: Failure): string {
+  const reason = shownReason(failure);
+  problem = reason;
+  const withheld =
+    reason === HIDDEN_REASON && failure.message !== undefined
+      ? ` (${failure.message.length} characters withheld)`
+      : '';
+  $.ui.log(`nullpii: ${event} failed (${failure.kind}): ${reason}${withheld}`, { to: 'debug' });
   $.ui.invalidate('ui.render');
-  return problem;
+  return reason;
 }
 
 /** The text with real values, for the screen only. */
@@ -208,7 +285,8 @@ export function register(on, options) {
     try {
       await openSession($);
     } catch (err) {
-      $.ui.toast(`nullpii is blocking prompts and tool results: ${blocked($, err)}`);
+      const reason = blocked($, 'session.start', failureOf(err));
+      $.ui.toast(`nullpii is blocking prompts and tool results: ${reason}`);
     }
     return next(e);
   });
@@ -220,7 +298,7 @@ export function register(on, options) {
       sessionSecret = undefined;
     } catch (err) {
       // The sidecar's idle TTL drops the session anyway.
-      $.ui.log(`nullpii: session not closed: ${String(err)}`, { to: 'debug' });
+      $.ui.log(`nullpii: session not closed: ${shownReason(failureOf(err))}`, { to: 'debug' });
     }
     return next(e);
   });
@@ -234,7 +312,7 @@ export function register(on, options) {
   }).catch(async ($, e, next) => {
     if (next.called) return next(e);
     return {
-      drop: `nullpii could not mask this prompt, so it was not sent (${blocked($, next.error.message)}). Start nullpii-gateway with its sidecar token set, or disable the nullpii mod.`,
+      drop: `nullpii could not mask this prompt, so it was not sent (${blocked($, 'prompt.submit', next.error)}). Start nullpii-gateway with its sidecar token set, or disable the nullpii mod.`,
     };
   });
 
@@ -243,7 +321,7 @@ export function register(on, options) {
   on('prompt.attachment', async ($, e, next) => {
     return next({ ...e, text: String(await masked($, e.text)) });
   }).catch(async ($, e, next) => {
-    blocked($, next.error.message);
+    blocked($, 'prompt.attachment', next.error);
     return next.called ? next(e) : { text: null };
   });
 
@@ -257,7 +335,7 @@ export function register(on, options) {
     )) as string[];
     return next({ blocks: e.blocks.map((b, i) => ({ ...b, text: texts[i] })) });
   }).catch(async ($, e, next) => {
-    blocked($, next.error.message);
+    blocked($, 'prompt.context', next.error);
     return next.called ? next(e) : { blocks: [] };
   });
 
@@ -305,12 +383,10 @@ export function register(on, options) {
       ...(out.context !== undefined && { context: out.context }),
     };
   }).catch(async ($, e, next) => {
-    const reason = blocked($, next.error.message);
-    if (next.called)
-      return { deny: `nullpii could not mask this tool's result, so it was withheld (${reason}).` };
-    return {
-      deny: `nullpii could not reach its sidecar, so this tool call was not run (${reason}).`,
-    };
+    // Claude reads fixed text: a failure after the restore can come from
+    // the tool or a hook beneath, and its text can quote the real values.
+    blocked($, 'tool.call', next.error);
+    return { deny: next.called ? RESULT_WITHHELD : CALL_NOT_RUN };
   });
 
   // A call that may change the masking policy is put to the user (or, in

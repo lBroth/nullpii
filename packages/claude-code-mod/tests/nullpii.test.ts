@@ -48,6 +48,10 @@ function fakeSidecar(opts: { down?: boolean; restoreTools?: string[]; liveKeys?:
   const hosts: string[] = [];
   const secretsSent: Array<string | undefined> = [];
   const restoreBodies: string[] = [];
+  /** Set it to make `/sanitize` and `/restore` answer this text, not JSON. */
+  const state: { garbage?: string } = {};
+  /** Every `$.ui.log` line the mod wrote. */
+  const logs: string[] = [];
   let next = 0;
   const maskString = (s: string, byLabel: Record<string, number>) => {
     let out = s;
@@ -87,6 +91,9 @@ function fakeSidecar(opts: { down?: boolean; restoreTools?: string[]; liveKeys?:
     calls.push(`${method} ${path}`);
     hosts.push(url.host);
     if (opts.down) return { deny: 'connect ECONNREFUSED 127.0.0.1:8787' };
+    if (state.garbage !== undefined && /\/(sanitize|restore)$/.test(path)) {
+      return { value: { status: 200, ok: true, headers: {}, text: state.garbage } };
+    }
     if (e.init?.headers?.authorization !== `Bearer ${TOKEN}`)
       return respond(401, { error: 'unauthorized' });
     // Fastify refuses a JSON content type with an empty body.
@@ -178,7 +185,7 @@ function fakeSidecar(opts: { down?: boolean; restoreTools?: string[]; liveKeys?:
       ...(shellBody && { shellKeptMasked: kept }),
     });
   };
-  return { handler, calls, hosts, restoreBodies, secretsSent, sessions };
+  return { handler, calls, hosts, logs, restoreBodies, secretsSent, sessions, state };
 }
 
 function stubSession(
@@ -193,7 +200,10 @@ function stubSession(
   on('command.register', () => ({ value: undefined }));
   on('session.id', () => ({ value: 'session-1' }));
   on('ui.toast', () => ({ value: undefined }));
-  on('ui.log', () => ({ value: undefined }));
+  on('ui.log', ($, e) => {
+    sidecar.logs.push(e.text);
+    return { value: undefined };
+  });
   on('http.fetch', sidecar.handler);
 }
 
@@ -337,8 +347,10 @@ test('with the sidecar down, a prompt is handed back and a tool call is refused'
   const prompt = await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
   expect(prompt.drop).toMatch(/nullpii could not mask this prompt/);
   const call = await $.tool.call({ tool: 'Bash', command: 'ls' });
-  expect(call.deny).toMatch(/nullpii could not reach its sidecar/);
+  expect(call.deny).toMatch(/nullpii could not prepare this tool call/);
   expect(ran).toEqual([]);
+  const status = await $.command.run({ command: 'pii', args: '' });
+  expect(status.text).toContain('Status: blocking (nullpii-gateway did not answer');
 });
 
 test('without a token, the mod blocks instead of sending data unmasked', async ($, on) => {
@@ -774,3 +786,61 @@ test(
     expect(new Set(sidecar.hosts)).toEqual(new Set(['localhost:9000']));
   },
 );
+
+/** A sidecar answer that is not JSON and quotes a value: a parse error
+ * would carry `John` into whatever shows the error's text. */
+const GARBAGE = 'John Smith';
+
+test('a failure before the tool runs reaches Claude as fixed text, never the error text', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const ran: string[] = [];
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', ($, e) => {
+    ran.push(e.command);
+    return { result: { stdout: '', stderr: '' } };
+  });
+  await start($);
+  await $.prompt.submit({ text: 'grep for John', wait: false, origin: COMPOSER });
+  sidecar.state.garbage = GARBAGE;
+  const out = await $.tool.call({ tool: 'Bash', command: `grep -r ${ph('PERSON', 0)} .` });
+  expect(ran).toEqual([]);
+  expect(out.deny).toMatch(/^nullpii could not prepare this tool call/);
+  expect(out.deny).not.toContain('John');
+  const report = await $.command.run({ command: 'pii', args: '' });
+  expect(report.text).toContain(
+    'Status: blocking (the sidecar answered with something that is not JSON)',
+  );
+  expect(report.text).not.toContain('John');
+  expect(sidecar.logs.join('\n')).not.toContain('John');
+});
+
+test('a failure after the tool ran withholds the result with fixed text', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  on('tool.call', () => ({ result: { stdout: 'owner: John', stderr: '' } }));
+  on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
+  await start($);
+  sidecar.state.garbage = GARBAGE;
+  const out = await $.tool.call({ tool: 'Bash', command: 'cat owners.txt' });
+  expect(out.deny).toMatch(/^nullpii could not mask this tool's result, so it was withheld/);
+  expect(JSON.stringify(out)).not.toContain('John');
+  const ui = await $.ui.mount(BAND);
+  expect(
+    await ui.find({ type: 'Text', text: /^nullpii · blocking: the sidecar answered/ }),
+  ).toBeDefined();
+  expect(await ui.find({ type: 'Text', text: /John/ })).toBeUndefined();
+  await ui.unmount();
+  expect(sidecar.logs.join('\n')).not.toContain('John');
+});
+
+test('a prompt the sidecar cannot mask is handed back without the error text', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  await start($);
+  sidecar.state.garbage = GARBAGE;
+  const prompt = await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  expect(prompt.drop).toContain('(the sidecar answered with something that is not JSON)');
+  expect(prompt.drop).not.toContain('John');
+});

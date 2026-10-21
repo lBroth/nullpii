@@ -54,6 +54,8 @@ If the sidecar cannot be reached, the mod has no sidecar token, or `sidecar_url`
 - an attachment such as an @-mentioned file is left out, and the first message's context (`CLAUDE.md`, your email) is sent empty;
 - the band turns red and says why.
 
+Claude is told only that the call was refused or its result withheld. The reason is shown to you, above the prompt and in `/pii`, and only when the mod wrote it: an error text from a tool, another hook or an unreadable sidecar answer can quote a real value, so its text is never shown, logged or sent to Claude.
+
 ## Set up
 
 1. In a terminal of its own, start a gateway with the sidecar API on (a version with session secrets, whose `restore` takes `tool`):

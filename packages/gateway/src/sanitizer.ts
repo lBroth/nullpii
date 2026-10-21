@@ -95,9 +95,14 @@ const UNSCANNABLE_SOURCE_TYPES: ReadonlySet<string> = new Set(['base64', 'url', 
  * input and the restore path never touches thinking deltas. */
 const OPAQUE_BLOCK_TYPES: ReadonlySet<string> = new Set(['thinking', 'redacted_thinking']);
 
+/** A call to a tool the client runs. Only its input can get real values
+ * back; a server or MCP tool call (`server_tool_use`, `mcp_tool_use`) is
+ * run by the upstream, off this machine. */
+const CLIENT_TOOL_CALL_TYPE = 'tool_use';
+
 /** Blocks whose `input` is arbitrary tool-argument JSON. */
 const TOOL_CALL_TYPES: ReadonlySet<string> = new Set([
-  'tool_use',
+  CLIENT_TOOL_CALL_TYPE,
   'server_tool_use',
   'mcp_tool_use',
 ]);
@@ -151,6 +156,7 @@ async function sanitizeIntoSession(
     body.tools = await Promise.all(body.tools.map((t) => sanitizeToolDef(np, t, sessionId, acc)));
   }
   await sanitizeTopLevelText(np, body, TOP_LEVEL_TEXT_FIELDS, sessionId, acc);
+  await sanitizeOutputFormats(np, body, sessionId, acc);
   // Append the preservation hint AFTER sanitization (and only when we
   // actually replaced something) so the assistant treats placeholders
   // literally and doesn't "tidy" them into realistic-looking values
@@ -203,11 +209,66 @@ function injectPreservationHint(body: AnthropicRequest): void {
 }
 
 /** Top-level request fields that can carry user text besides `system`,
- * `messages` and `tools`: `metadata` (`user_id` is often an email) and
+ * `messages`, `tools` and the structured-output schema (see
+ * `sanitizeOutputFormats`): `metadata` (`user_id` is often an email) and
  * `stop_sequences`. Every other top-level field is protocol (model,
- * sampling, `tool_choice`, `thinking`) or meant for the upstream itself
- * (`mcp_servers` URLs and credentials), and is forwarded as it is. */
+ * sampling, `tool_choice`, `thinking`, `output_config.effort`) or meant
+ * for the upstream itself (`mcp_servers` URLs and credentials), and is
+ * forwarded as it is. */
 const TOP_LEVEL_TEXT_FIELDS: readonly string[] = ['metadata', 'stop_sequences'];
+
+/** Deprecated top-level structured-output spec, superseded by
+ * `output_config.format`. */
+const OUTPUT_FORMAT_FIELD = 'output_format';
+/** Holds `format` (the structured-output spec) next to protocol settings
+ * such as `effort` and `task_budget`, which stay as they are. */
+const OUTPUT_CONFIG_FIELD = 'output_config';
+
+/** Sanitize the structured-output spec of a request, in place: the
+ * deprecated `output_format` and `output_config.format`, each by
+ * `sanitizeSchemaSpec`. A masked `enum` value the model answers with
+ * comes back restored, since response text is always restored. */
+async function sanitizeOutputFormats(
+  np: NullPii,
+  body: AnthropicRequest,
+  sessionId: string,
+  acc: CaptureAccumulator,
+): Promise<void> {
+  const legacy = body[OUTPUT_FORMAT_FIELD];
+  if (isRecord(legacy)) {
+    body[OUTPUT_FORMAT_FIELD] = await sanitizeSchemaSpec(np, legacy, sessionId, acc);
+  }
+  const config = body[OUTPUT_CONFIG_FIELD];
+  if (isRecord(config) && isRecord(config.format)) {
+    const format = await sanitizeSchemaSpec(np, config.format, sessionId, acc);
+    body[OUTPUT_CONFIG_FIELD] = { ...config, format };
+  }
+}
+
+/**
+ * Sanitize a structured-output spec: its `description` as text and its
+ * `schema` as a JSON schema (`sanitizeJsonSchema`); `type`, `name`,
+ * `strict` and any other field stay. Both APIs use this shape: Anthropic's
+ * `output_config.format` (and the deprecated `output_format`), OpenAI's
+ * `response_format.json_schema`.
+ *
+ * @returns a sanitized copy; `spec` is not mutated.
+ */
+export async function sanitizeSchemaSpec(
+  np: NullPii,
+  spec: Readonly<Record<string, unknown>>,
+  sessionId: string,
+  acc: CaptureAccumulator,
+): Promise<Record<string, unknown>> {
+  const out: Record<string, unknown> = { ...spec };
+  if (typeof spec.description === 'string') {
+    out.description = await sanitizeText(np, spec.description, sessionId, acc);
+  }
+  if (spec.schema !== undefined) {
+    out.schema = await sanitizeJsonSchema(np, spec.schema, sessionId, acc);
+  }
+  return out;
+}
 
 /** Sanitize the string leaves of the named top-level fields of `body`, in
  * place; their object keys are API-defined (`user_id`) and stay. Shared
@@ -276,20 +337,60 @@ async function sanitizeMessage(
   };
 }
 
+/** Tool-definition fields forwarded as written. `name` and `type` are
+ * what the API and the model match a tool by (and `restoreTools` matches
+ * the name); `cache_control` is protocol; the web tools' `allowed_domains`
+ * and `blocked_domains` are filters the upstream applies as written (a
+ * masked domain would match nothing); `allowed_callers` lists tool types,
+ * `model` (advisor tool) a model id; `mcp_server_name` must match an
+ * `mcp_servers` entry, which is forwarded as it is. */
+const TOOL_DEF_STRUCTURAL_KEYS: ReadonlySet<string> = new Set([
+  'name',
+  'type',
+  'cache_control',
+  'allowed_domains',
+  'blocked_domains',
+  'allowed_callers',
+  'model',
+  'mcp_server_name',
+]);
+
+/** The tool-definition field that holds the tool's input JSON schema. */
+const TOOL_INPUT_SCHEMA_FIELD = 'input_schema';
+
+/**
+ * Sanitize one `tools[]` entry (a client tool, a server tool such as web
+ * search, an MCP toolset): `input_schema` as a JSON schema
+ * (`sanitizeJsonSchema`), the structural fields as written, and every
+ * other field as data whose object keys stay (`sanitizeLeaves`): the
+ * `description`, `input_examples` (keyed by the schema's property names,
+ * which must keep matching it), web search's `user_location`, and any
+ * field the API adds later, which is scrubbed by default instead of
+ * forwarded verbatim. Numbers and booleans pass through.
+ */
 async function sanitizeToolDef(
   np: NullPii,
   tool: AnthropicToolDef,
   sessionId: string,
   acc: CaptureAccumulator,
 ): Promise<AnthropicToolDef> {
-  const out: AnthropicToolDef = { ...tool };
-  if (typeof tool.description === 'string') {
-    out.description = await sanitizeText(np, tool.description, sessionId, acc);
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(tool)) {
+    out[key] = await sanitizeToolDefField(np, key, value, sessionId, acc);
   }
-  if (tool.input_schema !== undefined) {
-    out.input_schema = await sanitizeJsonSchema(np, tool.input_schema, sessionId, acc);
-  }
-  return out;
+  return out as AnthropicToolDef;
+}
+
+function sanitizeToolDefField(
+  np: NullPii,
+  key: string,
+  value: unknown,
+  sessionId: string,
+  acc: CaptureAccumulator,
+): Promise<unknown> {
+  if (TOOL_DEF_STRUCTURAL_KEYS.has(key)) return Promise.resolve(value);
+  if (key === TOOL_INPUT_SCHEMA_FIELD) return sanitizeJsonSchema(np, value, sessionId, acc);
+  return sanitizeLeaves(np, value, sessionId, acc);
 }
 
 /** JSON-schema keywords whose value is free text the model reads. */
@@ -309,13 +410,15 @@ const SCHEMA_NAMED_KEYWORDS: ReadonlySet<string> = new Set([
 
 /**
  * Sanitize a JSON schema (a tool's `input_schema`, an OpenAI function's
- * `parameters`, a `response_format` schema) without changing what it
+ * `parameters`, a structured-output schema) without changing what it
  * validates: descriptions, titles and comments are sanitized as text, and
  * `enum`, `const`, `default` and `examples` values as data. Property names
  * and every keyword are the developer's identifiers, which the model must
  * see as written to call the tool, so they stay; so do `pattern` and
- * `format`. A masked `enum` value is what the model then answers with, and
- * the response restore puts the real value back.
+ * `format`. A masked `enum` value is what the model then answers with: the
+ * response restore puts the real value back where it restores at all, in
+ * the reply text and in the input of a tool in `restoreTools`. The input
+ * of any other tool keeps it masked.
  */
 export async function sanitizeJsonSchema(
   np: NullPii,
@@ -579,6 +682,17 @@ export function toolMayRestore(name: unknown, acc: RestoreAccumulator): boolean 
   return typeof name === 'string' && acc.restoreTools.has(name);
 }
 
+/** Whether an Anthropic content block is a tool call whose input may
+ * receive real values: a client `tool_use` of a tool in `restoreTools`.
+ * Server and MCP tool calls never do, whatever their name: the upstream
+ * runs them. Shared by the JSON restore and the stream relay. */
+export function toolCallMayRestore(
+  block: Readonly<Record<string, unknown>>,
+  acc: RestoreAccumulator,
+): boolean {
+  return block.type === CLIENT_TOOL_CALL_TYPE && toolMayRestore(block.name, acc);
+}
+
 /** Keep a tool input's placeholders as they are, counting them. */
 export function holdForTool(text: string, acc: RestoreAccumulator): string {
   acc.heldForTool += countPlaceholders(text);
@@ -587,10 +701,12 @@ export function holdForTool(text: string, acc: RestoreAccumulator): string {
 
 /**
  * Restore an Anthropic response body in place against `sessionId`: every
- * `text` block, and the input of each tool call to a tool in
- * `restoreTools` (a shell tool's `command` by the shell rule). A tool
- * outside the list keeps its placeholders, counted as held. Returns the
- * body plus counts; the caller logs the counts, never the values.
+ * `text` block, and the input of each client tool call (`tool_use`) to a
+ * tool in `restoreTools` (a shell tool's `command` by the shell rule). A
+ * tool outside the list, and every server or MCP tool call
+ * (`server_tool_use`, `mcp_tool_use`: the upstream runs them), keeps its
+ * placeholders, counted as held. Returns the body plus counts; the caller
+ * logs the counts, never the values.
  */
 export function restoreResponse(
   np: NullPii,
@@ -603,8 +719,8 @@ export function restoreResponse(
     if (block.type === 'text' && typeof block.text === 'string') {
       return { ...block, text: restoreString(np, block.text, sessionId, acc) };
     }
-    if (block.type === 'tool_use' && block.input !== undefined) {
-      if (!toolMayRestore(block.name, acc)) {
+    if (TOOL_CALL_TYPES.has(block.type) && block.input !== undefined) {
+      if (!toolCallMayRestore(block, acc)) {
         holdForTool(JSON.stringify(block.input), acc);
         return block;
       }

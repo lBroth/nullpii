@@ -8,7 +8,7 @@
 import type { ServerResponse } from 'node:http';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { printRequestSummary } from '../pretty-log.js';
-import type { RestoredResponse, SanitizedRequest } from '../sanitizer.js';
+import { type RestoredResponse, type SanitizedRequest, isRecord, parseJson } from '../sanitizer.js';
 
 /** Status of a reply the gateway itself sends when the upstream call
  * failed or returned something it cannot relay. */
@@ -30,6 +30,39 @@ export type RestoreCounts = Pick<
   | 'unsafeShellPlaceholders'
   | 'heldForToolPlaceholders'
 >;
+
+/** An upstream error `type` / `code` is logged only when it looks like an
+ * identifier (`rate_limit_exceeded`), so no free text ever reaches a log. */
+const LOGGABLE_ERROR_FIELD = /^[\w.-]{1,64}$/;
+
+/** What the request log keeps of an upstream error body. */
+export interface UpstreamErrorLogFields {
+  readonly bodyLength: number;
+  readonly errorType: string | null;
+  readonly errorCode: string | null;
+}
+
+/**
+ * The parts of a non-2xx upstream body that are safe to log: its length,
+ * and its `error.type` and `error.code` when they look like identifiers.
+ * The body itself is never logged: an upstream error can quote request
+ * content, including fields the gateway forwards without scanning (an
+ * image URL, `mcp_servers`) and values the detector missed.
+ */
+export function upstreamErrorLogFields(text: string): UpstreamErrorLogFields {
+  const parsed = parseJson(text);
+  const root = parsed !== undefined && isRecord(parsed.value) ? parsed.value : {};
+  const error = isRecord(root.error) ? root.error : {};
+  return {
+    bodyLength: text.length,
+    errorType: loggableField(error.type),
+    errorCode: loggableField(error.code),
+  };
+}
+
+function loggableField(value: unknown): string | null {
+  return typeof value === 'string' && LOGGABLE_ERROR_FIELD.test(value) ? value : null;
+}
 
 /** Whether an upstream status is a success (2xx). */
 export function isSuccess(status: number): boolean {

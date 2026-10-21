@@ -14,7 +14,12 @@
 
 import { type NullPii, type PiiSpan, PiiVault } from 'nullpii';
 import { describe, expect, it } from 'vitest';
+import { restoreResponse } from '../src/sanitizer.js';
 import { relaySseStream } from '../src/sse-relay.js';
+import type { AnthropicContentBlock, AnthropicResponse } from '../src/types.js';
+
+/** A tool in the default `restoreTools`: its input gets real values back. */
+const LOCAL_TOOL = 'Write';
 
 /** Build a minimal NullPii-shaped object backed by a real PiiVault.
  * We don't need detection here — the test pre-sanitises text via the
@@ -103,6 +108,16 @@ function reassembleInputJson(frames: string[]): Map<number, string> {
     out.set(parsed.index, (out.get(parsed.index) ?? '') + delta.partial_json);
   }
   return out;
+}
+
+/** The `content_block_start` that names a tool call's block; without it
+ * the relay keeps the block's input masked. */
+function toolStartFrame(index: number, name: string, type = 'tool_use'): string {
+  return sseFrame('content_block_start', {
+    type: 'content_block_start',
+    index,
+    content_block: { type, id: `toolu_${index}`, name, input: {} },
+  });
 }
 
 function inputJsonFrame(index: number, partialJson: string): string {
@@ -253,6 +268,7 @@ describe('relaySseStream', () => {
     const head = ph.slice(0, 8);
     const tail = ph.slice(8);
     const frames: string[] = [
+      toolStartFrame(1, LOCAL_TOOL),
       sseFrame('content_block_delta', {
         type: 'content_block_delta',
         index: 1,
@@ -289,6 +305,7 @@ describe('relaySseStream', () => {
     const address = 'Via "Roma" 1\nRome';
     const ph = bake(vault, sessionId, address, 'private_address');
     const frames: string[] = [
+      toolStartFrame(1, LOCAL_TOOL),
       inputJsonFrame(1, `{"address":"${ph.slice(0, 8)}`),
       inputJsonFrame(1, `${ph.slice(8)}","floor":2}`),
       sseFrame('content_block_stop', { type: 'content_block_stop', index: 1 }),
@@ -313,6 +330,7 @@ describe('relaySseStream', () => {
     const ph = bake(vault, sessionId, 'bob@example.com', 'private_email');
     // Cut off mid-object: not JSON, but still forwarded, restored.
     const frames: string[] = [
+      toolStartFrame(0, LOCAL_TOOL),
       inputJsonFrame(0, `{"to":"${ph}`),
       sseFrame('content_block_stop', { type: 'content_block_stop', index: 0 }),
     ];
@@ -336,6 +354,7 @@ describe('relaySseStream', () => {
     const { np, vault, sessionId } = buildHarness();
     const ph = bake(vault, sessionId, 'bob@example.com', 'private_email');
     const frames: string[] = [
+      toolStartFrame(0, LOCAL_TOOL),
       sseFrame('content_block_delta', {
         type: 'content_block_delta',
         index: 0,
@@ -365,6 +384,7 @@ describe('relaySseStream', () => {
     const { np, vault, sessionId } = buildHarness();
     const ph = bake(vault, sessionId, 'alice@example.com', 'private_email');
     const frames: string[] = [
+      toolStartFrame(0, LOCAL_TOOL),
       sseFrame('content_block_delta', {
         type: 'content_block_delta',
         index: 0,
@@ -454,5 +474,119 @@ describe('relaySseStream', () => {
       },
     });
     expect(out.join('')).toContain('Hi Frank');
+  });
+});
+
+describe('relaySseStream: tool input gets real values only where the JSON restore puts them', () => {
+  const EMAIL = 'bob@example.com';
+  /** Every tool named below is listed, so only the block type decides. */
+  const RESTORE_TOOLS: ReadonlySet<string> = new Set([LOCAL_TOOL, 'web_search', 'crm_lookup']);
+
+  function toolBlocks(ph: string): AnthropicContentBlock[] {
+    return [
+      { type: 'tool_use', id: 'toolu_0', name: LOCAL_TOOL, input: { to: ph } },
+      { type: 'tool_use', id: 'toolu_1', name: 'WebFetch', input: { url: ph } },
+      { type: 'server_tool_use', id: 'srvtoolu_2', name: 'web_search', input: { query: ph } },
+      {
+        type: 'mcp_tool_use',
+        id: 'mcptoolu_3',
+        name: 'crm_lookup',
+        server_name: 'crm',
+        input: { email: ph },
+      },
+    ];
+  }
+
+  /** The same blocks as a stream: start, the input split inside the
+   * placeholder, stop. */
+  function toolFrames(blocks: AnthropicContentBlock[]): string[] {
+    return blocks.flatMap((block, index) => {
+      const input = JSON.stringify(block.input);
+      const cut = input.indexOf('{{PII_') + 8;
+      return [
+        toolStartFrame(index, String(block.name), block.type),
+        inputJsonFrame(index, input.slice(0, cut)),
+        inputJsonFrame(index, input.slice(cut)),
+        sseFrame('content_block_stop', { type: 'content_block_stop', index }),
+      ];
+    });
+  }
+
+  it('restores a local tool_use and holds a tool outside restoreTools, server and MCP tool calls, in JSON and SSE alike', async () => {
+    const { np, vault, sessionId } = buildHarness();
+    const ph = bake(vault, sessionId, EMAIL, 'private_email');
+    const response: AnthropicResponse = {
+      id: 'msg_1',
+      type: 'message',
+      role: 'assistant',
+      content: toolBlocks(ph),
+    };
+    const json = restoreResponse(np, response, sessionId, RESTORE_TOOLS);
+
+    const out: string[] = [];
+    const counters = await relaySseStream({
+      np,
+      sessionId,
+      restoreTools: RESTORE_TOOLS,
+      upstream: chunkStream(toolFrames(toolBlocks(ph))),
+      write: (f) => {
+        out.push(f);
+      },
+    });
+
+    const streamed = reassembleInputJson(out);
+    const jsonInputs = json.body.content.map((b) => b.input);
+    expect(jsonInputs).toEqual([{ to: EMAIL }, { url: ph }, { query: ph }, { email: ph }]);
+    expect([0, 1, 2, 3].map((i) => JSON.parse(streamed.get(i) ?? ''))).toEqual(jsonInputs);
+    expect(counters.replacements).toBe(json.replacements);
+    expect(counters.heldForToolPlaceholders).toBe(json.heldForToolPlaceholders);
+    expect(counters.heldForToolPlaceholders).toBe(3);
+  });
+
+  it('keeps the placeholders of tool input whose content_block_start never arrived', async () => {
+    const { np, vault, sessionId } = buildHarness();
+    const ph = bake(vault, sessionId, EMAIL, 'private_email');
+    const frames = [
+      inputJsonFrame(0, `{"to":"${ph}"}`),
+      sseFrame('content_block_stop', { type: 'content_block_stop', index: 0 }),
+    ];
+    const out: string[] = [];
+
+    const counters = await relaySseStream({
+      np,
+      sessionId,
+      upstream: chunkStream(frames),
+      write: (f) => {
+        out.push(f);
+      },
+    });
+
+    expect(JSON.parse(reassembleInputJson(out).get(0) ?? '')).toEqual({ to: ph });
+    expect(out.join('')).not.toContain(EMAIL);
+    expect(counters.replacements).toBe(0);
+    expect(counters.heldForToolPlaceholders).toBe(1);
+  });
+
+  it('keeps a held block held when its stream is cut off before content_block_stop', async () => {
+    const { np, vault, sessionId } = buildHarness();
+    const ph = bake(vault, sessionId, EMAIL, 'private_email');
+    const frames = [
+      toolStartFrame(0, 'web_search', 'server_tool_use'),
+      inputJsonFrame(0, `{"query":"${ph}"}`),
+    ];
+    const out: string[] = [];
+
+    const counters = await relaySseStream({
+      np,
+      sessionId,
+      restoreTools: RESTORE_TOOLS,
+      upstream: chunkStream(frames),
+      write: (f) => {
+        out.push(f);
+      },
+    });
+
+    expect(JSON.parse(reassembleInputJson(out).get(0) ?? '')).toEqual({ query: ph });
+    expect(counters.heldForToolPlaceholders).toBe(1);
   });
 });

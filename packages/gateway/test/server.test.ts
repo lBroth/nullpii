@@ -306,6 +306,46 @@ describe('gateway · POST /v1/messages (non-streaming)', () => {
     expect(res.body).toBe(upstreamBody);
   });
 
+  it.each([false, true])(
+    'logs an upstream error by status, length and type, never its body (stream: %s)',
+    async (stream) => {
+      const { np } = buildMockNullPii();
+      // An error can quote the request: here an image URL the gateway
+      // forwards without scanning.
+      const quoted = 'https://img.example/ada-lovelace-passport.png';
+      const upstreamBody = JSON.stringify({
+        type: 'error',
+        error: { type: 'invalid_request_error', message: `Could not fetch ${quoted}` },
+      });
+      const { fetchImpl } = buildMockFetch(() => ({ status: 400, body: upstreamBody }));
+      const lines: string[] = [];
+      const app = await buildServer({
+        config: { ...TEST_CONFIG, logLevel: 'warn' },
+        np,
+        fetchImpl,
+        logStream: { write: (line) => lines.push(line) },
+      });
+      trackApp(app);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/messages',
+        payload: { model: 'claude-test', stream, messages: [{ role: 'user', content: 'Hi' }] },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toBe(upstreamBody);
+      const logged = lines.map((l) => JSON.parse(l) as Record<string, unknown>);
+      const entry = logged.find((l) => l.msg === 'anthropic.upstream_error');
+      expect(entry).toMatchObject({
+        upstreamStatus: 400,
+        bodyLength: upstreamBody.length,
+        errorType: 'invalid_request_error',
+      });
+      expect(lines.join('\n')).not.toContain(quoted);
+    },
+  );
+
   it('returns 502 when upstream fetch throws', async () => {
     const { np } = buildMockNullPii();
     const fetchImpl = async () => {

@@ -85,7 +85,7 @@ claude
 
 Your API key or Claude subscription login is passed through unchanged. For clients of the OpenAI Chat Completions API (the OpenAI SDKs, Aider, LiteLLM), set `OPENAI_BASE_URL=http://localhost:8787/v1`. The Responses API is not proxied.
 
-- Real values go back only into tools that run on your machine (`Bash`, `Read`, `Edit`, `Write`, …). Web and MCP tools keep the placeholders.
+- Real values go back only into the tools listed in the policy's `restoreTools`, by default the tools that run on your machine (`Bash`, `Read`, `Edit`, `Write`, …). Web and MCP tools, and tools the upstream runs itself, keep the placeholders.
 - The request log carries counts, never values.
 - The gateway has no authentication of its own: keep it on `127.0.0.1`.
 
@@ -199,7 +199,7 @@ new NullPii({ backend: 'mps' });   // Apple Silicon through CoreML
 
 - Detection runs on your machine. nullpii sends your text nowhere; its one network call is the model download.
 - The vault lives in memory and is never written to disk.
-- Logs carry counts and short ids, never values.
+- Logs carry counts and short ids, never values. The exception is the gateway's `NULLPII_LOG_TRAFFIC=wire` debugging dump, which prints what was sent upstream, including anything the detector missed (see SECURITY.md).
 - Restoring a value into a shell command can inject, because the model never saw the value. The gateway keeps the placeholder, and the mod refuses the call, where the value is unsafe or the command sends data off the machine. This is best effort; if you call `restore()` yourself, read [SECURITY.md](https://github.com/lBroth/nullpii/blob/main/SECURITY.md).
 
 Report a vulnerability privately: [security advisories](https://github.com/lBroth/nullpii/security/advisories/new).

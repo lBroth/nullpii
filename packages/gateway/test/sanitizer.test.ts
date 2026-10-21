@@ -222,6 +222,133 @@ describe('sanitizeRequest: request fields outside messages', () => {
   });
 });
 
+describe('sanitizeRequest: tool definitions and structured output', () => {
+  const clientTool = {
+    name: 'send',
+    description: `Mail ${CANARY}`,
+    input_schema: {
+      type: 'object',
+      properties: { recipient: { type: 'string', enum: [CANARY, 'nobody'] } },
+    },
+    input_examples: [{ recipient: CANARY }],
+    strict: true,
+    cache_control: { type: 'ephemeral' },
+  };
+  const webSearch = {
+    type: 'web_search_20260209',
+    name: 'web_search',
+    max_uses: 3,
+    allowed_domains: ['docs.example.com'],
+    user_location: { type: 'approximate', city: `Home of ${CANARY}`, timezone: 'Europe/Rome' },
+  };
+  const mcpToolset = {
+    type: 'mcp_toolset',
+    mcp_server_name: 'crm',
+    default_config: { enabled: true },
+    configs: { lookup_user: { enabled: true } },
+  };
+  /** A field the API may add later: scrubbed by default. */
+  const futureTool = { type: 'future_tool_20990101', name: 'future', persona: `Acts as ${CANARY}` };
+
+  async function sanitizeTools(tools: unknown[]) {
+    const body = { ...request([{ type: 'text', text: 'hi' }]), tools } as AnthropicRequest;
+    const out = await sanitizeRequest(mockNullPii(), body);
+    return out.body.tools as Array<Record<string, unknown>>;
+  }
+
+  it('scrubs every free-text field of every kind of tool', async () => {
+    const tools = await sanitizeTools([clientTool, webSearch, mcpToolset, futureTool]);
+    expect(JSON.stringify(tools)).not.toContain(CANARY);
+    expect(tools[0]?.description).toMatch(/^Mail \{\{PII_PRIVATE_EMAIL_/);
+    expect(tools[3]?.persona).toMatch(/^Acts as \{\{PII_PRIVATE_EMAIL_/);
+  });
+
+  it('keeps the fields the API and the model match on, and the upstream settings', async () => {
+    const [client, search, mcp, future] = await sanitizeTools([
+      clientTool,
+      webSearch,
+      mcpToolset,
+      futureTool,
+    ]);
+    expect(client).toMatchObject({
+      name: 'send',
+      strict: true,
+      cache_control: { type: 'ephemeral' },
+    });
+    // `input_examples` keep the schema's property names as keys.
+    expect(Object.keys((client?.input_examples as object[])[0] ?? {})).toEqual(['recipient']);
+    expect(search).toMatchObject({
+      type: 'web_search_20260209',
+      name: 'web_search',
+      max_uses: 3,
+      allowed_domains: ['docs.example.com'],
+    });
+    expect(search?.user_location).toMatchObject({ type: 'approximate', timezone: 'Europe/Rome' });
+    expect(mcp).toEqual(mcpToolset);
+    expect(future).toMatchObject({ type: 'future_tool_20990101', name: 'future' });
+  });
+
+  it('scrubs the structured-output schema, in output_config.format and output_format', async () => {
+    const schema = {
+      type: 'object',
+      description: `Contact card of ${CANARY}`,
+      properties: { email: { type: 'string', enum: [CANARY] } },
+    };
+    const body = {
+      ...request([{ type: 'text', text: 'hi' }]),
+      output_config: { effort: 'low', format: { type: 'json_schema', schema } },
+      output_format: { type: 'json_schema', schema },
+    } as AnthropicRequest;
+
+    const out = await sanitizeRequest(mockNullPii(), body);
+
+    expect(JSON.stringify(out.body)).not.toContain(CANARY);
+    expect(out.body.output_config).toMatchObject({
+      effort: 'low',
+      format: { type: 'json_schema' },
+    });
+    const sent = (out.body.output_config as { format: { schema: typeof schema } }).format.schema;
+    expect(Object.keys(sent.properties)).toEqual(['email']);
+    expect(out.captured).toBe(4);
+  });
+});
+
+describe('restoreResponse: a masked enum value', () => {
+  it('comes back in text and in a restoreTools tool, and stays masked in any other tool', async () => {
+    const np = mockNullPii();
+    const { body, sessionId } = await sanitizeRequest(np, {
+      ...request([{ type: 'text', text: 'hi' }]),
+      tools: [
+        {
+          name: 'send',
+          input_schema: { type: 'object', properties: { to: { type: 'string', enum: [CANARY] } } },
+        },
+      ],
+    } as AnthropicRequest);
+    const schema = body.tools?.[0]?.input_schema as { properties: { to: { enum: string[] } } };
+    const masked = schema.properties.to.enum[0] ?? '';
+    const response = {
+      id: 'msg_1',
+      type: 'message',
+      role: 'assistant',
+      content: [
+        { type: 'text', text: `Sending to ${masked}` },
+        { type: 'tool_use', id: 't1', name: 'Write', input: { to: masked } },
+        { type: 'tool_use', id: 't2', name: 'send', input: { to: masked } },
+      ],
+    } as AnthropicResponse;
+
+    const out = restoreResponse(np, response, sessionId, new Set(['Write']));
+
+    expect(out.body.content.map((b) => b.text ?? b.input)).toEqual([
+      `Sending to ${CANARY}`,
+      { to: CANARY },
+      { to: masked },
+    ]);
+    expect(out.heldForToolPlaceholders).toBe(1);
+  });
+});
+
 describe('restoreResponse: object keys', () => {
   it('puts the real value back into a masked key of a local tool call', async () => {
     const np = mockNullPii();

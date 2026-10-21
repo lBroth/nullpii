@@ -114,16 +114,19 @@ The gateway sanitises the request, forwards it to `NULLPII_UPSTREAM`, then resto
 
 **Scanned** before the request leaves:
 
-- `system` and every message's content: text, documents with a text or content source, search results, citations, tool results, and any block type the gateway does not know yet (every field but ids, names, signatures and media types);
+- `system` and every message's content: text, documents with a text or content source, search results, citations, tool results, and any block type the gateway does not know yet (every field but `type`, ids, names, signatures, media types, `cache_control`, and the encrypted payloads of server-tool results, which the upstream verifies);
 - tool calls in the history (`tool_use`, `server_tool_use`, `mcp_tool_use`): every string value of their `input`, and its object keys, since a tool can key data by a name or an email;
-- each tool's `description`, and its `input_schema`'s `description`, `title` and `$comment` texts and `enum`, `const`, `default` and `examples` values, at any depth. Property names and keywords stay as written, because the model needs them to call the tool; a masked `enum` value comes back restored;
+- every tool definition (client tools, server tools such as web search, MCP toolsets): its `input_schema`'s `description`, `title` and `$comment` texts and `enum`, `const`, `default` and `examples` values, at any depth, and every string value of its other fields except `name`, `type`, `cache_control`, `allowed_domains`, `blocked_domains`, `allowed_callers`, `model` and `mcp_server_name`. That covers the `description`, `input_examples`, web search's `user_location` and any field the gateway does not know yet. Property names and keywords stay as written, because the model needs them to call the tool, and so do the keys of `input_examples`, which are those property names. A masked `user_location.country` or `timezone` is no longer a valid code, and the upstream may refuse the request;
+- the structured-output spec, `output_config.format` (and the deprecated `output_format`): its `description` and its `schema`, as for `input_schema`;
 - `metadata` values (`user_id` is often an email) and `stop_sequences`.
 
-**Not scanned:** images and documents sent as base64, URL or file reference (counted as "not scanned"), `thinking` blocks (signed by the upstream, and generated from masked input anyway), and protocol fields: `model`, sampling parameters, `tool_choice`, `thinking`, and `mcp_servers`, whose URLs and credentials are meant for the upstream.
+A masked `enum` or `const` value is what the model then answers with. It comes back restored in the reply text and in the input of a tool in `restoreTools`; the input of any other tool keeps it masked (see Restored, below).
 
-**Restored** in the response: `content[].text`, and the input of a tool call to a tool in `restoreTools` (string values, and object keys that hold a placeholder).
+**Not scanned:** the payload of images and documents sent as base64, URL or file reference (counted as "not scanned"; a document's other fields, such as its `title`, are scanned), `thinking` blocks (signed by the upstream, and generated from masked input anyway), the tool-definition fields named above (what the API and the model match a tool by, and the web tools' domain filters, which the upstream applies as written), the URL query string (`?beta=true`), and every other top-level field, forwarded as the client sent it: protocol (`model`, sampling parameters, `tool_choice`, `thinking`, `output_config` apart from its `format`, `context_management`, `container`, and fields the gateway does not know) and `mcp_servers`, whose URLs and credentials are meant for the upstream.
 
-With `stream: true`, text deltas are restored as they stream, holding back only a placeholder split across deltas. Tool input (`input_json_delta`) is held per content block and sent once, restored, just before its `content_block_stop`: the assembled JSON is parsed and its string values restored, so a value holding a quote or a newline stays valid JSON. A client that disconnects mid-stream cancels the upstream call, so Anthropic stops generating (and billing) the rest of the reply.
+**Restored** in the response: `content[].text`, and the input of a client tool call (`tool_use`) to a tool in `restoreTools` (string values, and object keys that hold a placeholder). Every other tool call keeps its placeholders, counted in the request log's `heldForToolPlaceholders`: a tool outside `restoreTools`, and server and MCP tool calls (`server_tool_use`, `mcp_tool_use`), which the upstream runs, whatever their name.
+
+With `stream: true`, text deltas are restored as they stream, holding back only a placeholder split across deltas. Tool input (`input_json_delta`) is held per content block and sent once, just before its `content_block_stop`, restored by the same rule as a JSON reply: the tool is read from the block's `content_block_start`, and input whose `content_block_start` never arrived keeps its placeholders. The assembled JSON is parsed and its string values restored, so a value holding a quote or a newline stays valid JSON. A client that disconnects mid-stream cancels the upstream call, so Anthropic stops generating (and billing) the rest of the reply.
 
 ## OpenAI-compatible route
 
@@ -154,9 +157,9 @@ The gateway appends `/v1/chat/completions` to `NULLPII_OPENAI_UPSTREAM`, so set 
 - a file part's `filename`, which can name a person (`CV of …`);
 - `user` and `safety_identifier` (often an email), `metadata` values, `stop`, and `web_search_options.user_location`.
 
-**Not scanned:** `image_url`, `input_audio` and `file` parts are forwarded untouched, apart from a file's `filename`, and counted as "not scanned" in the log and the console summary. Tool names, protocol fields (`model`, sampling parameters, `tool_choice`, `logit_bias`) and `prompt_cache_key` are forwarded as they are.
+**Not scanned:** `image_url`, `input_audio` and `file` parts are forwarded untouched, apart from a file's `filename`, and counted as "not scanned" in the log and the console summary. Tool names, a custom tool's `format` (a grammar, which must stay valid syntax), the URL query string, protocol fields (`model`, sampling parameters, `tool_choice`, `logit_bias`), `prompt_cache_key` and every other top-level field are forwarded as they are.
 
-**Restored** in the response: each choice's `content`, `refusal`, `tool_calls[].function.arguments` (the string values of the parsed JSON, so a restored value holding a quote stays valid JSON), a custom tool call's `input`, and `function_call.arguments`. With `stream: true`, `delta.content` and `delta.refusal` are restored as they stream, and only a placeholder split across chunks is held back until it is complete. Tool-call arguments are held per call and sent restored, in one piece, with the chunk that carries the choice's `finish_reason` (or just before `data: [DONE]` if that never comes); each call's `id` and function name still arrive at once. Not restored: `logprobs` tokens, audio transcripts and streamed custom tool-call input keep their placeholders. In the `command` of a shell tool (`Bash`, `bash`, `shell`), a value goes back only where it is safe: see [Security](#security).
+**Restored** in the response: each choice's `content` and `refusal`, and, for a tool in `restoreTools`, `tool_calls[].function.arguments` (the string values of the parsed JSON, so a restored value holding a quote stays valid JSON), a custom tool call's `input`, and `function_call.arguments`; a call to any other tool keeps its placeholders. With `stream: true`, `delta.content` and `delta.refusal` are restored as they stream, and only a placeholder split across chunks is held back until it is complete. Tool-call arguments and custom tool-call input are held per call and sent in one piece, restored by the same rule, with the chunk that carries the choice's `finish_reason` (or just before `data: [DONE]` if that never comes); each call's `id` and tool name still arrive at once, and a call whose tool name never arrived keeps its placeholders. Not restored: `logprobs` tokens and audio transcripts keep their placeholders. In the `command` of a shell tool (`Bash`, `bash`, `shell`), a value goes back only where it is safe: see [Security](#security).
 
 When something was masked, the gateway appends `LLM_PRESERVATION_HINT` as a last `system` message: appended, never prepended, so the upstream prompt cache keeps the conversation prefix. `NULLPII_DISABLE_HINT=1` turns it off, for example for an upstream whose chat template accepts a system message only at the start.
 
@@ -183,7 +186,7 @@ What gets masked comes from the shared policy file. Everything else is set with 
 | `urlAllowlist` | `"none"` masks every URL. `{ hosts, replaceDefaults }` sets, per host (`docs.python.org`, or `*.github.com` for a domain and its subdomains), how much of a clean URL stays readable: `full`, `host` or `mask`. |
 | `restoreTools` | Tools whose arguments get real values back. It replaces the default list (`DEFAULT_RESTORE_TOOLS`: the tools that run on this machine). Any other tool keeps the placeholders. |
 
-An unknown key, category, host or release stops the gateway at startup with the reason. So does an integer variable that is not a whole number in its range (`30m`, `1e6` and `0` are refused rather than read as something else).
+An unknown key, category, host or release stops the gateway at startup with the reason. So does an environment variable outside its documented values: an integer that is not a whole number in its range (`30m`, `1e6` and `0` are refused rather than read as something else), a `NULLPII_DISABLE_HINT` other than `0` or `1`, or an upstream that is not a base URL as described below. The error names the variable. It never repeats the sidecar token, and repeats an upstream URL only once it is known to carry no credentials or query string.
 
 **Environment variables.**
 
@@ -192,8 +195,8 @@ An unknown key, category, host or release stops the gateway at startup with the 
 | `NULLPII_CONFIG` | (default location) | Path of the policy file. If set, the file must exist. |
 | `NULLPII_HOST` | `127.0.0.1` | Bind host |
 | `NULLPII_PORT` | `8787` | Bind port, 1 to 65535 |
-| `NULLPII_UPSTREAM` | `https://api.anthropic.com` | Upstream for `/v1/messages` (Anthropic Messages API) |
-| `NULLPII_OPENAI_UPSTREAM` | `https://api.openai.com` | Upstream for `/v1/chat/completions`: an OpenAI-compatible base URL without `/v1`, which the gateway appends. A value ending in `/v1` is refused at startup. |
+| `NULLPII_UPSTREAM` | `https://api.anthropic.com` | Upstream for `/v1/messages` (Anthropic Messages API): a base URL without `/v1`, which the gateway appends. |
+| `NULLPII_OPENAI_UPSTREAM` | `https://api.openai.com` | Upstream for `/v1/chat/completions`: an OpenAI-compatible base URL without `/v1`, which the gateway appends. |
 | `NULLPII_VAULT_TTL_MS` | `1800000` | Idle TTL of a sidecar session, at least 1000. The Messages proxy keeps one session per request and destroys it at the end. |
 | `NULLPII_SIDECAR_TOKEN` | (off) | Enables the [sidecar API](#sidecar-api). Bearer token, at least 32 characters. |
 | `NULLPII_SIDECAR_MAX_SESSIONS` | `64` | Concurrent sidecar sessions, at least 1. One more fails with 429. |
@@ -201,8 +204,10 @@ An unknown key, category, host or release stops the gateway at startup with the 
 | `NULLPII_BACKEND` | `cpu` | `cpu` / `mps` / `cuda` / `auto` |
 | `NULLPII_LOG_LEVEL` | `info` | Fastify log level |
 | `NULLPII_BODY_LIMIT_BYTES` | `10485760` | Request body cap (10 MB), at least 1 |
-| `NULLPII_LOG_TRAFFIC` | (off) | Set to `wire` to dump the sanitized request body and the raw upstream response to stdout for debugging, 64 KB per dump. They hold placeholders where nullpii found personal data, and anything it missed as written, so keep these dumps local. |
-| `NULLPII_DISABLE_HINT` | (off) | Debug-only. Set to `1` to suppress the `LLM_PRESERVATION_HINT` system-prompt injection. Useful when an upstream proxy / cache rejects the modified system prompt; leave unset in normal operation. |
+| `NULLPII_LOG_TRAFFIC` | (off) | Set to `wire` to dump to stdout, for debugging, the request body as forwarded, its headers (auth headers as their last 6 characters and length) and the raw upstream response before restore, 64 KB per dump. They hold placeholders where nullpii found personal data, and everything else as it was sent or written: values it missed, fields it does not scan (images, documents, `mcp_servers` and their credentials) and the model's output. Keep these dumps local. |
+| `NULLPII_DISABLE_HINT` | `0` | `1` suppresses the `LLM_PRESERVATION_HINT` system-prompt injection; `0` keeps it. Useful when an upstream proxy / cache rejects the modified system prompt; leave unset in normal operation. |
+
+Both upstreams must be `http:` or `https:` base URLs, without credentials (`user:password@`: the gateway forwards the client's own auth headers), a query string, a fragment or a trailing `/v1`; anything else is refused at startup. Trailing slashes are dropped.
 
 ## Sidecar API
 
@@ -256,7 +261,7 @@ would break SDK-level retry + backoff heuristics.
 
 ## Security
 
-**Shell commands keep unsafe values masked.** A masked value comes from data the model could not read, such as a file an agent opened, so it can hold anything, shell syntax included. When the gateway puts real values back into a tool call that a shell runs (Anthropic `Bash`; `Bash`, `bash` or `shell` on the OpenAI route, as a function or a custom tool), each placeholder in the `command` is restored only when its value is safe where the placeholder stands. The first row that applies decides:
+**Shell commands keep unsafe values masked.** A masked value comes from data the model could not read, such as a file an agent opened, so it can hold anything, shell syntax included. When the gateway puts real values back into a tool call that a shell runs (a tool named `Bash`, `bash` or `shell` and listed in `restoreTools`, on either route, and on the OpenAI route as a function or a custom tool), each placeholder in the `command` is restored only when its value is safe where the placeholder stands. The first row that applies decides:
 
 | Where the placeholder stands | Restored only when the value |
 |---|---|
@@ -268,7 +273,7 @@ would break SDK-level retry + backoff heuristics.
 | inside single quotes | has no `'` and no newline |
 | inside double quotes | has none of `"`, `$`, `` ` ``, `\`, `!`, and no newline |
 
-Otherwise the placeholder stays as written, and the command works on the placeholder text, which is harmless: in `echo {{PII_SECRET_0_…}}` it stays, in `echo '{{PII_SECRET_0_…}}'` the real value goes back. Names still come back in Claude Code's usual commit form, `git commit -m "$(cat <<'EOF' … EOF)"`. Heredoc bodies are skipped when the quoting is read, so an apostrophe in a body does not open a quote for the rest of the command, and `<<` counts only in shell code, not inside quotes or as the here-string `<<<`. The same rule applies to JSON responses and to streams. Placeholders kept this way are counted as `unsafeShellPlaceholders` in the request log and shown in the console summary, as a count only. The tool call's other fields, and every other tool (`Write` content, for example), are restored as usual. A shell tool's input that is not valid JSON keeps all of its placeholders.
+Otherwise the placeholder stays as written, and the command works on the placeholder text, which is harmless: in `echo {{PII_SECRET_0_…}}` it stays, in `echo '{{PII_SECRET_0_…}}'` the real value goes back. Names still come back in Claude Code's usual commit form, `git commit -m "$(cat <<'EOF' … EOF)"`. Heredoc bodies are skipped when the quoting is read, so an apostrophe in a body does not open a quote for the rest of the command, and `<<` counts only in shell code, not inside quotes or as the here-string `<<<`. The same rule applies to JSON responses and to streams. Placeholders kept this way are counted as `unsafeShellPlaceholders` in the request log and shown in the console summary, as a count only. The tool call's other fields, and every other tool in `restoreTools` (`Write` content, for example), are restored as usual. A shell tool's JSON input that does not parse keeps all of its placeholders; a custom shell tool's plain-text input is the command itself and gets the rule above.
 
 The interpreter list is best effort: a program it does not name that runs its quoted argument as code (for example `psql -c` or `mysql -e`, which run SQL) is covered by the quoting rules only.
 
@@ -277,8 +282,9 @@ The interpreter list is best effort: a program it does not name that runs its qu
 - Vault stays in-process. No persistence.
 - Counts and label histograms are logged per request; the request log
   never carries the values that were masked (the gateway logs counts
-  and labels only, field by field). `NULLPII_LOG_TRAFFIC=wire` is the
-  exception, for debugging: see Config.
+  and labels only, field by field), nor an upstream error's body (its
+  status, length and error type only). `NULLPII_LOG_TRAFFIC=wire` is
+  the exception, for debugging: see Config.
 - No telemetry / phone-home.
 
 License: Apache-2.0.

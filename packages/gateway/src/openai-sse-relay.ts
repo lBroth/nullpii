@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { type NullPii, RestoreStream } from 'nullpii';
+import { restoreCustomInput, restoreFunctionArguments } from './openai-sanitizer.js';
 import type {
   ChatChunkChoice,
   ChatCompletionChunk,
@@ -10,15 +11,11 @@ import type {
 } from './openai-types.js';
 import {
   type RestoreAccumulator,
-  holdForTool,
   isRecord,
   newRestoreAccumulator,
   parseJson,
-  restoreJsonText,
   tallyRestore,
-  toolMayRestore,
 } from './sanitizer.js';
-import { isShellTool } from './shell-restore.js';
 import type { SseRelayCounters, SseRelayOptions } from './sse-relay.js';
 
 /**
@@ -35,9 +32,14 @@ import type { SseRelayCounters, SseRelayOptions } from './sse-relay.js';
  *   index, as Anthropic `input_json_delta`s are, and forwarded once, when
  *   the choice finishes. The assembled string is parsed and only its
  *   string leaves are restored, so a value holding a quote or a newline is
- *   re-escaped instead of breaking the JSON. The first delta of each call
- *   is still forwarded at once, so its `id` and `function.name` arrive on
- *   time. A delta with no numeric `index` is forwarded as it is.
+ *   re-escaped instead of breaking the JSON. A custom tool call's
+ *   `custom.input` shards are buffered the same way and restored as text.
+ *   Either gets real values only for a tool in `restoreTools`, by the
+ *   same helpers as the JSON restore (`restoreFunctionArguments`,
+ *   `restoreCustomInput`); a call whose name never arrived keeps its
+ *   placeholders. The first delta of each call is still forwarded at once,
+ *   so its `id` and name arrive on time. A delta with no numeric `index`
+ *   is forwarded as it is.
  * - Flush points: the chunk that carries a choice's `finish_reason` also
  *   carries the text still held and the restored arguments; `[DONE]` (or
  *   the end of the stream, when the upstream was cut off) is preceded by
@@ -56,6 +58,20 @@ const DONE_SENTINEL = '[DONE]';
 /** Delta fields that stream free text. */
 const TEXT_FIELDS = ['content', 'refusal'] as const;
 type TextField = (typeof TEXT_FIELDS)[number];
+
+/** A streamed tool call is a function call or a custom (free-form) one;
+ * the field of its payload that streams text, per kind. */
+const CALL_TEXT_FIELD = { function: 'arguments', custom: 'input' } as const;
+type CallKind = keyof typeof CALL_TEXT_FIELD;
+
+/** What one choice holds of a streamed tool call: its kind, the tool's
+ * name from the call's first delta, and the text shards so far
+ * (`function.arguments` or `custom.input`), `null` before the first. */
+interface HeldCall {
+  readonly kind: CallKind;
+  name: string | undefined;
+  text: string | null;
+}
 
 /** Top-level fields copied from the last upstream chunk onto a chunk the
  * relay synthesises. Anything else (usage, provider extensions) belongs
@@ -180,12 +196,12 @@ class ChatRelay {
 }
 
 /** What one choice holds back: a text restorer per field, and the
- * argument shards of each tool call (plus the deprecated function call). */
+ * argument or input shards of each tool call (plus the deprecated
+ * function call). */
 class ChoiceRestorer {
   private readonly text = new Map<TextField, RestoreStream>();
-  private readonly toolArgs = new Map<number, string>();
-  /** Function name per tool-call index, from the call's first delta. */
-  private readonly toolNames = new Map<number, string>();
+  /** Per tool-call index. */
+  private readonly calls = new Map<number, HeldCall>();
   private functionArgs: string | null = null;
   private functionName: string | undefined;
 
@@ -201,7 +217,7 @@ class ChoiceRestorer {
     let changed = false;
     for (const field of TEXT_FIELDS) changed = this.pushText(delta, field) || changed;
     const calls = Array.isArray(delta.tool_calls) ? delta.tool_calls : [];
-    for (const call of calls) changed = this.holdToolArgs(call) || changed;
+    for (const call of calls) changed = this.holdToolCall(call) || changed;
     if (isRecord(delta.function_call)) {
       changed = this.holdFunctionArgs(delta.function_call) || changed;
     }
@@ -225,14 +241,30 @@ class ChoiceRestorer {
     return true;
   }
 
-  private holdToolArgs(call: ChatToolCallDelta): boolean {
+  /** Take a call's text shard out of the delta and hold it; true when
+   * one was taken. */
+  private holdToolCall(call: ChatToolCallDelta): boolean {
     if (!isRecord(call) || typeof call.index !== 'number') return false;
-    const fn = call.function;
-    if (!isRecord(fn)) return false;
-    if (typeof fn.name === 'string') this.toolNames.set(call.index, fn.name);
-    if (typeof fn.arguments !== 'string' || fn.arguments.length === 0) return false;
-    this.toolArgs.set(call.index, (this.toolArgs.get(call.index) ?? '') + fn.arguments);
-    fn.arguments = '';
+    if (isRecord(call.function)) return this.holdShard(call.index, 'function', call.function);
+    if (isRecord(call.custom)) return this.holdShard(call.index, 'custom', call.custom);
+    return false;
+  }
+
+  /** Note the tool's name when `payload` carries it, and move its text
+   * shard into the held state of call `index`, leaving the field empty in
+   * the forwarded delta. True when a shard was taken. */
+  private holdShard(index: number, kind: CallKind, payload: Record<string, unknown>): boolean {
+    let held = this.calls.get(index);
+    if (held === undefined) {
+      held = { kind, name: undefined, text: null };
+      this.calls.set(index, held);
+    }
+    if (typeof payload.name === 'string') held.name = payload.name;
+    const field = CALL_TEXT_FIELD[kind];
+    const shard = payload[field];
+    if (typeof shard !== 'string' || shard.length === 0) return false;
+    held.text = (held.text ?? '') + shard;
+    payload[field] = '';
     return true;
   }
 
@@ -260,25 +292,33 @@ class ChoiceRestorer {
   }
 
   private flushArgs(delta: ChatDelta): boolean {
-    const added = this.toolArgs.size > 0 || this.functionArgs !== null;
-    for (const [index, args] of this.toolArgs) {
-      setToolArgs(delta, index, this.restoreArgs(args, this.toolNames.get(index)));
+    let added = false;
+    for (const [index, held] of this.calls) {
+      if (held.text === null) continue;
+      setCallText(delta, index, held.kind, this.restoreCall(held, held.text));
+      added = true;
     }
-    this.toolArgs.clear();
+    this.calls.clear();
     if (this.functionArgs !== null) {
-      const args = this.restoreArgs(this.functionArgs, this.functionName);
+      const args = restoreFunctionArguments(
+        this.np,
+        this.functionName,
+        this.functionArgs,
+        this.sessionId,
+        this.acc,
+      );
       delta.function_call = { ...delta.function_call, arguments: args };
       this.functionArgs = null;
+      added = true;
     }
     return added;
   }
 
-  /** Restore one call's assembled arguments; a shell tool's `command`
-   * gets the shell-aware restore. */
-  private restoreArgs(args: string, name: string | undefined): string {
-    if (!toolMayRestore(name, this.acc)) return holdForTool(args, this.acc);
-    const runsInShell = isShellTool(name);
-    return restoreJsonText(this.np, args, this.sessionId, this.acc, runsInShell);
+  /** Restore one call's assembled text with the helper the JSON restore
+   * uses for that kind of call. */
+  private restoreCall(held: HeldCall, text: string): string {
+    const restore = held.kind === 'function' ? restoreFunctionArguments : restoreCustomInput;
+    return restore(this.np, held.name, text, this.sessionId, this.acc);
   }
 
   private textStream(field: TextField): RestoreStream {
@@ -291,16 +331,16 @@ class ChoiceRestorer {
   }
 }
 
-/** Put a call's restored arguments into `delta`: onto its entry when this
- * delta already has one, else as a new continuation entry. */
-function setToolArgs(delta: ChatDelta, index: number, args: string): void {
+/** Put a call's restored text into `delta` (`function.arguments` or
+ * `custom.input`): onto its entry when this delta already has one, else as
+ * a new continuation entry. */
+function setCallText(delta: ChatDelta, index: number, kind: CallKind, text: string): void {
   const calls = Array.isArray(delta.tool_calls) ? delta.tool_calls : [];
   const existing = calls.find((c) => isRecord(c) && c.index === index);
-  if (existing !== undefined) {
-    existing.function = { ...existing.function, arguments: args };
-  } else {
-    calls.push({ index, function: { arguments: args } });
-  }
+  const entry: ChatToolCallDelta = existing ?? { index };
+  if (kind === 'function') entry.function = { ...entry.function, arguments: text };
+  else entry.custom = { ...entry.custom, input: text };
+  if (existing === undefined) calls.push(entry);
   delta.tool_calls = calls;
 }
 

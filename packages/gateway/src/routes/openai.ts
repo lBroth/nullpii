@@ -27,6 +27,7 @@ import {
   isSuccess,
   logRoundTrip,
   openSseReply,
+  upstreamErrorLogFields,
   watchClientClose,
   writeFrame,
 } from './common.js';
@@ -43,8 +44,9 @@ export interface OpenAiRouteOptions {
   /** OpenAI-compatible base URL, without `/v1`. */
   readonly upstreamBaseUrl: string;
   readonly fetchImpl: Fetch;
-  /** When true, dump the sanitized request body + raw upstream response
-   * (placeholder-bearing) to stdout. Never logs real PII. */
+  /** When true, dump the request as forwarded and the raw upstream
+   * response to stdout (`traffic-log.ts`). Not free of personal data:
+   * they hold whatever nullpii did not mask. */
   readonly logTraffic: boolean;
   /** Tools whose arguments get real values back; default
    * `DEFAULT_RESTORE_TOOLS`. Any other tool keeps its placeholders. */
@@ -71,10 +73,6 @@ const UPSTREAM_ERROR_HEADERS: ReadonlySet<string> = new Set([
 ]);
 /** `x-ratelimit-{limit,remaining,reset}-{requests,tokens}`. */
 const UPSTREAM_ERROR_HEADER_PREFIXES = ['x-ratelimit-'];
-
-/** An upstream error `type` / `code` is logged only when it looks like an
- * identifier (`rate_limit_exceeded`), so no free text ever reaches a log. */
-const LOGGABLE_ERROR_FIELD = /^[\w.-]{1,64}$/;
 
 /** Everything one proxied call needs once its request is sanitized. */
 interface ChatCall {
@@ -267,30 +265,17 @@ function passThroughError(call: ChatCall, status: number, headers: Headers, text
     if (forwarded) reply.header(name, value);
   });
   if (headers.get('content-type') === null) reply.header('content-type', JSON_CONTENT_TYPE);
-  // Unlike the Anthropic route, the body itself is not logged: an OpenAI
-  // error can quote request content the gateway forwards without
-  // scanning, such as an image URL. Its `type` and `code` are enough to
-  // tell a rate limit from a bad request.
+  // The body is not logged (see `upstreamErrorLogFields`): its length,
+  // `type` and `code` are enough to tell a rate limit from a bad request.
   req.log.warn(
     {
       upstreamStatus: status,
       retryAfter: headers.get('retry-after') ?? undefined,
-      ...upstreamErrorKind(text),
+      ...upstreamErrorLogFields(text),
     },
     'openai.upstream_error',
   );
   return text;
-}
-
-function upstreamErrorKind(text: string): { errorType: string | null; errorCode: string | null } {
-  const parsed = parseJson(text);
-  const root = parsed !== undefined && isRecord(parsed.value) ? parsed.value : {};
-  const error = isRecord(root.error) ? root.error : {};
-  return { errorType: loggableField(error.type), errorCode: loggableField(error.code) };
-}
-
-function loggableField(value: unknown): string | null {
-  return typeof value === 'string' && LOGGABLE_ERROR_FIELD.test(value) ? value : null;
 }
 
 function isChatRequest(body: unknown): body is ChatCompletionRequest {

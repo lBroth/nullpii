@@ -46,7 +46,7 @@ NULLPII_MODEL_DIR=/path/to/model npm run test:e2e
 
 `test/e2e/*.test.ts` are excluded from the default `vitest run`; the `test:e2e` script sets `NULLPII_E2E=1` so the same `vitest.config.ts` swaps include/exclude lists.
 
-In CI the `e2e-onnx` job (`.github/workflows/ci.yml`) downloads the ONNX model from HuggingFace and runs the same suite. Opt-in via the repo variable `NULLPII_E2E_ENABLED=true` — flip it once `lBroth/nullpii` on HuggingFace is fully public (anonymous fetch must return 200). Optional repo variables `NULLPII_E2E_HF_REPO` and `NULLPII_E2E_HF_REVISION` override the default (`lBroth/nullpii@main`) — pin the revision to a 40-char commit SHA for reproducibility.
+In CI the `e2e-onnx` job (`.github/workflows/ci.yml`) runs the same suite against the model the library pins (`DEFAULT_MODEL_REPO` and `DEFAULT_MODEL_REVISION` in `src/defaults.ts`): it builds the library, fails unless that revision is a 40-character commit SHA, fetches it with `nullpii prefetch` as a user's install would (cached between runs), and points `NULLPII_MODEL_DIR` at it. The job is opt-in: set the repository variable `NULLPII_E2E_ENABLED=true` once the pinned revision downloads anonymously from Hugging Face.
 
 ## Test data
 

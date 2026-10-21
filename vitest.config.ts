@@ -9,9 +9,9 @@ import { defineConfig } from 'vitest/config';
 const E2E_ON = process.env.NULLPII_E2E === '1';
 
 export default defineConfig({
-  // The subpackages under `packages/recognizers-*/` import from `'nullpii'`
-  // to honour the published consumer surface. In this repo there is no
-  // `node_modules/nullpii` (we ARE nullpii), so resolve the import to the
+  // The gateway (`packages/gateway/src`) imports from `'nullpii'`, its
+  // published peer, and its tests run in this suite. In this repo there is
+  // no `node_modules/nullpii` (we ARE nullpii), so resolve the import to the
   // local source. Mirrors the `paths` entry in `tsconfig.json`.
   resolve: {
     alias: {

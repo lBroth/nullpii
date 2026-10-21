@@ -99,16 +99,20 @@ See [SECURITY.md](SECURITY.md). Use the GitHub Security Advisory channel — do 
 
 ## Release checklist
 
-Before tagging a new version:
+One tag, `vX.Y.Z`, releases the library, the gateway and the Claude Code mod, which share a version. On the commit you will tag:
 
-1. **Version bump.** `package.json.version` matches the topmost section of `CHANGELOG.md`. Bump SemVer per breaking / feature / fix.
-2. **Clean build.** `npm run clean && npm run build` (the `prebuild` hook runs `clean` automatically). Confirms no orphan `dist/*.js` from deleted `src/` files.
-3. **Pack inspection.** `npm pack --dry-run`. Verify every shipped file is intentional:
-   - Only the paths in `package.json` `files` are listed: `dist/`, `src/`, `bin/`, `assets/logo.png`, `README.md`, `LICENSE` and `NOTICE`.
+1. **Versions.** Set the new version in `package.json` and `package-lock.json` (`npm version X.Y.Z --no-git-tag-version` at the root), in `packages/gateway/package.json` and in `packages/claude-code-mod/.claude-plugin/plugin.json`; the release workflow refuses a tag that does not match all three. Bump SemVer per breaking / feature / fix. On a new minor, also move the gateway's peer range on `nullpii` (`>=X.Y.0 <X.(Y+1).0`).
+2. **Changelog.** Rename `## [Unreleased]` to `## [X.Y.Z] — YYYY-MM-DD` and open a new, empty `## [Unreleased]` above it. The GitHub release takes its notes from the `## [X.Y.Z]` section; without one they read only "Release X.Y.Z."
+3. **Model.** The library downloads the model revision it pins: a commit, never `main`, in `DEFAULT_MODEL_REVISION` (`src/defaults.ts`), and each file's SHA-256 in `DEFAULT_MODEL` (`src/model-manager.ts`). If the model changed, publish it to `lBroth/nullpii` on Hugging Face, update both pins, and run the real-ONNX suite against it (`npm run test:e2e`, see [Tests](#tests)).
+4. **Clean build.** `npm run clean && npm run build` (the `prebuild` hook runs `clean` automatically). Confirms no orphan `dist/*.js` from deleted `src/` files.
+5. **Pack inspection.** `npm pack --dry-run` at the root. Verify every shipped file is intentional:
+   - Only `package.json` and the paths in its `files` are listed: `dist/`, `src/`, `bin/`, `assets/logo.png`, `README.md`, `LICENSE` and `NOTICE`.
    - `dist/backend/` contains **only** `backend.{js,d.ts,*.map}`.
    - No orphan compiled outputs in `dist/` from modules that no longer exist in `src/`.
    - The tarball stays small: model weights ship through Hugging Face, not npm.
-4. **Full quality bar.** `npm run lint && npm run typecheck && npm test && npm run license-check && npm run circular-check`. All must pass on the release commit.
-5. **SBOM refresh.** `npm run sbom` regenerates `bom.json` with the current dep tree + timestamp.
-6. **Bench refresh.** If the runtime pipeline or the model changed, measure it with the method in `packages/eval/METHOD.md`, and fill the README and METHOD tables from the scored JSON; never type a number by hand.
-7. **Tag.** Push `vX.Y.Z` from a commit on main; `.github/workflows/release.yml` publishes both packages with provenance through npm trusted publishing, after the `npm` environment's reviewer approves.
+
+   Then, in `packages/gateway`, `npm publish --dry-run`: it runs the same `prepublishOnly` as the release, which compiles the gateway against the root `dist/`, and lists only `package.json`, `dist/`, `src/`, `bin/`, `README.md`, `LICENSE` and `NOTICE`. Delete the `dist/` and `node_modules/` it leaves in `packages/gateway` afterwards.
+6. **Full quality bar.** `npm run lint && npm run typecheck && npm test && npm run license-check && npm run circular-check && npm run hygiene && npm run docs:build`, and CI green on the release commit (CI also runs the mod's tests and the eval kit's).
+7. **Bench refresh.** If the runtime pipeline or the model changed, measure it with the method in `packages/eval/METHOD.md`, and fill the README and METHOD tables from the scored JSON; never type a number by hand.
+8. **Tag.** Push `vX.Y.Z` from a commit on main. `.github/workflows/release.yml` checks the versions and runs the gate; publishes `nullpii`, then `@lbroth/nullpii-gateway`, with provenance through npm trusted publishing (each publish job waits for the `npm` environment's reviewer); then creates the GitHub release with the changelog section and the SBOM (`bom.json`). `.github/workflows/gateway-docker.yml` builds the image from the same tag and pushes `ghcr.io/lbroth/nullpii-gateway` as `X.Y.Z`, `X.Y` and `latest`.
+9. **After.** Check that both npm pages show provenance, that the GitHub release carries the right notes, and that the image tags exist. GHCR creates a package private on its first push: once, make `nullpii-gateway` public (its package settings on GitHub, Change visibility).

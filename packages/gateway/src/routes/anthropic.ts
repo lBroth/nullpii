@@ -31,6 +31,7 @@ import {
   isSuccess,
   logRoundTrip,
   openSseReply,
+  upstreamErrorLogFields,
   watchClientClose,
   writeFrame,
 } from './common.js';
@@ -52,8 +53,6 @@ export interface AnthropicRouteOptions {
 const MESSAGES_PATH = '/v1/messages';
 const COUNT_TOKENS_PATH = '/v1/messages/count_tokens';
 const JSON_CONTENT_TYPE = 'application/json';
-/** Characters of an upstream error body kept in the warning log. */
-const LOGGED_ERROR_BODY_CHARS = 500;
 
 /** Headers from Anthropic that diagnose rate-limit / quota failures.
  * Forwarded verbatim so the client sees `retry-after` + the full
@@ -300,17 +299,16 @@ function passThroughError(
     if (value !== null) reply.header(name, value);
   }
   if (headers.get('content-type') === null) reply.header('content-type', JSON_CONTENT_TYPE);
-  // PII-safety invariant: `text` is the error body Anthropic returned for
-  // a request already sanitised, so it only echoes placeholder-bearing
-  // fragments, never real PII. Do NOT change this to log the pre-sanitise
-  // request body or a restored response without re-validating the "never
-  // log PII" rule.
+  // The body is not logged (see `upstreamErrorLogFields`): an error can
+  // quote the request, and what the gateway forwards is not free of
+  // personal data (unscanned fields, detector misses). Its length and
+  // `error.type` are enough to tell an overload from a bad request.
   req.log.warn(
     {
       upstreamStatus: status,
       retryAfter: headers.get('retry-after') ?? undefined,
       rateLimitReset: headers.get('anthropic-ratelimit-requests-reset') ?? undefined,
-      body: text.slice(0, LOGGED_ERROR_BODY_CHARS),
+      ...upstreamErrorLogFields(text),
     },
     'anthropic.upstream_error',
   );

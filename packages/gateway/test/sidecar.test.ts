@@ -561,7 +561,7 @@ describe('sidecar · restore with tool', () => {
     expect(res.body).not.toContain('evil.sh');
   });
 
-  it('restores the same value inside single quotes', async () => {
+  it('keeps the same value masked inside single quotes too: it is not inert', async () => {
     const { app } = await setup();
     const [secret] = await placeholdersFor(app, INJECTION);
 
@@ -572,7 +572,23 @@ describe('sidecar · restore with tool', () => {
     });
 
     const body = res.json() as ShellRestoreBody;
-    expect(body.value.command).toBe(`echo '${INJECTION}'`);
+    expect(body.value.command).toBe(`echo '${secret}'`);
+    expect(body.shellKeptMasked).toEqual([secret]);
+    expect(res.body).not.toContain(INJECTION);
+  });
+
+  it('restores a name with a space inside single quotes', async () => {
+    const { app } = await setup();
+    const [person] = await placeholdersFor(app, FULL_NAME);
+
+    const res = await restore(app, {
+      value: { command: `echo '${person}'` },
+      fields: ['command'],
+      tool: 'Bash',
+    });
+
+    const body = res.json() as ShellRestoreBody;
+    expect(body.value.command).toBe(`echo '${FULL_NAME}'`);
     expect(body.shellKeptMasked).toEqual([]);
   });
 

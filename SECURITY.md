@@ -18,6 +18,8 @@ Privately — open a [Security Advisory](https://github.com/lBroth/nullpii/secur
 - LLMs emitting PII they already knew independently.
 - Logging / caching / telemetry running **before** `sanitize()`.
 - Adversarial prompts asking the LLM to reveal mappings.
+- A repository's own Claude Code settings. Its `.claude/settings.json` outranks your user settings: it can turn the mod off (`enabledPlugins`), point Claude Code past the gateway (`env.ANTHROPIC_BASE_URL`), or add hooks that see prompts first. Use your organization's managed settings to force the mod or the gateway on.
+- Other local users or processes. The sidecar proves it holds the token before the mod sends anything, but a process of your own user can read the gateway's memory, and anyone holding the sidecar token can open its sessions up to `NULLPII_SIDECAR_MAX_SESSIONS` and so make the mod fail closed (no values are exposed that way).
 
 ## Known limitations / accepted trade-offs
 
@@ -51,7 +53,7 @@ A `command` sent as an argv array (`["bash", "-lc", "…"]`, as Codex does) foll
 
 The command is read once, in time linear in its length. A command longer than 256 KiB keeps every placeholder. The lists of interpreters and network clients are best effort: no list names every program that runs code or every way out of the machine. The plain-word rule does not depend on them. Program positions are judged at the shell level; inside code handed to an interpreter (`bash -c "…"`, `python3 -c "…"`) only the plain-word rule applies.
 
-**A limit by design.** `Write`, `Edit` and the other file tools get real values back whenever they are in `restoreTools`, as they are by default, since writing your data to your files is what they are for. A later command can still run such a file (`bash run.sh` after `Write run.sh`); the rule judges each call on its own and does not follow what a file holds.
+**A limit by design: each call is judged on its own.** `Write`, `Edit` and the other file tools get real values back whenever they are in `restoreTools`, as they are by default, since writing your data to your files is what they are for. A value restored by one call can therefore leave through a later call that holds no placeholder: a file written by `Write` or a shell redirect and then sent (`curl -d @notes.txt …`), a commit followed by `git push`, a variable set in a shell that Anthropic's bash tool keeps across calls. A later command can also run such a file (`bash run.sh` after `Write run.sh`). The rule does not follow what a file, a commit or a shell holds.
 
 If you call `restore()` yourself and pass the result to a shell, an interpreter, a query or a template, apply the same care. A restored value is data you did not show the model, and it can come from content an attacker controls.
 

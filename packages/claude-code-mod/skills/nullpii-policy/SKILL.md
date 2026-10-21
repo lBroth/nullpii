@@ -10,7 +10,7 @@ nullpii-gateway (the sidecar this plugin's mod talks to), the `nullpii` CLI and 
 ## 1. Find the file and the policy in effect
 
 ```bash
-npx -y nullpii config
+npx -y nullpii@0.5 config
 ```
 
 It validates the file and prints `{ "file", "policy", "restoreTools" }`. `file` is `null` when there is none. The user can also run `/pii`, which shows the policy the running sidecar loaded.
@@ -56,7 +56,7 @@ The mod puts every tool call it recognises as writing this file to the user (bes
 
 ## 3. Check it and apply it
 
-Run `npx -y nullpii config` again. Exit status 1 means the file is invalid, and the message names the key. Fix it before you stop.
+Run `npx -y nullpii@0.5 config` again. Exit status 1 means the file is invalid, and the message names the key. Fix it before you stop.
 
 The sidecar reads the file when it starts. Tell the user to restart `nullpii-gateway` for the change to apply. `/pii` then shows the new policy.
 

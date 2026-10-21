@@ -116,10 +116,11 @@ It talks to the gateway's local sidecar and fails closed when the sidecar is dow
 With the gateway running and its sidecar token at hand ([set up](https://github.com/lBroth/nullpii/tree/main/packages/claude-code-mod#set-up)), install it at the prompt of a Claude Code session:
 
 ```text
-/plugin install nullpii --marketplace lBroth/nullpii
+/plugin marketplace add lBroth/nullpii@v0.5.0
+/plugin install nullpii@nullpii
 ```
 
-or from a shell with `claude plugin marketplace add lBroth/nullpii`, then `claude plugin install nullpii@nullpii`.
+or from a shell with `claude plugin marketplace add lBroth/nullpii@v0.5.0`, then `claude plugin install nullpii@nullpii`. The `@v0.5.0` pins the mod to the release: without it you get whatever `main` holds.
 
 ## What gets caught
 
@@ -246,10 +247,12 @@ Presidio is fast because it is mostly patterns plus a small spaCy model; its mac
 ```ts
 new NullPii({ backend: 'cpu' });   // ONNX Runtime on the CPU (the default)
 new NullPii({ backend: 'cuda' });  // NVIDIA GPU, fp16 when the model ships it; falls back to the CPU
-new NullPii({ backend: 'mps' });   // Apple Silicon through CoreML
+new NullPii({ backend: 'mps' });   // Apple Silicon through CoreML; slower than 'cpu' today, see below
 ```
 
 `backend: 'cuda'` needs the CUDA libraries the installed `onnxruntime-node` was built against: for 1.30 on Linux x64, CUDA 13 (`libcudart.so.13`, `libcublas.so.13`, `libcublasLt.so.13`) and cuDNN 9, although its installer calls the build `cuda12`. When the CUDA or CoreML provider cannot be loaded, nullpii runs on the CPU instead and emits a process warning with code `NULLPII_BACKEND_FALLBACK` that names the cause (listen with `process.on('warning', …)`). A model downloaded for CUDA holds only the fp16 file; the CPU runs it too, but the benchmark measures fp32 on the CPU.
+
+On Apple Silicon use `cpu`: with CoreML the model ran about 8 times slower per window than on the CPU in our tests, and its first call took 18 to 26 seconds while CoreML compiled the graph, because the GLiNER head's dynamic shapes split it into many partitions (#51).
 
 `intraOpNumThreads` and `interOpNumThreads` are passed to ONNX Runtime.
 

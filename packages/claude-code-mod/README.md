@@ -71,26 +71,20 @@ Mods load in Claude Code 2.1.287 or later.
 2. Install the mod. At the prompt of a Claude Code session in a terminal:
 
    ```text
-   /plugin install nullpii --marketplace lBroth/nullpii
-   ```
-
-   Answer `y` to add the `lBroth/nullpii` marketplace, read the plugin's details and pick a scope (**Install for you** puts it in every project on this machine). Claude Code then asks for the plugin's options: paste the token from step 1 into **Sidecar token**, and keep the default **Sidecar URL** unless the gateway listens on another port. The dialog masks the token and keeps it in your system's secure storage, and Claude Code does not pass it to the commands Claude runs.
-
-   The same in two steps, at the prompt:
-
-   ```text
-   /plugin marketplace add lBroth/nullpii
+   /plugin marketplace add lBroth/nullpii@v0.5.0
    /plugin install nullpii@nullpii
    ```
+
+   `@v0.5.0` pins the marketplace, and so the mod, to the release tag: this mod sees every prompt and tool result, so install a release, not whatever `main` holds. Read the plugin's details and pick a scope (**Install for you** puts it in every project on this machine). Claude Code then asks for the plugin's options: paste the token from step 1 into **Sidecar token**, and keep the default **Sidecar URL** unless the gateway listens on another port. The dialog masks the token and keeps it in your system's secure storage, and Claude Code does not pass it to the commands Claude runs.
 
    From a shell, which does not ask for the options:
 
    ```bash
-   claude plugin marketplace add lBroth/nullpii
+   claude plugin marketplace add lBroth/nullpii@v0.5.0
    claude plugin install nullpii@nullpii
    ```
 
-   In the desktop app, where `/plugin` does not run: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `lBroth/nullpii`, then **Add plugin**.
+   In the desktop app, where `/plugin` does not run: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `lBroth/nullpii@v0.5.0`, then **Add plugin**.
 
 3. Set or change the options at any time with `/plugin configure nullpii@nullpii` at the prompt. From the shell that holds the token, without the dialog:
 
@@ -114,6 +108,9 @@ Before every request the mod checks that the process at that address holds the s
 
 ## Limits
 
+- **Each call is judged on its own.** A real value restored into one call (a file `Write` writes, a commit) can leave the machine through a later call that holds no placeholder, such as `git push` or `curl -d @file`. See SECURITY.md.
+- **Claude Code's own system prompt is not masked.** The mod masks prompts, tool results, attachments and `CLAUDE.md`; the sections Claude Code writes itself, such as the working directory (which can hold your user name) and the git status (author names, recent commit subjects), reach Claude as they are. The gateway masks the whole request, system prompt included.
+- **A repository's settings outrank yours.** Its `.claude/settings.json` can disable the mod or add hooks that see prompts before it does; your organization's managed settings can force it on.
 - **The policy guard is best effort.** It recognises a file tool writing any `…/nullpii/config.json` (whatever the case, with `./`, `../` and repeated separators resolved, and relative paths taken from the session's directory) or the loaded policy file, and a shell command that names a `nullpii` directory together with a `config.json`, or `NULLPII_CONFIG`. A command that reaches the file another way (a variable, a symlink, a script it runs), or an MCP tool that writes files, is not caught. The change still needs a sidecar restart, and `/pii` shows the policy the sidecar loaded.
 - **Auto mode.** Claude Code denies a tool call whose arguments a hook changed after the model wrote them. A local tool call that contains a placeholder is therefore refused in auto mode. Calls without placeholders are passed on unchanged and run normally.
 - **Tool rows and tool results on screen show placeholders.** Prompts and replies are drawn with real values. If the sidecar is unreachable, they show placeholders too.

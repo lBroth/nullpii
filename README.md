@@ -252,7 +252,7 @@ new NullPii({ backend: 'mps' });   // Apple Silicon through CoreML; slower than 
 
 `backend: 'cuda'` needs the CUDA libraries the installed `onnxruntime-node` was built against: for 1.30 on Linux x64, CUDA 13 (`libcudart.so.13`, `libcublas.so.13`, `libcublasLt.so.13`) and cuDNN 9, although its installer calls the build `cuda12`. When the CUDA or CoreML provider cannot be loaded, nullpii runs on the CPU instead and emits a process warning with code `NULLPII_BACKEND_FALLBACK` that names the cause (listen with `process.on('warning', …)`). A model downloaded for CUDA holds only the fp16 file; the CPU runs it too, but the benchmark measures fp32 on the CPU.
 
-On Apple Silicon use `cpu`: with CoreML the model ran about 8 times slower per window than on the CPU in our tests, and its first call took 18 to 26 seconds while CoreML compiled the graph, because the GLiNER head's dynamic shapes split it into many partitions (#51).
+On Apple Silicon use `cpu`: with CoreML the model was slower than on the CPU at every size measured (1.3 to 8 times, depending on the CoreML settings), and its first call took 18 to 26 seconds while CoreML compiled the graph, which the GLiNER head's dynamic shapes split into many partitions (#51).
 
 `intraOpNumThreads` and `interOpNumThreads` are passed to ONNX Runtime.
 

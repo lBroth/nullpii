@@ -51,6 +51,9 @@ jobs:
         with:
           node-version: '24'
       - run: npm install --global @anthropic-ai/claude-code@2.1.305
+      # The marketplace people install the mod from, and the mod itself.
+      - run: claude plugin validate --strict .
+      - run: claude plugin validate --strict packages/claude-code-mod
       - run: claude plugin test packages/claude-code-mod
 
   eval-python:

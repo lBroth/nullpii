@@ -58,6 +58,8 @@ Claude is told only that the call was refused or its result withheld. The reason
 
 ## Set up
 
+Mods load in Claude Code 2.1.287 or later.
+
 1. In a terminal of its own, start a gateway with the sidecar API on (a version with session secrets, whose `restore` takes `tool`):
 
    ```bash
@@ -66,13 +68,45 @@ Claude is told only that the call was refused or its result withheld. The reason
    npx -p nullpii -p onnxruntime-node -p @lbroth/nullpii-gateway nullpii-gateway
    ```
 
-2. Give the mod the same token through its `sidecar_token` option. For an installed plugin, run `/plugin configure` on it: the dialog masks the value and keeps it in your system's secure storage, and Claude Code does not pass it to the commands Claude runs. For a session started with `--plugin-dir`, you can instead export `NULLPII_SIDECAR_TOKEN` in the shell that starts Claude Code:
+2. Install the mod. At the prompt of a Claude Code session in a terminal:
 
-   ```bash
-   claude --plugin-dir ./packages/claude-code-mod
+   ```text
+   /plugin install nullpii --marketplace lBroth/nullpii
    ```
 
-   A token in that shell's environment is inherited by every command Claude runs there. On its own it reads nothing: each sidecar session also has a secret, which the sidecar hands to the mod when the session opens and which the mod keeps in memory only. A command holding just the token cannot read, restore or close your session.
+   Answer `y` to add the `lBroth/nullpii` marketplace, read the plugin's details and pick a scope (**Install for you** puts it in every project on this machine). Claude Code then asks for the plugin's options: paste the token from step 1 into **Sidecar token**, and keep the default **Sidecar URL** unless the gateway listens on another port. The dialog masks the token and keeps it in your system's secure storage, and Claude Code does not pass it to the commands Claude runs.
+
+   The same in two steps, at the prompt:
+
+   ```text
+   /plugin marketplace add lBroth/nullpii
+   /plugin install nullpii@nullpii
+   ```
+
+   From a shell, which does not ask for the options:
+
+   ```bash
+   claude plugin marketplace add lBroth/nullpii
+   claude plugin install nullpii@nullpii
+   ```
+
+   In the desktop app, where `/plugin` does not run: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `lBroth/nullpii`, then **Add plugin**.
+
+3. Set or change the options at any time with `/plugin configure nullpii@nullpii` at the prompt. From the shell that holds the token, without the dialog:
+
+   ```bash
+   printf '{"sidecar_token":"%s"}' "$NULLPII_SIDECAR_TOKEN" | claude plugin configure nullpii@nullpii --values-stdin
+   ```
+
+   Then restart Claude Code.
+
+To run the mod from a checkout instead, load its folder for one session. The token can then also come from `NULLPII_SIDECAR_TOKEN` in the shell that starts Claude Code:
+
+```bash
+claude --plugin-dir ./packages/claude-code-mod
+```
+
+A token in that shell's environment is inherited by every command Claude runs there. On its own it reads nothing: each sidecar session also has a secret, which the sidecar hands to the mod when the session opens and which the mod keeps in memory only. A command holding just the token cannot read, restore or close your session.
 
 The `sidecar_url` option sets the sidecar address (default `http://127.0.0.1:8787`). It must be `http://` on `127.0.0.1`, `localhost` or `[::1]`, with an optional port and nothing after it. The mod sends its token and every unmasked prompt to that address, and the sidecar answers only on this machine, so any other address is refused and the mod blocks until the option is fixed. The address comes from the option alone, never from the environment: plugin options are read only from your user settings (or your organization's managed settings), while a repository's `.claude/settings.json` can set environment variables. For the token, the option wins over `NULLPII_SIDECAR_TOKEN` when both are set.
 

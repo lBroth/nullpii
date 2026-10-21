@@ -70,11 +70,6 @@ const GLINER_LABELS: readonly PiiCategory[] = [
   ...GLINER_EXTENDED_CATEGORIES,
 ];
 
-/**
- * Public entry point. Construct with optional `NullPiiConfig`; call
- * `sanitize` (auto-`init`s) and later `restore` with the returned
- * `sessionId`. Call `dispose` to release native resources.
- */
 /** The text a sanitize call works on: the input with literal `{{`
  * escaped (`escaped`, what the vault sees), its detection-normalised form
  * (`normalized`), and the offset map between them. */
@@ -105,6 +100,11 @@ function toEscapedSpans(
   });
 }
 
+/**
+ * Public entry point. Construct with optional `NullPiiConfig`; call
+ * `sanitize` (auto-`init`s) and later `restore` with the returned
+ * `sessionId`. Call `dispose` to release native resources.
+ */
 export class NullPii {
   private readonly config: NullPiiConfig;
   /** `GLINER_LABELS` minus `config.disabledCategories`. */

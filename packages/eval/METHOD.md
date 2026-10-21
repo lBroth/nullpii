@@ -155,7 +155,7 @@ Without the clinical notes, the lead over everyone but rizzo-pii is gone: two to
 - the ai4privacy tasks come from the same family as part of the tuning set;
 - PIIMB shaped a design decision: an earlier result, on which nullpii missed every category it did not mask then, is why the five extended categories exist and are on by default. PIIMB has not been used to tune anything.
 
-**Latency** is in the README; it is measured on idle machines, every tool on the same corpus of coding-agent text.
+**Latency** is in the README; it is measured on idle machines, every tool on the same texts of coding-agent material (code, logs, prose and tool output) at 2,000, 30,000 and 100,000 characters, after a warm-up. On GPU every tool runs the full plan: 60, 12 and 5 texts per size, in three rounds, and the table shows the median of the rounds' medians. On CPU, where the full plan takes hours for a single tool, every tool runs the short plan: one text of each kind at 2,000 and 30,000 characters (6 each) and three at 100,000, timed once, and the table shows their median. The short plan's texts are a subset of the full plan's.
 
 ## Limits
 

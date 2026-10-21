@@ -48,7 +48,7 @@ node scripts/ab/harness.mjs latency --dist <nullpii dist> --out nullpii.json
 python scripts/ab/competitor_latency.py --inputs corpus.jsonl --tools <tool> --backend cpu --out tools.json
 ```
 
-The harness builds its corpus from files of this repository at a fixed commit, so run it from a git clone.
+The harness builds its corpus from files of this repository at a fixed commit, so run it from a git clone. `--plan short` (on both `dump-corpus` and `latency`) times one text of each kind at 2k and 30k characters and three at 100k, once: the plan the CPU table uses, since the full plan (three rounds of 77 texts) takes hours per tool on CPU.
 
 ## Bundled datasets
 

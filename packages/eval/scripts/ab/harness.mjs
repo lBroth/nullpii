@@ -5,16 +5,18 @@
 // built `dist/` so a baseline and a candidate are measured by the same
 // code on the same inputs.
 //
-//   node harness.mjs latency     --dist <abs dist> --out <file.json> [--label name]
+//   node harness.mjs latency     --dist <abs dist> --out <file.json> [--label name] [--plan full|short]
 //   node harness.mjs fingerprint --dist <abs dist> --out <file.json>
 //   node harness.mjs cold        --dist <abs dist> --out <file.json>
-//   node harness.mjs dump-corpus --out <file.jsonl>   (inputs for competitor_latency.py)
+//   node harness.mjs dump-corpus --out <file.jsonl> [--plan full|short]   (inputs for competitor_latency.py)
 //   node harness.mjs dump-fingerprint --out <file.jsonl>   (the fingerprint corpus: {id, text})
 //
 // Engine config comes from the AB_CONFIG env var (JSON, merged over
 // `{ backend: 'cpu' }`), so a config-only variant needs no code change.
 // Corpora are built from repository files at a fixed commit, so every
-// run on every branch sees identical inputs.
+// run on every branch sees identical inputs. The `short` latency plan
+// times one text of each kind at 2k and 30k characters and three at 100k,
+// once: enough for slow CPU runs, where the full plan takes hours per tool.
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -28,8 +30,12 @@ const CORPUS_COMMIT = '5130a64';
 const DATASETS = join(REPO, 'packages', 'eval', 'datasets');
 
 const SIZES = [2_000, 30_000, 100_000];
-const CALLS_PER_KIND = { 2000: 10, 30000: 2, 100000: 1 };
-const ROUNDS = 3;
+/** Latency plans: calls per text kind at each size, how many kinds at
+ * most per size, and rounds. */
+const PLANS = {
+  full: { calls: { 2000: 10, 30000: 2, 100000: 1 }, maxKinds: {}, rounds: 3 },
+  short: { calls: { 2000: 1, 30000: 1, 100000: 1 }, maxKinds: { 100000: 3 }, rounds: 1 },
+};
 const WARMUP_SIZES = [2_000, 2_000, 2_000, 30_000];
 const WINDOW_STRIDE = 0.37;
 const COLD_RUNS = 3;
@@ -117,16 +123,17 @@ async function timeCall(np, text) {
 /** Every timed input, in timing order. The latency mode times exactly
  * these and `dump-corpus` exports them, so other tools replay the same
  * texts in the same order. */
-function latencyPlan(kinds) {
+function latencyPlan(kinds, spec) {
   const plan = WARMUP_SIZES.map((size, i) => ({
     phase: 'warmup',
     size,
     text: windowOf(kinds.code, size, 1000 + i),
   }));
-  for (let round = 0; round < ROUNDS; round++) {
+  for (let round = 0; round < spec.rounds; round++) {
     for (const size of SIZES) {
-      for (const [kind, text] of Object.entries(kinds).filter(([, t]) => t.length >= size)) {
-        for (let call = 0; call < CALLS_PER_KIND[size]; call++) {
+      const fit = Object.entries(kinds).filter(([, t]) => t.length >= size);
+      for (const [kind, text] of fit.slice(0, spec.maxKinds[size] ?? fit.length)) {
+        for (let call = 0; call < spec.calls[size]; call++) {
           plan.push({ phase: 'measure', round, size, kind, call, text: windowOf(text, size, round * 100 + call) });
         }
       }
@@ -152,9 +159,16 @@ async function runRound(np, plan, round) {
   return out;
 }
 
+/** The latency plan `--plan` names (default `full`). */
+function planSpec(args) {
+  const spec = PLANS[args.plan ?? 'full'];
+  if (spec === undefined) throw new Error(`unknown --plan ${args.plan}; use ${Object.keys(PLANS).join(' or ')}`);
+  return spec;
+}
+
 function dumpCorpus(args) {
   if (!args.out) throw new Error('dump-corpus needs --out <file.jsonl>');
-  const plan = latencyPlan(buildKinds());
+  const plan = latencyPlan(buildKinds(), planSpec(args));
   writeFileSync(args.out, `${plan.map((s) => JSON.stringify(s)).join('\n')}\n`);
   return { mode: 'dump-corpus', inputs: plan.length };
 }
@@ -168,10 +182,11 @@ function dumpFingerprint(args) {
 
 async function latency(args) {
   const np = await loadEngine(args.dist);
-  const plan = latencyPlan(buildKinds());
+  const spec = planSpec(args);
+  const plan = latencyPlan(buildKinds(), spec);
   await warmup(np, plan);
   const rounds = [];
-  for (let r = 0; r < ROUNDS; r++) rounds.push(await runRound(np, plan, r));
+  for (let r = 0; r < spec.rounds; r++) rounds.push(await runRound(np, plan, r));
   const bySize = {};
   for (const size of SIZES) {
     const p50s = rounds.map((r) => r[size].p50);
@@ -186,7 +201,7 @@ async function latency(args) {
     };
   }
   await np.dispose();
-  return { mode: 'latency', bySize };
+  return { mode: 'latency', plan: args.plan ?? 'full', bySize };
 }
 
 function fingerprintDocs(kinds) {

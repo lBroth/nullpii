@@ -77,11 +77,13 @@ lives at [`examples/claude-code/`](https://github.com/lBroth/nullpii/tree/main/e
 
 ### Standalone via `npx` (no clone)
 
-If you don't want to clone the repo or run Docker, install both
-packages from npm and run the gateway as a one-shot binary:
+If you don't want to clone the repo or run Docker, install the gateway
+from npm with its two peer dependencies, `nullpii` (the detection
+library) and `onnxruntime-node` (the runtime it runs the model with),
+and run it as a one-shot binary:
 
 ```bash
-# install once (onnxruntime-node is nullpii's optional peer: install it too)
+# install once; listing the peers also puts the `nullpii` CLI on your PATH
 npm install -g nullpii onnxruntime-node @lbroth/nullpii-gateway
 nullpii-gateway
 

@@ -21,7 +21,7 @@ On five public datasets chosen before any tool ran on them (`packages/eval/METHO
 - **`PiiVault.sanitize` returns `MaskResult`;** `SanitizeResult` extends it with `modelUnscannedWords`.
 - **CLI:** `nullpii models download` is removed (use `nullpii prefetch --backend --variant`); `nullpii sanitize` no longer takes `--session` or prints a session id.
 - **Gateway:** real values go back only into the tools in `restoreTools` (by default the tools that run on this machine); web and MCP tools keep the placeholders. Numeric environment variables are parsed strictly, with a minimum per variable.
-- **`onnxruntime-node` 1.30 or later** is required (peer `^1.30.0`): the version nullpii is measured with, and the first whose installer carries no known advisory.
+- **`onnxruntime-node` 1.30 or later** is required (peer `^1.30.0`): the version nullpii is measured with, and the first whose installer carries no known advisory. The gateway declares it as a required peer too, so npm installs it with the gateway.
 - **Sidecar API:** `restore` takes `tool` instead of `shell`, and every call on a session needs the session's secret (`x-nullpii-session-secret`), returned once when it is created.
 
 ### Added

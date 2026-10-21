@@ -47,7 +47,7 @@ The sidecar reads the masking policy from `~/.config/nullpii/config.json`, or fr
 
 ## Fails closed
 
-If the sidecar cannot be reached, or the mod has no sidecar token:
+If the sidecar cannot be reached, the mod has no sidecar token, or `sidecar_url` is not an address on this machine:
 
 - a prompt is not sent, and goes back into the prompt box with the reason;
 - a tool call is refused, or its result is withheld;
@@ -72,7 +72,7 @@ If the sidecar cannot be reached, or the mod has no sidecar token:
 
    A token in that shell's environment is inherited by every command Claude runs there. On its own it reads nothing: each sidecar session also has a secret, which the sidecar hands to the mod when the session opens and which the mod keeps in memory only. A command holding just the token cannot read, restore or close your session.
 
-The `sidecar_url` option, or `NULLPII_SIDECAR_URL`, sets the sidecar address (default `http://127.0.0.1:8787`).
+The `sidecar_url` option sets the sidecar address (default `http://127.0.0.1:8787`). It must be `http://` on `127.0.0.1`, `localhost` or `[::1]`, with an optional port and nothing after it. The mod sends its token and every unmasked prompt to that address, and the sidecar answers only on this machine, so any other address is refused and the mod blocks until the option is fixed. The address comes from the option alone, never from the environment: plugin options are read only from your user settings (or your organization's managed settings), while a repository's `.claude/settings.json` can set environment variables. For the token, the option wins over `NULLPII_SIDECAR_TOKEN` when both are set.
 
 ## Limits
 

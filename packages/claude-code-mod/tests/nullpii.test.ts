@@ -4,6 +4,7 @@
 // answered from the `http.fetch` stub. No model, tool or network runs.
 
 import { expect, mock, test } from 'claude-code/testing';
+import { sidecarOrigin } from '../hooks/policy.ts';
 
 const TOKEN = 't'.repeat(64);
 /** The fake sidecar's one session prefix, as nullpii mints them. */
@@ -43,6 +44,8 @@ function fakeSidecar(opts: { down?: boolean; restoreTools?: string[]; liveKeys?:
   );
   let minted = 0;
   const calls: string[] = [];
+  /** `host:port` of every request, wherever it was sent. */
+  const hosts: string[] = [];
   const secretsSent: Array<string | undefined> = [];
   const restoreBodies: string[] = [];
   let next = 0;
@@ -79,8 +82,10 @@ function fakeSidecar(opts: { down?: boolean; restoreTools?: string[]; liveKeys?:
     e: { url: string; init?: { method?: string; body?: string; headers?: Record<string, string> } },
   ) => {
     const method = e.init?.method ?? 'GET';
-    const path = new URL(e.url).pathname;
+    const url = new URL(e.url);
+    const path = url.pathname;
     calls.push(`${method} ${path}`);
+    hosts.push(url.host);
     if (opts.down) return { deny: 'connect ECONNREFUSED 127.0.0.1:8787' };
     if (e.init?.headers?.authorization !== `Bearer ${TOKEN}`)
       return respond(401, { error: 'unauthorized' });
@@ -173,7 +178,7 @@ function fakeSidecar(opts: { down?: boolean; restoreTools?: string[]; liveKeys?:
       ...(shellBody && { shellKeptMasked: kept }),
     });
   };
-  return { handler, calls, restoreBodies, secretsSent, sessions };
+  return { handler, calls, hosts, restoreBodies, secretsSent, sessions };
 }
 
 function stubSession(
@@ -689,3 +694,83 @@ test('a session the sidecar dropped is opened again with a fresh secret', async 
   expect(sidecar.sessions.get('session-1')).toBe('secret-1');
   expect(sidecar.secretsSent.at(-1)).toBe('secret-1');
 });
+
+/** Addresses `sidecar_url` must refuse: the mod would send its token and
+ * every unmasked prompt there. */
+const NOT_SIDECAR_URLS = [
+  'http://203.0.113.7:8787',
+  'https://127.0.0.1:8787',
+  'http://user@127.0.0.1:8787',
+  'http://127.0.0.1:8787/v1',
+  'http://127.0.0.1:8787/?to=elsewhere',
+  'http://127.0.0.1:8787/#frag',
+  'http://127.0.0.1.nip.io:8787',
+  'http://localhost.example.com:8787',
+  'not a url',
+];
+
+test('sidecarOrigin keeps loopback http origins and refuses every other address', () => {
+  expect(sidecarOrigin('http://127.0.0.1:8787')).toBe('http://127.0.0.1:8787');
+  expect(sidecarOrigin('http://127.0.0.1:8787/')).toBe('http://127.0.0.1:8787');
+  expect(sidecarOrigin('http://localhost:9000')).toBe('http://localhost:9000');
+  expect(sidecarOrigin('http://LOCALHOST')).toBe('http://localhost');
+  expect(sidecarOrigin('http://[::1]:8787')).toBe('http://[::1]:8787');
+  expect(sidecarOrigin('http://127.1:8787')).toBe('http://127.0.0.1:8787');
+  for (const url of NOT_SIDECAR_URLS) expect(sidecarOrigin(url), url).toBeUndefined();
+});
+
+for (const url of NOT_SIDECAR_URLS.slice(0, 2)) {
+  test(
+    `sidecar_url ${url} blocks the mod before anything is sent`,
+    { options: { sidecar_url: url } },
+    async ($, on) => {
+      const sidecar = fakeSidecar();
+      stubSession(on, sidecar);
+      const ran: string[] = [];
+      on('prompt.submit', ($, e) => ({ text: e.text }));
+      on('tool.call', ($, e) => {
+        ran.push(e.tool);
+        return { result: 'ok' };
+      });
+      await start($);
+      const prompt = await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+      expect(prompt.drop).toMatch(/sidecar_url is not a local sidecar address/);
+      const call = await $.tool.call({ tool: 'Bash', command: 'ls' });
+      expect(typeof call.deny).toBe('string');
+      expect(ran).toEqual([]);
+      // Not one request, so neither the token nor any text left the mod.
+      expect(sidecar.calls).toEqual([]);
+      const status = await $.command.run({ command: 'pii', args: '' });
+      expect(status.text).toContain('Status: blocking (sidecar_url is not a local sidecar address');
+    },
+  );
+}
+
+test('NULLPII_SIDECAR_URL in the environment does not move the sidecar', async ($, on) => {
+  // A project's settings can set environment variables; they cannot set
+  // plugin options.
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar, {
+    NULLPII_SIDECAR_TOKEN: TOKEN,
+    NULLPII_SIDECAR_URL: 'http://203.0.113.7:8787',
+  });
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  await start($);
+  await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  expect(sidecar.hosts.length).toBeGreaterThan(0);
+  expect(new Set(sidecar.hosts)).toEqual(new Set(['127.0.0.1:8787']));
+});
+
+test(
+  'the sidecar_url option picks the loopback address and port',
+  { options: { sidecar_url: 'http://localhost:9000' } },
+  async ($, on) => {
+    const sidecar = fakeSidecar();
+    stubSession(on, sidecar);
+    on('prompt.submit', ($, e) => ({ text: e.text }));
+    await start($);
+    const prompt = await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+    expect(prompt.drop).toBeUndefined();
+    expect(new Set(sidecar.hosts)).toEqual(new Set(['localhost:9000']));
+  },
+);

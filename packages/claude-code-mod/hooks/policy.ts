@@ -52,6 +52,40 @@ export function optionString(
   return typeof value === 'string' && value !== '' ? value : undefined;
 }
 
+/** The sidecar speaks plain HTTP: it listens on this machine only. */
+const SIDECAR_PROTOCOL = 'http:';
+/** The host names the sidecar answers to: it refuses a request whose
+ * `Host` is any other, so a URL naming another host is never the sidecar.
+ * `URL` writes `127.1`, `0x7f000001` and `LOCALHOST` in these forms. */
+const LOOPBACK_HOSTNAMES: ReadonlySet<string> = new Set(['127.0.0.1', 'localhost', '[::1]']);
+/** The sidecar's routes sit at the root of its address. */
+const ROOT_PATH = '/';
+
+/**
+ * The origin of a sidecar address (`http://127.0.0.1:8787`), or undefined
+ * when `raw` is not one: anything but `http:` on 127.0.0.1, localhost or
+ * [::1] (any port), or an address with a user name, a password, a path, a
+ * query or a fragment. The mod sends its token and the text it masks to
+ * this address, so nothing else is accepted.
+ */
+export function sidecarOrigin(raw: string): string | undefined {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    // Not a URL at all: the caller reports the address as refused.
+    return undefined;
+  }
+  const loopback = url.protocol === SIDECAR_PROTOCOL && LOOPBACK_HOSTNAMES.has(url.hostname);
+  const bare =
+    url.username === '' &&
+    url.password === '' &&
+    url.pathname === ROOT_PATH &&
+    url.search === '' &&
+    url.hash === '';
+  return loopback && bare ? url.origin : undefined;
+}
+
 /** Whether any string in `value` holds a placeholder. */
 export function hasPlaceholder(value: unknown): boolean {
   return PLACEHOLDER.test(JSON.stringify(value) ?? '');

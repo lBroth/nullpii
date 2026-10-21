@@ -23,9 +23,11 @@ import {
   hasPlaceholder,
   optionString,
   restorableArgs,
+  sidecarOrigin,
   touchesPolicyFile,
 } from './policy.ts';
 
+/** The manifest's default for `sidecar_url`, for an option saved empty. */
 const DEFAULT_SIDECAR_URL = 'http://127.0.0.1:8787';
 const SESSIONS_PATH = '/v1/sidecar/sessions/';
 const STATUS_PATH = '/v1/sidecar/status';
@@ -36,6 +38,8 @@ const SESSION_SECRET_HEADER = 'x-nullpii-session-secret';
 const KEY_SUFFIX_RADIX = 36;
 const NO_TOKEN =
   'no sidecar token: set it with /plugin configure (sidecar_token), or NULLPII_SIDECAR_TOKEN';
+const NOT_LOOPBACK =
+  'sidecar_url is not a local sidecar address (http:// on 127.0.0.1, localhost or [::1], with an optional port and nothing after it): fix it with /plugin configure';
 const CONTEXT_WITHHELD =
   "nullpii withheld this tool's result: a hook attached text for Claude that holds personal data, and that text cannot be masked.";
 const POLICY_ASK =
@@ -67,7 +71,9 @@ const SHOWN_MAX = 256;
 const shown = new Map<string, string>();
 
 const counts = emptyCounts();
-let sidecarUrl = DEFAULT_SIDECAR_URL;
+// The sidecar's origin; undefined when `sidecar_url` is not a loopback
+// address, and then nothing is sent anywhere.
+let sidecarUrl: string | undefined;
 let token: string | undefined;
 // The Claude Code session id, and the sidecar key in use: the id, or the
 // id with a suffix once the mod has had to start a new sidecar session.
@@ -87,20 +93,22 @@ class SidecarError extends Error {
   }
 }
 
-/** Send one request to the sidecar at `url` (a full URL), with the
- * session secret when one is given. */
+/** Send one request to the sidecar's route `path`, with the session
+ * secret when one is given. Nothing is sent, the token included, unless
+ * the sidecar's address is a loopback one. */
 async function request(
   $,
   method: string,
-  url: string,
+  path: string,
   body?: unknown,
   secret?: string,
 ): Promise<unknown> {
+  if (sidecarUrl === undefined) throw new Error(NOT_LOOPBACK);
   if (token === undefined) throw new Error(NO_TOKEN);
   // A JSON content type with no body is a 400, so PUT and DELETE send neither.
   const json = body === undefined ? {} : { 'content-type': 'application/json' };
   const owner = secret === undefined ? {} : { [SESSION_SECRET_HEADER]: secret };
-  const res = await $.http.fetch(url, {
+  const res = await $.http.fetch(sidecarUrl + path, {
     method,
     headers: { authorization: `Bearer ${token}`, ...json, ...owner },
     ...(body !== undefined && { body: JSON.stringify(body) }),
@@ -114,7 +122,7 @@ async function sidecar($, method: string, path: string, body?: unknown): Promise
   return request(
     $,
     method,
-    sidecarUrl + SESSIONS_PATH + encodeURIComponent(sessionKey) + path,
+    SESSIONS_PATH + encodeURIComponent(sessionKey) + path,
     body,
     sessionSecret,
   );
@@ -140,7 +148,7 @@ async function openSession($): Promise<void> {
     await putSession($);
   }
   problem = undefined;
-  const status = (await request($, 'GET', sidecarUrl + STATUS_PATH)) as { policy?: Policy };
+  const status = (await request($, 'GET', STATUS_PATH)) as { policy?: Policy };
   policy = status.policy;
 }
 
@@ -185,12 +193,14 @@ export function register(on, options) {
       name: 'pii',
       description: 'Show what nullpii masked in this session',
     });
+    // The address comes from the plugin option alone: options are read from
+    // user and managed settings only, while a project's settings can set
+    // environment variables, so an address taken from the environment could
+    // send the token and every unmasked prompt where a repository says.
+    sidecarUrl = sidecarOrigin(optionString(options, 'sidecar_url') ?? DEFAULT_SIDECAR_URL);
     // The token comes from the plugin's sensitive option (secure storage,
-    // not exported to commands), else from the environment.
-    sidecarUrl =
-      (await $.env.get('NULLPII_SIDECAR_URL')) ??
-      optionString(options, 'sidecar_url') ??
-      DEFAULT_SIDECAR_URL;
+    // not exported to commands), else from the environment. It only ever
+    // goes to the loopback address above.
     token = optionString(options, 'sidecar_token') ?? (await $.env.get('NULLPII_SIDECAR_TOKEN'));
     sessionBase = await $.session.id();
     sessionKey = sessionBase;

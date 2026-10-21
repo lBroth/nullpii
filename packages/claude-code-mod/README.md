@@ -8,7 +8,7 @@ A band above the prompt shows what was masked in the session, by type:
 nullpii · 12 masked (person 5 · email 3 · secret 2 · phone 2) · 4 restored to local tools
 ```
 
-Status: preview. Tested with Claude Code 2.1.303.
+Status: preview. Tested with Claude Code 2.1.305, the version CI runs its tests with.
 
 ## What it does
 
@@ -60,12 +60,12 @@ Claude is told only that the call was refused or its result withheld. The reason
 
 Mods load in Claude Code 2.1.287 or later.
 
-1. In a terminal of its own, start a gateway with the sidecar API on (a version with session secrets, whose `restore` takes `tool`):
+1. In a terminal of its own, start a 0.5 gateway with the sidecar API on. The sidecar API changed in 0.5 (session secrets, `restore` by tool name) and this mod speaks only that one, so the command pins the gateway, and the `nullpii` it runs, to 0.5:
 
    ```bash
    export NULLPII_SIDECAR_TOKEN=$(openssl rand -hex 32)
    echo "$NULLPII_SIDECAR_TOKEN"   # you give this to the mod next
-   npx -p nullpii -p onnxruntime-node -p @lbroth/nullpii-gateway nullpii-gateway
+   npx -p nullpii@0.5 -p onnxruntime-node -p @lbroth/nullpii-gateway@0.5 nullpii-gateway
    ```
 
 2. Install the mod. At the prompt of a Claude Code session in a terminal:

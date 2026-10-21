@@ -103,13 +103,15 @@ export interface ChatCompletionResponse {
 }
 
 /** `tool_calls` entry of a streamed delta. The first delta of a call
- * carries `id`, `type` and `function.name`; the following ones carry
- * `index` and a shard of `function.arguments`. */
+ * carries `id`, `type` and the tool's `name`; the following ones carry
+ * `index` and a shard of `function.arguments`, or of `custom.input` for a
+ * free-form (`type: 'custom'`) tool. */
 export interface ChatToolCallDelta {
   index: number;
   id?: string;
   type?: string;
   function?: ChatFunctionCall;
+  custom?: ChatCustomCall;
   [k: string]: unknown;
 }
 

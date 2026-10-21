@@ -191,7 +191,11 @@ interface StreamedChoice {
   index: number;
   delta?: {
     content?: string | null;
-    tool_calls?: Array<{ index: number; function?: { name?: string; arguments?: string } }>;
+    tool_calls?: Array<{
+      index: number;
+      function?: { name?: string; arguments?: string };
+      custom?: { name?: string; input?: string };
+    }>;
   };
 }
 
@@ -199,6 +203,8 @@ interface Reassembled {
   readonly content: Map<number, string>;
   /** Keyed `${choiceIndex}:${toolCallIndex}`. */
   readonly args: Map<string, string>;
+  /** Custom tool-call input, keyed as `args`. */
+  readonly inputs: Map<string, string>;
   readonly names: Map<string, string>;
 }
 
@@ -209,14 +215,25 @@ function addChoice(out: Reassembled, choice: StreamedChoice): void {
   }
   for (const call of delta.tool_calls ?? []) {
     const key = `${choice.index}:${call.index}`;
-    if (call.function?.name !== undefined) out.names.set(key, call.function.name);
-    out.args.set(key, (out.args.get(key) ?? '') + (call.function?.arguments ?? ''));
+    const name = call.function?.name ?? call.custom?.name;
+    if (name !== undefined) out.names.set(key, name);
+    if (call.function !== undefined) {
+      out.args.set(key, (out.args.get(key) ?? '') + (call.function.arguments ?? ''));
+    }
+    if (call.custom !== undefined) {
+      out.inputs.set(key, (out.inputs.get(key) ?? '') + (call.custom.input ?? ''));
+    }
   }
 }
 
 /** Accumulate a relayed stream the way the OpenAI SDKs do. */
 function reassemble(body: string): Reassembled {
-  const out: Reassembled = { content: new Map(), args: new Map(), names: new Map() };
+  const out: Reassembled = {
+    content: new Map(),
+    args: new Map(),
+    inputs: new Map(),
+    names: new Map(),
+  };
   for (const frame of body.split('\n\n')) {
     if (!frame.startsWith('data: ') || frame === 'data: [DONE]') continue;
     const chunk = JSON.parse(frame.slice('data: '.length)) as { choices: StreamedChoice[] };
@@ -743,6 +760,76 @@ describe('openai · SSE relay', () => {
     const out = reassemble(body);
     expect(out.content.get(0)).toBe(`A:${PERSON} end`);
     expect(out.content.get(1)).toBe(`B:${EMAIL} end`);
+  });
+
+  it('restores streamed tool calls, custom ones included, exactly as the JSON reply', async () => {
+    const { np, sessionId, bake } = harness();
+    const ph = bake(EMAIL, 'private_email');
+    const calls = [
+      { id: 'call_0', type: 'custom', custom: { name: 'note', input: `Mail ${ph} today` } },
+      { id: 'call_1', type: 'custom', custom: { name: 'web_lookup', input: `find ${ph}` } },
+      { id: 'call_2', type: 'custom', custom: { name: 'shell', input: `echo '${ph}'` } },
+      {
+        id: 'call_3',
+        type: 'function',
+        function: { name: 'send', arguments: JSON.stringify({ to: ph }) },
+      },
+    ];
+    const json = restoreChatResponse(
+      np,
+      completion({ role: 'assistant', content: null, tool_calls: structuredClone(calls) }),
+      sessionId,
+      TEST_RESTORE_TOOLS,
+    );
+    // Each call streams as a first delta (id and name), then its text cut
+    // inside the placeholder.
+    const deltas = calls.flatMap((call, index) => {
+      const kind = call.custom !== undefined ? 'custom' : 'function';
+      const field = kind === 'custom' ? 'input' : 'arguments';
+      const text = call.custom?.input ?? call.function?.arguments ?? '';
+      const cut = text.indexOf('{{PII_') + 8;
+      const name = call.custom?.name ?? call.function?.name;
+      return [
+        { index, id: call.id, type: call.type, [kind]: { name, [field]: '' } },
+        { index, [kind]: { [field]: text.slice(0, cut) } },
+        { index, [kind]: { [field]: text.slice(cut) } },
+      ];
+    });
+
+    const { body, counters } = await relay(np, sessionId, [
+      ...deltas.map((call) => chunkFrame([{ index: 0, delta: { tool_calls: [call] } }])),
+      chunkFrame([{ index: 0, delta: {}, finish_reason: 'tool_calls' }]),
+      DONE_FRAME,
+    ]);
+
+    const jsonCalls = json.body.choices[0]?.message?.tool_calls ?? [];
+    expect(jsonCalls[0]?.custom?.input).toBe(`Mail ${EMAIL} today`);
+    // Not in restoreTools: keeps the placeholder.
+    expect(jsonCalls[1]?.custom?.input).toBe(`find ${ph}`);
+    expect(JSON.parse(jsonCalls[3]?.function?.arguments ?? '')).toEqual({ to: EMAIL });
+    const out = reassemble(body);
+    expect([0, 1, 2].map((i) => out.inputs.get(`0:${i}`))).toEqual(
+      [0, 1, 2].map((i) => jsonCalls[i]?.custom?.input),
+    );
+    expect(out.args.get('0:3')).toBe(jsonCalls[3]?.function?.arguments);
+    expect(out.names.get('0:0')).toBe('note');
+    expect(counters.replacements).toBe(json.replacements);
+    expect(counters.heldForToolPlaceholders).toBe(json.heldForToolPlaceholders);
+    expect(counters.heldForToolPlaceholders).toBe(1);
+  });
+
+  it('keeps streamed custom input masked when the call never named its tool', async () => {
+    const { np, sessionId, bake } = harness();
+    const ph = bake(EMAIL, 'private_email');
+
+    const { body, counters } = await relay(np, sessionId, [
+      chunkFrame([{ index: 0, delta: { tool_calls: [{ index: 0, custom: { input: ph } }] } }]),
+      chunkFrame([{ index: 0, delta: {}, finish_reason: 'tool_calls' }]),
+      DONE_FRAME,
+    ]);
+
+    expect(reassemble(body).inputs.get('0:0')).toBe(ph);
+    expect(counters.heldForToolPlaceholders).toBe(1);
   });
 
   it('flushes held arguments in a synthesised chunk before [DONE] when no finish_reason arrives', async () => {

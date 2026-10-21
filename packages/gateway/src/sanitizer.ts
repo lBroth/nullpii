@@ -95,9 +95,14 @@ const UNSCANNABLE_SOURCE_TYPES: ReadonlySet<string> = new Set(['base64', 'url', 
  * input and the restore path never touches thinking deltas. */
 const OPAQUE_BLOCK_TYPES: ReadonlySet<string> = new Set(['thinking', 'redacted_thinking']);
 
+/** A call to a tool the client runs. Only its input can get real values
+ * back; a server or MCP tool call (`server_tool_use`, `mcp_tool_use`) is
+ * run by the upstream, off this machine. */
+const CLIENT_TOOL_CALL_TYPE = 'tool_use';
+
 /** Blocks whose `input` is arbitrary tool-argument JSON. */
 const TOOL_CALL_TYPES: ReadonlySet<string> = new Set([
-  'tool_use',
+  CLIENT_TOOL_CALL_TYPE,
   'server_tool_use',
   'mcp_tool_use',
 ]);
@@ -579,6 +584,17 @@ export function toolMayRestore(name: unknown, acc: RestoreAccumulator): boolean 
   return typeof name === 'string' && acc.restoreTools.has(name);
 }
 
+/** Whether an Anthropic content block is a tool call whose input may
+ * receive real values: a client `tool_use` of a tool in `restoreTools`.
+ * Server and MCP tool calls never do, whatever their name: the upstream
+ * runs them. Shared by the JSON restore and the stream relay. */
+export function toolCallMayRestore(
+  block: Readonly<Record<string, unknown>>,
+  acc: RestoreAccumulator,
+): boolean {
+  return block.type === CLIENT_TOOL_CALL_TYPE && toolMayRestore(block.name, acc);
+}
+
 /** Keep a tool input's placeholders as they are, counting them. */
 export function holdForTool(text: string, acc: RestoreAccumulator): string {
   acc.heldForTool += countPlaceholders(text);
@@ -587,10 +603,12 @@ export function holdForTool(text: string, acc: RestoreAccumulator): string {
 
 /**
  * Restore an Anthropic response body in place against `sessionId`: every
- * `text` block, and the input of each tool call to a tool in
- * `restoreTools` (a shell tool's `command` by the shell rule). A tool
- * outside the list keeps its placeholders, counted as held. Returns the
- * body plus counts; the caller logs the counts, never the values.
+ * `text` block, and the input of each client tool call (`tool_use`) to a
+ * tool in `restoreTools` (a shell tool's `command` by the shell rule). A
+ * tool outside the list, and every server or MCP tool call
+ * (`server_tool_use`, `mcp_tool_use`: the upstream runs them), keeps its
+ * placeholders, counted as held. Returns the body plus counts; the caller
+ * logs the counts, never the values.
  */
 export function restoreResponse(
   np: NullPii,
@@ -603,8 +621,8 @@ export function restoreResponse(
     if (block.type === 'text' && typeof block.text === 'string') {
       return { ...block, text: restoreString(np, block.text, sessionId, acc) };
     }
-    if (block.type === 'tool_use' && block.input !== undefined) {
-      if (!toolMayRestore(block.name, acc)) {
+    if (TOOL_CALL_TYPES.has(block.type) && block.input !== undefined) {
+      if (!toolCallMayRestore(block, acc)) {
         holdForTool(JSON.stringify(block.input), acc);
         return block;
       }

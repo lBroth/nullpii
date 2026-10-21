@@ -332,9 +332,10 @@ async function sanitizeSearchLocation(
 
 /**
  * Restore placeholders in a non-streaming Chat Completions response, in
- * place: each choice's `content`, `refusal`, tool-call `arguments`,
- * custom tool-call `input` and deprecated `function_call`. Returns counts
- * only, never values.
+ * place: each choice's `content` and `refusal`, and the tool-call
+ * `arguments`, custom tool-call `input` and deprecated `function_call` of
+ * a tool in `restoreTools` (any other tool keeps its placeholders,
+ * counted as held). Returns counts only, never values.
  *
  * @param np - the engine whose vault holds `sessionId`.
  * @param body - the parsed upstream response; mutated and returned.
@@ -389,21 +390,14 @@ function restoreToolCall(
   sessionId: string,
   acc: RestoreAccumulator,
 ): ChatToolCall {
-  const name = isRecord(call.function) ? call.function.name : call.custom?.name;
-  if (!toolMayRestore(name, acc)) {
-    holdForTool(JSON.stringify(call), acc);
-    return call;
-  }
   const out: ChatToolCall = { ...call };
   if (isRecord(call.function)) {
     out.function = restoreFunctionCall(np, call.function, sessionId, acc);
   }
-  if (isRecord(call.custom) && typeof call.custom.input === 'string') {
-    // A custom shell tool's whole input is the command.
-    const input = isShellTool(call.custom.name)
-      ? restoreShellText(np, call.custom.input, sessionId, acc)
-      : restoreString(np, call.custom.input, sessionId, acc);
-    out.custom = { ...call.custom, input };
+  const custom = call.custom;
+  if (isRecord(custom) && typeof custom.input === 'string') {
+    const input = restoreCustomInput(np, custom.name, custom.input, sessionId, acc);
+    out.custom = { ...custom, input };
   }
   return out;
 }
@@ -415,10 +409,43 @@ function restoreFunctionCall(
   acc: RestoreAccumulator,
 ): ChatFunctionCall {
   if (typeof fn.arguments !== 'string') return fn;
-  if (!toolMayRestore(fn.name, acc)) {
-    holdForTool(fn.arguments, acc);
-    return fn;
-  }
-  const runsInShell = isShellTool(fn.name);
-  return { ...fn, arguments: restoreJsonText(np, fn.arguments, sessionId, acc, runsInShell) };
+  return { ...fn, arguments: restoreFunctionArguments(np, fn.name, fn.arguments, sessionId, acc) };
+}
+
+/**
+ * Restore a function call's `arguments` (a JSON document held as a
+ * string) for the tool `name`: real values only when the tool is in
+ * `restoreTools`, with the shell rule for a shell tool's `command`;
+ * otherwise every placeholder is kept and counted as held. Shared by the
+ * JSON restore and the stream relay, so both decide the same way.
+ */
+export function restoreFunctionArguments(
+  np: NullPii,
+  name: unknown,
+  args: string,
+  sessionId: string,
+  acc: RestoreAccumulator,
+): string {
+  if (!toolMayRestore(name, acc)) return holdForTool(args, acc);
+  return restoreJsonText(np, args, sessionId, acc, isShellTool(name));
+}
+
+/**
+ * Restore a custom (free-form) tool call's `input` for the tool `name`:
+ * real values only when the tool is in `restoreTools`, and with the shell
+ * rule when it is a shell tool, whose whole input is the command;
+ * otherwise every placeholder is kept and counted as held. Shared by the
+ * JSON restore and the stream relay.
+ */
+export function restoreCustomInput(
+  np: NullPii,
+  name: unknown,
+  input: string,
+  sessionId: string,
+  acc: RestoreAccumulator,
+): string {
+  if (!toolMayRestore(name, acc)) return holdForTool(input, acc);
+  return isShellTool(name)
+    ? restoreShellText(np, input, sessionId, acc)
+    : restoreString(np, input, sessionId, acc);
 }

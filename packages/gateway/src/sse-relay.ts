@@ -8,7 +8,7 @@ import {
   newRestoreAccumulator,
   restoreJsonText,
   tallyRestore,
-  toolMayRestore,
+  toolCallMayRestore,
 } from './sanitizer.js';
 import { isShellTool } from './shell-restore.js';
 // The gateway hands `NullPii` directly to `RestoreStream` — both
@@ -60,8 +60,10 @@ export interface SseRelayOptions {
   readonly restoreTools?: ReadonlySet<string>;
 }
 
-/** How a tool call's streamed input is restored at its block's stop. */
-type ToolRestore = 'shell' | 'hold';
+/** How a tool call's streamed input is restored at its block's stop: as
+ * JSON, or with the shell rule for a shell tool's `command`. A block with
+ * no entry keeps its placeholders. */
+type ToolRestore = 'json' | 'shell';
 
 const FRAME_SEPARATOR = '\n\n';
 
@@ -100,6 +102,12 @@ const FRAME_SEPARATOR = '\n\n';
  *   sit inside JSON string values where naive substring restore can
  *   re-emit a partial-JSON shard mid-token. Tool inputs are short
  *   relative to text bodies, so the UX cost is negligible.
+ * - Which tool input gets real values back is decided from the block's
+ *   `content_block_start`, as `restoreResponse` decides for a JSON reply:
+ *   only a client `tool_use` of a tool in `restoreTools`. A server or MCP
+ *   tool call (`server_tool_use`, `mcp_tool_use`), a tool outside the
+ *   list, and input whose `content_block_start` was never seen keep their
+ *   placeholders, counted as held (fail closed).
  * - A `Bash` tool call (named in its `content_block_start`) → its
  *   `command` gets the shell-aware restore (`shell-restore.ts`): a
  *   placeholder is put back only when its value is safe in the quoting
@@ -112,8 +120,8 @@ export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCou
   const decoder = new TextDecoder();
   const restorers = new Map<number, RestoreStream>();
   const jsonBuffers = new Map<number, string>();
-  /** Content blocks whose tool input is not restored as plain JSON: a
-   * shell tool's, or a tool's outside `restoreTools`. */
+  /** Content blocks whose tool input may get real values back, and how.
+   * Input of any other block keeps its placeholders. */
   const toolBlocks = new Map<number, ToolRestore>();
   const acc = newRestoreAccumulator(restoreTools);
 
@@ -127,15 +135,15 @@ export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCou
   }
 
   function restoreJsonBuffer(index: number): string | null {
+    const mode = toolBlocks.get(index);
+    toolBlocks.delete(index);
     const buf = jsonBuffers.get(index);
     if (buf === undefined) return null;
     jsonBuffers.delete(index);
     // Empty buffer = upstream stop with no shards. Restoring '' is a
     // no-op but the explicit short-circuit makes the intent obvious.
     if (buf.length === 0) return '';
-    const mode = toolBlocks.get(index);
-    toolBlocks.delete(index);
-    if (mode === 'hold') return holdForTool(buf, acc);
+    if (mode === undefined) return holdForTool(buf, acc);
     return restoreJsonText(np, buf, sessionId, acc, mode === 'shell');
   }
 
@@ -282,18 +290,20 @@ function processFrame(
   return [`${frame}${FRAME_SEPARATOR}`];
 }
 
-/** Remember how each tool call's input is restored at
- * `content_block_stop`: kept masked for a tool outside `restoreTools`,
- * shell-aware for a shell tool. */
+/** Remember, at a block's `content_block_start`, whether its tool input
+ * gets real values back at `content_block_stop` (`toolCallMayRestore`),
+ * and whether with the shell rule. Any other block, server and MCP tool
+ * calls included, gets no entry and keeps its placeholders. */
 function noteToolBlock(
   data: Record<string, unknown>,
   toolBlocks: Map<number, ToolRestore>,
   acc: RestoreAccumulator,
 ): void {
   const block = data.content_block;
-  if (typeof data.index !== 'number' || !isRecord(block) || block.type !== 'tool_use') return;
-  if (!toolMayRestore(block.name, acc)) toolBlocks.set(data.index, 'hold');
-  else if (isShellTool(block.name)) toolBlocks.set(data.index, 'shell');
+  if (typeof data.index !== 'number' || !isRecord(block)) return;
+  toolBlocks.delete(data.index);
+  if (!toolCallMayRestore(block, acc)) return;
+  toolBlocks.set(data.index, isShellTool(block.name) ? 'shell' : 'json');
 }
 
 interface ParsedFrame {

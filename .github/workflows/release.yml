@@ -5,7 +5,9 @@ name: release
 # checks that the tagged commit is on main and that the library, the
 # gateway and the Claude Code mod all carry the tag's version, then
 # publishes both npm packages with provenance and creates the GitHub
-# Release. The same tag builds the gateway image (gateway-docker.yml).
+# Release, then builds and pushes the gateway image (gateway-docker.yml).
+# A pre-release tag (`v0.6.0-rc.1`) publishes to npm under the `next`
+# dist-tag, as a GitHub pre-release, and moves no `latest` image tag.
 #
 # Publishing uses npm trusted publishing (OIDC): no npm token exists in
 # the repository. One-time configuration:
@@ -68,7 +70,16 @@ jobs:
             fi
           done
           exit "$status"
+      # The default model must name a Hugging Face commit, not a branch, so
+      # the repository cannot change what a release downloads.
+      - name: Default model is pinned to a commit
+        run: |
+          grep -Eq "^export const DEFAULT_MODEL_REVISION = '[0-9a-f]{40}';" src/defaults.ts \
+            || { echo "src/defaults.ts: DEFAULT_MODEL_REVISION is not a 40-hex commit"; exit 1; }
+      # The tests mock ONNX Runtime: its CUDA download is not needed.
       - run: npm ci
+        env:
+          ONNXRUNTIME_NODE_INSTALL: skip
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
@@ -102,7 +113,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run build
       # The verify job checked that this version is the tag's.
-      - run: npm publish --provenance --access public
+      - run: npm publish --provenance --access public ${{ contains(github.ref_name, '-') && '--tag next' || '' }}
 
   publish-gateway:
     # Publishes `@lbroth/nullpii-gateway` from packages/gateway/, after
@@ -142,7 +153,7 @@ jobs:
       - name: npm publish
         if: steps.check.outputs.already-published != 'true'
         working-directory: packages/gateway
-        run: npm publish --provenance --access public
+        run: npm publish --provenance --access public ${{ contains(github.ref_name, '-') && '--tag next' || '' }}
 
   # The model is not published from here: the maintainers upload it to
   # Hugging Face (lBroth/nullpii) themselves, from training artifacts that
@@ -175,4 +186,12 @@ jobs:
           files: bom.json
           generate_release_notes: false
           draft: false
-          prerelease: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+
+  image:
+    name: gateway image
+    needs: [publish, publish-gateway]
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/gateway-docker.yml

@@ -26,7 +26,10 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
+      # The tests mock ONNX Runtime: its CUDA download is not needed.
       - run: npm ci
+        env:
+          ONNXRUNTIME_NODE_INSTALL: skip
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test

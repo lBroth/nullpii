@@ -9,7 +9,8 @@ name: gateway-docker
 # image.
 #
 # Triggers and the image tags they push:
-#   - a release tag `vX.Y.Z` (the tag release.yml publishes npm from) →
+#   - a release, called by release.yml once both npm packages are
+#     published (so an image never ships for a version npm refused) →
 #     `X.Y.Z`, `X.Y` and `latest`; a pre-release tag such as
 #     `v0.6.0-rc.1` → only `0.6.0-rc.1`
 #   - a push to `main` touching what goes into the image → `edge`
@@ -37,9 +38,7 @@ on:
       - 'NOTICE'
       - '.dockerignore'
       - '.github/workflows/gateway-docker.yml'
-    # Path filters are not applied to tag pushes: every release tag builds.
-    tags:
-      - 'v*.*.*'
+  workflow_call:
   workflow_dispatch:
 
 permissions:
@@ -67,7 +66,10 @@ jobs:
         with:
           node-version: '24'
           cache: npm
+      # The tests mock ONNX Runtime: its CUDA download is not needed.
       - run: npm ci
+        env:
+          ONNXRUNTIME_NODE_INSTALL: skip
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test

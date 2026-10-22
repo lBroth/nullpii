@@ -241,6 +241,9 @@ const COMMAND_OPTIONS: ReadonlyMap<string, RegExp> = new Map([
   // Writing where an option points chooses what is overwritten.
   ['sort', /^--compress-program|^-[A-Za-z]*o|^--output/],
   ['base64', /^-[A-Za-z]*o|^--output/],
+  // `printf -v NAME` assigns a shell variable; `file -C` writes a file.
+  ['printf', /^-v/],
+  ['file', /^-[A-Za-z]*C|^--compile/],
   ['fzf', /^--(?:preview|bind)/],
 ]);
 
@@ -481,7 +484,6 @@ const NETWORK_IN_CODE =
  * in a command that runs only these is data too. */
 const DATA_PROGRAMS: ReadonlySet<string> = new Set([
   'cat',
-  'tee',
   'echo',
   'printf',
   'mkdir',

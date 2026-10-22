@@ -2,7 +2,7 @@
 
 What the nullpii detection model was trained on, under which licence, and what was kept out. Read this before you approve the model for use in your organisation.
 
-The model is a fine-tune of a GLiNER span model, exported to ONNX. nullpii downloads it from the Hugging Face Hub on first use, at a pinned revision whose files it checks by SHA-256; it is not part of the npm package.
+The model is a fine-tune of a GLiNER span model, exported to ONNX. nullpii downloads it from the Hugging Face Hub on first use, and checks every file it downloads against a SHA-256 pinned in the library; it is not part of the npm package.
 
 ## Base model
 

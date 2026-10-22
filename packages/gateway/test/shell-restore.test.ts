@@ -676,6 +676,9 @@ describe('shell restore · v3 hardening', () => {
     (p: string) => `sort a.txt -o ${p}`,
     (p: string) => `git diff --output=${p}`,
     (p: string) => `uniq a.txt ${p}`,
+    (p: string) => `printf -v ${p} '%s' x`,
+    (p: string) => `printf -v PATH '%s' ${p}`,
+    (p: string) => `file -C -m ${p}`,
     (p: string) => `tee notes.md <<'EOF'\n${p}\nEOF`,
     (p: string) => `echo "$(${':;'.repeat(70)})" B=${p}`,
   ])('restores nothing where a listed program would run or write by an option: %#', (build) => {

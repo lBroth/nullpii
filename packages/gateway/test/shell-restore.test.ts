@@ -1309,6 +1309,24 @@ describe('shell restore · round-10 layout and redirections', () => {
     expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(expected);
   });
 
+  it.each([
+    [(p: string) => `cat <'${p} x'`, 0],
+    [(p: string) => `cat 0<"${p} x"`, 0],
+    [(p: string) => `grep probe a<'${p} x'`, 0],
+    [(p: string) => `grep probe <${p}' x'`, 0],
+    [(p: string) => `grep probe ${p}2>/dev/null`, 0],
+    [(p: string) => `grep probe ${p}10<notes.md`, 0],
+    [(p: string) => `grep probe ${p} 2>/dev/null`, 1],
+  ])(
+    'holds a redirection target with a quoted blank, and a value before digits and a redirection: %#',
+    (build, expected) => {
+      const { np, vault, sessionId } = harness();
+      const digits = bake(vault, sessionId, '1', 'secret');
+
+      expect(restored(restoreShellCommand(np, build(digits), sessionId))).toBe(expected);
+    },
+  );
+
   it('restores into both bodies of two heredocs opened on one line', () => {
     const { np, vault, sessionId } = harness();
     const first = bake(vault, sessionId, FULL_NAME, 'private_person');

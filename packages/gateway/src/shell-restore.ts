@@ -58,8 +58,9 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  *
  * The command is read once, in time linear in its length, whatever the
  * number of placeholders; a command longer than `MAX_COMMAND_CHARS`, with
- * a simple command past the read window (`MAX_WORD_SCAN` characters or
- * `MAX_WORDS` words, heredoc bodies not counted), or with a heredoc body
+ * a simple command past the read window (more than `MAX_WORD_SCAN`
+ * characters, or `MAX_WORDS` words or more, heredoc bodies not counted),
+ * or with a heredoc body
  * whose closing line cannot be found keeps every placeholder, and one whose
  * quoting is left open loses the heredoc exception. `<<` counts only in shell code, never
  * inside quotes. A `command` given as an argv array
@@ -808,9 +809,11 @@ const LEADING_TABS = /^\t+/;
 /** The start of a word that a following `<` or `>` continues: nothing,
  * a descriptor number, or the operator so far (`2>`, `>`, `<`). */
 const REDIRECTION_HEAD = /^\d*[<>]*$/;
-/** A redirection word (`>`, `2>>log`, `&>`, `<in`); group 1 is empty
- * when the operator stands alone and its target is the next word. */
-const REDIRECTION = /^(?:\d+|\{[A-Za-z_]\w*\})?(?:&>>?[|!]?|>>?[|!]|>&|<&|<<<|<<-?|<>|>>?|<)(\S*)$/;
+/** A redirection word (`>`, `2>>log`, `&>`, `<in`, `<'a b'` with its
+ * quotes removed); group 1 is empty when the operator stands alone and
+ * its target is the next word. */
+const REDIRECTION =
+  /^(?:\d+|\{[A-Za-z_]\w*\})?(?:&>>?[|!]?|>>?[|!]|>&|<&|<<<|<<-?|<>|>>?|<)([\s\S]*)$/;
 /** A version or `.exe` suffix on a program name (`python3.12`, `pwsh.exe`). */
 const PROGRAM_SUFFIX = /(?:[\d.]+|\.exe)$/;
 
@@ -1789,13 +1792,16 @@ export function restoreShellCommand(
   return restoreEach(np, command, sessionId, () => false);
 }
 
-/** True when the placeholder at `at` is followed directly by `<` or `>`. */
+/** True when the placeholder at `at` is followed by `<` or `>`, directly
+ * or after digits: a value of digits would join them into the descriptor
+ * number (`{{…}}2>err.log` with `1` is `12>err.log` in bash). */
 function gluedToRedirection(command: string, at: number): boolean {
   const placeholder = new RegExp(PLACEHOLDER_REGEX.source, 'y');
   placeholder.lastIndex = at;
   if (!placeholder.test(command)) return false;
-  const next = command[placeholder.lastIndex];
-  return next === '<' || next === '>';
+  const operator = /\d*[<>]/y;
+  operator.lastIndex = placeholder.lastIndex;
+  return operator.test(command);
 }
 
 /** Where restoring one placeholder changed a command's length: at `at`

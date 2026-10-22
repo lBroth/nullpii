@@ -1210,6 +1210,47 @@ describe('shell restore · round-11 heredocs inside substitutions', () => {
     expect(r.command).toBe(commitWith(`fix #123 (see) ${FULL_NAME}`));
   });
 
+  it.each([';', '|', '&', '<', '>'])(
+    'keeps every value where `%s#` and a blank-led `#` read differently in bash 3.2',
+    (op) => {
+      const { np, vault, sessionId } = harness();
+      const word = bake(vault, sessionId, EMAIL, 'private_email');
+      const command = `git commit -m $(cat <<'EOF'\nx #(\na${op}#)\nThanks ${word}\nEOF\n)`;
+
+      expect(restored(restoreShellCommand(np, command, sessionId))).toBe(0);
+    },
+  );
+
+  it.each(['EOF word (x)', 'EOFx)', 'EOF) more'])(
+    'keeps every value after a body line that bash 5.2 reads as the end: %j',
+    (line) => {
+      const { np, vault, sessionId } = harness();
+      const word = bake(vault, sessionId, EMAIL, 'private_email');
+      const command = `git commit -m "$(cat <<'EOF'\nfix\n${line}\nby ${word}\nEOF\n)"`;
+
+      expect(restored(restoreShellCommand(np, command, sessionId))).toBe(0);
+    },
+  );
+
+  it('keeps every value in a `$(…)` that holds a `case`', () => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, EMAIL, 'private_email');
+    const command = `git commit -m $(case a in a)\ncat <<'EOF'\n${word}\nEOF\n;; esac)`;
+
+    expect(restored(restoreShellCommand(np, command, sessionId))).toBe(0);
+  });
+
+  it('judges many substitutions with heredocs in linear time', () => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, EMAIL, 'private_email');
+    const unit = "$(cat <<'E'\n #(\nE\n)\n";
+    const command = `ls ${word}\n${unit.repeat(Math.floor((MAX_COMMAND_CHARS - 64) / unit.length))}`;
+
+    const started = performance.now();
+    restoreShellCommand(np, command, sessionId);
+    expect(performance.now() - started).toBeLessThan(MAX_LONG_COMMAND_MS);
+  });
+
   it('still restores a commit message with an issue reference', () => {
     const { np, vault, sessionId } = harness();
     const name = bake(vault, sessionId, FULL_NAME, 'private_person');

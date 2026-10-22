@@ -128,10 +128,10 @@ const DATA_BODY_SAFE: Readonly<Record<DataBodyContext, RegExp>> = {
   heredoc: /^[^\n\u2028\u2029]*$/u,
   'heredoc-expanding': /^[^$`\\\n\u2028\u2029]*$/u,
   // Inside `$(…)` the body is not opaque to every shell: bash 3.2 (the
-  // macOS `/bin/bash`) scans it for quotes, parentheses, backticks and
-  // escapes (and, unquoted, comments) to find the end of the substitution.
+  // macOS `/bin/bash`) scans it for quotes, parentheses, backticks,
+  // escapes and some `#` comments to find the end of the substitution.
   // So, whichever the delimiter, none of those characters; a value whose
-  // word-start `#` comments out a parenthesis is caught when the restored
+  // `#` comments out a parenthesis or a quote is caught when the restored
   // command is judged again, since the bash 3.2 readings then disagree.
   'heredoc-in-substitution': /^[^$`\\()'"\n\u2028\u2029]*$/u,
 };
@@ -809,9 +809,8 @@ const COMMENT_PRECEDERS: ReadonlySet<string> = new Set([
 
 const ENV_ASSIGNMENT = /^[A-Za-z_]\w*=/;
 const LEADING_TABS = /^\t+/;
-/** After a heredoc delimiter: blanks, then the `)` that ends `$(…)`. */
-const DELIMITER_PAREN = /^[ \t]*\)/;
 const WHITESPACE = /\s/;
+const CASE_KEYWORD = 'case';
 /** A redirection word (`>`, `2>>log`, `&>`, `<in`); group 1 is empty
  * when the operator stands alone and its target is the next word. */
 const REDIRECTION = /^(?:\d+|\{[A-Za-z_]\w*\})?(?:&>>?[|!]?|>>?[|!]|>&|<&|<<<|<<-?|<>|>>?|<)(\S*)$/;
@@ -1521,10 +1520,9 @@ function lex(
       continue;
     }
     i += advance(stack, frame, pending, command, i, scan);
-    if (scan.nesting + stack.length > MAX_NESTING) {
-      scan.broken = true;
-      return false;
-    }
+    if (scan.nesting + stack.length > MAX_NESTING) scan.broken = true;
+    // A command found unreadable needs no further reading.
+    if (scan.broken) return false;
   }
   record(scan, end - 1, contextOf(stack));
   for (const frame of stack) {
@@ -1602,6 +1600,8 @@ function advanceCode(
     return readHeredocOperator(command, i, frame, pending, scan);
   }
   if (ch === '>') return readOutputRedirection(command, i, scan);
+  // A `case` pattern's `)` ends `$(…)` in bash 3.2 and not in newer shells.
+  if (frame.kind === 'subst' && startsCase(command, i)) scan.broken = true;
   if (ch === '$' && command[i + 1] === "'") {
     stack.push({ kind: 'ansi', depth: 0, cmdStart: 0 });
     return 2;
@@ -1689,6 +1689,15 @@ function redirectionTarget(command: string, j: number): string {
   return quote === undefined && target.length <= MAX_WORD_CHARS ? target : '';
 }
 
+/** True when the word `case` starts at `i` of shell code. */
+function startsCase(command: string, i: number): boolean {
+  return (
+    command.startsWith(CASE_KEYWORD, i) &&
+    startsWord(command, i) &&
+    WHITESPACE.test(command[i + CASE_KEYWORD.length] ?? '')
+  );
+}
+
 /** True when the character at `i` begins a word of shell code. */
 function startsWord(command: string, i: number): boolean {
   const before = command[i - 1];
@@ -1712,34 +1721,59 @@ function trackParens(stack: Frame[], frame: Frame, command: string, i: number, s
   }
   // bash 3.2 (macOS's `/bin/bash`) finds the end of `$(…)` by scanning its
   // text for quotes and parentheses, heredoc bodies included; newer shells
-  // parse the body as a body. It skips `#` comments in an unquoted `$(…)`
-  // but not inside `"$(…)"`, so both scans must end where the lexer does:
-  // a substitution with a heredoc whose end any reading places elsewhere
-  // is not read.
+  // parse the body as a body. Which `#` starts a comment in that scan
+  // depends on quoting and on the character before it, so every reading
+  // must end where the lexer does: a substitution with a heredoc whose end
+  // any reading places elsewhere is not read.
   if (frame.heredoc === true && !bash32AgreesAt(command, frame.opened ?? -1, i)) {
     scan.broken = true;
   }
   closeCommand(stack, frame, i, scan);
 }
 
-/** True when bash 3.2 ends the `$(…)` whose `$` is at `open` at `end`,
- * whether or not it skips `#` comments there. */
+/** How a bash 3.2 scan of `$(…)` treats `#`: never as a comment (inside
+ * `"$(…)"` when parsing), as a comment after a blank or a newline (an
+ * unquoted `$(…)`, as `/bin/bash` 3.2.57 reads it), or after any word
+ * boundary (the widest reading). */
+type CommentReading = 'none' | 'blank' | 'word';
+const COMMENT_READINGS: readonly CommentReading[] = ['none', 'blank', 'word'];
+/** The characters after which bash 3.2 starts a comment in `$(…)`. */
+const BLANKS: ReadonlySet<string> = new Set([' ', '\t', '\n']);
+
+/** True when every bash 3.2 reading ends the `$(…)` whose `$` is at
+ * `open` at `end`. Each scan stops at `end`, so a check costs at most the
+ * substitution's own length. */
 function bash32AgreesAt(command: string, open: number, end: number): boolean {
-  return (
-    bash32SubstitutionEnd(command, open, true) === end &&
-    bash32SubstitutionEnd(command, open, false) === end
+  return COMMENT_READINGS.every(
+    (reading) => bash32SubstitutionEnd(command, open, reading, end) === end,
   );
 }
 
-/** Where bash 3.2 ends the `$(…)` whose `$` is at `open`: quotes, escapes,
- * backticks and nested parentheses are tracked, heredocs are not; with
- * `comments`, so are `#` comments from a word start to the end of the
- * line (as `/bin/bash` 3.2.57 reads an unquoted `$(…)`; inside `"$(…)"`
- * it does not skip them). `-1` when it finds no end. */
-function bash32SubstitutionEnd(command: string, open: number, comments: boolean): number {
+/** True when the `#` at `j` starts a comment under `reading`. */
+function startsComment(command: string, j: number, open: number, reading: CommentReading): boolean {
+  if (reading === 'none') return false;
+  if (reading === 'word') return startsWord(command, j);
+  if (j === open + 2) return true;
+  const before = command[j - 1] ?? '';
+  // A newline escaped by a backslash joins the lines: what counts is the
+  // character before the backslash.
+  if (before === '\n' && command[j - 2] === '\\') return BLANKS.has(command[j - 3] ?? '');
+  return BLANKS.has(before);
+}
+
+/** Where bash 3.2 ends the `$(…)` whose `$` is at `open`, looking no
+ * further than `limit`: quotes, escapes, backticks, nested parentheses and
+ * `#` comments (per `reading`) are tracked, heredocs are not. `-1` when it
+ * finds no end by `limit`. */
+function bash32SubstitutionEnd(
+  command: string,
+  open: number,
+  reading: CommentReading,
+  limit: number,
+): number {
   if (open < 0) return -1;
   const stack: Array<'(' | '"' | '`'> = ['('];
-  for (let j = open + 2; j < command.length; j++) {
+  for (let j = open + 2; j <= limit && j < command.length; j++) {
     const ch = command[j];
     const top = stack.at(-1);
     if (ch === '\\') {
@@ -1753,13 +1787,13 @@ function bash32SubstitutionEnd(command: string, open: number, comments: boolean)
         stack.push('(');
         j += 1;
       }
-    } else if (comments && ch === '#' && startsWord(command, j)) {
+    } else if (ch === '#' && startsComment(command, j, open, reading)) {
       const newline = command.indexOf('\n', j);
-      if (newline === -1) return -1;
+      if (newline === -1 || newline > limit) return -1;
       j = newline - 1;
     } else if (ch === "'") {
       j = command.indexOf("'", j + 1);
-      if (j === -1) return -1;
+      if (j === -1 || j > limit) return -1;
     } else if (ch === '"' || ch === '`' || ch === '(') {
       stack.push(ch);
     } else if (ch === ')') {
@@ -1897,8 +1931,9 @@ function findClosingLine(
     const line = command.slice(lineStart, lineEnd);
     const candidate = heredoc.stripTabs ? line.replace(LEADING_TABS, '') : line;
     if (candidate === heredoc.delimiter) return { bodyEnd: lineStart, next: lineEnd };
-    // Inside `$(…)`, bash 5.2 also ends the body at the delimiter followed
-    // by `)`, older shells do not: such a body cannot be read.
+    // Inside `$(…)`, bash 5.2 also ends the body at a line that starts with
+    // the delimiter and holds a `)` (`EOF) more`, `EOFx)`), zsh does not:
+    // such a body cannot be read.
     if (heredoc.inSubstitution && closesSubstitution(candidate, heredoc.delimiter)) {
       return undefined;
     }
@@ -1908,9 +1943,11 @@ function findClosingLine(
   return undefined;
 }
 
-/** True when `line` is `delimiter` then blanks and `)`. */
+/** True when `line` starts with `delimiter` and holds a `)` after it:
+ * inside `$(…)`, bash 5.2 ends the body at the delimiter there and reads
+ * the rest of the line as code. */
 function closesSubstitution(line: string, delimiter: string): boolean {
-  return line.startsWith(delimiter) && DELIMITER_PAREN.test(line.slice(delimiter.length));
+  return line.startsWith(delimiter) && line.includes(')', delimiter.length);
 }
 
 /** A shell command with its safe placeholders restored. */

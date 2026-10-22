@@ -224,11 +224,39 @@ const CODE_SUBCOMMANDS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ['defaults', new Set(['write', 'import'])],
 ]);
 
+/** A pattern for a long option and every unique abbreviation of it from
+ * `min` characters, as getopt_long and git's parse-options accept
+ * (`--out` for `--output`), with or without `=value`. */
+function longOption(name: string, min = 3): string {
+  const tail = name
+    .slice(min)
+    .split('')
+    .reduceRight((rest, ch) => `(?:${escapeRe(ch)}${rest})?`, '');
+  return `^--${escapeRe(name.slice(0, min))}${tail}(?:=|$)`;
+}
+
+function escapeRe(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function optionPattern(...parts: string[]): RegExp {
+  return new RegExp(parts.join('|'));
+}
+
 /** Options that make an otherwise plain program run a command it is given
  * (`find -exec`, `tar -I`, `zip -TT`, `git -c core.pager=…`). */
 const COMMAND_OPTIONS: ReadonlyMap<string, RegExp> = new Map([
-  ['find', /^-(?:exec|execdir|ok|okdir|delete|fprint|fprint0|fprintf|fls)$/],
-  ['git', /^-O|^--open-files-in-pager|^--output|^--ext-diff/],
+  // `-rm` is bfs's spelling of `-delete` (Claude Code's `find` may be bfs).
+  ['find', /^-(?:exec|execdir|ok|okdir|delete|rm|fprint|fprint0|fprintf|fls)$/],
+  [
+    'git',
+    optionPattern(
+      '^-[A-Za-z]*O',
+      longOption('open-files-in-pager'),
+      longOption('output'),
+      longOption('ext-diff'),
+    ),
+  ],
   [
     'tar',
     /^-[A-Za-z]*I|^--(?:use-compress-program|to-command|checkpoint-action|info-script|new-volume-script)/,
@@ -236,14 +264,14 @@ const COMMAND_OPTIONS: ReadonlyMap<string, RegExp> = new Map([
   ['zip', /^-TT|^--unzip-command/],
   ['rsync', /^-[A-Za-z]*e|^--rsh/],
   ['less', /^-[A-Za-z]*\+|^\+/],
-  ['rg', /^--pre(?:=|$)|^--hostname-bin/],
+  ['rg', optionPattern('^--pre(?:=|$)', longOption('pre-glob', 6), longOption('hostname-bin'))],
   ['man', /^-[A-Za-z]*P|^--pager/],
   // Writing where an option points chooses what is overwritten.
-  ['sort', /^--compress-program|^-[A-Za-z]*o|^--output/],
-  ['base64', /^-[A-Za-z]*o|^--output/],
+  ['sort', optionPattern('^-[A-Za-z]*o', longOption('output'), longOption('compress-program'))],
+  ['base64', optionPattern('^-[A-Za-z]*o', longOption('output'))],
   // `printf -v NAME` assigns a shell variable; `file -C` writes a file.
   ['printf', /^-v/],
-  ['file', /^-[A-Za-z]*C|^--compile/],
+  ['file', optionPattern('^-[A-Za-z]*C', longOption('compile'))],
   ['fzf', /^--(?:preview|bind)/],
 ]);
 
@@ -613,6 +641,21 @@ const FILE_WRITERS: ReadonlySet<string> = new Set([
  * and not `>/dev/null`. */
 const WRITE_REDIRECTION = /(?<![<>&\d])\d*>>?\|?(?!&|\s*\/dev\/null\b)/;
 
+/** The output redirections of a command and their targets. */
+const OUTPUT_TARGET = /(?<![<>&\d])\d*&?>>?[|!]?\s*([^\s;&|<>()]+)/g;
+/** A document a data heredoc may be written to: no hidden directory or
+ * file on its path (`./` and `../` aside), and a text extension. */
+const PLAIN_DATA_FILE = /^(?!.*(?:^|\/)\.(?!\.?\/))[\w./+-]*\.(?:md|markdown|txt|csv|tsv|log|rst)$/;
+/** Characters of word scanning allowed per character of command, plus a
+ * base, before a command is judged too costly to read. */
+const SCAN_BUDGET_PER_CHAR = 2;
+const SCAN_BUDGET_BASE = 32 * 1024;
+/** Characters kept of a word: enough for any name, option or assignment
+ * the rules read. */
+const MAX_WORD_CHARS = 256;
+/** The characters a shell splits words on by default (`IFS`). */
+const FIELD_SEPARATORS: ReadonlySet<string> = new Set([' ', '\t', '\n']);
+
 /** Nesting deeper than this is not read: the command keeps every
  * placeholder. */
 const MAX_NESTING = 64;
@@ -688,7 +731,7 @@ const LEADING_TABS = /^\t+/;
 const WHITESPACE = /\s/;
 /** A redirection word (`>`, `2>>log`, `&>`, `<in`); group 1 is empty
  * when the operator stands alone and its target is the next word. */
-const REDIRECTION = /^\d*(?:[<>]{1,3}|&>>?|[<>]&)(\S*)$/;
+const REDIRECTION = /^(?:\d+|\{[A-Za-z_]\w*\})?(?:&>>?!?|>>?[|!]|>&|<&|<<<|<>|>>?|<)(\S*)$/;
 /** A version or `.exe` suffix on a program name (`python3.12`, `pwsh.exe`). */
 const PROGRAM_SUFFIX = /(?:[\d.]+|\.exe)$/;
 
@@ -750,6 +793,13 @@ interface Word {
 
 /** What one simple command runs. */
 interface Program {
+  /** A redirection stands before the program word (`>| cat …`): shells
+   * disagree on what such a prefix is, so the command is not judged as
+   * the program that follows it. */
+  readonly redirectedPrefix: boolean;
+  /** An argument is computed (`$x`, `$'…'`): its value, an option
+   * included, is known only at run time. */
+  readonly computedArgs: boolean;
   /** Lower case, without directory or version suffix; `undefined` when
    * an expansion names it (`$PY`, `$(which python3)`). */
   readonly name: string | undefined;
@@ -779,6 +829,14 @@ interface Verdict {
    * `export`, `alias` and the like. */
   readonly programAt: ReadonlySet<number>;
 }
+
+/** The verdict for a command that cannot be read whole: nothing comes back. */
+const KEEP_ALL: Verdict = {
+  offMachine: true,
+  runsCode: true,
+  contextAt: new Map(),
+  programAt: new Set(),
+};
 
 /** Stands for a placeholder when the words before it are read. */
 const PLACEHOLDER_STAND_IN = 'x';
@@ -832,10 +890,17 @@ function judge(command: string, targets: readonly number[]): Verdict {
   if (scan.broken) {
     return { offMachine: true, runsCode: true, contextAt: new Map(), programAt: new Set() };
   }
-  const programs = scan.commands.flatMap(([start, end]) => {
-    const p = programOf(wordsOf(command.slice(start, Math.min(end, start + MAX_WORD_SCAN))));
-    return p === undefined ? [] : [p];
-  });
+  // Words are read again for each command and placeholder: past a budget
+  // in proportion to the command, it keeps every placeholder instead.
+  const budget = { left: SCAN_BUDGET_PER_CHAR * command.length + SCAN_BUDGET_BASE };
+  const programs: Program[] = [];
+  for (const [start, end] of scan.commands) {
+    const stop = Math.min(end, start + MAX_WORD_SCAN);
+    budget.left -= stop - start;
+    if (budget.left < 0) return KEEP_ALL;
+    const p = programOf(wordsOf(command.slice(start, stop)));
+    if (p !== undefined) programs.push(p);
+  }
   // Data bodies are text written out, not commands: a commit message that
   // mentions `ssh` or `bash -c` neither sends nor runs anything.
   const code = withoutRanges(command, scan.dataBodies);
@@ -848,6 +913,9 @@ function judge(command: string, targets: readonly number[]): Verdict {
     scan.dataBodies.length > 0 ||
     WRITE_REDIRECTION.test(code) ||
     programs.some((p) => p.name !== undefined && FILE_WRITERS.has(p.name));
+  // A command that names a file run later (a git hook, a shell start-up
+  // file, a directory on PATH) can put a value there by any means:
+  // `cp {{…}} .git/hooks/pre-commit`, `mv {{…}} ~/.zshrc`.
   const writesExecuted = writesFiles && EXECUTED_LATER.test(code);
   // `offMachine` also covers a program whose code no word is safe in.
   const offMachine =
@@ -857,7 +925,28 @@ function judge(command: string, targets: readonly number[]): Verdict {
     programs.some(sendsOut) ||
     (strict && NETWORK_IN_CODE.test(code)) ||
     (URL_SCHEME.test(code) && !programs.every(isDataProgram));
-  const bodyContext = dataBodyContext(programs, strict || !closed || writesExecuted);
+  // A data body goes to standard output or to a plain document file; one
+  // written elsewhere (`.git/config`, `Makefile`, `run.sh`) may be read
+  // as code later.
+  const toPlainFiles = [...code.matchAll(OUTPUT_TARGET)].every((m) =>
+    PLAIN_DATA_FILE.test(m[1] ?? ''),
+  );
+  const bodyContext = dataBodyContext(
+    programs,
+    strict || !closed || writesExecuted || !toPlainFiles,
+  );
+  // `cd {{…}} && git status` would let a value choose the repository whose
+  // configuration and hooks git runs.
+  const holdCd = programs.some((p) => p.name === 'git');
+  // Any program outside the allowlist (`ARG_DATA_PROGRAMS`) keeps every
+  // placeholder too: the lists above are a second line, not the rule.
+  const unlisted = !programs.every(takesDataArgs);
+  // Nothing comes back from a command judged whole: its positions need no
+  // reading.
+  // A heredoc written to anything but standard output or a document may
+  // be read later as code or configuration: nothing comes back into it.
+  const toCodeFile = scan.dataBodies.length > 0 && !toPlainFiles;
+  const keepAll = offMachine || strict || writesExecuted || unlisted || toCodeFile;
   const contextAt = new Map<number, QuoteContext>();
   const programAt = new Set<number>();
   const settled = new Map<number, boolean>();
@@ -867,15 +956,16 @@ function judge(command: string, targets: readonly number[]): Verdict {
     if (strict) contextAt.set(index, 'none');
     else if (DATA_BODY_CONTEXTS.has(context)) contextAt.set(index, bodyContext(context));
     else contextAt.set(index, context);
-    if (holdsAt(command, index, sorted, settled)) programAt.add(index);
+    if (keepAll || budget.left < 0) return;
+    if (holdsAt(command, index, sorted, settled, holdCd, budget)) programAt.add(index);
   });
-  // A command that names a file run later (a git hook, a shell start-up
-  // file, a directory on PATH) can put a value there by any means:
-  // `cp {{…}} .git/hooks/pre-commit`, `mv {{…}} ~/.zshrc`.
-  // Any program outside the allowlist (`ARG_DATA_PROGRAMS`) keeps every
-  // placeholder too: the lists above are a second line, not the rule.
-  const unlisted = !programs.every(takesDataArgs);
-  return { offMachine, runsCode: strict || writesExecuted || unlisted, contextAt, programAt };
+  if (budget.left < 0) return KEEP_ALL;
+  return {
+    offMachine,
+    runsCode: strict || writesExecuted || unlisted || toCodeFile,
+    contextAt,
+    programAt,
+  };
 }
 
 /** `text` with each of `ranges` blanked out, offsets kept. */
@@ -900,11 +990,14 @@ function holdsAt(
   index: number,
   sorted: ReadonlyArray<readonly [number, number]>,
   settled: Map<number, boolean>,
+  holdCd: boolean,
+  budget: { left: number },
 ): boolean {
   const start = innermostStart(sorted, index);
   if (start === undefined) return false;
   if (start === DEEP) return true;
   if (index - start > MAX_WORD_SCAN) return !programSettled(command, start, settled);
+  budget.left -= index - start;
   const words = wordsOf(command.slice(start, index) + PLACEHOLDER_STAND_IN);
   if (words.length >= MAX_WORDS) return false;
   const own = words.at(-1);
@@ -919,6 +1012,7 @@ function holdsAt(
   if (before.length > 0 && REDIRECTION.exec(before.at(-1)?.text ?? '')?.[1] === '') return true;
   if (programIsNext(before)) return true;
   const program = programOf(before);
+  if (program?.name === 'cd' && holdCd) return true;
   return program?.name !== undefined && ENVIRONMENT_BUILTINS.has(program.name);
 }
 
@@ -1016,6 +1110,11 @@ function runsFile(p: Program): boolean {
 /** True when a value may be restored into `p`'s command (`ARG_DATA_PROGRAMS`). */
 function takesDataArgs(p: Program): boolean {
   if (p.name === undefined || p.wrappers.length > 0 || p.byPath) return false;
+  if (p.redirectedPrefix) return false;
+  // A computed argument can expand to an option (`$'--pre'`); only
+  // `git commit`'s message, built from a heredoc (`-m "$(cat <<'EOF' …)"`),
+  // may be one.
+  if (p.computedArgs && !(p.name === 'git' && p.args[0] === 'commit')) return false;
   if (p.name === 'git') return ARG_DATA_GIT_SUBCOMMANDS.has(p.args[0] ?? '');
   return ARG_DATA_PROGRAMS.has(p.name);
 }
@@ -1034,6 +1133,12 @@ function wordsOf(text: string): Word[] {
   let inWord = false;
   let computed = false;
   let quote: string | undefined;
+  // Only a word's start matters (a program name, an option, an
+  // assignment), so a long word is kept to its first characters.
+  const add = (ch: string): void => {
+    if (word.length < MAX_WORD_CHARS) word += ch;
+    inWord = true;
+  };
   const flush = (): void => {
     if (inWord) words.push({ text: word, computed });
     word = '';
@@ -1044,35 +1149,29 @@ function wordsOf(text: string): Word[] {
     const ch = text[i] ?? '';
     if (quote === "'") {
       if (ch === "'") quote = undefined;
-      else word += ch;
+      else add(ch);
       continue;
     }
     if (ch === '\\') {
       // A backslash before a newline continues the line; before anything
       // else it makes that character literal.
       const next = text[i + 1] ?? '';
-      if (next !== '\n') {
-        word += next;
-        inWord = true;
-      }
+      if (next !== '\n') add(next);
       i++;
       continue;
     }
     if (ch === '$' || ch === '`') computed = true;
     if (quote === '"') {
       if (ch === '"') quote = undefined;
-      else word += ch;
+      else add(ch);
       continue;
     }
     if (ch === '#' && !inWord) break;
     if (ch === "'" || ch === '"') {
       quote = ch;
       inWord = true;
-    } else if (WHITESPACE.test(ch)) flush();
-    else {
-      word += ch;
-      inWord = true;
-    }
+    } else if (FIELD_SEPARATORS.has(ch)) flush();
+    else add(ch);
   }
   if (words.length < MAX_WORDS) flush();
   return words;
@@ -1083,6 +1182,7 @@ function wordsOf(text: string): Word[] {
  * when it runs none (`for`, `fi`, a bare assignment). */
 function programOf(words: readonly Word[]): Program | undefined {
   let k = skipPrefix(words, 0);
+  const redirectedPrefix = words.slice(0, k).some((w) => REDIRECTION.test(w.text));
   const first = words[k];
   if (first === undefined || NO_PROGRAM_KEYWORDS.has(first.text)) return undefined;
   const wrappers: string[] = [];
@@ -1094,13 +1194,29 @@ function programOf(words: readonly Word[]): Program | undefined {
     if (word === undefined) {
       const last = wrappers.at(-1);
       if (last === undefined) return undefined;
-      return { name: last, byPath: false, wrappers, wrapperShell, args: [] };
+      return {
+        name: last,
+        byPath: false,
+        wrappers,
+        wrapperShell,
+        args: [],
+        redirectedPrefix,
+        computedArgs: false,
+      };
     }
     const name = word.computed ? undefined : normalise(word.text);
     const options = name === undefined ? undefined : WRAPPERS.get(name);
     if (options === undefined || name === undefined) {
-      const args = words.slice(k + 1).map((w) => w.text);
-      return { name, byPath: word.text.includes('/'), wrappers, wrapperShell, args };
+      const rest = words.slice(k + 1);
+      return {
+        name,
+        byPath: word.text.includes('/'),
+        wrappers,
+        wrapperShell,
+        args: rest.map((w) => w.text),
+        redirectedPrefix,
+        computedArgs: rest.some((w) => w.computed),
+      };
     }
     wrappers.push(name);
     const skipped = skipWrapperArgs(words, k + 1, name, options);
@@ -1156,6 +1272,8 @@ function skipPrefix(words: readonly Word[], k: number): number {
  * version or `.exe` suffix (`/usr/bin/Python3.12` → `python`). */
 function normalise(word: string): string {
   const base = (word.split('/').at(-1) ?? word).toLowerCase();
+  // `base64` is a name, not `base` version 64.
+  if (ARG_DATA_PROGRAMS.has(base)) return base;
   const bare = base.replace(PROGRAM_SUFFIX, '');
   return bare === '' ? base : bare;
 }
@@ -1297,6 +1415,8 @@ function separatesCommands(command: string, i: number): boolean {
   const ch = command[i];
   if (ch === undefined || !COMMAND_SEPARATORS.has(ch)) return false;
   if (ch === '{') return startsWord(command, i) && WHITESPACE.test(command[i + 1] ?? '');
+  // `>|` is a redirection that overrides noclobber, not a pipe.
+  if (ch === '|') return command[i - 1] !== '>';
   if (ch !== '&') return true;
   return !REDIRECTION_SIDES.has(command[i - 1] ?? '') && command[i + 1] !== '>';
 }
@@ -1523,7 +1643,7 @@ export function restoreShellArgv(
     argv,
     sessionId,
     (position, value) => {
-      if (!offline || position === program) return false;
+      if (!offline || position === program || position === 0) return false;
       if (code) return false;
       return PLAIN_WORD.test(value);
     },

@@ -699,6 +699,43 @@ describe('shell restore · v3 hardening', () => {
     expect(restoreShellCommand(np, build(email), sessionId).command).toBe(build(EMAIL));
   });
 
+  it.each([
+    (p: string) => `>| cat python3 ${p}`,
+    (p: string) => `>& cat python3 ${p}`,
+    (p: string) => `>! cat python3 ${p}`,
+    (p: string) => `echo hi >& ${p}`,
+    (p: string) => `cat x {fd}>${p}`,
+    (p: string) => `find ${p} $'-name' x`,
+    (p: string) => `sort --out=${p} a.txt`,
+    (p: string) => `git grep --open=x ${p}`,
+    (p: string) => `cd ${p} && git status`,
+    (p: string) => `cat >> .git/config <<'EOF'\n${p}\nEOF`,
+    (p: string) => `cat > Makefile <<'EOF'\n${p}\nEOF`,
+  ])(
+    'round 7: a prefix, a computed or abbreviated option, a repository or a non-document target keeps the value: %#',
+    (build) => {
+      const { np, vault, sessionId } = harness();
+      const email = bake(vault, sessionId, EMAIL, 'private_email');
+
+      expect(restoreShellCommand(np, build(email), sessionId).keptMasked).toEqual([email]);
+    },
+  );
+
+  it('a data heredoc to a document file still gets values back', () => {
+    const { np, vault, sessionId } = harness();
+    const person = bake(vault, sessionId, FULL_NAME, 'private_person');
+    const command = (n: string) => `cat > ./docs/notes.md <<'EOF'\nOwner: ${n}\nEOF`;
+
+    expect(restoreShellCommand(np, command(person), sessionId).command).toBe(command(FULL_NAME));
+  });
+
+  it('base64 is a listed name, not a versioned "base"', () => {
+    const { np, vault, sessionId } = harness();
+    const email = bake(vault, sessionId, EMAIL, 'private_email');
+
+    expect(restoreShellCommand(np, `base64 ${email}`, sessionId).command).toBe(`base64 ${EMAIL}`);
+  });
+
   it('reading a file under /etc does not count as writing one', () => {
     const { np, vault, sessionId } = harness();
     const email = bake(vault, sessionId, EMAIL, 'private_email');

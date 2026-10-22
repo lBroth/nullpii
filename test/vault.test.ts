@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { describe, expect, it } from 'vitest';
 import { SessionMismatchError, SessionNotFoundError } from '../src/errors.js';
 import { sessionPrefixOf as expectedPrefix } from '../src/session-prefix.js';

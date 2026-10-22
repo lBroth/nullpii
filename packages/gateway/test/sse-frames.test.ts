@@ -4,7 +4,7 @@
 // relays read upstream events through.
 
 import { describe, expect, it } from 'vitest';
-import { SseFrameSplitter, parseSseFields } from '../src/sse-frames.js';
+import { MAX_FRAME_CHARS, SseFrameSplitter, parseSseFields } from '../src/sse-frames.js';
 
 function splitAll(chunks: readonly string[]): string[] {
   const splitter = new SseFrameSplitter();
@@ -21,6 +21,11 @@ describe('SseFrameSplitter', () => {
     ['CRLF split between chunks', ['data: a\r', '\n\r', '\ndata: b\r\n\r\n']],
   ])('splits frames on blank lines with %s line ends', (_ends, chunks) => {
     expect(splitAll(chunks)).toEqual(['data: a', 'data: b']);
+  });
+
+  it('fails a stream whose frame never ends instead of growing without bound', () => {
+    const splitter = new SseFrameSplitter();
+    expect(() => splitter.push('x'.repeat(MAX_FRAME_CHARS + 1))).toThrow(/longer than/);
   });
 
   it('keeps a last frame with no blank line after it for the caller to judge', () => {

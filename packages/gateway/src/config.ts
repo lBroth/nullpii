@@ -80,7 +80,7 @@ const UPSTREAM_PROTOCOLS: ReadonlySet<string> = new Set(['http:', 'https:']);
 const PLAIN_HTTP = 'http:';
 /** Hosts a plain `http:` upstream may name: the request carries the API
  * key and the masked conversation, so it crosses no network unencrypted. */
-const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['127.0.0.1', 'localhost', '[::1]']);
+const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['127.0.0.1', '[::1]']);
 
 /** The environment variables the gateway reads. */
 export const NULLPII_HOST = 'NULLPII_HOST';
@@ -188,7 +188,7 @@ function readUpstreamUrl(v: UpstreamVar): string {
   }
   if (url.protocol === PLAIN_HTTP && !LOOPBACK_HOSTS.has(url.hostname)) {
     throw new Error(
-      `${v.name} must use https: unless it is on this machine (127.0.0.1, localhost or [::1]): the API key and the conversation would cross the network unencrypted`,
+      `${v.name} must use https: unless it is on this machine (the literal 127.0.0.1 or [::1]; localhost can resolve to the other one): the API key and the conversation would cross the network unencrypted`,
     );
   }
   if (url.username !== '' || url.password !== '') {

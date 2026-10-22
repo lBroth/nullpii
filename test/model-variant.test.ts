@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OrtBackend } from '../src/backend/backend.js';
 import { ModelNotFoundError } from '../src/errors.js';
-import { ModelManager } from '../src/model-manager.js';
+import { DEFAULT_MODEL, ModelManager } from '../src/model-manager.js';
 import { onnxCandidates } from '../src/model-variant.js';
 import type { ModelVariant } from '../src/types/index.js';
 
@@ -65,6 +65,9 @@ describe('onnxCandidates', () => {
 });
 
 describe('ModelManager.ensure picks the ONNX file', () => {
+  // The default model without its hash pins: the files written below are
+  // stand-ins, which the pinned hashes would rightly refuse.
+  const UNPINNED = { repo: DEFAULT_MODEL.repo, revision: DEFAULT_MODEL.revision };
   const manager = () => new ModelManager(tempDir('nullpii-cache-'));
   /** A verified cache entry: the file plus its checksum sidecar. */
   const cache = (m: ModelManager, file: string) => {
@@ -78,20 +81,20 @@ describe('ModelManager.ensure picks the ONNX file', () => {
   };
 
   it('fetches fp16 on CUDA when the revision has it', async () => {
-    const out = await manager().ensure({ backend: 'cuda', timeoutMs: 1 });
+    const out = await manager().ensure({ model: UNPINNED, backend: 'cuda', timeoutMs: 1 });
     expect(out.onnxFile).toBe('model_fp16.onnx');
     expect(hub.fetched).not.toContain('model.onnx');
   });
 
   it('falls back to fp32 when the revision has no fp16 file', async () => {
     hub.fail.set('model_fp16.onnx', notFound('model_fp16.onnx'));
-    const out = await manager().ensure({ backend: 'cuda', timeoutMs: 1 });
+    const out = await manager().ensure({ model: UNPINNED, backend: 'cuda', timeoutMs: 1 });
     expect(out.onnxFile).toBe('model.onnx');
   });
 
   it('falls back to fp32 when the fp16 download fails for another reason', async () => {
     hub.fail.set('model_fp16.onnx', new ModelNotFoundError('https://huggingface.co/x (HTTP 503)'));
-    const out = await manager().ensure({ backend: 'cuda', timeoutMs: 1 });
+    const out = await manager().ensure({ model: UNPINNED, backend: 'cuda', timeoutMs: 1 });
     expect(out.onnxFile).toBe('model.onnx');
   });
 
@@ -99,7 +102,7 @@ describe('ModelManager.ensure picks the ONNX file', () => {
     const m = manager();
     cache(m, 'model.onnx');
     hub.fail.set('model_fp16.onnx', new Error('offline'));
-    const out = await m.ensure({ backend: 'cuda', timeoutMs: 1 });
+    const out = await m.ensure({ model: UNPINNED, backend: 'cuda', timeoutMs: 1 });
     expect(out.onnxFile).toBe('model.onnx');
     expect(hub.fetched).not.toContain('model.onnx');
   });
@@ -108,7 +111,7 @@ describe('ModelManager.ensure picks the ONNX file', () => {
     const m = manager();
     cache(m, 'model.onnx');
     cache(m, 'model_fp16.onnx');
-    const out = await m.ensure({ backend: 'cuda', timeoutMs: 1 });
+    const out = await m.ensure({ model: UNPINNED, backend: 'cuda', timeoutMs: 1 });
     expect(out.onnxFile).toBe('model_fp16.onnx');
   });
 
@@ -118,20 +121,20 @@ describe('ModelManager.ensure picks the ONNX file', () => {
       'model.onnx',
       new ModelNotFoundError('https://huggingface.co/x/model.onnx (download failed)'),
     );
-    await expect(manager().ensure({ backend: 'cuda', timeoutMs: 1 })).rejects.toThrow(
-      /model\.onnx/,
-    );
+    await expect(
+      manager().ensure({ model: UNPINNED, backend: 'cuda', timeoutMs: 1 }),
+    ).rejects.toThrow(/model\.onnx/);
   });
 
   it('fails when an explicit fp16 is missing', async () => {
     hub.fail.set('model_fp16.onnx', notFound('model_fp16.onnx'));
     await expect(
-      manager().ensure({ variant: 'fp16', backend: 'cuda', timeoutMs: 1 }),
+      manager().ensure({ model: UNPINNED, variant: 'fp16', backend: 'cuda', timeoutMs: 1 }),
     ).rejects.toThrow(ModelNotFoundError);
   });
 
   it('fetches only fp32 on the CPU', async () => {
-    const out = await manager().ensure({ timeoutMs: 1 });
+    const out = await manager().ensure({ model: UNPINNED, timeoutMs: 1 });
     expect(out.onnxFile).toBe('model.onnx');
     expect(hub.fetched).not.toContain('model_fp16.onnx');
   });

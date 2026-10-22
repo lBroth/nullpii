@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { describe, expect, it } from 'vitest';
 import { runRecognizers } from '../src/recognizers.js';
 import type { PiiSpan, Recognizer } from '../src/types/index.js';

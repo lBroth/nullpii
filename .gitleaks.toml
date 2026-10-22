@@ -37,3 +37,13 @@ regexes = [
   # traces_v2_gen.py: `d.t("$ curl -sv -u ci-bot:")`, then a generated password
   '''^ci-bot:"\)''',
 ]
+
+[[allowlists]]
+description = "SHA-256 of the published model files (public digests, not secrets)"
+regexes = [
+  '''58b6d795693fc3e79f465134a8e5acd4fa58799c6d614f1b795df24d4253313a''',
+  '''900b2b025915ca437515aa4154ee51467ab47805e67e6d883df37d69c1ae2065''',
+  '''c5b8041501fcdee792b9b112dd592861f04391a24633a73fd9f05aaaf6e8eff1''',
+  '''dec8f0f8a2d78af7d7c5553cf7144abc9bf06774170d9ebca6b831db6e542790''',
+  '''c12b7b3bab6cd638f70b203daf1438bf7fedbeab4728a1e155728af9a5a55687''',
+]

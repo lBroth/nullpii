@@ -35,7 +35,7 @@ Masking hides a value from the model, so the model cannot judge it. Suppose a fi
 
 The rule covers every tool a shell runs, under each agent's name: `Bash` (Claude Code), `bash` (Anthropic's bash tool) and `shell` (OpenAI-style agents such as Codex).
 
-**A value comes back only into a command whose every program is on a short list of programs that read their arguments as data:** `ls`, `cat`, `head`, `tail`, `wc`, `grep`, `rg`, `ag`, `find`, `fd`, `stat`, `file`, `du`, `df`, `tree`, `diff`, `cmp`, `sort`, `uniq`, `cut`, `tr`, `jq`, `yq`, `echo`, `printf`, `mkdir`, `cd`, `pwd`, `touch`, `basename`, `dirname`, `realpath`, `readlink`, checksum tools, `base64`, `column`, `nl`, `true`, `false`, `test`, and `git` `log`, `status`, `diff`, `show`, `add`, `commit`, `blame`, `grep`, `ls-files`, `rev-parse`; each by name, with no wrapper (`sudo`, `env`, …) and not by path. Any other program keeps every placeholder in the whole command: no list can name every program that sends data out, runs code it is handed or writes where an argument says, so the default is to restore nothing. Programs that write where an argument points (`cp`, `mv`, `rm`, `tee`, `install`) are not on the list, so a value cannot choose what is overwritten or deleted.
+**A value comes back only into a command whose every program is on a short list of programs that read their arguments as data:** `ls`, `cat`, `head`, `tail`, `wc`, `grep`, `egrep`, `fgrep`, `rg`, `find`, `stat`, `file`, `du`, `df`, `diff`, `cmp`, `sort`, `cut`, `tr`, `jq`, `echo`, `printf`, `mkdir`, `cd`, `pwd`, `touch`, `basename`, `dirname`, `realpath`, `readlink`, `sha256sum`, `sha1sum`, `md5sum`, `shasum`, `base64`, `column`, `nl`, `true`, `false`, `test`, `[`, `:`, and `git` `log`, `status`, `diff`, `show`, `add`, `commit`, `blame`, `grep`, `ls-files`, `rev-parse`; each by name, with no wrapper (`sudo`, `env`, …) and not by path. Any other program keeps every placeholder in the whole command: no list can name every program that sends data out, runs code it is handed or writes where an argument says, so the default is to restore nothing. Programs that write where an argument points (`cp`, `mv`, `rm`, `tee`, `install`) are not on the list, and neither are options of listed programs that run or write (`find -exec`/`-delete`/`-fprint`, `rg --pre`/`--hostname-bin`, `sort -o`, `base64 -o`, `git --output`, `git grep -O`): a command that uses one keeps every placeholder.
 
 On top of that list, as a second line, these keep every placeholder even with listed programs:
 
@@ -52,7 +52,7 @@ Otherwise **a value comes back only as one plain word:** letters, digits and `@%
 | Any position in a command that runs a program off the list, or sends data out or runs code (above) | Nothing: every placeholder stays masked |
 | The program of a simple command, or part of it; a redirection target; an assignment; an argument of `export`, `alias`, … | Nothing: it stays masked |
 | Anywhere else in shell code, quoted or not | One plain word |
-| Heredoc body that `cat` or `tee` writes out, in a command that runs nothing but `cat`, `tee`, `echo`, `printf`, `mkdir`, `cd`, `touch`, `ls`, `pwd`, `true` or `git` `commit`, `add`, `rm`, `mv`, `status`, `diff`, `log` or `show`, each by name, with its quoting and substitutions closed, and not written to a file that runs later (`.git/hooks/`, `.husky/`, `~/.bashrc` and other shell start-up files, `.envrc`, `crontab`, `/etc/`) | Literal body (`<<'EOF'`): no line break. Bare delimiter (`<<EOF`): no line break, `$`, backtick or backslash |
+| Heredoc body that `cat` writes out, in a command whose every program is on the list above, with its quoting and substitutions closed, and not written to a file that runs later (`.git/hooks/`, `.husky/`, `~/.bashrc` and other shell start-up files, `.envrc`, `crontab`, `/etc/`) | Literal body (`<<'EOF'`): no line break. Bare delimiter (`<<EOF`): no line break, `$`, backtick or backslash |
 | Any other heredoc body | One plain word, or nothing in a command above |
 | A `#` comment | Its quotes and heredoc markers are ignored, so they cannot change the position of what follows |
 
@@ -76,7 +76,7 @@ Treat a sanitized prompt as lower-risk, not as free of personal data.
 
 ## CI-enforced rules
 
-- Dependencies under Apache-2.0, MIT, BSD-2/3-Clause, ISC, CC0-1.0, BlueOak-1.0.0, Unlicense or 0BSD only (checked by the dependency review in `security.yml`).
+- Runtime dependencies under Apache-2.0, MIT, BSD, ISC or CC0 only (`npm run license-check`); development dependencies may also be BlueOak-1.0.0, Unlicense or 0BSD (the dependency review in `security.yml`).
 - npm releases use `--provenance`.
 - File paths sandboxed to a cache root (`InvalidPathError` on traversal).
 

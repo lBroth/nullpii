@@ -24,11 +24,11 @@ docker compose -f examples/claude-code/docker-compose.yml ps
 # STATUS shows "healthy" within about 30 seconds
 
 # 5. Smoke test
-curl -fsS http://localhost:8787/health
+curl -fsS http://127.0.0.1:8787/health
 # {"status":"ok"}
 
 # 6. Point Claude Code at it
-export ANTHROPIC_BASE_URL=http://localhost:8787
+export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
 export ANTHROPIC_API_KEY=sk-ant-…   # your real key, passed through
 
 # 7. Run Claude Code normally
@@ -56,7 +56,7 @@ Project-local (per-repo) — `.claude/settings.local.json`:
 ```json
 {
   "env": {
-    "ANTHROPIC_BASE_URL": "http://localhost:8787",
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:8787",
     "ANTHROPIC_API_KEY": "sk-ant-…"
   }
 }
@@ -133,7 +133,7 @@ export MODEL_DIR_HOST=<the directory prefetch printed>
 docker compose -f examples/claude-code/docker-compose.local-model.yml up -d
 
 # 3. Same setup as the quickstart from here on
-export ANTHROPIC_BASE_URL=http://localhost:8787
+export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
 export ANTHROPIC_API_KEY=sk-ant-…
 claude "summarise email to John at john@acme.io"
 ```

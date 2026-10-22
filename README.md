@@ -6,7 +6,7 @@
 
 Mask personal data and secrets before they reach an LLM, and put them back on the way out. Detection runs on your machine: a fine-tuned GLiNER model plus validated recognizers, with a reversible in-memory vault.
 
-- **Measured on held-out data.** On five datasets chosen before any tool was run on them (four public sets and a synthetic coding-agent trace set built for this benchmark), with under 1% measured overlap with the training data nullpii and the compared tools declare, nullpii ranks second on macro char-F2 among 15 open-source detectors, behind rizzo-pii (0.770): 0.756 with its five extended categories off, as the datasets do not label them, and 0.747 for its default configuration counted on the same labels. It lets less personal data through than any other tool's best-scoring configuration (recall 0.960). Much of its lead over the other 13 comes from one dataset, clinical notes in Greek and German: without it nullpii is third, and three more tools are within the interval. On English text alone it is fifth. Scored by us with the PIIMB leaderboard's method (not a submitted entry), its average F2 of 0.851 is above the 35 listed tools; without the one task from its training family it is 0.831, not clearly ahead. It gets there by masking generously: on precision-weighted scores most tools rank above it. [Results](#benchmark).
+- **Measured on held-out data.** On five datasets chosen before any tool was run on them (four public sets and a synthetic coding-agent trace set built for this benchmark), with under 1% measured overlap with nullpii's training data and the public training sets the compared tools declare (a few declared sets could not be compared; METHOD.md), nullpii ranks second on macro char-F2 among 15 open-source detectors, behind rizzo-pii (0.770): 0.756 with its five extended categories off, as the datasets do not label them, and 0.747 for its default configuration counted on the same labels. It lets less personal data through than any other tool's best-scoring configuration (recall 0.960). Much of its lead over the other 13 comes from one dataset, clinical notes in Greek and German: without it nullpii is third, and three more tools are within the interval. On English text alone it is fifth. Scored by us with the PIIMB leaderboard's method (not a submitted entry), its average F2 of 0.851 is above the 35 listed tools; without the one task from its training family it is 0.831, not clearly ahead. It gets there by masking generously: on precision-weighted scores most tools rank above it. [Results](#benchmark).
 - **Works with any model.** Mask before your LLM call and restore after it. Or run the gateway in front of the Anthropic or OpenAI API, or the Claude Code mod.
 - **Built for coding agents.** It masks tool output (files, logs, command results), not just prompts; it keeps public links to code hosts and documentation readable; and it keeps a hidden value masked where a shell could run it, or in a command that sends data off the machine (best effort: see SECURITY.md).
 
@@ -88,13 +88,13 @@ An HTTP proxy for the Anthropic Messages API (`/v1/messages`) and the OpenAI Cha
 ```bash
 git clone https://github.com/lBroth/nullpii.git && cd nullpii
 docker compose -f examples/claude-code/docker-compose.yml up -d   # listens on 127.0.0.1:8787
-export ANTHROPIC_BASE_URL=http://localhost:8787
+export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
 claude
 ```
 
 The first request downloads the model (1.2 GB) into the container's cache volume and waits for it; [`examples/claude-code`](https://github.com/lBroth/nullpii/tree/main/examples/claude-code) shows how to fetch it beforehand. The image is also published as `ghcr.io/lbroth/nullpii-gateway`.
 
-Your API key or Claude subscription login is passed through unchanged. For clients of the OpenAI Chat Completions API (the OpenAI SDKs, Aider, LiteLLM), set `OPENAI_BASE_URL=http://localhost:8787/v1`. The Responses API is not proxied.
+Your API key or Claude subscription login is passed through unchanged. For clients of the OpenAI Chat Completions API (the OpenAI SDKs, Aider, LiteLLM), set `OPENAI_BASE_URL=http://127.0.0.1:8787/v1`. The Responses API is not proxied.
 
 - Real values go back only into the tools listed in the policy's `restoreTools`, by default the tools that run on your machine (`Bash`, `Read`, `Edit`, `Write`, …). Web and MCP tools, and tools the upstream runs itself, keep the placeholders.
 - The request log carries counts, never values.
@@ -155,7 +155,7 @@ Obfuscated input is decoded before detection: Unicode look-alikes and fullwidth 
 How the numbers are produced, and every rule that keeps them honest: [`packages/eval/METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md).
 
 - **Metric:** character level and label-agnostic. A character of personal data counts as protected if any span covers it, whatever the label. F2 counts recall as twice as important as precision (β = 2), because a missed character leaks; F0.5, which favours precision, is shown next to it.
-- **Data:** five datasets, chosen by written criteria and frozen before any tool ran on them, none in the training or tuning data nullpii and the compared tools declare (measured overlap with the known sets under 1%; several tools declare none): four public sets, REDACT, TonicAI's human-annotated Privacy-Bench, PIILO student essays and Greek and German clinical notes, and a synthetic coding-agent trace set built for this benchmark, from a generator written independently of nullpii to a specification we wrote.
+- **Data:** five datasets, chosen by written criteria and frozen before any tool ran on them, with under 1% measured overlap with nullpii's training and tuning data and the public training sets the compared tools declare (several tools declare none, and a few declared sets could not be compared): four public sets, REDACT, TonicAI's human-annotated Privacy-Bench, PIILO student essays and Greek and German clinical notes, and a synthetic coding-agent trace set built for this benchmark, from a generator written independently of nullpii to a specification we wrote.
 - **Competitors:** each runs as its authors ship it (the few departures, such as windowing long texts, are listed in METHOD.md), at its default and at an operating point tuned on the same tuning set as nullpii; each is shown at its better row.
 - **Confidence:** paired bootstrap, 95% intervals of nullpii minus the tool, the test fixed before the run; intervals corrected for multiple comparisons (Bonferroni, 99.67%), a check added afterwards, are in METHOD.md.
 
@@ -195,7 +195,7 @@ The three reported (not gated) sets, the per-dataset numbers and the sensitivity
 ### Latency
 
 <!-- latency:begin -->
-nullpii is not the fastest: it is seventh of 15 on GPU and fifth of 17 on CPU (at 30k). Median time per call, in milliseconds, for texts of 2,000, 30,000 and 100,000 characters of coding-agent material (code, logs, prose, tool output); every tool times the same texts on the same idle machine, after a warm-up, at its default operating point. How the texts are chosen: [`METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md).
+nullpii is not the fastest: it is seventh of 14 tools on GPU and fifth of 16 on CPU (at 30k, counting nullpii once). Median time per call, in milliseconds, for texts of 2,000, 30,000 and 100,000 characters of coding-agent material (code, logs, prose, tool output); every tool times the same texts on the same idle machine, after a warm-up, at its default operating point. How the texts are chosen: [`METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md).
 
 **GPU** (Linux, NVIDIA RTX 4070 Ti; 60, 12 and 5 texts per size, three rounds). nullpii loads `model_fp16.onnx` on CUDA.
 
@@ -239,7 +239,7 @@ nullpii is not the fastest: it is seventh of 15 on GPU and fifth of 17 on CPU (a
 | OpenMed privacy-filter-multilingual-v2 | 9,133 | 132,528 | 448,206 |
 | openai privacy-filter | 9,514 | 137,526 | 467,769 |
 
-Presidio is fast because it is mostly patterns plus a small spaCy model; its macro char-F2 is 0.628. OpenMed Large's time depends strongly on the text (at 100k, a median of 22 s and a 95th percentile of 63 s), so its 100k figure, from three texts, is rough. On CPU nullpii's two references, at the start and at the end of the run, agree within 1% (0.3% at 2k and 30k, 0.7% at 100k). gliner_multi_pii (ONNX) runs on CPU only and Presidio has no GPU path, so they are not in the GPU table.
+Presidio is fast because it is mostly patterns plus a small spaCy model; its macro char-F2 is 0.628. OpenMed Large's time depends strongly on the text (at 100k, a median of 22 s and a 95th percentile of 63 s), so its 100k figure, from three texts, is rough. On CPU nullpii's two references, at the start and at the end of the run, agree within 1% (0.2% at 2k, 0.3% at 30k, 0.7% at 100k). gliner_multi_pii (ONNX) runs on CPU only and Presidio has no GPU path, so they are not in the GPU table.
 <!-- latency:end -->
 
 ## Backends
@@ -250,7 +250,7 @@ new NullPii({ backend: 'cuda' });  // NVIDIA GPU, fp16 when the model ships it; 
 new NullPii({ backend: 'mps' });   // Apple Silicon through CoreML; slower than 'cpu' today, see below
 ```
 
-`backend: 'cuda'` needs the CUDA libraries the installed `onnxruntime-node` was built against: for 1.30 on Linux x64, CUDA 13 (`libcudart.so.13`, `libcublas.so.13`, `libcublasLt.so.13`) and cuDNN 9, although its installer calls the build `cuda12`. When the CUDA or CoreML provider cannot be loaded, nullpii runs on the CPU instead and emits a process warning with code `NULLPII_BACKEND_FALLBACK` that names the cause (listen with `process.on('warning', …)`). A model downloaded for CUDA holds only the fp16 file; the CPU runs it too, but the benchmark measures fp32 on the CPU.
+`backend: 'cuda'` needs the CUDA libraries the installed `onnxruntime-node` was built against: for 1.30 on Linux x64, CUDA 13 (`libcudart.so.13`, `libcublas.so.13`, `libcublasLt.so.13`) and cuDNN 9, although its installer calls the build `cuda12`. When a session with the CUDA or CoreML provider cannot be created (a missing library, an unsupported graph, too little memory), nullpii runs on the CPU instead and emits a process warning with code `NULLPII_BACKEND_FALLBACK` that names the cause (listen with `process.on('warning', …)`). A model downloaded for CUDA holds only the fp16 file; the CPU runs it too, but the benchmark measures fp32 on the CPU.
 
 On Apple Silicon use `cpu`: with CoreML the model was slower than on the CPU at every size measured (1.3 to 8 times, depending on the CoreML settings; measured on earlier builds), and its first call took 18 to 26 seconds while CoreML compiled the graph, which the GLiNER head's dynamic shapes split into many partitions (#51).
 
@@ -268,7 +268,7 @@ On Apple Silicon use `cpu`: with CoreML the model was slower than on the CPU at 
 - Detection runs on your machine. nullpii sends your text nowhere; its one network call is the model download.
 - The vault lives in memory and is never written to disk.
 - Logs carry counts and short ids, never values. The exception is the gateway's `NULLPII_LOG_TRAFFIC=wire` debugging dump, which prints what was sent upstream, including anything the detector missed (see SECURITY.md).
-- Restoring a value into a shell command can inject, because the model never saw the value. The gateway keeps the placeholder, and the mod refuses the call, unless the value is one plain word that is not the program, or text in a heredoc written out as data, and the command sends nothing off the machine. This is best effort; if you call `restore()` yourself, read [SECURITY.md](https://github.com/lBroth/nullpii/blob/main/SECURITY.md).
+- Restoring a value into a shell command can inject, because the model never saw the value. The gateway keeps the placeholder, and the mod refuses the call, unless every program in the command is on a short list of programs that read their arguments as data (`ls`, `grep`, `cat`, `git log`, …; SECURITY.md) and the value is one plain word that is not the program or a redirection target, or text in a heredoc that `cat` writes out as data. This is best effort; if you call `restore()` yourself, read [SECURITY.md](https://github.com/lBroth/nullpii/blob/main/SECURITY.md).
 
 Report a vulnerability privately: [security advisories](https://github.com/lBroth/nullpii/security/advisories/new).
 

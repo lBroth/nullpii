@@ -20,6 +20,9 @@ const COMMENT_PREFIX = ':';
 const FIELD_SEPARATOR = ':';
 const EVENT_FIELD = 'event';
 const DATA_FIELD = 'data';
+/** Longest frame read: an upstream that sends more without a blank line
+ * fails the stream instead of growing the buffer without bound. */
+export const MAX_FRAME_CHARS = 8 * 1024 * 1024;
 
 /** The fields of one frame that the relays read. */
 export interface SseFields {
@@ -42,13 +45,18 @@ export class SseFrameSplitter {
     let chunk = this.pendingCr ? CR + text : text;
     this.pendingCr = chunk.endsWith(CR);
     if (this.pendingCr) chunk = chunk.slice(0, -1);
+    // A separator can straddle the old end of the buffer by one LF.
+    const from = Math.max(0, this.buffer.length - 1);
     this.buffer += chunk.replace(CRLF_OR_CR, LF);
     const frames: string[] = [];
-    let sep = this.buffer.indexOf(FRAME_SEPARATOR);
+    let sep = this.buffer.indexOf(FRAME_SEPARATOR, from);
     while (sep !== -1) {
       frames.push(this.buffer.slice(0, sep));
       this.buffer = this.buffer.slice(sep + FRAME_SEPARATOR.length);
       sep = this.buffer.indexOf(FRAME_SEPARATOR);
+    }
+    if (this.buffer.length > MAX_FRAME_CHARS) {
+      throw new Error(`upstream SSE frame longer than ${MAX_FRAME_CHARS} characters`);
     }
     return frames;
   }

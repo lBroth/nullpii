@@ -2,7 +2,7 @@
 #
 # Local nullpii gateway in front of Claude Code (or any client that
 # speaks the Anthropic Messages API). Point your client's baseURL at
-# http://localhost:8787 and your requests get PII-sanitized before
+# http://127.0.0.1:8787 and your requests get PII-sanitized before
 # they leave your machine. From the root of a clone of the repository:
 #
 #   # once: download the model (~1.2 GB) into the cache volume

@@ -106,7 +106,7 @@ describe('loadConfig', () => {
   it.each([
     ['https://proxy.test///', 'https://proxy.test'],
     ['https://OpenRouter.ai/api/', 'https://openrouter.ai/api'],
-    ['http://localhost:11434', 'http://localhost:11434'],
+    ['http://127.0.0.1:11434', 'http://127.0.0.1:11434'],
     ['http://127.0.0.1:8080/', 'http://127.0.0.1:8080'],
     ['http://[::1]:8080', 'http://[::1]:8080'],
   ])('normalizes the upstream base URL %s', (value, expected) => {
@@ -129,6 +129,7 @@ describe('loadConfig', () => {
         /must use https: unless it is on this machine/,
       ],
       ['plain http to a LAN address', 'http://192.168.1.20:11434', /must use https:/],
+      ['plain http to localhost', 'http://localhost:11434', /must use https:/],
     ])('refuses %s', (_case, value, message) => {
       vi.stubEnv(name, value);
       expect(() => loadConfig()).toThrow(message);

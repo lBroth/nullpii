@@ -9,6 +9,7 @@ import {
   DEFAULT_BACKEND,
   DEFAULT_MODEL_REPO,
   DEFAULT_MODEL_REVISION,
+  DEFAULT_MODEL_SHA256,
   DEFAULT_VARIANT,
 } from './defaults.js';
 import { InvalidConfigError, InvalidPathError } from './errors.js';
@@ -26,7 +27,7 @@ const LOG_SCOPE = 'nullpii:model-manager';
  *
  * First-call download is one-shot; subsequent calls hit the local cache.
  */
-const SHARED_FILES: readonly string[] = [
+export const SHARED_FILES: readonly string[] = [
   'tokenizer.json',
   'gliner_config.json',
   'tokenizer_config.json',
@@ -48,6 +49,7 @@ export interface ModelRef {
 export const DEFAULT_MODEL: ModelRef = {
   repo: DEFAULT_MODEL_REPO,
   revision: DEFAULT_MODEL_REVISION,
+  sha256: DEFAULT_MODEL_SHA256,
 };
 
 /** A pinned SHA-256: 64 lower-case hex digits, as `sha256File` prints. */

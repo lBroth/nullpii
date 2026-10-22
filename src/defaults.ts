@@ -54,7 +54,20 @@ export const CACHE_MODELS_SUBDIR = 'models';
  * (`model.onnx` + tokenizer + config, ~1.16 GB FP32). See
  * `model-manager.ts` for the file manifest. */
 export const DEFAULT_MODEL_REPO = 'lBroth/nullpii';
+/** The Hugging Face commit nullpii loads. A release refuses to publish
+ * until this names a commit, never a branch (`release.yml`). */
 export const DEFAULT_MODEL_REVISION = 'main';
+/** The SHA-256 of every file nullpii fetches from `DEFAULT_MODEL_REVISION`:
+ * a download or a cached copy with another hash is refused, so whoever
+ * controls the repository cannot change what runs. These are the files
+ * nullpii 0.5 was measured with (docs/WEIGHTS_PROVENANCE.md). */
+export const DEFAULT_MODEL_SHA256: Readonly<Record<string, string>> = {
+  'model.onnx': '58b6d795693fc3e79f465134a8e5acd4fa58799c6d614f1b795df24d4253313a',
+  'model_fp16.onnx': '900b2b025915ca437515aa4154ee51467ab47805e67e6d883df37d69c1ae2065',
+  'tokenizer.json': 'c5b8041501fcdee792b9b112dd592861f04391a24633a73fd9f05aaaf6e8eff1',
+  'gliner_config.json': 'dec8f0f8a2d78af7d7c5553cf7144abc9bf06774170d9ebca6b831db6e542790',
+  'tokenizer_config.json': 'c12b7b3bab6cd638f70b203daf1438bf7fedbeab4728a1e155728af9a5a55687',
+};
 
 /** Built-in recognizers auto-registered on every `NullPii` instance
  * unless the user passes `recognizers: 'none'` or supplies their own

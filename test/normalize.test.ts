@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { describe, expect, it } from 'vitest';
 import { normalizeForDetection, remapSpan } from '../src/normalize.js';
 import { PLACEHOLDER_OPEN_ESCAPED, escapePlaceholders } from '../src/placeholder-escape.js';

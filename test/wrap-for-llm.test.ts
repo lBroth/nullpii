@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { describe, expect, it } from 'vitest';
 import type { SanitizeResult } from '../src/types/index.js';
 import { LLM_PRESERVATION_HINT, wrapForLLM } from '../src/wrap-for-llm.js';

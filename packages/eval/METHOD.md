@@ -143,7 +143,7 @@ nullpii's default configuration also masks five categories outside the core labe
 
 Without the clinical notes, the lead over everyone but rizzo-pii is gone: two tools are significantly ahead, and pii-identifier, privacy-filter-multilingual-v2 and OpenMed large are within the interval. They are the only medical text, and the only Greek, in the gated sets.
 
-**Sensitivity checks** (reported, none decides; run before NVIDIA's server row was added, so they do not include it):
+**Sensitivity checks** (reported, none decides; the first two were run before NVIDIA's server row was added, so they do not include it):
 - without the documents any OpenMed row returned no output for (77 gated documents, for every tool): conclusions unchanged;
 - every set resampled by its recorded clusters: conclusions unchanged (rizzo-pii [−0.022, −0.004]);
 - nullpii's default configuration on the core labels (0.747) as the baseline: ahead of the same 14 rows, also with the Bonferroni correction (narrowest nvidia/gliner-PII [+0.009, +0.047]), and behind rizzo-pii, −0.022, significantly in both tests ([−0.031, −0.013] at 95%, [−0.034, −0.008] corrected).

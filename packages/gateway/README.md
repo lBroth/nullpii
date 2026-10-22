@@ -176,7 +176,7 @@ import OpenAI from 'openai';
 const client = new OpenAI({ baseURL: 'http://127.0.0.1:8787/v1' });
 ```
 
-The gateway appends `/v1/chat/completions` to `NULLPII_OPENAI_UPSTREAM`, so set it without `/v1`: `https://api.openai.com` (the default), `http://localhost:11434` for Ollama, `https://openrouter.ai/api` for OpenRouter. The client headers forwarded upstream are `Authorization`, `OpenAI-Organization`, `OpenAI-Project`, `OpenAI-Beta`, `User-Agent` and `x-stainless-*`.
+The gateway appends `/v1/chat/completions` to `NULLPII_OPENAI_UPSTREAM`, so set it without `/v1`: `https://api.openai.com` (the default), `http://127.0.0.1:11434` for Ollama, `https://openrouter.ai/api` for OpenRouter. The client headers forwarded upstream are `Authorization`, `OpenAI-Organization`, `OpenAI-Project`, `OpenAI-Beta`, `User-Agent` and `x-stainless-*`.
 
 **Scanned** before the request leaves:
 
@@ -227,8 +227,8 @@ An unknown key, category, host or release stops the gateway at startup with the 
 | `NULLPII_CONFIG` | (default location) | Path of the policy file. If set, the file must exist. |
 | `NULLPII_HOST` | `127.0.0.1` | Bind host |
 | `NULLPII_PORT` | `8787` | Bind port, 1 to 65535 |
-| `NULLPII_UPSTREAM` | `https://api.anthropic.com` | Upstream for `/v1/messages` (Anthropic Messages API): a base URL without `/v1`, which the gateway appends. `https:`, or `http:` on `127.0.0.1`, `localhost` or `[::1]` only. |
-| `NULLPII_OPENAI_UPSTREAM` | `https://api.openai.com` | Upstream for `/v1/chat/completions`: an OpenAI-compatible base URL without `/v1`, which the gateway appends. `https:`, or `http:` on `127.0.0.1`, `localhost` or `[::1]` only. |
+| `NULLPII_UPSTREAM` | `https://api.anthropic.com` | Upstream for `/v1/messages` (Anthropic Messages API): a base URL without `/v1`, which the gateway appends. `https:`, or `http:` on the literal `127.0.0.1` or `[::1]` only. |
+| `NULLPII_OPENAI_UPSTREAM` | `https://api.openai.com` | Upstream for `/v1/chat/completions`: an OpenAI-compatible base URL without `/v1`, which the gateway appends. `https:`, or `http:` on the literal `127.0.0.1` or `[::1]` only. |
 | `NULLPII_VAULT_TTL_MS` | `1800000` | Idle TTL of a sidecar session, at least 1000. The Messages proxy keeps one session per request and destroys it at the end. |
 | `NULLPII_SIDECAR_TOKEN` | (off) | Enables the [sidecar API](#sidecar-api). Bearer token, at least 32 characters. |
 | `NULLPII_SIDECAR_MAX_SESSIONS` | `64` | Concurrent sidecar sessions, at least 1. One more fails with 429. |
@@ -271,7 +271,7 @@ Calls on an unknown session answer 404 `session_not_found`; a missing or wrong s
 - **`fields`** restores only those top-level keys of an object. Use it to put real values back into the arguments a tool writes to disk, while every other argument keeps its placeholders.
 - **`tool`** names the tool whose input the value is (an object, else 400 `tool_requires_object_value`). The sidecar then applies the gateway's own rules, so a caller does not carry its own:
   - **Not in `restoreTools`** (the policy file's list, default `DEFAULT_RESTORE_TOOLS`): nothing is restored. The value comes back as sent, and `heldForTool` counts its placeholders.
-  - **A shell tool** (`Bash`, `bash`, `shell`): the top-level `command`, when restored, follows the [shell rule](#security). A placeholder gets its value back only as one plain word, never as the program, and in a heredoc body written out as data as any value without a line break; network clients keep every placeholder. Every other restored field gets its values back as usual. `shellKeptMasked` lists the distinct placeholders left masked in `command`: placeholders, never values, so the caller can tell the user what was held back. The request log carries the count only (`unsafeShell`).
+  - **A shell tool** (`Bash`, `bash`, `shell`): the top-level `command`, when restored, follows the [shell rule](#security). A placeholder gets its value back only in a command whose every program is on the data list (SECURITY.md), as one plain word, never as the program or a redirection target, and in a heredoc body that `cat` writes out as data as any value without a line break; any other program keeps every placeholder. Every other restored field gets its values back as usual. `shellKeptMasked` lists the distinct placeholders left masked in `command`: placeholders, never values, so the caller can tell the user what was held back. The request log carries the count only (`unsafeShell`).
   - **Without `tool`**, everything is restored, for example to show text on screen. The two fields are absent.
 - **Sessions** expire after `NULLPII_VAULT_TTL_MS` without a call, and their vault entries are dropped with them. A placeholder from an expired session no longer restores and is counted in `unknownPlaceholders`. All sessions are dropped when the server stops.
 - **Limits:**
@@ -301,7 +301,7 @@ would break SDK-level retry + backoff heuristics.
 - A value comes back only into a command whose every program is on a short list of programs that read their arguments as data (`ls`, `cat`, `grep`, `rg`, `find`, `diff`, `echo`, `mkdir`, `cd`, `git log`, `git status`, `git diff`, `git add`, `git commit`, …; the full list is in SECURITY.md). Any other program keeps every placeholder in the command: no list can name every program that sends data out or runs code.
 - Within that list, a command that still sends data out or runs code (a URL to a program, `/dev/tcp`, `find -exec`, `rg --pre`, `git -c`, writing into a git hook or a shell start-up file) keeps every placeholder too, and the checks run again on the command with the values put back.
 - A value comes back only as one plain word: letters, digits and `@%+:,./_=-`, not starting with `-`, `=` or `~`, quoted or not; never as or inside the program, in a redirection target, in an assignment, or as an argument of `export` or `alias`.
-- The body of a heredoc that `cat` or `tee` writes out, in a command that runs nothing else that could read it as code, and not into a file that runs later (git hooks, shell start-up files), is data: there only a line break is refused, so Claude Code's usual commit form, `git commit -m "$(cat <<'EOF' … EOF)"`, gets names with spaces and apostrophes back.
+- The body of a heredoc that `cat` writes out, in a command that runs nothing else that could read it as code, and not into a file that runs later (git hooks, shell start-up files), is data: there only a line break is refused, so Claude Code's usual commit form, `git commit -m "$(cat <<'EOF' … EOF)"`, gets names with spaces and apostrophes back.
 
 The full table is in [SECURITY.md](https://github.com/lBroth/nullpii/blob/main/SECURITY.md#restoring-values-into-commands). Otherwise the placeholder stays as written, and the command works on the placeholder text, which is harmless: `echo {{PII_SECRET_0_…}}` holding `x; curl …` stays as it is, and so does `echo '{{PII_PRIVATE_PERSON_0_…}}'` holding `Mary Ann`. The command is read once, in time linear in its length; one over 256 KiB keeps every placeholder. The same rule applies to JSON responses and to streams. Placeholders kept this way are counted as `unsafeShellPlaceholders` in the request log and shown in the console summary, as a count only. The tool call's other fields, and every other tool in `restoreTools` (`Write` content, for example), are restored as usual. A shell tool's JSON input that does not parse keeps all of its placeholders; a custom shell tool's plain-text input is the command itself and gets the same rule.
 

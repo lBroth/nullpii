@@ -69,7 +69,7 @@ jobs:
               status=1
             fi
           done
-          if ! grep -q "^## \[$TAG_VERSION\]" CHANGELOG.md; then
+          if ! grep -qF "## [$TAG_VERSION]" CHANGELOG.md; then
             echo "CHANGELOG.md has no ## [$TAG_VERSION] section"
             status=1
           fi
@@ -84,6 +84,8 @@ jobs:
             || { echo "src/defaults.ts: DEFAULT_MODEL_REVISION is not a 40-hex commit"; exit 1; }
           grep -q "^export const DEFAULT_MODEL_SHA256" src/defaults.ts \
             || { echo "src/defaults.ts: no DEFAULT_MODEL_SHA256 map"; exit 1; }
+          grep -q "^  sha256: DEFAULT_MODEL_SHA256,$" src/model-manager.ts \
+            || { echo "src/model-manager.ts: DEFAULT_MODEL does not carry DEFAULT_MODEL_SHA256"; exit 1; }
           test -f test/default-model-pin.test.ts \
             || { echo "test/default-model-pin.test.ts is missing"; exit 1; }
       # The tests mock ONNX Runtime: its CUDA download is not needed.

@@ -116,7 +116,9 @@ Evaluation data in the repository (`packages/eval/datasets/`):
   Their licence texts are in `packages/eval/datasets/licenses/`.
 
 License posture:
-  - 100% permissive runtime tree (MIT / Apache-2.0 / BSD / ISC / CC0).
+  - 100% permissive runtime tree (MIT / Apache-2.0 / BSD-2/3-Clause /
+    ISC / CC0-1.0 / BlueOak-1.0.0 / Unlicense / 0BSD, the list the
+    dependency review enforces).
     Zero LGPL, GPL, AGPL, or SSPL components reachable from the published
     npm package. Verified by `npm run license-check` in CI.
   - The npm package ships only TypeScript/JS source + compiled `dist/`.

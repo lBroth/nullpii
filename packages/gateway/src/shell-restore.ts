@@ -182,6 +182,12 @@ const CODE_RUNNERS: ReadonlySet<string> = new Set([
   'hyperfine',
   'gdb',
   'trap',
+  'pipx',
+  'emacs',
+  'nix-shell',
+  'crontab',
+  'systemctl',
+  'launchctl',
 ]);
 
 /** Programs that run code through some subcommands (`uv run`, `npm exec`,
@@ -189,7 +195,6 @@ const CODE_RUNNERS: ReadonlySet<string> = new Set([
 const CODE_SUBCOMMANDS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ['uv', new Set(['run', 'tool'])],
   ['uvx', new Set<string>()],
-  ['npm', new Set(['exec', 'run', 'run-script', 'test', 'start', 'x'])],
   ['pnpm', new Set(['exec', 'dlx', 'run', 'test', 'start'])],
   ['yarn', new Set(['exec', 'dlx', 'run', 'test', 'start'])],
   ['bun', new Set(['run', 'x', 'test'])],
@@ -201,7 +206,21 @@ const CODE_SUBCOMMANDS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ['go', new Set(['run', 'test', 'generate'])],
   ['docker', new Set(['run', 'exec'])],
   ['podman', new Set(['run', 'exec'])],
-  ['git', new Set(['-c', '--config-env', 'filter-branch', 'rebase', 'bisect'])],
+  [
+    'git',
+    new Set([
+      '-c',
+      '--config-env',
+      'config',
+      'filter-branch',
+      'rebase',
+      'bisect',
+      'difftool',
+      'mergetool',
+    ]),
+  ],
+  ['npm', new Set(['exec', 'run', 'run-script', 'test', 'start', 'x', 'config', 'set'])],
+  ['defaults', new Set(['write', 'import'])],
 ]);
 
 /** Options that make an otherwise plain program run a command it is given
@@ -215,6 +234,10 @@ const COMMAND_OPTIONS: ReadonlyMap<string, RegExp> = new Map([
   ['zip', /^-TT|^--unzip-command/],
   ['rsync', /^-[A-Za-z]*e|^--rsh/],
   ['less', /^-[A-Za-z]*\+|^\+/],
+  ['rg', /^--pre(?:=|$)/],
+  ['man', /^-[A-Za-z]*P|^--pager/],
+  ['sort', /^--compress-program/],
+  ['fzf', /^--(?:preview|bind)/],
 ]);
 
 /** Programs that run the program named after their own options, with the
@@ -356,6 +379,12 @@ const NETWORK_PROGRAMS: ReadonlySet<string> = new Set([
   'clickhouse-client',
   'ldapsearch',
   'ldapmodify',
+  'ssh-keyscan',
+  'getent',
+  'arp',
+  'huggingface-cli',
+  'hf',
+  'ollama',
   'open',
   'xdg-open',
   'gio',
@@ -386,7 +415,23 @@ const NETWORK_SUBCOMMANDS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ['docker', new Set(['push', 'pull', 'login'])],
   ['podman', new Set(['push', 'pull', 'login'])],
   ['buildah', new Set(['push', 'pull', 'login'])],
-  ['npm', new Set(['publish', 'login', 'adduser', 'install', 'i', 'add', 'ci', 'update'])],
+  [
+    'npm',
+    new Set([
+      'publish',
+      'login',
+      'adduser',
+      'install',
+      'i',
+      'add',
+      'ci',
+      'update',
+      'view',
+      'info',
+      'show',
+      'search',
+    ]),
+  ],
   ['pnpm', new Set(['publish', 'login', 'install', 'i', 'add', 'update'])],
   ['yarn', new Set(['publish', 'login', 'npm', 'install', 'add', 'up'])],
   ['bun', new Set(['publish', 'install', 'i', 'add'])],
@@ -482,7 +527,21 @@ const ENVIRONMENT_BUILTINS: ReadonlySet<string> = new Set([
 /** Files a shell, git or a hook runner executes later: a heredoc written
  * to one is code, not data. */
 const EXECUTED_LATER =
-  /(?:^|[\s/'"])(?:\.git\/hooks\/|\.husky\/|\.githooks\/|\.(?:bash|zsh|ksh|mksh|tcsh|csh)rc\b|\.(?:bash_)?profile\b|\.zprofile\b|\.zshenv\b|\.zlogin\b|\.envrc\b|\.config\/fish\/|crontab\b|\/etc\/)/;
+  /(?:^|[\s/'"])(?:\.git\/hooks\/|\.husky\/|\.githooks\/|\.(?:bash|zsh|ksh|mksh|tcsh|csh)rc\b|\.(?:bash_)?profile\b|\.zprofile\b|\.zshenv\b|\.zlogin\b|\.envrc\b|\.config\/fish\/|crontab\b|\/etc\/|(?:~|\$HOME)\/(?:\.local\/)?bin\/|\/usr\/(?:local\/)?bin\/|LaunchAgents\/|systemd\/)/;
+
+/** Programs that put a file in place, whose destination may run later. */
+const FILE_WRITERS: ReadonlySet<string> = new Set([
+  'cp',
+  'mv',
+  'ln',
+  'install',
+  'tee',
+  'dd',
+  'rsync',
+  'cat',
+]);
+/** An output redirection (`>`, `>>`, `>|`, `&>`), not `2>&1`. */
+const WRITE_REDIRECTION = /(?<![<>&\d])\d*>(?!&)/;
 
 /** Nesting deeper than this is not read: the command keeps every
  * placeholder. */
@@ -715,7 +774,11 @@ function judge(command: string, targets: readonly number[]): Verdict {
   const strict = NESTED_INTERPRETER.test(code) || programs.some((p) => runsCode(p) || runsFile(p));
   // A data body written to a file that a shell, git or a hook runs later
   // is code: `cat > .git/hooks/pre-commit <<'EOF'`, `cat >> ~/.bashrc`.
-  const writesExecuted = scan.dataBodies.length > 0 && EXECUTED_LATER.test(code);
+  const writesFiles =
+    scan.dataBodies.length > 0 ||
+    WRITE_REDIRECTION.test(code) ||
+    programs.some((p) => p.name !== undefined && FILE_WRITERS.has(p.name));
+  const writesExecuted = writesFiles && EXECUTED_LATER.test(code);
   // `offMachine` also covers a program whose code no word is safe in.
   const offMachine =
     ANY_DELIMITER_IN_TEXT.test(code) ||
@@ -736,7 +799,10 @@ function judge(command: string, targets: readonly number[]): Verdict {
     else contextAt.set(index, context);
     if (holdsAt(command, index, sorted, settled)) programAt.add(index);
   });
-  return { offMachine, runsCode: strict, contextAt, programAt };
+  // A command that names a file run later (a git hook, a shell start-up
+  // file, a directory on PATH) can put a value there by any means:
+  // `cp {{…}} .git/hooks/pre-commit`, `mv {{…}} ~/.zshrc`.
+  return { offMachine, runsCode: strict || writesExecuted, contextAt, programAt };
 }
 
 /** `text` with each of `ranges` blanked out, offsets kept. */

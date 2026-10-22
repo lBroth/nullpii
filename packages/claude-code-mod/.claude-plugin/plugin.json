@@ -17,7 +17,7 @@
     "sidecar_url": {
       "type": "string",
       "title": "Sidecar URL",
-      "description": "Where nullpii-gateway listens: http:// on 127.0.0.1, localhost or [::1], with an optional port. Any other address is refused.",
+      "description": "Where nullpii-gateway listens: http:// on 127.0.0.1 or [::1], the literal address the gateway listens on, with an optional port. Any other address, localhost included, is refused.",
       "default": "http://127.0.0.1:8787"
     }
   }

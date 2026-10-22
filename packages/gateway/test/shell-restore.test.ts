@@ -654,6 +654,15 @@ describe('shell restore · v3 hardening', () => {
     expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(0);
   });
 
+  it('reading a file under /etc does not count as writing one', () => {
+    const { np, vault, sessionId } = harness();
+    const email = bake(vault, sessionId, EMAIL, 'private_email');
+
+    expect(restoreShellCommand(np, `grep ${email} /etc/hosts`, sessionId).command).toBe(
+      `grep ${EMAIL} /etc/hosts`,
+    );
+  });
+
   it('a file named after sed is not sed', () => {
     const { np, vault, sessionId } = harness();
     const email = bake(vault, sessionId, EMAIL, 'private_email');
@@ -748,6 +757,21 @@ describe('shell restore · round-5 bypasses', () => {
     (p: string) => `npm exec ${p}`,
     (p: string) => `hyperfine ${p}`,
     (p: string) => `ruby -e "puts ${p}"`,
+    (p: string) => `git config core.pager ${p}`,
+    (p: string) => `npm config set script-shell ${p}`,
+    (p: string) => `cp ${p} .git/hooks/pre-commit`,
+    (p: string) => `ln -sf ${p} .git/hooks/pre-commit`,
+    (p: string) => `mv ${p} ~/.zshrc`,
+    (p: string) => `install -m755 ${p} ~/bin/ls`,
+    (p: string) => `crontab ${p}`,
+    (p: string) => `systemctl start ${p}`,
+    (p: string) => `rg --pre ${p} foo`,
+    (p: string) => `git difftool -x ${p}`,
+    (p: string) => `man -P ${p} ls`,
+    (p: string) => `sort --compress-program=${p} f`,
+    (p: string) => `ssh-keyscan ${p}`,
+    (p: string) => `getent hosts ${p}`,
+    (p: string) => `npm view ${p}`,
   ])('keeps a plain word that could run as code masked: %#', (build) => {
     const { np, vault, sessionId } = harness();
     const word = bake(vault, sessionId, 'reboot', 'secret');

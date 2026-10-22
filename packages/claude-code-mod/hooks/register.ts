@@ -44,7 +44,7 @@ const KEY_SUFFIX_RADIX = 36;
 const NO_TOKEN =
   'no sidecar token: set it with /plugin configure (sidecar_token), or NULLPII_SIDECAR_TOKEN';
 const NOT_LOOPBACK =
-  'sidecar_url is not a local sidecar address (http:// on 127.0.0.1, localhost or [::1], with an optional port and nothing after it): fix it with /plugin configure';
+  'sidecar_url is not a local sidecar address (http:// on 127.0.0.1 or [::1], the address the gateway listens on, with an optional port and nothing after it): fix it with /plugin configure';
 const UNREACHABLE =
   'nullpii-gateway did not answer at the sidecar address: start it with NULLPII_SIDECAR_TOKEN set';
 const NOT_JSON = 'the sidecar answered with something that is not JSON';

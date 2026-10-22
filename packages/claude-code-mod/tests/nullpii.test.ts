@@ -801,14 +801,15 @@ const NOT_SIDECAR_URLS = [
   'http://127.0.0.1:8787/#frag',
   'http://127.0.0.1.nip.io:8787',
   'http://localhost.example.com:8787',
+  // `localhost` can resolve to the loopback address the gateway is not on.
+  'http://localhost:8787',
+  'http://LOCALHOST',
   'not a url',
 ];
 
 test('sidecarOrigin keeps loopback http origins and refuses every other address', () => {
   expect(sidecarOrigin('http://127.0.0.1:8787')).toBe('http://127.0.0.1:8787');
   expect(sidecarOrigin('http://127.0.0.1:8787/')).toBe('http://127.0.0.1:8787');
-  expect(sidecarOrigin('http://localhost:9000')).toBe('http://localhost:9000');
-  expect(sidecarOrigin('http://LOCALHOST')).toBe('http://localhost');
   expect(sidecarOrigin('http://[::1]:8787')).toBe('http://[::1]:8787');
   expect(sidecarOrigin('http://127.1:8787')).toBe('http://127.0.0.1:8787');
   for (const url of NOT_SIDECAR_URLS) expect(sidecarOrigin(url), url).toBeUndefined();
@@ -858,7 +859,7 @@ test('NULLPII_SIDECAR_URL in the environment does not move the sidecar', async (
 
 test(
   'the sidecar_url option picks the loopback address and port',
-  { options: { sidecar_url: 'http://localhost:9000' } },
+  { options: { sidecar_url: 'http://[::1]:9000' } },
   async ($, on) => {
     const sidecar = fakeSidecar();
     stubSession(on, sidecar);
@@ -866,7 +867,7 @@ test(
     await start($);
     const prompt = await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
     expect(prompt.drop).toBeUndefined();
-    expect(new Set(sidecar.hosts)).toEqual(new Set(['localhost:9000']));
+    expect(new Set(sidecar.hosts)).toEqual(new Set(['[::1]:9000']));
   },
 );
 

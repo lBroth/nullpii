@@ -127,9 +127,9 @@ const DATA_BODY_SAFE: Readonly<Record<DataBodyContext, RegExp>> = {
   heredoc: /^[^\n\u2028\u2029]*$/u,
   'heredoc-expanding': /^[^$`\\\n\u2028\u2029]*$/u,
   // Inside `$(…)` the body is not opaque to every shell: bash 3.2 (the
-  // macOS `/bin/bash`) scans it for quotes, parentheses, backticks,
-  // escapes and comments to find the end of the substitution. So, whichever
-  // the delimiter, none of the characters that scan reads.
+  // macOS `/bin/bash`) scans it for quotes, parentheses, backticks and
+  // escapes (and, unquoted, comments) to find the end of the substitution.
+  // So, whichever the delimiter, none of the characters that scan reads.
   'heredoc-in-substitution': /^[^$`\\()'"\n\u2028\u2029]*$/u,
 };
 
@@ -1709,19 +1709,31 @@ function trackParens(stack: Frame[], frame: Frame, command: string, i: number, s
   }
   // bash 3.2 (macOS's `/bin/bash`) finds the end of `$(…)` by scanning its
   // text for quotes and parentheses, heredoc bodies included; newer shells
-  // parse the body as a body. A substitution with a heredoc whose end the
-  // two readings place differently is not read.
-  if (frame.heredoc === true && bash32SubstitutionEnd(command, frame.opened ?? -1) !== i) {
+  // parse the body as a body. It skips `#` comments in an unquoted `$(…)`
+  // but not inside `"$(…)"`, so both scans must end where the lexer does:
+  // a substitution with a heredoc whose end any reading places elsewhere
+  // is not read.
+  if (frame.heredoc === true && !bash32AgreesAt(command, frame.opened ?? -1, i)) {
     scan.broken = true;
   }
   closeCommand(stack, frame, i, scan);
 }
 
+/** True when bash 3.2 ends the `$(…)` whose `$` is at `open` at `end`,
+ * whether or not it skips `#` comments there. */
+function bash32AgreesAt(command: string, open: number, end: number): boolean {
+  return (
+    bash32SubstitutionEnd(command, open, true) === end &&
+    bash32SubstitutionEnd(command, open, false) === end
+  );
+}
+
 /** Where bash 3.2 ends the `$(…)` whose `$` is at `open`: quotes, escapes,
- * backticks, nested parentheses and `#` comments (from a word start to the
- * end of the line, as `/bin/bash` 3.2.57 reads them) are tracked,
- * heredocs are not. `-1` when it finds no end. */
-function bash32SubstitutionEnd(command: string, open: number): number {
+ * backticks and nested parentheses are tracked, heredocs are not; with
+ * `comments`, so are `#` comments from a word start to the end of the
+ * line (as `/bin/bash` 3.2.57 reads an unquoted `$(…)`; inside `"$(…)"`
+ * it does not skip them). `-1` when it finds no end. */
+function bash32SubstitutionEnd(command: string, open: number, comments: boolean): number {
   if (open < 0) return -1;
   const stack: Array<'(' | '"' | '`'> = ['('];
   for (let j = open + 2; j < command.length; j++) {
@@ -1738,7 +1750,7 @@ function bash32SubstitutionEnd(command: string, open: number): number {
         stack.push('(');
         j += 1;
       }
-    } else if (ch === '#' && startsWord(command, j)) {
+    } else if (comments && ch === '#' && startsWord(command, j)) {
       const newline = command.indexOf('\n', j);
       if (newline === -1) return -1;
       j = newline - 1;

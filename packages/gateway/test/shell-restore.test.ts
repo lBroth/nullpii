@@ -1189,6 +1189,27 @@ describe('shell restore · round-11 heredocs inside substitutions', () => {
     expect(restored(restoreShellCommand(np, command, sessionId))).toBe(0);
   });
 
+  it.each(['note #1 )"\nThanks PH', "fix #12's PH"])(
+    'keeps every value where `#` reads differently inside `"$(…)"`: %j',
+    (message) => {
+      const { np, vault, sessionId } = harness();
+      const name = bake(vault, sessionId, FULL_NAME, 'private_person');
+
+      expect(
+        restored(restoreShellCommand(np, commitWith(message.replace('PH', name)), sessionId)),
+      ).toBe(0);
+    },
+  );
+
+  it('still restores a commit message with an issue reference and balanced parentheses', () => {
+    const { np, vault, sessionId } = harness();
+    const name = bake(vault, sessionId, FULL_NAME, 'private_person');
+
+    const r = restoreShellCommand(np, commitWith(`fix #123 (see) ${name}`), sessionId);
+
+    expect(r.command).toBe(commitWith(`fix #123 (see) ${FULL_NAME}`));
+  });
+
   it('still restores a commit message with an issue reference', () => {
     const { np, vault, sessionId } = harness();
     const name = bake(vault, sessionId, FULL_NAME, 'private_person');

@@ -19,17 +19,23 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  * works on the placeholder text, which is harmless.
  *
  * On top of that:
+ * - a listed program counts only by name, with no wrapper, no path, no
+ *   redirection before it and no computed argument (`$x`, `$'…'`; git
+ *   commit's heredoc message aside), and with none of the options that run
+ *   or write (`COMMAND_OPTIONS`, abbreviations included);
  * - a placeholder that is, or is part of, the program a simple command
- *   runs, a redirection target, an assignment or an argument of `export`
- *   or `alias` stays masked: a value must not choose what runs or what is
- *   written;
+ *   runs, a redirection target, an assignment, an argument of `export` or
+ *   `alias`, or a `cd` argument in a command that runs git stays masked: a
+ *   value must not choose what runs, what is written or which repository
+ *   git reads;
  * - within the list, a command that sends data off the machine (a URL,
  *   `/dev/tcp`) or runs code through an option (`find -exec`, `rg --pre`,
  *   `git -c`) keeps every placeholder, also when judged again with the
  *   values put back;
  * - the one exception to the plain-word rule is the body of a heredoc that
- *   `cat` writes out, in a command that runs nothing else that
- *   could read it as code (`cat > notes.md <<'EOF'`, a
+ *   `cat` writes to standard output or to a document file (`.md`, `.txt`,
+ *   …; `PLAIN_DATA_FILE`), in a command that runs nothing else that could
+ *   read it as code (`cat > notes.md <<'EOF'`, a
  *   `git commit -m "$(cat <<'EOF' …)"` message): that body is data, as a
  *   file the `Write` tool writes is, so only a line break is refused (and
  *   in a bare-delimiter body, which expands, `$`, a backtick or a
@@ -37,9 +43,10 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  *   that mentions `ssh` does not count as a network call.
  *
  * The command is read once, in time linear in its length, whatever the
- * number of placeholders; a command longer than `MAX_COMMAND_CHARS`, or
- * one whose quoting or substitutions are left open, keeps every
- * placeholder or loses the heredoc exception. Heredoc bodies and `#`
+ * number of placeholders; a command longer than `MAX_COMMAND_CHARS`,
+ * nested past `MAX_NESTING`, or whose words would be read past the scan
+ * budget keeps every placeholder, and one whose quoting or substitutions
+ * are left open loses the heredoc exception. Heredoc bodies and `#`
  * comments are skipped by the quote lexer; `<<` counts only in shell code,
  * never inside quotes or as the here-string `<<<`. A `command` given as an
  * argv array (`["bash", "-lc", "…"]`) is judged by `restoreShellArgv`.

@@ -153,6 +153,12 @@ describe('sidecar · access control', () => {
       headers: { authorization: `bearer ${TOKEN}` },
     });
     expect(res.statusCode).toBe(200);
+    const spaced = await app.inject({
+      method: 'GET',
+      url: '/v1/sidecar/status',
+      headers: { authorization: `Bearer \t ${TOKEN}` },
+    });
+    expect(spaced.statusCode).toBe(200);
   });
 
   it('refuses a non-loopback Host (DNS rebinding) even with the token', async () => {

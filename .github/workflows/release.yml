@@ -85,10 +85,24 @@ jobs:
             *-*) pin="$TAG_VERSION" ;;
             *) pin="${TAG_VERSION%.*}" ;;
           esac
-          if ! grep -qF "npx -y nullpii@$pin config" packages/claude-code-mod/skills/nullpii-policy/SKILL.md; then
-            echo "the nullpii-policy skill does not run nullpii@$pin"
+          pins=$(grep -oE 'npx -y nullpii@[^ ]+ config' packages/claude-code-mod/skills/nullpii-policy/SKILL.md | sort -u)
+          if [ "$pins" != "npx -y nullpii@$pin config" ]; then
+            echo "the nullpii-policy skill must run nullpii@$pin everywhere, found: $pins"
             status=1
           fi
+          # A release moves the marketplace pin in the install commands.
+          case "$TAG_VERSION" in
+            *-*) ;;
+            *)
+              for doc in README.md packages/claude-code-mod/README.md; do
+                stale=$(grep -oE 'lBroth/nullpii@v[0-9A-Za-z.-]+' "$doc" | sort -u | grep -vxF "lBroth/nullpii@v$TAG_VERSION" || true)
+                if [ -n "$stale" ]; then
+                  echo "$doc still pins $stale, the tag says lBroth/nullpii@v$TAG_VERSION"
+                  status=1
+                fi
+              done
+              ;;
+          esac
           # The gateway is built against this commit's core: its peer range
           # starts at this very version, pre-releases included.
           base=${TAG_VERSION%%-*}
@@ -106,7 +120,7 @@ jobs:
       # The default model must name a Hugging Face commit, not a branch, so
       # the repository cannot change what a release downloads,
       # and a SHA-256 for every file it fetches, which the pin test
-      # (test/default-model-pin.test.ts, run by `npm test` below) checks.
+      # (test/default-model-pin.test.ts, run by `npm run test:coverage` below) checks.
       - name: Default model is pinned to a commit and per-file hashes
         run: |
           grep -Eq "^export const DEFAULT_MODEL_REVISION = '[0-9a-f]{40}';" src/defaults.ts \
@@ -123,12 +137,18 @@ jobs:
           ONNXRUNTIME_NODE_INSTALL: skip
       - run: npm run lint
       - run: npm run typecheck
-      - run: npm test
+      - run: npm run test:coverage
       - run: npm run build
       - run: npm run license-check
       - run: npm run circular-check
       - run: npm run hygiene
       - run: npm run sbom
+      # The tag also releases the Claude Code mod (through the marketplace
+      # pin): the same checks as ci.yml's mod job.
+      - run: npm install --global @anthropic-ai/claude-code@2.1.305
+      - run: claude plugin validate --strict .
+      - run: claude plugin validate --strict packages/claude-code-mod
+      - run: claude plugin test packages/claude-code-mod
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: sbom

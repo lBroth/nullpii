@@ -12,9 +12,11 @@ import { describe, expect, it } from 'vitest';
 const BIN = fileURLToPath(new URL('../bin/nullpii-gateway.mjs', import.meta.url));
 const PACKAGE_JSON = new URL('../package.json', import.meta.url);
 const USAGE_EXIT = 2;
+/** A regression that starts a server must fail the test, not hang it. */
+const RUN_TIMEOUT_MS = 10_000;
 
 function run(...args: string[]) {
-  return spawnSync(process.execPath, [BIN, ...args], { encoding: 'utf8' });
+  return spawnSync(process.execPath, [BIN, ...args], { encoding: 'utf8', timeout: RUN_TIMEOUT_MS });
 }
 
 describe('nullpii-gateway command line', () => {

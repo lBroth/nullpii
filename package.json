@@ -72,7 +72,7 @@
     "license-checker": "^25.0.1",
     "madge": "^8.0.0",
     "onnxruntime-node": "1.30.0",
-    "tsx": "^4.19.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.7.2",
     "vite": "8.2.4",
     "vitepress": "1.6.4",

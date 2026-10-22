@@ -45,6 +45,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Tagged commit is on main
         run: |
           git fetch --no-tags origin main
@@ -69,6 +70,25 @@ jobs:
               status=1
             fi
           done
+          # `npm version` writes the lockfile too; a stale one would install
+          # under the old version.
+          for field in version "packages[''].version"; do
+            version=$(node -p "require('./package-lock.json').$field")
+            if [ "$version" != "$TAG_VERSION" ]; then
+              echo "package-lock.json $field is $version, the tag says $TAG_VERSION"
+              status=1
+            fi
+          done
+          # The mod's policy skill runs the CLI of this release: `X.Y` for a
+          # release, the exact version for a pre-release (`X.Y` matches none).
+          case "$TAG_VERSION" in
+            *-*) pin="$TAG_VERSION" ;;
+            *) pin="${TAG_VERSION%.*}" ;;
+          esac
+          if ! grep -qF "npx -y nullpii@$pin config" packages/claude-code-mod/skills/nullpii-policy/SKILL.md; then
+            echo "the nullpii-policy skill does not run nullpii@$pin"
+            status=1
+          fi
           # The gateway is built against this commit's core: its peer range
           # starts at this very version, pre-releases included.
           base=${TAG_VERSION%%-*}
@@ -207,6 +227,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - name: Extract changelog body for tag
         id: changelog
         run: |

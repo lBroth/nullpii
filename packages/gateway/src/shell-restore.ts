@@ -124,7 +124,7 @@ export const MAX_COMMAND_CHARS = 256 * 1024;
 const SAME_COMMAND = String.raw`[^;&|\n]{0,256}?`;
 
 /** Interpreter names, for the patterns that look inside quoted code. */
-const INTERPRETER_NAMES = String.raw`(?:bash|sh|zsh|dash|ksh|fish|python[\d.]*|pypy[\d.]*|node|nodejs|bun|deno|perl|ruby|lua|php|Rscript|osascript|pwsh)`;
+const INTERPRETER_NAMES = String.raw`(?:bash|sh|zsh|dash|ksh|mksh|yash|posh|csh|tcsh|fish|python[\d.]*|pypy[\d.]*|node|nodejs|bun|deno|perl|ruby|lua|php|Rscript|osascript|pwsh|powershell)`;
 
 /** A program name standing as a whole word: not part of a path segment,
  * a file name (`sed.txt`) or a longer name (`ssh-keygen`, `~/.ssh`). */
@@ -139,7 +139,8 @@ const NAME_END = String.raw`(?![\w.-])`;
  * itself runs is judged by name (`CODE_RUNNERS`). */
 const NESTED_INTERPRETER = new RegExp(
   [
-    String.raw`${NAME_START}(?:bash|sh|zsh|dash|ksh|fish)${NAME_END}${SAME_COMMAND}\s(?:-[A-Za-z]*c[A-Za-z]*|--command)\b`,
+    String.raw`${NAME_START}(?:bash|sh|zsh|dash|ksh|mksh|yash|posh|csh|tcsh|fish)${NAME_END}${SAME_COMMAND}\s(?:-[A-Za-z]*c[A-Za-z]*|--command)\b`,
+    String.raw`${NAME_START}(?:pwsh|powershell)${NAME_END}${SAME_COMMAND}\s-`,
     String.raw`${NAME_START}(?:eval|ssh)${NAME_END}|${NAME_START}(?:su|runuser|flock|script)${NAME_END}${SAME_COMMAND}\s(?:-c|--command)\b`,
     String.raw`${NAME_START}(?:python[\d.]*|pypy[\d.]*)${NAME_END}${SAME_COMMAND}\s-[A-Za-z]*c[A-Za-z]*\b`,
     String.raw`${NAME_START}(?:node|nodejs|bun|deno)${NAME_END}${SAME_COMMAND}\s(?:-[A-Za-z]*[ep][A-Za-z]*|--eval|--print|eval)\b`,
@@ -653,6 +654,16 @@ const DATA_GIT_SUBCOMMANDS: ReadonlySet<string> = new Set([
 const ANY_DELIMITER_PROGRAMS: ReadonlySet<string> = new Set(['sed', 'gsed', 'perl', 'ruby', 'irb']);
 const ANY_DELIMITER_IN_TEXT = /(?<![\w.-])(?:g?sed|perl|ruby|irb)(?![\w.-])/;
 
+/** Builtins that zsh or ksh93 read an argument of as arithmetic, which
+ * can assign (`HOME=0`, `PATH++`): ksh93's `test` and `[` on integer
+ * comparisons. No value comes back into their arguments. (`printf` does
+ * the same for a numeric conversion: `convertsOnlyStrings`.) */
+const ARITHMETIC_BUILTINS: ReadonlySet<string> = new Set(['test', '[']);
+
+/** A `printf` conversion of a string, or a literal `%`: no width or
+ * precision taken from an argument (`*`). */
+const STRING_CONVERSION = /%(?:%|[-+ #0]*\d*(?:\.\d*)?[sbc])/g;
+
 /** Shell builtins whose arguments set what later commands run or see
  * (`export LD_PRELOAD=…`, `alias ll=…`): a value is never restored there. */
 const ENVIRONMENT_BUILTINS: ReadonlySet<string> = new Set([
@@ -870,6 +881,10 @@ interface Scan {
 /** A word of a simple command, quotes and escapes removed. */
 interface Word {
   readonly text: string;
+  /** How many leading characters of `text` were written unquoted. An
+   * assignment's name and `=`, or a redirection's operator, count only
+   * there: `'LC_ALL=C' grep …` runs a program named `LC_ALL=C`. */
+  readonly bare: number;
   /** Where the word starts and ends in the text it was read from. */
   readonly start: number;
   readonly end: number;
@@ -1089,10 +1104,25 @@ function readCommands(
 
 /** True when every assignment among `words` sets the locale or time zone. */
 function assignsOnlyLocale(words: readonly Word[]): boolean {
-  return words.every(
-    (w) =>
-      !ENV_ASSIGNMENT.test(w.text) || SAFE_ASSIGNMENT.test(w.text.slice(0, w.text.indexOf('='))),
-  );
+  return words.every((w) => !isAssignment(w) || SAFE_ASSIGNMENT.test(assignedName(w)));
+}
+
+/** True when `w` is an assignment as a shell reads one: `NAME=` written
+ * unquoted. */
+function isAssignment(w: Word): boolean {
+  return ENV_ASSIGNMENT.test(w.text) && w.text.indexOf('=') < w.bare;
+}
+
+function assignedName(w: Word): string {
+  return w.text.slice(0, w.text.indexOf('='));
+}
+
+/** The redirection `w` is, with its operator written unquoted (`>x`,
+ * `2>'a b'`, not `'>x'`); `null` otherwise. Group 1 is the target. */
+function redirectionOf(w: Word): RegExpExecArray | null {
+  const m = REDIRECTION.exec(w.text);
+  if (m === null || w.text.length - (m[1] ?? '').length > w.bare) return null;
+  return m;
 }
 
 /** True when `command` holds only whitespace from `start` to `end`. */
@@ -1148,8 +1178,19 @@ function holdsAt(
   // and, in a shell kept across calls, the next one's (git reads its
   // configuration and hooks there).
   const program = programOf(before);
-  if (program?.name === 'cd') return true;
-  return program !== undefined && ENVIRONMENT_BUILTINS.has(program.name);
+  if (program === undefined) return false;
+  if (program.name === 'cd' || ARITHMETIC_BUILTINS.has(program.name)) return true;
+  if (program.name === 'printf' && !convertsOnlyStrings(program.args)) return true;
+  return ENVIRONMENT_BUILTINS.has(program.name);
+}
+
+/** True when `printf`'s format, read before the value, converts only
+ * strings: zsh and ksh93 read the argument of a numeric conversion as
+ * arithmetic, which can assign (`printf %d HOME=0`). */
+function convertsOnlyStrings(args: readonly string[]): boolean {
+  const format = args[0] === '--' ? args[1] : args[0];
+  if (format === undefined) return false;
+  return !format.replace(STRING_CONVERSION, '').includes('%');
 }
 
 /** The start of the command extent around `index`, from extents sorted
@@ -1251,6 +1292,7 @@ function wordsOf(text: string): Word[] {
   let word = '';
   let inWord = false;
   let quote: string | undefined;
+  let quotedAt: number | undefined;
   let wordStart = 0;
   let i = 0;
   const begin = (): void => {
@@ -1261,10 +1303,15 @@ function wordsOf(text: string): Word[] {
     begin();
     word += ch;
   };
+  const quoting = (): void => {
+    begin();
+    quotedAt ??= word.length;
+  };
   const flush = (): void => {
-    if (inWord) words.push({ text: word, start: wordStart, end: i });
+    if (inWord) words.push({ text: word, bare: quotedAt ?? word.length, start: wordStart, end: i });
     word = '';
     inWord = false;
+    quotedAt = undefined;
   };
   for (; i < text.length && words.length < MAX_WORDS; i++) {
     const ch = text[i] ?? '';
@@ -1277,7 +1324,10 @@ function wordsOf(text: string): Word[] {
       // A backslash before a newline continues the line; before anything
       // else it makes that character literal.
       const next = text[i + 1] ?? '';
-      if (next !== '\n') add(next);
+      if (next !== '\n') {
+        quoting();
+        add(next);
+      }
       i++;
       continue;
     }
@@ -1287,13 +1337,15 @@ function wordsOf(text: string): Word[] {
       continue;
     }
     if (ch === "'" || ch === '"') {
-      begin();
+      quoting();
       quote = ch;
     } else if (FIELD_SEPARATORS.has(ch)) flush();
     else {
-      // Digits before the operator name its descriptor (`2>`), and the
-      // operator's characters stay together (`>>`, `<>`).
-      if ((ch === '<' || ch === '>') && !REDIRECTION_HEAD.test(word)) flush();
+      // Unquoted digits before the operator name its descriptor (`2>`;
+      // `"2">` is the word `2`), and the operator's characters stay
+      // together (`>>`, `<>`).
+      const head = quotedAt === undefined && REDIRECTION_HEAD.test(word);
+      if ((ch === '<' || ch === '>') && !head) flush();
       add(ch);
     }
   }
@@ -1306,11 +1358,9 @@ function wordsOf(text: string): Word[] {
  * none (assignments or redirections alone). */
 function programOf(words: readonly Word[]): Program | undefined {
   let k = skipPrefix(words, 0);
-  const redirectedPrefix = words.slice(0, k).some((w) => REDIRECTION.test(w.text));
-  const assigned = words
-    .slice(0, k)
-    .filter((w) => ENV_ASSIGNMENT.test(w.text))
-    .map((w) => w.text.slice(0, w.text.indexOf('=')));
+  const prefix = words.slice(0, k);
+  const redirectedPrefix = prefix.some((w) => !isAssignment(w));
+  const assigned = prefix.filter(isAssignment).map(assignedName);
   const first = words[k];
   if (first === undefined) return undefined;
   const wrappers: string[] = [];
@@ -1386,13 +1436,13 @@ function skipWrapperArgs(
 function skipPrefix(words: readonly Word[], k: number): number {
   let i = k;
   for (;;) {
-    const text = words[i]?.text;
-    if (text === undefined) return i;
-    if (ENV_ASSIGNMENT.test(text)) {
+    const word = words[i];
+    if (word === undefined) return i;
+    if (isAssignment(word)) {
       i += 1;
       continue;
     }
-    const m = REDIRECTION.exec(text);
+    const m = redirectionOf(word);
     if (m === null) return i;
     i += m[1] === '' ? 2 : 1;
   }
@@ -1938,10 +1988,10 @@ const SCRIPT_FLAG = /^-[A-Za-z]*c[A-Za-z]*$|^--command$/;
 /** Shell options that take the next argument (`-o pipefail`, `+O extglob`). */
 const OPTION_WITH_ARGUMENT = /^[-+][A-Za-z]*[oO]$|^--(?:rcfile|init-file|init-command)$/;
 
-/** The index of the program an argv array runs, past assignments,
- * redirections and wrappers. */
+/** The index of the program an argv array runs, past wrappers (no
+ * shell reads it: no word is an assignment or a redirection). */
 function argvProgramIndex(argv: readonly string[]): number {
-  const words = argv.map((text) => ({ text, start: 0, end: text.length }));
+  const words = argv.map((text) => ({ text, bare: 0, start: 0, end: text.length }));
   let k = skipPrefix(words, 0);
   for (;;) {
     const text = words[k]?.text;
@@ -1968,7 +2018,7 @@ function shellScriptIndex(argv: readonly string[], program: number): number {
 
 /** The program an argv array runs, every word literal. */
 function argvProgram(argv: readonly string[]): Program | undefined {
-  return programOf(argv.map((text) => ({ text, start: 0, end: text.length })));
+  return programOf(argv.map((text) => ({ text, bare: 0, start: 0, end: text.length })));
 }
 
 function argvRunsCode(argv: readonly string[]): boolean {
@@ -1985,14 +2035,20 @@ function argvSendsOffMachine(argv: readonly string[]): boolean {
   const program = argvProgram(argv);
   if (program !== undefined && sendsOut(program)) return true;
   if (program !== undefined && ANY_DELIMITER_PROGRAMS.has(program.name)) return true;
-  if (argv.some((a) => ANY_DELIMITER_IN_TEXT.test(a))) return true;
-  if (argv.some((a) => NETWORK_CLIENT.test(a))) return true;
+  // The script a shell runs is judged as a string command, which skips a
+  // heredoc body written out as data (a commit message that mentions
+  // `ssh`); every other word is read whole.
+  const script = shellScriptIndex(argv, argvProgramIndex(argv));
+  if (script >= 0 && sendsOffMachine(argv[script] ?? '')) return true;
+  const words = argv.filter((_, k) => k !== script);
+  if (words.some((a) => ANY_DELIMITER_IN_TEXT.test(a))) return true;
+  if (words.some((a) => NETWORK_CLIENT.test(a))) return true;
   // As in a string command: a URL handed to a program that is not a data one.
-  if (argv.some((a) => URL_SCHEME.test(a)) && !(program !== undefined && isDataProgram(program))) {
+  if (words.some((a) => URL_SCHEME.test(a)) && !(program !== undefined && isDataProgram(program))) {
     return true;
   }
   if (!argvRunsCode(argv)) return false;
-  return argv.some((a) => NETWORK_IN_CODE.test(a) || sendsOffMachine(a));
+  return words.some((a) => NETWORK_IN_CODE.test(a) || sendsOffMachine(a));
 }
 
 /** Restore each placeholder of `text` whose real value `safe` accepts at

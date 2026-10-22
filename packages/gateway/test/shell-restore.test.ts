@@ -1327,6 +1327,64 @@ describe('shell restore · round-10 layout and redirections', () => {
     },
   );
 
+  it.each([
+    [(p: string) => `printf '%d\\n' ${p}; grep probe notes.md`, 'probe=7', 0],
+    [(p: string) => `printf '%*s' ${p} x`, 'probe=7', 0],
+    [(p: string) => `printf ${p}`, EMAIL, 0],
+    [(p: string) => `[ 1 -lt ${p} ] && grep probe notes.md`, 'probe=7', 0],
+    [(p: string) => `test -n ${p}`, EMAIL, 0],
+    [(p: string) => `printf '%s\\n' ${p}`, EMAIL, 1],
+    [(p: string) => `printf -- '%5.2s|%%|%c' ${p}`, EMAIL, 1],
+  ])('holds the arguments zsh or ksh93 may read as arithmetic: %#', (build, value, expected) => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, value, 'secret');
+
+    expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(expected);
+  });
+
+  it.each([
+    [(p: string) => `'LC_ALL=C/x' grep probe ${p}`, 0],
+    [(p: string) => `LC_ALL'=C/x' grep probe ${p}`, 0],
+    [(p: string) => `grep probe ${p}; '<a b'`, 0],
+    [(p: string) => `"2">notes.md grep probe ${p}`, 0],
+    [(p: string) => `LC_ALL="C" grep probe ${p}`, 1],
+    [(p: string) => `grep probe ${p} >'notes.md'`, 1],
+  ])('reads an assignment or a redirection only when written unquoted: %#', (build, expected) => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, EMAIL, 'private_email');
+
+    expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(expected);
+  });
+
+  it.each([
+    (p: string) => `grep 'tcsh -c' notes.md ${p}`,
+    (p: string) => `grep 'pwsh -Command' notes.md ${p}`,
+    (p: string) => `grep probe notes.md ${p} | mksh`,
+  ])('counts more shells and PowerShell named with code in the text: %#', (build) => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, EMAIL, 'private_email');
+
+    expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(0);
+  });
+
+  it('argv: no word is an assignment, so a program named like one is not a listed program', () => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, EMAIL, 'private_email');
+
+    expect(restored(restoreShellArgv(np, ['LC_ALL=C/x', 'grep', 'probe', word], sessionId))).toBe(
+      0,
+    );
+  });
+
+  it('argv: a shell script is judged as a string command, its data heredoc body skipped', () => {
+    const { np, vault, sessionId } = harness();
+    const name = bake(vault, sessionId, FULL_NAME, 'private_person');
+    const script = `git commit -F - <<'EOF'\nFix ssh setup for ${name}\nEOF`;
+
+    expect(restored(restoreShellArgv(np, ['bash', '-lc', script], sessionId))).toBe(1);
+    expect(restored(restoreShellArgv(np, ['bash', '-lc', `${script}\ncurl x`], sessionId))).toBe(0);
+  });
+
   it('restores into both bodies of two heredocs opened on one line', () => {
     const { np, vault, sessionId } = harness();
     const first = bake(vault, sessionId, FULL_NAME, 'private_person');

@@ -43,6 +43,9 @@ const REFUSAL_REPLIES: Readonly<Record<SessionRefusal, { status: number; error: 
   forbidden: { status: 403, error: 'bad_session_secret' },
 };
 const LOOPBACK_HOSTNAMES: ReadonlySet<string> = new Set(['127.0.0.1', 'localhost', '[::1]']);
+/** The `Authorization` value that carries the token; the scheme name is
+ * case-insensitive (RFC 9110, section 11.1). */
+const BEARER = /^bearer (.*)$/i;
 /** The route a caller checks the sidecar knows the token on, before it
  * sends the token or any text. */
 export const CHALLENGE_PATH = '/v1/sidecar/challenge';
@@ -143,7 +146,7 @@ function rejectReason(
   if (req.headers.origin !== undefined) return { status: 403, error: 'origin_not_allowed' };
   if (req.url === CHALLENGE_PATH) return null;
   const auth = req.headers.authorization ?? '';
-  const presented = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : '';
+  const presented = BEARER.exec(auth)?.[1] ?? '';
   if (!timingSafeEqual(sha256(presented), tokenDigest)) {
     return { status: 401, error: 'unauthorized' };
   }

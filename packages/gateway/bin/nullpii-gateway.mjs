@@ -10,19 +10,27 @@ default). Every setting is an environment variable or the shared policy
 file; see https://github.com/lBroth/nullpii/tree/main/packages/gateway
 `;
 
+const VERSION_FLAGS = new Set(['--version', '-v']);
+const HELP_FLAGS = new Set(['--help', '-h']);
+
 // Answer before any configuration is read: an option never starts a server.
 const args = process.argv.slice(2);
 if (args.length > 0) {
-  if (args[0] === '--version' || args[0] === '-v') {
+  const [flag, extra] = args;
+  if (extra === undefined && VERSION_FLAGS.has(flag)) {
     const { version } = createRequire(import.meta.url)('../package.json');
     process.stdout.write(`${version}\n`);
     process.exit(0);
   }
-  if (args[0] === '--help' || args[0] === '-h') {
+  if (extra === undefined && HELP_FLAGS.has(flag)) {
     process.stdout.write(USAGE);
     process.exit(0);
   }
-  process.stderr.write(`nullpii-gateway: unknown argument ${JSON.stringify(args[0])}\n${USAGE}`);
+  // One option at most: anything else is an error, never a server start.
+  const unexpected = VERSION_FLAGS.has(flag) || HELP_FLAGS.has(flag) ? extra : flag;
+  process.stderr.write(
+    `nullpii-gateway: unexpected argument ${JSON.stringify(unexpected)}\n${USAGE}`,
+  );
   process.exit(2);
 }
 
@@ -37,7 +45,14 @@ try {
   process.stderr.write(`nullpii-gateway: ${err instanceof Error ? err.message : String(err)}\n`);
   process.exit(1);
 }
-const app = await startServer(config);
+let app;
+try {
+  app = await startServer(config);
+} catch (err) {
+  // A port already in use, or an address that cannot be bound: one line.
+  process.stderr.write(`nullpii-gateway: ${err instanceof Error ? err.message : String(err)}\n`);
+  process.exit(1);
+}
 printBanner(config, 'prod');
 
 const shutdown = async (signal) => {

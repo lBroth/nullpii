@@ -145,6 +145,16 @@ describe('sidecar · access control', () => {
     expect(wrong.statusCode).toBe(401);
   });
 
+  it('accepts the bearer scheme name in any case', async () => {
+    const { app } = await setup();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/sidecar/status',
+      headers: { authorization: `bearer ${TOKEN}` },
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
   it('refuses a non-loopback Host (DNS rebinding) even with the token', async () => {
     const { app } = await setup();
     const res = await app.inject({

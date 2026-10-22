@@ -1277,6 +1277,28 @@ describe('shell restore · round-11 heredocs inside substitutions', () => {
     expect(restored(restoreShellCommand(np, command, sessionId))).toBe(0);
   });
 
+  it.each([
+    (p: string) => `cat <(cat <<'EOF'\n${p}\nEOF\n)`,
+    (p: string) => `git commit -F <(cat <<'EOF'\n${p}\nEOF\n)`,
+    (p: string) => `ls ${p} >(cat <<'EOF'\nx\nEOF\n)`,
+    (p: string) => `git commit -F - \${x:-<<'EOF'\n${p}\nEOF\n}`,
+    (p: string) => `git commit -F - <<'EOF' \${x:-\n${p}\nEOF\n}`,
+    (p: string) => `cat <<'EOF' && git commit -m \${x:-\n${p}\nEOF\n}`,
+  ])('keeps every value with a heredoc in process substitution or `${…}`: %#', (build) => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, 'hi } ; reboot ; echo {', 'secret');
+
+    expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(0);
+  });
+
+  it('still restores a plain word next to a one-line `${…}`', () => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, EMAIL, 'private_email');
+    const command = `git commit -m "release \${VERSION:-1}" --author=${word}`;
+
+    expect(restored(restoreShellCommand(np, command, sessionId))).toBe(1);
+  });
+
   it('judges many substitutions with heredocs in linear time', () => {
     const { np, vault, sessionId } = harness();
     const word = bake(vault, sessionId, EMAIL, 'private_email');

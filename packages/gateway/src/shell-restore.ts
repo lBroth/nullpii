@@ -800,7 +800,7 @@ const REDIRECTION = /^(?:\d+|\{[A-Za-z_]\w*\})?(?:&>>?[|!]?|>>?[|!]|>&|<&|<<<|<<
 /** A version or `.exe` suffix on a program name (`python3.12`, `pwsh.exe`). */
 const PROGRAM_SUFFIX = /(?:[\d.]+|\.exe)$/;
 
-type FrameKind = 'code' | 'subst' | 'backtick' | 'single' | 'ansi' | 'double' | 'body';
+type FrameKind = 'code' | 'subst' | 'backtick' | 'single' | 'ansi' | 'double' | 'body' | 'param';
 
 /** Shell code, where quotes, substitutions and operators mean something. */
 const CODE_KINDS: ReadonlySet<FrameKind> = new Set(['code', 'subst', 'backtick']);
@@ -1264,8 +1264,8 @@ function takesDataArgs(p: Program): boolean {
   if (p.name === undefined || p.wrappers.length > 0 || p.byPath) return false;
   if (p.redirectedPrefix) return false;
   // A computed argument can expand to an option (`$'--pre'`); only
-  // `git commit`'s message, built from a heredoc (`-m "$(cat <<'EOF' …)"`),
-  // may be one.
+  // `git commit`'s may be one (`-m "$msg"`): its options name no program
+  // or output file.
   if (p.computedArgs && !(p.name === 'git' && p.args[0] === 'commit')) return false;
   if (p.name === 'git') return ARG_DATA_GIT_SUBCOMMANDS.has(p.args[0] ?? '');
   return ARG_DATA_PROGRAMS.has(p.name);
@@ -1472,8 +1472,8 @@ function lex(
       scan.commands.push([frame.cmdStart, i]);
       const next = readHeredocBodies(command, i + 1, pending, scan, limit, stack.length);
       // An unreadable delimiter or no closing line: the body's extent, and
-      // so every command after it, is unknown (inside `$(…)`, bash 5.2 ends
-      // a body at a line `EOF)`), so the command is not read at all.
+      // so every command after it, is unknown, so the command is not read
+      // at all.
       if (next === undefined) {
         scan.broken = true;
         return false;
@@ -1536,6 +1536,15 @@ function advance(
     stack.push({ kind: 'subst', depth: 0, cmdStart: i + 2 });
     return 2;
   }
+  // `${…}`: a parameter expansion, whose word may hold quotes and
+  // substitutions. A line break or a heredoc inside one is read
+  // differently by shells (a `}` in a body ends the expansion), so such a
+  // command is not read.
+  if (ch === '$' && command[i + 1] === '{') {
+    stack.push({ kind: 'param', depth: 0, cmdStart: 0 });
+    return 2;
+  }
+  if (frame.kind === 'param') return advanceParam(stack, frame, command, i, scan);
   if (ch === '`') {
     if (frame.kind === 'backtick') closeCommand(stack, frame, i, scan);
     else stack.push({ kind: 'backtick', depth: 0, cmdStart: i + 1 });
@@ -1547,6 +1556,26 @@ function advance(
   }
   if (frame.kind === 'body') return 1;
   return advanceCode(stack, frame, pending, command, i, scan);
+}
+
+/** One character inside `${…}`: braces nest, quotes open as in code, and
+ * a line break or a heredoc operator makes the command unreadable. */
+function advanceParam(
+  stack: Frame[],
+  frame: Frame,
+  command: string,
+  i: number,
+  scan: Scan,
+): number {
+  const ch = command[i];
+  if (ch === '\n' || (ch === '<' && command[i + 1] === '<')) scan.broken = true;
+  else if (ch === '{') frame.depth += 1;
+  else if (ch === '}') {
+    if (frame.depth === 0) stack.pop();
+    else frame.depth -= 1;
+  } else if (ch === "'") stack.push({ kind: 'single', depth: 0, cmdStart: 0 });
+  else if (ch === '"') stack.push({ kind: 'double', depth: 0, cmdStart: 0 });
+  return 1;
 }
 
 /** One token of shell code: the top level, or inside a substitution. */
@@ -1562,6 +1591,13 @@ function advanceCode(
   if (ch === '#' && startsWord(command, i)) return commentLength(command, i);
   if (ch === '<' && command[i + 1] === '<') {
     return readHeredocOperator(command, i, frame, pending, scan);
+  }
+  // Process substitution (`<(…)`, `>(…)`) is read like `$(…)`, also by
+  // bash 3.2's scan: a heredoc or a `case` inside one keeps every value.
+  if ((ch === '<' || ch === '>') && command[i + 1] === '(') {
+    if (ch === '>') scan.outputs.push('');
+    stack.push({ kind: 'subst', depth: 0, cmdStart: i + 2 });
+    return 2;
   }
   if (ch === '>') return readOutputRedirection(command, i, scan);
   // A `case` pattern's `)` ends `$(…)` in bash 3.2 and not in newer shells.

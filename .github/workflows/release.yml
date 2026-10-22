@@ -71,11 +71,17 @@ jobs:
           done
           exit "$status"
       # The default model must name a Hugging Face commit, not a branch, so
-      # the repository cannot change what a release downloads.
-      - name: Default model is pinned to a commit
+      # the repository cannot change what a release downloads,
+      # and a SHA-256 for every file it fetches, which the pin test
+      # (test/default-model-pin.test.ts, run by `npm test` below) checks.
+      - name: Default model is pinned to a commit and per-file hashes
         run: |
           grep -Eq "^export const DEFAULT_MODEL_REVISION = '[0-9a-f]{40}';" src/defaults.ts \
             || { echo "src/defaults.ts: DEFAULT_MODEL_REVISION is not a 40-hex commit"; exit 1; }
+          grep -q "^export const DEFAULT_MODEL_SHA256" src/defaults.ts \
+            || { echo "src/defaults.ts: no DEFAULT_MODEL_SHA256 map"; exit 1; }
+          test -f test/default-model-pin.test.ts \
+            || { echo "test/default-model-pin.test.ts is missing"; exit 1; }
       # The tests mock ONNX Runtime: its CUDA download is not needed.
       - run: npm ci
         env:

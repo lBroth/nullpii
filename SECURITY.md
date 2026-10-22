@@ -19,7 +19,7 @@ Privately — open a [Security Advisory](https://github.com/lBroth/nullpii/secur
 - Logging / caching / telemetry running **before** `sanitize()`.
 - Adversarial prompts asking the LLM to reveal mappings.
 - A repository's own Claude Code settings. Its `.claude/settings.json` outranks your user settings: it can turn the mod off (`enabledPlugins`), point Claude Code past the gateway (`env.ANTHROPIC_BASE_URL`), or add hooks that see prompts first. Use your organization's managed settings to force the mod or the gateway on.
-- Other local users or processes. The sidecar proves it holds the token before the mod sends anything, but a process of your own user can read the gateway's memory, and anyone holding the sidecar token can open its sessions up to `NULLPII_SIDECAR_MAX_SESSIONS` and so make the mod fail closed (no values are exposed that way).
+- Other local users or processes. The sidecar proves it holds the token before the mod sends anything (the check and the request are two connections, so a process that swaps in between them is not excluded), but a process of your own user can read the gateway's memory, and anyone holding the sidecar token can open its sessions up to `NULLPII_SIDECAR_MAX_SESSIONS` and so make the mod fail closed (no values are exposed that way).
 
 ## Known limitations / accepted trade-offs
 

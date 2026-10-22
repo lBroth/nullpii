@@ -9,7 +9,7 @@ nullpii masks personal data and secrets before text reaches an LLM, so the main 
 ## Data
 
 - **Tuning set.** Held-out slices of Isotonic (en, de, fr, it), ai4privacy-300k, and a set of synthetic coding-agent traces. Every choice is made on this set: nullpii's changes and thresholds, and every competitor's operating point. It is close to nullpii's home distribution, which is why nothing is claimed from it.
-- **Report set (R3), gated.** Five public datasets chosen by written criteria (licence, independence from every compared tool's declared training data, domain and language coverage) and frozen by SHA-256 before any tool ran on them:
+- **Report set (R3), gated.** Five datasets (four public sets and a synthetic coding-agent trace set) chosen by written criteria (licence, independence from every compared tool's declared training data, domain and language coverage) and frozen by SHA-256 before any tool ran on them:
   - REDACT (EU-language and English records of its locked test split);
   - TonicAI's human-annotated Privacy-Bench;
   - PIILO (student essays);
@@ -27,7 +27,7 @@ nullpii masks personal data and secrets before text reaches an LLM, so the main 
 - **F2 decides; F1 and F0.5 are reported next to it.** F2 counts recall as twice as important as precision (β = 2), the product's priority, and it rewards over-masking. A mask-everything row shows the floor.
 - **Core label space.** Scores use the categories every dataset labels (persons, contact details, addresses, dates, identifiers, URLs, IPs, secrets). nullpii's extended categories (organisations, occupations, demographic and sensitive attributes, titles) are on by default; its default configuration is reported both raw and filtered to the core labels.
 - **Macro over datasets**, with a leave-one-dataset-out range so one dataset cannot carry the result.
-- **Paired bootstrap, 95% CIs** of nullpii minus each tool, 1,000 resamples: by document, except traces-v3, resampled by generator template. As a sensitivity check every set is also resampled by its recorded source document or conversation. The test fixed before the run is this uncorrected 95% interval, over 15 comparisons: the 14 tools, with NVIDIA's reference server counted as its own row next to `nvidia/gliner-PII`. Intervals corrected for those 15 comparisons (Bonferroni, 99.67%) were added after the run, as a check, and are reported next to them.
+- **Paired bootstrap, 95% CIs** of nullpii minus each tool, 1,000 resamples: by document, except traces-v3, resampled by generator template. As a sensitivity check every set is also resampled by its recorded source document or conversation. The test fixed before the run is this uncorrected 95% interval over the 14 tools; NVIDIA's reference server, added after the first look, is reported as a 15th comparison under the same test. Intervals corrected for those 15 comparisons (Bonferroni, 99.67%) were added after the run, as a check, and are reported next to them.
 
 ## Competitors, run as shipped
 
@@ -129,7 +129,7 @@ nullpii 0.5 (the release build and the published weights, in fp32) in its core r
 
 nullpii's default configuration also masks five categories outside the core labels these datasets are scored on (organisations, occupations, demographic and sensitive attributes, titles), so as shipped it scores lower here: 0.653 on the gated sets, 0.136 on PIILO. Turning those five off gives the core regime above.
 
-**Comparisons (gated sets, F2).** On the macro over the five sets (not on each set: on PIILO, eight tools are ahead), nullpii is significantly ahead of every tool but one, at that tool's better row: the narrowest margins are nvidia/gliner-PII [+0.024, +0.050] and OpenMed privacy-filter-multilingual-v2 [+0.030, +0.048]. rizzo-pii at its default is significantly ahead of nullpii, [−0.021, −0.005], all of it on PIILO; this is the test fixed before the run. With 99.67% intervals (a Bonferroni correction for 15 comparisons, added after the run), the 13 leads hold (narrowest nvidia/gliner-PII [+0.018, +0.056]) and the gap to rizzo-pii, −0.013, is no longer significant, [−0.025, +0.001]. No dataset has a tool with significantly higher recall at matched or better precision. At F0.5 nullpii falls to ninth: eight tools are ahead.
+**Comparisons (gated sets, F2).** On the macro over the five sets (not on each set: on PIILO, eight tools are ahead), nullpii is significantly ahead of every tool but one, at that tool's better row: the narrowest margins are nvidia/gliner-PII [+0.024, +0.050] and OpenMed privacy-filter-multilingual-v2 [+0.030, +0.048]. rizzo-pii at its default is significantly ahead of nullpii, [−0.021, −0.005], all of it on PIILO; this is the test fixed before the run. With 99.67% intervals (a Bonferroni correction for 15 comparisons, added after the run), the 14 leads hold (13 tools and NVIDIA's server pipeline; narrowest nvidia/gliner-PII [+0.018, +0.056]) and the gap to rizzo-pii, −0.013, is no longer significant, [−0.025, +0.001]. No dataset has a tool with significantly higher recall at matched or better precision. At F0.5 nullpii falls to ninth: eight tools are ahead.
 
 **One dataset carries the margin.** Leaving each set out in turn (each tool at its better row; the tool's score minus nullpii's, with the paired 95% CI):
 
@@ -143,10 +143,10 @@ nullpii's default configuration also masks five categories outside the core labe
 
 Without the clinical notes, the lead over everyone but rizzo-pii is gone: two tools are significantly ahead, and pii-identifier, privacy-filter-multilingual-v2 and OpenMed large are within the interval. They are the only medical text, and the only Greek, in the gated sets.
 
-**Sensitivity checks** (reported, none decides):
+**Sensitivity checks** (reported, none decides; run before NVIDIA's server row was added, so they do not include it):
 - without the documents any OpenMed row returned no output for (77 gated documents, for every tool): conclusions unchanged;
 - every set resampled by its recorded clusters: conclusions unchanged (rizzo-pii [−0.022, −0.004]);
-- nullpii's default configuration on the core labels (0.747) as the baseline: ahead of the same 13 tools, also with the Bonferroni correction (narrowest nvidia/gliner-PII [+0.009, +0.047]), and behind rizzo-pii, −0.022, significantly in both tests ([−0.031, −0.013] at 95%, [−0.034, −0.008] corrected).
+- nullpii's default configuration on the core labels (0.747) as the baseline: ahead of the same 14 rows, also with the Bonferroni correction (narrowest nvidia/gliner-PII [+0.009, +0.047]), and behind rizzo-pii, −0.022, significantly in both tests ([−0.031, −0.013] at 95%, [−0.034, −0.008] corrected).
 
 **OpenMed's texts with no output.** `deidentify` refuses some texts as suspicious content (7 traces-v3 transcripts, 2 PIILO essays, 2 RedactionBench documents and 1 mama-deid text, for both models at both points) and fails its own safety-sweep check on others, more at the tuned points' lower thresholds (Small tuned: 7 REDACT, 41 Tonic, 11 PIILO, 1 eu-clinical, 83 mama-deid; Large tuned: 9 REDACT, 3 Tonic, 1 PIILO, 59 mama-deid). They score as no spans. The package logs no text, so each failure is matched to its document by length and empty output (`scripts/ab/openmed_no_output.py`).
 

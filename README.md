@@ -6,7 +6,7 @@
 
 Mask personal data and secrets before they reach an LLM, and put them back on the way out. Detection runs on your machine: a fine-tuned GLiNER model plus validated recognizers, with a reversible in-memory vault.
 
-- **Measured on held-out data.** On five datasets chosen before any tool was run on them (four public sets and a synthetic coding-agent trace set built for this benchmark), absent from the training data nullpii and the compared tools declare, nullpii ranks second on macro char-F2 among 15 open-source detectors, behind rizzo-pii (0.770): 0.756 with its five extended categories off, as the datasets do not label them, and 0.747 for its default configuration counted on the same labels. It lets less personal data through than any other tool's best-scoring configuration (recall 0.960). Much of its lead over the other 13 comes from one dataset, clinical notes in Greek and German: without it nullpii is third, and three more tools are within the interval. On English text alone it is fifth. Scored by us with the PIIMB leaderboard's method (not a submitted entry), its average F2 of 0.851 is above the 35 listed tools; without the one task from its training family it is 0.831, not clearly ahead. It gets there by masking generously: on precision-weighted scores most tools rank above it. [Results](#benchmark).
+- **Measured on held-out data.** On five datasets chosen before any tool was run on them (four public sets and a synthetic coding-agent trace set built for this benchmark), with under 1% measured overlap with the training data nullpii and the compared tools declare, nullpii ranks second on macro char-F2 among 15 open-source detectors, behind rizzo-pii (0.770): 0.756 with its five extended categories off, as the datasets do not label them, and 0.747 for its default configuration counted on the same labels. It lets less personal data through than any other tool's best-scoring configuration (recall 0.960). Much of its lead over the other 13 comes from one dataset, clinical notes in Greek and German: without it nullpii is third, and three more tools are within the interval. On English text alone it is fifth. Scored by us with the PIIMB leaderboard's method (not a submitted entry), its average F2 of 0.851 is above the 35 listed tools; without the one task from its training family it is 0.831, not clearly ahead. It gets there by masking generously: on precision-weighted scores most tools rank above it. [Results](#benchmark).
 - **Works with any model.** Mask before your LLM call and restore after it. Or run the gateway in front of the Anthropic or OpenAI API, or the Claude Code mod.
 - **Built for coding agents.** It masks tool output (files, logs, command results), not just prompts; it keeps public links to code hosts and documentation readable; and it keeps a hidden value masked where a shell could run it, or in a command that sends data off the machine (best effort: see SECURITY.md).
 
@@ -195,7 +195,7 @@ The three reported (not gated) sets, the per-dataset numbers and the sensitivity
 ### Latency
 
 <!-- latency:begin -->
-nullpii is not the fastest: it sits in the middle of the field, on GPU and on CPU. Median time per call, in milliseconds, for texts of 2,000, 30,000 and 100,000 characters of coding-agent material (code, logs, prose, tool output); every tool times the same texts on the same idle machine, after a warm-up, at its default operating point. How the texts are chosen: [`METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md).
+nullpii is not the fastest: it is seventh of 15 on GPU and fifth of 17 on CPU (at 30k). Median time per call, in milliseconds, for texts of 2,000, 30,000 and 100,000 characters of coding-agent material (code, logs, prose, tool output); every tool times the same texts on the same idle machine, after a warm-up, at its default operating point. How the texts are chosen: [`METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md).
 
 **GPU** (Linux, NVIDIA RTX 4070 Ti; 60, 12 and 5 texts per size, three rounds). nullpii loads `model_fp16.onnx` on CUDA.
 
@@ -239,7 +239,7 @@ nullpii is not the fastest: it sits in the middle of the field, on GPU and on CP
 | OpenMed privacy-filter-multilingual-v2 | 9,133 | 132,528 | 448,206 |
 | openai privacy-filter | 9,514 | 137,526 | 467,769 |
 
-Presidio is fast because it is mostly patterns plus a small spaCy model; its macro char-F2 is 0.628. OpenMed's time depends strongly on the text (1.4 to 14 seconds across the 30k texts for the Large model), so its 100k figure, from three texts, is rough. On CPU nullpii's two references, at the start and at the end of the run, agree within 0.5%. gliner_multi_pii (ONNX) runs on CPU only and Presidio has no GPU path, so they are not in the GPU table.
+Presidio is fast because it is mostly patterns plus a small spaCy model; its macro char-F2 is 0.628. OpenMed Large's time depends strongly on the text (at 100k, a median of 22 s and a 95th percentile of 63 s), so its 100k figure, from three texts, is rough. On CPU nullpii's two references, at the start and at the end of the run, agree within 1% (0.3% at 2k and 30k, 0.7% at 100k). gliner_multi_pii (ONNX) runs on CPU only and Presidio has no GPU path, so they are not in the GPU table.
 <!-- latency:end -->
 
 ## Backends
@@ -252,7 +252,7 @@ new NullPii({ backend: 'mps' });   // Apple Silicon through CoreML; slower than 
 
 `backend: 'cuda'` needs the CUDA libraries the installed `onnxruntime-node` was built against: for 1.30 on Linux x64, CUDA 13 (`libcudart.so.13`, `libcublas.so.13`, `libcublasLt.so.13`) and cuDNN 9, although its installer calls the build `cuda12`. When the CUDA or CoreML provider cannot be loaded, nullpii runs on the CPU instead and emits a process warning with code `NULLPII_BACKEND_FALLBACK` that names the cause (listen with `process.on('warning', …)`). A model downloaded for CUDA holds only the fp16 file; the CPU runs it too, but the benchmark measures fp32 on the CPU.
 
-On Apple Silicon use `cpu`: with CoreML the model was slower than on the CPU at every size measured (1.3 to 8 times, depending on the CoreML settings), and its first call took 18 to 26 seconds while CoreML compiled the graph, which the GLiNER head's dynamic shapes split into many partitions (#51).
+On Apple Silicon use `cpu`: with CoreML the model was slower than on the CPU at every size measured (1.3 to 8 times, depending on the CoreML settings; measured on earlier builds), and its first call took 18 to 26 seconds while CoreML compiled the graph, which the GLiNER head's dynamic shapes split into many partitions (#51).
 
 `intraOpNumThreads` and `interOpNumThreads` are passed to ONNX Runtime.
 

@@ -298,15 +298,16 @@ would break SDK-level retry + backoff heuristics.
 
 **Shell commands keep unsafe values masked.** A masked value comes from data the model could not read, such as a file an agent opened, so it can hold anything, shell syntax included. When the gateway puts real values back into a tool call that a shell runs (a tool named `Bash`, `bash` or `shell` and listed in `restoreTools`, on either route, and on the OpenAI route as a function or a custom tool), each placeholder in the `command` is restored only as one plain word, and never as the program:
 
-- A command that sends data off the machine (`curl`, `ssh`, `gh`, `dig`, `git push`, `git clone`, `docker push`, a URL handed to a program that is not a data one, … also behind `sudo`, `env` or `timeout`) keeps every placeholder.
-- So does a command that runs `sed` or `perl`, whose code any character can end.
-- Everywhere else a value comes back only as one plain word: letters, digits and `@%+:,./_=-`, not starting with `-`, `=` or `~`. Such a word means the same thing to a shell and to any program it hands the word to, quoted or not, so the rule does not depend on a list of programs that read a string again as code.
-- A placeholder that is, or is part of, the program a simple command runs (also behind a wrapper, after an assignment, or in a substitution) stays masked.
-- The body of a heredoc that `cat` or `tee` writes out, in a command that runs nothing else that could read it as code, is data: there only a line break is refused, so Claude Code's usual commit form, `git commit -m "$(cat <<'EOF' … EOF)"`, gets names with spaces and apostrophes back.
+- A command that sends data off the machine (`curl`, `ssh`, `gh`, `dig`, `psql`, `git push`, `npm install`, a URL handed to a program that is not a data one, … also behind `sudo`, `env` or `timeout`) keeps every placeholder.
+- So does a command that runs code it is handed (`bash -c`, `python3`, `eval`, `xargs`, `make`, `npm test`, `uv run`, `find -exec`, `./build.sh`, …) or runs `sed`, `perl` or `ruby`, whose code any character can end: where a value lands in that code is unknown.
+- The checks run again on the command with the values put back, so a value that makes it send data out (a redirection to `/dev/tcp/…`, a URL) keeps every placeholder.
+- Everywhere else a value comes back only as one plain word: letters, digits and `@%+:,./_=-`, not starting with `-`, `=` or `~`, quoted or not.
+- A placeholder that is, or is part of, the program a simple command runs (also behind a wrapper, after an assignment, or in a substitution), an assignment, or an argument of `export` or `alias` stays masked.
+- The body of a heredoc that `cat` or `tee` writes out, in a command that runs nothing else that could read it as code, and not into a file that runs later (git hooks, shell start-up files), is data: there only a line break is refused, so Claude Code's usual commit form, `git commit -m "$(cat <<'EOF' … EOF)"`, gets names with spaces and apostrophes back.
 
 The full table is in [SECURITY.md](https://github.com/lBroth/nullpii/blob/main/SECURITY.md#restoring-values-into-commands). Otherwise the placeholder stays as written, and the command works on the placeholder text, which is harmless: `echo {{PII_SECRET_0_…}}` holding `x; curl …` stays as it is, and so does `echo '{{PII_PRIVATE_PERSON_0_…}}'` holding `Mary Ann`. The command is read once, in time linear in its length; one over 256 KiB keeps every placeholder. The same rule applies to JSON responses and to streams. Placeholders kept this way are counted as `unsafeShellPlaceholders` in the request log and shown in the console summary, as a count only. The tool call's other fields, and every other tool in `restoreTools` (`Write` content, for example), are restored as usual. A shell tool's JSON input that does not parse keeps all of its placeholders; a custom shell tool's plain-text input is the command itself and gets the same rule.
 
-The interpreter and network lists are best effort: a program they do not name that sends data out or runs its quoted argument as code (for example `psql -c` or `mysql -e`, which run SQL) is covered by the plain-word rule only.
+The network, code-runner and wrapper lists are best effort: a program they do not name that sends data out or runs an argument as code gets the plain-word rule only.
 
 ## Privacy
 

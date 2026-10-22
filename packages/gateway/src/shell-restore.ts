@@ -97,17 +97,22 @@ const INTERPRETER_NAMES = String.raw`(?:bash|sh|zsh|dash|ksh|fish|python[\d.]*|p
  * flag may follow other options (`bash -o pipefail -c`); a flag cluster
  * counts when it holds the code letter (`-lc`). The program a command
  * itself runs is judged by name (`CODE_RUNNERS`). */
+/** A program name standing as a whole word: not part of a path segment,
+ * a file name (`sed.txt`) or a longer name (`ssh-keygen`, `~/.ssh`). */
+const NAME_START = String.raw`(?<![\w.-])`;
+const NAME_END = String.raw`(?![\w.-])`;
+
 const NESTED_INTERPRETER = new RegExp(
   [
-    String.raw`\b(?:bash|sh|zsh|dash|ksh|fish)\b${SAME_COMMAND}\s(?:-[A-Za-z]*c[A-Za-z]*|--command)\b`,
-    String.raw`\beval\b|\bssh\b|\b(?:su|runuser|flock|script)\b${SAME_COMMAND}\s(?:-c|--command)\b`,
-    String.raw`\b(?:python[\d.]*|pypy[\d.]*)\b${SAME_COMMAND}\s-[A-Za-z]*c[A-Za-z]*\b`,
-    String.raw`\b(?:node|nodejs|bun|deno)\b${SAME_COMMAND}\s(?:-[A-Za-z]*[ep][A-Za-z]*|--eval|--print|eval)\b`,
-    String.raw`\b(?:perl|ruby|lua|Rscript|osascript)\b${SAME_COMMAND}\s-[A-Za-z]*[eE][A-Za-z]*\b`,
-    String.raw`\bphp\b${SAME_COMMAND}\s-[A-Za-z]*r[A-Za-z]*\b`,
-    String.raw`\|&?\s*(?:sudo\s+)?(?:\S*/)?${INTERPRETER_NAMES}\b`,
-    String.raw`\b${INTERPRETER_NAMES}\b${SAME_COMMAND}(?:<<<|[<>]\()`,
-    /\b(?:awk|gawk|mawk|nawk|sed)\b/.source,
+    String.raw`${NAME_START}(?:bash|sh|zsh|dash|ksh|fish)${NAME_END}${SAME_COMMAND}\s(?:-[A-Za-z]*c[A-Za-z]*|--command)\b`,
+    String.raw`${NAME_START}(?:eval|ssh)${NAME_END}|${NAME_START}(?:su|runuser|flock|script)${NAME_END}${SAME_COMMAND}\s(?:-c|--command)\b`,
+    String.raw`${NAME_START}(?:python[\d.]*|pypy[\d.]*)${NAME_END}${SAME_COMMAND}\s-[A-Za-z]*c[A-Za-z]*\b`,
+    String.raw`${NAME_START}(?:node|nodejs|bun|deno)${NAME_END}${SAME_COMMAND}\s(?:-[A-Za-z]*[ep][A-Za-z]*|--eval|--print|eval)\b`,
+    String.raw`${NAME_START}(?:perl|ruby|lua|Rscript|osascript)${NAME_END}${SAME_COMMAND}\s-[A-Za-z]*[eE][A-Za-z]*\b`,
+    String.raw`${NAME_START}php${NAME_END}${SAME_COMMAND}\s-[A-Za-z]*r[A-Za-z]*\b`,
+    String.raw`\|&?\s*(?:sudo\s+)?(?:\S*/)?${INTERPRETER_NAMES}${NAME_END}`,
+    String.raw`${NAME_START}${INTERPRETER_NAMES}${NAME_END}${SAME_COMMAND}(?:<<<|[<>]\()`,
+    String.raw`${NAME_START}(?:awk|gawk|mawk|nawk|sed)${NAME_END}`,
   ].join('|'),
 );
 
@@ -174,6 +179,42 @@ const CODE_RUNNERS: ReadonlySet<string> = new Set([
   'npx',
   'pnpx',
   'bunx',
+  'hyperfine',
+  'gdb',
+  'trap',
+]);
+
+/** Programs that run code through some subcommands (`uv run`, `npm exec`,
+ * `docker run`); a command counts when any of its words is one. */
+const CODE_SUBCOMMANDS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ['uv', new Set(['run', 'tool'])],
+  ['uvx', new Set<string>()],
+  ['npm', new Set(['exec', 'run', 'run-script', 'test', 'start', 'x'])],
+  ['pnpm', new Set(['exec', 'dlx', 'run', 'test', 'start'])],
+  ['yarn', new Set(['exec', 'dlx', 'run', 'test', 'start'])],
+  ['bun', new Set(['run', 'x', 'test'])],
+  ['poetry', new Set(['run'])],
+  ['pipenv', new Set(['run'])],
+  ['bundle', new Set(['exec'])],
+  ['nix', new Set(['run', 'shell', 'develop'])],
+  ['cargo', new Set(['run', 'test'])],
+  ['go', new Set(['run', 'test', 'generate'])],
+  ['docker', new Set(['run', 'exec'])],
+  ['podman', new Set(['run', 'exec'])],
+  ['git', new Set(['-c', '--config-env', 'filter-branch', 'rebase', 'bisect'])],
+]);
+
+/** Options that make an otherwise plain program run a command it is given
+ * (`find -exec`, `tar -I`, `zip -TT`, `git -c core.pager=…`). */
+const COMMAND_OPTIONS: ReadonlyMap<string, RegExp> = new Map([
+  ['find', /^-(?:exec|execdir|ok|okdir)$/],
+  [
+    'tar',
+    /^-[A-Za-z]*I|^--(?:use-compress-program|to-command|checkpoint-action|info-script|new-volume-script)/,
+  ],
+  ['zip', /^-TT|^--unzip-command/],
+  ['rsync', /^-[A-Za-z]*e|^--rsh/],
+  ['less', /^-[A-Za-z]*\+|^\+/],
 ]);
 
 /** Programs that run the program named after their own options, with the
@@ -197,6 +238,24 @@ const WRAPPERS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ['caffeinate', new Set(['-t', '-w'])],
   ['chronic', new Set<string>()],
   ['xargs', new Set(['-I', '-n', '-P', '-L', '-d', '-E', '-s', '-a'])],
+  ['strace', new Set(['-o', '-e', '-p', '-s', '-u'])],
+  ['ltrace', new Set(['-o', '-e', '-p', '-s', '-u'])],
+  ['valgrind', new Set<string>()],
+  ['chroot', new Set<string>()],
+  ['taskset', new Set<string>()],
+  ['numactl', new Set<string>()],
+  ['chrt', new Set<string>()],
+  ['faketime', new Set<string>()],
+  ['unshare', new Set<string>()],
+  ['nsenter', new Set(['-t', '--target'])],
+  ['systemd-run', new Set<string>()],
+  ['pkexec', new Set(['--user'])],
+  ['firejail', new Set<string>()],
+  ['bwrap', new Set<string>()],
+  ['proxychains', new Set(['-f'])],
+  ['proxychains4', new Set(['-f'])],
+  ['torsocks', new Set<string>()],
+  ['flatpak-spawn', new Set<string>()],
 ]);
 
 /** Wrappers that take a positional argument before the program
@@ -204,6 +263,10 @@ const WRAPPERS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
 const WRAPPER_POSITIONALS: ReadonlyMap<string, number> = new Map([
   ['timeout', 1],
   ['gtimeout', 1],
+  ['chroot', 1],
+  ['taskset', 1],
+  ['chrt', 1],
+  ['faketime', 1],
 ]);
 
 /** Wrapper options that make it run a shell on a string, not a program
@@ -282,6 +345,21 @@ const NETWORK_PROGRAMS: ReadonlySet<string> = new Set([
   'rclone',
   's3cmd',
   'smbclient',
+  'psql',
+  'mysql',
+  'mariadb',
+  'mongosh',
+  'mongo',
+  'redis-cli',
+  'sqlcmd',
+  'sqlplus',
+  'clickhouse-client',
+  'ldapsearch',
+  'ldapmodify',
+  'open',
+  'xdg-open',
+  'gio',
+  'start',
   'iwr',
   'irm',
   'invoke-webrequest',
@@ -308,15 +386,21 @@ const NETWORK_SUBCOMMANDS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ['docker', new Set(['push', 'pull', 'login'])],
   ['podman', new Set(['push', 'pull', 'login'])],
   ['buildah', new Set(['push', 'pull', 'login'])],
-  ['npm', new Set(['publish', 'login', 'adduser'])],
-  ['pnpm', new Set(['publish', 'login'])],
-  ['yarn', new Set(['publish', 'login', 'npm'])],
-  ['bun', new Set(['publish'])],
-  ['cargo', new Set(['publish', 'login'])],
-  ['gem', new Set(['push', 'signin'])],
+  ['npm', new Set(['publish', 'login', 'adduser', 'install', 'i', 'add', 'ci', 'update'])],
+  ['pnpm', new Set(['publish', 'login', 'install', 'i', 'add', 'update'])],
+  ['yarn', new Set(['publish', 'login', 'npm', 'install', 'add', 'up'])],
+  ['bun', new Set(['publish', 'install', 'i', 'add'])],
+  ['cargo', new Set(['publish', 'login', 'install', 'add'])],
+  ['gem', new Set(['push', 'signin', 'install'])],
   ['twine', new Set(['upload'])],
-  ['poetry', new Set(['publish'])],
-  ['uv', new Set(['publish'])],
+  ['poetry', new Set(['publish', 'add', 'install'])],
+  ['uv', new Set(['publish', 'add', 'pip', 'sync'])],
+  ['pip', new Set(['install', 'download'])],
+  ['pip3', new Set(['install', 'download'])],
+  ['go', new Set(['get', 'install'])],
+  ['brew', new Set(['install', 'fetch', 'tap'])],
+  ['apt', new Set(['install', 'download'])],
+  ['apt-get', new Set(['install', 'download'])],
   ['openssl', new Set(['s_client', 's_server', 'ocsp'])],
 ]);
 
@@ -378,8 +462,31 @@ const DATA_GIT_SUBCOMMANDS: ReadonlySet<string> = new Set([
  * and that can then run a command: `sed`'s `s` takes any delimiter and an
  * `e` flag, `perl`'s `s///e` too. Not even a plain word is safe in their
  * code, so a command that runs one keeps every placeholder. */
-const ANY_DELIMITER_PROGRAMS: ReadonlySet<string> = new Set(['sed', 'gsed', 'perl']);
-const ANY_DELIMITER_IN_TEXT = /(?<![\w.-])(?:g?sed|perl)(?![\w.-])/;
+const ANY_DELIMITER_PROGRAMS: ReadonlySet<string> = new Set(['sed', 'gsed', 'perl', 'ruby', 'irb']);
+const ANY_DELIMITER_IN_TEXT = /(?<![\w.-])(?:g?sed|perl|ruby|irb)(?![\w.-])/;
+
+/** Shell builtins whose arguments set what later commands run or see
+ * (`export LD_PRELOAD=…`, `alias ll=…`): a value is never restored there. */
+const ENVIRONMENT_BUILTINS: ReadonlySet<string> = new Set([
+  'export',
+  'declare',
+  'typeset',
+  'local',
+  'readonly',
+  'alias',
+  'set',
+  'unset',
+  'shopt',
+]);
+
+/** Files a shell, git or a hook runner executes later: a heredoc written
+ * to one is code, not data. */
+const EXECUTED_LATER =
+  /(?:^|[\s/'"])(?:\.git\/hooks\/|\.husky\/|\.githooks\/|\.(?:bash|zsh|ksh|mksh|tcsh|csh)rc\b|\.(?:bash_)?profile\b|\.zprofile\b|\.zshenv\b|\.zlogin\b|\.envrc\b|\.config\/fish\/|crontab\b|\/etc\/)/;
+
+/** Nesting deeper than this is not read: the command keeps every
+ * placeholder. */
+const MAX_NESTING = 64;
 
 /** Programs that make a file executable, to run it. */
 const RUNS_FILE_PROGRAMS: ReadonlySet<string> = new Set(['chmod']);
@@ -500,6 +607,9 @@ interface Scan {
   heredocCommand: { start: number; word: string };
   /** `HEREDOC_OPERATOR`, sticky, for this scan alone. */
   readonly heredocOperator: RegExp;
+  /** A nested part (a heredoc body's own heredoc) could not be read, or
+   * the nesting went past `MAX_NESTING`. */
+  broken: boolean;
 }
 
 /** A word of a simple command, quotes and escapes removed; `computed`
@@ -532,8 +642,12 @@ interface Verdict {
   readonly offMachine: boolean;
   /** The context at each placeholder position, keyed by index. */
   readonly contextAt: ReadonlyMap<number, QuoteContext>;
-  /** The placeholder positions that are, or are part of, the program a
-   * simple command runs. */
+  /** It runs code it is handed, or could not be read whole: nothing is
+   * restored, since where a value lands in that code is unknown. */
+  readonly runsCode: boolean;
+  /** The placeholder positions where no value is restored: the program a
+   * simple command runs or part of it, an assignment, the arguments of
+   * `export`, `alias` and the like. */
   readonly programAt: ReadonlySet<number>;
 }
 
@@ -573,7 +687,7 @@ export function shellContextAt(command: string, index: number): QuoteContext {
 /** Read `command` once and judge it at each of `targets` (ascending). */
 function judge(command: string, targets: readonly number[]): Verdict {
   if (command.length > MAX_COMMAND_CHARS) {
-    return { offMachine: true, contextAt: new Map(), programAt: new Set() };
+    return { offMachine: true, runsCode: true, contextAt: new Map(), programAt: new Set() };
   }
   const scan: Scan = {
     targets,
@@ -583,8 +697,12 @@ function judge(command: string, targets: readonly number[]): Verdict {
     line: { end: -1, lastPipe: -1 },
     heredocCommand: { start: -1, word: '' },
     heredocOperator: new RegExp(HEREDOC_OPERATOR.source, 'y'),
+    broken: false,
   };
-  const closed = lex(command, 0, command.length, codeFrame(), scan);
+  const closed = lex(command, 0, command.length, codeFrame(), scan, command.length) && !scan.broken;
+  if (scan.broken) {
+    return { offMachine: true, runsCode: true, contextAt: new Map(), programAt: new Set() };
+  }
   const programs = scan.commands.flatMap(([start, end]) => {
     const p = programOf(wordsOf(command.slice(start, Math.min(end, start + MAX_WORD_SCAN))));
     return p === undefined ? [] : [p];
@@ -592,7 +710,12 @@ function judge(command: string, targets: readonly number[]): Verdict {
   // Data bodies are text written out, not commands: a commit message that
   // mentions `ssh` or `bash -c` neither sends nor runs anything.
   const code = withoutRanges(command, scan.dataBodies);
-  const strict = NESTED_INTERPRETER.test(code) || programs.some(runsCode);
+  // A program run by path (`./build.sh`) or a file made executable runs
+  // code too.
+  const strict = NESTED_INTERPRETER.test(code) || programs.some((p) => runsCode(p) || runsFile(p));
+  // A data body written to a file that a shell, git or a hook runs later
+  // is code: `cat > .git/hooks/pre-commit <<'EOF'`, `cat >> ~/.bashrc`.
+  const writesExecuted = scan.dataBodies.length > 0 && EXECUTED_LATER.test(code);
   // `offMachine` also covers a program whose code no word is safe in.
   const offMachine =
     ANY_DELIMITER_IN_TEXT.test(code) ||
@@ -601,18 +724,19 @@ function judge(command: string, targets: readonly number[]): Verdict {
     programs.some(sendsOut) ||
     (strict && NETWORK_IN_CODE.test(code)) ||
     (URL_SCHEME.test(code) && !programs.every(isDataProgram));
-  const bodyContext = dataBodyContext(programs, strict || !closed);
+  const bodyContext = dataBodyContext(programs, strict || !closed || writesExecuted);
   const contextAt = new Map<number, QuoteContext>();
   const programAt = new Set<number>();
   const settled = new Map<number, boolean>();
+  const sorted = [...scan.commands].sort((a, b) => a[0] - b[0]);
   targets.forEach((index, k) => {
     const context = scan.contexts[k] ?? 'none';
     if (strict) contextAt.set(index, 'none');
     else if (DATA_BODY_CONTEXTS.has(context)) contextAt.set(index, bodyContext(context));
     else contextAt.set(index, context);
-    if (startsProgramAt(command, index, scan.commands, settled)) programAt.add(index);
+    if (holdsAt(command, index, sorted, settled)) programAt.add(index);
   });
-  return { offMachine, contextAt, programAt };
+  return { offMachine, runsCode: strict, contextAt, programAt };
 }
 
 /** `text` with each of `ranges` blanked out, offsets kept. */
@@ -626,29 +750,52 @@ function withoutRanges(text: string, ranges: ReadonlyArray<readonly [number, num
   return out + text.slice(last);
 }
 
-/** True when the placeholder at `index` stands in the program word of the
- * innermost simple command around it: the words before it are only
- * keywords, assignments, redirections and wrappers. Past the first
- * `MAX_WORD_SCAN` characters of a command, it is the program unless one
- * was already read there (`settled`, per command start). */
-function startsProgramAt(
+/** True when no value may be restored at `index`: the placeholder stands
+ * in the program word of the innermost simple command around it (the
+ * words before it are only keywords, assignments, redirections and
+ * wrappers), in an assignment, or in the arguments of `export`, `alias`
+ * and the like. Past the first `MAX_WORD_SCAN` characters of a command,
+ * it holds unless a program was already read there (`settled`). */
+function holdsAt(
   command: string,
   index: number,
-  commands: ReadonlyArray<readonly [number, number]>,
+  sorted: ReadonlyArray<readonly [number, number]>,
   settled: Map<number, boolean>,
 ): boolean {
-  let start: number | undefined;
-  for (const [s, e] of commands) {
-    if (s <= index && index <= e && (start === undefined || s > start)) start = s;
-  }
+  const start = innermostStart(sorted, index);
   if (start === undefined) return false;
   if (index - start > MAX_WORD_SCAN) return !programSettled(command, start, settled);
   const words = wordsOf(command.slice(start, index) + PLACEHOLDER_STAND_IN);
   if (words.length >= MAX_WORDS) return false;
   const own = words.at(-1);
-  if (own === undefined || ENV_ASSIGNMENT.test(own.text) || REDIRECTION.test(own.text))
-    return false;
-  return programIsNext(words.slice(0, -1));
+  if (own === undefined) return false;
+  if (ENV_ASSIGNMENT.test(own.text)) return true;
+  if (REDIRECTION.test(own.text)) return false;
+  const before = words.slice(0, -1);
+  if (programIsNext(before)) return true;
+  const program = programOf(before);
+  return program?.name !== undefined && ENVIRONMENT_BUILTINS.has(program.name);
+}
+
+/** The start of the innermost command extent around `index`, from
+ * extents sorted by start: the latest start at or before `index` whose
+ * extent reaches it. Nested extents start after the one they sit in. */
+function innermostStart(
+  sorted: ReadonlyArray<readonly [number, number]>,
+  index: number,
+): number | undefined {
+  let lo = 0;
+  let hi = sorted.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if ((sorted[mid]?.[0] ?? 0) <= index) lo = mid + 1;
+    else hi = mid;
+  }
+  for (let k = lo - 1; k >= 0 && lo - k <= MAX_NESTING; k--) {
+    const extent = sorted[k];
+    if (extent !== undefined && extent[1] >= index) return extent[0];
+  }
+  return undefined;
 }
 
 /** True when the command starting at `start` names its program within
@@ -692,7 +839,16 @@ function dataBodyContext(
 
 function runsCode(p: Program): boolean {
   if (p.name === undefined || p.wrapperShell) return true;
-  return CODE_RUNNERS.has(p.name) || p.wrappers.some((w) => CODE_RUNNERS.has(w));
+  if (CODE_RUNNERS.has(p.name) || p.wrappers.some((w) => CODE_RUNNERS.has(w))) return true;
+  const subcommands = CODE_SUBCOMMANDS.get(p.name);
+  if (
+    subcommands !== undefined &&
+    (subcommands.size === 0 || p.args.some((a) => subcommands.has(a)))
+  ) {
+    return true;
+  }
+  const option = COMMAND_OPTIONS.get(p.name);
+  return option !== undefined && p.args.some((a) => option.test(a));
 }
 
 function sendsOut(p: Program): boolean {
@@ -853,7 +1009,14 @@ function codeFrame(): Frame {
 /** Lex `command` from `start` to `end`, with `base` as the nesting in
  * force at `start`: record the context at each target in range, and the
  * extent of each simple command of shell code. */
-function lex(command: string, start: number, end: number, base: Frame, scan: Scan): boolean {
+function lex(
+  command: string,
+  start: number,
+  end: number,
+  base: Frame,
+  scan: Scan,
+  limit: number,
+): boolean {
   const stack: Frame[] = [base];
   const pending: Heredoc[] = [];
   let i = start;
@@ -862,7 +1025,7 @@ function lex(command: string, start: number, end: number, base: Frame, scan: Sca
     const frame = stack.at(-1) ?? base;
     if (command[i] === '\n' && pending.length > 0 && CODE_KINDS.has(frame.kind)) {
       scan.commands.push([frame.cmdStart, i]);
-      const next = readHeredocBodies(command, i + 1, pending, scan);
+      const next = readHeredocBodies(command, i + 1, pending, scan, limit);
       // An unreadable delimiter or no closing line: the body's extent, and
       // so what follows it, is unknown.
       if (next === undefined) {
@@ -875,6 +1038,10 @@ function lex(command: string, start: number, end: number, base: Frame, scan: Sca
       continue;
     }
     i += advance(stack, frame, pending, command, i, scan);
+    if (stack.length > MAX_NESTING) {
+      scan.broken = true;
+      return false;
+    }
   }
   record(scan, end - 1, contextOf(stack));
   for (const frame of stack) {
@@ -1075,10 +1242,11 @@ function readHeredocBodies(
   start: number,
   pending: readonly Heredoc[],
   scan: Scan,
+  limit: number,
 ): number | undefined {
   let bodyStart = start;
   for (const heredoc of pending) {
-    const end = findClosingLine(command, bodyStart, heredoc);
+    const end = findClosingLine(command, bodyStart, heredoc, limit);
     if (end === undefined) return undefined;
     readBody(command, bodyStart, end.bodyEnd, heredoc, scan);
     bodyStart = end.next;
@@ -1096,7 +1264,11 @@ function readBody(command: string, start: number, end: number, heredoc: Heredoc,
   if (!heredoc.data) record(scan, end - 1, 'none');
   else if (heredoc.literal) record(scan, end - 1, 'heredoc');
   if (heredoc.literal) return;
-  lex(command, start, end, { kind: 'body', depth: 0, cmdStart: 0 }, scan);
+  // The body's own heredocs end inside it; one that does not, or a body
+  // whose nesting cannot be read, leaves the command unread.
+  if (!lex(command, start, end, { kind: 'body', depth: 0, cmdStart: 0 }, scan, end)) {
+    scan.broken = true;
+  }
 }
 
 /** The body's end (start of the closing line) and where shell code
@@ -1105,12 +1277,14 @@ function findClosingLine(
   command: string,
   start: number,
   heredoc: Heredoc,
+  limit: number,
 ): { bodyEnd: number; next: number } | undefined {
   if (heredoc.delimiter === undefined) return undefined;
   let lineStart = start;
-  while (lineStart <= command.length) {
-    const newline = command.indexOf('\n', lineStart);
-    const lineEnd = newline === -1 ? command.length : newline;
+  while (lineStart <= limit) {
+    const found = command.indexOf('\n', lineStart);
+    const newline = found === -1 || found >= limit ? -1 : found;
+    const lineEnd = newline === -1 ? limit : newline;
     const line = command.slice(lineStart, lineEnd);
     const candidate = heredoc.stripTabs ? line.replace(LEADING_TABS, '') : line;
     if (candidate === heredoc.delimiter) return { bodyEnd: lineStart, next: lineEnd };
@@ -1148,10 +1322,18 @@ export function restoreShellCommand(
 ): ShellRestore {
   const starts = [...command.matchAll(placeholderPattern())].map((m) => m.index);
   const verdict = judge(command, starts);
-  return restoreEach(np, command, sessionId, (value, at) => {
-    if (verdict.offMachine || verdict.programAt.has(at)) return false;
+  const keepAll = verdict.offMachine || verdict.runsCode;
+  const restored = restoreEach(np, command, sessionId, (value, at) => {
+    if (keepAll || verdict.programAt.has(at)) return false;
     return shellSafe(value, verdict.contextAt.get(at) ?? 'none');
   });
+  if (restored.results.every((r) => r.replacements === 0)) return restored;
+  // The values must not change what the command is: one restored as a
+  // redirection to `/dev/tcp/…`, a URL, or a word that makes a program
+  // run code keeps every placeholder.
+  const after = judge(restored.command, []);
+  if (!after.offMachine && !after.runsCode) return restored;
+  return restoreEach(np, command, sessionId, () => false);
 }
 
 /** A shell `command` given as an argv array, with its safe placeholders
@@ -1184,18 +1366,42 @@ export function restoreShellArgv(
   const offline = length <= MAX_COMMAND_CHARS && !argvSendsOffMachine(argv);
   const program = argvProgramIndex(argv);
   const script = shellScriptIndex(argv, program);
+  // A program that runs code gets values back only inside the script a
+  // shell runs, which is judged as a string command; nowhere else.
+  const code = argvRunsCode(argv);
+  const first = restoreArgvWords(
+    np,
+    argv,
+    sessionId,
+    (position, value) => {
+      if (!offline || position === program) return false;
+      if (code) return false;
+      return PLAIN_WORD.test(value);
+    },
+    offline ? script : -1,
+  );
+  if (first.results.every((r) => r.replacements === 0)) return first;
+  // As for a string command: the values must not change what it is.
+  if (!argvSendsOffMachine(first.argv) && (code || !argvRunsCode(first.argv))) return first;
+  return restoreArgvWords(np, argv, sessionId, () => false, -1);
+}
+
+/** Restore each word of `argv`: the shell script at `script` as a string
+ * command, every other word where `safe` accepts the value. */
+function restoreArgvWords(
+  np: RestoreCapable,
+  argv: readonly string[],
+  sessionId: string,
+  safe: (position: number, value: string) => boolean,
+  script: number,
+): ShellArgvRestore {
   const results: RestoreResult[] = [];
   const keptMasked: string[] = [];
   const restored = argv.map((word, position) => {
     const r =
-      position === script && offline
+      position === script
         ? restoreShellCommand(np, word, sessionId)
-        : restoreEach(
-            np,
-            word,
-            sessionId,
-            (value) => offline && position !== program && PLAIN_WORD.test(value),
-          );
+        : restoreEach(np, word, sessionId, (value) => safe(position, value));
     results.push(...r.results);
     keptMasked.push(...r.keptMasked);
     return r.command;
@@ -1204,9 +1410,19 @@ export function restoreShellArgv(
 }
 
 /** Shells whose `-c` argument is a script. */
-const ARGV_SHELLS: ReadonlySet<string> = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'mksh']);
+const ARGV_SHELLS: ReadonlySet<string> = new Set([
+  'bash',
+  'sh',
+  'zsh',
+  'dash',
+  'ksh',
+  'mksh',
+  'fish',
+]);
 /** A shell option cluster that holds `c`: the next argument is the script. */
-const SCRIPT_FLAG = /^-[A-Za-z]*c[A-Za-z]*$/;
+const SCRIPT_FLAG = /^-[A-Za-z]*c[A-Za-z]*$|^--command$/;
+/** Shell options that take the next argument (`-o pipefail`, `+O extglob`). */
+const OPTION_WITH_ARGUMENT = /^[-+][A-Za-z]*[oO]$|^--(?:rcfile|init-file|init-command)$/;
 
 /** The index of the program an argv array runs, past keywords,
  * assignments, redirections and wrappers. */
@@ -1228,8 +1444,10 @@ function shellScriptIndex(argv: readonly string[], program: number): number {
   const name = argv[program];
   if (name === undefined || !ARGV_SHELLS.has(normalise(name))) return -1;
   for (let k = program + 1; k < argv.length; k++) {
-    if (SCRIPT_FLAG.test(argv[k] ?? '')) return k + 1;
-    if (!(argv[k] ?? '').startsWith('-')) return -1;
+    const word = argv[k] ?? '';
+    if (SCRIPT_FLAG.test(word)) return k + 1;
+    if (OPTION_WITH_ARGUMENT.test(word)) k += 1;
+    else if (!word.startsWith('-') && !word.startsWith('+')) return -1;
   }
   return -1;
 }

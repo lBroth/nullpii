@@ -65,7 +65,7 @@
     "@types/cli-progress": "^3.11.6",
     "@types/debug": "^4.1.13",
     "@types/node": "^22.19.17",
-    "@vitest/coverage-v8": "4.1.11",
+    "@vitest/coverage-v8": "4.1.12",
     "fast-check": "^4.7.0",
     "fastify": "5.12.5",
     "lefthook": "^1.10.0",
@@ -76,7 +76,7 @@
     "typescript": "^5.7.2",
     "vite": "8.2.4",
     "vitepress": "1.6.4",
-    "vitest": "4.1.11"
+    "vitest": "4.1.12"
   },
   "publishConfig": {
     "access": "public",

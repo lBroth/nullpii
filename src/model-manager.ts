@@ -50,11 +50,11 @@ export const DEFAULT_MODEL: ModelRef = {
   revision: DEFAULT_MODEL_REVISION,
 };
 
-/** The SHA-256 `model` pins for `file`; `undefined` when it pins none.
- * A model that pins hashes must pin every file it fetches. */
 /** A pinned SHA-256: 64 lower-case hex digits, as `sha256File` prints. */
 const SHA256_HEX = /^[0-9a-f]{64}$/;
 
+/** The SHA-256 `model` pins for `file`; `undefined` when it pins none.
+ * A model that pins hashes must pin every file it fetches. */
 function expectedSha(model: ModelRef, file: string): string | undefined {
   if (model.sha256 === undefined) return undefined;
   const sha = model.sha256[file];

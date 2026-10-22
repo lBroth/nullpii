@@ -462,6 +462,7 @@ export class NullPii {
     // A local directory may hold either precision; the backend loads the
     // first candidate present. A download fetches exactly one.
     let onnxFiles = onnxCandidates(variant, backendName);
+    let downloaded = false;
     if (this.config.modelDir !== undefined) {
       this.modelDir = this.config.modelDir;
     } else if (envModelDir !== undefined) {
@@ -476,6 +477,7 @@ export class NullPii {
       });
       this.modelDir = ensured.modelDir;
       onnxFiles = [ensured.onnxFile];
+      downloaded = true;
     }
 
     // Constructor work (no I/O): OrtBackend lazy-loads the ONNX graph
@@ -484,8 +486,12 @@ export class NullPii {
     this.backend = new OrtBackend(this.modelDir, {
       onnxFiles,
       // On the CPU the precision it is measured in comes first; a model
-      // downloaded for CUDA may hold only fp16, which the CPU runs too.
-      cpuFallbackOnnxFiles: [...new Set([...onnxCandidates(variant, 'cpu'), ...onnxFiles])],
+      // downloaded for CUDA may hold only fp16, which the CPU runs too. A
+      // download falls back to the file it verified, never to another one
+      // found in the cache.
+      cpuFallbackOnnxFiles: downloaded
+        ? onnxFiles
+        : [...new Set([...onnxCandidates(variant, 'cpu'), ...onnxFiles])],
       executionProviders: backendToProviders(this.config.backend),
       ...(this.config.intraOpNumThreads !== undefined && {
         intraOpNumThreads: this.config.intraOpNumThreads,

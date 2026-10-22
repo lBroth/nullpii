@@ -15,8 +15,8 @@ name: gateway-docker
 #     `v0.6.0-rc.1` → only `0.6.0-rc.1`
 #   - a push to `main` touching what goes into the image → `edge`
 #   - every pushed build also gets `sha-<short commit>`
-#   - a manual `workflow_dispatch` on `main` or on a release tag rebuilds
-#     and pushes as above; on any other branch it builds without pushing
+#   - a manual `workflow_dispatch` on `main` rebuilds and pushes `edge`;
+#     on a tag or any other branch it builds without pushing
 #
 # The ONNX model is NOT baked in: the gateway downloads it into the
 # image's cache volume the first time it needs it, unless it is
@@ -86,8 +86,12 @@ jobs:
       - name: Push only from main or a release tag
         id: target
         run: |
-          case "$GITHUB_REF" in
-            refs/heads/main | refs/tags/v*.*.*) push=true ;;
+          # A tag push reaches this workflow only through release.yml, once
+          # npm has both packages (a called workflow sees the caller's
+          # event, `push`); a manual run pushes from main only.
+          case "$GITHUB_EVENT_NAME:$GITHUB_REF" in
+            push:refs/heads/main | workflow_dispatch:refs/heads/main) push=true ;;
+            push:refs/tags/v*.*.*) push=true ;;
             *) push=false ;;
           esac
           echo "push=$push" >> "$GITHUB_OUTPUT"

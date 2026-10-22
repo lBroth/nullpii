@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { freemem, totalmem } from 'node:os';
 import chalk from 'chalk';
 import type { Command } from 'commander';
+import { NULLPII_MODEL_DIR, readEnvVar } from '../../config.js';
 import { ModelManager, defaultCacheDir } from '../../model-manager.js';
 
 export function registerDoctor(program: Command): void {
@@ -58,9 +59,14 @@ async function checkCacheDir(): Promise<boolean> {
 }
 
 async function checkModelArtifacts(): Promise<boolean> {
-  const dir = new ModelManager().modelDir;
-  if (!existsSync(dir))
-    return warn('model artifacts', 'not yet downloaded — run `nullpii prefetch`');
+  // A staged directory replaces the download, as it does for the engine.
+  const staged = readEnvVar(NULLPII_MODEL_DIR);
+  const dir = staged ?? new ModelManager().modelDir;
+  if (!existsSync(dir)) {
+    return staged === undefined
+      ? warn('model artifacts', 'not yet downloaded — run `nullpii prefetch`')
+      : fail('model artifacts', `${NULLPII_MODEL_DIR}=${dir} does not exist`);
+  }
   const tok = `${dir}/tokenizer.json`;
   return existsSync(tok)
     ? ok('model artifacts', `${dir}`)

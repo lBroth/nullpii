@@ -69,6 +69,10 @@ jobs:
               status=1
             fi
           done
+          if ! grep -q "^## \[$TAG_VERSION\]" CHANGELOG.md; then
+            echo "CHANGELOG.md has no ## [$TAG_VERSION] section"
+            status=1
+          fi
           exit "$status"
       # The default model must name a Hugging Face commit, not a branch, so
       # the repository cannot change what a release downloads,
@@ -92,6 +96,7 @@ jobs:
       - run: npm run build
       - run: npm run license-check
       - run: npm run circular-check
+      - run: npm run hygiene
       - run: npm run sbom
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

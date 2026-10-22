@@ -489,6 +489,78 @@ const DATA_PROGRAMS: ReadonlySet<string> = new Set([
   ':',
 ]);
 
+/** The programs a value may be restored into: each reads its arguments
+ * as data, opens no connection and runs no code it is handed. A command
+ * that runs any other program keeps every placeholder: no list can name
+ * every program that sends data out or runs code, so the default is to
+ * restore nothing. Programs that write where an argument says (`cp`,
+ * `mv`, `rm`, `tee`, `install`) are left out, so a value cannot choose
+ * what is overwritten or deleted. */
+const ARG_DATA_PROGRAMS: ReadonlySet<string> = new Set([
+  'ls',
+  'cat',
+  'head',
+  'tail',
+  'wc',
+  'grep',
+  'egrep',
+  'fgrep',
+  'rg',
+  'ag',
+  'ack',
+  'find',
+  'fd',
+  'stat',
+  'file',
+  'du',
+  'df',
+  'tree',
+  'diff',
+  'cmp',
+  'sort',
+  'uniq',
+  'cut',
+  'tr',
+  'jq',
+  'yq',
+  'echo',
+  'printf',
+  'mkdir',
+  'cd',
+  'pwd',
+  'touch',
+  'basename',
+  'dirname',
+  'realpath',
+  'readlink',
+  'sha256sum',
+  'sha1sum',
+  'md5sum',
+  'shasum',
+  'base64',
+  'column',
+  'nl',
+  'true',
+  'false',
+  'test',
+  '[',
+  ':',
+]);
+
+/** `git` subcommands a value may be restored into. */
+const ARG_DATA_GIT_SUBCOMMANDS: ReadonlySet<string> = new Set([
+  'log',
+  'status',
+  'diff',
+  'show',
+  'add',
+  'commit',
+  'blame',
+  'grep',
+  'ls-files',
+  'rev-parse',
+]);
+
 /** `git` subcommands that read their arguments as data and run no code
  * on them, so a commit message heredoc in `git add … && git commit …`
  * stays data. */
@@ -802,7 +874,10 @@ function judge(command: string, targets: readonly number[]): Verdict {
   // A command that names a file run later (a git hook, a shell start-up
   // file, a directory on PATH) can put a value there by any means:
   // `cp {{…}} .git/hooks/pre-commit`, `mv {{…}} ~/.zshrc`.
-  return { offMachine, runsCode: strict || writesExecuted, contextAt, programAt };
+  // Any program outside the allowlist (`ARG_DATA_PROGRAMS`) keeps every
+  // placeholder too: the lists above are a second line, not the rule.
+  const unlisted = !programs.every(takesDataArgs);
+  return { offMachine, runsCode: strict || writesExecuted || unlisted, contextAt, programAt };
 }
 
 /** `text` with each of `ranges` blanked out, offsets kept. */
@@ -836,8 +911,11 @@ function holdsAt(
   const own = words.at(-1);
   if (own === undefined) return false;
   if (ENV_ASSIGNMENT.test(own.text)) return true;
-  if (REDIRECTION.test(own.text)) return false;
+  // A redirection target is a file the command writes or reads: a value
+  // there would choose which (`> ~/.ssh/authorized_keys`).
+  if (REDIRECTION.test(own.text)) return true;
   const before = words.slice(0, -1);
+  if (before.length > 0 && REDIRECTION.exec(before.at(-1)?.text ?? '')?.[1] === '') return true;
   if (programIsNext(before)) return true;
   const program = programOf(before);
   return program?.name !== undefined && ENVIRONMENT_BUILTINS.has(program.name);
@@ -926,6 +1004,13 @@ function sendsOut(p: Program): boolean {
 
 function runsFile(p: Program): boolean {
   return p.byPath || (p.name !== undefined && RUNS_FILE_PROGRAMS.has(p.name));
+}
+
+/** True when a value may be restored into `p`'s command (`ARG_DATA_PROGRAMS`). */
+function takesDataArgs(p: Program): boolean {
+  if (p.name === undefined || p.wrappers.length > 0 || p.byPath) return false;
+  if (p.name === 'git') return ARG_DATA_GIT_SUBCOMMANDS.has(p.args[0] ?? '');
+  return ARG_DATA_PROGRAMS.has(p.name);
 }
 
 function isDataProgram(p: Program): boolean {
@@ -1259,7 +1344,7 @@ function readHeredocOperator(
   }
   if (scan.heredocCommand.start !== frame.cmdStart) {
     const head = command.slice(frame.cmdStart, Math.min(i, frame.cmdStart + MAX_WORD_SCAN));
-    scan.heredocCommand = { start: frame.cmdStart, word: commandWord(head) };
+    scan.heredocCommand = { start: frame.cmdStart, word: programOf(wordsOf(head))?.name ?? '' };
   }
   const word = scan.heredocCommand.word;
   const quoted = m[3] ?? m[4];
@@ -1288,16 +1373,6 @@ function pipedLater(command: string, i: number, scan: Scan): boolean {
     scan.line = { end, lastPipe };
   }
   return scan.line.lastPipe > i;
-}
-
-/** The program a simple command runs: its first word that is not an
- * environment assignment, without a directory (`/bin/cat` → `cat`). */
-function commandWord(text: string): string {
-  const word = text
-    .trim()
-    .split(/\s+/)
-    .find((w) => !ENV_ASSIGNMENT.test(w));
-  return word?.split('/').at(-1) ?? '';
 }
 
 /** Walk the bodies of the heredocs that start at `start`, in order,
@@ -1434,7 +1509,8 @@ export function restoreShellArgv(
   const script = shellScriptIndex(argv, program);
   // A program that runs code gets values back only inside the script a
   // shell runs, which is judged as a string command; nowhere else.
-  const code = argvRunsCode(argv);
+  const runs = argvProgram(argv);
+  const code = argvRunsCode(argv) || runs === undefined || !takesDataArgs(runs);
   const first = restoreArgvWords(
     np,
     argv,

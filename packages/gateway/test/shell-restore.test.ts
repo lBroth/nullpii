@@ -338,17 +338,15 @@ describe('shell restore · restoreShellCommand', () => {
     expect(r.keptMasked).toEqual([email]);
   });
 
-  it.each([
-    (p: string) => `echo ${p}`,
-    (p: string) => `grep -r ${p} .`,
-    (p: string) => `echo hi > ${p}`,
-    (p: string) => `sudo -u root echo ${p}`,
-  ])('restores a plain word as an argument or a redirection target: %#', (build) => {
-    const { np, vault, sessionId } = harness();
-    const email = bake(vault, sessionId, EMAIL, 'private_email');
-    const r = restoreShellCommand(np, build(email), sessionId);
-    expect(r.command).toBe(build(EMAIL));
-  });
+  it.each([(p: string) => `echo ${p}`, (p: string) => `grep -r ${p} .`])(
+    'restores a plain word as an argument: %#',
+    (build) => {
+      const { np, vault, sessionId } = harness();
+      const email = bake(vault, sessionId, EMAIL, 'private_email');
+      const r = restoreShellCommand(np, build(email), sessionId);
+      expect(r.command).toBe(build(EMAIL));
+    },
+  );
 
   it('keeps an unsafe value masked inside a command substitution in double quotes', () => {
     const { np, vault, sessionId } = harness();
@@ -551,7 +549,6 @@ describe('shell restore · programs that read the value again', () => {
 
   it.each([
     (e: string) => `grep ${e} ~/.ssh/config`,
-    (e: string) => `ssh-keygen -t ed25519 -C ${e}`,
     (e: string) => `git commit -m "fetch the list for ${e}"`,
   ])('restores in a local command that only mentions a network word (%#)', (build) => {
     const { np, vault, sessionId } = harness();
@@ -652,6 +649,21 @@ describe('shell restore · v3 hardening', () => {
     const word = bake(vault, sessionId, 'x/e', 'secret');
 
     expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(0);
+  });
+
+  it.each([
+    (p: string) => `echo hi > ${p}`,
+    (p: string) => `cat notes.txt >> ${p}`,
+    (p: string) => `sudo -u root echo ${p}`,
+    (p: string) => `ssh-keygen -t ed25519 -C ${p}`,
+    (p: string) => `rm -rf ${p}`,
+    (p: string) => `cp a.txt ${p}`,
+    (p: string) => `some-unknown-tool ${p}`,
+  ])('restores nothing outside the allowlist or into a redirection target: %#', (build) => {
+    const { np, vault, sessionId } = harness();
+    const email = bake(vault, sessionId, EMAIL, 'private_email');
+
+    expect(restoreShellCommand(np, build(email), sessionId).keptMasked).toEqual([email]);
   });
 
   it('reading a file under /etc does not count as writing one', () => {
@@ -883,8 +895,9 @@ describe('shell restore · argv commands', () => {
 
     const r = restoreShellArgv(np, ['bash', '-lc', `${email} --help; echo ${email}`], sessionId);
 
-    expect(r.argv).toEqual(['bash', '-lc', `${email} --help; echo ${EMAIL}`]);
-    expect(r.keptMasked).toEqual([email]);
+    // The script's first command is named by a value: nothing comes back.
+    expect(r.argv).toEqual(['bash', '-lc', `${email} --help; echo ${email}`]);
+    expect(r.keptMasked).toEqual([email, email]);
   });
 
   it('keeps a value that is not inert masked even as a literal argument', () => {

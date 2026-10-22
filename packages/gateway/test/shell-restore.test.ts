@@ -189,14 +189,17 @@ describe('shell restore · quoting context', () => {
     [`echo \\'${MARKER}`, 'none'],
     [`echo "it's ${MARKER}"`, 'double'],
     [`echo 'a "b' ${MARKER}`, 'none'],
-    [`echo "a \\" ${MARKER}"`, 'double'],
+    // Outside the grammar read (an escape, an expansion, a substitution,
+    // a comment): the command is not read, so every placeholder stays
+    // masked and no context applies.
+    [`echo "a \\" ${MARKER}"`, 'none'],
     [`echo 'a \\' ${MARKER}`, 'none'],
     // A command substitution is unquoted, even inside double quotes.
     [`echo "$(cat ${MARKER})"`, 'none'],
     [`echo "\`cat ${MARKER}\`"`, 'none'],
-    [`echo "$(printf "${MARKER}")"`, 'double'],
-    [`echo "$(echo (a)) ${MARKER}"`, 'double'],
-    [`echo "$((1 + 2)) ${MARKER}"`, 'double'],
+    [`echo "$(printf "${MARKER}")"`, 'none'],
+    [`echo "$(echo (a)) ${MARKER}"`, 'none'],
+    [`echo "$((1 + 2)) ${MARKER}"`, 'none'],
     // Heredoc bodies fed to cat or tee: literal, or expanding when bare.
     [`cat <<'EOF'\n${MARKER}\nEOF`, 'heredoc'],
     [`cat <<"EOF"\n${MARKER}\nEOF`, 'heredoc'],
@@ -230,13 +233,13 @@ describe('shell restore · quoting context', () => {
     [`awk '{print "${MARKER}"}' data.txt`, 'none'],
     // A `#` comment: a quote in it opens nothing.
     [`# load the user's key\nexport KEY=${MARKER}`, 'none'],
-    [`# don't print\necho "t=${MARKER}"`, 'double'],
-    [`echo hi # it's done\necho '${MARKER}'`, 'single'],
-    [`echo hi; # it's done\necho '${MARKER}'`, 'single'],
+    [`# don't print\necho "t=${MARKER}"`, 'none'],
+    [`echo hi # it's done\necho '${MARKER}'`, 'none'],
+    [`echo hi; # it's done\necho '${MARKER}'`, 'none'],
     // Not comments: mid-word, `$#`, `${#x}`, inside quotes.
     [`echo a#b '${MARKER}'`, 'single'],
-    [`echo $# '${MARKER}'`, 'single'],
-    [`echo \${#x} '${MARKER}'`, 'single'],
+    [`echo $# '${MARKER}'`, 'none'],
+    [`echo \${#x} '${MARKER}'`, 'none'],
     [`echo "#" '${MARKER}'`, 'single'],
     // The code flag after other options and their arguments.
     [`bash -o pipefail -c "echo ${MARKER}"`, 'none'],
@@ -509,7 +512,7 @@ describe('shell restore · programs that read the value again', () => {
     [`cat > notes.md <<'EOF'\n${MARKER}\nEOF\ngit push`, 'double'],
     [`cd docs && cat > notes.md <<'EOF'\n${MARKER}\nEOF`, 'heredoc'],
     // `$'…'` honours backslash escapes; a redirection is not a separator.
-    [`echo $'it\\'s' '${MARKER}'`, 'single'],
+    [`echo $'it\\'s' '${MARKER}'`, 'none'],
     [`echo $'a\\'' ${MARKER}`, 'none'],
     [`cat <<'EOF' > notes.md 2>&1\n${MARKER}\nEOF`, 'heredoc'],
   ])('%j → %s', (command, context) => {
@@ -1291,12 +1294,12 @@ describe('shell restore · round-11 heredocs inside substitutions', () => {
     expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(0);
   });
 
-  it('still restores a plain word next to a one-line `${…}`', () => {
+  it('keeps every value in a command with any `$`, even a one-line `${…}`', () => {
     const { np, vault, sessionId } = harness();
     const word = bake(vault, sessionId, EMAIL, 'private_email');
     const command = `git commit -m "release \${VERSION:-1}" --author=${word}`;
 
-    expect(restored(restoreShellCommand(np, command, sessionId))).toBe(1);
+    expect(restored(restoreShellCommand(np, command, sessionId))).toBe(0);
   });
 
   it('judges many substitutions with heredocs in linear time', () => {

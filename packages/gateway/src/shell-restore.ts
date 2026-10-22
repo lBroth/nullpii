@@ -20,9 +20,10 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  *
  * On top of that:
  * - a listed program counts only by name, with no wrapper, no path, no
- *   redirection before it and no computed argument (`$x`, `$'…'`; git
- *   commit's heredoc message aside), and with none of the options that run
- *   or write (`COMMAND_OPTIONS`, abbreviations included);
+ *   redirection before it and no computed argument (`$x`, `$'…'`; `git
+ *   commit` aside, whose options name no program or output file), and with
+ *   none of the options that run or write (`COMMAND_OPTIONS`, abbreviations
+ *   included);
  * - a placeholder that is, or is part of, the program a simple command
  *   runs, a redirection target, an assignment, an argument of `export` or
  *   `alias`, or a `cd` argument stays masked: a value must not choose what
@@ -76,11 +77,25 @@ export const SHELL_COMMAND_FIELD = 'command';
 
 /** Where a placeholder stands. `heredoc` is the body of a quoted-delimiter
  * heredoc and `heredoc-expanding` that of a bare one, both only while the
- * body is data (see `DATA_PROGRAMS`); any other body is `none`. */
-export type QuoteContext = 'none' | 'single' | 'double' | 'heredoc' | 'heredoc-expanding';
+ * body is data (see `DATA_PROGRAMS`); `heredoc-in-substitution` is such a
+ * body inside `$(…)` or backticks; any other body is `none`. */
+export type QuoteContext =
+  | 'none'
+  | 'single'
+  | 'double'
+  | 'heredoc'
+  | 'heredoc-expanding'
+  | 'heredoc-in-substitution';
+
+/** The contexts of a data heredoc body. */
+type DataBodyContext = 'heredoc' | 'heredoc-expanding' | 'heredoc-in-substitution';
 
 /** Contexts that hold data a program writes out, not shell code. */
-const DATA_BODY_CONTEXTS: ReadonlySet<QuoteContext> = new Set(['heredoc', 'heredoc-expanding']);
+const DATA_BODY_CONTEXTS: ReadonlySet<QuoteContext> = new Set<DataBodyContext>([
+  'heredoc',
+  'heredoc-expanding',
+  'heredoc-in-substitution',
+]);
 
 /** A value that may be restored outside a data heredoc body: one plain
  * word, with no character any shell or quoting gives a meaning to, and
@@ -88,14 +103,27 @@ const DATA_BODY_CONTEXTS: ReadonlySet<QuoteContext> = new Set(['heredoc', 'hered
  * (a home directory). */
 const PLAIN_WORD = /^(?![-=~])[\p{L}\p{N}@%+:,./_=-]+$/u;
 
+/** Contexts where `$` expands. */
+const EXPANDING_CONTEXTS: ReadonlySet<QuoteContext> = new Set<QuoteContext>([
+  'none',
+  'double',
+  'heredoc-expanding',
+  'heredoc-in-substitution',
+]);
+
 /** What a value may hold in a data heredoc body. */
-const DATA_BODY_SAFE: Readonly<Record<'heredoc' | 'heredoc-expanding', RegExp>> = {
+const DATA_BODY_SAFE: Readonly<Record<DataBodyContext, RegExp>> = {
   // A quoted-delimiter body is literal: it ends only at a line that reads
   // as the delimiter. A value with no line break can still complete such a
   // line (a value `EOF` alone on its line); the second reading in
   // `restoreShellCommand` sees the body end early and keeps every value.
   heredoc: /^[^\n\u2028\u2029]*$/u,
   'heredoc-expanding': /^[^$`\\\n\u2028\u2029]*$/u,
+  // Inside `$(…)` or backticks the body is not opaque to every shell: a
+  // backtick ends a backtick substitution in any shell, and bash 3.2 (the
+  // macOS `/bin/bash`) ends `$(…)` at a `)` in the body. So none of the
+  // characters that can close or reopen the substitution or its quoting.
+  'heredoc-in-substitution': /^[^$`\\()'"\n\u2028\u2029]*$/u,
 };
 
 /** Longest command read: a longer one keeps every placeholder, so the
@@ -109,17 +137,17 @@ const SAME_COMMAND = String.raw`[^;&|\n]{0,256}?`;
 /** Interpreter names, for the patterns that look inside quoted code. */
 const INTERPRETER_NAMES = String.raw`(?:bash|sh|zsh|dash|ksh|fish|python[\d.]*|pypy[\d.]*|node|nodejs|bun|deno|perl|ruby|lua|php|Rscript|osascript|pwsh)`;
 
+/** A program name standing as a whole word: not part of a path segment,
+ * a file name (`sed.txt`) or a longer name (`ssh-keygen`, `~/.ssh`). */
+const NAME_START = String.raw`(?<![\w.-])`;
+const NAME_END = String.raw`(?![\w.-])`;
+
 /** Code handed to an interpreter, read on the whole text so that it is
  * found where no program is read, inside an argument or a quoted string
  * (`docker run img sh -c "…"`, `find . -exec bash -c '…'`). Each code
  * flag may follow other options (`bash -o pipefail -c`); a flag cluster
  * counts when it holds the code letter (`-lc`). The program a command
  * itself runs is judged by name (`CODE_RUNNERS`). */
-/** A program name standing as a whole word: not part of a path segment,
- * a file name (`sed.txt`) or a longer name (`ssh-keygen`, `~/.ssh`). */
-const NAME_START = String.raw`(?<![\w.-])`;
-const NAME_END = String.raw`(?![\w.-])`;
-
 const NESTED_INTERPRETER = new RegExp(
   [
     String.raw`${NAME_START}(?:bash|sh|zsh|dash|ksh|fish)${NAME_END}${SAME_COMMAND}\s(?:-[A-Za-z]*c[A-Za-z]*|--command)\b`,
@@ -518,11 +546,11 @@ const NETWORK_CLIENT = new RegExp(
   'i',
 );
 
-/** In a command that runs code: a URL, a networking library, or a short
- * network client name, which that code may use. */
 /** A URL: handed to a program that is not a data one, it may be opened. */
 const URL_SCHEME = /(?<![a-z0-9+.-])[a-z][a-z0-9+.-]{0,31}:\/\//i;
 
+/** In a command that runs code: a URL, a networking library, or a short
+ * network client name, which that code may use. */
 const NETWORK_IN_CODE =
   /(?<![a-z0-9+.-])[a-z][a-z0-9+.-]{0,31}:\/\/|\b(?:requests|urllib|httpx|aiohttp|socket|fetch|axios|XMLHttpRequest|WebSocket|LWP|IO::Socket|Net::HTTP|http\.client|net\.connect|nc|gh|dig|ping|ftp|xh|aws)\b/;
 
@@ -771,6 +799,8 @@ const COMMENT_PRECEDERS: ReadonlySet<string> = new Set([
 
 const ENV_ASSIGNMENT = /^[A-Za-z_]\w*=/;
 const LEADING_TABS = /^\t+/;
+/** After a heredoc delimiter: blanks, then the `)` that ends `$(…)`. */
+const DELIMITER_PAREN = /^[ \t]*\)/;
 const WHITESPACE = /\s/;
 /** A redirection word (`>`, `2>>log`, `&>`, `<in`); group 1 is empty
  * when the operator stands alone and its target is the next word. */
@@ -792,6 +822,10 @@ interface Frame {
   readonly kind: FrameKind;
   depth: number;
   cmdStart: number;
+  /** For a `subst` frame: where its `$(` stands. */
+  readonly opened?: number;
+  /** For a `subst` frame: a heredoc operator was met in it. */
+  heredoc?: boolean;
 }
 
 /** A heredoc whose body starts at the next newline of shell code. */
@@ -804,6 +838,8 @@ interface Heredoc {
   readonly stripTabs: boolean;
   /** Fed to `cat` and not piped on, so the body is data. */
   readonly data: boolean;
+  /** Met inside `$(…)` or backticks. */
+  readonly inSubstitution: boolean;
 }
 
 /** One pass over a command: the context at each target position, in
@@ -816,6 +852,8 @@ interface Scan {
   readonly dataBodies: Array<readonly [number, number]>;
   /** The extent of every heredoc body, data or not, in the order read. */
   readonly bodies: Array<readonly [number, number]>;
+  /** The extent of every heredoc body met inside `$(…)` or backticks. */
+  readonly substitutionBodies: Array<readonly [number, number]>;
   /** The target of every output redirection in shell code, quotes
    * removed; empty when it expands or cannot be read whole. */
   readonly outputs: string[];
@@ -876,8 +914,8 @@ interface Verdict {
    * restored, since where a value lands in that code is unknown. */
   readonly runsCode: boolean;
   /** The placeholder positions where no value is restored: the program a
-   * simple command runs or part of it, an assignment, the arguments of
-   * `export`, `alias` and the like. */
+   * simple command runs or part of it, an assignment, a redirection
+   * target, the arguments of `cd`, `export`, `alias` and the like. */
   readonly programAt: ReadonlySet<number>;
   /** How the command splits: its simple commands and heredoc bodies. */
   readonly layout: Layout;
@@ -913,10 +951,12 @@ export function sendsOffMachine(command: string): boolean {
 /** True when `value` can be put back as written in `context`: one plain
  * word, or in a data heredoc body a value that cannot end the body. */
 export function shellSafe(value: string, context: QuoteContext): boolean {
-  if (context === 'heredoc' || context === 'heredoc-expanding') {
-    return DATA_BODY_SAFE[context].test(value);
-  }
+  if (isDataBody(context)) return DATA_BODY_SAFE[context].test(value);
   return PLAIN_WORD.test(value);
+}
+
+function isDataBody(context: QuoteContext): context is DataBodyContext {
+  return DATA_BODY_CONTEXTS.has(context);
 }
 
 /**
@@ -939,6 +979,7 @@ function judge(command: string, targets: readonly number[]): Verdict {
     commands: [],
     dataBodies: [],
     bodies: [],
+    substitutionBodies: [],
     outputs: [],
     line: { end: -1, lastPipe: -1 },
     heredocCommand: { start: -1, word: '' },
@@ -999,10 +1040,13 @@ function judge(command: string, targets: readonly number[]): Verdict {
   const contextAt = new Map<number, QuoteContext>();
   const programAt = new Set<number>();
   const sorted = [...scan.commands].sort((a, b) => a[0] - b[0]);
+  const substitutionBodies = outermost(scan.substitutionBodies);
   targets.forEach((index, k) => {
     const context = scan.contexts[k] ?? 'none';
+    const nested = isDataBody(context) && insideAny(substitutionBodies, index);
     if (strict) contextAt.set(index, 'none');
-    else if (DATA_BODY_CONTEXTS.has(context)) contextAt.set(index, bodyContext(context));
+    else if (nested) contextAt.set(index, bodyContext('heredoc-in-substitution'));
+    else if (isDataBody(context)) contextAt.set(index, bodyContext(context));
     else contextAt.set(index, context);
     if (keepAll) return;
     if (holdsAt(index, sorted, wordsAt)) programAt.add(index);
@@ -1089,6 +1133,12 @@ function rangesWithin(
     out.push([range[0], Math.min(range[1], end)]);
   }
   return out;
+}
+
+/** True when `index` lies in one of `sorted` (disjoint, ascending). */
+function insideAny(sorted: ReadonlyArray<readonly [number, number]>, index: number): boolean {
+  const [range] = rangesWithin(sorted, 0, index + 1).slice(-1);
+  return range !== undefined && index < range[1];
 }
 
 /** True when `command` holds only whitespace from `start` to `end`. */
@@ -1442,8 +1492,8 @@ function lex(
       scan.commands.push([frame.cmdStart, i]);
       const next = readHeredocBodies(command, i + 1, pending, scan, limit);
       // An unreadable delimiter or no closing line: the body's extent, and
-      // so every command after it, is unknown (`bash` 3.2 even ends a body
-      // at `EOF)`), so the command is not read at all.
+      // so every command after it, is unknown (inside `$(…)`, bash 5.2 ends
+      // a body at a line `EOF)`), so the command is not read at all.
       if (next === undefined) {
         scan.broken = true;
         return false;
@@ -1504,7 +1554,7 @@ function advance(
   }
   if (ch === '\\') return 2;
   if (ch === '$' && command[i + 1] === '(') {
-    stack.push({ kind: 'subst', depth: 0, cmdStart: i + 2 });
+    stack.push({ kind: 'subst', depth: 0, cmdStart: i + 2, opened: i });
     return 2;
   }
   if (ch === '`') {
@@ -1541,7 +1591,7 @@ function advanceCode(
   }
   if (ch === "'") stack.push({ kind: 'single', depth: 0, cmdStart: 0 });
   else if (ch === '"') stack.push({ kind: 'double', depth: 0, cmdStart: 0 });
-  else if (frame.kind === 'subst') trackParens(stack, frame, ch, i, scan);
+  else if (frame.kind === 'subst') trackParens(stack, frame, command, i, scan);
   if (separatesCommands(command, i)) {
     scan.commands.push([frame.cmdStart, i]);
     frame.cmdStart = i + 1;
@@ -1635,17 +1685,55 @@ function commentLength(command: string, i: number): number {
   return (newline === -1 ? command.length : newline) - i;
 }
 
-function trackParens(
-  stack: Frame[],
-  frame: Frame,
-  ch: string | undefined,
-  i: number,
-  scan: Scan,
-): void {
+function trackParens(stack: Frame[], frame: Frame, command: string, i: number, scan: Scan): void {
+  const ch = command[i];
   if (ch === '(') frame.depth += 1;
   if (ch !== ')') return;
-  if (frame.depth === 0) closeCommand(stack, frame, i, scan);
-  else frame.depth -= 1;
+  if (frame.depth > 0) {
+    frame.depth -= 1;
+    return;
+  }
+  // bash 3.2 (macOS's `/bin/bash`) finds the end of `$(…)` by scanning its
+  // text for quotes and parentheses, heredoc bodies included; newer shells
+  // parse the body as a body. A substitution with a heredoc whose end the
+  // two readings place differently is not read.
+  if (frame.heredoc === true && bash32SubstitutionEnd(command, frame.opened ?? -1) !== i) {
+    scan.broken = true;
+  }
+  closeCommand(stack, frame, i, scan);
+}
+
+/** Where bash 3.2 ends the `$(…)` whose `$` is at `open`: quotes, escapes,
+ * backticks and nested parentheses are tracked, heredocs and comments are
+ * not. `-1` when it finds no end. */
+function bash32SubstitutionEnd(command: string, open: number): number {
+  if (open < 0) return -1;
+  const stack: Array<'(' | '"' | '`'> = ['('];
+  for (let j = open + 2; j < command.length; j++) {
+    const ch = command[j];
+    const top = stack.at(-1);
+    if (ch === '\\') {
+      j += 1;
+    } else if (top === '`') {
+      if (ch === '`') stack.pop();
+    } else if (top === '"') {
+      if (ch === '"') stack.pop();
+      else if (ch === '`') stack.push('`');
+      else if (ch === '$' && command[j + 1] === '(') {
+        stack.push('(');
+        j += 1;
+      }
+    } else if (ch === "'") {
+      j = command.indexOf("'", j + 1);
+      if (j === -1) return -1;
+    } else if (ch === '"' || ch === '`' || ch === '(') {
+      stack.push(ch);
+    } else if (ch === ')') {
+      stack.pop();
+      if (stack.length === 0) return j;
+    }
+  }
+  return -1;
 }
 
 /** Close a substitution at `i`, recording its last simple command. */
@@ -1664,10 +1752,20 @@ function readHeredocOperator(
   scan: Scan,
 ): number {
   if (command[i + 2] === '<') return 3;
+  // Shells disagree on a heredoc inside backticks (a backtick in its body
+  // ends the substitution in every shell), so such a command is not read.
+  if (frame.kind === 'backtick') scan.broken = true;
+  if (frame.kind === 'subst') frame.heredoc = true;
   scan.heredocOperator.lastIndex = i;
   const m = scan.heredocOperator.exec(command);
   if (m === null) {
-    pending.push({ delimiter: undefined, literal: false, stripTabs: false, data: false });
+    pending.push({
+      delimiter: undefined,
+      literal: false,
+      stripTabs: false,
+      data: false,
+      inSubstitution: false,
+    });
     return 2;
   }
   if (scan.heredocCommand.start !== frame.cmdStart) {
@@ -1681,6 +1779,7 @@ function readHeredocOperator(
     literal: quoted !== undefined,
     stripTabs: m[1] === '-',
     data: HEREDOC_DATA_COMMANDS.has(word) && !pipedLater(command, i, scan),
+    inSubstitution: frame.kind === 'subst' || frame.kind === 'backtick',
   });
   return m[0].length;
 }
@@ -1731,6 +1830,7 @@ function readBody(command: string, start: number, end: number, heredoc: Heredoc,
   // checks read; one with none is plain text.
   const expands = !heredoc.literal && /[$`]/.test(command.slice(start, end));
   scan.bodies.push([start, end]);
+  if (heredoc.inSubstitution) scan.substitutionBodies.push([start, end]);
   if (heredoc.data && !expands) scan.dataBodies.push([start, end]);
   if (!heredoc.data) record(scan, end - 1, 'none');
   else if (heredoc.literal) record(scan, end - 1, 'heredoc');
@@ -1759,10 +1859,20 @@ function findClosingLine(
     const line = command.slice(lineStart, lineEnd);
     const candidate = heredoc.stripTabs ? line.replace(LEADING_TABS, '') : line;
     if (candidate === heredoc.delimiter) return { bodyEnd: lineStart, next: lineEnd };
+    // Inside `$(…)`, bash 5.2 also ends the body at the delimiter followed
+    // by `)`, older shells do not: such a body cannot be read.
+    if (heredoc.inSubstitution && closesSubstitution(candidate, heredoc.delimiter)) {
+      return undefined;
+    }
     if (newline === -1) return undefined;
     lineStart = newline + 1;
   }
   return undefined;
+}
+
+/** True when `line` is `delimiter` then blanks and `)`. */
+function closesSubstitution(line: string, delimiter: string): boolean {
+  return line.startsWith(delimiter) && DELIMITER_PAREN.test(line.slice(delimiter.length));
 }
 
 /** A shell command with its safe placeholders restored. */
@@ -1802,7 +1912,11 @@ export function restoreShellCommand(
     sessionId,
     (value, at) => {
       if (keepAll || verdict.programAt.has(at)) return false;
-      return shellSafe(value, verdict.contextAt.get(at) ?? 'none');
+      const context = verdict.contextAt.get(at) ?? 'none';
+      // `$` or `${` just before it would make the value a parameter name
+      // (`${HOME}`) wherever `$` expands.
+      if (EXPANDING_CONTEXTS.has(context) && opensParameter(command, at)) return false;
+      return shellSafe(value, context);
     },
     shifts,
   );
@@ -1815,6 +1929,13 @@ export function restoreShellCommand(
   const same = sameLayout(verdict.layout, after.layout, shifts);
   if (same && !after.offMachine && !after.runsCode) return restored;
   return restoreEach(np, command, sessionId, () => false);
+}
+
+/** True when `$` or `${` stands just before `at`, so that a value there
+ * would complete a parameter expansion. */
+function opensParameter(command: string, at: number): boolean {
+  const before = command[at - 1];
+  return before === '$' || (before === '{' && command[at - 2] === '$');
 }
 
 /** Where restoring one placeholder changed a command's length: at `at`
@@ -1873,8 +1994,8 @@ export interface ShellArgvRestore {
  * runs without a shell, but the same rules hold as in a string command:
  * - nothing is restored when the program sends data off the machine, or
  *   runs code that may;
- * - a value is restored only as one plain word, and never into the program
- *   itself;
+ * - a value is restored only as one plain word, never into the program
+ *   itself, and never into the arguments of `cd`, `export` and the like;
  * - the script a shell runs (`bash -lc "…"`) is judged as a string
  *   command, program positions and data heredocs included.
  *

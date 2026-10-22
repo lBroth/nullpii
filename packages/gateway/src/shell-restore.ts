@@ -14,8 +14,10 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  * (`advance`): words, single quotes, double quotes without `$`, a backtick
  * or a backslash, `&&`, `||`, `|`, `;`, line breaks, redirections and
  * heredocs. Anything else (any `$`, backticks, backslashes, parentheses,
- * braces, comments, a lone `&`, `;;`, `[[`, `<<<`, a reserved word such as
- * `if` or `case`) keeps every placeholder: shells disagree on how such
+ * braces, comments, a lone `&` (also `&>`), `>!`, `>>&`, `;;`, `[[`, `<<<`,
+ * control characters, a heredoc operator with no body, a reserved word
+ * such as `if` or `case` where a program could stand) keeps every
+ * placeholder: shells disagree on how such
  * constructs nest and end. Within that grammar, every program must be on a
  * closed list of programs that read their arguments as data
  * (`ARG_DATA_PROGRAMS`), and a value comes back only as one plain word:
@@ -24,12 +26,15 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  * placeholder text, which is harmless.
  *
  * On top of that:
- * - a listed program counts only by name, with no wrapper, no path, no
- *   redirection before it, and with none of the options that run or write
- *   (`COMMAND_OPTIONS`, abbreviations included);
+ * - a listed program counts only by name exactly as written, with no
+ *   wrapper, no path, no redirection before it, no assignment other than
+ *   the locale or time zone (before it, or as a command of its own:
+ *   `PATH=…; grep …`), and with none of the options that run or write
+ *   (`COMMAND_OPTIONS`, abbreviations and short-option clusters included);
  * - a placeholder that is, or is part of, the program a simple command
  *   runs, a redirection target, an assignment, an argument of `export` or
- *   `alias`, or a `cd` argument stays masked: a value must not choose what
+ *   `alias`, a `cd` argument, or a placeholder written in shell code
+ *   directly before `<` or `>` stays masked: a value must not choose what
  *   runs, what is written or the directory later commands (git among them)
  *   run in;
  * - within the list, a command that sends data off the machine (a URL,
@@ -46,9 +51,9 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  *   …; `PLAIN_DATA_FILE`), or that `git commit -F -` reads as its message,
  *   in a command that runs nothing else that could read it as code
  *   (`cat > notes.md <<'EOF'`, `git commit -F - <<'EOF'`): that body is
- *   data, as a file the `Write` tool writes is, so only a line break is
- *   refused (and in a bare-delimiter body, `$`, a backtick or a
- *   backslash). The network checks skip such a body, so a commit message
+ *   data, as a file the `Write` tool writes is, so only a line break or
+ *   another control character but tab is refused (and in a
+ *   bare-delimiter body, `$`, a backtick or a backslash). The network checks skip such a body, so a commit message
  *   that mentions `ssh` does not count as a network call.
  *
  * The command is read once, in time linear in its length, whatever the
@@ -101,8 +106,12 @@ const DATA_BODY_SAFE: Readonly<Record<DataBodyContext, RegExp>> = {
   // as the delimiter. A value with no line break can still complete such a
   // line (a value `EOF` alone on its line); the second reading in
   // `restoreShellCommand` sees the body end early and keeps every value.
-  heredoc: /^[^\n\u2028\u2029]*$/u,
-  'heredoc-expanding': /^[^$`\\\n\u2028\u2029]*$/u,
+  // Control characters but tab are refused per value: the second reading
+  // would refuse the whole command for them (`UNREAD_CHARACTERS`).
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: refusing them is the point.
+  heredoc: /^[^\u0000-\u0008\u000a-\u001f\u007f-\u009f\u2028\u2029]*$/u,
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: refusing them is the point.
+  'heredoc-expanding': /^[^$`\\\u0000-\u0008\u000a-\u001f\u007f-\u009f\u2028\u2029]*$/u,
 };
 
 /** Longest command read: a longer one keeps every placeholder, so the
@@ -267,6 +276,13 @@ function optionPattern(...parts: string[]): RegExp {
   return new RegExp(parts.join('|'));
 }
 
+/** A short option anywhere in a cluster after one `-`, at any length:
+ * getopt and git read each character as an option, digits included,
+ * until one takes an argument (`git grep -n3O<pager>`). */
+function shortOption(letter: string): string {
+  return `^-(?!-)[\\s\\S]*${escapeRe(letter)}`;
+}
+
 /** Options that make an otherwise plain program run a command it is given
  * (`find -exec`, `tar -I`, `zip -TT`, `git -c core.pager=…`). */
 const COMMAND_OPTIONS: ReadonlyMap<string, RegExp> = new Map([
@@ -275,7 +291,7 @@ const COMMAND_OPTIONS: ReadonlyMap<string, RegExp> = new Map([
   [
     'git',
     optionPattern(
-      '^-[A-Za-z]*O',
+      shortOption('O'),
       longOption('open-files-in-pager'),
       longOption('output'),
       longOption('ext-diff'),
@@ -283,20 +299,23 @@ const COMMAND_OPTIONS: ReadonlyMap<string, RegExp> = new Map([
   ],
   [
     'tar',
-    /^-[A-Za-z]*I|^--(?:use-compress-program|to-command|checkpoint-action|info-script|new-volume-script)/,
+    optionPattern(
+      shortOption('I'),
+      '^--(?:use-compress-program|to-command|checkpoint-action|info-script|new-volume-script)',
+    ),
   ],
   ['zip', /^-TT|^--unzip-command/],
-  ['rsync', /^-[A-Za-z]*e|^--rsh/],
-  ['less', /^-[A-Za-z]*\+|^\+/],
+  ['rsync', optionPattern(shortOption('e'), '^--rsh')],
+  ['less', optionPattern(shortOption('+'), '^\\+')],
   // ripgrep takes no abbreviations; `--pre-glob` runs nothing without `--pre`.
   ['rg', /^--pre(?:=|$)|^--hostname-bin(?:=|$)/],
-  ['man', /^-[A-Za-z]*P|^--pager/],
+  ['man', optionPattern(shortOption('P'), '^--pager')],
   // Writing where an option points chooses what is overwritten.
-  ['sort', optionPattern('^-[A-Za-z]*o', longOption('output'), longOption('compress-program'))],
-  ['base64', optionPattern('^-[A-Za-z]*o', longOption('output'))],
+  ['sort', optionPattern(shortOption('o'), longOption('output'), longOption('compress-program'))],
+  ['base64', optionPattern(shortOption('o'), longOption('output'))],
   // `printf -v NAME` assigns a shell variable; `file -C` writes a file.
   ['printf', /^-v/],
-  ['file', optionPattern('^-[A-Za-z]*C', longOption('compile'))],
+  ['file', optionPattern(shortOption('C'), longOption('compile'))],
   ['fzf', /^--(?:preview|bind)/],
 ]);
 
@@ -696,41 +715,13 @@ const BUILD_INPUT_TXT =
 function isDocument(target: string): boolean {
   return PLAIN_DATA_FILE.test(target) && !BUILD_INPUT_TXT.test(target);
 }
-/** Characters kept of a word: enough for any name, option or assignment
- * the rules read. */
-const MAX_WORD_CHARS = 256;
+/** Characters read of a redirection target: a longer one is no document. */
+const MAX_TARGET_CHARS = 256;
 /** The characters a shell splits words on by default (`IFS`). */
 const FIELD_SEPARATORS: ReadonlySet<string> = new Set([' ', '\t', '\n']);
 
 /** Programs that make a file executable, to run it. */
 const RUNS_FILE_PROGRAMS: ReadonlySet<string> = new Set(['chmod']);
-
-/** Shell words that come before the program of a simple command. */
-const LEADING_KEYWORDS: ReadonlySet<string> = new Set([
-  'if',
-  'then',
-  'else',
-  'elif',
-  'do',
-  'while',
-  'until',
-  '!',
-  '{',
-  'coproc',
-]);
-
-/** Shell words that start a simple command with no program to run. */
-const NO_PROGRAM_KEYWORDS: ReadonlySet<string> = new Set([
-  'for',
-  'case',
-  'select',
-  'function',
-  'fi',
-  'done',
-  'esac',
-  '}',
-  '[[',
-]);
 
 /** How many words of a simple command are read, and how far: enough for
  * wrappers, the program and its subcommand, bounded on long input. */
@@ -811,7 +802,7 @@ const COMMENT_PRECEDERS: ReadonlySet<string> = new Set([
 ]);
 
 const ENV_ASSIGNMENT = /^[A-Za-z_]\w*=/;
-/** Variables an assignment before a listed program may set. */
+/** Variables a command with listed programs may assign. */
 const SAFE_ASSIGNMENT = /^(?:LANG|LANGUAGE|LC_[A-Z]+|TZ)$/;
 const LEADING_TABS = /^\t+/;
 /** A redirection word (`>`, `2>>log`, `&>`, `<in`); group 1 is empty
@@ -870,11 +861,9 @@ interface Scan {
   broken: boolean;
 }
 
-/** A word of a simple command, quotes and escapes removed; `computed`
- * when it holds an expansion, so its value is known only at run time. */
+/** A word of a simple command, quotes and escapes removed. */
 interface Word {
   readonly text: string;
-  readonly computed: boolean;
   /** Where the word starts and ends in the text it was read from. */
   readonly start: number;
   readonly end: number;
@@ -886,12 +875,8 @@ interface Program {
    * disagree on what such a prefix is, so the command is not judged as
    * the program that follows it. */
   readonly redirectedPrefix: boolean;
-  /** An argument is computed (`$x`, `$'…'`): its value, an option
-   * included, is known only at run time. */
-  readonly computedArgs: boolean;
-  /** Lower case, without directory or version suffix; `undefined` when
-   * an expansion names it (`$PY`, `$(which python3)`). */
-  readonly name: string | undefined;
+  /** Lower case, without directory or version suffix. */
+  readonly name: string;
   /** Named by a path (`./run.sh`, `/tmp/x`): it runs a file. */
   readonly byPath: boolean;
   /** The wrappers it runs behind, normalised like `name`. */
@@ -900,7 +885,8 @@ interface Program {
   readonly wrapperShell: boolean;
   /** Its arguments, as far as they were read. */
   readonly args: readonly string[];
-  /** The program word as written, when no expansion makes it. */
+  /** The program word as written; `undefined` for a wrapper that runs
+   * on its own (`xargs`). */
   readonly literal: string | undefined;
   /** Names assigned before the program (`NAME=value cmd`). */
   readonly assigned: readonly string[];
@@ -1009,7 +995,7 @@ function judge(command: string, targets: readonly number[]): Verdict {
   const writesFiles =
     scan.dataBodies.length > 0 ||
     written.length > 0 ||
-    programs.some((p) => p.name !== undefined && FILE_WRITERS.has(p.name));
+    programs.some((p) => FILE_WRITERS.has(p.name));
   // A command that names a file run later (a git hook, a shell start-up
   // file, a directory on PATH) can put a value there by any means:
   // `cp {{…}} .git/hooks/pre-commit`, `mv {{…}} ~/.zshrc`.
@@ -1018,7 +1004,7 @@ function judge(command: string, targets: readonly number[]): Verdict {
   // `offMachine` also covers a program whose code no word is safe in.
   const offMachine =
     ANY_DELIMITER_IN_TEXT.test(code) ||
-    programs.some((p) => p.name !== undefined && ANY_DELIMITER_PROGRAMS.has(p.name)) ||
+    programs.some((p) => ANY_DELIMITER_PROGRAMS.has(p.name)) ||
     NETWORK_CLIENT.test(code) ||
     programs.some(sendsOut) ||
     (strict && NETWORK_IN_CODE.test(code)) ||
@@ -1061,65 +1047,46 @@ function judge(command: string, targets: readonly number[]): Verdict {
   };
 }
 
-/** The words and program of every simple command `scan` met, heredoc
- * bodies skipped; `undefined` when a command is past the read window or
- * starts with a reserved word. */
+/** The words and program of every simple command `scan` met (heredoc
+ * bodies lie between commands, never in one); `undefined` when a command
+ * is past the read window, has a reserved word where its program would
+ * stand, or assigns a variable other than the locale or time zone with
+ * no program after it. */
 function readCommands(
   command: string,
   scan: Scan,
 ): { programs: Program[]; wordsAt: Map<number, Word[]> } | undefined {
-  // Command extents and heredoc bodies do not nest: each is read once.
-  const bodies = scan.bodies;
   const programs: Program[] = [];
   // Each command's words, read once, for every placeholder in it.
   const wordsAt = new Map<number, Word[]>();
   for (const [start, end] of scan.commands) {
-    // A heredoc body is part of no command's words: a long commit message
-    // does not push its command past the read window.
-    const skips = bodies.length === 0 ? NO_RANGES : rangesWithin(bodies, start, end);
-    const length = skips.reduce((n, [s, e]) => n - (e - s), end - start);
     // A simple command longer than the read window is not judged by the
     // part that was read: its later words could be options, redirections
     // or a program the rules never see.
-    if (length > MAX_WORD_SCAN) return undefined;
+    if (end - start > MAX_WORD_SCAN) return undefined;
     if (isBlank(command, start, end)) continue;
-    const relative =
-      skips.length === 0 ? NO_RANGES : skips.map(([s, e]) => [s - start, e - start] as const);
-    const words = wordsOf(command.slice(start, end), relative);
+    const words = wordsOf(command.slice(start, end));
     if (words.length >= MAX_WORDS) return undefined;
     // Compound commands and keywords (`if`, `for`, `case`, `!`, …) are
-    // outside the grammar read.
-    if (RESERVED_WORDS.has(words[0]?.text ?? '')) return undefined;
+    // outside the grammar read, also after an assignment or a redirection
+    // (`LANG=C for …` runs a program named `for` in bash, fails in zsh).
+    if (RESERVED_WORDS.has(words[skipPrefix(words, 0)]?.text ?? '')) return undefined;
     wordsAt.set(start, words);
     const p = programOf(words);
+    // Assignments with no program after them (`PATH=…; grep …`) hold for
+    // every later command.
+    if (p === undefined && !assignsOnlyLocale(words)) return undefined;
     if (p !== undefined) programs.push(p);
   }
   return { programs, wordsAt };
 }
 
-const NO_RANGES: ReadonlyArray<readonly [number, number]> = [];
-
-/** The ranges of `sorted` (disjoint, ascending) that start within
- * `[start, end)`, cut at `end`. */
-function rangesWithin(
-  sorted: ReadonlyArray<readonly [number, number]>,
-  start: number,
-  end: number,
-): Array<readonly [number, number]> {
-  let lo = 0;
-  let hi = sorted.length;
-  while (lo < hi) {
-    const mid = (lo + hi) >>> 1;
-    if ((sorted[mid]?.[0] ?? end) < start) lo = mid + 1;
-    else hi = mid;
-  }
-  const out: Array<readonly [number, number]> = [];
-  for (let k = lo; k < sorted.length; k++) {
-    const range = sorted[k];
-    if (range === undefined || range[0] >= end) break;
-    out.push([range[0], Math.min(range[1], end)]);
-  }
-  return out;
+/** True when every assignment among `words` sets the locale or time zone. */
+function assignsOnlyLocale(words: readonly Word[]): boolean {
+  return words.every(
+    (w) =>
+      !ENV_ASSIGNMENT.test(w.text) || SAFE_ASSIGNMENT.test(w.text.slice(0, w.text.indexOf('='))),
+  );
 }
 
 /** True when `command` holds only whitespace from `start` to `end`. */
@@ -1177,7 +1144,7 @@ function holdsAt(
   // configuration and hooks there).
   const program = programOf(before);
   if (program?.name === 'cd') return true;
-  return program?.name !== undefined && ENVIRONMENT_BUILTINS.has(program.name);
+  return program !== undefined && ENVIRONMENT_BUILTINS.has(program.name);
 }
 
 /** The start of the command extent around `index`, from extents sorted
@@ -1201,14 +1168,12 @@ function enclosingStart(
 /** True when the word after `words` would be the program they run. */
 function programIsNext(words: readonly Word[]): boolean {
   let k = skipPrefix(words, 0);
-  const first = words[k];
-  if (first !== undefined && NO_PROGRAM_KEYWORDS.has(first.text)) return false;
   for (;;) {
     const word = words[k];
     if (word === undefined) return true;
-    const name = word.computed ? undefined : normalise(word.text);
-    const options = name === undefined ? undefined : WRAPPERS.get(name);
-    if (options === undefined || name === undefined) return false;
+    const name = normalise(word.text);
+    const options = WRAPPERS.get(name);
+    if (options === undefined) return false;
     k = skipWrapperArgs(words, k + 1, name, options).next;
   }
 }
@@ -1226,7 +1191,7 @@ function dataBodyContext(
 }
 
 function runsCode(p: Program): boolean {
-  if (p.name === undefined || p.wrapperShell) return true;
+  if (p.wrapperShell) return true;
   if (CODE_RUNNERS.has(p.name) || p.wrappers.some((w) => CODE_RUNNERS.has(w))) return true;
   const subcommands = CODE_SUBCOMMANDS.get(p.name);
   if (
@@ -1240,23 +1205,19 @@ function runsCode(p: Program): boolean {
 }
 
 function sendsOut(p: Program): boolean {
-  if (p.name === undefined) return false;
   if (NETWORK_PROGRAMS.has(p.name)) return true;
   const subcommands = NETWORK_SUBCOMMANDS.get(p.name);
   return subcommands !== undefined && p.args.some((a) => subcommands.has(a));
 }
 
 function runsFile(p: Program): boolean {
-  return p.byPath || (p.name !== undefined && RUNS_FILE_PROGRAMS.has(p.name));
+  return p.byPath || RUNS_FILE_PROGRAMS.has(p.name);
 }
 
 /** True when a value may be restored into `p`'s command (`ARG_DATA_PROGRAMS`). */
 function takesDataArgs(p: Program): boolean {
   if (!listedAsWritten(p)) return false;
   if (p.redirectedPrefix) return false;
-  // A computed argument can expand to an option (`$'--pre'`). The grammar
-  // read leaves `$` and backticks out, so this is a second line.
-  if (p.computedArgs) return false;
   if (p.literal === 'git') return ARG_DATA_GIT_SUBCOMMANDS.has(p.args[0] ?? '');
   return ARG_DATA_PROGRAMS.has(p.literal ?? '');
 }
@@ -1276,44 +1237,29 @@ function listedAsWritten(p: Program): boolean {
   return p.assigned.every((name) => SAFE_ASSIGNMENT.test(name));
 }
 
-/** The words at the start of a simple command, up to `MAX_WORDS` and a
- * `#` comment. Each of `skips` (heredoc bodies, ascending) is part of the
- * word it stands in, and none of its text is read. */
-function wordsOf(text: string, skips: ReadonlyArray<readonly [number, number]> = []): Word[] {
+/** The words at the start of a simple command, up to `MAX_WORDS`, each
+ * whole: an option cluster is read to its end (`-nnn…O`). */
+function wordsOf(text: string): Word[] {
   const words: Word[] = [];
   let word = '';
   let inWord = false;
-  let computed = false;
   let quote: string | undefined;
   let wordStart = 0;
   let i = 0;
-  let nextSkip = 0;
   const begin = (): void => {
     if (!inWord) wordStart = i;
     inWord = true;
   };
-  // Only a word's start matters (a program name, an option, an
-  // assignment), so a long word is kept to its first characters.
   const add = (ch: string): void => {
     begin();
-    if (word.length < MAX_WORD_CHARS) word += ch;
+    word += ch;
   };
   const flush = (): void => {
-    if (inWord) words.push({ text: word, computed, start: wordStart, end: i });
+    if (inWord) words.push({ text: word, start: wordStart, end: i });
     word = '';
     inWord = false;
-    computed = false;
   };
   for (; i < text.length && words.length < MAX_WORDS; i++) {
-    const skip = skips[nextSkip];
-    if (skip !== undefined && i >= skip[0]) {
-      nextSkip += 1;
-      if (i < skip[1]) {
-        begin();
-        i = skip[1] - 1;
-        continue;
-      }
-    }
     const ch = text[i] ?? '';
     if (quote === "'") {
       if (ch === "'") quote = undefined;
@@ -1328,13 +1274,11 @@ function wordsOf(text: string, skips: ReadonlyArray<readonly [number, number]> =
       i++;
       continue;
     }
-    if (ch === '$' || ch === '`') computed = true;
     if (quote === '"') {
       if (ch === '"') quote = undefined;
       else add(ch);
       continue;
     }
-    if (ch === '#' && !inWord) break;
     if (ch === "'" || ch === '"') {
       begin();
       quote = ch;
@@ -1345,9 +1289,9 @@ function wordsOf(text: string, skips: ReadonlyArray<readonly [number, number]> =
   return words;
 }
 
-/** The program a simple command runs: past shell keywords, environment
- * assignments, redirections and wrappers with their options. `undefined`
- * when it runs none (`for`, `fi`, a bare assignment). */
+/** The program a simple command runs: past environment assignments,
+ * redirections and wrappers with their options. `undefined` when it runs
+ * none (assignments or redirections alone). */
 function programOf(words: readonly Word[]): Program | undefined {
   let k = skipPrefix(words, 0);
   const redirectedPrefix = words.slice(0, k).some((w) => REDIRECTION.test(w.text));
@@ -1356,7 +1300,7 @@ function programOf(words: readonly Word[]): Program | undefined {
     .filter((w) => ENV_ASSIGNMENT.test(w.text))
     .map((w) => w.text.slice(0, w.text.indexOf('=')));
   const first = words[k];
-  if (first === undefined || NO_PROGRAM_KEYWORDS.has(first.text)) return undefined;
+  if (first === undefined) return undefined;
   const wrappers: string[] = [];
   let wrapperShell = false;
   for (;;) {
@@ -1373,14 +1317,13 @@ function programOf(words: readonly Word[]): Program | undefined {
         wrapperShell,
         args: [],
         redirectedPrefix,
-        computedArgs: false,
         literal: undefined,
         assigned,
       };
     }
-    const name = word.computed ? undefined : normalise(word.text);
-    const options = name === undefined ? undefined : WRAPPERS.get(name);
-    if (options === undefined || name === undefined) {
+    const name = normalise(word.text);
+    const options = WRAPPERS.get(name);
+    if (options === undefined) {
       const rest = words.slice(k + 1);
       return {
         name,
@@ -1389,8 +1332,7 @@ function programOf(words: readonly Word[]): Program | undefined {
         wrapperShell,
         args: rest.map((w) => w.text),
         redirectedPrefix,
-        computedArgs: rest.some((w) => w.computed),
-        literal: word.computed ? undefined : word.text,
+        literal: word.text,
         assigned,
       };
     }
@@ -1428,13 +1370,13 @@ function skipWrapperArgs(
   }
 }
 
-/** Skip shell keywords, assignments and redirections from `k`. */
+/** Skip assignments and redirections from `k`. */
 function skipPrefix(words: readonly Word[], k: number): number {
   let i = k;
   for (;;) {
     const text = words[i]?.text;
     if (text === undefined) return i;
-    if (LEADING_KEYWORDS.has(text) || ENV_ASSIGNMENT.test(text)) {
+    if (ENV_ASSIGNMENT.test(text)) {
       i += 1;
       continue;
     }
@@ -1607,17 +1549,19 @@ function isClobberBar(command: string, i: number): boolean {
 }
 
 /** Record the file the output redirection whose `>` is at `i` writes
- * (`>`, `>>`, `>|`, `>!`, `>&FILE`, `<>`; `&>` never gets here:
- * `outsideGrammar`); return the
+ * (`>`, `>>`, `>|`, `>&FILE`, `<>`; `&>` never gets here:
+ * `outsideGrammar`; `>!` and `>>&` mark the command unread); return the
  * operator's length, so the target is lexed as the word it is. A `>&`
  * that copies or closes a descriptor (`2>&1`, `>&-`) writes no file. */
 function readOutputRedirection(command: string, i: number, scan: Scan): number {
   let j = i + 1;
-  if (command[j] === '>') j += 1;
+  const appends = command[j] === '>';
+  if (appends) j += 1;
   const duplicates = command[j] === '&';
   // `>!` overrides noclobber in zsh only; elsewhere it writes a file named
-  // `!…`, so the shells disagree on the target.
-  if (command[j] === '!') scan.broken = true;
+  // `!…`. `>>&` appends to a file in zsh (`>>&2` to one named `2`) and is
+  // an error elsewhere. Either way the shells disagree on the target.
+  if (command[j] === '!' || (appends && duplicates)) scan.broken = true;
   if (duplicates || command[j] === '|') j += 1;
   const target = redirectionTarget(command, j);
   if (!(duplicates && DESCRIPTOR_TARGET.test(target))) scan.outputs.push(target);
@@ -1625,22 +1569,21 @@ function readOutputRedirection(command: string, i: number, scan: Scan): number {
 }
 
 /** The redirection target word that starts at `j`, after blanks, quotes
- * removed. Empty when it expands (`$`, a backtick), holds a backslash,
- * leaves a quote open or is longer than `MAX_WORD_CHARS`: a target that
- * cannot be read is no document. */
+ * removed. Empty when it leaves a quote open or is longer than
+ * `MAX_TARGET_CHARS`: a target that cannot be read is no document. (`$`,
+ * backticks and backslashes leave the grammar read: `outsideGrammar`.) */
 function redirectionTarget(command: string, j: number): string {
   let k = j;
   while (command[k] === ' ' || command[k] === '\t') k += 1;
   let target = '';
   let quote: string | undefined;
-  for (; k < command.length && target.length <= MAX_WORD_CHARS; k++) {
+  for (; k < command.length && target.length <= MAX_TARGET_CHARS; k++) {
     const ch = command[k] ?? '';
     if (quote === "'") {
       if (ch === "'") quote = undefined;
       else target += ch;
       continue;
     }
-    if (ch === '$' || ch === '`' || ch === '\\') return '';
     if (quote === '"') {
       if (ch === '"') quote = undefined;
       else target += ch;
@@ -1650,7 +1593,7 @@ function redirectionTarget(command: string, j: number): string {
     else if (TARGET_ENDS.has(ch)) break;
     else target += ch;
   }
-  return quote === undefined && target.length <= MAX_WORD_CHARS ? target : '';
+  return quote === undefined && target.length <= MAX_TARGET_CHARS ? target : '';
 }
 
 /** True when the character at `i` begins a word of shell code. */
@@ -1695,7 +1638,7 @@ function readHeredocOperator(
  * its message from standard input (`-F -`, `-F-`, `--file=-`,
  * `--file -`), each by name with no wrapper or path. */
 function readsHeredocAsData(p: Program | undefined): boolean {
-  if (p === undefined || p.name === undefined || p.wrappers.length > 0 || p.byPath) return false;
+  if (p === undefined || p.wrappers.length > 0 || p.byPath) return false;
   if (HEREDOC_DATA_COMMANDS.has(p.name)) return true;
   if (p.name !== 'git' || p.args[0] !== 'commit') return false;
   return p.args.some(
@@ -1732,13 +1675,15 @@ function readHeredocBodies(
   scan: Scan,
 ): number | undefined {
   let bodyStart = start;
+  let resume = start;
   for (const heredoc of pending) {
     const end = findClosingLine(command, bodyStart, heredoc, command.length);
     if (end === undefined) return undefined;
     readBody(command, bodyStart, end.bodyEnd, heredoc, scan);
-    bodyStart = end.next;
+    resume = end.next;
+    bodyStart = end.next + 1;
   }
-  return bodyStart;
+  return resume;
 }
 
 /** Record the targets in one body. A bare-delimiter body that holds `$`,
@@ -1977,10 +1922,10 @@ const SCRIPT_FLAG = /^-[A-Za-z]*c[A-Za-z]*$|^--command$/;
 /** Shell options that take the next argument (`-o pipefail`, `+O extglob`). */
 const OPTION_WITH_ARGUMENT = /^[-+][A-Za-z]*[oO]$|^--(?:rcfile|init-file|init-command)$/;
 
-/** The index of the program an argv array runs, past keywords,
- * assignments, redirections and wrappers. */
+/** The index of the program an argv array runs, past assignments,
+ * redirections and wrappers. */
 function argvProgramIndex(argv: readonly string[]): number {
-  const words = argv.map((text) => ({ text, computed: false, start: 0, end: text.length }));
+  const words = argv.map((text) => ({ text, start: 0, end: text.length }));
   let k = skipPrefix(words, 0);
   for (;;) {
     const text = words[k]?.text;
@@ -2007,7 +1952,7 @@ function shellScriptIndex(argv: readonly string[], program: number): number {
 
 /** The program an argv array runs, every word literal. */
 function argvProgram(argv: readonly string[]): Program | undefined {
-  return programOf(argv.map((text) => ({ text, computed: false, start: 0, end: text.length })));
+  return programOf(argv.map((text) => ({ text, start: 0, end: text.length })));
 }
 
 function argvRunsCode(argv: readonly string[]): boolean {
@@ -2023,7 +1968,7 @@ function argvRunsCode(argv: readonly string[]): boolean {
 function argvSendsOffMachine(argv: readonly string[]): boolean {
   const program = argvProgram(argv);
   if (program !== undefined && sendsOut(program)) return true;
-  if (program?.name !== undefined && ANY_DELIMITER_PROGRAMS.has(program.name)) return true;
+  if (program !== undefined && ANY_DELIMITER_PROGRAMS.has(program.name)) return true;
   if (argv.some((a) => ANY_DELIMITER_IN_TEXT.test(a))) return true;
   if (argv.some((a) => NETWORK_CLIENT.test(a))) return true;
   // As in a string command: a URL handed to a program that is not a data one.

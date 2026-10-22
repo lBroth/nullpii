@@ -1207,6 +1207,92 @@ describe('shell restore · round-10 layout and redirections', () => {
 
     expect(restored(restoreShellArgv(np, ['cd', word], sessionId))).toBe(0);
   });
+
+  it.each([
+    [(p: string) => `git grep -n3O${p} probe`, 0],
+    [(p: string) => `git grep -${'n'.repeat(300)}O${p} probe`, 0],
+    [(p: string) => `file -0C -m ${p}`, 0],
+    [(p: string) => `sort -${'r'.repeat(300)}o out.sh ${p}`, 0],
+    [(p: string) => `base64 -${'D'.repeat(300)}o out.sh ${p}`, 0],
+    [(p: string) => `git grep -n ${p}`, 1],
+    [(p: string) => `sort -t, -k2 ${p}`, 1],
+  ])(
+    'finds an option that runs or writes anywhere in a short-option cluster: %#',
+    (build, expected) => {
+      const { np, vault, sessionId } = harness();
+      const word = bake(vault, sessionId, EMAIL, 'private_email');
+
+      expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(expected);
+    },
+  );
+
+  it.each([
+    [(p: string) => `PATH=/tmp/x; grep ${p} notes.md`, 0],
+    [(p: string) => `PATH=/tmp/x && grep ${p} notes.md`, 0],
+    [(p: string) => `HOME=/tmp/x; git log --author=${p}`, 0],
+    [(p: string) => `GIT_EDITOR=true; git commit --author=${p}`, 0],
+    [(p: string) => `LANG=C; grep ${p} notes.md`, 1],
+  ])(
+    'reads an assignment as a command of its own like one before a program: %#',
+    (build, expected) => {
+      const { np, vault, sessionId } = harness();
+      const word = bake(vault, sessionId, EMAIL, 'private_email');
+
+      expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(expected);
+    },
+  );
+
+  it.each([
+    (p: string) => `LANG=C for grep ${p}`,
+    (p: string) => `>/dev/null done x ${p}`,
+    (p: string) => `TZ=UTC then cat ${p}`,
+  ])('does not read a reserved word where the program stands: %#', (build) => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, EMAIL, 'private_email');
+
+    expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(0);
+  });
+
+  it.each([
+    [(p: string) => `echo ${p} >>&2`, 0],
+    [(p: string) => `grep ${p} notes.md 2>>&1`, 0],
+    [(p: string) => `grep ${p} notes.md >>&-`, 0],
+    [(p: string) => `grep ${p} notes.md 2>&1`, 1],
+    [(p: string) => `grep ${p} notes.md >> notes.md`, 1],
+  ])(
+    "does not read zsh's `>>&`, which appends to a file named by its digits: %#",
+    (build, expected) => {
+      const { np, vault, sessionId } = harness();
+      const word = bake(vault, sessionId, EMAIL, 'private_email');
+
+      expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(expected);
+    },
+  );
+
+  it('keeps only the value holding a control character in a data heredoc body', () => {
+    const { np, vault, sessionId } = harness();
+    const control = bake(vault, sessionId, 'a\u001bb', 'secret');
+    const name = bake(vault, sessionId, FULL_NAME, 'private_person');
+    const command = `cat > notes.md <<'EOF'\n${control}\n${name}\nEOF`;
+
+    const r = restoreShellCommand(np, command, sessionId);
+
+    expect(restored(r)).toBe(1);
+    expect(r.command).toContain(control);
+    expect(r.command).toContain(FULL_NAME);
+  });
+
+  it('restores into both bodies of two heredocs opened on one line', () => {
+    const { np, vault, sessionId } = harness();
+    const first = bake(vault, sessionId, FULL_NAME, 'private_person');
+    const second = bake(vault, sessionId, EMAIL, 'private_email');
+    const command = `cat <<'A' <<'B' > notes.md\n${first}\nA\n${second}\nB\n`;
+
+    const r = restoreShellCommand(np, command, sessionId);
+
+    expect(restored(r)).toBe(2);
+    expect(r.command).toBe(`cat <<'A' <<'B' > notes.md\n${FULL_NAME}\nA\n${EMAIL}\nB\n`);
+  });
 });
 
 describe('shell restore · round-11 heredocs inside substitutions', () => {

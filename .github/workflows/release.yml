@@ -37,7 +37,7 @@ concurrency:
 
 jobs:
   verify:
-    name: gate (lint + typecheck + test + build + license + circular + sbom)
+    name: gate (versions + model pin + lint + typecheck + test + build + license + circular + hygiene + sbom)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -69,6 +69,14 @@ jobs:
               status=1
             fi
           done
+          # The gateway is built against this commit's core: its peer range
+          # starts at this very version, pre-releases included.
+          expected=">=$TAG_VERSION-0 <$(node -p "const [a,b]=process.argv[1].split('.');a+'.'+(Number(b)+1)+'.0'" "$TAG_VERSION")"
+          peer=$(node -p "require('./packages/gateway/package.json').peerDependencies.nullpii")
+          if [ "$peer" != "$expected" ]; then
+            echo "packages/gateway/package.json peer on nullpii is $peer, expected $expected"
+            status=1
+          fi
           if ! grep -qF "## [$TAG_VERSION]" CHANGELOG.md; then
             echo "CHANGELOG.md has no ## [$TAG_VERSION] section"
             status=1
@@ -117,6 +125,8 @@ jobs:
       url: https://www.npmjs.com/package/nullpii
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24'
@@ -156,6 +166,8 @@ jobs:
       url: https://www.npmjs.com/package/@lbroth/nullpii-gateway
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24'

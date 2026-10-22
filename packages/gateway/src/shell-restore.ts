@@ -271,7 +271,8 @@ const COMMAND_OPTIONS: ReadonlyMap<string, RegExp> = new Map([
   ['zip', /^-TT|^--unzip-command/],
   ['rsync', /^-[A-Za-z]*e|^--rsh/],
   ['less', /^-[A-Za-z]*\+|^\+/],
-  ['rg', optionPattern('^--pre(?:=|$)', longOption('pre-glob', 6), longOption('hostname-bin'))],
+  // ripgrep takes no abbreviations; `--pre-glob` runs nothing without `--pre`.
+  ['rg', /^--pre(?:=|$)|^--hostname-bin(?:=|$)/],
   ['man', /^-[A-Za-z]*P|^--pager/],
   // Writing where an option points chooses what is overwritten.
   ['sort', optionPattern('^-[A-Za-z]*o', longOption('output'), longOption('compress-program'))],
@@ -754,7 +755,7 @@ const LEADING_TABS = /^\t+/;
 const WHITESPACE = /\s/;
 /** A redirection word (`>`, `2>>log`, `&>`, `<in`); group 1 is empty
  * when the operator stands alone and its target is the next word. */
-const REDIRECTION = /^(?:\d+|\{[A-Za-z_]\w*\})?(?:&>>?!?|>>?[|!]|>&|<&|<<<|<>|>>?|<)(\S*)$/;
+const REDIRECTION = /^(?:\d+|\{[A-Za-z_]\w*\})?(?:&>>?[|!]?|>>?[|!]|>&|<&|<<<|<<-?|<>|>>?|<)(\S*)$/;
 /** A version or `.exe` suffix on a program name (`python3.12`, `pwsh.exe`). */
 const PROGRAM_SUFFIX = /(?:[\d.]+|\.exe)$/;
 
@@ -805,8 +806,6 @@ interface Scan {
   /** A nested part (a heredoc body's own heredoc) could not be read, or
    * the nesting went past `MAX_NESTING`. */
   broken: boolean;
-  /** Heredoc bodies that `cat` writes out as data, expanding or not. */
-  dataHeredocs: number;
 }
 
 /** A word of a simple command, quotes and escapes removed; `computed`
@@ -814,6 +813,9 @@ interface Scan {
 interface Word {
   readonly text: string;
   readonly computed: boolean;
+  /** Where the word starts and ends in the text it was read from. */
+  readonly start: number;
+  readonly end: number;
 }
 
 /** What one simple command runs. */
@@ -863,9 +865,6 @@ const KEEP_ALL: Verdict = {
   programAt: new Set(),
 };
 
-/** Stands for a placeholder when the words before it are read. */
-const PLACEHOLDER_STAND_IN = 'x';
-
 /** True when `name` is one of the `SHELL_TOOLS`. */
 export function isShellTool(name: unknown): boolean {
   return typeof name === 'string' && SHELL_TOOLS.has(name);
@@ -899,7 +898,7 @@ export function shellContextAt(command: string, index: number): QuoteContext {
 /** Read `command` once and judge it at each of `targets` (ascending). */
 function judge(command: string, targets: readonly number[]): Verdict {
   if (command.length > MAX_COMMAND_CHARS) {
-    return { offMachine: true, runsCode: true, contextAt: new Map(), programAt: new Set() };
+    return KEEP_ALL;
   }
   const scan: Scan = {
     targets,
@@ -910,16 +909,18 @@ function judge(command: string, targets: readonly number[]): Verdict {
     heredocCommand: { start: -1, word: '' },
     heredocOperator: new RegExp(HEREDOC_OPERATOR.source, 'y'),
     broken: false,
-    dataHeredocs: 0,
   };
   const closed = lex(command, 0, command.length, codeFrame(), scan, command.length) && !scan.broken;
   if (scan.broken) {
-    return { offMachine: true, runsCode: true, contextAt: new Map(), programAt: new Set() };
+    return KEEP_ALL;
   }
-  // Words are read again for each command and placeholder: past a budget
-  // in proportion to the command, it keeps every placeholder instead.
+  // Nested commands are read once each, so their words are read again for
+  // every level: past a budget in proportion to the command, it keeps
+  // every placeholder instead.
   const budget = { left: SCAN_BUDGET_PER_CHAR * command.length + SCAN_BUDGET_BASE };
   const programs: Program[] = [];
+  // Each command's words, read once, for every placeholder in it.
+  const wordsAt = new Map<number, Word[]>();
   for (const [start, end] of scan.commands) {
     const stop = Math.min(end, start + MAX_WORD_SCAN);
     budget.left -= stop - start;
@@ -929,6 +930,7 @@ function judge(command: string, targets: readonly number[]): Verdict {
     // part that was read: its later words could be options, redirections
     // or a program the rules never see.
     if (end - start > MAX_WORD_SCAN || words.length >= MAX_WORDS) return KEEP_ALL;
+    wordsAt.set(start, words);
     const p = programOf(words);
     if (p !== undefined) programs.push(p);
   }
@@ -967,19 +969,15 @@ function judge(command: string, targets: readonly number[]): Verdict {
     programs,
     strict || !closed || writesExecuted || !toPlainFiles,
   );
-  // `cd {{…}} && git status` would let a value choose the repository whose
-  // configuration and hooks git runs.
-  const holdCd = programs.some((p) => p.name === 'git');
   // Any program outside the allowlist (`ARG_DATA_PROGRAMS`) keeps every
   // placeholder too: the lists above are a second line, not the rule.
   const unlisted = !programs.every(takesDataArgs);
+  // A command that writes anything but a document, through a heredoc or
+  // any other redirection (`echo {{…}} > run.sh`), may have it read later
+  // as code or configuration: nothing comes back into it.
+  const toCodeFile = !toPlainFiles;
   // Nothing comes back from a command judged whole: its positions need no
   // reading.
-  // A heredoc written to anything but standard output or a document may
-  // be read later as code or configuration: nothing comes back into it.
-  // So does a command that writes any other file through a redirection
-  // (`echo {{…}} > run.sh`): only documents get values.
-  const toCodeFile = (scan.dataHeredocs > 0 || written.length > 0) && !toPlainFiles;
   const keepAll = offMachine || strict || writesExecuted || unlisted || toCodeFile;
   const contextAt = new Map<number, QuoteContext>();
   const programAt = new Set<number>();
@@ -989,10 +987,9 @@ function judge(command: string, targets: readonly number[]): Verdict {
     if (strict) contextAt.set(index, 'none');
     else if (DATA_BODY_CONTEXTS.has(context)) contextAt.set(index, bodyContext(context));
     else contextAt.set(index, context);
-    if (keepAll || budget.left < 0) return;
-    if (holdsAt(command, index, sorted, holdCd, budget)) programAt.add(index);
+    if (keepAll) return;
+    if (holdsAt(index, sorted, wordsAt)) programAt.add(index);
   });
-  if (budget.left < 0) return KEEP_ALL;
   return {
     offMachine,
     runsCode: strict || writesExecuted || unlisted || toCodeFile,
@@ -1019,23 +1016,22 @@ function withoutRanges(text: string, ranges: ReadonlyArray<readonly [number, num
  * and the like. Past the first `MAX_WORD_SCAN` characters or `MAX_WORDS`
  * words of a command, it holds. */
 function holdsAt(
-  command: string,
   index: number,
   sorted: ReadonlyArray<readonly [number, number]>,
-  holdCd: boolean,
-  budget: { left: number },
+  wordsAt: ReadonlyMap<number, readonly Word[]>,
 ): boolean {
   const start = innermostStart(sorted, index);
   if (start === undefined) return false;
   if (start === DEEP) return true;
-  // Past the read window the placeholder's role is unknown: held.
-  if (index - start > MAX_WORD_SCAN) return true;
-  budget.left -= index - start;
-  const words = wordsOf(command.slice(start, index) + PLACEHOLDER_STAND_IN);
-  if (words.length >= MAX_WORDS) return true;
-  const own = words.at(-1);
-  if (own === undefined) return false;
-  const before = words.slice(0, -1);
+  const words = wordsAt.get(start);
+  // A command whose words were not read, or a placeholder in none of
+  // them (after a comment): its role is unknown, so it is held.
+  if (words === undefined) return true;
+  const offset = index - start;
+  const k = words.findIndex((w) => w.end > offset);
+  const own = words[k];
+  if (own === undefined || own.start > offset) return true;
+  const before = words.slice(0, k);
   // An assignment before the program sets the environment it runs with;
   // `--grep user={{…}}` after it is an argument.
   if (ENV_ASSIGNMENT.test(own.text) && programIsNext(before)) return true;
@@ -1044,8 +1040,11 @@ function holdsAt(
   if (REDIRECTION.test(own.text)) return true;
   if (before.length > 0 && REDIRECTION.exec(before.at(-1)?.text ?? '')?.[1] === '') return true;
   if (programIsNext(before)) return true;
+  // `cd` chooses the directory every later command runs in, this one's
+  // and, in a shell kept across calls, the next one's (git reads its
+  // configuration and hooks there).
   const program = programOf(before);
-  if (program?.name === 'cd' && holdCd) return true;
+  if (program?.name === 'cd') return true;
   return program?.name !== undefined && ENVIRONMENT_BUILTINS.has(program.name);
 }
 
@@ -1154,19 +1153,25 @@ function wordsOf(text: string): Word[] {
   let inWord = false;
   let computed = false;
   let quote: string | undefined;
+  let wordStart = 0;
+  let i = 0;
+  const begin = (): void => {
+    if (!inWord) wordStart = i;
+    inWord = true;
+  };
   // Only a word's start matters (a program name, an option, an
   // assignment), so a long word is kept to its first characters.
   const add = (ch: string): void => {
+    begin();
     if (word.length < MAX_WORD_CHARS) word += ch;
-    inWord = true;
   };
   const flush = (): void => {
-    if (inWord) words.push({ text: word, computed });
+    if (inWord) words.push({ text: word, computed, start: wordStart, end: i });
     word = '';
     inWord = false;
     computed = false;
   };
-  for (let i = 0; i < text.length && words.length < MAX_WORDS; i++) {
+  for (; i < text.length && words.length < MAX_WORDS; i++) {
     const ch = text[i] ?? '';
     if (quote === "'") {
       if (ch === "'") quote = undefined;
@@ -1189,8 +1194,8 @@ function wordsOf(text: string): Word[] {
     }
     if (ch === '#' && !inWord) break;
     if (ch === "'" || ch === '"') {
+      begin();
       quote = ch;
-      inWord = true;
     } else if (FIELD_SEPARATORS.has(ch)) flush();
     else add(ch);
   }
@@ -1436,10 +1441,20 @@ function separatesCommands(command: string, i: number): boolean {
   const ch = command[i];
   if (ch === undefined || !COMMAND_SEPARATORS.has(ch)) return false;
   if (ch === '{') return startsWord(command, i) && WHITESPACE.test(command[i + 1] ?? '');
-  // `>|` is a redirection that overrides noclobber, not a pipe.
-  if (ch === '|') return command[i - 1] !== '>';
+  // `>|` is a redirection that overrides noclobber, not a pipe; `\>|` is a
+  // literal `>` and then a pipe.
+  if (ch === '|') return !isClobberBar(command, i);
   if (ch !== '&') return true;
   return !REDIRECTION_SIDES.has(command[i - 1] ?? '') && command[i + 1] !== '>';
+}
+
+/** True when the `|` at `i` belongs to the redirection `>|`: an
+ * unescaped `>` just before it. */
+function isClobberBar(command: string, i: number): boolean {
+  if (command[i - 1] !== '>') return false;
+  let backslashes = 0;
+  for (let k = i - 2; k >= 0 && command[k] === '\\'; k--) backslashes += 1;
+  return backslashes % 2 === 0;
 }
 
 /** True when the character at `i` begins a word of shell code. */
@@ -1514,7 +1529,7 @@ function pipedLater(command: string, i: number, scan: Scan): boolean {
     let lastPipe = -1;
     for (let k = end - 1; k > i; k--) {
       // `>|` is a redirection, not a pipe.
-      if (command[k] === '|' && command[k - 1] !== '>') {
+      if (command[k] === '|' && !isClobberBar(command, k)) {
         lastPipe = k;
         break;
       }
@@ -1551,7 +1566,6 @@ function readBody(command: string, start: number, end: number, heredoc: Heredoc,
   // checks read; one with none is plain text.
   const expands = !heredoc.literal && /[$`]/.test(command.slice(start, end));
   if (heredoc.data && !expands) scan.dataBodies.push([start, end]);
-  if (heredoc.data) scan.dataHeredocs += 1;
   if (!heredoc.data) record(scan, end - 1, 'none');
   else if (heredoc.literal) record(scan, end - 1, 'heredoc');
   if (heredoc.literal) return;
@@ -1719,7 +1733,7 @@ const OPTION_WITH_ARGUMENT = /^[-+][A-Za-z]*[oO]$|^--(?:rcfile|init-file|init-co
 /** The index of the program an argv array runs, past keywords,
  * assignments, redirections and wrappers. */
 function argvProgramIndex(argv: readonly string[]): number {
-  const words = argv.map((text) => ({ text, computed: false }));
+  const words = argv.map((text) => ({ text, computed: false, start: 0, end: text.length }));
   let k = skipPrefix(words, 0);
   for (;;) {
     const text = words[k]?.text;
@@ -1746,7 +1760,7 @@ function shellScriptIndex(argv: readonly string[], program: number): number {
 
 /** The program an argv array runs, every word literal. */
 function argvProgram(argv: readonly string[]): Program | undefined {
-  return programOf(argv.map((text) => ({ text, computed: false })));
+  return programOf(argv.map((text) => ({ text, computed: false, start: 0, end: text.length })));
 }
 
 function argvRunsCode(argv: readonly string[]): boolean {

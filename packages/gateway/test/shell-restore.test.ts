@@ -712,7 +712,7 @@ describe('shell restore · v3 hardening', () => {
     (p: string) => `cat >> .git/config <<'EOF'\n${p}\nEOF`,
     (p: string) => `cat > Makefile <<'EOF'\n${p}\nEOF`,
   ])(
-    'round 7: a prefix, a computed or abbreviated option, a repository or a non-document target keeps the value: %#',
+    'round 7: a prefix, a computed or abbreviated option, a repository or a non-document target keeps the value: %s',
     (build) => {
       const { np, vault, sessionId } = harness();
       const email = bake(vault, sessionId, EMAIL, 'private_email');
@@ -734,7 +734,7 @@ describe('shell restore · v3 hardening', () => {
     (p: string) => `cat <<'EOF' >&Makefile\n${p}\nEOF`,
     (p: string) => `cat <<'EOF' 1<>run.sh\n${p}\nEOF`,
     (p: string) => `{ cat <<'EOF'; } >&Makefile\n${p}\nEOF`,
-  ])('round 8: one-letter abbreviations and every output redirection: %#', (build) => {
+  ])('round 8: one-letter abbreviations and every output redirection: %s', (build) => {
     const { np, vault, sessionId } = harness();
     const email = bake(vault, sessionId, EMAIL, 'private_email');
 
@@ -753,7 +753,7 @@ describe('shell restore · v3 hardening', () => {
     (p: string) => `echo ${p} &> out`,
     (p: string) => `cat <<'EOF' > requirements.txt\n${p}\nEOF`,
   ])(
-    'round 9: a command past the read window, or writing a file that is not a document: %#',
+    'round 9: a command past the read window, or writing a file that is not a document: %s',
     (build) => {
       const { np, vault, sessionId } = harness();
       const email = bake(vault, sessionId, EMAIL, 'private_email');
@@ -771,6 +771,47 @@ describe('shell restore · v3 hardening', () => {
       expect(restoreShellCommand(np, build(email), sessionId).command).toBe(build(EMAIL));
     },
   );
+
+  it.each([
+    (p: string) => `echo ${p} \\>|./send.md host`,
+    (p: string) => `cat <<'EOF' \\>|./send.md host\n${p}\nEOF`,
+    (p: string) => `cd ${p}`,
+    (p: string) => `cd ${p} && ls`,
+    (p: string) => `find ${p} -rm`,
+    (p: string) => `cat <<'EOF' > .notes.md\n${p}\nEOF`,
+    (p: string) => `cat <<'EOF' > docs/.x/notes.md\n${p}\nEOF`,
+  ])('round 10: an escaped `>` before a pipe, `cd`, bfs `-rm`, hidden documents: %s', (build) => {
+    const { np, vault, sessionId } = harness();
+    const email = bake(vault, sessionId, EMAIL, 'private_email');
+
+    expect(restoreShellCommand(np, build(email), sessionId).keptMasked).toEqual([email]);
+  });
+
+  it('a commit message with many names gets every value back', () => {
+    const { np, vault, sessionId } = harness();
+    const email = bake(vault, sessionId, EMAIL, 'private_email');
+    const lines = (v: string) =>
+      Array.from({ length: 30 }, (_, i) => `Reviewed-by ${i} <${v}>`).join('\n');
+    const command = (v: string) => `git commit -m "$(cat <<'EOF'\nfix\n\n${lines(v)}\nEOF\n)"`;
+
+    expect(restoreShellCommand(np, command(email), sessionId).command).toBe(command(EMAIL));
+  });
+
+  it('argv never restores into position 0', () => {
+    const { np, vault, sessionId } = harness();
+    const email = bake(vault, sessionId, EMAIL, 'private_email');
+
+    expect(restoreShellArgv(np, [email, 'x'], sessionId).keptMasked).toEqual([email]);
+  });
+
+  it('a command whose nesting would be read past the budget keeps every value', () => {
+    const { np, vault, sessionId } = harness();
+    const email = bake(vault, sessionId, EMAIL, 'private_email');
+    const unit = `${'$('.repeat(60)}ls ${email}${')'.repeat(60)} `;
+
+    const r = restoreShellCommand(np, unit.repeat(40), sessionId);
+    expect(restored(r)).toBe(0);
+  });
 
   it('`>|` to a document file is a redirection, not a pipe', () => {
     const { np, vault, sessionId } = harness();

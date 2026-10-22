@@ -71,7 +71,8 @@ jobs:
           done
           # The gateway is built against this commit's core: its peer range
           # starts at this very version, pre-releases included.
-          expected=">=$TAG_VERSION-0 <$(node -p "const [a,b]=process.argv[1].split('.');a+'.'+(Number(b)+1)+'.0'" "$TAG_VERSION")"
+          base=${TAG_VERSION%%-*}
+          expected=">=$base-0 <$(node -p "const [a,b]=process.argv[1].split('.');a+'.'+(Number(b)+1)+'.0'" "$base")"
           peer=$(node -p "require('./packages/gateway/package.json').peerDependencies.nullpii")
           if [ "$peer" != "$expected" ]; then
             echo "packages/gateway/package.json peer on nullpii is $peer, expected $expected"

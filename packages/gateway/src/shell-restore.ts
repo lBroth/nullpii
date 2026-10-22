@@ -316,8 +316,9 @@ const COMMAND_OPTIONS: ReadonlyMap<string, RegExp> = new Map([
   // Writing where an option points chooses what is overwritten.
   ['sort', optionPattern(shortOption('o'), longOption('output'), longOption('compress-program'))],
   ['base64', optionPattern(shortOption('o'), longOption('output'))],
-  // `printf -v NAME` assigns a shell variable; `file -C` writes a file.
-  ['printf', /^-v/],
+  // `printf -v NAME` assigns a shell variable, also in a cluster zsh
+  // accepts (`-:v`); `file -C` writes a file.
+  ['printf', optionPattern(shortOption('v'))],
   ['file', optionPattern(shortOption('C'), longOption('compile'))],
   ['fzf', /^--(?:preview|bind)/],
 ]);
@@ -665,8 +666,8 @@ const ARITHMETIC_BUILTINS: ReadonlySet<string> = new Set(['test', '[']);
  * precision taken from an argument (`*`). */
 const STRING_CONVERSION = /%(?:%|[-+ #0]*\d*(?:\.\d*)?[sbc])/g;
 /** A backslash escape in a `printf` format other than `\n`, `\t` or `\\`:
- * zsh and ksh93 decode escapes before reading conversions (`\045` is
- * `%`). */
+ * zsh and ksh93 decode `\u` and `\U` escapes before reading conversions
+ * (`\U00000025` is `%`). */
 const ESCAPED_BACKSLASH = /\\\\/g;
 const OTHER_ESCAPE = /\\(?![nt])/;
 /** A redirection operator at the start of a word, with its descriptor. */
@@ -1211,9 +1212,13 @@ function holdsAt(
 
 /** True when `printf`'s format, read before the value, converts only
  * strings: zsh and ksh93 read the argument of a numeric conversion as
- * arithmetic, which can assign (`printf %d HOME=0`). */
+ * arithmetic, which can assign (`printf %d HOME=0`). A first operand
+ * starting with `-` other than `--` may be options to them (zsh `-:`,
+ * ksh93 `-+`, `-[`), and the format the next word: the value is held. */
 function convertsOnlyStrings(args: readonly string[]): boolean {
-  const format = args[0] === '--' ? args[1] : args[0];
+  const first = args[0];
+  if (first === undefined || (first.startsWith('-') && first !== '--')) return false;
+  const format = first === '--' ? args[1] : first;
   if (format === undefined) return false;
   if (OTHER_ESCAPE.test(format.replace(ESCAPED_BACKSLASH, ''))) return false;
   return !format.replace(STRING_CONVERSION, '').includes('%');

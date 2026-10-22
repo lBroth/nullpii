@@ -1400,6 +1400,18 @@ describe('shell restore · round-10 layout and redirections', () => {
   });
 
   it.each([
+    [(p: string) => `printf -: '%d' ${p}`, 'probe=7'],
+    [(p: string) => `printf -+ '%d' ${p}`, 'probe=7'],
+    [(p: string) => `printf '-[' '%d' ${p}`, 'probe=7'],
+    [(p: string) => `printf -:v probe '%s' ${p}`, EMAIL],
+  ])('holds printf values behind option words zsh or ksh93 accept: %#', (build, value) => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, value, 'secret');
+
+    expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(0);
+  });
+
+  it.each([
     [['bash', '-c'], 1],
     [['/bin/bash', '-c'], 1],
     [['/usr/bin/sh', '-c'], 1],

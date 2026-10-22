@@ -721,6 +721,34 @@ describe('shell restore · v3 hardening', () => {
     },
   );
 
+  it.each([
+    (p: string) => `sort --o ${p} a.txt`,
+    (p: string) => `sort --co=${p} a.txt`,
+    (p: string) => `base64 --o ${p} a.txt`,
+    (p: string) => `file --co -m ${p}`,
+    (p: string) => `git grep --op=${p} foo`,
+    (p: string) => `echo ${p} &>> ~/.bashrc`,
+    (p: string) => `echo ${p} &> .git/hooks/pre-commit`,
+    (p: string) => `echo ${p} >&.git/hooks/pre-commit`,
+    (p: string) => `echo ${p} 1<>~/.bashrc`,
+    (p: string) => `cat <<'EOF' >&Makefile\n${p}\nEOF`,
+    (p: string) => `cat <<'EOF' 1<>run.sh\n${p}\nEOF`,
+    (p: string) => `{ cat <<'EOF'; } >&Makefile\n${p}\nEOF`,
+  ])('round 8: one-letter abbreviations and every output redirection: %#', (build) => {
+    const { np, vault, sessionId } = harness();
+    const email = bake(vault, sessionId, EMAIL, 'private_email');
+
+    expect(restoreShellCommand(np, build(email), sessionId).keptMasked).toEqual([email]);
+  });
+
+  it('`>|` to a document file is a redirection, not a pipe', () => {
+    const { np, vault, sessionId } = harness();
+    const person = bake(vault, sessionId, FULL_NAME, 'private_person');
+    const command = (n: string) => `cat <<'EOF' >| notes.md\n${n}\nEOF`;
+
+    expect(restoreShellCommand(np, command(person), sessionId).command).toBe(command(FULL_NAME));
+  });
+
   it('a data heredoc to a document file still gets values back', () => {
     const { np, vault, sessionId } = harness();
     const person = bake(vault, sessionId, FULL_NAME, 'private_person');

@@ -48,4 +48,4 @@ Most of the training text is synthetic. Three sources are real text: the package
 
 ## Status
 
-This document describes the weights published with nullpii 0.5 (`model.onnx` SHA-256 `58b6d795…4253313a`, `model_fp16.onnx` `900b2b02…1ae2065`). The weights published before them (v0.3.0) came from the same kinds of sources, with fewer generated categories, and are withdrawn.
+This document describes the weights published with nullpii 0.5 (`model.onnx` SHA-256 `58b6d795…4253313a`, `model_fp16.onnx` `900b2b02…c1ae2065`). The weights published before them (v0.3.0) came from the same kinds of sources, with fewer generated categories, and are withdrawn.

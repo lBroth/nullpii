@@ -231,10 +231,10 @@ const CODE_SUBCOMMANDS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ['defaults', new Set(['write', 'import'])],
 ]);
 
-/** A pattern for a long option and every unique abbreviation of it from
- * `min` characters, as getopt_long and git's parse-options accept
+/** A pattern for a long option and every abbreviation of it from `min`
+ * characters (one by default), as getopt_long and git's parse-options accept
  * (`--out` for `--output`), with or without `=value`. */
-function longOption(name: string, min = 3): string {
+function longOption(name: string, min = 1): string {
   const tail = name
     .slice(min)
     .split('')
@@ -644,12 +644,27 @@ const FILE_WRITERS: ReadonlySet<string> = new Set([
   'dd',
   'rsync',
 ]);
-/** An output redirection (`>`, `>>`, `>|`, `&>`) to a file: not `2>&1`
- * and not `>/dev/null`. */
-const WRITE_REDIRECTION = /(?<![<>&\d])\d*>>?\|?(?!&|\s*\/dev\/null\b)/;
+/** An output redirection and its target: `>`, `>>`, `>|`, `>!`, `&>`,
+ * `&>>`, `>&FILE`, `<>` (read and write), with an optional descriptor
+ * (`2>`, `{fd}>`). `>&` is tried before `>` so that `2>&1` reads as a
+ * descriptor copy. */
+const OUTPUT_REDIRECTION = /(?:\d+|\{[A-Za-z_]\w*\})?(&>>?|>&|<>|>>?[|!]?)\s*([^\s;&|<>()]*)/g;
+/** A `>&` target that copies or closes a descriptor rather than naming a
+ * file. */
+const DESCRIPTOR_TARGET = /^(?:\d+|-)$/;
+const DEV_NULL = '/dev/null';
 
-/** The output redirections of a command and their targets. */
-const OUTPUT_TARGET = /(?<![<>&\d])\d*&?>>?[|!]?\s*([^\s;&|<>()]+)/g;
+/** The files a command's output redirections write; an empty target
+ * stands for one that could not be read. */
+function outputTargets(code: string): string[] {
+  const targets: string[] = [];
+  for (const m of code.matchAll(OUTPUT_REDIRECTION)) {
+    const target = m[2] ?? '';
+    if (m[1] === '>&' && DESCRIPTOR_TARGET.test(target)) continue;
+    targets.push(target);
+  }
+  return targets;
+}
 /** A document a data heredoc may be written to: no hidden directory or
  * file on its path (`./` and `../` aside), and a text extension. */
 const PLAIN_DATA_FILE = /^(?!.*(?:^|\/)\.(?!\.?\/))[\w./+-]*\.(?:md|markdown|txt|csv|tsv|log|rst)$/;
@@ -916,14 +931,16 @@ function judge(command: string, targets: readonly number[]): Verdict {
   const strict = NESTED_INTERPRETER.test(code) || programs.some((p) => runsCode(p) || runsFile(p));
   // A data body written to a file that a shell, git or a hook runs later
   // is code: `cat > .git/hooks/pre-commit <<'EOF'`, `cat >> ~/.bashrc`.
+  const outputs = outputTargets(code);
   const writesFiles =
     scan.dataBodies.length > 0 ||
-    WRITE_REDIRECTION.test(code) ||
+    outputs.some((t) => t !== DEV_NULL) ||
     programs.some((p) => p.name !== undefined && FILE_WRITERS.has(p.name));
   // A command that names a file run later (a git hook, a shell start-up
   // file, a directory on PATH) can put a value there by any means:
   // `cp {{…}} .git/hooks/pre-commit`, `mv {{…}} ~/.zshrc`.
-  const writesExecuted = writesFiles && EXECUTED_LATER.test(code);
+  const writesExecuted =
+    writesFiles && (EXECUTED_LATER.test(code) || outputs.some((t) => EXECUTED_LATER.test(` ${t}`)));
   // `offMachine` also covers a program whose code no word is safe in.
   const offMachine =
     ANY_DELIMITER_IN_TEXT.test(code) ||
@@ -935,9 +952,7 @@ function judge(command: string, targets: readonly number[]): Verdict {
   // A data body goes to standard output or to a plain document file; one
   // written elsewhere (`.git/config`, `Makefile`, `run.sh`) may be read
   // as code later.
-  const toPlainFiles = [...code.matchAll(OUTPUT_TARGET)].every((m) =>
-    PLAIN_DATA_FILE.test(m[1] ?? ''),
-  );
+  const toPlainFiles = outputs.every((t) => PLAIN_DATA_FILE.test(t));
   const bodyContext = dataBodyContext(
     programs,
     strict || !closed || writesExecuted || !toPlainFiles,
@@ -1499,7 +1514,8 @@ function pipedLater(command: string, i: number, scan: Scan): boolean {
     const end = newline === -1 ? command.length : newline;
     let lastPipe = -1;
     for (let k = end - 1; k > i; k--) {
-      if (command[k] === '|') {
+      // `>|` is a redirection, not a pipe.
+      if (command[k] === '|' && command[k - 1] !== '>') {
         lastPipe = k;
         break;
       }

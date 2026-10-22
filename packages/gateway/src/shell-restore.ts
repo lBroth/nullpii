@@ -780,7 +780,7 @@ const RESERVED_WORDS: ReadonlySet<string> = new Set([
  * discarded, a carriage return becomes part of a word), so a command that
  * holds one is not read. */
 // biome-ignore lint/suspicious/noControlCharactersInRegex: matching them is the point.
-const UNREAD_CHARACTERS = /[\u0000-\u0008\u000b-\u001f\u007f\u0085\u2028\u2029]/;
+const UNREAD_CHARACTERS = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u2028\u2029]/;
 /** What makes a bare-delimiter heredoc body expand. */
 const BODY_EXPANSION = /[$`\\]/;
 
@@ -805,6 +805,9 @@ const ENV_ASSIGNMENT = /^[A-Za-z_]\w*=/;
 /** Variables a command with listed programs may assign. */
 const SAFE_ASSIGNMENT = /^(?:LANG|LANGUAGE|LC_[A-Z]+|TZ)$/;
 const LEADING_TABS = /^\t+/;
+/** The start of a word that a following `<` or `>` continues: nothing,
+ * a descriptor number, or the operator so far (`2>`, `>`, `<`). */
+const REDIRECTION_HEAD = /^\d*[<>]*$/;
 /** A redirection word (`>`, `2>>log`, `&>`, `<in`); group 1 is empty
  * when the operator stands alone and its target is the next word. */
 const REDIRECTION = /^(?:\d+|\{[A-Za-z_]\w*\})?(?:&>>?[|!]?|>>?[|!]|>&|<&|<<<|<<-?|<>|>>?|<)(\S*)$/;
@@ -1110,8 +1113,7 @@ function withoutRanges(text: string, ranges: ReadonlyArray<readonly [number, num
 
 /** True when no value may be restored at `index`: the placeholder stands
  * in the program word of the simple command around it (the
- * words before it are only keywords, assignments, redirections and
- * wrappers), in an assignment, in a redirection target, or in the
+ * words before it are only assignments, redirections and wrappers), in an assignment, in a redirection target, or in the
  * arguments of `cd`, `export`, `alias` and the like. A command past the
  * read window never gets here: `judge` keeps every placeholder of it. */
 function holdsAt(
@@ -1238,7 +1240,9 @@ function listedAsWritten(p: Program): boolean {
 }
 
 /** The words at the start of a simple command, up to `MAX_WORDS`, each
- * whole: an option cluster is read to its end (`-nnn…O`). */
+ * whole: an option cluster is read to its end (`-nnn…O`). As in a shell,
+ * an unquoted `<` or `>` ends the word before it: `a<{{…}}` is the word
+ * `a`, then the redirection `<{{…}}`. */
 function wordsOf(text: string): Word[] {
   const words: Word[] = [];
   let word = '';
@@ -1283,7 +1287,12 @@ function wordsOf(text: string): Word[] {
       begin();
       quote = ch;
     } else if (FIELD_SEPARATORS.has(ch)) flush();
-    else add(ch);
+    else {
+      // Digits before the operator name its descriptor (`2>`), and the
+      // operator's characters stay together (`>>`, `<>`).
+      if ((ch === '<' || ch === '>') && !REDIRECTION_HEAD.test(word)) flush();
+      add(ch);
+    }
   }
   if (words.length < MAX_WORDS) flush();
   return words;
@@ -1571,7 +1580,8 @@ function readOutputRedirection(command: string, i: number, scan: Scan): number {
 /** The redirection target word that starts at `j`, after blanks, quotes
  * removed. Empty when it leaves a quote open or is longer than
  * `MAX_TARGET_CHARS`: a target that cannot be read is no document. (`$`,
- * backticks and backslashes leave the grammar read: `outsideGrammar`.) */
+ * backticks and backslashes outside single quotes leave the grammar read:
+ * `advance`.) */
 function redirectionTarget(command: string, j: number): string {
   let k = j;
   while (command[k] === ' ' || command[k] === '\t') k += 1;

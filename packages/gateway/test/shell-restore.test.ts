@@ -1282,6 +1282,33 @@ describe('shell restore · round-10 layout and redirections', () => {
     expect(r.command).toContain(FULL_NAME);
   });
 
+  it.each(['\u0080', '\u0090', '\u009b', '\u009f'])(
+    'keeps every value in a command holding C1 control character %j',
+    (control) => {
+      const { np, vault, sessionId } = harness();
+      const word = bake(vault, sessionId, EMAIL, 'private_email');
+
+      expect(restored(restoreShellCommand(np, `grep ${word} notes.md${control}`, sessionId))).toBe(
+        0,
+      );
+    },
+  );
+
+  it.each([
+    [(p: string) => `grep a<${p}`, 0],
+    [(p: string) => `grep a< ${p}`, 0],
+    [(p: string) => `grep a<"${p}"`, 0],
+    [(p: string) => `grep a 2<${p}`, 0],
+    [(p: string) => `grep a ${p}`, 1],
+    [(p: string) => `grep "a<b" ${p}`, 1],
+    [(p: string) => `echo hi>notes.md && grep ${p} notes.md`, 1],
+  ])('holds an input redirection target glued to the word before it: %#', (build, expected) => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, EMAIL, 'private_email');
+
+    expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(expected);
+  });
+
   it('restores into both bodies of two heredocs opened on one line', () => {
     const { np, vault, sessionId } = harness();
     const first = bake(vault, sessionId, FULL_NAME, 'private_person');

@@ -1333,8 +1333,9 @@ describe('shell restore · round-10 layout and redirections', () => {
     [(p: string) => `printf ${p}`, EMAIL, 0],
     [(p: string) => `[ 1 -lt ${p} ] && grep probe notes.md`, 'probe=7', 0],
     [(p: string) => `test -n ${p}`, EMAIL, 0],
-    [(p: string) => `printf '%s\\n' ${p}`, EMAIL, 1],
-    [(p: string) => `printf -- '%5.2s|%%|%c' ${p}`, EMAIL, 1],
+    [(p: string) => `printf '%s\\n' ${p}`, EMAIL, 0],
+    [(p: string) => `printf -- '%5.2s|%%|%c' ${p}`, EMAIL, 0],
+    [(p: string) => `echo ${p}`, 'probe=7', 1],
   ])('holds the arguments zsh or ksh93 may read as arithmetic: %#', (build, value, expected) => {
     const { np, vault, sessionId } = harness();
     const word = bake(vault, sessionId, value, 'secret');
@@ -1391,8 +1392,8 @@ describe('shell restore · round-10 layout and redirections', () => {
     [(p: string) => `printf -- 2>/dev/null '%d' ${p}`, 0],
     [(p: string) => `printf '\\045d' ${p}`, 0],
     [(p: string) => `printf '\\U00000025d' ${p}`, 0],
-    [(p: string) => `printf 2>/dev/null '%s\\n' ${p}`, 1],
-  ])("reads printf's format past redirections and escapes: %#", (build, expected) => {
+    [(p: string) => `printf 2>/dev/null '%s\\n' ${p}`, 0],
+  ])("holds printf's arguments past redirections and escapes too: %#", (build, expected) => {
     const { np, vault, sessionId } = harness();
     const word = bake(vault, sessionId, 'probe=7', 'secret');
 

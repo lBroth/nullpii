@@ -33,8 +33,8 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  *   (`COMMAND_OPTIONS`, abbreviations and short-option clusters included);
  * - a placeholder that is, or is part of, the program a simple command
  *   runs, a redirection target, an assignment, an argument of `export` or
- *   `alias`, a `cd` argument, an argument of `test`, `[` or a `printf`
- *   whose format converts more than strings, or a placeholder written in
+ *   `alias`, a `cd` argument, an argument of `printf`, `test` or `[`, or
+ *   a placeholder written in
  *   shell code directly before `<` or `>` stays masked: a value must not choose what
  *   runs, what is written or the directory later commands (git among them)
  *   run in;
@@ -656,20 +656,13 @@ const DATA_GIT_SUBCOMMANDS: ReadonlySet<string> = new Set([
 const ANY_DELIMITER_PROGRAMS: ReadonlySet<string> = new Set(['sed', 'gsed', 'perl', 'ruby', 'irb']);
 const ANY_DELIMITER_IN_TEXT = /(?<![\w.-])(?:g?sed|perl|ruby|irb)(?![\w.-])/;
 
-/** Builtins that zsh or ksh93 read an argument of as arithmetic, which
- * can assign (`HOME=0`, `PATH++`): ksh93's `test` and `[` on integer
- * comparisons, zsh's `test -t`. No value comes back into their arguments.
- * (`printf` does the same for a numeric conversion: `convertsOnlyStrings`.) */
-const ARITHMETIC_BUILTINS: ReadonlySet<string> = new Set(['test', '[']);
-
-/** A `printf` conversion of a string, or a literal `%`: no width or
- * precision taken from an argument (`*`). */
-const STRING_CONVERSION = /%(?:%|[-+ #0]*\d*(?:\.\d*)?[sbc])/g;
-/** A backslash escape in a `printf` format other than `\n`, `\t` or `\\`:
- * zsh and ksh93 decode `\u` and `\U` escapes before reading conversions
- * (`\U00000025` is `%`). */
-const ESCAPED_BACKSLASH = /\\\\/g;
-const OTHER_ESCAPE = /\\(?![nt])/;
+/** Builtins that zsh or ksh93 may read an argument of as arithmetic,
+ * which can assign (`HOME=0`, `PATH++`): `printf` for a numeric
+ * conversion (with formats, options and escapes each shell reads its own
+ * way: zsh `-:`, ksh93 `-+`, `\U00000025` for `%`), ksh93's `test` and
+ * `[` on integer comparisons, zsh's `test -t`. No value comes back into
+ * their arguments; `echo` prints a value. */
+const ARITHMETIC_BUILTINS: ReadonlySet<string> = new Set(['printf', 'test', '[']);
 /** A redirection operator at the start of a word, with its descriptor. */
 const REDIRECTION_OPERATOR =
   /^(?:\d+|\{[A-Za-z_]\w*\})?(?:&>>?[|!]?|>>?[|!]|>&|<&|<<<|<<-?|<>|>>?|<)/;
@@ -1135,20 +1128,6 @@ function redirectedTarget(w: Word): string | undefined {
   return operator === null ? undefined : w.text.slice(operator[0].length);
 }
 
-/** The words after the program of the simple command `words` start,
- * redirections and their targets left out (`printf 2>/dev/null '%d' …`). */
-function operandsOf(words: readonly Word[]): string[] {
-  const out: string[] = [];
-  for (let i = skipPrefix(words, 0) + 1; i < words.length; i++) {
-    const word = words[i];
-    if (word === undefined) break;
-    const target = redirectedTarget(word);
-    if (target === undefined) out.push(word.text);
-    else if (target === '') i += 1;
-  }
-  return out;
-}
-
 /** True when `command` holds only whitespace from `start` to `end`. */
 function isBlank(command: string, start: number, end: number): boolean {
   for (let k = start; k < end; k++) {
@@ -1172,8 +1151,7 @@ function withoutRanges(text: string, ranges: ReadonlyArray<readonly [number, num
  * in the program word of the simple command around it (the words before
  * it are only assignments, redirections and wrappers), in an assignment,
  * in a redirection target, or in the arguments of `cd`, `export`, `alias`
- * and the like, of `test` and `[`, or of a `printf` whose format converts
- * more than strings. A command past the
+ * and the like, or of `printf`, `test` and `[`. A command past the
  * read window never gets here: `judge` keeps every placeholder of it. */
 function holdsAt(
   index: number,
@@ -1206,22 +1184,7 @@ function holdsAt(
   const program = programOf(before);
   if (program === undefined) return false;
   if (program.name === 'cd' || ARITHMETIC_BUILTINS.has(program.name)) return true;
-  if (program.name === 'printf' && !convertsOnlyStrings(operandsOf(before))) return true;
   return ENVIRONMENT_BUILTINS.has(program.name);
-}
-
-/** True when `printf`'s format, read before the value, converts only
- * strings: zsh and ksh93 read the argument of a numeric conversion as
- * arithmetic, which can assign (`printf %d HOME=0`). A first operand
- * starting with `-` other than `--` may be options to them (zsh `-:`,
- * ksh93 `-+`, `-[`), and the format the next word: the value is held. */
-function convertsOnlyStrings(args: readonly string[]): boolean {
-  const first = args[0];
-  if (first === undefined || (first.startsWith('-') && first !== '--')) return false;
-  const format = first === '--' ? args[1] : first;
-  if (format === undefined) return false;
-  if (OTHER_ESCAPE.test(format.replace(ESCAPED_BACKSLASH, ''))) return false;
-  return !format.replace(STRING_CONVERSION, '').includes('%');
 }
 
 /** The start of the command extent around `index`, from extents sorted

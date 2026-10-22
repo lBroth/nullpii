@@ -38,18 +38,15 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  * - judged again with the values put back, the command must also split
  *   into the same simple commands and heredoc bodies as before, or it
  *   keeps every placeholder;
- * - the one exception to the plain-word rule is the body of a heredoc that
- *   `cat` writes to standard output or to a document file (`.md`, `.txt`,
- *   …; `PLAIN_DATA_FILE`), in a command that runs nothing else that could
- *   read it as code (`cat > notes.md <<'EOF'`, a
- *   `git commit -m "$(cat <<'EOF' …)"` message): that body is data, as a
- *   file the `Write` tool writes is, so only a line break is refused (and
- *   in a bare-delimiter body, which expands, `$`, a backtick or a
- *   backslash; inside `$(…)`, whichever the delimiter, also a parenthesis
- *   or a quote, which bash 3.2 reads there, and nothing that moves where
- *   bash 3.2 ends the substitution, with or without its comments). The network checks skip such
- *   a body, so a commit message that mentions `ssh` does not count as a
- *   network call;
+ * - the one exception to the plain-word rule is the body of a top-level
+ *   heredoc that `cat` writes to standard output or to a document file
+ *   (`.md`, `.txt`, …; `PLAIN_DATA_FILE`), or that `git commit -F -` reads
+ *   as its message, in a command that runs nothing else that could read it
+ *   as code (`cat > notes.md <<'EOF'`, `git commit -F - <<'EOF'`): that
+ *   body is data, as a file the `Write` tool writes is, so only a line
+ *   break is refused (and in a bare-delimiter body, which expands, `$`, a
+ *   backtick or a backslash). The network checks skip such a body, so a
+ *   commit message that mentions `ssh` does not count as a network call;
  * - no value comes back right after `$` or `${` where `$` expands.
  *
  * The command is read once, in time linear in its length, whatever the
@@ -57,10 +54,9 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  * nested `MAX_NESTING` levels deep or more, with a simple command past the
  * read window (`MAX_WORD_SCAN` characters or `MAX_WORDS` words, heredoc
  * bodies not counted), with a heredoc body whose closing line cannot be
- * found, with a heredoc that shells read differently inside a command
- * substitution (inside backticks; a `$(…)` that bash 3.2 ends elsewhere;
- * a body line of the delimiter and `)`), or whose words would be read
- * past the scan budget keeps every placeholder, and
+ * found, with a heredoc or a `case` inside a command substitution (which
+ * shells read differently), or whose words would be read past the scan
+ * budget keeps every placeholder, and
  * one whose quoting or substitutions are left open loses the heredoc
  * exception. Heredoc bodies and `#`
  * comments are skipped by the quote lexer; `<<` counts only in shell code,
@@ -84,25 +80,16 @@ export const SHELL_COMMAND_FIELD = 'command';
 
 /** Where a placeholder stands. `heredoc` is the body of a quoted-delimiter
  * heredoc and `heredoc-expanding` that of a bare one, both only while the
- * body is data (see `DATA_PROGRAMS`); `heredoc-in-substitution` is such a
- * body inside `$(…)` (one inside backticks is never read); any other body
- * is `none`. */
-export type QuoteContext =
-  | 'none'
-  | 'single'
-  | 'double'
-  | 'heredoc'
-  | 'heredoc-expanding'
-  | 'heredoc-in-substitution';
+ * body is data (see `DATA_PROGRAMS`); any other body is `none`. */
+export type QuoteContext = 'none' | 'single' | 'double' | 'heredoc' | 'heredoc-expanding';
 
 /** The contexts of a data heredoc body. */
-type DataBodyContext = 'heredoc' | 'heredoc-expanding' | 'heredoc-in-substitution';
+type DataBodyContext = 'heredoc' | 'heredoc-expanding';
 
 /** Contexts that hold data a program writes out, not shell code. */
 const DATA_BODY_CONTEXTS: ReadonlySet<QuoteContext> = new Set<DataBodyContext>([
   'heredoc',
   'heredoc-expanding',
-  'heredoc-in-substitution',
 ]);
 
 /** A value that may be restored outside a data heredoc body: one plain
@@ -116,7 +103,6 @@ const EXPANDING_CONTEXTS: ReadonlySet<QuoteContext> = new Set<QuoteContext>([
   'none',
   'double',
   'heredoc-expanding',
-  'heredoc-in-substitution',
 ]);
 
 /** What a value may hold in a data heredoc body. */
@@ -127,13 +113,6 @@ const DATA_BODY_SAFE: Readonly<Record<DataBodyContext, RegExp>> = {
   // `restoreShellCommand` sees the body end early and keeps every value.
   heredoc: /^[^\n\u2028\u2029]*$/u,
   'heredoc-expanding': /^[^$`\\\n\u2028\u2029]*$/u,
-  // Inside `$(…)` the body is not opaque to every shell: bash 3.2 (the
-  // macOS `/bin/bash`) scans it for quotes, parentheses, backticks,
-  // escapes and some `#` comments to find the end of the substitution.
-  // So, whichever the delimiter, none of those characters; a value whose
-  // `#` comments out a parenthesis or a quote is caught when the restored
-  // command is judged again, since the bash 3.2 readings then disagree.
-  'heredoc-in-substitution': /^[^$`\\()'"\n\u2028\u2029]*$/u,
 };
 
 /** Longest command read: a longer one keeps every placeholder, so the
@@ -784,6 +763,10 @@ const HEREDOC_OPERATOR =
 
 /** Commands whose heredoc body is data, not code. */
 const HEREDOC_DATA_COMMANDS: ReadonlySet<string> = new Set(['cat']);
+/** `git commit` options that read the message from standard input. */
+const STDIN_MESSAGE_FLAGS: ReadonlySet<string> = new Set(['-F-', '--file=-']);
+/** `git commit` options whose next word names the message file. */
+const MESSAGE_FILE_FLAGS: ReadonlySet<string> = new Set(['-F', '--file']);
 
 /** Characters after which a new simple command starts (see
  * `separatesCommands`). */
@@ -831,10 +814,6 @@ interface Frame {
   readonly kind: FrameKind;
   depth: number;
   cmdStart: number;
-  /** For a `subst` frame: where its `$(` stands. */
-  readonly opened?: number;
-  /** For a `subst` frame: a heredoc operator was met in it. */
-  heredoc?: boolean;
 }
 
 /** A heredoc whose body starts at the next newline of shell code. */
@@ -845,10 +824,9 @@ interface Heredoc {
   readonly literal: boolean;
   /** `<<-`: leading tabs are stripped from the closing line. */
   readonly stripTabs: boolean;
-  /** Fed to `cat` and not piped on, so the body is data. */
+  /** Fed to `cat` or as `git commit -F -`'s message, and not piped on,
+   * so the body is data. */
   readonly data: boolean;
-  /** Met inside `$(…)` or backticks. */
-  readonly inSubstitution: boolean;
 }
 
 /** One pass over a command: the context at each target position, in
@@ -861,17 +839,15 @@ interface Scan {
   readonly dataBodies: Array<readonly [number, number]>;
   /** The extent of every heredoc body, data or not, in the order read. */
   readonly bodies: Array<readonly [number, number]>;
-  /** The extent of every heredoc body met inside `$(…)` or backticks. */
-  readonly substitutionBodies: Array<readonly [number, number]>;
   /** The target of every output redirection in shell code, quotes
    * removed; empty when it expands or cannot be read whole. */
   readonly outputs: string[];
   /** The line the last `<<` was met on, and its last `|`, read once per
    * line so that many operators on one line cost linear time. */
   line: { end: number; lastPipe: number };
-  /** The program word of the simple command the last `<<` was met in,
-   * by the command's start, read once per command. */
-  heredocCommand: { start: number; word: string };
+  /** Whether the simple command the last `<<` was met in reads a heredoc
+   * as data, by the command's start, read once per command. */
+  heredocCommand: { start: number; data: boolean };
   /** `HEREDOC_OPERATOR`, sticky, for this scan alone. */
   readonly heredocOperator: RegExp;
   /** The levels of nesting around the text being lexed: a bare heredoc
@@ -879,9 +855,7 @@ interface Scan {
   nesting: number;
   /** The command cannot be read whole: a nested part (a heredoc body's own
    * heredoc) could not be read, the nesting reached `MAX_NESTING`, a
-   * heredoc stands inside backticks, a body line inside `$(…)` reads as
-   * the delimiter and `)`, or bash 3.2 would end a `$(…)` holding a
-   * heredoc elsewhere. */
+   * heredoc stands inside a command substitution, or a `case` does. */
   broken: boolean;
 }
 
@@ -994,10 +968,9 @@ function judge(command: string, targets: readonly number[]): Verdict {
     commands: [],
     dataBodies: [],
     bodies: [],
-    substitutionBodies: [],
     outputs: [],
     line: { end: -1, lastPipe: -1 },
-    heredocCommand: { start: -1, word: '' },
+    heredocCommand: { start: -1, data: false },
     heredocOperator: new RegExp(HEREDOC_OPERATOR.source, 'y'),
     nesting: 0,
     broken: false,
@@ -1056,12 +1029,9 @@ function judge(command: string, targets: readonly number[]): Verdict {
   const contextAt = new Map<number, QuoteContext>();
   const programAt = new Set<number>();
   const sorted = [...scan.commands].sort((a, b) => a[0] - b[0]);
-  const substitutionBodies = outermost(scan.substitutionBodies);
   targets.forEach((index, k) => {
     const context = scan.contexts[k] ?? 'none';
-    const nested = isDataBody(context) && insideAny(substitutionBodies, index);
     if (strict) contextAt.set(index, 'none');
-    else if (nested) contextAt.set(index, bodyContext('heredoc-in-substitution'));
     else if (isDataBody(context)) contextAt.set(index, bodyContext(context));
     else contextAt.set(index, context);
     if (keepAll) return;
@@ -1149,12 +1119,6 @@ function rangesWithin(
     out.push([range[0], Math.min(range[1], end)]);
   }
   return out;
-}
-
-/** True when `index` lies in one of `sorted` (disjoint, ascending). */
-function insideAny(sorted: ReadonlyArray<readonly [number, number]>, index: number): boolean {
-  const [range] = rangesWithin(sorted, 0, index + 1).slice(-1);
-  return range !== undefined && index < range[1];
 }
 
 /** True when `command` holds only whitespace from `start` to `end`. */
@@ -1569,7 +1533,7 @@ function advance(
   }
   if (ch === '\\') return 2;
   if (ch === '$' && command[i + 1] === '(') {
-    stack.push({ kind: 'subst', depth: 0, cmdStart: i + 2, opened: i });
+    stack.push({ kind: 'subst', depth: 0, cmdStart: i + 2 });
     return 2;
   }
   if (ch === '`') {
@@ -1608,7 +1572,7 @@ function advanceCode(
   }
   if (ch === "'") stack.push({ kind: 'single', depth: 0, cmdStart: 0 });
   else if (ch === '"') stack.push({ kind: 'double', depth: 0, cmdStart: 0 });
-  else if (frame.kind === 'subst') trackParens(stack, frame, command, i, scan);
+  else if (frame.kind === 'subst') trackParens(stack, frame, ch, i, scan);
   if (separatesCommands(command, i)) {
     scan.commands.push([frame.cmdStart, i]);
     frame.cmdStart = i + 1;
@@ -1711,97 +1675,17 @@ function commentLength(command: string, i: number): number {
   return (newline === -1 ? command.length : newline) - i;
 }
 
-function trackParens(stack: Frame[], frame: Frame, command: string, i: number, scan: Scan): void {
-  const ch = command[i];
+function trackParens(
+  stack: Frame[],
+  frame: Frame,
+  ch: string | undefined,
+  i: number,
+  scan: Scan,
+): void {
   if (ch === '(') frame.depth += 1;
   if (ch !== ')') return;
-  if (frame.depth > 0) {
-    frame.depth -= 1;
-    return;
-  }
-  // bash 3.2 (macOS's `/bin/bash`) finds the end of `$(…)` by scanning its
-  // text for quotes and parentheses, heredoc bodies included; newer shells
-  // parse the body as a body. Which `#` starts a comment in that scan
-  // depends on quoting and on the character before it, so every reading
-  // must end where the lexer does: a substitution with a heredoc whose end
-  // any reading places elsewhere is not read.
-  if (frame.heredoc === true && !bash32AgreesAt(command, frame.opened ?? -1, i)) {
-    scan.broken = true;
-  }
-  closeCommand(stack, frame, i, scan);
-}
-
-/** How a bash 3.2 scan of `$(…)` treats `#`: never as a comment (inside
- * `"$(…)"` when parsing), as a comment after a blank or a newline (an
- * unquoted `$(…)`, as `/bin/bash` 3.2.57 reads it), or after any word
- * boundary (the widest reading). */
-type CommentReading = 'none' | 'blank' | 'word';
-const COMMENT_READINGS: readonly CommentReading[] = ['none', 'blank', 'word'];
-/** The characters after which bash 3.2 starts a comment in `$(…)`. */
-const BLANKS: ReadonlySet<string> = new Set([' ', '\t', '\n']);
-
-/** True when every bash 3.2 reading ends the `$(…)` whose `$` is at
- * `open` at `end`. Each scan stops at `end`, so a check costs at most the
- * substitution's own length. */
-function bash32AgreesAt(command: string, open: number, end: number): boolean {
-  return COMMENT_READINGS.every(
-    (reading) => bash32SubstitutionEnd(command, open, reading, end) === end,
-  );
-}
-
-/** True when the `#` at `j` starts a comment under `reading`. */
-function startsComment(command: string, j: number, open: number, reading: CommentReading): boolean {
-  if (reading === 'none') return false;
-  if (reading === 'word') return startsWord(command, j);
-  if (j === open + 2) return true;
-  const before = command[j - 1] ?? '';
-  // A newline escaped by a backslash joins the lines: what counts is the
-  // character before the backslash.
-  if (before === '\n' && command[j - 2] === '\\') return BLANKS.has(command[j - 3] ?? '');
-  return BLANKS.has(before);
-}
-
-/** Where bash 3.2 ends the `$(…)` whose `$` is at `open`, looking no
- * further than `limit`: quotes, escapes, backticks, nested parentheses and
- * `#` comments (per `reading`) are tracked, heredocs are not. `-1` when it
- * finds no end by `limit`. */
-function bash32SubstitutionEnd(
-  command: string,
-  open: number,
-  reading: CommentReading,
-  limit: number,
-): number {
-  if (open < 0) return -1;
-  const stack: Array<'(' | '"' | '`'> = ['('];
-  for (let j = open + 2; j <= limit && j < command.length; j++) {
-    const ch = command[j];
-    const top = stack.at(-1);
-    if (ch === '\\') {
-      j += 1;
-    } else if (top === '`') {
-      if (ch === '`') stack.pop();
-    } else if (top === '"') {
-      if (ch === '"') stack.pop();
-      else if (ch === '`') stack.push('`');
-      else if (ch === '$' && command[j + 1] === '(') {
-        stack.push('(');
-        j += 1;
-      }
-    } else if (ch === '#' && startsComment(command, j, open, reading)) {
-      const newline = command.indexOf('\n', j);
-      if (newline === -1 || newline > limit) return -1;
-      j = newline - 1;
-    } else if (ch === "'") {
-      j = command.indexOf("'", j + 1);
-      if (j === -1 || j > limit) return -1;
-    } else if (ch === '"' || ch === '`' || ch === '(') {
-      stack.push(ch);
-    } else if (ch === ')') {
-      stack.pop();
-      if (stack.length === 0) return j;
-    }
-  }
-  return -1;
+  if (frame.depth === 0) closeCommand(stack, frame, i, scan);
+  else frame.depth -= 1;
 }
 
 /** Close a substitution at `i`, recording its last simple command. */
@@ -1820,36 +1704,45 @@ function readHeredocOperator(
   scan: Scan,
 ): number {
   if (command[i + 2] === '<') return 3;
-  // Shells disagree on a heredoc inside backticks (a backtick in its body
-  // ends the substitution in every shell), so such a command is not read.
-  if (frame.kind === 'backtick') scan.broken = true;
-  if (frame.kind === 'subst') frame.heredoc = true;
+  // Shells disagree on where a heredoc inside a command substitution ends
+  // (bash 3.2 scans the body for quotes, parentheses and some comments to
+  // find the end of `$(…)`; bash 5.2 ends a body at a line that starts with
+  // the delimiter and holds a `)`; a backtick in the body ends a backtick
+  // substitution), so a command holding one is not read.
+  if (frame.kind === 'subst' || frame.kind === 'backtick') scan.broken = true;
   scan.heredocOperator.lastIndex = i;
   const m = scan.heredocOperator.exec(command);
   if (m === null) {
-    pending.push({
-      delimiter: undefined,
-      literal: false,
-      stripTabs: false,
-      data: false,
-      inSubstitution: false,
-    });
+    pending.push({ delimiter: undefined, literal: false, stripTabs: false, data: false });
     return 2;
   }
   if (scan.heredocCommand.start !== frame.cmdStart) {
     const head = command.slice(frame.cmdStart, Math.min(i, frame.cmdStart + MAX_WORD_SCAN));
-    scan.heredocCommand = { start: frame.cmdStart, word: programOf(wordsOf(head))?.name ?? '' };
+    scan.heredocCommand = {
+      start: frame.cmdStart,
+      data: readsHeredocAsData(programOf(wordsOf(head))),
+    };
   }
-  const word = scan.heredocCommand.word;
   const quoted = m[3] ?? m[4];
   pending.push({
     delimiter: quoted ?? m[5],
     literal: quoted !== undefined,
     stripTabs: m[1] === '-',
-    data: HEREDOC_DATA_COMMANDS.has(word) && !pipedLater(command, i, scan),
-    inSubstitution: frame.kind === 'subst' || frame.kind === 'backtick',
+    data: scan.heredocCommand.data && !pipedLater(command, i, scan),
   });
   return m[0].length;
+}
+
+/** True when `p` reads its heredoc as data: `cat`, or `git commit` taking
+ * its message from standard input (`-F -`, `-F-`, `--file=-`,
+ * `--file -`), each by name with no wrapper or path. */
+function readsHeredocAsData(p: Program | undefined): boolean {
+  if (p === undefined || p.name === undefined || p.wrappers.length > 0 || p.byPath) return false;
+  if (HEREDOC_DATA_COMMANDS.has(p.name)) return true;
+  if (p.name !== 'git' || p.args[0] !== 'commit') return false;
+  return p.args.some(
+    (a, k) => STDIN_MESSAGE_FLAGS.has(a) || (MESSAGE_FILE_FLAGS.has(a) && p.args[k + 1] === '-'),
+  );
 }
 
 /** True when a `|` follows `i` on its line. The line's end and last `|`
@@ -1902,7 +1795,6 @@ function readBody(command: string, start: number, end: number, heredoc: Heredoc,
   // checks read; one with none is plain text.
   const expands = !heredoc.literal && /[$`]/.test(command.slice(start, end));
   scan.bodies.push([start, end]);
-  if (heredoc.inSubstitution) scan.substitutionBodies.push([start, end]);
   if (heredoc.data && !expands) scan.dataBodies.push([start, end]);
   if (!heredoc.data) record(scan, end - 1, 'none');
   else if (heredoc.literal) record(scan, end - 1, 'heredoc');
@@ -1931,23 +1823,10 @@ function findClosingLine(
     const line = command.slice(lineStart, lineEnd);
     const candidate = heredoc.stripTabs ? line.replace(LEADING_TABS, '') : line;
     if (candidate === heredoc.delimiter) return { bodyEnd: lineStart, next: lineEnd };
-    // Inside `$(…)`, bash 5.2 also ends the body at a line that starts with
-    // the delimiter and holds a `)` (`EOF) more`, `EOFx)`), zsh does not:
-    // such a body cannot be read.
-    if (heredoc.inSubstitution && closesSubstitution(candidate, heredoc.delimiter)) {
-      return undefined;
-    }
     if (newline === -1) return undefined;
     lineStart = newline + 1;
   }
   return undefined;
-}
-
-/** True when `line` starts with `delimiter` and holds a `)` after it:
- * inside `$(…)`, bash 5.2 ends the body at the delimiter there and reads
- * the rest of the line as code. */
-function closesSubstitution(line: string, delimiter: string): boolean {
-  return line.startsWith(delimiter) && line.includes(')', delimiter.length);
 }
 
 /** A shell command with its safe placeholders restored. */

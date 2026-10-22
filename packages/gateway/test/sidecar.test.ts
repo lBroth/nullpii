@@ -623,7 +623,7 @@ describe('sidecar · restore with tool', () => {
   }
 
   function commitWith(message: string): string {
-    return `git commit -m "$(cat <<'EOF'\n${message}\nEOF\n)"`;
+    return `git commit -F - <<'EOF'\n${message}\nEOF`;
   }
 
   it('keeps an unsafe unquoted value masked and lists its placeholder, never the value', async () => {
@@ -675,7 +675,7 @@ describe('sidecar · restore with tool', () => {
     expect(body.shellKeptMasked).toEqual([person]);
   });
 
-  it('restores a two-word name in a quoted heredoc (Claude Code commit message)', async () => {
+  it('restores a two-word name in a quoted heredoc commit message (`git commit -F -`)', async () => {
     const { app } = await setup();
     const [person] = await placeholdersFor(app, FULL_NAME);
 

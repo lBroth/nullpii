@@ -585,6 +585,8 @@ test('inside single quotes a name with a space stays masked: only one plain word
     command: `printf '%s' '${ph('PERSON', 0)}' > to.txt`,
   });
   expect(out.deny).toContain(`will not put the real value of ${ph('PERSON', 0)}`);
+  // Claude is pointed at the commit form that does get values back.
+  expect(out.deny).toContain("git commit -F - <<'EOF'");
   expect(ran).toEqual([]);
 });
 

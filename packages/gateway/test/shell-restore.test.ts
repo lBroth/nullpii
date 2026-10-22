@@ -93,21 +93,29 @@ function placeholdersIn(text: unknown): [string, string] {
   return [secret, person];
 }
 
-/** A Claude Code-style commit: the message is a quoted heredoc. */
-function commitWith(message: string): string {
+/** Claude Code's usual commit: the message is a quoted heredoc inside a
+ * command substitution, which shells read differently, so it keeps every
+ * placeholder. */
+function commitSubst(message: string): string {
   return `git commit -m "$(cat <<'EOF'\n${message}\nEOF\n)"`;
+}
+
+/** The commit form that gets values back: the message is a quoted heredoc
+ * `git commit` reads from standard input. */
+function commitStdin(message: string): string {
+  return `git commit -F - <<'EOF'\n${message}\nEOF`;
 }
 
 /** One command using each placeholder unquoted, quoted, and in a heredoc. */
 function bashCommand(secret: string, person: string): string {
-  return `echo ${secret} && echo '${secret}' && echo "${person}" && echo ${person} && ${commitWith(`Thanks ${person}`)}`;
+  return `echo ${secret} && echo '${secret}' && echo "${person}" && echo ${person} && ${commitStdin(`Thanks ${person}`)}`;
 }
 
 /** What the client must receive: real values only where they are safe.
  * Neither value is one plain word, so both stay masked, quoted or not;
  * the commit message, a data heredoc body, gets the name back. */
 function expectedCommand(secret: string, person: string): string {
-  return `echo ${secret} && echo '${secret}' && echo "${person}" && echo ${person} && ${commitWith(`Thanks ${FULL_NAME}`)}`;
+  return `echo ${secret} && echo '${secret}' && echo "${person}" && echo ${person} && ${commitStdin(`Thanks ${FULL_NAME}`)}`;
 }
 
 const apps: FastifyInstance[] = [];
@@ -197,7 +205,8 @@ describe('shell restore · quoting context', () => {
     [`cat <<'EOF' > notes.txt\n${MARKER}\nEOF`, 'heredoc'],
     // `tee` writes where an argument points: not a data command.
     [`tee notes.txt <<'EOF'\n${MARKER}\nEOF`, 'none'],
-    [commitWith(`Thanks ${MARKER}`), 'heredoc-in-substitution'],
+    [commitSubst(`Thanks ${MARKER}`), 'none'],
+    [commitStdin(`Thanks ${MARKER}`), 'heredoc'],
     [`cat <<EOF\n${MARKER}\nEOF`, 'heredoc-expanding'],
     [`cat <<EOF\n$(echo ${MARKER})\nEOF`, 'none'],
     // A body is not shell code: its apostrophe opens no quote.
@@ -359,13 +368,13 @@ describe('shell restore · restoreShellCommand', () => {
     expect(r.keptMasked).toHaveLength(1);
   });
 
-  it('restores a two-word name in a quoted heredoc (Claude Code commit message)', () => {
+  it('restores a two-word name in a quoted heredoc commit message (`git commit -F -`)', () => {
     const { np, vault, sessionId } = harness();
     const person = bake(vault, sessionId, FULL_NAME, 'private_person');
 
-    const r = restoreShellCommand(np, commitWith(`Thanks ${person}`), sessionId);
+    const r = restoreShellCommand(np, commitStdin(`Thanks ${person}`), sessionId);
 
-    expect(r.command).toBe(commitWith(`Thanks ${FULL_NAME}`));
+    expect(r.command).toBe(commitStdin(`Thanks ${FULL_NAME}`));
     expect(r.keptMasked).toHaveLength(0);
   });
 
@@ -565,7 +574,7 @@ describe('shell restore · programs that read the value again', () => {
 
     expect(restoreShellCommand(np, body(name), sessionId).command).toBe(body("Anna D'Amico"));
     // Inside `$(…)` bash 3.2 reads the quote: it stays masked there.
-    const commit = commitWith(`Thanks ${name}`);
+    const commit = commitSubst(`Thanks ${name}`);
     expect(restoreShellCommand(np, commit, sessionId).command).toBe(commit);
     const thenAdd = (n: string) => `${body(n)}\ngit add notes.md`;
     expect(restoreShellCommand(np, thenAdd(name), sessionId).command).toBe(thenAdd("Anna D'Amico"));
@@ -602,12 +611,12 @@ describe('shell restore · v3 hardening', () => {
   it('a commit message that mentions network tools is still data', () => {
     const { np, vault, sessionId } = harness();
     const person = bake(vault, sessionId, FULL_NAME, 'private_person');
-    const command = commitWith(`Thanks ${person}: fix the ssh and curl -X calls, bash -c too`);
+    const command = commitStdin(`Thanks ${person}: fix the ssh and curl -X calls, bash -c too`);
 
     const r = restoreShellCommand(np, command, sessionId);
 
     expect(r.command).toBe(
-      commitWith(`Thanks ${FULL_NAME}: fix the ssh and curl -X calls, bash -c too`),
+      commitStdin(`Thanks ${FULL_NAME}: fix the ssh and curl -X calls, bash -c too`),
     );
   });
 
@@ -792,7 +801,7 @@ describe('shell restore · v3 hardening', () => {
     const email = bake(vault, sessionId, EMAIL, 'private_email');
     const lines = (v: string) =>
       Array.from({ length: 30 }, (_, i) => `Reviewed-by ${i} <${v}>`).join('\n');
-    const command = (v: string) => `git commit -m "$(cat <<'EOF'\nfix\n\n${lines(v)}\nEOF\n)"`;
+    const command = (v: string) => commitStdin(`fix\n\n${lines(v)}`);
 
     expect(restoreShellCommand(np, command(email), sessionId).command).toBe(command(EMAIL));
   });
@@ -1125,7 +1134,7 @@ describe('shell restore · round-10 layout and redirections', () => {
     const name = bake(vault, sessionId, FULL_NAME, 'private_person');
     const long = `${'word '.repeat(1200)}\n${'more '.repeat(80)}`;
 
-    expect(restored(restoreShellCommand(np, commitWith(`${long}${name}`), sessionId))).toBe(1);
+    expect(restored(restoreShellCommand(np, commitStdin(`${long}${name}`), sessionId))).toBe(1);
   });
 
   it('argv: `cd` gets no value, as in shell code', () => {
@@ -1151,7 +1160,7 @@ describe('shell restore · round-11 heredocs inside substitutions', () => {
       const { np, vault, sessionId } = harness();
       const word = bake(vault, sessionId, value, 'secret');
 
-      expect(restored(restoreShellCommand(np, commitWith(`fix: ${word}`), sessionId))).toBe(0);
+      expect(restored(restoreShellCommand(np, commitSubst(`fix: ${word}`), sessionId))).toBe(0);
     },
   );
 
@@ -1196,18 +1205,46 @@ describe('shell restore · round-11 heredocs inside substitutions', () => {
       const name = bake(vault, sessionId, FULL_NAME, 'private_person');
 
       expect(
-        restored(restoreShellCommand(np, commitWith(message.replace('PH', name)), sessionId)),
+        restored(restoreShellCommand(np, commitSubst(message.replace('PH', name)), sessionId)),
       ).toBe(0);
     },
   );
 
-  it('still restores a commit message with an issue reference and balanced parentheses', () => {
+  it.each(['fix #123 (see) PH', 'fix(gateway): thanks PH', 'plain message for PH'])(
+    'keeps every value in a `$(…)` commit message, whatever it holds: %j',
+    (message) => {
+      const { np, vault, sessionId } = harness();
+      const name = bake(vault, sessionId, FULL_NAME, 'private_person');
+      const command = commitSubst(message.replace('PH', name));
+
+      expect(restoreShellCommand(np, command, sessionId).command).toBe(command);
+    },
+  );
+
+  it.each([
+    (m: string) => `git commit -F - <<'EOF'\n${m}\nEOF`,
+    (m: string) => `git commit -F- <<'EOF'\n${m}\nEOF`,
+    (m: string) => `git commit --file=- <<'EOF'\n${m}\nEOF`,
+    (m: string) => `git add -A && git commit --file - <<'EOF'\n${m}\nEOF`,
+  ])('restores any value without a line break in a `git commit -F -` message: %#', (build) => {
+    const { np, vault, sessionId } = harness();
+    const name = bake(vault, sessionId, "Anna D'Amico", 'private_person');
+    const message = (n: string) => `fix(gateway): thanks ${n} #123 (see)`;
+
+    const r = restoreShellCommand(np, build(message(name)), sessionId);
+
+    expect(r.command).toBe(build(message("Anna D'Amico")));
+  });
+
+  it.each([
+    (m: string) => `git commit -F - <<'EOF' | cat\n${m}\nEOF`,
+    (m: string) => `git -C repo commit -F - <<'EOF'\n${m}\nEOF`,
+    (m: string) => `git commit -F msg.txt <<'EOF'\n${m}\nEOF`,
+  ])('restores nothing but plain words in other `git commit` heredocs: %#', (build) => {
     const { np, vault, sessionId } = harness();
     const name = bake(vault, sessionId, FULL_NAME, 'private_person');
 
-    const r = restoreShellCommand(np, commitWith(`fix #123 (see) ${name}`), sessionId);
-
-    expect(r.command).toBe(commitWith(`fix #123 (see) ${FULL_NAME}`));
+    expect(restored(restoreShellCommand(np, build(`thanks ${name}`), sessionId))).toBe(0);
   });
 
   it.each([';', '|', '&', '<', '>'])(
@@ -1249,24 +1286,6 @@ describe('shell restore · round-11 heredocs inside substitutions', () => {
     const started = performance.now();
     restoreShellCommand(np, command, sessionId);
     expect(performance.now() - started).toBeLessThan(MAX_LONG_COMMAND_MS);
-  });
-
-  it('still restores a commit message with an issue reference', () => {
-    const { np, vault, sessionId } = harness();
-    const name = bake(vault, sessionId, FULL_NAME, 'private_person');
-
-    const r = restoreShellCommand(np, commitWith(`fix #123: thanks ${name}`), sessionId);
-
-    expect(r.command).toBe(commitWith(`fix #123: thanks ${FULL_NAME}`));
-  });
-
-  it('still restores a name in a commit message with balanced parentheses', () => {
-    const { np, vault, sessionId } = harness();
-    const name = bake(vault, sessionId, FULL_NAME, 'private_person');
-
-    const r = restoreShellCommand(np, commitWith(`fix(gateway): thanks ${name}`), sessionId);
-
-    expect(r.command).toBe(commitWith(`fix(gateway): thanks ${FULL_NAME}`));
   });
 
   it('a body outside a substitution still takes quotes and parentheses', () => {

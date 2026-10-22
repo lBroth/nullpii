@@ -11,7 +11,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "nullpii": "./bin/nullpii.mjs"
+    "nullpii": "bin/nullpii.mjs"
   },
   "exports": {
     ".": {
@@ -80,7 +80,8 @@
   },
   "publishConfig": {
     "access": "public",
-    "provenance": true
+    "provenance": true,
+    "registry": "https://registry.npmjs.org/"
   },
   "repository": {
     "type": "git",

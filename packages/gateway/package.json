@@ -33,7 +33,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "nullpii-gateway": "./bin/nullpii-gateway.mjs"
+    "nullpii-gateway": "bin/nullpii-gateway.mjs"
   },
   "exports": {
     ".": {
@@ -52,7 +52,7 @@
     "fastify": "^5.12.5"
   },
   "peerDependencies": {
-    "nullpii": ">=0.5.0 <0.6.0",
+    "nullpii": ">=0.5.0-0 <0.6.0",
     "onnxruntime-node": "^1.30.0"
   },
   "engines": {
@@ -60,6 +60,7 @@
   },
   "publishConfig": {
     "access": "public",
-    "provenance": true
+    "provenance": true,
+    "registry": "https://registry.npmjs.org/"
   }
 }

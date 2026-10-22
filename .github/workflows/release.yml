@@ -125,8 +125,22 @@ jobs:
         run: node -e "const [a,b,c]=process.argv[1].split('.').map(Number); process.exit(a>11||(a===11&&(b>5||(b===5&&c>=1)))?0:1)" "$(npm --version)"
       - run: npm ci --ignore-scripts
       - run: npm run build
+      # A re-run of the whole workflow after `nullpii` is out goes on to
+      # the gateway instead of failing here.
+      - name: Skip if nullpii@<version> already published
+        id: check
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if npm view "nullpii@$PKG_VERSION" version >/dev/null 2>&1; then
+            echo "already-published=true" >> "$GITHUB_OUTPUT"
+            echo "Version $PKG_VERSION already on npm — skipping."
+          else
+            echo "already-published=false" >> "$GITHUB_OUTPUT"
+          fi
       # The verify job checked that this version is the tag's.
-      - run: npm publish --provenance --access public ${{ contains(github.ref_name, '-') && '--tag next' || '' }}
+      - name: npm publish
+        if: steps.check.outputs.already-published != 'true'
+        run: npm publish --provenance --access public ${{ contains(github.ref_name, '-') && '--tag next' || '' }}
 
   publish-gateway:
     # Publishes `@lbroth/nullpii-gateway` from packages/gateway/, after

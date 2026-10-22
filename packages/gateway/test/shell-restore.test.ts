@@ -1151,6 +1151,48 @@ describe('shell restore · round-10 layout and redirections', () => {
     expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(0);
   });
 
+  it.each(['\r', '\u0000', '\u000b', '\u2028'])(
+    'keeps every value in a command holding control character %j',
+    (control) => {
+      const { np, vault, sessionId } = harness();
+      const name = bake(vault, sessionId, FULL_NAME, 'private_person');
+      const command = `cat > notes.md <<'EOF'${control}\n${name}\nEOF`;
+
+      expect(restored(restoreShellCommand(np, command, sessionId))).toBe(0);
+    },
+  );
+
+  it.each([
+    [(p: string) => `GIT_PAGER=cat git log --author=${p}`, 0],
+    [(p: string) => `GREP ${p} notes.md`, 0],
+    [(p: string) => `grep3 ${p} notes.md`, 0],
+    [(p: string) => `ls.exe ${p}`, 0],
+    [(p: string) => `echo ${p} >! notes.md`, 0],
+    [(p: string) => `grep ${p} notes.md <<'EOF'`, 0],
+    [(p: string) => `LC_ALL=C grep ${p} notes.md`, 1],
+  ])('reads a listed program only as written and alone: %#', (build, expected) => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, EMAIL, 'private_email');
+
+    expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(expected);
+  });
+
+  it('holds a value glued to a redirection, which digits would turn into a descriptor', () => {
+    const { np, vault, sessionId } = harness();
+    const digits = bake(vault, sessionId, '2', 'secret');
+
+    expect(restored(restoreShellCommand(np, `echo ${digits}>notes.md`, sessionId))).toBe(0);
+  });
+
+  it('argv: a URL handed to a program that is not a data one keeps every value', () => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, EMAIL, 'private_email');
+
+    const r = restoreShellArgv(np, ['grep', 'https://example.org/x', word], sessionId);
+
+    expect(restored(r)).toBe(0);
+  });
+
   it('restores into a heredoc body however many commands come before it', () => {
     const { np, vault, sessionId } = harness();
     const name = bake(vault, sessionId, FULL_NAME, 'private_person');

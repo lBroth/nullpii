@@ -54,7 +54,7 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  * The command is read once, in time linear in its length, whatever the
  * number of placeholders; a command longer than `MAX_COMMAND_CHARS`, with
  * a simple command past the read window (`MAX_WORD_SCAN` characters or
- * `MAX_WORDS` words, heredoc bodies not counted), with a heredoc body
+ * `MAX_WORDS` words, heredoc bodies not counted), or with a heredoc body
  * whose closing line cannot be found keeps every placeholder, and one whose
  * quoting is left open loses the heredoc exception. `<<` counts only in shell code, never
  * inside quotes. A `command` given as an argv array
@@ -741,7 +741,7 @@ const MAX_WORD_SCAN = 4096;
  * delimiter that is quoted (`'EOF'`, `"EOF"`), backslash-escaped (`\EOF`)
  * or bare (`EOF`). Groups: 1 dash, 3 quoted word, 4 escaped word, 5 bare. */
 const HEREDOC_OPERATOR =
-  /<<(-?)[ \t]*(?:(['"])([A-Za-z_]\w*)\2|\\([A-Za-z_]\w*)|([A-Za-z_]\w*))(?=[\s;&|<>()]|$)/;
+  /<<(-?)[ \t]*(?:(['"])([A-Za-z_]\w*)\2|\\([A-Za-z_]\w*)|([A-Za-z_]\w*))(?=[ \t\n;&|<>()]|$)/;
 
 /** Commands whose heredoc body is data, not code. */
 const HEREDOC_DATA_COMMANDS: ReadonlySet<string> = new Set(['cat']);
@@ -784,6 +784,12 @@ const RESERVED_WORDS: ReadonlySet<string> = new Set([
   '{',
   '}',
 ]);
+/** Control characters other than tab and line feed, and Unicode line
+ * separators: shells drop, keep or split on them differently (a NUL is
+ * discarded, a carriage return becomes part of a word), so a command that
+ * holds one is not read. */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: matching them is the point.
+const UNREAD_CHARACTERS = /[\u0000-\u0008\u000b-\u001f\u007f\u0085\u2028\u2029]/;
 /** What makes a bare-delimiter heredoc body expand. */
 const BODY_EXPANSION = /[$`\\]/;
 
@@ -805,6 +811,8 @@ const COMMENT_PRECEDERS: ReadonlySet<string> = new Set([
 ]);
 
 const ENV_ASSIGNMENT = /^[A-Za-z_]\w*=/;
+/** Variables an assignment before a listed program may set. */
+const SAFE_ASSIGNMENT = /^(?:LANG|LANGUAGE|LC_[A-Z]+|TZ)$/;
 const LEADING_TABS = /^\t+/;
 /** A redirection word (`>`, `2>>log`, `&>`, `<in`); group 1 is empty
  * when the operator stands alone and its target is the next word. */
@@ -892,6 +900,10 @@ interface Program {
   readonly wrapperShell: boolean;
   /** Its arguments, as far as they were read. */
   readonly args: readonly string[];
+  /** The program word as written, when no expansion makes it. */
+  readonly literal: string | undefined;
+  /** Names assigned before the program (`NAME=value cmd`). */
+  readonly assigned: readonly string[];
 }
 
 /** What a command does, as far as restoring into it is concerned. */
@@ -962,7 +974,7 @@ export function shellContextAt(command: string, index: number): QuoteContext {
 
 /** Read `command` once and judge it at each of `targets` (ascending). */
 function judge(command: string, targets: readonly number[]): Verdict {
-  if (command.length > MAX_COMMAND_CHARS) {
+  if (command.length > MAX_COMMAND_CHARS || UNREAD_CHARACTERS.test(command)) {
     return KEEP_ALL;
   }
   const scan: Scan = {
@@ -1130,7 +1142,7 @@ function withoutRanges(text: string, ranges: ReadonlyArray<readonly [number, num
 }
 
 /** True when no value may be restored at `index`: the placeholder stands
- * in the program word of the innermost simple command around it (the
+ * in the program word of the simple command around it (the
  * words before it are only keywords, assignments, redirections and
  * wrappers), in an assignment, in a redirection target, or in the
  * arguments of `cd`, `export`, `alias` and the like. A command past the
@@ -1240,19 +1252,28 @@ function runsFile(p: Program): boolean {
 
 /** True when a value may be restored into `p`'s command (`ARG_DATA_PROGRAMS`). */
 function takesDataArgs(p: Program): boolean {
-  if (p.name === undefined || p.wrappers.length > 0 || p.byPath) return false;
+  if (!listedAsWritten(p)) return false;
   if (p.redirectedPrefix) return false;
   // A computed argument can expand to an option (`$'--pre'`). The grammar
   // read leaves `$` and backticks out, so this is a second line.
   if (p.computedArgs) return false;
-  if (p.name === 'git') return ARG_DATA_GIT_SUBCOMMANDS.has(p.args[0] ?? '');
-  return ARG_DATA_PROGRAMS.has(p.name);
+  if (p.literal === 'git') return ARG_DATA_GIT_SUBCOMMANDS.has(p.args[0] ?? '');
+  return ARG_DATA_PROGRAMS.has(p.literal ?? '');
 }
 
 function isDataProgram(p: Program): boolean {
-  if (p.name === undefined || p.wrappers.length > 0 || p.byPath) return false;
-  if (p.name === 'git') return DATA_GIT_SUBCOMMANDS.has(p.args[0] ?? '');
-  return DATA_PROGRAMS.has(p.name);
+  if (!listedAsWritten(p)) return false;
+  if (p.literal === 'git') return DATA_GIT_SUBCOMMANDS.has(p.args[0] ?? '');
+  return DATA_PROGRAMS.has(p.literal ?? '');
+}
+
+/** True when `p` may count as a listed program at all: named exactly as a
+ * list names it (no other case, version suffix, `.exe` or path), with no
+ * wrapper, and with no assignment before it but the locale and time zone
+ * (`GIT_EDITOR=…` and the like choose what a listed program runs). */
+function listedAsWritten(p: Program): boolean {
+  if (p.literal === undefined || p.wrappers.length > 0 || p.byPath) return false;
+  return p.assigned.every((name) => SAFE_ASSIGNMENT.test(name));
 }
 
 /** The words at the start of a simple command, up to `MAX_WORDS` and a
@@ -1330,6 +1351,10 @@ function wordsOf(text: string, skips: ReadonlyArray<readonly [number, number]> =
 function programOf(words: readonly Word[]): Program | undefined {
   let k = skipPrefix(words, 0);
   const redirectedPrefix = words.slice(0, k).some((w) => REDIRECTION.test(w.text));
+  const assigned = words
+    .slice(0, k)
+    .filter((w) => ENV_ASSIGNMENT.test(w.text))
+    .map((w) => w.text.slice(0, w.text.indexOf('=')));
   const first = words[k];
   if (first === undefined || NO_PROGRAM_KEYWORDS.has(first.text)) return undefined;
   const wrappers: string[] = [];
@@ -1349,6 +1374,8 @@ function programOf(words: readonly Word[]): Program | undefined {
         args: [],
         redirectedPrefix,
         computedArgs: false,
+        literal: undefined,
+        assigned,
       };
     }
     const name = word.computed ? undefined : normalise(word.text);
@@ -1363,6 +1390,8 @@ function programOf(words: readonly Word[]): Program | undefined {
         args: rest.map((w) => w.text),
         redirectedPrefix,
         computedArgs: rest.some((w) => w.computed),
+        literal: word.computed ? undefined : word.text,
+        assigned,
       };
     }
     wrappers.push(name);
@@ -1462,7 +1491,9 @@ function lex(command: string, scan: Scan): boolean {
   }
   record(scan, command.length - 1, contextOf(stack));
   scan.commands.push([base.cmdStart, command.length]);
-  return stack.length === 1 && pending.length === 0;
+  // A heredoc operator with no body after it: not read either.
+  if (pending.length > 0) scan.broken = true;
+  return stack.length === 1;
 }
 
 /** Give `context` to every target not yet recorded up to `limit`. */
@@ -1584,7 +1615,10 @@ function readOutputRedirection(command: string, i: number, scan: Scan): number {
   let j = i + 1;
   if (command[j] === '>') j += 1;
   const duplicates = command[j] === '&';
-  if (duplicates || command[j] === '|' || command[j] === '!') j += 1;
+  // `>!` overrides noclobber in zsh only; elsewhere it writes a file named
+  // `!…`, so the shells disagree on the target.
+  if (command[j] === '!') scan.broken = true;
+  if (duplicates || command[j] === '|') j += 1;
   const target = redirectionTarget(command, j);
   if (!(duplicates && DESCRIPTOR_TARGET.test(target))) scan.outputs.push(target);
   return j - i;
@@ -1781,7 +1815,11 @@ export function restoreShellCommand(
     sessionId,
     (value, at) => {
       if (keepAll || verdict.programAt.has(at)) return false;
-      return shellSafe(value, verdict.contextAt.get(at) ?? 'none');
+      const context = verdict.contextAt.get(at) ?? 'none';
+      // Glued to a redirection in shell code (`{{…}}>notes.md`), a value of
+      // digits would become its file descriptor.
+      if (context === 'none' && gluedToRedirection(command, at)) return false;
+      return shellSafe(value, context);
     },
     shifts,
   );
@@ -1794,6 +1832,15 @@ export function restoreShellCommand(
   const same = sameLayout(verdict.layout, after.layout, shifts);
   if (same && !after.offMachine && !after.runsCode) return restored;
   return restoreEach(np, command, sessionId, () => false);
+}
+
+/** True when the placeholder at `at` is followed directly by `<` or `>`. */
+function gluedToRedirection(command: string, at: number): boolean {
+  const placeholder = new RegExp(PLACEHOLDER_REGEX.source, 'y');
+  placeholder.lastIndex = at;
+  if (!placeholder.test(command)) return false;
+  const next = command[placeholder.lastIndex];
+  return next === '<' || next === '>';
 }
 
 /** Where restoring one placeholder changed a command's length: at `at`
@@ -1979,6 +2026,10 @@ function argvSendsOffMachine(argv: readonly string[]): boolean {
   if (program?.name !== undefined && ANY_DELIMITER_PROGRAMS.has(program.name)) return true;
   if (argv.some((a) => ANY_DELIMITER_IN_TEXT.test(a))) return true;
   if (argv.some((a) => NETWORK_CLIENT.test(a))) return true;
+  // As in a string command: a URL handed to a program that is not a data one.
+  if (argv.some((a) => URL_SCHEME.test(a)) && !(program !== undefined && isDataProgram(program))) {
+    return true;
+  }
   if (!argvRunsCode(argv)) return false;
   return argv.some((a) => NETWORK_IN_CODE.test(a) || sendsOffMachine(a));
 }

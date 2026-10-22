@@ -46,7 +46,8 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  *   file the `Write` tool writes is, so only a line break is refused (and
  *   in a bare-delimiter body, which expands, `$`, a backtick or a
  *   backslash; inside `$(…)`, whichever the delimiter, also a parenthesis
- *   or a quote, which bash 3.2 reads there). The network checks skip such
+ *   or a quote, which bash 3.2 reads there, and nothing that moves where
+ *   bash 3.2 ends the substitution, with or without its comments). The network checks skip such
  *   a body, so a commit message that mentions `ssh` does not count as a
  *   network call;
  * - no value comes back right after `$` or `${` where `$` expands.
@@ -129,7 +130,9 @@ const DATA_BODY_SAFE: Readonly<Record<DataBodyContext, RegExp>> = {
   // Inside `$(…)` the body is not opaque to every shell: bash 3.2 (the
   // macOS `/bin/bash`) scans it for quotes, parentheses, backticks and
   // escapes (and, unquoted, comments) to find the end of the substitution.
-  // So, whichever the delimiter, none of the characters that scan reads.
+  // So, whichever the delimiter, none of those characters; a value whose
+  // word-start `#` comments out a parenthesis is caught when the restored
+  // command is judged again, since the bash 3.2 readings then disagree.
   'heredoc-in-substitution': /^[^$`\\()'"\n\u2028\u2029]*$/u,
 };
 

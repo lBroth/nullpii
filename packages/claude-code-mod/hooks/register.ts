@@ -409,7 +409,7 @@ export function register(on, options) {
       const kept = r.shellKeptMasked ?? [];
       if (kept.length > 0) {
         return {
-          deny: `nullpii will not put the real value of ${kept.join(', ')} into this command: the value came from data you could not read, and the command sends data off this machine, runs a program nullpii does not restore into, or would read the value in a position where it can change what runs or what is written. For a commit message, write it as \`git commit -F - <<'EOF'\`, then the message, then \`EOF\` on its own line: that form gets values without a line break back, while a heredoc inside \`$(…)\` never does. Otherwise ask the user to run the command themselves.`,
+          deny: `nullpii will not put the real value of ${kept.join(', ')} into this command: the value came from data you could not read, and the command is written outside the small shell grammar nullpii reads (any \`$\`, backtick, backslash, parenthesis, brace, \`#\` comment, lone \`&\`, or a keyword such as \`if\`), sends data off this machine, runs a program nullpii does not restore into, writes a file other than a document, or holds the value where it is not one plain word or could change what runs or what is written. For a commit message, write it as \`git commit -F - <<'EOF'\`, then the message, then \`EOF\` on its own line: that form gets values without a line break back, while a heredoc inside \`$(…)\` never does. Otherwise ask the user to run the command themselves.`,
         };
       }
       // Rewrite the call only when a placeholder was replaced: a rewritten

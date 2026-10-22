@@ -1140,6 +1140,14 @@ describe('shell restore · round-10 layout and redirections', () => {
     expect(restored(restoreShellCommand(np, commitStdin(`${long}${name}`), sessionId))).toBe(1);
   });
 
+  it('restores into a heredoc body however many commands come before it', () => {
+    const { np, vault, sessionId } = harness();
+    const name = bake(vault, sessionId, FULL_NAME, 'private_person');
+    const command = `${'ls;'.repeat(100)}\ncat > notes.md <<'EOF'\n${name}\nEOF`;
+
+    expect(restored(restoreShellCommand(np, command, sessionId))).toBe(1);
+  });
+
   it('argv: `cd` gets no value, as in shell code', () => {
     const { np, vault, sessionId } = harness();
     const word = bake(vault, sessionId, EMAIL, 'private_email');

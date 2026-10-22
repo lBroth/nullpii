@@ -55,9 +55,8 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  * number of placeholders; a command longer than `MAX_COMMAND_CHARS`, with
  * a simple command past the read window (`MAX_WORD_SCAN` characters or
  * `MAX_WORDS` words, heredoc bodies not counted), with a heredoc body
- * whose closing line cannot be found, or whose words would be read past
- * the scan budget keeps every placeholder, and one whose quoting is left
- * open loses the heredoc exception. `<<` counts only in shell code, never
+ * whose closing line cannot be found keeps every placeholder, and one whose
+ * quoting is left open loses the heredoc exception. `<<` counts only in shell code, never
  * inside quotes. A `command` given as an argv array
  * (`["bash", "-lc", "…"]`) is judged by `restoreShellArgv`. The Claude
  * Code mod gets the same rules through the sidecar's `restore` with
@@ -697,19 +696,11 @@ const BUILD_INPUT_TXT =
 function isDocument(target: string): boolean {
   return PLAIN_DATA_FILE.test(target) && !BUILD_INPUT_TXT.test(target);
 }
-/** Characters of word scanning allowed per character of command, plus a
- * base, before a command is judged too costly to read. */
-const SCAN_BUDGET_PER_CHAR = 2;
-const SCAN_BUDGET_BASE = 32 * 1024;
 /** Characters kept of a word: enough for any name, option or assignment
  * the rules read. */
 const MAX_WORD_CHARS = 256;
 /** The characters a shell splits words on by default (`IFS`). */
 const FIELD_SEPARATORS: ReadonlySet<string> = new Set([' ', '\t', '\n']);
-
-/** Nesting this deep or deeper (each substitution, quote or bare heredoc
- * body a level) is not read: the command keeps every placeholder. */
-const MAX_NESTING = 64;
 
 /** Programs that make a file executable, to run it. */
 const RUNS_FILE_PROGRAMS: ReadonlySet<string> = new Set(['chmod']);
@@ -796,9 +787,9 @@ const RESERVED_WORDS: ReadonlySet<string> = new Set([
 /** What makes a bare-delimiter heredoc body expand. */
 const BODY_EXPANSION = /[$`\\]/;
 
-/** Characters after which `#` starts a comment: it must begin a word.
- * Not `$` (`$#`) or `{` (`${#x}`). A backtick counts, so a doubtful `#`
- * is read as a comment, which only makes the context after it stricter. */
+/** Characters after which a `#` begins a word, and so a comment, which is
+ * outside the grammar read (`outsideGrammar`): the command then keeps
+ * every placeholder. Wider than any shell's rule, which only keeps more. */
 const COMMENT_PRECEDERS: ReadonlySet<string> = new Set([
   ' ',
   '\t',
@@ -1060,16 +1051,13 @@ function judge(command: string, targets: readonly number[]): Verdict {
 
 /** The words and program of every simple command `scan` met, heredoc
  * bodies skipped; `undefined` when a command is past the read window or
- * its words would be read past the scan budget. */
+ * starts with a reserved word. */
 function readCommands(
   command: string,
   scan: Scan,
 ): { programs: Program[]; wordsAt: Map<number, Word[]> } | undefined {
-  // Nested commands are read once each, so their words are read again for
-  // every level: past a budget in proportion to the command, it keeps
-  // every placeholder instead.
-  let budget = SCAN_BUDGET_PER_CHAR * command.length + SCAN_BUDGET_BASE;
-  const bodies = outermost(scan.bodies);
+  // Command extents and heredoc bodies do not nest: each is read once.
+  const bodies = scan.bodies;
   const programs: Program[] = [];
   // Each command's words, read once, for every placeholder in it.
   const wordsAt = new Map<number, Word[]>();
@@ -1078,11 +1066,10 @@ function readCommands(
     // does not push its command past the read window.
     const skips = bodies.length === 0 ? NO_RANGES : rangesWithin(bodies, start, end);
     const length = skips.reduce((n, [s, e]) => n - (e - s), end - start);
-    budget -= length;
     // A simple command longer than the read window is not judged by the
     // part that was read: its later words could be options, redirections
     // or a program the rules never see.
-    if (budget < 0 || length > MAX_WORD_SCAN) return undefined;
+    if (length > MAX_WORD_SCAN) return undefined;
     if (isBlank(command, start, end)) continue;
     const relative =
       skips.length === 0 ? NO_RANGES : skips.map(([s, e]) => [s - start, e - start] as const);
@@ -1099,19 +1086,6 @@ function readCommands(
 }
 
 const NO_RANGES: ReadonlyArray<readonly [number, number]> = [];
-
-/** The ranges of `ranges` (in the order read, nested ones after the one
- * they sit in) that no earlier range holds. */
-function outermost(
-  ranges: ReadonlyArray<readonly [number, number]>,
-): Array<readonly [number, number]> {
-  const out: Array<readonly [number, number]> = [];
-  for (const range of ranges) {
-    const last = out.at(-1);
-    if (last === undefined || range[0] >= last[1]) out.push(range);
-  }
-  return out;
-}
 
 /** The ranges of `sorted` (disjoint, ascending) that start within
  * `[start, end)`, cut at `end`. */
@@ -1166,13 +1140,12 @@ function holdsAt(
   sorted: ReadonlyArray<readonly [number, number]>,
   wordsAt: ReadonlyMap<number, readonly Word[]>,
 ): boolean {
-  const start = innermostStart(sorted, index);
+  const start = enclosingStart(sorted, index);
   if (start === undefined) return false;
-  if (start === DEEP) return true;
   const words = wordsAt.get(start);
   // Defensive: every command with a placeholder has its words read. One
-  // without, or a placeholder in none of them (after a comment), has an
-  // unknown role, so it is held.
+  // without, or a placeholder in none of them, has an unknown role, so it
+  // is held.
   if (words === undefined) return true;
   const offset = index - start;
   const k = words.findIndex((w) => w.end > offset);
@@ -1195,10 +1168,10 @@ function holdsAt(
   return program?.name !== undefined && ENVIRONMENT_BUILTINS.has(program.name);
 }
 
-/** The start of the innermost command extent around `index`, from
- * extents sorted by start: the latest start at or before `index` whose
- * extent reaches it. Nested extents start after the one they sit in. */
-function innermostStart(
+/** The start of the command extent around `index`, from extents sorted
+ * by start (they do not nest): the last one that starts at or before
+ * `index`, when it reaches it. */
+function enclosingStart(
   sorted: ReadonlyArray<readonly [number, number]>,
   index: number,
 ): number | undefined {
@@ -1209,18 +1182,9 @@ function innermostStart(
     if ((sorted[mid]?.[0] ?? 0) <= index) lo = mid + 1;
     else hi = mid;
   }
-  for (let k = lo - 1; k >= 0; k--) {
-    // Past the nesting window the enclosing command is unknown: held.
-    if (lo - k > MAX_NESTING) return DEEP;
-    const extent = sorted[k];
-    if (extent !== undefined && extent[1] >= index) return extent[0];
-  }
-  return undefined;
+  const extent = sorted[lo - 1];
+  return extent !== undefined && extent[1] >= index ? extent[0] : undefined;
 }
-
-/** `innermostStart` found too many nested commands to tell which one a
- * placeholder is in. */
-const DEEP = -1;
 
 /** True when the word after `words` would be the program they run. */
 function programIsNext(words: readonly Word[]): boolean {
@@ -1659,7 +1623,7 @@ function startsWord(command: string, i: number): boolean {
 }
 
 /** Record the heredoc whose operator starts at `i`; return its length.
- * `<<<` is a here-string: the word after it is an ordinary argument. */
+ * (`<<<` never gets here: `outsideGrammar`.) */
 function readHeredocOperator(
   command: string,
   i: number,

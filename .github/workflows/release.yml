@@ -1,7 +1,9 @@
 name: release
 
 # Triggers when a tag matching v*.*.* is pushed, and only then: one
-# trigger, so a release never publishes twice. Runs the full CI gate,
+# trigger, so a release never publishes twice. Runs CI's checks (coverage
+# thresholds and the mod's checks included; the eval kit's tests and the
+# OS/Node matrix run in CI on the merge commit),
 # checks that the tagged commit is on main and that the library, the
 # gateway and the Claude Code mod all carry the tag's version, then
 # publishes both npm packages with provenance and creates the GitHub
@@ -37,7 +39,7 @@ concurrency:
 
 jobs:
   verify:
-    name: gate (versions + model pin + lint + typecheck + test + build + license + circular + hygiene + sbom)
+    name: gate (versions + pins + model pin + lint + typecheck + coverage + build + license + circular + hygiene + sbom + mod)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -101,6 +103,13 @@ jobs:
                   status=1
                 fi
               done
+              # The mod README's gateway command installs this minor line.
+              stale=$(grep -oE '(@lbroth/nullpii-gateway|nullpii)@[0-9][0-9A-Za-z.-]*' packages/claude-code-mod/README.md \
+                | sort -u | grep -vxF -e "nullpii@$pin" -e "@lbroth/nullpii-gateway@$pin" || true)
+              if [ -n "$stale" ]; then
+                echo "packages/claude-code-mod/README.md installs $stale, the tag says $pin"
+                status=1
+              fi
               ;;
           esac
           # The gateway is built against this commit's core: its peer range

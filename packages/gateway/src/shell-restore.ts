@@ -45,15 +45,21 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  *   `git commit -m "$(cat <<'EOF' …)"` message): that body is data, as a
  *   file the `Write` tool writes is, so only a line break is refused (and
  *   in a bare-delimiter body, which expands, `$`, a backtick or a
- *   backslash). The network checks skip such a body, so a commit message
- *   that mentions `ssh` does not count as a network call.
+ *   backslash; inside `$(…)`, whichever the delimiter, also a parenthesis
+ *   or a quote, which bash 3.2 reads there). The network checks skip such
+ *   a body, so a commit message that mentions `ssh` does not count as a
+ *   network call;
+ * - no value comes back right after `$` or `${` where `$` expands.
  *
  * The command is read once, in time linear in its length, whatever the
  * number of placeholders; a command longer than `MAX_COMMAND_CHARS`,
- * nested past `MAX_NESTING`, with a simple command past the read window
- * (`MAX_WORD_SCAN` characters or `MAX_WORDS` words, heredoc bodies not
- * counted), with a heredoc whose closing line cannot be found, or whose
- * words would be read past the scan budget keeps every placeholder, and
+ * nested `MAX_NESTING` levels deep or more, with a simple command past the
+ * read window (`MAX_WORD_SCAN` characters or `MAX_WORDS` words, heredoc
+ * bodies not counted), with a heredoc body whose closing line cannot be
+ * found, with a heredoc that shells read differently inside a command
+ * substitution (inside backticks; a `$(…)` that bash 3.2 ends elsewhere;
+ * a body line of the delimiter and `)`), or whose words would be read
+ * past the scan budget keeps every placeholder, and
  * one whose quoting or substitutions are left open loses the heredoc
  * exception. Heredoc bodies and `#`
  * comments are skipped by the quote lexer; `<<` counts only in shell code,
@@ -78,7 +84,8 @@ export const SHELL_COMMAND_FIELD = 'command';
 /** Where a placeholder stands. `heredoc` is the body of a quoted-delimiter
  * heredoc and `heredoc-expanding` that of a bare one, both only while the
  * body is data (see `DATA_PROGRAMS`); `heredoc-in-substitution` is such a
- * body inside `$(…)` or backticks; any other body is `none`. */
+ * body inside `$(…)` (one inside backticks is never read); any other body
+ * is `none`. */
 export type QuoteContext =
   | 'none'
   | 'single'
@@ -119,10 +126,10 @@ const DATA_BODY_SAFE: Readonly<Record<DataBodyContext, RegExp>> = {
   // `restoreShellCommand` sees the body end early and keeps every value.
   heredoc: /^[^\n\u2028\u2029]*$/u,
   'heredoc-expanding': /^[^$`\\\n\u2028\u2029]*$/u,
-  // Inside `$(…)` or backticks the body is not opaque to every shell: a
-  // backtick ends a backtick substitution in any shell, and bash 3.2 (the
-  // macOS `/bin/bash`) ends `$(…)` at a `)` in the body. So none of the
-  // characters that can close or reopen the substitution or its quoting.
+  // Inside `$(…)` the body is not opaque to every shell: bash 3.2 (the
+  // macOS `/bin/bash`) scans it for quotes, parentheses, backticks,
+  // escapes and comments to find the end of the substitution. So, whichever
+  // the delimiter, none of the characters that scan reads.
   'heredoc-in-substitution': /^[^$`\\()'"\n\u2028\u2029]*$/u,
 };
 
@@ -727,8 +734,8 @@ const MAX_WORD_CHARS = 256;
 /** The characters a shell splits words on by default (`IFS`). */
 const FIELD_SEPARATORS: ReadonlySet<string> = new Set([' ', '\t', '\n']);
 
-/** Nesting deeper than this is not read: the command keeps every
- * placeholder. */
+/** Nesting this deep or deeper (each substitution, quote or bare heredoc
+ * body a level) is not read: the command keeps every placeholder. */
 const MAX_NESTING = 64;
 
 /** Programs that make a file executable, to run it. */
@@ -865,8 +872,14 @@ interface Scan {
   heredocCommand: { start: number; word: string };
   /** `HEREDOC_OPERATOR`, sticky, for this scan alone. */
   readonly heredocOperator: RegExp;
-  /** A nested part (a heredoc body's own heredoc) could not be read, or
-   * the nesting went past `MAX_NESTING`. */
+  /** The levels of nesting around the text being lexed: a bare heredoc
+   * body is lexed on its own, inside the levels its heredoc stands in. */
+  nesting: number;
+  /** The command cannot be read whole: a nested part (a heredoc body's own
+   * heredoc) could not be read, the nesting reached `MAX_NESTING`, a
+   * heredoc stands inside backticks, a body line inside `$(…)` reads as
+   * the delimiter and `)`, or bash 3.2 would end a `$(…)` holding a
+   * heredoc elsewhere. */
   broken: boolean;
 }
 
@@ -984,6 +997,7 @@ function judge(command: string, targets: readonly number[]): Verdict {
     line: { end: -1, lastPipe: -1 },
     heredocCommand: { start: -1, word: '' },
     heredocOperator: new RegExp(HEREDOC_OPERATOR.source, 'y'),
+    nesting: 0,
     broken: false,
   };
   const closed = lex(command, 0, command.length, codeFrame(), scan, command.length) && !scan.broken;
@@ -1490,7 +1504,7 @@ function lex(
     const frame = stack.at(-1) ?? base;
     if (command[i] === '\n' && pending.length > 0 && CODE_KINDS.has(frame.kind)) {
       scan.commands.push([frame.cmdStart, i]);
-      const next = readHeredocBodies(command, i + 1, pending, scan, limit);
+      const next = readHeredocBodies(command, i + 1, pending, scan, limit, stack.length);
       // An unreadable delimiter or no closing line: the body's extent, and
       // so every command after it, is unknown (inside `$(…)`, bash 5.2 ends
       // a body at a line `EOF)`), so the command is not read at all.
@@ -1504,7 +1518,7 @@ function lex(
       continue;
     }
     i += advance(stack, frame, pending, command, i, scan);
-    if (stack.length > MAX_NESTING) {
+    if (scan.nesting + stack.length > MAX_NESTING) {
       scan.broken = true;
       return false;
     }
@@ -1704,8 +1718,9 @@ function trackParens(stack: Frame[], frame: Frame, command: string, i: number, s
 }
 
 /** Where bash 3.2 ends the `$(…)` whose `$` is at `open`: quotes, escapes,
- * backticks and nested parentheses are tracked, heredocs and comments are
- * not. `-1` when it finds no end. */
+ * backticks, nested parentheses and `#` comments (from a word start to the
+ * end of the line, as `/bin/bash` 3.2.57 reads them) are tracked,
+ * heredocs are not. `-1` when it finds no end. */
 function bash32SubstitutionEnd(command: string, open: number): number {
   if (open < 0) return -1;
   const stack: Array<'(' | '"' | '`'> = ['('];
@@ -1723,6 +1738,10 @@ function bash32SubstitutionEnd(command: string, open: number): number {
         stack.push('(');
         j += 1;
       }
+    } else if (ch === '#' && startsWord(command, j)) {
+      const newline = command.indexOf('\n', j);
+      if (newline === -1) return -1;
+      j = newline - 1;
     } else if (ch === "'") {
       j = command.indexOf("'", j + 1);
       if (j === -1) return -1;
@@ -1812,12 +1831,16 @@ function readHeredocBodies(
   pending: readonly Heredoc[],
   scan: Scan,
   limit: number,
+  depth: number,
 ): number | undefined {
   let bodyStart = start;
   for (const heredoc of pending) {
     const end = findClosingLine(command, bodyStart, heredoc, limit);
     if (end === undefined) return undefined;
+    // The body's own nesting counts on top of the levels around it.
+    scan.nesting += depth;
     readBody(command, bodyStart, end.bodyEnd, heredoc, scan);
+    scan.nesting -= depth;
     bodyStart = end.next;
   }
   return bodyStart;

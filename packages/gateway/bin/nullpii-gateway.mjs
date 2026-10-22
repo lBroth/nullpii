@@ -34,8 +34,16 @@ if (args.length > 0) {
   process.exit(2);
 }
 
-// Loaded only once the arguments are known to start a server.
-const { loadConfig, printBanner, startServer } = await import('../dist/index.js');
+// Loaded only once the arguments are known to start a server. A missing
+// build or peer (`nullpii`, `onnxruntime-node`) is one line too.
+let gateway;
+try {
+  gateway = await import('../dist/index.js');
+} catch (err) {
+  process.stderr.write(`nullpii-gateway: ${err instanceof Error ? err.message : String(err)}\n`);
+  process.exit(1);
+}
+const { loadConfig, printBanner, startServer } = gateway;
 
 let config;
 try {

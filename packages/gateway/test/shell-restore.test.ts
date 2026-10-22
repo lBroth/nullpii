@@ -1167,6 +1167,37 @@ describe('shell restore · round-11 heredocs inside substitutions', () => {
     expect(restored(restoreShellCommand(np, command.replace('PH', name), sessionId))).toBe(0);
   });
 
+  it.each([
+    [`git commit -m $(cat <<'EOF'\nAdd feature # (experimental\n) PH\nEOF\n)`, 'x; reboot'],
+    [`git commit -m "$(cat <<'EOF'\nNote (ref PH) tail\nEOF\n)"`, 'word # x'],
+  ])(
+    "keeps every value where a `#` comment moves bash 3.2's end of `$(…)`: %#",
+    (command, value) => {
+      const { np, vault, sessionId } = harness();
+      const word = bake(vault, sessionId, value, 'secret');
+
+      expect(restored(restoreShellCommand(np, command.replace('PH', word), sessionId))).toBe(0);
+    },
+  );
+
+  it('keeps every value in a command nested past the limit through a heredoc body', () => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, EMAIL, 'private_email');
+    const inner = `${'$('.repeat(40)}ls ${word}${')'.repeat(40)}`;
+    const command = `${'$('.repeat(30)}cat <<EOF\n${inner}\nEOF\n${')'.repeat(30)}`;
+
+    expect(restored(restoreShellCommand(np, command, sessionId))).toBe(0);
+  });
+
+  it('still restores a commit message with an issue reference', () => {
+    const { np, vault, sessionId } = harness();
+    const name = bake(vault, sessionId, FULL_NAME, 'private_person');
+
+    const r = restoreShellCommand(np, commitWith(`fix #123: thanks ${name}`), sessionId);
+
+    expect(r.command).toBe(commitWith(`fix #123: thanks ${FULL_NAME}`));
+  });
+
   it('still restores a name in a commit message with balanced parentheses', () => {
     const { np, vault, sessionId } = harness();
     const name = bake(vault, sessionId, FULL_NAME, 'private_person');

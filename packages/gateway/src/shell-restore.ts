@@ -15,7 +15,7 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  * or a backslash, `&&`, `||`, `|`, `;`, line breaks, redirections and
  * heredocs. Anything else (any `$`, backticks, backslashes, parentheses,
  * braces, comments, a lone `&` (also `&>`), `>!`, `>>&`, `;;`, `[[`, `<<<`,
- * control characters, a heredoc operator with no body, a reserved word
+ * control characters, U+2028/U+2029, a heredoc operator with no body, a reserved word
  * such as `if` or `case` where a program could stand) keeps every
  * placeholder: shells disagree on how such
  * constructs nest and end. Within that grammar, every program must be on a
@@ -33,8 +33,9 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  *   (`COMMAND_OPTIONS`, abbreviations and short-option clusters included);
  * - a placeholder that is, or is part of, the program a simple command
  *   runs, a redirection target, an assignment, an argument of `export` or
- *   `alias`, a `cd` argument, or a placeholder written in shell code
- *   directly before `<` or `>` stays masked: a value must not choose what
+ *   `alias`, a `cd` argument, an argument of `test`, `[` or a `printf`
+ *   whose format converts more than strings, or a placeholder written in
+ *   shell code directly before `<` or `>` stays masked: a value must not choose what
  *   runs, what is written or the directory later commands (git among them)
  *   run in;
  * - within the list, a command that sends data off the machine (a URL,
@@ -656,13 +657,21 @@ const ANY_DELIMITER_IN_TEXT = /(?<![\w.-])(?:g?sed|perl|ruby|irb)(?![\w.-])/;
 
 /** Builtins that zsh or ksh93 read an argument of as arithmetic, which
  * can assign (`HOME=0`, `PATH++`): ksh93's `test` and `[` on integer
- * comparisons. No value comes back into their arguments. (`printf` does
- * the same for a numeric conversion: `convertsOnlyStrings`.) */
+ * comparisons, zsh's `test -t`. No value comes back into their arguments.
+ * (`printf` does the same for a numeric conversion: `convertsOnlyStrings`.) */
 const ARITHMETIC_BUILTINS: ReadonlySet<string> = new Set(['test', '[']);
 
 /** A `printf` conversion of a string, or a literal `%`: no width or
  * precision taken from an argument (`*`). */
 const STRING_CONVERSION = /%(?:%|[-+ #0]*\d*(?:\.\d*)?[sbc])/g;
+/** A backslash escape in a `printf` format other than `\n`, `\t` or `\\`:
+ * zsh and ksh93 decode escapes before reading conversions (`\045` is
+ * `%`). */
+const ESCAPED_BACKSLASH = /\\\\/g;
+const OTHER_ESCAPE = /\\(?![nt])/;
+/** A redirection operator at the start of a word, with its descriptor. */
+const REDIRECTION_OPERATOR =
+  /^(?:\d+|\{[A-Za-z_]\w*\})?(?:&>>?[|!]?|>>?[|!]|>&|<&|<<<|<<-?|<>|>>?|<)/;
 
 /** Shell builtins whose arguments set what later commands run or see
  * (`export LD_PRELOAD=…`, `alias ll=…`): a value is never restored there. */
@@ -1117,12 +1126,26 @@ function assignedName(w: Word): string {
   return w.text.slice(0, w.text.indexOf('='));
 }
 
-/** The redirection `w` is, with its operator written unquoted (`>x`,
- * `2>'a b'`, not `'>x'`); `null` otherwise. Group 1 is the target. */
-function redirectionOf(w: Word): RegExpExecArray | null {
-  const m = REDIRECTION.exec(w.text);
-  if (m === null || w.text.length - (m[1] ?? '').length > w.bare) return null;
-  return m;
+/** The target of the redirection `w` is, read with its operator written
+ * unquoted (`>x`, `2>'a b'`, `>'>x.md'`; not `'>x'`): empty when the
+ * target is the next word, `undefined` when `w` is no redirection. */
+function redirectedTarget(w: Word): string | undefined {
+  const operator = REDIRECTION_OPERATOR.exec(w.text.slice(0, w.bare));
+  return operator === null ? undefined : w.text.slice(operator[0].length);
+}
+
+/** The words after the program of the simple command `words` start,
+ * redirections and their targets left out (`printf 2>/dev/null '%d' …`). */
+function operandsOf(words: readonly Word[]): string[] {
+  const out: string[] = [];
+  for (let i = skipPrefix(words, 0) + 1; i < words.length; i++) {
+    const word = words[i];
+    if (word === undefined) break;
+    const target = redirectedTarget(word);
+    if (target === undefined) out.push(word.text);
+    else if (target === '') i += 1;
+  }
+  return out;
 }
 
 /** True when `command` holds only whitespace from `start` to `end`. */
@@ -1145,9 +1168,11 @@ function withoutRanges(text: string, ranges: ReadonlyArray<readonly [number, num
 }
 
 /** True when no value may be restored at `index`: the placeholder stands
- * in the program word of the simple command around it (the
- * words before it are only assignments, redirections and wrappers), in an assignment, in a redirection target, or in the
- * arguments of `cd`, `export`, `alias` and the like. A command past the
+ * in the program word of the simple command around it (the words before
+ * it are only assignments, redirections and wrappers), in an assignment,
+ * in a redirection target, or in the arguments of `cd`, `export`, `alias`
+ * and the like, of `test` and `[`, or of a `printf` whose format converts
+ * more than strings. A command past the
  * read window never gets here: `judge` keeps every placeholder of it. */
 function holdsAt(
   index: number,
@@ -1180,7 +1205,7 @@ function holdsAt(
   const program = programOf(before);
   if (program === undefined) return false;
   if (program.name === 'cd' || ARITHMETIC_BUILTINS.has(program.name)) return true;
-  if (program.name === 'printf' && !convertsOnlyStrings(program.args)) return true;
+  if (program.name === 'printf' && !convertsOnlyStrings(operandsOf(before))) return true;
   return ENVIRONMENT_BUILTINS.has(program.name);
 }
 
@@ -1190,6 +1215,7 @@ function holdsAt(
 function convertsOnlyStrings(args: readonly string[]): boolean {
   const format = args[0] === '--' ? args[1] : args[0];
   if (format === undefined) return false;
+  if (OTHER_ESCAPE.test(format.replace(ESCAPED_BACKSLASH, ''))) return false;
   return !format.replace(STRING_CONVERSION, '').includes('%');
 }
 
@@ -1442,9 +1468,9 @@ function skipPrefix(words: readonly Word[], k: number): number {
       i += 1;
       continue;
     }
-    const m = redirectionOf(word);
-    if (m === null) return i;
-    i += m[1] === '' ? 2 : 1;
+    const target = redirectedTarget(word);
+    if (target === undefined) return i;
+    i += target === '' ? 2 : 1;
   }
 }
 
@@ -1974,15 +2000,9 @@ function restoreArgvWords(
 }
 
 /** Shells whose `-c` argument is a script. */
-const ARGV_SHELLS: ReadonlySet<string> = new Set([
-  'bash',
-  'sh',
-  'zsh',
-  'dash',
-  'ksh',
-  'mksh',
-  'fish',
-]);
+const ARGV_SHELLS: ReadonlySet<string> = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'mksh']);
+/** The standard directories a shell named by path may sit in. */
+const ARGV_SHELL_DIR = /^(?:\/usr)?\/bin\//;
 /** A shell option cluster that holds `c`: the next argument is the script. */
 const SCRIPT_FLAG = /^-[A-Za-z]*c[A-Za-z]*$|^--command$/;
 /** Shell options that take the next argument (`-o pipefail`, `+O extglob`). */
@@ -2006,7 +2026,11 @@ function argvProgramIndex(argv: readonly string[]): number {
 /** The index of the script a shell program runs with `-c`, or -1. */
 function shellScriptIndex(argv: readonly string[], program: number): number {
   const name = argv[program];
-  if (name === undefined || !ARGV_SHELLS.has(normalise(name))) return -1;
+  // A POSIX shell, first and named as written (or in `/bin`, `/usr/bin`):
+  // a wrapper, another path (`./bash`), case or version suffix could run
+  // another program, and `fish` quotes differently.
+  if (program !== 0 || name === undefined) return -1;
+  if (!ARGV_SHELLS.has(name.replace(ARGV_SHELL_DIR, ''))) return -1;
   for (let k = program + 1; k < argv.length; k++) {
     const word = argv[k] ?? '';
     if (SCRIPT_FLAG.test(word)) return k + 1;

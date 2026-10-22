@@ -1385,6 +1385,41 @@ describe('shell restore · round-10 layout and redirections', () => {
     expect(restored(restoreShellArgv(np, ['bash', '-lc', `${script}\ncurl x`], sessionId))).toBe(0);
   });
 
+  it.each([
+    [(p: string) => `printf 2>/dev/null '%d' ${p}`, 0],
+    [(p: string) => `printf >notes.md '%d' ${p}`, 0],
+    [(p: string) => `printf -- 2>/dev/null '%d' ${p}`, 0],
+    [(p: string) => `printf '\\045d' ${p}`, 0],
+    [(p: string) => `printf '\\U00000025d' ${p}`, 0],
+    [(p: string) => `printf 2>/dev/null '%s\\n' ${p}`, 1],
+  ])("reads printf's format past redirections and escapes: %#", (build, expected) => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, 'probe=7', 'secret');
+
+    expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(expected);
+  });
+
+  it.each([
+    [['bash', '-c'], 1],
+    [['/bin/bash', '-c'], 1],
+    [['/usr/bin/sh', '-c'], 1],
+    [['./bash', '-c'], 0],
+    [['sudo', 'bash', '-c'], 0],
+    [['BASH', '-c'], 0],
+    [['bash5.2', '-c'], 0],
+    [['fish', '-c'], 0],
+  ])(
+    'argv: restores into a -c script only for a POSIX shell named as written: %j',
+    (shell, expected) => {
+      const { np, vault, sessionId } = harness();
+      const word = bake(vault, sessionId, EMAIL, 'private_email');
+
+      expect(restored(restoreShellArgv(np, [...shell, `grep probe ${word}`], sessionId))).toBe(
+        expected,
+      );
+    },
+  );
+
   it('restores into both bodies of two heredocs opened on one line', () => {
     const { np, vault, sessionId } = harness();
     const first = bake(vault, sessionId, FULL_NAME, 'private_person');

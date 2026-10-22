@@ -53,7 +53,7 @@ nullpii masks personal data and secrets before text reaches an LLM, so the main 
 
 ## Results
 
-nullpii 0.5 (the release build and the published weights, in fp32) in its core regime, measured on CUDA; its CUDA and CPU outputs agree on all but a few documents in a thousand. The fp16 model nullpii loads on CUDA by default scores the same macro F2 on these sets, with macro recall 0.9595 against 0.9596 in fp32, and is about 15% faster at 30k and 100k characters (463 ms against 537 ms, 1,650 ms against 1,945 ms, median per call on the RTX 4070 Ti). Competitors at their default and tuned operating points; each row shows a tool's better one. The R3 sets were first scored on 20 October with the candidate build; these numbers are the re-measurement after the pre-release fixes, which moved nullpii's macro by −0.001.
+nullpii 0.5 (the release build and the published weights, in fp32) in its core regime, measured on CUDA; its CUDA and CPU outputs agree on all but a few documents in a thousand. The fp16 model nullpii loads on CUDA by default scores the same macro F2 on these sets, with macro recall 0.9595 against 0.9596 in fp32, and takes 14–15% less time at 30k and 100k characters (463 ms against 537 ms, 1,650 ms against 1,945 ms, median per call on the RTX 4070 Ti). Competitors at their default and tuned operating points; each row shows a tool's better one. The R3 sets were first scored on 20 October with the candidate build; these numbers are the re-measurement after the pre-release fixes, which moved nullpii's macro by −0.001.
 
 **Gated sets** (char-F2; each tool at its better row, `(default)` where that is its default)
 

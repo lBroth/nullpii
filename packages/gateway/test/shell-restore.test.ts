@@ -741,6 +741,37 @@ describe('shell restore · v3 hardening', () => {
     expect(restoreShellCommand(np, build(email), sessionId).keptMasked).toEqual([email]);
   });
 
+  it.each([
+    (p: string) => `${'A=1 '.repeat(70)}${p} x`,
+    (p: string) => `${'2>/dev/null '.repeat(70)}${p} x`,
+    (p: string) => `ls ${'a '.repeat(70)}${p}`,
+    (p: string) => `find ${p} ${'a '.repeat(70)}-delete`,
+    (p: string) => `ls a${' '.repeat(4100)}> ${p}`,
+    (p: string) => `cd x${' '.repeat(4100)}${p} && git log`,
+    (p: string) => `cat <<EOF > Makefile\n\${HOME}\n${p}\nEOF`,
+    (p: string) => `echo ${p} > run.sh`,
+    (p: string) => `echo ${p} &> out`,
+    (p: string) => `cat <<'EOF' > requirements.txt\n${p}\nEOF`,
+  ])(
+    'round 9: a command past the read window, or writing a file that is not a document: %#',
+    (build) => {
+      const { np, vault, sessionId } = harness();
+      const email = bake(vault, sessionId, EMAIL, 'private_email');
+
+      expect(restoreShellCommand(np, build(email), sessionId).keptMasked).toEqual([email]);
+    },
+  );
+
+  it.each([(p: string) => `grep x ${p} > out.txt`, (p: string) => `grep x ${p} 2>/dev/null`])(
+    'a write to a document or to /dev/null still gets values back: %#',
+    (build) => {
+      const { np, vault, sessionId } = harness();
+      const email = bake(vault, sessionId, EMAIL, 'private_email');
+
+      expect(restoreShellCommand(np, build(email), sessionId).command).toBe(build(EMAIL));
+    },
+  );
+
   it('`>|` to a document file is a redirection, not a pipe', () => {
     const { np, vault, sessionId } = harness();
     const person = bake(vault, sessionId, FULL_NAME, 'private_person');

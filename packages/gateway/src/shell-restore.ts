@@ -667,7 +667,8 @@ function outputTargets(code: string): string[] {
 }
 /** A document a data heredoc may be written to: no hidden directory or
  * file on its path (`./` and `../` aside), and a text extension. */
-const PLAIN_DATA_FILE = /^(?!.*(?:^|\/)\.(?!\.?\/))[\w./+-]*\.(?:md|markdown|txt|csv|tsv|log|rst)$/;
+const PLAIN_DATA_FILE =
+  /^(?!.*(?:^|\/)\.(?!\.?\/))(?!(?:.*\/)?(?:CMakeLists|requirements[\w.-]*|constraints[\w.-]*)\.txt$)[\w./+-]*\.(?:md|markdown|txt|csv|tsv|log|rst)$/;
 /** Characters of word scanning allowed per character of command, plus a
  * base, before a command is judged too costly to read. */
 const SCAN_BUDGET_PER_CHAR = 2;
@@ -804,6 +805,8 @@ interface Scan {
   /** A nested part (a heredoc body's own heredoc) could not be read, or
    * the nesting went past `MAX_NESTING`. */
   broken: boolean;
+  /** Heredoc bodies that `cat` writes out as data, expanding or not. */
+  dataHeredocs: number;
 }
 
 /** A word of a simple command, quotes and escapes removed; `computed`
@@ -907,6 +910,7 @@ function judge(command: string, targets: readonly number[]): Verdict {
     heredocCommand: { start: -1, word: '' },
     heredocOperator: new RegExp(HEREDOC_OPERATOR.source, 'y'),
     broken: false,
+    dataHeredocs: 0,
   };
   const closed = lex(command, 0, command.length, codeFrame(), scan, command.length) && !scan.broken;
   if (scan.broken) {
@@ -920,7 +924,12 @@ function judge(command: string, targets: readonly number[]): Verdict {
     const stop = Math.min(end, start + MAX_WORD_SCAN);
     budget.left -= stop - start;
     if (budget.left < 0) return KEEP_ALL;
-    const p = programOf(wordsOf(command.slice(start, stop)));
+    const words = wordsOf(command.slice(start, stop));
+    // A simple command longer than the read window is not judged by the
+    // part that was read: its later words could be options, redirections
+    // or a program the rules never see.
+    if (end - start > MAX_WORD_SCAN || words.length >= MAX_WORDS) return KEEP_ALL;
+    const p = programOf(words);
     if (p !== undefined) programs.push(p);
   }
   // Data bodies are text written out, not commands: a commit message that
@@ -952,7 +961,8 @@ function judge(command: string, targets: readonly number[]): Verdict {
   // A data body goes to standard output or to a plain document file; one
   // written elsewhere (`.git/config`, `Makefile`, `run.sh`) may be read
   // as code later.
-  const toPlainFiles = outputs.every((t) => PLAIN_DATA_FILE.test(t));
+  const written = outputs.filter((t) => t !== DEV_NULL);
+  const toPlainFiles = written.every((t) => PLAIN_DATA_FILE.test(t));
   const bodyContext = dataBodyContext(
     programs,
     strict || !closed || writesExecuted || !toPlainFiles,
@@ -967,11 +977,12 @@ function judge(command: string, targets: readonly number[]): Verdict {
   // reading.
   // A heredoc written to anything but standard output or a document may
   // be read later as code or configuration: nothing comes back into it.
-  const toCodeFile = scan.dataBodies.length > 0 && !toPlainFiles;
+  // So does a command that writes any other file through a redirection
+  // (`echo {{…}} > run.sh`): only documents get values.
+  const toCodeFile = (scan.dataHeredocs > 0 || written.length > 0) && !toPlainFiles;
   const keepAll = offMachine || strict || writesExecuted || unlisted || toCodeFile;
   const contextAt = new Map<number, QuoteContext>();
   const programAt = new Set<number>();
-  const settled = new Map<number, boolean>();
   const sorted = [...scan.commands].sort((a, b) => a[0] - b[0]);
   targets.forEach((index, k) => {
     const context = scan.contexts[k] ?? 'none';
@@ -979,7 +990,7 @@ function judge(command: string, targets: readonly number[]): Verdict {
     else if (DATA_BODY_CONTEXTS.has(context)) contextAt.set(index, bodyContext(context));
     else contextAt.set(index, context);
     if (keepAll || budget.left < 0) return;
-    if (holdsAt(command, index, sorted, settled, holdCd, budget)) programAt.add(index);
+    if (holdsAt(command, index, sorted, holdCd, budget)) programAt.add(index);
   });
   if (budget.left < 0) return KEEP_ALL;
   return {
@@ -1005,23 +1016,23 @@ function withoutRanges(text: string, ranges: ReadonlyArray<readonly [number, num
  * in the program word of the innermost simple command around it (the
  * words before it are only keywords, assignments, redirections and
  * wrappers), in an assignment, or in the arguments of `export`, `alias`
- * and the like. Past the first `MAX_WORD_SCAN` characters of a command,
- * it holds unless a program was already read there (`settled`). */
+ * and the like. Past the first `MAX_WORD_SCAN` characters or `MAX_WORDS`
+ * words of a command, it holds. */
 function holdsAt(
   command: string,
   index: number,
   sorted: ReadonlyArray<readonly [number, number]>,
-  settled: Map<number, boolean>,
   holdCd: boolean,
   budget: { left: number },
 ): boolean {
   const start = innermostStart(sorted, index);
   if (start === undefined) return false;
   if (start === DEEP) return true;
-  if (index - start > MAX_WORD_SCAN) return !programSettled(command, start, settled);
+  // Past the read window the placeholder's role is unknown: held.
+  if (index - start > MAX_WORD_SCAN) return true;
   budget.left -= index - start;
   const words = wordsOf(command.slice(start, index) + PLACEHOLDER_STAND_IN);
-  if (words.length >= MAX_WORDS) return false;
+  if (words.length >= MAX_WORDS) return true;
   const own = words.at(-1);
   if (own === undefined) return false;
   const before = words.slice(0, -1);
@@ -1064,18 +1075,6 @@ function innermostStart(
 /** `innermostStart` found too many nested commands to tell which one a
  * placeholder is in. */
 const DEEP = -1;
-
-/** True when the command starting at `start` names its program within
- * its first `MAX_WORD_SCAN` characters, followed by another word. */
-function programSettled(command: string, start: number, settled: Map<number, boolean>): boolean {
-  const known = settled.get(start);
-  if (known !== undefined) return known;
-  const words = wordsOf(command.slice(start, start + MAX_WORD_SCAN));
-  let found = false;
-  for (let k = 1; k < words.length && !found; k++) found = !programIsNext(words.slice(0, k));
-  settled.set(start, found);
-  return found;
-}
 
 /** True when the word after `words` would be the program they run. */
 function programIsNext(words: readonly Word[]): boolean {
@@ -1552,6 +1551,7 @@ function readBody(command: string, start: number, end: number, heredoc: Heredoc,
   // checks read; one with none is plain text.
   const expands = !heredoc.literal && /[$`]/.test(command.slice(start, end));
   if (heredoc.data && !expands) scan.dataBodies.push([start, end]);
+  if (heredoc.data) scan.dataHeredocs += 1;
   if (!heredoc.data) record(scan, end - 1, 'none');
   else if (heredoc.literal) record(scan, end - 1, 'heredoc');
   if (heredoc.literal) return;

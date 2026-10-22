@@ -1029,6 +1029,113 @@ describe('shell restore · round-5 bypasses', () => {
   });
 });
 
+describe('shell restore · round-10 layout and redirections', () => {
+  function harness() {
+    const { np, vault } = vaultEngine();
+    const sessionId = vault.createSession();
+    return { np, vault, sessionId };
+  }
+  const restored = (r: { results: ReadonlyArray<{ replacements: number }> }) =>
+    r.results.reduce((n, x) => n + x.replacements, 0);
+
+  it.each([
+    ["cat > notes.md <<'EOF'\nA\nB\nmore text\nEOF", 'EOF'],
+    ["cat <<'EOF'\nA\nB\nEOF", 'EOF'],
+    [`git commit -m "$(cat <<'EOF'\nA\nB\nEOF\n)"`, 'EOF'],
+    ['cat > notes.md <<EOF\nA\nB\nEOF', 'EOF'],
+    // After `E` on its line, `OF` completes the delimiter.
+    ["cat <<'EOF'\nEA\nB\nEOF", 'OF'],
+    // With `<<-`, leading tabs are stripped before the line is compared.
+    ["cat <<-'EOF'\nA\nB\n\tEOF", '\tEOF'],
+  ])('keeps every value when one ends its heredoc early: %#', (command, delimiter) => {
+    const { np, vault, sessionId } = harness();
+    const end = bake(vault, sessionId, delimiter, 'secret');
+    const next = bake(vault, sessionId, 'a; reboot', 'secret');
+    const masked = command.replace('A', end).replace('B', next);
+
+    const r = restoreShellCommand(np, masked, sessionId);
+
+    expect(restored(r)).toBe(0);
+    expect(r.command).toBe(masked);
+  });
+
+  it('still restores a heredoc body whose values do not end it', () => {
+    const { np, vault, sessionId } = harness();
+    const end = bake(vault, sessionId, 'EOF is the delimiter', 'secret');
+    const command = `cat > notes.md <<'EOF'\n${end}\nEOF`;
+
+    expect(restored(restoreShellCommand(np, command, sessionId))).toBe(1);
+  });
+
+  it.each([
+    (p: string) => `cat <<'END-MSG'\nx\nEND-MSG\nls ${p}`,
+    (p: string) => `cat <<"E"OF\nx\nEOF\nls ${p}`,
+    (p: string) => `echo "$(cat <<'EOF'\nmsg\nEOF)" && ls ${p}`,
+  ])('keeps every value after a heredoc whose closing line is not found: %#', (build) => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, EMAIL, 'private_email');
+
+    expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(0);
+  });
+
+  it.each([
+    (p: string) => `echo x \\<& rm -f ${p}`,
+    (p: string) => `ls \\<& gh gist create ${p}`,
+    (p: string) => `echo x \\>& rm -f ${p}`,
+    (p: string) => `echo x \\>& notes.md ${p}`,
+  ])('an escaped `<` or `>` before `&` does not hide the next command: %#', (build) => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, EMAIL, 'private_email');
+
+    expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(0);
+  });
+
+  it.each([
+    (p: string) => `git log --format='%an <%ae>' --author=${p}`,
+    (p: string) => `git commit -m "rename a -> b for ${p}"`,
+    (p: string) => `grep -E "a>b" ${p}`,
+    (p: string) => `echo ${p} > 'notes.md'`,
+    (p: string) => `ls ${p} > /dev/stderr 2>&1`,
+    (p: string) => `ls ${p} >&2`,
+    (p: string) => `echo ${p} >> docs/Notes.MD`,
+  ])('a `>` that writes no file, or writes a document, keeps values: %#', (build) => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, EMAIL, 'private_email');
+
+    expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(1);
+  });
+
+  it.each([
+    'cmakelists.txt',
+    'Requirements.txt',
+    'requirements/base.txt',
+    'dev-requirements.txt',
+    'test_doc.txt',
+    'out.json',
+  ])('a heredoc written to a build or test input keeps its values: %s', (file) => {
+    const { np, vault, sessionId } = harness();
+    const name = bake(vault, sessionId, FULL_NAME, 'private_person');
+    const command = `cat > ${file} <<'EOF'\n${name}\nEOF`;
+
+    expect(restored(restoreShellCommand(np, command, sessionId))).toBe(0);
+  });
+
+  it('does not count a commit message heredoc toward the read window', () => {
+    const { np, vault, sessionId } = harness();
+    const name = bake(vault, sessionId, FULL_NAME, 'private_person');
+    const long = `${'word '.repeat(1200)}"\n${'more '.repeat(80)}`;
+
+    expect(restored(restoreShellCommand(np, commitWith(`${long}${name}`), sessionId))).toBe(1);
+  });
+
+  it('argv: `cd` gets no value, as in shell code', () => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, EMAIL, 'private_email');
+
+    expect(restored(restoreShellArgv(np, ['cd', word], sessionId))).toBe(0);
+  });
+});
+
 describe('shell restore · argv commands', () => {
   function harness() {
     const { np, vault } = vaultEngine();

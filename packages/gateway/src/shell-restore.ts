@@ -25,13 +25,18 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  *   or write (`COMMAND_OPTIONS`, abbreviations included);
  * - a placeholder that is, or is part of, the program a simple command
  *   runs, a redirection target, an assignment, an argument of `export` or
- *   `alias`, or a `cd` argument in a command that runs git stays masked: a
- *   value must not choose what runs, what is written or which repository
- *   git reads;
+ *   `alias`, or a `cd` argument stays masked: a value must not choose what
+ *   runs, what is written or the directory later commands (git among them)
+ *   run in;
  * - within the list, a command that sends data off the machine (a URL,
  *   `/dev/tcp`) or runs code through an option (`find -exec`, `rg --pre`,
  *   `git -c`) keeps every placeholder, also when judged again with the
- *   values put back;
+ *   values put back, and so does one that writes any file but a document
+ *   (`PLAIN_DATA_FILE`; `/dev/null` and the standard streams are no
+ *   file);
+ * - judged again with the values put back, the command must also split
+ *   into the same simple commands and heredoc bodies as before, or it
+ *   keeps every placeholder;
  * - the one exception to the plain-word rule is the body of a heredoc that
  *   `cat` writes to standard output or to a document file (`.md`, `.txt`,
  *   …; `PLAIN_DATA_FILE`), in a command that runs nothing else that could
@@ -44,9 +49,12 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  *
  * The command is read once, in time linear in its length, whatever the
  * number of placeholders; a command longer than `MAX_COMMAND_CHARS`,
- * nested past `MAX_NESTING`, or whose words would be read past the scan
- * budget keeps every placeholder, and one whose quoting or substitutions
- * are left open loses the heredoc exception. Heredoc bodies and `#`
+ * nested past `MAX_NESTING`, with a simple command past the read window
+ * (`MAX_WORD_SCAN` characters or `MAX_WORDS` words, heredoc bodies not
+ * counted), with a heredoc whose closing line cannot be found, or whose
+ * words would be read past the scan budget keeps every placeholder, and
+ * one whose quoting or substitutions are left open loses the heredoc
+ * exception. Heredoc bodies and `#`
  * comments are skipped by the quote lexer; `<<` counts only in shell code,
  * never inside quotes or as the here-string `<<<`. A `command` given as an
  * argv array (`["bash", "-lc", "…"]`) is judged by `restoreShellArgv`.
@@ -82,8 +90,10 @@ const PLAIN_WORD = /^(?![-=~])[\p{L}\p{N}@%+:,./_=-]+$/u;
 
 /** What a value may hold in a data heredoc body. */
 const DATA_BODY_SAFE: Readonly<Record<'heredoc' | 'heredoc-expanding', RegExp>> = {
-  // A quoted-delimiter body is literal; only a newline could end it early,
-  // with the delimiter on a line of its own.
+  // A quoted-delimiter body is literal: it ends only at a line that reads
+  // as the delimiter. A value with no line break can still complete such a
+  // line (a value `EOF` alone on its line); the second reading in
+  // `restoreShellCommand` sees the body end early and keeps every value.
   heredoc: /^[^\n\u2028\u2029]*$/u,
   'heredoc-expanding': /^[^$`\\\n\u2028\u2029]*$/u,
 };
@@ -645,31 +655,40 @@ const FILE_WRITERS: ReadonlySet<string> = new Set([
   'dd',
   'rsync',
 ]);
-/** An output redirection and its target: `>`, `>>`, `>|`, `>!`, `&>`,
- * `&>>`, `>&FILE`, `<>` (read and write), with an optional descriptor
- * (`2>`, `{fd}>`). `>&` is tried before `>` so that `2>&1` reads as a
- * descriptor copy. */
-const OUTPUT_REDIRECTION = /(?:\d+|\{[A-Za-z_]\w*\})?(&>>?|>&|<>|>>?[|!]?)\s*([^\s;&|<>()]*)/g;
 /** A `>&` target that copies or closes a descriptor rather than naming a
  * file. */
 const DESCRIPTOR_TARGET = /^(?:\d+|-)$/;
-const DEV_NULL = '/dev/null';
-
-/** The files a command's output redirections write; an empty target
- * stands for one that could not be read. */
-function outputTargets(code: string): string[] {
-  const targets: string[] = [];
-  for (const m of code.matchAll(OUTPUT_REDIRECTION)) {
-    const target = m[2] ?? '';
-    if (m[1] === '>&' && DESCRIPTOR_TARGET.test(target)) continue;
-    targets.push(target);
-  }
-  return targets;
-}
+/** Redirection targets that are no file a later command could read. */
+const NO_FILE_TARGETS: ReadonlySet<string> = new Set(['/dev/null', '/dev/stdout', '/dev/stderr']);
+/** Characters that end a redirection target word outside quotes. */
+const TARGET_ENDS: ReadonlySet<string> = new Set([
+  ' ',
+  '\t',
+  '\n',
+  ';',
+  '&',
+  '|',
+  '<',
+  '>',
+  '(',
+  ')',
+]);
 /** A document a data heredoc may be written to: no hidden directory or
- * file on its path (`./` and `../` aside), and a text extension. */
+ * file on its path (`./` and `../` aside), and a text extension. Case is
+ * ignored, as on the default macOS and Windows file systems. */
 const PLAIN_DATA_FILE =
-  /^(?!.*(?:^|\/)\.(?!\.?\/))(?!(?:.*\/)?(?:CMakeLists|requirements[\w.-]*|constraints[\w.-]*)\.txt$)[\w./+-]*\.(?:md|markdown|txt|csv|tsv|log|rst)$/;
+  /^(?!.*(?:^|\/)\.(?!\.?\/))[\w./+-]*\.(?:md|markdown|txt|csv|tsv|log|rst)$/i;
+/** `.txt` files that tools read as input: CMake's `CMakeLists.txt`, pip's
+ * requirements and constraints files (`requirements/base.txt`,
+ * `dev-requirements.txt`), pytest's doctest files (`test*.txt`). */
+const BUILD_INPUT_TXT =
+  /(?:^|\/)(?:cmakelists|test[^/]*|[^/]*(?:requirements|constraints)[^/]*)\.txt$|(?:^|\/)(?:requirements|constraints)\//i;
+
+/** True when the redirection target `target` is a document: a file no
+ * shell, build tool or test runner reads as code or configuration. */
+function isDocument(target: string): boolean {
+  return PLAIN_DATA_FILE.test(target) && !BUILD_INPUT_TXT.test(target);
+}
 /** Characters of word scanning allowed per character of command, plus a
  * base, before a command is judged too costly to read. */
 const SCAN_BUDGET_PER_CHAR = 2;
@@ -783,7 +802,7 @@ interface Heredoc {
   readonly literal: boolean;
   /** `<<-`: leading tabs are stripped from the closing line. */
   readonly stripTabs: boolean;
-  /** Fed to `cat` or `tee` and not piped on, so the body is data. */
+  /** Fed to `cat` and not piped on, so the body is data. */
   readonly data: boolean;
 }
 
@@ -795,6 +814,11 @@ interface Scan {
   readonly commands: Array<readonly [number, number]>;
   /** The extent of every heredoc body written out as data. */
   readonly dataBodies: Array<readonly [number, number]>;
+  /** The extent of every heredoc body, data or not, in the order read. */
+  readonly bodies: Array<readonly [number, number]>;
+  /** The target of every output redirection in shell code, quotes
+   * removed; empty when it expands or cannot be read whole. */
+  readonly outputs: string[];
   /** The line the last `<<` was met on, and its last `|`, read once per
    * line so that many operators on one line cost linear time. */
   line: { end: number; lastPipe: number };
@@ -855,6 +879,14 @@ interface Verdict {
    * simple command runs or part of it, an assignment, the arguments of
    * `export`, `alias` and the like. */
   readonly programAt: ReadonlySet<number>;
+  /** How the command splits: its simple commands and heredoc bodies. */
+  readonly layout: Layout;
+}
+
+/** The extents a command splits into, in the order the lexer met them. */
+interface Layout {
+  readonly commands: ReadonlyArray<readonly [number, number]>;
+  readonly bodies: ReadonlyArray<readonly [number, number]>;
 }
 
 /** The verdict for a command that cannot be read whole: nothing comes back. */
@@ -863,6 +895,7 @@ const KEEP_ALL: Verdict = {
   runsCode: true,
   contextAt: new Map(),
   programAt: new Set(),
+  layout: { commands: [], bodies: [] },
 };
 
 /** True when `name` is one of the `SHELL_TOOLS`. */
@@ -905,6 +938,8 @@ function judge(command: string, targets: readonly number[]): Verdict {
     contexts: [],
     commands: [],
     dataBodies: [],
+    bodies: [],
+    outputs: [],
     line: { end: -1, lastPipe: -1 },
     heredocCommand: { start: -1, word: '' },
     heredocOperator: new RegExp(HEREDOC_OPERATOR.source, 'y'),
@@ -914,26 +949,9 @@ function judge(command: string, targets: readonly number[]): Verdict {
   if (scan.broken) {
     return KEEP_ALL;
   }
-  // Nested commands are read once each, so their words are read again for
-  // every level: past a budget in proportion to the command, it keeps
-  // every placeholder instead.
-  const budget = { left: SCAN_BUDGET_PER_CHAR * command.length + SCAN_BUDGET_BASE };
-  const programs: Program[] = [];
-  // Each command's words, read once, for every placeholder in it.
-  const wordsAt = new Map<number, Word[]>();
-  for (const [start, end] of scan.commands) {
-    const stop = Math.min(end, start + MAX_WORD_SCAN);
-    budget.left -= stop - start;
-    if (budget.left < 0) return KEEP_ALL;
-    const words = wordsOf(command.slice(start, stop));
-    // A simple command longer than the read window is not judged by the
-    // part that was read: its later words could be options, redirections
-    // or a program the rules never see.
-    if (end - start > MAX_WORD_SCAN || words.length >= MAX_WORDS) return KEEP_ALL;
-    wordsAt.set(start, words);
-    const p = programOf(words);
-    if (p !== undefined) programs.push(p);
-  }
+  const read = readCommands(command, scan);
+  if (read === undefined) return KEEP_ALL;
+  const { programs, wordsAt } = read;
   // Data bodies are text written out, not commands: a commit message that
   // mentions `ssh` or `bash -c` neither sends nor runs anything.
   const code = withoutRanges(command, scan.dataBodies);
@@ -942,16 +960,16 @@ function judge(command: string, targets: readonly number[]): Verdict {
   const strict = NESTED_INTERPRETER.test(code) || programs.some((p) => runsCode(p) || runsFile(p));
   // A data body written to a file that a shell, git or a hook runs later
   // is code: `cat > .git/hooks/pre-commit <<'EOF'`, `cat >> ~/.bashrc`.
-  const outputs = outputTargets(code);
+  const written = scan.outputs.filter((t) => !NO_FILE_TARGETS.has(t));
   const writesFiles =
     scan.dataBodies.length > 0 ||
-    outputs.some((t) => t !== DEV_NULL) ||
+    written.length > 0 ||
     programs.some((p) => p.name !== undefined && FILE_WRITERS.has(p.name));
   // A command that names a file run later (a git hook, a shell start-up
   // file, a directory on PATH) can put a value there by any means:
   // `cp {{…}} .git/hooks/pre-commit`, `mv {{…}} ~/.zshrc`.
   const writesExecuted =
-    writesFiles && (EXECUTED_LATER.test(code) || outputs.some((t) => EXECUTED_LATER.test(` ${t}`)));
+    writesFiles && (EXECUTED_LATER.test(code) || written.some((t) => EXECUTED_LATER.test(` ${t}`)));
   // `offMachine` also covers a program whose code no word is safe in.
   const offMachine =
     ANY_DELIMITER_IN_TEXT.test(code) ||
@@ -963,8 +981,7 @@ function judge(command: string, targets: readonly number[]): Verdict {
   // A data body goes to standard output or to a plain document file; one
   // written elsewhere (`.git/config`, `Makefile`, `run.sh`) may be read
   // as code later.
-  const written = outputs.filter((t) => t !== DEV_NULL);
-  const toPlainFiles = written.every((t) => PLAIN_DATA_FILE.test(t));
+  const toPlainFiles = written.every(isDocument);
   const bodyContext = dataBodyContext(
     programs,
     strict || !closed || writesExecuted || !toPlainFiles,
@@ -995,7 +1012,91 @@ function judge(command: string, targets: readonly number[]): Verdict {
     runsCode: strict || writesExecuted || unlisted || toCodeFile,
     contextAt,
     programAt,
+    layout: { commands: scan.commands, bodies: scan.bodies },
   };
+}
+
+/** The words and program of every simple command `scan` met, heredoc
+ * bodies skipped; `undefined` when a command is past the read window or
+ * its words would be read past the scan budget. */
+function readCommands(
+  command: string,
+  scan: Scan,
+): { programs: Program[]; wordsAt: Map<number, Word[]> } | undefined {
+  // Nested commands are read once each, so their words are read again for
+  // every level: past a budget in proportion to the command, it keeps
+  // every placeholder instead.
+  let budget = SCAN_BUDGET_PER_CHAR * command.length + SCAN_BUDGET_BASE;
+  const bodies = outermost(scan.bodies);
+  const programs: Program[] = [];
+  // Each command's words, read once, for every placeholder in it.
+  const wordsAt = new Map<number, Word[]>();
+  for (const [start, end] of scan.commands) {
+    // A heredoc body is part of no command's words: a long commit message
+    // does not push its command past the read window.
+    const skips = bodies.length === 0 ? NO_RANGES : rangesWithin(bodies, start, end);
+    const length = skips.reduce((n, [s, e]) => n - (e - s), end - start);
+    budget -= length;
+    // A simple command longer than the read window is not judged by the
+    // part that was read: its later words could be options, redirections
+    // or a program the rules never see.
+    if (budget < 0 || length > MAX_WORD_SCAN) return undefined;
+    if (isBlank(command, start, end)) continue;
+    const relative =
+      skips.length === 0 ? NO_RANGES : skips.map(([s, e]) => [s - start, e - start] as const);
+    const words = wordsOf(command.slice(start, end), relative);
+    if (words.length >= MAX_WORDS) return undefined;
+    wordsAt.set(start, words);
+    const p = programOf(words);
+    if (p !== undefined) programs.push(p);
+  }
+  return { programs, wordsAt };
+}
+
+const NO_RANGES: ReadonlyArray<readonly [number, number]> = [];
+
+/** The ranges of `ranges` (in the order read, nested ones after the one
+ * they sit in) that no earlier range holds. */
+function outermost(
+  ranges: ReadonlyArray<readonly [number, number]>,
+): Array<readonly [number, number]> {
+  const out: Array<readonly [number, number]> = [];
+  for (const range of ranges) {
+    const last = out.at(-1);
+    if (last === undefined || range[0] >= last[1]) out.push(range);
+  }
+  return out;
+}
+
+/** The ranges of `sorted` (disjoint, ascending) that start within
+ * `[start, end)`, cut at `end`. */
+function rangesWithin(
+  sorted: ReadonlyArray<readonly [number, number]>,
+  start: number,
+  end: number,
+): Array<readonly [number, number]> {
+  let lo = 0;
+  let hi = sorted.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if ((sorted[mid]?.[0] ?? end) < start) lo = mid + 1;
+    else hi = mid;
+  }
+  const out: Array<readonly [number, number]> = [];
+  for (let k = lo; k < sorted.length; k++) {
+    const range = sorted[k];
+    if (range === undefined || range[0] >= end) break;
+    out.push([range[0], Math.min(range[1], end)]);
+  }
+  return out;
+}
+
+/** True when `command` holds only whitespace from `start` to `end`. */
+function isBlank(command: string, start: number, end: number): boolean {
+  for (let k = start; k < end; k++) {
+    if (!FIELD_SEPARATORS.has(command[k] ?? '')) return false;
+  }
+  return true;
 }
 
 /** `text` with each of `ranges` blanked out, offsets kept. */
@@ -1012,9 +1113,9 @@ function withoutRanges(text: string, ranges: ReadonlyArray<readonly [number, num
 /** True when no value may be restored at `index`: the placeholder stands
  * in the program word of the innermost simple command around it (the
  * words before it are only keywords, assignments, redirections and
- * wrappers), in an assignment, or in the arguments of `export`, `alias`
- * and the like. Past the first `MAX_WORD_SCAN` characters or `MAX_WORDS`
- * words of a command, it holds. */
+ * wrappers), in an assignment, in a redirection target, or in the
+ * arguments of `cd`, `export`, `alias` and the like. A command past the
+ * read window never gets here: `judge` keeps every placeholder of it. */
 function holdsAt(
   index: number,
   sorted: ReadonlyArray<readonly [number, number]>,
@@ -1024,8 +1125,9 @@ function holdsAt(
   if (start === undefined) return false;
   if (start === DEEP) return true;
   const words = wordsAt.get(start);
-  // A command whose words were not read, or a placeholder in none of
-  // them (after a comment): its role is unknown, so it is held.
+  // Defensive: every command with a placeholder has its words read. One
+  // without, or a placeholder in none of them (after a comment), has an
+  // unknown role, so it is held.
   if (words === undefined) return true;
   const offset = index - start;
   const k = words.findIndex((w) => w.end > offset);
@@ -1146,8 +1248,9 @@ function isDataProgram(p: Program): boolean {
 }
 
 /** The words at the start of a simple command, up to `MAX_WORDS` and a
- * `#` comment. */
-function wordsOf(text: string): Word[] {
+ * `#` comment. Each of `skips` (heredoc bodies, ascending) is part of the
+ * word it stands in, and none of its text is read. */
+function wordsOf(text: string, skips: ReadonlyArray<readonly [number, number]> = []): Word[] {
   const words: Word[] = [];
   let word = '';
   let inWord = false;
@@ -1155,6 +1258,7 @@ function wordsOf(text: string): Word[] {
   let quote: string | undefined;
   let wordStart = 0;
   let i = 0;
+  let nextSkip = 0;
   const begin = (): void => {
     if (!inWord) wordStart = i;
     inWord = true;
@@ -1172,6 +1276,15 @@ function wordsOf(text: string): Word[] {
     computed = false;
   };
   for (; i < text.length && words.length < MAX_WORDS; i++) {
+    const skip = skips[nextSkip];
+    if (skip !== undefined && i >= skip[0]) {
+      nextSkip += 1;
+      if (i < skip[1]) {
+        begin();
+        i = skip[1] - 1;
+        continue;
+      }
+    }
     const ch = text[i] ?? '';
     if (quote === "'") {
       if (ch === "'") quote = undefined;
@@ -1329,9 +1442,10 @@ function lex(
       scan.commands.push([frame.cmdStart, i]);
       const next = readHeredocBodies(command, i + 1, pending, scan, limit);
       // An unreadable delimiter or no closing line: the body's extent, and
-      // so what follows it, is unknown.
+      // so every command after it, is unknown (`bash` 3.2 even ends a body
+      // at `EOF)`), so the command is not read at all.
       if (next === undefined) {
-        record(scan, Number.POSITIVE_INFINITY, 'none');
+        scan.broken = true;
         return false;
       }
       pending.length = 0;
@@ -1420,6 +1534,7 @@ function advanceCode(
   if (ch === '<' && command[i + 1] === '<') {
     return readHeredocOperator(command, i, frame, pending, scan);
   }
+  if (ch === '>') return readOutputRedirection(command, i, scan);
   if (ch === '$' && command[i + 1] === "'") {
     stack.push({ kind: 'ansi', depth: 0, cmdStart: 0 });
     return 2;
@@ -1436,7 +1551,8 @@ function advanceCode(
 
 /** True when the character at `i` of shell code ends a simple command.
  * `{` only as the grouping word (`{ cmd; }`), not in `${x}` or `-I{}`;
- * `&` only as an operator, not in a redirection (`2>&1`, `&>log`). */
+ * `&` only as an operator, not in a redirection (`<&3`, `&>log`); `\<&`
+ * is a literal `<` and then `&`. */
 function separatesCommands(command: string, i: number): boolean {
   const ch = command[i];
   if (ch === undefined || !COMMAND_SEPARATORS.has(ch)) return false;
@@ -1445,16 +1561,65 @@ function separatesCommands(command: string, i: number): boolean {
   // literal `>` and then a pipe.
   if (ch === '|') return !isClobberBar(command, i);
   if (ch !== '&') return true;
-  return !REDIRECTION_SIDES.has(command[i - 1] ?? '') && command[i + 1] !== '>';
+  const redirects = REDIRECTION_SIDES.has(command[i - 1] ?? '') && !escapedAt(command, i - 1);
+  return !redirects && command[i + 1] !== '>';
 }
 
 /** True when the `|` at `i` belongs to the redirection `>|`: an
  * unescaped `>` just before it. */
 function isClobberBar(command: string, i: number): boolean {
-  if (command[i - 1] !== '>') return false;
+  return command[i - 1] === '>' && !escapedAt(command, i - 1);
+}
+
+/** True when the character at `k` is escaped: an odd number of
+ * backslashes stands just before it. */
+function escapedAt(command: string, k: number): boolean {
   let backslashes = 0;
-  for (let k = i - 2; k >= 0 && command[k] === '\\'; k--) backslashes += 1;
-  return backslashes % 2 === 0;
+  for (let j = k - 1; j >= 0 && command[j] === '\\'; j--) backslashes += 1;
+  return backslashes % 2 === 1;
+}
+
+/** Record the file the output redirection whose `>` is at `i` writes
+ * (`>`, `>>`, `>|`, `>!`, `&>`, `&>>`, `>&FILE`, `<>`); return the
+ * operator's length, so the target is lexed as the word it is. A `>&`
+ * that copies or closes a descriptor (`2>&1`, `>&-`) writes no file. */
+function readOutputRedirection(command: string, i: number, scan: Scan): number {
+  let j = i + 1;
+  if (command[j] === '>') j += 1;
+  const duplicates = command[j] === '&';
+  if (duplicates || command[j] === '|' || command[j] === '!') j += 1;
+  const target = redirectionTarget(command, j);
+  if (!(duplicates && DESCRIPTOR_TARGET.test(target))) scan.outputs.push(target);
+  return j - i;
+}
+
+/** The redirection target word that starts at `j`, after blanks, quotes
+ * removed. Empty when it expands (`$`, a backtick), holds a backslash,
+ * leaves a quote open or is longer than `MAX_WORD_CHARS`: a target that
+ * cannot be read is no document. */
+function redirectionTarget(command: string, j: number): string {
+  let k = j;
+  while (command[k] === ' ' || command[k] === '\t') k += 1;
+  let target = '';
+  let quote: string | undefined;
+  for (; k < command.length && target.length <= MAX_WORD_CHARS; k++) {
+    const ch = command[k] ?? '';
+    if (quote === "'") {
+      if (ch === "'") quote = undefined;
+      else target += ch;
+      continue;
+    }
+    if (ch === '$' || ch === '`' || ch === '\\') return '';
+    if (quote === '"') {
+      if (ch === '"') quote = undefined;
+      else target += ch;
+      continue;
+    }
+    if (ch === "'" || ch === '"') quote = ch;
+    else if (TARGET_ENDS.has(ch)) break;
+    else target += ch;
+  }
+  return quote === undefined && target.length <= MAX_WORD_CHARS ? target : '';
 }
 
 /** True when the character at `i` begins a word of shell code. */
@@ -1565,6 +1730,7 @@ function readBody(command: string, start: number, end: number, heredoc: Heredoc,
   // A body that expands keeps its substitutions in the text the network
   // checks read; one with none is plain text.
   const expands = !heredoc.literal && /[$`]/.test(command.slice(start, end));
+  scan.bodies.push([start, end]);
   if (heredoc.data && !expands) scan.dataBodies.push([start, end]);
   if (!heredoc.data) record(scan, end - 1, 'none');
   else if (heredoc.literal) record(scan, end - 1, 'heredoc');
@@ -1614,9 +1780,10 @@ export interface ShellRestore {
  * Restore the placeholders in a shell `command`, each only when its real
  * value is safe in the context at its position (`shellContextAt`), and
  * none in a command that sends data off the machine (`sendsOffMachine`).
- * The command is read once, as received: a value restored there never
- * ends its quoting or its heredoc, so it cannot change the context of a
- * later placeholder.
+ * The command is judged as received, then again with the values put back:
+ * a value that makes it send data out or run code, or that moves where a
+ * simple command or a heredoc body starts or ends (a value that reads as
+ * the delimiter ends its heredoc early), keeps every placeholder.
  *
  * @param np - the engine whose vault holds `sessionId`.
  */
@@ -1628,17 +1795,68 @@ export function restoreShellCommand(
   const starts = [...command.matchAll(placeholderPattern())].map((m) => m.index);
   const verdict = judge(command, starts);
   const keepAll = verdict.offMachine || verdict.runsCode;
-  const restored = restoreEach(np, command, sessionId, (value, at) => {
-    if (keepAll || verdict.programAt.has(at)) return false;
-    return shellSafe(value, verdict.contextAt.get(at) ?? 'none');
-  });
+  const shifts: Shift[] = [];
+  const restored = restoreEach(
+    np,
+    command,
+    sessionId,
+    (value, at) => {
+      if (keepAll || verdict.programAt.has(at)) return false;
+      return shellSafe(value, verdict.contextAt.get(at) ?? 'none');
+    },
+    shifts,
+  );
   if (restored.results.every((r) => r.replacements === 0)) return restored;
   // The values must not change what the command is: one restored as a
   // redirection to `/dev/tcp/…`, a URL, or a word that makes a program
-  // run code keeps every placeholder.
+  // run code keeps every placeholder, and so does one that changes how
+  // the command splits.
   const after = judge(restored.command, []);
-  if (!after.offMachine && !after.runsCode) return restored;
+  const same = sameLayout(verdict.layout, after.layout, shifts);
+  if (same && !after.offMachine && !after.runsCode) return restored;
   return restoreEach(np, command, sessionId, () => false);
+}
+
+/** Where restoring one placeholder changed a command's length: at `at`
+ * of the masked command, `from` characters became `to`. */
+interface Shift {
+  readonly at: number;
+  readonly from: number;
+  readonly to: number;
+}
+
+/** True when `after`, read from the restored command, splits exactly as
+ * `before` (read from the masked one) once its offsets are moved by
+ * `shifts`. */
+function sameLayout(before: Layout, after: Layout, shifts: readonly Shift[]): boolean {
+  const move = offsetMover(shifts);
+  const same = (
+    a: ReadonlyArray<readonly [number, number]>,
+    b: ReadonlyArray<readonly [number, number]>,
+  ): boolean =>
+    a.length === b.length &&
+    a.every(([start, end], k) => move(start) === b[k]?.[0] && move(end) === b[k]?.[1]);
+  return same(before.commands, after.commands) && same(before.bodies, after.bodies);
+}
+
+/** Maps an offset of the masked command to the restored one; an offset
+ * inside a restored placeholder maps to `undefined`. */
+function offsetMover(shifts: readonly Shift[]): (offset: number) => number | undefined {
+  const delta: number[] = [0];
+  for (const s of shifts) delta.push((delta.at(-1) ?? 0) + s.to - s.from);
+  return (offset) => {
+    // How many shifts start before `offset`.
+    let lo = 0;
+    let hi = shifts.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if ((shifts[mid]?.at ?? offset) < offset) lo = mid + 1;
+      else hi = mid;
+    }
+    const last = shifts[lo - 1];
+    if (last !== undefined && offset < last.at + last.from) return undefined;
+    return offset + (delta[lo] ?? 0);
+  };
 }
 
 /** A shell `command` given as an argv array, with its safe placeholders
@@ -1675,13 +1893,16 @@ export function restoreShellArgv(
   // shell runs, which is judged as a string command; nowhere else.
   const runs = argvProgram(argv);
   const code = argvRunsCode(argv) || runs === undefined || !takesDataArgs(runs);
+  // As in shell code, the arguments of `cd`, `export` and the like get no
+  // value.
+  const held = runs?.name === 'cd' || ENVIRONMENT_BUILTINS.has(runs?.name ?? '');
   const first = restoreArgvWords(
     np,
     argv,
     sessionId,
     (position, value) => {
       if (!offline || position === program || position === 0) return false;
-      if (code) return false;
+      if (code || held) return false;
       return PLAIN_WORD.test(value);
     },
     offline ? script : -1,
@@ -1784,12 +2005,14 @@ function argvSendsOffMachine(argv: readonly string[]): boolean {
 }
 
 /** Restore each placeholder of `text` whose real value `safe` accepts at
- * the placeholder's index; leave the others literal. */
+ * the placeholder's index; leave the others literal. Each value put back
+ * is noted in `shifts`, when given. */
 function restoreEach(
   np: RestoreCapable,
   text: string,
   sessionId: string,
   safe: (value: string, at: number) => boolean,
+  shifts?: Shift[],
 ): ShellRestore {
   const results: RestoreResult[] = [];
   const keptMasked: string[] = [];
@@ -1802,6 +2025,9 @@ function restoreEach(
     const ok = r.replacements === 0 || safe(r.restored, start);
     if (ok) results.push(r);
     else keptMasked.push(placeholder);
+    if (ok && r.replacements > 0) {
+      shifts?.push({ at: start, from: placeholder.length, to: r.restored.length });
+    }
     out += text.slice(last, start) + (ok ? r.restored : placeholder);
     last = start + placeholder.length;
   }

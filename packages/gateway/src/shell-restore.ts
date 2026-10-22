@@ -1552,8 +1552,10 @@ function outsideGrammar(command: string, i: number): boolean {
   if (ch === ';') return next === ';';
   if (ch === '[') return next === '[' && startsWord(command, i);
   if (ch === '<') return next === '<' && command[i + 2] === '<';
-  // `&&` and `&>` are read; any other `&` is not.
-  if (ch === '&') return next !== '&' && command[i - 1] !== '&' && next !== '>';
+  // Only `&&` is read. `&>` is one redirection in bash and zsh but a
+  // background `&` then `>` in dash and ksh, where the next word becomes a
+  // program; any other `&` (background, `|&`, `<&`) is not read either.
+  if (ch === '&') return next !== '&' && command[i - 1] !== '&';
   return false;
 }
 
@@ -1574,7 +1576,8 @@ function isClobberBar(command: string, i: number): boolean {
 }
 
 /** Record the file the output redirection whose `>` is at `i` writes
- * (`>`, `>>`, `>|`, `>!`, `&>`, `&>>`, `>&FILE`, `<>`); return the
+ * (`>`, `>>`, `>|`, `>!`, `>&FILE`, `<>`; `&>` never gets here:
+ * `outsideGrammar`); return the
  * operator's length, so the target is lexed as the word it is. A `>&`
  * that copies or closes a descriptor (`2>&1`, `>&-`) writes no file. */
 function readOutputRedirection(command: string, i: number, scan: Scan): number {

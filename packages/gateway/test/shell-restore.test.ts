@@ -1140,6 +1140,17 @@ describe('shell restore · round-10 layout and redirections', () => {
     expect(restored(restoreShellCommand(np, commitStdin(`${long}${name}`), sessionId))).toBe(1);
   });
 
+  it.each([
+    (p: string) => `: &>/dev/null ${p}`,
+    (p: string) => `cat notes.md &>> out.log ${p}`,
+    (p: string) => `grep ${p} notes.md &>/dev/null`,
+  ])('keeps every value with `&>`, which dash and ksh read as `&` then `>`: %#', (build) => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, EMAIL, 'private_email');
+
+    expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(0);
+  });
+
   it('restores into a heredoc body however many commands come before it', () => {
     const { np, vault, sessionId } = harness();
     const name = bake(vault, sessionId, FULL_NAME, 'private_person');

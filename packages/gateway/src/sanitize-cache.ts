@@ -50,6 +50,12 @@ export class SanitizeCache {
     return this.entries.size;
   }
 
+  /** Forget every response: they were masked under a policy that changed. */
+  clear(): void {
+    this.entries.clear();
+    this.chars = 0;
+  }
+
   private evict(): void {
     for (const [key, response] of this.entries) {
       if (this.entries.size <= SANITIZE_CACHE_MAX_ENTRIES && this.chars <= SANITIZE_CACHE_MAX_CHARS)

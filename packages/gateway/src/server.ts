@@ -3,6 +3,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { NullPii, toEngineConfig } from 'nullpii';
 import type { GatewayConfig } from './config.js';
+import { LivePolicy } from './live-policy.js';
 import { registerAnthropicRoute } from './routes/anthropic.js';
 import { registerHealthRoute } from './routes/health.js';
 import { registerOpenAiRoute } from './routes/openai.js';
@@ -41,13 +42,20 @@ export async function buildServer(opts: BuildServerOptions): Promise<FastifyInst
     bodyLimit: config.bodyLimitBytes,
   });
 
+  // One policy for every route, which the sidecar can replace live.
+  const policy = new LivePolicy(
+    config.policy,
+    config.policyFile,
+    config.policyLoaded,
+    config.restoreTools,
+  );
   await registerHealthRoute(app);
   await registerAnthropicRoute(app, {
     np,
     upstreamBaseUrl: config.upstreamBaseUrl,
     fetchImpl,
     logTraffic: config.logTraffic,
-    restoreTools: config.restoreTools,
+    restoreTools: policy.restoreTools,
     appendHint: config.appendHint,
   });
   await registerOpenAiRoute(app, {
@@ -55,7 +63,7 @@ export async function buildServer(opts: BuildServerOptions): Promise<FastifyInst
     upstreamBaseUrl: config.openaiUpstreamBaseUrl,
     fetchImpl,
     logTraffic: config.logTraffic,
-    restoreTools: config.restoreTools,
+    restoreTools: policy.restoreTools,
     appendHint: config.appendHint,
   });
   if (config.sidecarToken !== undefined) {
@@ -64,10 +72,7 @@ export async function buildServer(opts: BuildServerOptions): Promise<FastifyInst
       token: config.sidecarToken,
       ttlMs: config.vaultTtlMs,
       maxSessions: config.sidecarMaxSessions,
-      restoreTools: config.restoreTools,
-      policy: config.policy,
-      policyFile: config.policyFile,
-      policyLoaded: config.policyLoaded,
+      policy,
       ...(opts.now !== undefined && { now: opts.now }),
     });
   }

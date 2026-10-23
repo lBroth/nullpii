@@ -129,6 +129,12 @@ export class SidecarSessions {
     }
   }
 
+  /** Forget every session's cached sanitize responses, as after a policy
+   * change; the sessions and their vaults stay. */
+  clearCaches(): void {
+    for (const entry of this.entries.values()) entry.cache.clear();
+  }
+
   /** Drop every session. Called when the server closes. */
   closeAll(): void {
     for (const [key, entry] of [...this.entries]) this.drop(key, entry);

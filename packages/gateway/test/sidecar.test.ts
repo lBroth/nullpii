@@ -9,7 +9,10 @@ import type { NullPii } from 'nullpii';
 import { DEFAULT_DISABLED_CATEGORIES, PiiVault, TextTooLongError } from 'nullpii';
 
 import { createHmac } from 'node:crypto';
-import { afterEach, describe, expect, it } from 'vitest';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { GatewayConfig } from '../src/config.js';
 import {
   CHALLENGE_CONTEXT,
@@ -52,10 +55,19 @@ const PATTERNS: ReadonlyArray<[RegExp, 'private_email' | 'private_person' | 'sec
   [/Ada Lovelace/g, 'private_person'],
 ];
 
-function buildMockNullPii(): { np: NullPii; vault: PiiVault; modelCalls: () => number } {
+function buildMockNullPii(): {
+  np: NullPii;
+  vault: PiiVault;
+  modelCalls: () => number;
+  policies: unknown[];
+} {
   const vault = new PiiVault();
   let calls = 0;
+  const policies: unknown[] = [];
   const mock = {
+    updatePolicy: (policy: unknown) => {
+      policies.push(policy);
+    },
     async sanitize(text: string, sessionId?: string) {
       calls += 1;
       const id = sessionId ?? vault.createSession();
@@ -77,7 +89,7 @@ function buildMockNullPii(): { np: NullPii; vault: PiiVault; modelCalls: () => n
     createSession: () => vault.createSession(),
     destroySession: (sessionId: string) => vault.destroySession(sessionId),
   };
-  return { np: mock as unknown as NullPii, vault, modelCalls: () => calls };
+  return { np: mock as unknown as NullPii, vault, modelCalls: () => calls, policies };
 }
 
 const apps: FastifyInstance[] = [];
@@ -273,6 +285,7 @@ describe('sidecar · status', () => {
         file: '/home/node/.config/nullpii/config.json',
         loaded: true,
         config: { disabledCategories: ['private_title'], restoreTools: ['Read'] },
+        categories: expect.objectContaining({ private_title: 'off', private_person: 'mask' }),
         disabledCategories: ['private_title'],
         restoreTools: ['Read'],
       },
@@ -283,7 +296,7 @@ describe('sidecar · status', () => {
     const { app } = await setup();
     const res = await app.inject({ method: 'GET', url: '/v1/sidecar/status', headers: AUTH });
     const policy = (res.json() as { policy: { disabledCategories: string[] } }).policy;
-    expect(policy.disabledCategories).toEqual([...DEFAULT_DISABLED_CATEGORIES]);
+    expect([...policy.disabledCategories].sort()).toEqual([...DEFAULT_DISABLED_CATEGORIES].sort());
   });
 });
 
@@ -905,5 +918,93 @@ describe('SanitizeCache', () => {
     const cache = new SanitizeCache();
     cache.set('big', 'x'.repeat(SANITIZE_CACHE_MAX_CHARS + 1));
     expect(cache.get('big')).toBeUndefined();
+  });
+});
+
+describe('sidecar · policy', () => {
+  let policyDir = '';
+  beforeEach(() => {
+    policyDir = mkdtempSync(join(tmpdir(), 'nullpii-policy-'));
+  });
+  afterEach(() => rmSync(policyDir, { recursive: true, force: true }));
+
+  function putPolicy(
+    app: FastifyInstance,
+    config: unknown,
+    headers: Record<string, string> = AUTH,
+  ) {
+    return app.inject({ method: 'PUT', url: '/v1/sidecar/policy', headers, payload: { config } });
+  }
+
+  it('replaces the policy live: written to its file, applied to the engine and the restore tools', async () => {
+    const engine = buildMockNullPii();
+    const file = join(policyDir, 'nullpii', 'config.json');
+    const { app } = await setup({ policyFile: file }, engine);
+    const config = {
+      categories: { private_url: 'ask', private_date: 'mask' },
+      restoreTools: ['Read'],
+    };
+
+    const res = await putPolicy(app, config);
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual(config);
+    const status = (
+      await app.inject({ method: 'GET', url: '/v1/sidecar/status', headers: AUTH })
+    ).json() as {
+      policy: {
+        loaded: boolean;
+        categories: Record<string, string>;
+        restoreTools: string[];
+        disabledCategories: string[];
+      };
+    };
+    expect(status.policy.loaded).toBe(true);
+    expect(status.policy.categories.private_url).toBe('ask');
+    expect(status.policy.disabledCategories).not.toContain('private_date');
+    expect(status.policy.restoreTools).toEqual(['Read']);
+    expect(engine.policies).toHaveLength(1);
+    expect(engine.policies[0]).toMatchObject({
+      disabledCategories: expect.not.arrayContaining(['private_date']),
+    });
+  });
+
+  it('refuses an invalid policy and changes nothing', async () => {
+    const engine = buildMockNullPii();
+    const file = join(policyDir, 'config.json');
+    const { app } = await setup({ policyFile: file }, engine);
+
+    const res = await putPolicy(app, { categories: { private_url: 'maybe' } });
+
+    expect(res.statusCode).toBe(400);
+    expect((res.json() as { error: string }).error).toBe('invalid_policy');
+    expect(existsSync(file)).toBe(false);
+    expect(engine.policies).toHaveLength(0);
+  });
+
+  it('needs the token', async () => {
+    const { app } = await setup({ policyFile: join(policyDir, 'config.json') });
+
+    const res = await putPolicy(app, {}, {});
+
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('forgets the cached sanitize responses masked under the old policy', async () => {
+    const { app } = await setup({ policyFile: join(policyDir, 'config.json') });
+    await open(app, 's1');
+    const sanitize = () =>
+      app.inject({
+        method: 'POST',
+        url: '/v1/sidecar/sessions/s1/sanitize',
+        headers: authFor('s1'),
+        payload: { value: `hello ${FULL_NAME}` },
+      });
+    await sanitize();
+    expect((await sanitize()).headers['x-nullpii-cache']).toBe('hit');
+
+    await putPolicy(app, { categories: { private_person: 'off' } });
+
+    expect((await sanitize()).headers['x-nullpii-cache']).toBe('miss');
   });
 });

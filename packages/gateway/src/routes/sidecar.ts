@@ -2,12 +2,8 @@
 
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import {
-  DEFAULT_DISABLED_CATEGORIES,
-  type NullPii,
-  type NullPiiFileConfig,
-  TextTooLongError,
-} from 'nullpii';
+import { InvalidConfigError, type NullPii, TextTooLongError } from 'nullpii';
+import type { LivePolicy } from '../live-policy.js';
 import { SanitizeCache } from '../sanitize-cache.js';
 import { restoreValue, sanitizeValue } from '../sanitizer.js';
 import { countPlaceholders, isShellTool } from '../shell-tools.js';
@@ -20,14 +16,10 @@ export interface SidecarRouteOptions {
   readonly token: string;
   readonly ttlMs: number;
   readonly maxSessions: number;
-  /** Tools whose input a `restore` with `tool` may put real values into:
-   * the policy's `restoreTools`. */
-  readonly restoreTools: ReadonlySet<string>;
-  /** The policy file's contents, path, and whether it was loaded, for
-   * `GET /v1/sidecar/status`. */
-  readonly policy: NullPiiFileConfig;
-  readonly policyFile: string;
-  readonly policyLoaded: boolean;
+  /** The masking policy in effect: its file, its restore tools (the tools
+   * a `restore` with `tool` may put real values into), which
+   * `PUT /v1/sidecar/policy` replaces. */
+  readonly policy: LivePolicy;
   /** Clock, injectable for tests. */
   readonly now?: () => number;
 }
@@ -87,6 +79,14 @@ const RESTORE_BODY = {
     fields: { type: 'array', maxItems: MAX_RESTORE_FIELDS, items: { type: 'string' } },
     tool: { type: 'string', minLength: 1, maxLength: MAX_TOOL_NAME_LENGTH },
   },
+} as const;
+
+/** A policy file's contents, validated by `parseConfig` in the route. */
+const POLICY_BODY = {
+  type: 'object',
+  required: ['config'],
+  additionalProperties: false,
+  properties: { config: { type: 'object' } },
 } as const;
 
 interface ChallengeRequest {
@@ -255,17 +255,46 @@ export async function registerSidecarRoutes(
       }),
     );
 
+    const policyView = () => {
+      const modes = opts.policy.modes();
+      return {
+        file: opts.policy.file,
+        loaded: opts.policy.loaded,
+        config: opts.policy.config,
+        categories: modes,
+        disabledCategories: Object.keys(modes).filter(
+          (c) => modes[c as keyof typeof modes] === 'off',
+        ),
+        restoreTools: [...opts.policy.restoreTools],
+      };
+    };
+
     scope.get('/v1/sidecar/status', async () => ({
       status: 'ok',
       sessions: sessions.size,
-      policy: {
-        file: opts.policyFile,
-        loaded: opts.policyLoaded,
-        config: opts.policy,
-        disabledCategories: opts.policy.disabledCategories ?? DEFAULT_DISABLED_CATEGORIES,
-        restoreTools: [...opts.restoreTools],
-      },
+      policy: policyView(),
     }));
+
+    // Replace the policy: validated, written to the policy file, applied
+    // to the engine and the restore tools at once. Cached sanitize
+    // responses were masked under the old policy, so they go.
+    scope.put<{ Body: { config: unknown } }>(
+      '/v1/sidecar/policy',
+      { schema: { body: POLICY_BODY } },
+      async (req, reply) => {
+        try {
+          opts.policy.replace(np, req.body.config);
+        } catch (err) {
+          if (err instanceof InvalidConfigError) {
+            return reply.code(400).send({ error: 'invalid_policy', message: err.message });
+          }
+          throw err;
+        }
+        sessions.clearCaches();
+        req.log.info('sidecar.policy');
+        return { status: 'ok', policy: policyView() };
+      },
+    );
 
     scope.put<SessionRequest>(
       '/v1/sidecar/sessions/:key',
@@ -348,7 +377,7 @@ export async function registerSidecarRoutes(
         // A shell tool's input never gets a value: every placeholder is
         // listed back so the caller can refuse the call.
         const shell = isShellTool(tool);
-        if (tool !== undefined && !shell && !opts.restoreTools.has(tool)) {
+        if (tool !== undefined && !shell && !opts.policy.restoreTools.has(tool)) {
           return sendHeld(req, reply, value);
         }
         const r = restoreValue(np, value, session.vaultId, fields, shell);

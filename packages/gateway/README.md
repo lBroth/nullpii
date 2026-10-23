@@ -203,7 +203,7 @@ Upstream errors pass through with their status and body, plus `retry-after`, `re
 
 What gets masked comes from the shared policy file. Everything else is set with environment variables.
 
-**Policy file.** The gateway reads `$NULLPII_CONFIG`, else `~/.config/nullpii/config.json` (or `$XDG_CONFIG_HOME/nullpii/config.json`) if it exists. The CLI, the library and the Claude Code mod use the same file. It is read once, at startup, so restart the gateway after you change it. `nullpii config` validates it and prints it.
+**Policy file.** The gateway reads `$NULLPII_CONFIG`, else `~/.config/nullpii/config.json` (or `$XDG_CONFIG_HOME/nullpii/config.json`) if it exists. The CLI, the library and the Claude Code mod use the same file. It is read at startup; an edit by hand applies after a restart, while a change sent through the sidecar (`PUT /v1/sidecar/policy`, which the Claude Code mod's `/pii` uses) applies at once. `nullpii config` validates it and prints it.
 
 ```json
 {
@@ -216,6 +216,7 @@ What gets masked comes from the shared policy file. Everything else is set with 
 | Key | Effect |
 |---|---|
 | `disabledCategories` | Categories that are not masked. Default: dates, companies, jobs, honorifics, demographic and sensitive attributes (`DEFAULT_DISABLED_CATEGORIES`); `[]` masks every category. |
+| `categories` | The mode of each category named: `mask`, `ask` (masked; the Claude Code mod asks about a value in your own prompt, see its README) or `off` (readable). It overrides `disabledCategories` for the categories it names. |
 | `categoryThresholds`, `threshold` | Confidence cuts in `[0, 1]`, per category or for all. Lower masks more. |
 | `urlAllowlist` | `"none"` masks every URL. `{ hosts, replaceDefaults }` sets, per host (`docs.python.org`, or `*.github.com` for a domain and its subdomains), how much of a clean URL stays readable: `full`, `host` or `mask`. |
 | `restoreTools` | Tools whose arguments get real values back. It replaces the default list (`DEFAULT_RESTORE_TOOLS`: the tools that run on this machine). Any other tool keeps the placeholders. |
@@ -259,7 +260,8 @@ Every other request needs `Authorization: Bearer $NULLPII_SIDECAR_TOKEN`. Every 
 | Method and path | Body | Response |
 |---|---|---|
 | `POST /v1/sidecar/challenge` | `{ nonce }` | `{ proof }`; no token needed |
-| `GET /v1/sidecar/status` | — | `{ status, sessions, policy }`, `policy` being `{ file, loaded, config, restoreTools }` |
+| `GET /v1/sidecar/status` | — | `{ status, sessions, policy }`, `policy` being `{ file, loaded, config, categories, disabledCategories, restoreTools }`: the file's contents, the mode of every category (`mask`, `ask`, `off`), the categories left readable and the tools that get values, as in effect |
+| `PUT /v1/sidecar/policy` | `{ config }` | `{ status, policy }`: `config` (a policy file's contents) is validated, written to the policy file (mode 0600) and applied at once, to the engine and the restore tools of every route; cached sanitize responses are dropped. 400 `invalid_policy` changes nothing. |
 | `PUT /v1/sidecar/sessions/:key` | — | 201 `{ status: "created", secret }` for a new session. For an open one: 200 `{ status: "exists" }` with its secret, 409 `session_exists` without it. 429 when `NULLPII_SIDECAR_MAX_SESSIONS` are open. |
 | `POST /v1/sidecar/sessions/:key/sanitize` | `{ value }`: a string or any JSON | `{ value, captured, capturedByLabel, modelUnscannedWords }` |
 | `POST /v1/sidecar/sessions/:key/restore` | `{ value, fields?, tool? }` | `{ value, replacements, replacementsByLabel, unknownPlaceholders, foreignPlaceholders }`, plus `shellKeptMasked` for a shell tool and `heldForTool` for a tool outside `restoreTools` |

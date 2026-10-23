@@ -12,6 +12,7 @@ import {
   type ShellTool,
   WORKDIR_FIELDS,
   countPlaceholders,
+  judgedCommandField,
   placeholdersIn,
   restoreShellArgv,
   restoreShellCommand,
@@ -782,9 +783,11 @@ export function restoreValue(
   const acc = newRestoreAccumulator();
   const keptMasked: string[] = [];
   const options = { movedDir: setsWorkdir(value) };
+  const judged =
+    shell !== undefined && isRecord(value) ? judgedCommandField(shell, value) : undefined;
   const restoreField = (key: string, field: unknown): unknown =>
     shell !== undefined
-      ? restoreShellToolField(np, shell, key, field, sessionId, acc, options, keptMasked)
+      ? restoreShellToolField(np, judged, key, field, sessionId, acc, options, keptMasked)
       : restoreJsonValue(np, field, sessionId, acc);
   const obj = isRecord(value) ? value : undefined;
   let out: unknown;
@@ -869,9 +872,10 @@ export function restoreToolInput(
   // An input that is not an object has no command field to judge.
   if (!isRecord(input)) return keepShellField(input, acc);
   const options = { movedDir: setsWorkdir(input) };
+  const judged = judgedCommandField(shell, input);
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(input)) {
-    out[key] = restoreShellToolField(np, shell, key, value, sessionId, acc, options);
+    out[key] = restoreShellToolField(np, judged, key, value, sessionId, acc, options);
   }
   return out;
 }
@@ -885,7 +889,7 @@ export function restoreToolInput(
  */
 function restoreShellToolField(
   np: NullPii,
-  shell: ShellTool,
+  commandField: string | undefined,
   key: string,
   field: unknown,
   sessionId: string,
@@ -893,9 +897,10 @@ function restoreShellToolField(
   options: ShellOptions,
   keptMasked?: string[],
 ): unknown {
-  if (key === shell.commandField) {
+  // A tool whose command no field may hold a value for gets none at all.
+  if (commandField === undefined) return keepShellField(field, acc, keptMasked);
+  if (key === commandField)
     return restoreShellField(np, field, sessionId, acc, keptMasked, options);
-  }
   if (SHELL_TEXT_FIELDS.has(key)) return restoreJsonValue(np, field, sessionId, acc);
   return keepShellField(field, acc, keptMasked);
 }

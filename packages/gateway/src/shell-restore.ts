@@ -73,27 +73,30 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  * by a later command.
  */
 
-/** Tools whose input a shell runs, as each agent names them, with the
- * input field the shell interprets: Claude Code's `Bash`, Anthropic's bash
- * tool (`bash`), the `shell` and `shell_command` tools of OpenAI-style
- * agents such as Codex, Codex's `exec_command` (`cmd`), and its
- * `write_stdin`, whose input goes to a running process and so gets no
- * value at all. */
-const SHELL_TOOL_FIELDS: ReadonlyMap<string, string | undefined> = new Map([
-  ['Bash', 'command'],
-  ['bash', 'command'],
-  ['shell', 'command'],
-  ['shell_command', 'command'],
-  ['exec_command', 'cmd'],
-  ['write_stdin', undefined],
-]);
-export const SHELL_TOOLS: ReadonlySet<string> = new Set(SHELL_TOOL_FIELDS.keys());
-
 /** A shell tool, as its input is restored: the field the shell interprets
- * (`undefined` when none may get a value). */
+ * (`undefined` when no field may get a value), and the field that names
+ * the shell, when the call chooses it. */
 export interface ShellTool {
   readonly commandField: string | undefined;
+  readonly interpreterField?: string;
 }
+
+/** Tools whose input a shell runs, as each agent names them: Claude
+ * Code's `Bash` and Anthropic's `bash` (a POSIX shell), the `shell` tool
+ * of OpenAI-style agents such as Codex (an argv array), Codex's
+ * `exec_command`, whose `cmd` runs in the shell its `shell` field names
+ * (the user's default shell without it, PowerShell on Windows), and its
+ * `shell_command` (always the default shell) and `write_stdin` (input to a
+ * running process), which get no value at all. */
+const SHELL_TOOL_SPECS: ReadonlyMap<string, ShellTool> = new Map([
+  ['Bash', { commandField: 'command' }],
+  ['bash', { commandField: 'command' }],
+  ['shell', { commandField: 'command' }],
+  ['exec_command', { commandField: 'cmd', interpreterField: 'shell' }],
+  ['shell_command', { commandField: undefined }],
+  ['write_stdin', { commandField: undefined }],
+]);
+export const SHELL_TOOLS: ReadonlySet<string> = new Set(SHELL_TOOL_SPECS.keys());
 
 /** Input fields that set the directory a shell tool's command runs in. A
  * relative file the command writes lands there, as after a `cd`. */
@@ -981,8 +984,20 @@ export function isShellTool(name: unknown): boolean {
 
 /** The shell tool `name` is, or `undefined` for any other tool. */
 export function shellToolOf(name: unknown): ShellTool | undefined {
-  if (typeof name !== 'string' || !SHELL_TOOL_FIELDS.has(name)) return undefined;
-  return { commandField: SHELL_TOOL_FIELDS.get(name) };
+  return typeof name === 'string' ? SHELL_TOOL_SPECS.get(name) : undefined;
+}
+
+/** The field of `input` that the shell rule judges, for the shell tool
+ * `shell`: its command field, unless the call names its shell and that is
+ * not a POSIX one (`isPosixShell`), whose reading the rule is; `undefined`
+ * when no field may get a value. */
+export function judgedCommandField(
+  shell: ShellTool,
+  input: Readonly<Record<string, unknown>>,
+): string | undefined {
+  if (shell.interpreterField === undefined) return shell.commandField;
+  const named = input[shell.interpreterField];
+  return typeof named === 'string' && isPosixShell(named) ? shell.commandField : undefined;
 }
 
 /** True when `command` sends data off the machine: a network client or an
@@ -2006,6 +2021,13 @@ function restoreArgvWords(
 const ARGV_SHELLS: ReadonlySet<string> = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'mksh']);
 /** The standard directories a shell named by path may sit in. */
 const ARGV_SHELL_DIR = /^(?:\/usr)?\/bin\//;
+
+/** True when `name` names a POSIX shell as written, or in `/bin` or
+ * `/usr/bin`: a path elsewhere (`./bash`), another case or a version
+ * suffix could run another program. */
+function isPosixShell(name: string): boolean {
+  return ARGV_SHELLS.has(name.replace(ARGV_SHELL_DIR, ''));
+}
 /** A shell option cluster that holds `c`: the next argument is the script. */
 const SCRIPT_FLAG = /^-[A-Za-z]*c[A-Za-z]*$|^--command$/;
 /** Shell options that take the next argument (`-o pipefail`, `+O extglob`). */
@@ -2032,8 +2054,7 @@ function shellScriptIndex(argv: readonly string[], program: number): number {
   // A POSIX shell, first and named as written (or in `/bin`, `/usr/bin`):
   // a wrapper, another path (`./bash`), case or version suffix could run
   // another program, and `fish` quotes differently.
-  if (program !== 0 || name === undefined) return -1;
-  if (!ARGV_SHELLS.has(name.replace(ARGV_SHELL_DIR, ''))) return -1;
+  if (program !== 0 || name === undefined || !isPosixShell(name)) return -1;
   for (let k = program + 1; k < argv.length; k++) {
     const word = argv[k] ?? '';
     if (SCRIPT_FLAG.test(word)) return k + 1;

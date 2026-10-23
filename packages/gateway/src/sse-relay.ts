@@ -64,10 +64,8 @@ export interface SseRelayOptions {
 }
 
 /** How a tool call's streamed input is restored at its block's stop: as
- * JSON, or with the shell rule for a shell tool's `command`. A block with
- * no entry keeps its placeholders. */
-/** How a tool block's input is restored: as that shell tool's, or (no
- * `shell`) as plain JSON. */
+ * that shell tool's input (`shell`), or as plain JSON. A block with no
+ * entry keeps its placeholders. */
 interface ToolRestore {
   readonly shell: ShellTool | undefined;
 }

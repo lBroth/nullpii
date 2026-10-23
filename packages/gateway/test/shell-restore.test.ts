@@ -2275,27 +2275,27 @@ describe('shell restore · tool input fields', () => {
     expect((stays as { command: string }).command).toContain(FULL_NAME);
   });
 
-  it("judges Codex's exec_command by its cmd field and gives write_stdin nothing", () => {
+  it.each([
+    [{ cmd: 'grep W notes.md', shell: 'bash' }, 'exec_command', 'cmd', 1],
+    [{ cmd: 'grep W notes.md', shell: '/bin/zsh' }, 'exec_command', 'cmd', 1],
+    [{ cmd: 'grep W notes.md' }, 'exec_command', 'cmd', 0],
+    [{ cmd: 'grep W notes.md', shell: 'pwsh' }, 'exec_command', 'cmd', 0],
+    [{ cmd: 'grep W notes.md', shell: '/usr/local/bin/bash' }, 'exec_command', 'cmd', 0],
+    [{ command: 'grep W notes.md' }, 'shell_command', 'command', 0],
+    [{ chars: 'W', description: 'W' }, 'write_stdin', 'description', 0],
+  ])("judges Codex's tools by the shell they run in: %j as %s", (input, tool, field, expected) => {
     const { np, vault, sessionId } = harness();
     const word = bake(vault, sessionId, EMAIL, 'private_email');
+    const masked = Object.fromEntries(
+      Object.entries(input).map(([k, v]) => [k, v.replace('W', word)]),
+    );
     const acc = newRestoreAccumulator();
 
-    const exec = restoreToolInput(
-      np,
-      { cmd: `grep ${word} notes.md` },
-      sessionId,
-      acc,
-      shellToolOf('exec_command'),
-    );
-    const stdin = restoreToolInput(
-      np,
-      { session_id: 1, chars: `${word}\n` },
-      sessionId,
-      acc,
-      shellToolOf('write_stdin'),
-    );
+    const out = restoreToolInput(np, masked, sessionId, acc, shellToolOf(tool)) as Record<
+      string,
+      string
+    >;
 
-    expect((exec as { cmd: string }).cmd).toBe(`grep ${EMAIL} notes.md`);
-    expect((stdin as { chars: string }).chars).toBe(`${word}\n`);
+    expect(out[field]?.includes(EMAIL) ? 1 : 0).toBe(expected);
   });
 });

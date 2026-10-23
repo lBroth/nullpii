@@ -20,7 +20,6 @@ import {
   restoreShellArgv,
   restoreShellCommand,
   shellContextAt,
-  shellSafe,
   shellToolOf,
 } from '../src/shell-restore.js';
 import type { AnthropicRequest, AnthropicResponse } from '../src/types.js';
@@ -260,58 +259,6 @@ describe('shell restore · quoting context', () => {
   ])('%j → %s', (command, context) => {
     expect(contextAt(command)).toBe(context);
   });
-
-  it.each<[string, QuoteContext, boolean]>([
-    ['john@acme.io', 'none', true],
-    [FULL_NAME, 'none', false],
-    [INJECTION, 'none', false],
-    // Never inert: quoted, it would still break out of a program that
-    // reads the string again (`python3 <<< "…"`, `watch "…"`).
-    [INJECTION, 'single', false],
-    [INJECTION, 'double', false],
-    // Outside a data body only one plain word, whatever the quoting.
-    [FULL_NAME, 'single', false],
-    ['Nicolò', 'double', true],
-    ['Nicolò Rossi', 'double', false],
-    ["O'Brien", 'single', false],
-    ["O'Brien", 'double', false],
-    ['a (b)', 'double', false],
-    ['a{b}', 'single', false],
-    ['tab\there', 'single', false],
-    ['line\u2028break', 'double', false],
-    // A word a shell would read as an option, a comment or a home dir.
-    ['x --delete', 'double', false],
-    ['x #rest', 'single', false],
-    ['x ~/y', 'single', false],
-    ['Via Roma 1 - Milano', 'double', false],
-    ['two\nlines', 'single', false],
-    [FULL_NAME, 'double', false],
-    ['$HOME', 'double', false],
-    ['a"b', 'double', false],
-    ['a`id`', 'double', false],
-    ['a\\b', 'double', false],
-    ['hi!', 'double', false],
-    [FULL_NAME, 'heredoc', true],
-    [EXPANSION, 'heredoc', true],
-    ["O'Brien", 'heredoc', true],
-    ['two\nlines', 'heredoc', false],
-    ['O\'Brien "Bob"', 'heredoc-expanding', true],
-    ['$HOME', 'heredoc-expanding', false],
-    ['a`id`', 'heredoc-expanding', false],
-    ['a\\b', 'heredoc-expanding', false],
-    // A leading dash would read as an option to the command.
-    ['-rf', 'none', false],
-    ['--output=/tmp/x', 'single', false],
-    ['-v', 'double', false],
-    ['-- a list item', 'heredoc', true],
-    // zsh expands a leading `=` to a program path.
-    ['=ls', 'none', false],
-    ['a=b', 'none', true],
-    ['~root', 'none', false],
-    ['mario.rossi@example.com', 'single', true],
-  ])('shellSafe(%j, %s) is %s', (value, context, safe) => {
-    expect(shellSafe(value, context)).toBe(safe);
-  });
 });
 
 describe('shell restore · restoreShellCommand', () => {
@@ -321,23 +268,18 @@ describe('shell restore · restoreShellCommand', () => {
     return { np, vault, sessionId };
   }
 
-  it('keeps a value that is not one plain word masked, quoted or not; restores a plain one', () => {
+  it('keeps every value in shell code, quoted or not: values go only into data bodies', () => {
     const { np, vault, sessionId } = harness();
     const secret = bake(vault, sessionId, INJECTION, 'secret');
     const person = bake(vault, sessionId, FULL_NAME, 'private_person');
     const email = bake(vault, sessionId, EMAIL, 'private_email');
+    const command = `echo ${secret} && echo '${secret}' && echo "${person}" '${person}' ${email}`;
 
-    const r = restoreShellCommand(
-      np,
-      `echo ${secret} && echo '${secret}' && echo "${person}" '${person}' ${email}`,
-      sessionId,
-    );
+    const r = restoreShellCommand(np, command, sessionId);
 
-    expect(r.command).toBe(
-      `echo ${secret} && echo '${secret}' && echo "${person}" '${person}' ${EMAIL}`,
-    );
-    expect(r.keptMasked).toEqual([secret, secret, person, person]);
-    expect(r.results.reduce((n, x) => n + x.replacements, 0)).toBe(1);
+    expect(r.command).toBe(command);
+    expect(r.keptMasked).toEqual([secret, secret, person, person, email]);
+    expect(r.results.reduce((n, x) => n + x.replacements, 0)).toBe(0);
   });
 
   it.each([
@@ -356,12 +298,13 @@ describe('shell restore · restoreShellCommand', () => {
   });
 
   it.each([(p: string) => `echo ${p}`, (p: string) => `grep -r ${p} .`])(
-    'restores a plain word as an argument: %#',
+    'keeps a plain word in an argument masked: %#',
     (build) => {
       const { np, vault, sessionId } = harness();
       const email = bake(vault, sessionId, EMAIL, 'private_email');
       const r = restoreShellCommand(np, build(email), sessionId);
-      expect(r.command).toBe(build(EMAIL));
+      expect(r.command).toBe(build(email));
+      expect(r.keptMasked).toEqual([email]);
     },
   );
 
@@ -453,13 +396,13 @@ describe('shell restore · restoreShellCommand', () => {
     expect(r.keptMasked).toEqual([email]);
   });
 
-  it('restores the same plain value in a command that stays on the machine', () => {
+  it('restores a value in a document a heredoc writes, in a command that stays on the machine', () => {
     const { np, vault, sessionId } = harness();
     const email = bake(vault, sessionId, EMAIL, 'private_email');
 
-    expect(restoreShellCommand(np, `grep -rn ${email} src/`, sessionId).command).toBe(
-      `grep -rn ${EMAIL} src/`,
-    );
+    expect(
+      restoreShellCommand(np, `cat > notes.md <<'EOF'\n${email}\nEOF`, sessionId).command,
+    ).toBe(`cat > notes.md <<'EOF'\n${EMAIL}\nEOF`);
   });
 
   it('counts an unknown placeholder as unknown, not as unsafe', () => {
@@ -467,9 +410,13 @@ describe('shell restore · restoreShellCommand', () => {
     const known = bake(vault, sessionId, 'readme.md', 'private_url');
     const unknown = known.replace(/_\d+_/, '_99_');
 
-    const r = restoreShellCommand(np, `cat ${known} ${unknown}`, sessionId);
+    const r = restoreShellCommand(
+      np,
+      `cat > notes.md <<'EOF'\n${known} ${unknown}\nEOF`,
+      sessionId,
+    );
 
-    expect(r.command).toBe(`cat readme.md ${unknown}`);
+    expect(r.command).toBe(`cat > notes.md <<'EOF'\nreadme.md ${unknown}\nEOF`);
     expect(r.keptMasked).toHaveLength(0);
     expect(r.results.reduce((n, x) => n + x.unknownPlaceholders.length, 0)).toBe(1);
   });
@@ -566,9 +513,9 @@ describe('shell restore · programs that read the value again', () => {
   });
 
   it.each([
-    (e: string) => `grep ${e} ~/.ssh/config`,
-    (e: string) => `git commit -m "fetch the list for ${e}"`,
-  ])('restores in a local command that only mentions a network word (%#)', (build) => {
+    (e: string) => `git commit -F - <<'EOF'\nfetch the list for ${e}\nEOF`,
+    (e: string) => `cat > notes.md <<'EOF'\nssh to ${e}\nEOF`,
+  ])('restores into a data body that only mentions a network word (%#)', (build) => {
     const { np, vault, sessionId } = harness();
     const email = bake(vault, sessionId, EMAIL, 'private_email');
 
@@ -651,9 +598,11 @@ describe('shell restore · v3 hardening', () => {
     const { np, vault, sessionId } = harness();
     const email = bake(vault, sessionId, EMAIL, 'private_email');
 
-    const r = restoreShellCommand(np, `echo "see https://example.org" ${email}`, sessionId);
+    const command = (e: string) =>
+      `echo "see https://example.org" && cat > notes.md <<'EOF'\n${e}\nEOF`;
+    const r = restoreShellCommand(np, command(email), sessionId);
 
-    expect(r.command).toBe(`echo "see https://example.org" ${EMAIL}`);
+    expect(r.command).toBe(command(EMAIL));
   });
 
   it.each([
@@ -709,11 +658,11 @@ describe('shell restore · v3 hardening', () => {
     (p: string) => `grep ${p} /etc/hosts 2>/dev/null`,
     (p: string) => `cat /etc/hosts | grep ${p}`,
     (p: string) => `git log --grep user=${p}`,
-  ])('restores into read-only commands the earlier heuristics refused: %#', (build) => {
+  ])('keeps a value in a read-only command too: values go only into data bodies: %#', (build) => {
     const { np, vault, sessionId } = harness();
     const email = bake(vault, sessionId, EMAIL, 'private_email');
 
-    expect(restoreShellCommand(np, build(email), sessionId).command).toBe(build(EMAIL));
+    expect(restoreShellCommand(np, build(email), sessionId).keptMasked).toEqual([email]);
   });
 
   it.each([
@@ -779,15 +728,15 @@ describe('shell restore · v3 hardening', () => {
     },
   );
 
-  it.each([(p: string) => `grep x ${p} > out.md`, (p: string) => `grep x ${p} 2>/dev/null`])(
-    'a write to a document or to /dev/null still gets values back: %#',
-    (build) => {
-      const { np, vault, sessionId } = harness();
-      const email = bake(vault, sessionId, EMAIL, 'private_email');
+  it.each([
+    (p: string) => `cat > out.md <<'EOF'\n${p}\nEOF`,
+    (p: string) => `cat <<'EOF' 2>/dev/null\n${p}\nEOF`,
+  ])('a data body written to a document or to stdout still gets values back: %#', (build) => {
+    const { np, vault, sessionId } = harness();
+    const email = bake(vault, sessionId, EMAIL, 'private_email');
 
-      expect(restoreShellCommand(np, build(email), sessionId).command).toBe(build(EMAIL));
-    },
-  );
+    expect(restoreShellCommand(np, build(email), sessionId).command).toBe(build(EMAIL));
+  });
 
   it.each([
     (p: string) => `echo ${p} \\>|./send.md host`,
@@ -846,29 +795,20 @@ describe('shell restore · v3 hardening', () => {
     expect(restoreShellCommand(np, command(person), sessionId).command).toBe(command(FULL_NAME));
   });
 
-  it('base64 is a listed name, not a versioned "base"', () => {
-    const { np, vault, sessionId } = harness();
-    const email = bake(vault, sessionId, EMAIL, 'private_email');
-
-    expect(restoreShellCommand(np, `base64 ${email}`, sessionId).command).toBe(`base64 ${EMAIL}`);
-  });
-
   it('reading a file under /etc does not count as writing one', () => {
     const { np, vault, sessionId } = harness();
     const email = bake(vault, sessionId, EMAIL, 'private_email');
 
-    expect(restoreShellCommand(np, `grep ${email} /etc/hosts`, sessionId).command).toBe(
-      `grep ${EMAIL} /etc/hosts`,
-    );
+    const command = (e: string) => `cat /etc/hosts > /dev/null; cat > notes.md <<'EOF'\n${e}\nEOF`;
+    expect(restoreShellCommand(np, command(email), sessionId).command).toBe(command(EMAIL));
   });
 
   it('a file named after sed is not sed', () => {
     const { np, vault, sessionId } = harness();
     const email = bake(vault, sessionId, EMAIL, 'private_email');
 
-    expect(restoreShellCommand(np, `cat sed.txt ${email}`, sessionId).command).toBe(
-      `cat sed.txt ${EMAIL}`,
-    );
+    const command = (e: string) => `cat sed.md && cat > notes.md <<'EOF'\n${e}\nEOF`;
+    expect(restoreShellCommand(np, command(email), sessionId).command).toBe(command(EMAIL));
   });
 
   it('a heredoc delimiter must be a whole word', () => {
@@ -1108,14 +1048,14 @@ describe('shell restore · round-10 layout and redirections', () => {
   });
 
   it.each([
-    (p: string) => `git log --format='%an <%ae>' --author=${p}`,
-    (p: string) => `git commit -m "rename a -> b for ${p}"`,
-    (p: string) => `grep -E "a>b" ${p}`,
-    (p: string) => `echo ${p} > 'notes.md'`,
-    (p: string) => `ls ${p} > /dev/stderr 2>&1`,
-    (p: string) => `ls ${p} >&2`,
-    (p: string) => `echo ${p} >> docs/Notes.MD`,
-  ])('a `>` that writes no file, or writes a document, keeps values: %#', (build) => {
+    (p: string) => `git log --format='%an <%ae>' && git commit -F - <<'EOF'\n${p}\nEOF`,
+    (p: string) => `git commit -F - <<'EOF'\nrename a -> b for ${p}\nEOF`,
+    (p: string) => `echo "a>b" && cat > notes.md <<'EOF'\n${p}\nEOF`,
+    (p: string) => `cat <<'EOF' > 'notes.md'\n${p}\nEOF`,
+    (p: string) => `cat <<'EOF' > /dev/stderr 2>&1\n${p}\nEOF`,
+    (p: string) => `cat <<'EOF' >&2\n${p}\nEOF`,
+    (p: string) => `cat <<'EOF' >> docs/Notes.MD\n${p}\nEOF`,
+  ])('a `>` that writes no file, or writes a document, keeps a data body restored: %#', (build) => {
     const { np, vault, sessionId } = harness();
     const word = bake(vault, sessionId, EMAIL, 'private_email');
 
@@ -1174,7 +1114,7 @@ describe('shell restore · round-10 layout and redirections', () => {
     [(p: string) => `ls.exe ${p}`, 0],
     [(p: string) => `echo ${p} >! notes.md`, 0],
     [(p: string) => `grep ${p} notes.md <<'EOF'`, 0],
-    [(p: string) => `LC_ALL=C grep ${p} notes.md`, 1],
+    [(p: string) => `LC_ALL=C cat > notes.md <<'EOF'\n${p}\nEOF`, 1],
   ])('reads a listed program only as written and alone: %#', (build, expected) => {
     const { np, vault, sessionId } = harness();
     const word = bake(vault, sessionId, EMAIL, 'private_email');
@@ -1219,8 +1159,8 @@ describe('shell restore · round-10 layout and redirections', () => {
     [(p: string) => `file -0C -m ${p}`, 0],
     [(p: string) => `sort -${'r'.repeat(300)}o out.sh ${p}`, 0],
     [(p: string) => `base64 -${'D'.repeat(300)}o out.sh ${p}`, 0],
-    [(p: string) => `git grep -n ${p}`, 1],
-    [(p: string) => `sort -t, -k2 ${p}`, 1],
+    [(p: string) => `git grep -n ${p}`, 0],
+    [(p: string) => `git log -n 3 && git commit -F - <<'EOF'\n${p}\nEOF`, 1],
   ])(
     'finds an option that runs or writes anywhere in a short-option cluster: %#',
     (build, expected) => {
@@ -1236,7 +1176,7 @@ describe('shell restore · round-10 layout and redirections', () => {
     [(p: string) => `PATH=/tmp/x && grep ${p} notes.md`, 0],
     [(p: string) => `HOME=/tmp/x; git log --author=${p}`, 0],
     [(p: string) => `GIT_EDITOR=true; git commit --author=${p}`, 0],
-    [(p: string) => `LANG=C; grep ${p} notes.md`, 1],
+    [(p: string) => `LANG=C; cat > notes.md <<'EOF'\n${p}\nEOF`, 1],
   ])(
     'reads an assignment as a command of its own like one before a program: %#',
     (build, expected) => {
@@ -1262,8 +1202,8 @@ describe('shell restore · round-10 layout and redirections', () => {
     [(p: string) => `echo ${p} >>&2`, 0],
     [(p: string) => `grep ${p} notes.md 2>>&1`, 0],
     [(p: string) => `grep ${p} notes.md >>&-`, 0],
-    [(p: string) => `grep ${p} notes.md 2>&1`, 1],
-    [(p: string) => `grep ${p} notes.md >> notes.md`, 1],
+    [(p: string) => `cat <<'EOF' 2>&1\n${p}\nEOF`, 1],
+    [(p: string) => `cat <<'EOF' >> notes.md\n${p}\nEOF`, 1],
   ])(
     "does not read zsh's `>>&`, which appends to a file named by its digits: %#",
     (build, expected) => {
@@ -1304,9 +1244,9 @@ describe('shell restore · round-10 layout and redirections', () => {
     [(p: string) => `grep a< ${p}`, 0],
     [(p: string) => `grep a<"${p}"`, 0],
     [(p: string) => `grep a 2<${p}`, 0],
-    [(p: string) => `grep a ${p}`, 1],
-    [(p: string) => `grep "a<b" ${p}`, 1],
-    [(p: string) => `echo hi>notes.md && grep ${p} notes.md`, 1],
+    [(p: string) => `cat <<'EOF' > notes.md\n${p}\nEOF`, 1],
+    [(p: string) => `echo "a<b" && cat > notes.md <<'EOF'\n${p}\nEOF`, 1],
+    [(p: string) => `echo hi>notes.md && cat >> notes.md <<'EOF'\n${p}\nEOF`, 1],
   ])('holds an input redirection target glued to the word before it: %#', (build, expected) => {
     const { np, vault, sessionId } = harness();
     const word = bake(vault, sessionId, EMAIL, 'private_email');
@@ -1321,7 +1261,7 @@ describe('shell restore · round-10 layout and redirections', () => {
     [(p: string) => `grep probe <${p}' x'`, 0],
     [(p: string) => `grep probe ${p}2>/dev/null`, 0],
     [(p: string) => `grep probe ${p}10<notes.md`, 0],
-    [(p: string) => `grep probe ${p} 2>/dev/null`, 1],
+    [(p: string) => `cat <<'EOF' 2>/dev/null\n${p}\nEOF`, 1],
   ])(
     'holds a redirection target with a quoted blank, and a value before digits and a redirection: %#',
     (build, expected) => {
@@ -1340,7 +1280,7 @@ describe('shell restore · round-10 layout and redirections', () => {
     [(p: string) => `test -n ${p}`, EMAIL, 0],
     [(p: string) => `printf '%s\\n' ${p}`, EMAIL, 0],
     [(p: string) => `printf -- '%5.2s|%%|%c' ${p}`, EMAIL, 0],
-    [(p: string) => `echo ${p}`, 'probe=7', 1],
+    [(p: string) => `cat > notes.md <<'EOF'\n${p}\nEOF`, 'probe=7', 1],
   ])(
     "holds the arguments zsh or ksh93 may read as arithmetic, not echo's: %#",
     (build, value, expected) => {
@@ -1356,8 +1296,8 @@ describe('shell restore · round-10 layout and redirections', () => {
     [(p: string) => `LC_ALL'=C/x' grep probe ${p}`, 0],
     [(p: string) => `grep probe ${p}; '<a b'`, 0],
     [(p: string) => `"2">notes.md grep probe ${p}`, 0],
-    [(p: string) => `LC_ALL="C" grep probe ${p}`, 1],
-    [(p: string) => `grep probe ${p} >'notes.md'`, 1],
+    [(p: string) => `LC_ALL="C" cat > notes.md <<'EOF'\n${p}\nEOF`, 1],
+    [(p: string) => `cat <<'EOF' >'notes.md'\n${p}\nEOF`, 1],
   ])('reads an assignment or a redirection only when written unquoted: %#', (build, expected) => {
     const { np, vault, sessionId } = harness();
     const word = bake(vault, sessionId, EMAIL, 'private_email');
@@ -1447,27 +1387,32 @@ describe('shell restore · round-10 layout and redirections', () => {
     },
   );
 
-  it.each([
-    [(p: string) => `LC_ALL=C.UTF-8 grep ${p} notes.md`, 1],
-    [(p: string) => `LANGUAGE=en_US:en grep ${p} notes.md`, 1],
-    [(p: string) => `TZ=Europe/Rome git log --author=${p}`, 1],
-    [(p: string) => `LANG=de_DE.UTF-8@euro; grep ${p} notes.md`, 1],
-    [(p: string) => `LC_ALL=en_US.UTF-8 grep ${p} notes.md`, 1],
-    [(p: string) => `LANG=POSIX grep ${p} notes.md`, 1],
-    [(p: string) => `LANG=de_DE@euro; grep ${p} notes.md`, 0],
-    [(p: string) => `LC_ALL=zh_TW.Big5 grep ${p} notes.md`, 0],
-    [(p: string) => `LC_ALL=zh_CN.GBK; grep ${p} notes.md`, 0],
-    [(p: string) => `TZ=/tmp/zone git log --author=${p}`, 0],
-    [(p: string) => `TZ=../zone git log --author=${p}`, 0],
-    [(p: string) => `LC_ALL=/tmp/locale grep ${p} notes.md`, 0],
-    [(p: string) => `LC_ALL=a=b grep ${p} notes.md`, 0],
-    [(p: string) => `LANGUAGE=.. git log --author=${p}`, 0],
-    [(p: string) => `LC_ALL=.. grep ${p} notes.md`, 0],
-    [(p: string) => `LANGUAGE=en:.. diff a.md ${p}`, 0],
-    [(p: string) => `LANG=.; grep ${p} notes.md`, 0],
-    [(p: string) => `TZ=Etc/GMT+1 git log --author=${p}`, 1],
-    [(p: string) => `LANG= grep ${p} notes.md`, 1],
-  ])('allows the locale and time zone only with a plain name: %#', (build, expected) => {
+  it.each(
+    [
+      ['LC_ALL=C.UTF-8', 1],
+      ['LANGUAGE=en_US:en', 1],
+      ['TZ=Europe/Rome', 1],
+      ['LANG=de_DE.UTF-8@euro;', 1],
+      ['LC_ALL=en_US.UTF-8', 1],
+      ['LANG=POSIX', 1],
+      ['LANG=de_DE@euro;', 0],
+      ['LC_ALL=zh_TW.Big5', 0],
+      ['LC_ALL=zh_CN.GBK;', 0],
+      ['TZ=/tmp/zone', 0],
+      ['TZ=../zone', 0],
+      ['LC_ALL=/tmp/locale', 0],
+      ['LC_ALL=a=b', 0],
+      ['LANGUAGE=..', 0],
+      ['LC_ALL=..', 0],
+      ['LANGUAGE=en:..', 0],
+      ['LANG=.;', 0],
+      ['TZ=Etc/GMT+1', 1],
+      ['LANG=', 1],
+    ].map(([prefix, expected]) => [
+      (p: string) => `${prefix} cat > notes.md <<'EOF'\n${p}\nEOF`,
+      expected,
+    ]) as Array<[(p: string) => string, number]>,
+  )('allows the locale and time zone only with a plain name: %#', (build, expected) => {
     const { np, vault, sessionId } = harness();
     const word = bake(vault, sessionId, EMAIL, 'private_email');
 
@@ -1513,15 +1458,15 @@ describe('shell restore · round-10 layout and redirections', () => {
   });
 
   it.each([
-    [(p: string) => `cd requirements && echo ${p} > base.txt`, 0],
-    [(p: string) => `cd .git && echo ${p} > notes.md`, 0],
-    [(p: string) => `echo ${p} > BIN/notes.md`, 0],
-    [(p: string) => `echo ${p} > /ETC/notes.md`, 0],
-    [(p: string) => `cd docs && grep ${p} notes.md`, 1],
-    [(p: string) => `cd docs && grep ${p} notes.md > /tmp/hits.md`, 1],
-    [(p: string) => `echo ${p} > /private/etc/notes.md`, 0],
-    [(p: string) => `echo ${p} > notes.txt`, 0],
-    [(p: string) => `git add bin/cli.js && grep ${p} notes.md > hits.md`, 1],
+    [(p: string) => `cd requirements && cat > base.md <<'EOF'\n${p}\nEOF`, 0],
+    [(p: string) => `cd .git && cat > notes.md <<'EOF'\n${p}\nEOF`, 0],
+    [(p: string) => `cat > BIN/notes.md <<'EOF'\n${p}\nEOF`, 0],
+    [(p: string) => `cat > /ETC/notes.md <<'EOF'\n${p}\nEOF`, 0],
+    [(p: string) => `cd docs && git commit -F - <<'EOF'\n${p}\nEOF`, 1],
+    [(p: string) => `cd docs && cat > /tmp/hits.md <<'EOF'\n${p}\nEOF`, 1],
+    [(p: string) => `cat > /private/etc/notes.md <<'EOF'\n${p}\nEOF`, 0],
+    [(p: string) => `cat > notes.txt <<'EOF'\n${p}\nEOF`, 0],
+    [(p: string) => `git add bin/cli.js && cat > hits.md <<'EOF'\n${p}\nEOF`, 1],
   ])('judges a write after a cd, and bin directories as targets only: %#', (build, expected) => {
     const { np, vault, sessionId } = harness();
     const word = bake(vault, sessionId, EMAIL, 'private_email');
@@ -1537,31 +1482,12 @@ describe('shell restore · round-10 layout and redirections', () => {
     expect(restored(restoreShellCommand(np, command, sessionId))).toBe(1);
   });
 
-  it.each([
-    ['@probe', 0],
-    ['probe%x%', 0],
-    ['//probe/share/notes.md', 0],
-    [EMAIL, 1],
-    ['probe@host', 1],
-  ])(
-    'restores %j as a plain word only if no Windows shell layer reads it: expected %i',
-    (value, expected) => {
-      const { np, vault, sessionId } = harness();
-      const word = bake(vault, sessionId, value, 'secret');
-
-      expect(restored(restoreShellCommand(np, `grep ${word} notes.md`, sessionId))).toBe(expected);
-    },
-  );
-
-  it('still restores beside a search pattern that starts with two slashes and a space', () => {
+  it('restores beside an echo of a pattern that starts with two slashes', () => {
     const { np, vault, sessionId } = harness();
     const word = bake(vault, sessionId, EMAIL, 'private_email');
+    const command = `echo '// TODO' && cat > notes.md <<'EOF'\n${word}\nEOF`;
 
-    expect(
-      restored(
-        restoreShellCommand(np, `grep -rn '// TODO' src && grep ${word} notes.md`, sessionId),
-      ),
-    ).toBe(1);
+    expect(restored(restoreShellCommand(np, command, sessionId))).toBe(1);
   });
 
   it.each([
@@ -1579,9 +1505,8 @@ describe('shell restore · round-10 layout and redirections', () => {
       const { np, vault, sessionId } = harness();
       const word = bake(vault, sessionId, EMAIL, 'private_email');
 
-      expect(restored(restoreShellArgv(np, [...shell, `grep probe ${word}`], sessionId))).toBe(
-        expected,
-      );
+      const script = `cat > notes.md <<'EOF'\n${word}\nEOF`;
+      expect(restored(restoreShellArgv(np, [...shell, script], sessionId))).toBe(expected);
     },
   );
 
@@ -1797,21 +1722,26 @@ describe('shell restore · argv commands', () => {
     const email = bake(vault, sessionId, EMAIL, 'private_email');
     const secret = bake(vault, sessionId, INJECTION, 'secret');
 
-    const r = restoreShellArgv(np, ['bash', '-lc', `echo ${person} ${email} ${secret}`], sessionId);
+    const script = (p: string) => `echo ${secret} && cat > notes.md <<'EOF'\n${p} ${email}\nEOF`;
 
-    expect(r.argv).toEqual(['bash', '-lc', `echo ${person} ${EMAIL} ${secret}`]);
-    expect(r.keptMasked).toEqual([person, secret]);
+    const r = restoreShellArgv(np, ['bash', '-lc', script(person)], sessionId);
+
+    expect(r.argv).toEqual([
+      'bash',
+      '-lc',
+      `echo ${secret} && cat > notes.md <<'EOF'\n${FULL_NAME} ${EMAIL}\nEOF`,
+    ]);
+    expect(r.keptMasked).toEqual([secret]);
   });
 
-  it('restores one plain word as an argument, and nothing else, as in a string command', () => {
+  it('restores no word of an argv array, as in a string command', () => {
     const { np, vault, sessionId } = harness();
     const person = bake(vault, sessionId, FULL_NAME, 'private_person');
     const email = bake(vault, sessionId, EMAIL, 'private_email');
 
     const r = restoreShellArgv(np, ['grep', '-F', person, email], sessionId);
 
-    expect(r.argv).toEqual(['grep', '-F', person, EMAIL]);
-    expect(r.keptMasked).toEqual([person]);
+    expect(r.argv).toEqual(['grep', '-F', person, email]);
   });
 
   it('judges the script a shell runs as a string command', () => {
@@ -2288,20 +2218,15 @@ describe('shell restore · tool input fields', () => {
     const word = bake(vault, sessionId, EMAIL, 'private_email');
     const acc = newRestoreAccumulator();
 
+    const command = `cat > notes.md <<'EOF'\n${word}\nEOF`;
     const onWindows = restoreToolInput(
       np,
-      { command: `grep ${word} notes.md` },
+      { command },
       sessionId,
       acc,
       shellToolOf('Bash', 'win32'),
     );
-    const onMac = restoreToolInput(
-      np,
-      { command: `grep ${word} notes.md` },
-      sessionId,
-      acc,
-      shellToolOf('Bash', 'darwin'),
-    );
+    const onMac = restoreToolInput(np, { command }, sessionId, acc, shellToolOf('Bash', 'darwin'));
 
     expect((onWindows as { command: string }).command).toContain(word);
     expect((onMac as { command: string }).command).toContain(EMAIL);
@@ -2311,7 +2236,7 @@ describe('shell restore · tool input fields', () => {
     const { np, vault, sessionId } = harness();
     const word = bake(vault, sessionId, EMAIL, 'private_email');
     const acc = newRestoreAccumulator();
-    const command = ['grep', word, '/srv/notes.md'];
+    const command = ['bash', '-lc', `cat > /srv/notes.md <<'EOF'\n${word}\nEOF`];
 
     const withEnv = restoreToolInput(
       np,
@@ -2328,8 +2253,8 @@ describe('shell restore · tool input fields', () => {
       shellToolOf('shell'),
     );
 
-    expect((withEnv as { command: string[] }).command[1]).toBe(word);
-    expect((emptyEnv as { command: string[] }).command[1]).toBe(EMAIL);
+    expect((withEnv as { command: string[] }).command[2]).toContain(word);
+    expect((emptyEnv as { command: string[] }).command[2]).toContain(EMAIL);
   });
 
   it('treats a workdir as a cd: a relative write gets no value', () => {

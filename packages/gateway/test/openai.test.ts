@@ -615,7 +615,7 @@ describe('openai · response restore', () => {
           {
             id: 'call_1',
             type: 'custom',
-            custom: { name: 'shell', input: `grep -rn ${email} contacts/` },
+            custom: { name: 'shell', input: `cat > contacts.md <<'EOF'\n${email}\nEOF` },
           },
         ],
         function_call: { name: 'send', arguments: JSON.stringify({ to: email }) },
@@ -627,7 +627,9 @@ describe('openai · response restore', () => {
 
     const message = restored.body.choices[0]?.message;
     expect(message?.refusal).toBe(`I will not contact ${PERSON}`);
-    expect(message?.tool_calls?.[0]?.custom?.input).toBe(`grep -rn ${EMAIL} contacts/`);
+    expect(message?.tool_calls?.[0]?.custom?.input).toBe(
+      `cat > contacts.md <<'EOF'\n${EMAIL}\nEOF`,
+    );
     expect(JSON.parse(message?.function_call?.arguments ?? '')).toEqual({ to: EMAIL });
     expect(restored.replacements).toBe(3);
   });

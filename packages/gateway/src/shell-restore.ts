@@ -107,8 +107,9 @@ export const WORKDIR_FIELDS: ReadonlySet<string> = new Set(['workdir', 'cwd', 'w
 export interface ShellOptions {
   /** The call sets the working directory itself (`WORKDIR_FIELDS`). */
   readonly movedDir?: boolean;
-  /** That working directory is a network path (`namesNetworkPath`): the
-   * command's file arguments may be opened over the network. */
+  /** The call sets the command's environment itself (an `env` field),
+   * which chooses what it runs or reads as an assignment would: nothing
+   * comes back. */
   readonly offMachine?: boolean;
 }
 /** The other input fields of a shell tool that get values back, for a
@@ -138,22 +139,6 @@ const DATA_BODY_CONTEXTS: ReadonlySet<QuoteContext> = new Set<DataBodyContext>([
  * (zsh's `=cmd` expansion), `~` (a home directory), `@` (PowerShell
  * splatting) or `//` (a network path under Windows' POSIX layers). */
 const PLAIN_WORD = /^(?![-=~@])(?!\/\/)[\p{L}\p{N}@+:,./_=-]+$/u;
-/** A network path in a word as the program gets it, quotes removed:
- * `//host/…` anywhere but after a URL scheme's `:` (`-f//host/x`
- * included), which Git Bash and Cygwin programs open over the network, or
- * Cygwin's NT namespace (`/proc/sys/…`). */
-const NETWORK_PATH = /(?<![:/])\/\/(?![\s/]|$)|(?:^|=)\/proc\/sys(?:\/|$)/u;
-
-/** True when the shell word `w` names a network path, as an argument or
- * as the target of the redirection it is (`<//host/x`). */
-function namesNetworkWord(w: Word): boolean {
-  return namesNetworkPath(w.text) || namesNetworkPath(redirectedTarget(w) ?? '');
-}
-
-/** True when `word`, as a program gets it, names a network path. */
-export function namesNetworkPath(word: string): boolean {
-  return NETWORK_PATH.test(word);
-}
 
 /** What a value may hold in a data heredoc body. */
 const DATA_BODY_SAFE: Readonly<Record<DataBodyContext, RegExp>> = {
@@ -1004,9 +989,20 @@ export function isShellTool(name: unknown): boolean {
 }
 
 /** The shell tool `name` is, or `undefined` for any other tool. */
-export function shellToolOf(name: unknown): ShellTool | undefined {
-  return typeof name === 'string' ? SHELL_TOOL_SPECS.get(name) : undefined;
+export function shellToolOf(
+  name: unknown,
+  platform: string = process.platform,
+): ShellTool | undefined {
+  const spec = typeof name === 'string' ? SHELL_TOOL_SPECS.get(name) : undefined;
+  if (spec === undefined) return undefined;
+  // On Windows no shell tool gets a value: Git Bash, MSYS2 and Cygwin read
+  // paths (network paths in several spellings, `/proc/sys`, backslashes)
+  // and Windows shells read words in ways this rule does not model.
+  return platform === WINDOWS ? NO_VALUE : spec;
 }
+
+const WINDOWS = 'win32';
+const NO_VALUE: ShellTool = { commandField: undefined };
 
 /** True when `command` sends data off the machine: a network client or an
  * upload, behind any wrapper, or code it runs that opens a URL or a
@@ -1082,9 +1078,7 @@ function judge(command: string, targets: readonly number[], options: ShellOption
     programs.some(sendsOut) ||
     (strict && NETWORK_IN_CODE.test(code)) ||
     (URL_SCHEME.test(code) && !programs.every(isDataProgram)) ||
-    options.offMachine === true ||
-    scan.outputs.some(namesNetworkPath) ||
-    [...wordsAt.values()].some((words) => words.some(namesNetworkWord));
+    options.offMachine === true;
   // A data body goes to standard output or to a plain document file; one
   // written elsewhere (`.git/config`, `Makefile`, `run.sh`) may be read
   // as code later.
@@ -2103,7 +2097,7 @@ function argvSendsOffMachine(argv: readonly string[]): boolean {
   if (script >= 0 && sendsOffMachine(argv[script] ?? '')) return true;
   const words = argv.filter((_, k) => k !== script);
   if (words.some((a) => ANY_DELIMITER_IN_TEXT.test(a))) return true;
-  if (words.some((a) => NETWORK_CLIENT.test(a) || namesNetworkPath(a))) return true;
+  if (words.some((a) => NETWORK_CLIENT.test(a))) return true;
   // As in a string command: a URL handed to a program that is not a data one.
   if (words.some((a) => URL_SCHEME.test(a)) && !(program !== undefined && isDataProgram(program))) {
     return true;

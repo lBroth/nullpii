@@ -1553,30 +1553,6 @@ describe('shell restore · round-10 layout and redirections', () => {
     },
   );
 
-  it.each([
-    (p: string) => `touch //probe/share/${p}.md`,
-    (p: string) => `cat //${p}.probe.example/x`,
-    (p: string) => `grep ${p} //probe/share/notes.md`,
-    (p: string) => `echo ${p} > /""/probe/share/n.md`,
-    (p: string) => `cat '/'/probe/${p}`,
-    (p: string) => `grep -f//probe.example/x ${p}`,
-    (p: string) => `grep ${p} /proc/sys/probe/notes.md`,
-    (p: string) => `grep ${p} <//probe/share/notes.md`,
-  ])('keeps every value in a command that names a network path: %#', (build) => {
-    const { np, vault, sessionId } = harness();
-    const word = bake(vault, sessionId, 'probe', 'secret');
-
-    expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(0);
-  });
-
-  it('keeps a value that makes a network host, quoted or not', () => {
-    const { np, vault, sessionId } = harness();
-    const name = bake(vault, sessionId, 'Émile', 'private_person');
-
-    expect(restored(restoreShellCommand(np, `cat //${name}/x`, sessionId))).toBe(0);
-    expect(restored(restoreShellCommand(np, `cat "//${name}/x"`, sessionId))).toBe(0);
-  });
-
   it('still restores beside a search pattern that starts with two slashes and a space', () => {
     const { np, vault, sessionId } = harness();
     const word = bake(vault, sessionId, EMAIL, 'private_email');
@@ -2307,20 +2283,53 @@ describe('shell restore · tool input fields', () => {
     }
   });
 
-  it('keeps every value when the working directory is a network path', () => {
+  it('gives no shell tool a value when the gateway runs on Windows', () => {
     const { np, vault, sessionId } = harness();
     const word = bake(vault, sessionId, EMAIL, 'private_email');
     const acc = newRestoreAccumulator();
 
-    const out = restoreToolInput(
+    const onWindows = restoreToolInput(
       np,
-      { command: ['ls', word], workdir: '//probe/share' },
+      { command: `grep ${word} notes.md` },
+      sessionId,
+      acc,
+      shellToolOf('Bash', 'win32'),
+    );
+    const onMac = restoreToolInput(
+      np,
+      { command: `grep ${word} notes.md` },
+      sessionId,
+      acc,
+      shellToolOf('Bash', 'darwin'),
+    );
+
+    expect((onWindows as { command: string }).command).toContain(word);
+    expect((onMac as { command: string }).command).toContain(EMAIL);
+  });
+
+  it('keeps every value when the call sets an environment', () => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, EMAIL, 'private_email');
+    const acc = newRestoreAccumulator();
+    const command = ['grep', word, '/srv/notes.md'];
+
+    const withEnv = restoreToolInput(
+      np,
+      { command, env: { X: '1' } },
+      sessionId,
+      acc,
+      shellToolOf('shell'),
+    );
+    const emptyEnv = restoreToolInput(
+      np,
+      { command, env: {} },
       sessionId,
       acc,
       shellToolOf('shell'),
     );
 
-    expect((out as { command: string[] }).command[1]).toBe(word);
+    expect((withEnv as { command: string[] }).command[1]).toBe(word);
+    expect((emptyEnv as { command: string[] }).command[1]).toBe(EMAIL);
   });
 
   it('treats a workdir as a cd: a relative write gets no value', () => {

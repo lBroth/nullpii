@@ -12,7 +12,6 @@ import {
   type ShellTool,
   WORKDIR_FIELDS,
   countPlaceholders,
-  namesNetworkPath,
   placeholdersIn,
   restoreShellArgv,
   restoreShellCommand,
@@ -949,19 +948,22 @@ export function keepShellField(
   return field;
 }
 
-/** How a shell tool's input moves its command (`WORKDIR_FIELDS`): to a
- * directory of its own (`movedDir`), or to a network path (`offMachine`),
- * where every file argument may be opened over the network. */
+/** How a shell tool's input sets where and how its command runs: a
+ * working directory of its own (`WORKDIR_FIELDS`, `movedDir`), or an
+ * environment (`env`, `offMachine`: nothing comes back, as with an
+ * assignment in the command). */
 function workdirOptions(input: unknown): ShellOptions {
   if (!isRecord(input)) return {};
-  const dirs = [...WORKDIR_FIELDS]
-    .map((k) => input[k])
-    .filter((d) => d !== undefined && d !== null && d !== '');
+  const set = (d: unknown): boolean => d !== undefined && d !== null && d !== '';
+  const env = input[ENV_FIELD];
   return {
-    movedDir: dirs.length > 0,
-    offMachine: dirs.some((d) => typeof d === 'string' && namesNetworkPath(d)),
+    movedDir: [...WORKDIR_FIELDS].some((k) => set(input[k])),
+    offMachine: set(env) && !(isRecord(env) && Object.keys(env).length === 0),
   };
 }
+
+/** The input field that sets a shell tool's environment. */
+const ENV_FIELD = 'env';
 
 /** Shell-aware restore of one command string (see `shell-restore.ts`),
  * tallying counts into `acc` and, when given, appending the placeholders

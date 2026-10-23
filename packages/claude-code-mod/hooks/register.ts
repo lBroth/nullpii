@@ -13,6 +13,7 @@
 // The vault lives in the sidecar's memory; this mod keeps counts only, and
 // the session's secret, which never leaves this process's memory.
 
+import { applyPiiCommand, parsePiiCommand, placeholdersToAsk, shortName } from './categories.ts';
 import {
   PLACEHOLDER,
   type Policy,
@@ -21,6 +22,7 @@ import {
   emptyCounts,
   expectedProof,
   formatBand,
+  formatPolicy,
   formatReport,
   hasPlaceholder,
   optionString,
@@ -34,6 +36,14 @@ import {
 const DEFAULT_SIDECAR_URL = 'http://127.0.0.1:8787';
 const SESSIONS_PATH = '/v1/sidecar/sessions/';
 const STATUS_PATH = '/v1/sidecar/status';
+const POLICY_PATH = '/v1/sidecar/policy';
+/** The answers of the dialog that asks before masking a value in the
+ * user's own prompt (a category whose mode is `ask`). */
+const ASK_MASK = 'Mask';
+const ASK_READABLE = 'Send readable';
+const ASK_ALWAYS_READABLE = 'Always readable';
+/** How much of a value the dialog shows. */
+const ASK_PREVIEW_CHARS = 60;
 const CHALLENGE_PATH = '/v1/sidecar/challenge';
 const JSON_TYPE = { 'content-type': 'application/json' };
 const SESSION_NOT_FOUND = 404;
@@ -312,6 +322,57 @@ function blocked($, event: string, failure: Failure): string {
   return reason;
 }
 
+/** Send the policy file contents `config` to the sidecar, which writes
+ * and applies it; resolves to the policy now in effect. */
+async function putPolicy($, config: Readonly<Record<string, unknown>>): Promise<Policy> {
+  const answer = (await request($, 'PUT', POLICY_PATH, { config })) as { policy: Policy };
+  return answer.policy;
+}
+
+/**
+ * The masked prompt `text`, after asking the user about the values of the
+ * categories whose mode is `ask`: masked as they are, sent readable, or
+ * sent readable with those categories left readable from now on. A dialog
+ * that is dismissed, or that no one can answer (`claude -p`), keeps them
+ * masked. The values are shown on this machine only.
+ */
+async function confirmed($, text: string): Promise<string> {
+  const asked = placeholdersToAsk(text, policy?.categories);
+  if (asked.length === 0) return text;
+  const restored = (await sidecar($, 'POST', '/restore', {
+    value: asked.map((a) => a.placeholder),
+  })) as { value: string[] };
+  const values = restored.value;
+  const listed = asked.map((a, i) => `${shortName(a.category)} "${preview(values[i] ?? '')}"`);
+  const categories = [...new Set(asked.map((a) => a.category))];
+  let answer: string;
+  try {
+    answer = await $.ui.ask(`nullpii would mask ${listed.join(', ')} in your prompt. Mask?`, {
+      header: 'nullpii',
+      options: [ASK_MASK, ASK_READABLE, ASK_ALWAYS_READABLE],
+    });
+  } catch (err) {
+    $.ui.log(`nullpii: no answer to the mask dialog (${errorName(err)}); kept masked`, {
+      to: 'debug',
+    });
+    return text;
+  }
+  if (answer !== ASK_READABLE && answer !== ASK_ALWAYS_READABLE) return text;
+  if (answer === ASK_ALWAYS_READABLE && policy !== undefined) {
+    const command = { kind: 'set', mode: 'off', categories } as const;
+    policy = await putPolicy($, applyPiiCommand(policy.config, command));
+  }
+  return asked.reduce(
+    (out, a, i) => out.split(a.placeholder).join(values[i] ?? a.placeholder),
+    text,
+  );
+}
+
+/** `value` cut to `ASK_PREVIEW_CHARS`, for the dialog. */
+function preview(value: string): string {
+  return value.length > ASK_PREVIEW_CHARS ? `${value.slice(0, ASK_PREVIEW_CHARS)}…` : value;
+}
+
 /** The text with real values, for the screen only. */
 async function restoredForDisplay($, text: string): Promise<string> {
   const cached = shown.get(text);
@@ -326,7 +387,8 @@ export function register(on, options) {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'pii',
-      description: 'Show what nullpii masked in this session',
+      description:
+        'Show what nullpii masked and its policy; change it: /pii preset agent|secrets|all, /pii mask|ask|off <category…>, /pii reset',
     });
     // The address comes from the plugin option alone: options are read from
     // user and managed settings only, while a project's settings can set
@@ -366,7 +428,9 @@ export function register(on, options) {
       text: string;
       context: string[];
     };
-    return next({ ...e, text: out.text, ...(e.context !== undefined && { context: out.context }) });
+    // Only what the user typed is put to them; text the engine adds is not.
+    const text = e.isMeta === true ? out.text : await confirmed($, out.text);
+    return next({ ...e, text, ...(e.context !== undefined && { context: out.context }) });
   }).catch(async ($, e, next) => {
     if (next.called) return next(e);
     return {
@@ -463,9 +527,20 @@ export function register(on, options) {
     return { decision: 'ask', reason: POLICY_ASK };
   }).catch(async ($, e, next) => (next.called ? { decision: 'ask', reason: POLICY_ASK } : next(e)));
 
-  on('command.run', { command: 'pii' }, async () => ({
-    text: formatReport(counts, problem, policy),
-  }));
+  on('command.run', { command: 'pii' }, async ($, e) => {
+    const command = parsePiiCommand(e.args ?? '');
+    if (command.kind === 'status') return { text: formatReport(counts, problem, policy) };
+    if (command.kind === 'error') return { text: command.message };
+    if (policy === undefined) {
+      return { text: 'nullpii: the sidecar has not answered, so the policy cannot change now.' };
+    }
+    try {
+      policy = await putPolicy($, applyPiiCommand(policy.config, command));
+      return { text: ['Policy changed.', ...formatPolicy(policy)].join('\n') };
+    } catch (err) {
+      return { text: `nullpii could not change the policy: ${shownReason(failureOf(err))}` };
+    }
+  });
 
   // The transcript shows real values; what Claude reads keeps the
   // placeholders. If the sidecar fails, the hook is skipped and the row is

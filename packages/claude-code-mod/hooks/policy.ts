@@ -5,6 +5,8 @@
 // and the policy are shown. No mods API calls live here, so
 // `claude plugin validate` reads every `$` call from register.ts.
 
+import { PII_USAGE, shortName } from './categories.ts';
+
 /**
  * Arguments that may get their real values back, per built-in tool that
  * acts on this machine. Whether a tool gets any is not decided here: the
@@ -233,6 +235,9 @@ export interface Policy {
   /** The categories left readable, defaults included (absent from an
    * older sidecar). */
   disabledCategories?: readonly string[];
+  /** The mode of every category: `mask`, `ask` or `off` (absent from an
+   * older sidecar). */
+  categories?: Readonly<Record<string, string>>;
   restoreTools: readonly string[];
 }
 
@@ -283,16 +288,33 @@ export function formatBand(counts: Counts, problem: string | undefined): string 
   return `nullpii · ${counts.masked} masked (${labels}) · ${counts.restored} restored to local tools`;
 }
 
+/** The categories under `mode`, by short name, or `none`. */
+function categoriesIn(modes: Readonly<Record<string, string>>, mode: string): string {
+  const names = Object.keys(modes)
+    .filter((c) => modes[c] === mode)
+    .map(shortName);
+  return names.length > 0 ? names.join(', ') : 'none';
+}
+
 /** The policy lines of the `/pii` reply. */
 export function formatPolicy(policy: Policy | undefined): string[] {
   if (policy === undefined) return ['Policy: unknown (the sidecar has not answered)'];
   const disabled = policy.disabledCategories ?? policy.config.disabledCategories;
   const off = Array.isArray(disabled) && disabled.length > 0 ? disabled.join(', ') : 'none';
+  const modes = policy.categories;
+  const categories =
+    modes === undefined
+      ? [`Categories left readable: ${off}`]
+      : [
+          `Masked: ${categoriesIn(modes, 'mask')}`,
+          `Masked after asking you (in your prompts): ${categoriesIn(modes, 'ask')}`,
+          `Left readable: ${categoriesIn(modes, 'off')}`,
+        ];
   return [
     `Policy file: ${policy.file} (${policy.loaded ? 'loaded' : 'not present: built-in defaults'})`,
-    `Categories left readable: ${off}`,
+    ...categories,
     `Tools that get real values back: ${policy.restoreTools.join(', ')}`,
-    'Changes to the file apply when nullpii-gateway restarts.',
+    `Change it with ${PII_USAGE.slice('Usage: '.length)}`,
   ];
 }
 

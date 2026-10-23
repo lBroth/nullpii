@@ -30,6 +30,10 @@ const SECRETS: ReadonlyArray<[RegExp, string]> = [
 ];
 
 const SECRET_HEADER = 'x-nullpii-session-secret';
+const PLACEHOLDER_ANY = /\{\{PII_[A-Z]+_\d+_[0-9a-f]{16}\}\}/g;
+/** The data forms the fake sidecar's stand-in shell rule accepts; group 1
+ * is the heredoc body. */
+const DATA_HEREDOC = /^(?:cat > [\w./-]+\.md|git commit -F -) <<'EOF'\n([\s\S]*)\nEOF$/;
 const SESSIONS_PREFIX = '/v1/sidecar/sessions/';
 
 /** A stand-in for nullpii-gateway's sidecar routes, with one vault.
@@ -178,19 +182,33 @@ function fakeSidecar(
     }
     let replacements = 0;
     // Stand-in for the gateway's shell rule on a shell tool (tested there):
-    // in `command`, a value is restored only if it is one plain word.
+    // in `command`, a value comes back only in the body of a data heredoc
+    // (`cat > FILE.md <<'EOF'` or `git commit -F - <<'EOF'`), only when
+    // every placeholder of the command is there, and only with no line break.
     const kept: string[] = [];
-    const restoreIn = (text: string, shellRule: boolean) =>
-      text.replace(/\{\{PII_[A-Z]+_\d+_[0-9a-f]{16}\}\}/g, (placeholder, at: number) => {
+    const keep = (placeholder: string) => {
+      if (!kept.includes(placeholder)) kept.push(placeholder);
+    };
+    const restoreIn = (text: string, shellRule: boolean): string => {
+      if (shellRule) {
+        const body = DATA_HEREDOC.exec(text)?.[1];
+        const outside = body === undefined ? text : text.replace(body, '');
+        if (body === undefined || (outside.match(PLACEHOLDER_ANY) ?? []).length > 0) {
+          for (const placeholder of text.match(PLACEHOLDER_ANY) ?? []) keep(placeholder);
+          return text;
+        }
+      }
+      return text.replace(PLACEHOLDER_ANY, (placeholder) => {
         const real = vault.get(placeholder);
         if (real === undefined) return placeholder;
-        if (shellRule && !/^(?![-=~])[A-Za-z0-9@%+=:,./_-]+$/.test(real)) {
-          if (!kept.includes(placeholder)) kept.push(placeholder);
+        if (shellRule && real.includes('\n')) {
+          keep(placeholder);
           return placeholder;
         }
         replacements += 1;
         return real;
       });
+    };
     const shellBody = body.tool === 'Bash';
     const input = body.value as Record<string, unknown>;
     const value = shellBody
@@ -317,10 +335,13 @@ test('placeholders in a local tool call get their real values back before it run
     return { result: { stdout: 'found john@acme.io', stderr: '' } };
   });
   await start($);
-  await $.prompt.submit({ text: 'grep for john@acme.io', wait: false, origin: COMPOSER });
+  await $.prompt.submit({ text: 'note john@acme.io', wait: false, origin: COMPOSER });
   const placeholder = ph('EMAIL', 0);
-  const out = await $.tool.call({ tool: 'Bash', command: `grep -r ${placeholder} .` });
-  expect(commands).toEqual(['grep -r john@acme.io .']);
+  const out = await $.tool.call({
+    tool: 'Bash',
+    command: `cat > notes.md <<'EOF'\nContact: ${placeholder}\nEOF`,
+  });
+  expect(commands).toEqual(["cat > notes.md <<'EOF'\nContact: john@acme.io\nEOF"]);
   expect(JSON.stringify(out)).not.toContain('john@acme.io');
 });
 

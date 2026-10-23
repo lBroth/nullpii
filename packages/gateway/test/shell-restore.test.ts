@@ -775,6 +775,39 @@ describe('shell restore · OpenAI route', () => {
     expect(PLACEHOLDER.test(command)).toBe(!restores);
     PLACEHOLDER.lastIndex = 0;
   });
+
+  it('SSE: a frame whose data is JSON but not an object holds every later tool input', async () => {
+    const app = await serve((body) => {
+      const [secret, person] = placeholdersIn(forwardedUserText(body));
+      const args = JSON.stringify({ command: bashCommand(secret, person) });
+      return sseResponse([
+        'data: 42\n\n',
+        openAiFrame([
+          {
+            index: 0,
+            delta: { tool_calls: [{ index: 0, function: { name: 'bash', arguments: args } }] },
+          },
+        ]),
+        openAiFrame([{ index: 0, delta: {}, finish_reason: 'tool_calls' }]),
+        'data: [DONE]\n\n',
+      ]);
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: {
+        model: 'gpt-test',
+        stream: true,
+        messages: [{ role: 'user', content: USER_TEXT }],
+      },
+    });
+
+    const command = (JSON.parse(streamedInputs(res.body).get(0) ?? '') as { command: string })
+      .command;
+    expect(command).not.toContain(FULL_NAME);
+    expect(command).not.toContain(INJECTION);
+  });
 });
 
 describe('shell restore · request log', () => {

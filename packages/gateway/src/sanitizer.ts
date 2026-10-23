@@ -12,6 +12,7 @@ import {
   type ShellTool,
   WORKDIR_FIELDS,
   countPlaceholders,
+  namesNetworkPath,
   placeholdersIn,
   restoreShellArgv,
   restoreShellCommand,
@@ -781,7 +782,7 @@ export function restoreValue(
 ): RestoredValue {
   const acc = newRestoreAccumulator();
   const keptMasked: string[] = [];
-  const options = { movedDir: setsWorkdir(value) };
+  const options = workdirOptions(value);
   const restoreField = (key: string, field: unknown): unknown =>
     shell !== undefined
       ? restoreShellToolField(
@@ -877,7 +878,7 @@ export function restoreToolInput(
   if (shell === undefined) return restoreJsonValue(np, input, sessionId, acc);
   // An input that is not an object has no command field to judge.
   if (!isRecord(input)) return keepShellField(input, acc);
-  const options = { movedDir: setsWorkdir(input) };
+  const options = workdirOptions(input);
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(input)) {
     out[key] = restoreShellToolField(np, shell.commandField, key, value, sessionId, acc, options);
@@ -948,13 +949,18 @@ export function keepShellField(
   return field;
 }
 
-/** True when a shell tool's input sets the directory its command runs in
- * (`WORKDIR_FIELDS`). */
-function setsWorkdir(input: unknown): boolean {
-  if (!isRecord(input)) return false;
-  return [...WORKDIR_FIELDS].some(
-    (k) => input[k] !== undefined && input[k] !== null && input[k] !== '',
-  );
+/** How a shell tool's input moves its command (`WORKDIR_FIELDS`): to a
+ * directory of its own (`movedDir`), or to a network path (`offMachine`),
+ * where every file argument may be opened over the network. */
+function workdirOptions(input: unknown): ShellOptions {
+  if (!isRecord(input)) return {};
+  const dirs = [...WORKDIR_FIELDS]
+    .map((k) => input[k])
+    .filter((d) => d !== undefined && d !== null && d !== '');
+  return {
+    movedDir: dirs.length > 0,
+    offMachine: dirs.some((d) => typeof d === 'string' && namesNetworkPath(d)),
+  };
 }
 
 /** Shell-aware restore of one command string (see `shell-restore.ts`),

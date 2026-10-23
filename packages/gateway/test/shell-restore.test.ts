@@ -1557,11 +1557,35 @@ describe('shell restore · round-10 layout and redirections', () => {
     (p: string) => `touch //probe/share/${p}.md`,
     (p: string) => `cat //${p}.probe.example/x`,
     (p: string) => `grep ${p} //probe/share/notes.md`,
+    (p: string) => `echo ${p} > /""/probe/share/n.md`,
+    (p: string) => `cat '/'/probe/${p}`,
+    (p: string) => `grep -f//probe.example/x ${p}`,
+    (p: string) => `grep ${p} /proc/sys/probe/notes.md`,
+    (p: string) => `grep ${p} <//probe/share/notes.md`,
   ])('keeps every value in a command that names a network path: %#', (build) => {
     const { np, vault, sessionId } = harness();
     const word = bake(vault, sessionId, 'probe', 'secret');
 
     expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(0);
+  });
+
+  it('keeps a value that makes a network host, quoted or not', () => {
+    const { np, vault, sessionId } = harness();
+    const name = bake(vault, sessionId, 'Émile', 'private_person');
+
+    expect(restored(restoreShellCommand(np, `cat //${name}/x`, sessionId))).toBe(0);
+    expect(restored(restoreShellCommand(np, `cat "//${name}/x"`, sessionId))).toBe(0);
+  });
+
+  it('still restores beside a search pattern that starts with two slashes and a space', () => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, EMAIL, 'private_email');
+
+    expect(
+      restored(
+        restoreShellCommand(np, `grep -rn '// TODO' src && grep ${word} notes.md`, sessionId),
+      ),
+    ).toBe(1);
   });
 
   it.each([
@@ -2281,6 +2305,22 @@ describe('shell restore · tool input fields', () => {
       expect(restoreToolInput(np, input, sessionId, acc, shellToolOf('shell'))).toEqual(input);
       expect(acc.unsafeShell).toBe(1);
     }
+  });
+
+  it('keeps every value when the working directory is a network path', () => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, EMAIL, 'private_email');
+    const acc = newRestoreAccumulator();
+
+    const out = restoreToolInput(
+      np,
+      { command: ['ls', word], workdir: '//probe/share' },
+      sessionId,
+      acc,
+      shellToolOf('shell'),
+    );
+
+    expect((out as { command: string[] }).command[1]).toBe(word);
   });
 
   it('treats a workdir as a cd: a relative write gets no value', () => {

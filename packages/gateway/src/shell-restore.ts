@@ -86,8 +86,8 @@ export interface ShellTool {
  * `PowerShell` tool, which get no value at all (PowerShell reads a plain
  * word differently from a POSIX shell): the first two run in the user's default shell or one Codex
  * picks from a `shell` field it reads only as a hint (PowerShell or
- * `cmd.exe` on Windows, where a plain word can read a variable), and the
- * last writes to a running process. */
+ * `cmd.exe` on Windows), shells this rule does not read, and the last
+ * writes to a running process. */
 const SHELL_TOOL_SPECS: ReadonlyMap<string, ShellTool> = new Map([
   ['Bash', { commandField: 'command' }],
   ['bash', { commandField: 'command' }],
@@ -107,6 +107,9 @@ export const WORKDIR_FIELDS: ReadonlySet<string> = new Set(['workdir', 'cwd', 'w
 export interface ShellOptions {
   /** The call sets the working directory itself (`WORKDIR_FIELDS`). */
   readonly movedDir?: boolean;
+  /** That working directory is a network path (`namesNetworkPath`): the
+   * command's file arguments may be opened over the network. */
+  readonly offMachine?: boolean;
 }
 /** The other input fields of a shell tool that get values back, for a
  * tool with a command field: text shown to the user. Any other field (`workdir`, `cwd`, `env`, `timeout`
@@ -135,9 +138,22 @@ const DATA_BODY_CONTEXTS: ReadonlySet<QuoteContext> = new Set<DataBodyContext>([
  * (zsh's `=cmd` expansion), `~` (a home directory), `@` (PowerShell
  * splatting) or `//` (a network path under Windows' POSIX layers). */
 const PLAIN_WORD = /^(?![-=~@])(?!\/\/)[\p{L}\p{N}@+:,./_=-]+$/u;
-/** A word of shell code that starts as a network path (`//host/…`), which
- * Git Bash and Cygwin programs open over the network. */
-const NETWORK_PATH = /(?:^|[\s'"=<>|;&])\/\/[\w.-]/;
+/** A network path in a word as the program gets it, quotes removed:
+ * `//host/…` anywhere but after a URL scheme's `:` (`-f//host/x`
+ * included), which Git Bash and Cygwin programs open over the network, or
+ * Cygwin's NT namespace (`/proc/sys/…`). */
+const NETWORK_PATH = /(?<![:/])\/\/(?![\s/]|$)|(?:^|=)\/proc\/sys(?:\/|$)/u;
+
+/** True when the shell word `w` names a network path, as an argument or
+ * as the target of the redirection it is (`<//host/x`). */
+function namesNetworkWord(w: Word): boolean {
+  return namesNetworkPath(w.text) || namesNetworkPath(redirectedTarget(w) ?? '');
+}
+
+/** True when `word`, as a program gets it, names a network path. */
+export function namesNetworkPath(word: string): boolean {
+  return NETWORK_PATH.test(word);
+}
 
 /** What a value may hold in a data heredoc body. */
 const DATA_BODY_SAFE: Readonly<Record<DataBodyContext, RegExp>> = {
@@ -1020,7 +1036,7 @@ export function shellContextAt(command: string, index: number): QuoteContext {
 }
 
 /** Read `command` once and judge it at each of `targets` (ascending). */
-function judge(command: string, targets: readonly number[], movedDir = false): Verdict {
+function judge(command: string, targets: readonly number[], options: ShellOptions = {}): Verdict {
   if (command.length > MAX_COMMAND_CHARS || UNREAD_CHARACTERS.test(command)) {
     return KEEP_ALL;
   }
@@ -1066,7 +1082,9 @@ function judge(command: string, targets: readonly number[], movedDir = false): V
     programs.some(sendsOut) ||
     (strict && NETWORK_IN_CODE.test(code)) ||
     (URL_SCHEME.test(code) && !programs.every(isDataProgram)) ||
-    NETWORK_PATH.test(code);
+    options.offMachine === true ||
+    scan.outputs.some(namesNetworkPath) ||
+    [...wordsAt.values()].some((words) => words.some(namesNetworkWord));
   // A data body goes to standard output or to a plain document file; one
   // written elsewhere (`.git/config`, `Makefile`, `run.sh`) may be read
   // as code later.
@@ -1075,7 +1093,8 @@ function judge(command: string, targets: readonly number[], movedDir = false): V
   // target reads (`cd .git && echo … > notes.md`): no plain file. (A directory an earlier command left is
   // not seen: a relative target is judged as written.)
   const movesThenWrites =
-    written.some((t) => !t.startsWith('/')) && (movedDir || programs.some((p) => p.name === 'cd'));
+    written.some((t) => !t.startsWith('/')) &&
+    (options.movedDir === true || programs.some((p) => p.name === 'cd'));
   const toPlainFiles = written.every(isDocument) && !movesThenWrites;
   const bodyContext = dataBodyContext(
     programs,
@@ -1847,7 +1866,7 @@ export function restoreShellCommand(
   options: ShellOptions = {},
 ): ShellRestore {
   const starts = [...command.matchAll(placeholderPattern())].map((m) => m.index);
-  const verdict = judge(command, starts, options.movedDir);
+  const verdict = judge(command, starts, options);
   const keepAll = verdict.offMachine || verdict.runsCode;
   const shifts: Shift[] = [];
   const restored = restoreEach(
@@ -1869,7 +1888,7 @@ export function restoreShellCommand(
   // redirection to `/dev/tcp/…`, a URL, or a word that makes a program
   // run code keeps every placeholder, and so does one that changes how
   // the command splits.
-  const after = judge(restored.command, [], options.movedDir);
+  const after = judge(restored.command, [], options);
   const same = sameLayout(verdict.layout, after.layout, shifts);
   if (same && !after.offMachine && !after.runsCode) return restored;
   return restoreEach(np, command, sessionId, () => false);
@@ -1957,7 +1976,8 @@ export function restoreShellArgv(
   options: ShellOptions = {},
 ): ShellArgvRestore {
   const length = argv.reduce((n, a) => n + a.length, 0);
-  const offline = length <= MAX_COMMAND_CHARS && !argvSendsOffMachine(argv);
+  const offline =
+    length <= MAX_COMMAND_CHARS && options.offMachine !== true && !argvSendsOffMachine(argv);
   const program = argvProgramIndex(argv);
   const script = shellScriptIndex(argv, program);
   // A program that runs code gets values back only inside the script a
@@ -2083,7 +2103,7 @@ function argvSendsOffMachine(argv: readonly string[]): boolean {
   if (script >= 0 && sendsOffMachine(argv[script] ?? '')) return true;
   const words = argv.filter((_, k) => k !== script);
   if (words.some((a) => ANY_DELIMITER_IN_TEXT.test(a))) return true;
-  if (words.some((a) => NETWORK_CLIENT.test(a) || NETWORK_PATH.test(a))) return true;
+  if (words.some((a) => NETWORK_CLIENT.test(a) || namesNetworkPath(a))) return true;
   // As in a string command: a URL handed to a program that is not a data one.
   if (words.some((a) => URL_SCHEME.test(a)) && !(program !== undefined && isDataProgram(program))) {
     return true;

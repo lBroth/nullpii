@@ -29,7 +29,7 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  * - a listed program counts only by name exactly as written, with no
  *   wrapper, no path, no redirection before it, no assignment other than
  *   the locale or time zone with a plain value (`SAFE_ASSIGNMENT`; before
- *   it, or as a command of its own: `PATH=…; grep …`), and with none of the options that run or write
+ *   it, or as a command of its own: `PATH=…; grep …`), and with none of the options that run, write or set a variable
  *   (`COMMAND_OPTIONS`, abbreviations and short-option clusters included);
  * - a placeholder that is, or is part of, the program a simple command
  *   runs, a redirection target, an assignment, an argument of `export` or
@@ -286,7 +286,8 @@ function shortOption(letter: string): string {
 }
 
 /** Options that make an otherwise plain program run a command it is given
- * (`find -exec`, `tar -I`, `zip -TT`, `git -c core.pager=…`). */
+ * (`find -exec`, `tar -I`, `zip -TT`, `git -c core.pager=…`), write where
+ * an argument points (`sort -o`) or set a shell variable (`stat -A`). */
 const COMMAND_OPTIONS: ReadonlyMap<string, RegExp> = new Map([
   // `-rm` is bfs's spelling of `-delete` (Claude Code's `find` may be bfs).
   ['find', /^-(?:exec|execdir|ok|okdir|delete|rm|fprint|fprint0|fprintf|fls)$/],
@@ -319,7 +320,7 @@ const COMMAND_OPTIONS: ReadonlyMap<string, RegExp> = new Map([
   ['file', optionPattern(shortOption('C'), longOption('compile'))],
   // Builtins a shell can load in their place set a variable through these:
   // zsh's `zsh/stat` (`stat -A`/`-H NAME`), bash's loadable `stat`,
-  // `realpath -a` and `cut -a`. No GNU or BSD build uses the letters.
+  // `realpath -a` and `cut -a`. GNU and macOS builds have none of these letters.
   ['stat', optionPattern(shortOption('A'), shortOption('H'))],
   ['realpath', optionPattern(shortOption('a'))],
   ['cut', optionPattern(shortOption('a'))],
@@ -680,7 +681,7 @@ const ENVIRONMENT_BUILTINS: ReadonlySet<string> = new Set([
 /** Files a shell, git or a hook runner executes later: a heredoc written
  * to one is code, not data. */
 const EXECUTED_LATER =
-  /(?:^|[\s/'"])(?:\.git\/hooks\/|\.husky\/|\.githooks\/|\.(?:bash|zsh|ksh|mksh|tcsh|csh)rc\b|\.(?:bash_)?profile\b|\.zprofile\b|\.zshenv\b|\.zlogin\b|\.envrc\b|\.config\/fish\/|crontab\b|\/etc\/|(?:~|\$HOME)\/(?:\.local\/)?bin\/|\/usr\/(?:local\/)?bin\/|LaunchAgents\/|systemd\/)/;
+  /(?:^|[\s/'"])(?:\.git\/hooks\/|\.husky\/|\.githooks\/|\.(?:bash|zsh|ksh|mksh|tcsh|csh)rc\b|\.(?:bash_)?profile\b|\.zprofile\b|\.zshenv\b|\.zlogin\b|\.envrc\b|\.config\/fish\/|crontab\b|\/etc\/|s?bin\/|LaunchAgents\/|systemd\/)/;
 
 /** Programs that put a file in place, whose destination may run later. */
 const FILE_WRITERS: ReadonlySet<string> = new Set([
@@ -813,14 +814,17 @@ const COMMENT_PRECEDERS: ReadonlySet<string> = new Set([
 ]);
 
 const ENV_ASSIGNMENT = /^[A-Za-z_]\w*=/;
-/** Assignments a command with listed programs may make: the locale or
- * the time zone, each with a plain value, a locale name (`C.UTF-8`,
- * `de_DE@euro`, `en_US:en`) or a zone name (`UTC`, `Europe/Rome`), each
- * part starting with a letter, digit or `_`. A path (`..` included:
- * libintl looks catalogs up under `<localedir>/<value>/`) or an expression
- * could choose what is loaded or evaluated. */
+/** Assignments a command with listed programs may make, each with a
+ * plain value: `LANG` and `LC_*` set to `C`, `POSIX` or a locale with an
+ * explicit UTF-8 codeset (`C.UTF-8`, `en_US.UTF-8`), since a shell told to
+ * use another multibyte encoding (GBK, Big5, Shift JIS) would read the
+ * command's bytes differently; `LANGUAGE` (message catalogs only) set to
+ * names separated by `:` (`en_US:en`); `TZ` set to a zone name (`UTC`,
+ * `Europe/Rome`). Each part starts with a letter, digit or `_`: a path
+ * (`..` included: libintl looks catalogs up under `<localedir>/<value>/`)
+ * or an expression could choose what is loaded or evaluated. */
 const SAFE_ASSIGNMENT =
-  /^(?:(?:LANG|LANGUAGE|LC_[A-Z]+)=(?:[A-Za-z0-9_][A-Za-z0-9_.@-]*(?::[A-Za-z0-9_][A-Za-z0-9_.@-]*)*)?|TZ=(?:[A-Za-z0-9_][A-Za-z0-9_+-]*(?:\/[A-Za-z0-9_][A-Za-z0-9_+-]*)*)?)$/;
+  /^(?:(?:LANG|LC_[A-Z]+)=(?:C|POSIX|(?:C|[A-Za-z]{2,3}(?:_[A-Za-z]{2})?)\.(?:UTF-8|utf-8|UTF8|utf8)(?:@[A-Za-z0-9]+)?)?|LANGUAGE=(?:[A-Za-z0-9_][A-Za-z0-9_.@-]*(?::[A-Za-z0-9_][A-Za-z0-9_.@-]*)*)?|TZ=(?:[A-Za-z0-9_][A-Za-z0-9_+-]*(?:\/[A-Za-z0-9_][A-Za-z0-9_+-]*)*)?)$/;
 const LEADING_TABS = /^\t+/;
 /** The start of a word that a following `<` or `>` continues: nothing,
  * a descriptor number, or the operator so far (`2>`, `>`, `<`). */

@@ -1446,7 +1446,12 @@ describe('shell restore · round-10 layout and redirections', () => {
     [(p: string) => `LC_ALL=C.UTF-8 grep ${p} notes.md`, 1],
     [(p: string) => `LANGUAGE=en_US:en grep ${p} notes.md`, 1],
     [(p: string) => `TZ=Europe/Rome git log --author=${p}`, 1],
-    [(p: string) => `LANG=de_DE@euro; grep ${p} notes.md`, 1],
+    [(p: string) => `LANG=de_DE.UTF-8@euro; grep ${p} notes.md`, 1],
+    [(p: string) => `LC_ALL=en_US.UTF-8 grep ${p} notes.md`, 1],
+    [(p: string) => `LANG=POSIX grep ${p} notes.md`, 1],
+    [(p: string) => `LANG=de_DE@euro; grep ${p} notes.md`, 0],
+    [(p: string) => `LC_ALL=zh_TW.Big5 grep ${p} notes.md`, 0],
+    [(p: string) => `LC_ALL=zh_CN.GBK; grep ${p} notes.md`, 0],
     [(p: string) => `TZ=/tmp/zone git log --author=${p}`, 0],
     [(p: string) => `TZ=../zone git log --author=${p}`, 0],
     [(p: string) => `LC_ALL=/tmp/locale grep ${p} notes.md`, 0],
@@ -1489,6 +1494,18 @@ describe('shell restore · round-10 layout and redirections', () => {
       expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(0);
     },
   );
+
+  it.each([
+    (p: string) => `echo ${p} > bin/notes.md`,
+    (p: string) => `echo ${p} > venv/bin/notes.md`,
+    (p: string) => `echo ${p} > /opt/homebrew/bin/notes.md`,
+    (p: string) => `echo ${p} > sbin/notes.md`,
+  ])('keeps every value in a command that writes into any bin directory: %#', (build) => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, EMAIL, 'private_email');
+
+    expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(0);
+  });
 
   it.each([
     [['bash', '-c'], 1],

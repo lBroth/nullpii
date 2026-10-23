@@ -68,8 +68,17 @@ type CallKind = keyof typeof CALL_TEXT_FIELD;
  * (`function.arguments` or `custom.input`), `null` before the first. */
 interface HeldCall {
   readonly kind: CallKind;
-  name: string | undefined;
+  /** `null` when the stream sent two different names (`nextName`). */
+  name: string | null | undefined;
   text: string | null;
+}
+
+/** The tool name after a delta that carries `fragment`. A name sent once,
+ * or repeated unchanged, is kept; a different one makes the name
+ * ambiguous (`null`, which no tool list holds): clients differ on whether
+ * name fragments are joined or replaced, so the relay picks neither. */
+function nextName(current: string | null | undefined, fragment: string): string | null {
+  return current === undefined || current === fragment ? fragment : null;
 }
 
 /** Top-level fields copied from the last upstream chunk onto a chunk the
@@ -204,7 +213,7 @@ class ChoiceRestorer {
   /** Per tool-call index. */
   private readonly calls = new Map<number, HeldCall>();
   private functionArgs: string | null = null;
-  private functionName: string | undefined;
+  private functionName: string | null | undefined;
 
   constructor(
     private readonly np: NullPii,
@@ -261,7 +270,7 @@ class ChoiceRestorer {
       held = { kind, name: undefined, text: null };
       this.calls.set(index, held);
     }
-    if (typeof payload.name === 'string') held.name = payload.name;
+    if (typeof payload.name === 'string') held.name = nextName(held.name, payload.name);
     const field = CALL_TEXT_FIELD[kind];
     const shard = payload[field];
     if (typeof shard !== 'string' || shard.length === 0) return false;
@@ -271,7 +280,7 @@ class ChoiceRestorer {
   }
 
   private holdFunctionArgs(fn: ChatFunctionCall): boolean {
-    if (typeof fn.name === 'string') this.functionName = fn.name;
+    if (typeof fn.name === 'string') this.functionName = nextName(this.functionName, fn.name);
     if (typeof fn.arguments !== 'string' || fn.arguments.length === 0) return false;
     this.functionArgs = (this.functionArgs ?? '') + fn.arguments;
     fn.arguments = '';

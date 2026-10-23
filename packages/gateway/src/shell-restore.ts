@@ -18,10 +18,12 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  *
  * on the first line, optionally after `git add …` or `mkdir -p …` joined by
  * `&&`; the body follows, and the closing line is the last line. A quoted
- * delimiter makes the body literal: the shell expands nothing in it. A
- * value comes back there when it holds no line break or other control
- * character but tab and does not end the body early. Any other command,
- * and a placeholder anywhere but in that body, keeps every placeholder.
+ * delimiter makes the body literal: the shell expands nothing in it. No
+ * body line may start with the delimiter (ksh93 ends the body at such a
+ * line when a closing bracket follows). A value comes back there when it
+ * holds no line break or other control character but tab, no `<<` and not
+ * the delimiter. Any other command, and a placeholder anywhere but in
+ * that body, keeps every placeholder.
  *
  * A value restored into a file (here, or by `Write`) can be read by a
  * later command: each call is judged on its own.
@@ -119,15 +121,23 @@ const RUN_LATER_DIR = /(?:^|\/)(?:s?bin|etc|LaunchAgents|systemd)\//i;
  * body) or any other control character but tab. */
 // biome-ignore lint/suspicious/noControlCharactersInRegex: refusing them is the point.
 const UNSAFE_IN_BODY = /[\u0000-\u0008\u000a-\u001f\u007f-\u009f\u2028\u2029]/;
+/** Text a body value may not hold: a heredoc operator, which an agent's
+ * own reading of the command (Claude Code picks how to quote a command it
+ * runs by looking for one) could take for a second heredoc. */
+const HEREDOC_OPERATOR = '<<';
+
+/** A data heredoc's body (`start`, `end`) and its delimiter. */
+interface DataBody {
+  readonly start: number;
+  readonly end: number;
+  readonly delimiter: string;
+}
 
 /** Where the data body of `command` lies, or `undefined` when `command` is
  * not one of the fixed data forms (`DATA_HEAD`) with its body after the
  * first line and its closing line last, writing standard output or a
  * document (an absolute one when `movedDir`). */
-function parseDataHeredoc(
-  command: string,
-  movedDir: boolean,
-): { readonly start: number; readonly end: number } | undefined {
+function parseDataHeredoc(command: string, movedDir: boolean): DataBody | undefined {
   const firstBreak = command.indexOf('\n');
   if (firstBreak === -1) return undefined;
   const head = DATA_HEAD.exec(command.slice(0, firstBreak))?.groups;
@@ -137,14 +147,16 @@ function parseDataHeredoc(
   const closingLine = head.d1 ?? head.d2 ?? head.d3;
   if (closingLine === undefined) return undefined;
   const start = firstBreak + 1;
-  // The closing line is the first line that reads as the delimiter; it
-  // must be the last line, so nothing runs after the body.
+  // The closing line is the first line that starts with the delimiter
+  // (ksh93 also ends the body at a line that starts with it and goes on
+  // with a closing bracket); it must be the delimiter alone and the last
+  // line, so nothing runs after the body.
   const rest = command.endsWith('\n') ? command.slice(start, -1) : command.slice(start);
   const lines = rest.split('\n');
-  const closing = lines.indexOf(closingLine);
-  if (closing !== lines.length - 1) return undefined;
+  const closing = lines.findIndex((line) => line.startsWith(closingLine));
+  if (closing !== lines.length - 1 || lines[closing] !== closingLine) return undefined;
   const end = start + lines.slice(0, closing).reduce((n, line) => n + line.length + 1, 0);
-  return { start, end };
+  return { start, end, delimiter: closingLine };
 }
 
 /** True when `target` is a document `cat` may write: not in a directory
@@ -170,9 +182,9 @@ export interface ShellRestore {
  * Restore the placeholders of a shell `command`: only in the body of a
  * data heredoc (`parseDataHeredoc`), only when every placeholder of the
  * command stands there, and only values with no line break or other
- * control character but tab. The command with the values put back must
- * still parse the same way (a value that reads as the delimiter would end
- * the body early); otherwise every placeholder stays literal.
+ * control character but tab, no `<<` and not the delimiter. The command
+ * with the values put back must still parse the same way; otherwise every
+ * placeholder stays literal.
  *
  * @param np - the engine whose vault holds `sessionId`.
  */
@@ -191,7 +203,11 @@ export function restoreShellCommand(
   if (body === undefined || !starts.every(inBody)) {
     return restoreEach(np, command, sessionId, () => false);
   }
-  const restored = restoreEach(np, command, sessionId, (value) => !UNSAFE_IN_BODY.test(value));
+  const safe = (value: string): boolean =>
+    !UNSAFE_IN_BODY.test(value) &&
+    !value.includes(HEREDOC_OPERATOR) &&
+    !value.includes(body.delimiter);
+  const restored = restoreEach(np, command, sessionId, safe);
   if (parseDataHeredoc(restored.command, movedDir) !== undefined) return restored;
   return restoreEach(np, command, sessionId, () => false);
 }

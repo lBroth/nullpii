@@ -216,6 +216,8 @@ describe('shell restore · the data forms', () => {
     ['an escape character', 'a\u001bb'],
     ['a line separator', 'a b'],
     ['the delimiter, ending the body early', 'EOF'],
+    ['the delimiter inside a line', 'see EOF) here'],
+    ['a heredoc operator', 'a <<b'],
   ])('keeps every placeholder when a value holds %s', (_what, value) => {
     const { np, vault, sessionId } = harness();
     const p = bake(vault, sessionId, value, 'secret');
@@ -227,13 +229,27 @@ describe('shell restore · the data forms', () => {
     expect(r.command).toBe(command);
   });
 
-  it('keeps every placeholder when one value cannot go back, and none of the others', () => {
+  it('keeps a value that cannot go back masked, and restores the others', () => {
     const { np, vault, sessionId } = harness();
     const ok = bake(vault, sessionId, FULL_NAME, 'private_person');
     const bad = bake(vault, sessionId, 'EOF', 'secret');
     const command = `cat > notes.md <<'EOF'\n${ok}\n${bad}\nEOF`;
 
-    expect(restoreShellCommand(np, command, sessionId).command).toBe(command);
+    const r = restoreShellCommand(np, command, sessionId);
+
+    expect(r.command).toBe(`cat > notes.md <<'EOF'\n${FULL_NAME}\n${bad}\nEOF`);
+    expect(r.keptMasked).toEqual([bad]);
+  });
+
+  it('keeps every placeholder when a body line starts with the delimiter (ksh93 may end the body there)', () => {
+    const { np, vault, sessionId } = harness();
+    const name = bake(vault, sessionId, FULL_NAME, 'private_person');
+    const command = `cat > notes.md <<'EOF'\n${name}\nEOF)\nEOF`;
+
+    const r = restoreShellCommand(np, command, sessionId);
+
+    expect(restored(r)).toBe(0);
+    expect(r.command).toBe(command);
   });
 });
 
@@ -673,6 +689,40 @@ describe('shell restore · OpenAI route', () => {
     const command = (JSON.parse(streamedInputs(res.body).get(0) ?? '') as { command: string })
       .command;
     expect(command).toBe(expectedCommand());
+  });
+
+  it.each([
+    ['repeated unchanged keeps its values', ['shell', 'shell'], true],
+    ['sent as two different fragments gets no value', ['my_', 'shell'], false],
+  ])('SSE: a tool name %s', async (_what, names, restores) => {
+    const app = await serve((body) => {
+      const [secret, person] = placeholdersIn(forwardedUserText(body));
+      const args = JSON.stringify({ command: bashCommand(secret, person) });
+      const call = (fn: Record<string, string>) =>
+        openAiFrame([{ index: 0, delta: { tool_calls: [{ index: 0, function: fn }] } }]);
+      return sseResponse([
+        call({ name: names[0] ?? '', arguments: '' }),
+        call({ name: names[1] ?? '', arguments: args }),
+        openAiFrame([{ index: 0, delta: {}, finish_reason: 'tool_calls' }]),
+        'data: [DONE]\n\n',
+      ]);
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: {
+        model: 'gpt-test',
+        stream: true,
+        messages: [{ role: 'user', content: USER_TEXT }],
+      },
+    });
+
+    const command = (JSON.parse(streamedInputs(res.body).get(0) ?? '') as { command: string })
+      .command;
+    expect(command === expectedCommand()).toBe(restores);
+    expect(PLACEHOLDER.test(command)).toBe(!restores);
+    PLACEHOLDER.lastIndex = 0;
   });
 });
 

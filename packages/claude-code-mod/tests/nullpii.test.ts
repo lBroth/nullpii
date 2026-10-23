@@ -569,7 +569,7 @@ test('inside single quotes the same value is refused too: a program could read i
   expect(ran).toEqual([]);
 });
 
-test('inside single quotes a name with a space stays masked: only one plain word comes back', async ($, on) => {
+test('inside single quotes a name with a space stays masked: values come back only in a data heredoc body', async ($, on) => {
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);
   const ran: string[] = [];

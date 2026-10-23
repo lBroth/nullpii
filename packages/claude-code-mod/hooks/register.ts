@@ -415,7 +415,7 @@ export function register(on, options) {
       }
       if (kept.length > 0) {
         return {
-          deny: `nullpii will not put the real value of ${kept.join(', ')} into this command: the value came from data you could not read, so it comes back only in the body of a quoted heredoc in one of these commands, alone on the first line (after \`git add …\` or \`mkdir …\` and \`&&\` at most): \`git commit -F - <<'EOF'\` (the message), \`cat > notes.md <<'EOF'\` (a document: \`.md\`, \`.csv\`, …) or \`cat <<'EOF'\`; then the text, then \`EOF\` as the last line. A placeholder anywhere else, or in any other command, keeps its placeholder; a heredoc inside \`$(…)\` never gets values, and on Windows no shell command does. Otherwise ask the user to run the command themselves.`,
+          deny: `nullpii will not put the real value of ${kept.join(', ')} into this command: the value came from data you could not read, so it comes back only in the body of a quoted heredoc in one of these commands, alone on the first line (or after \`git add …\` or \`mkdir …\` and \`&&\`): \`git commit -F - <<'EOF'\` (the message), \`cat > notes.md <<'EOF'\` (a document: \`.md\`, \`.csv\`, …) or \`cat <<'EOF'\`; then the text, then \`EOF\` as the last line. A placeholder anywhere else, or in any other command, keeps its placeholder; a heredoc inside \`$(…)\` never gets values, and on Windows no shell command does. Otherwise ask the user to run the command themselves.`,
         };
       }
       // Rewrite the call only when a placeholder was replaced: a rewritten

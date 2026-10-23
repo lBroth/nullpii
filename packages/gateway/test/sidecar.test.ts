@@ -660,7 +660,7 @@ describe('sidecar · restore with tool', () => {
     expect(res.body).not.toContain(INJECTION);
   });
 
-  it('keeps a name with a space masked even inside single quotes: only one plain word comes back', async () => {
+  it('keeps a name with a space masked inside single quotes: values come back only in a data heredoc body', async () => {
     const { app } = await setup();
     const [person] = await placeholdersFor(app, FULL_NAME);
 

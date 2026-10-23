@@ -641,8 +641,8 @@ export interface RestoredResponse<TBody = AnthropicResponse> {
   readonly replacementsByLabel: Readonly<Partial<Record<string, number>>>;
   readonly unknownPlaceholders: number;
   readonly foreignPlaceholders: number;
-  /** Placeholders left literal in a shell tool's `command` because their
-   * value was not safe in the quoting there (see `shell-restore.ts`). */
+  /** Placeholders left literal in a shell tool's `command`: outside a data
+   * heredoc body, or with a value not safe there (see `shell-restore.ts`). */
   readonly unsafeShellPlaceholders: number;
   /** Placeholders left in the input of a tool outside `restoreTools`
    * (network and MCP tools by default), so no value leaves through it. */
@@ -758,9 +758,8 @@ export interface RestoredValue {
   readonly unknownPlaceholders: number;
   readonly foreignPlaceholders: number;
   /** With `shell`: the distinct placeholders left masked in the command
-   * (their value was not safe there, or the command sends data off the
-   * machine) or in a field other than `SHELL_TEXT_FIELDS`. Placeholders,
-   * never values. */
+   * (outside a data heredoc body, or with a value not safe there) or in a
+   * field other than `SHELL_TEXT_FIELDS`. Placeholders, never values. */
   readonly shellKeptMasked?: readonly string[];
 }
 

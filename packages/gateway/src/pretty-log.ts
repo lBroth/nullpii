@@ -66,8 +66,8 @@ export interface RequestSummary {
   readonly unscanned?: number;
   /** Words the model could not read; only the recognizers scanned them. */
   readonly modelUnscannedWords?: number;
-  /** Placeholders kept masked in a shell command because their value was
-   * not safe in the quoting there. */
+  /** Placeholders kept masked in a shell command: outside a data heredoc
+   * body, or with a value not safe there. */
   readonly unsafeShell?: number;
   /** Placeholders kept in the input of a tool outside `restoreTools`. */
   readonly heldForTool?: number;

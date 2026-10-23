@@ -73,13 +73,37 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  * by a later command.
  */
 
-/** Tools whose input a shell runs, as each agent names them: Claude
- * Code's `Bash`, Anthropic's bash tool (`bash`), and the `shell` tool of
- * OpenAI-style agents such as Codex. */
-export const SHELL_TOOLS: ReadonlySet<string> = new Set(['Bash', 'bash', 'shell']);
+/** Tools whose input a shell runs, as each agent names them, with the
+ * input field the shell interprets: Claude Code's `Bash`, Anthropic's bash
+ * tool (`bash`), the `shell` and `shell_command` tools of OpenAI-style
+ * agents such as Codex, Codex's `exec_command` (`cmd`), and its
+ * `write_stdin`, whose input goes to a running process and so gets no
+ * value at all. */
+const SHELL_TOOL_FIELDS: ReadonlyMap<string, string | undefined> = new Map([
+  ['Bash', 'command'],
+  ['bash', 'command'],
+  ['shell', 'command'],
+  ['shell_command', 'command'],
+  ['exec_command', 'cmd'],
+  ['write_stdin', undefined],
+]);
+export const SHELL_TOOLS: ReadonlySet<string> = new Set(SHELL_TOOL_FIELDS.keys());
 
-/** The input field of a shell tool that the shell interprets. */
-export const SHELL_COMMAND_FIELD = 'command';
+/** A shell tool, as its input is restored: the field the shell interprets
+ * (`undefined` when none may get a value). */
+export interface ShellTool {
+  readonly commandField: string | undefined;
+}
+
+/** Input fields that set the directory a shell tool's command runs in. A
+ * relative file the command writes lands there, as after a `cd`. */
+export const WORKDIR_FIELDS: ReadonlySet<string> = new Set(['workdir', 'cwd', 'working_directory']);
+
+/** How a shell command is judged beyond its own text. */
+export interface ShellOptions {
+  /** The call sets the working directory itself (`WORKDIR_FIELDS`). */
+  readonly movedDir?: boolean;
+}
 /** The other input fields of a shell tool that get values back: text
  * shown to the user. Any other field (`workdir`, `cwd`, `env`, `timeout`
  * or one nullpii does not know) keeps its placeholders: it can set where
@@ -952,7 +976,13 @@ const KEEP_ALL: Verdict = {
 
 /** True when `name` is one of the `SHELL_TOOLS`. */
 export function isShellTool(name: unknown): boolean {
-  return typeof name === 'string' && SHELL_TOOLS.has(name);
+  return shellToolOf(name) !== undefined;
+}
+
+/** The shell tool `name` is, or `undefined` for any other tool. */
+export function shellToolOf(name: unknown): ShellTool | undefined {
+  if (typeof name !== 'string' || !SHELL_TOOL_FIELDS.has(name)) return undefined;
+  return { commandField: SHELL_TOOL_FIELDS.get(name) };
 }
 
 /** True when `command` sends data off the machine: a network client or an
@@ -983,7 +1013,7 @@ export function shellContextAt(command: string, index: number): QuoteContext {
 }
 
 /** Read `command` once and judge it at each of `targets` (ascending). */
-function judge(command: string, targets: readonly number[]): Verdict {
+function judge(command: string, targets: readonly number[], movedDir = false): Verdict {
   if (command.length > MAX_COMMAND_CHARS || UNREAD_CHARACTERS.test(command)) {
     return KEEP_ALL;
   }
@@ -1032,13 +1062,12 @@ function judge(command: string, targets: readonly number[]): Verdict {
   // A data body goes to standard output or to a plain document file; one
   // written elsewhere (`.git/config`, `Makefile`, `run.sh`) may be read
   // as code later.
-  // A relative file written after a `cd` lands where the `cd` points, not
-  // where its target reads (`cd .git && echo … > notes.md`): a command
-  // that does both writes no plain file. (A directory an earlier command left is
+  // A relative file written after a `cd`, or in a call that sets its own
+  // working directory (`ShellOptions.movedDir`), lands there, not where its
+  // target reads (`cd .git && echo … > notes.md`): no plain file. (A directory an earlier command left is
   // not seen: a relative target is judged as written.)
   const movesThenWrites =
-    written.some((t) => !t.startsWith('/') && !t.startsWith('~')) &&
-    programs.some((p) => p.name === 'cd');
+    written.some((t) => !t.startsWith('/')) && (movedDir || programs.some((p) => p.name === 'cd'));
   const toPlainFiles = written.every(isDocument) && !movesThenWrites;
   const bodyContext = dataBodyContext(
     programs,
@@ -1807,9 +1836,10 @@ export function restoreShellCommand(
   np: RestoreCapable,
   command: string,
   sessionId: string,
+  options: ShellOptions = {},
 ): ShellRestore {
   const starts = [...command.matchAll(placeholderPattern())].map((m) => m.index);
-  const verdict = judge(command, starts);
+  const verdict = judge(command, starts, options.movedDir);
   const keepAll = verdict.offMachine || verdict.runsCode;
   const shifts: Shift[] = [];
   const restored = restoreEach(
@@ -1831,7 +1861,7 @@ export function restoreShellCommand(
   // redirection to `/dev/tcp/…`, a URL, or a word that makes a program
   // run code keeps every placeholder, and so does one that changes how
   // the command splits.
-  const after = judge(restored.command, []);
+  const after = judge(restored.command, [], options.movedDir);
   const same = sameLayout(verdict.layout, after.layout, shifts);
   if (same && !after.offMachine && !after.runsCode) return restored;
   return restoreEach(np, command, sessionId, () => false);
@@ -1916,6 +1946,7 @@ export function restoreShellArgv(
   np: RestoreCapable,
   argv: readonly string[],
   sessionId: string,
+  options: ShellOptions = {},
 ): ShellArgvRestore {
   const length = argv.reduce((n, a) => n + a.length, 0);
   const offline = length <= MAX_COMMAND_CHARS && !argvSendsOffMachine(argv);
@@ -1939,11 +1970,12 @@ export function restoreShellArgv(
       return PLAIN_WORD.test(value);
     },
     offline ? script : -1,
+    options,
   );
   if (first.results.every((r) => r.replacements === 0)) return first;
   // As for a string command: the values must not change what it is.
   if (!argvSendsOffMachine(first.argv) && (code || !argvRunsCode(first.argv))) return first;
-  return restoreArgvWords(np, argv, sessionId, () => false, -1);
+  return restoreArgvWords(np, argv, sessionId, () => false, -1, options);
 }
 
 /** Restore each word of `argv`: the shell script at `script` as a string
@@ -1954,13 +1986,14 @@ function restoreArgvWords(
   sessionId: string,
   safe: (position: number, value: string) => boolean,
   script: number,
+  options: ShellOptions,
 ): ShellArgvRestore {
   const results: RestoreResult[] = [];
   const keptMasked: string[] = [];
   const restored = argv.map((word, position) => {
     const r =
       position === script
-        ? restoreShellCommand(np, word, sessionId)
+        ? restoreShellCommand(np, word, sessionId, options)
         : restoreEach(np, word, sessionId, (value) => safe(position, value));
     results.push(...r.results);
     keptMasked.push(...r.keptMasked);

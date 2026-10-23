@@ -12,6 +12,7 @@ import { type NullPii, type PiiSpan, PiiVault } from 'nullpii';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { GatewayConfig } from '../src/config.js';
 import type { ChatCompletionRequest, ChatCompletionResponse } from '../src/openai-types.js';
+import { newRestoreAccumulator, restoreToolInput } from '../src/sanitizer.js';
 import { buildServer } from '../src/server.js';
 import {
   MAX_COMMAND_CHARS,
@@ -20,6 +21,7 @@ import {
   restoreShellCommand,
   shellContextAt,
   shellSafe,
+  shellToolOf,
 } from '../src/shell-restore.js';
 import type { AnthropicRequest, AnthropicResponse } from '../src/types.js';
 import { BASE_TEST_CONFIG } from './fixtures.js';
@@ -2234,5 +2236,66 @@ describe('shell restore · request log', () => {
     for (const value of [INJECTION, 'evil.sh', FULL_NAME, 'Smith']) {
       expect(log).not.toContain(value);
     }
+  });
+});
+
+describe('shell restore · tool input fields', () => {
+  function harness() {
+    const { np, vault } = vaultEngine();
+    const sessionId = vault.createSession();
+    return { np, vault, sessionId };
+  }
+
+  it('keeps every placeholder in a shell tool input that is not an object', () => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, EMAIL, 'private_email');
+    for (const input of [`grep ${word} notes.md`, ['grep', word, 'notes.md']]) {
+      const acc = newRestoreAccumulator();
+      expect(restoreToolInput(np, input, sessionId, acc, shellToolOf('shell'))).toEqual(input);
+      expect(acc.unsafeShell).toBe(1);
+    }
+  });
+
+  it('treats a workdir as a cd: a relative write gets no value', () => {
+    const { np, vault, sessionId } = harness();
+    const name = bake(vault, sessionId, FULL_NAME, 'private_person');
+    const command = `cat > notes.md <<'EOF'\n${name}\nEOF`;
+    const acc = newRestoreAccumulator();
+
+    const moved = restoreToolInput(
+      np,
+      { command, workdir: '/srv/x' },
+      sessionId,
+      acc,
+      shellToolOf('shell'),
+    );
+    const stays = restoreToolInput(np, { command }, sessionId, acc, shellToolOf('shell'));
+
+    expect((moved as { command: string }).command).toBe(command);
+    expect((stays as { command: string }).command).toContain(FULL_NAME);
+  });
+
+  it("judges Codex's exec_command by its cmd field and gives write_stdin nothing", () => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, EMAIL, 'private_email');
+    const acc = newRestoreAccumulator();
+
+    const exec = restoreToolInput(
+      np,
+      { cmd: `grep ${word} notes.md` },
+      sessionId,
+      acc,
+      shellToolOf('exec_command'),
+    );
+    const stdin = restoreToolInput(
+      np,
+      { session_id: 1, chars: `${word}\n` },
+      sessionId,
+      acc,
+      shellToolOf('write_stdin'),
+    );
+
+    expect((exec as { cmd: string }).cmd).toBe(`grep ${EMAIL} notes.md`);
+    expect((stdin as { chars: string }).chars).toBe(`${word}\n`);
   });
 });

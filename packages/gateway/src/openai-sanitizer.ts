@@ -20,6 +20,7 @@ import {
   type SanitizedRequest,
   holdForTool,
   isRecord,
+  keepShellField,
   newCaptureAccumulator,
   newRestoreAccumulator,
   parseJson,
@@ -35,7 +36,7 @@ import {
   shouldAppendHint,
   toolMayRestore,
 } from './sanitizer.js';
-import { isShellTool } from './shell-restore.js';
+import { shellToolOf } from './shell-restore.js';
 
 /**
  * Request and response walk for the OpenAI Chat Completions format, with
@@ -423,7 +424,7 @@ export function restoreFunctionArguments(
   acc: RestoreAccumulator,
 ): string {
   if (!toolMayRestore(name, acc)) return holdForTool(args, acc);
-  return restoreJsonText(np, args, sessionId, acc, isShellTool(name));
+  return restoreJsonText(np, args, sessionId, acc, shellToolOf(name));
 }
 
 /**
@@ -441,7 +442,13 @@ export function restoreCustomInput(
   acc: RestoreAccumulator,
 ): string {
   if (!toolMayRestore(name, acc)) return holdForTool(input, acc);
-  return isShellTool(name)
-    ? restoreShellText(np, input, sessionId, acc)
-    : restoreString(np, input, sessionId, acc);
+  const shell = shellToolOf(name);
+  if (shell === undefined) return restoreString(np, input, sessionId, acc);
+  // A free-form shell tool's whole input is its command; one with no
+  // command field (`write_stdin`) gets no value.
+  if (shell.commandField === undefined) {
+    keepShellField(input, acc);
+    return input;
+  }
+  return restoreShellText(np, input, sessionId, acc);
 }

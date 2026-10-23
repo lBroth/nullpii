@@ -10,7 +10,7 @@ import {
   tallyRestore,
   toolCallMayRestore,
 } from './sanitizer.js';
-import { isShellTool } from './shell-restore.js';
+import { type ShellTool, shellToolOf } from './shell-restore.js';
 import { FRAME_SEPARATOR, SseFrameSplitter, parseSseFields, serialiseFrame } from './sse-frames.js';
 // The gateway hands `NullPii` directly to `RestoreStream` — both
 // satisfy the `RestoreCapable` structural type the stream needs. No
@@ -66,7 +66,11 @@ export interface SseRelayOptions {
 /** How a tool call's streamed input is restored at its block's stop: as
  * JSON, or with the shell rule for a shell tool's `command`. A block with
  * no entry keeps its placeholders. */
-type ToolRestore = 'json' | 'shell';
+/** How a tool block's input is restored: as that shell tool's, or (no
+ * `shell`) as plain JSON. */
+interface ToolRestore {
+  readonly shell: ShellTool | undefined;
+}
 
 /** State of one stream beyond its blocks. */
 interface StreamState {
@@ -157,7 +161,7 @@ export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCou
     // no-op but the explicit short-circuit makes the intent obvious.
     if (buf.length === 0) return '';
     if (mode === undefined) return holdForTool(buf, acc);
-    return restoreJsonText(np, buf, sessionId, acc, mode === 'shell');
+    return restoreJsonText(np, buf, sessionId, acc, mode.shell);
   }
 
   const relay = (frame: string): string[] =>
@@ -315,7 +319,7 @@ function noteToolBlock(
   if (typeof data.index !== 'number' || !isRecord(block)) return;
   toolBlocks.delete(data.index);
   if (!toolCallMayRestore(block, acc)) return;
-  toolBlocks.set(data.index, isShellTool(block.name) ? 'shell' : 'json');
+  toolBlocks.set(data.index, { shell: shellToolOf(block.name) });
 }
 
 /** A frame with no `data` (a comment, a keep-alive), one whose `data` is

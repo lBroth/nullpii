@@ -227,7 +227,8 @@ describe('nullpii config', () => {
     expect(await cli('config')).toBe(0);
     const shown = JSON.parse(out);
     expect(shown).toMatchObject({ file: null, policy: {} });
-    expect(shown.restoreTools).toContain('Bash');
+    expect(shown.restoreTools).toContain('Write');
+    expect(shown.restoreTools).not.toContain('Bash');
   });
 
   it('prints the validated file and its restore-tool list', async () => {

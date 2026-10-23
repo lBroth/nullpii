@@ -66,9 +66,11 @@ const OWN_REASONS: ReadonlySet<string> = new Set([
 /** SidecarError's text, the one with a variable part. */
 const SIDECAR_STATUS = /^nullpii sidecar answered \d{3}$/;
 const TIMEOUT_KIND = 'timeout';
-/** Shell tools whose command the sidecar judges by the shell rule
- * (SECURITY.md); any other shell tool gets no value in its command. */
-const RULE_SHELL_TOOLS: ReadonlySet<string> = new Set(['Bash', 'bash', 'shell']);
+/** The refusal for a shell call that holds placeholders: no shell command
+ * gets a real value (SECURITY.md). Names the placeholders, never values. */
+function shellDenied(kept: readonly string[]): string {
+  return `nullpii puts no real value into a shell command (${kept.join(', ')}): the value came from data you could not read, so a command could run it. Work with that data through Grep, Read, Edit or Write, which get real values back, or ask the user to run the command themselves.`;
+}
 const THROW_KIND = 'throw';
 // What Claude reads when the mod refuses a call: fixed text, never the
 // failure's own, which can quote real values. The reason is the user's.
@@ -404,23 +406,12 @@ export function register(on, options) {
     let call = e;
     if (hasPlaceholder(args)) {
       // The sidecar decides by the tool's name: nothing for a tool outside
-      // the policy's `restoreTools`, and for a shell tool the shell rule
-      // (SECURITY.md), which keeps a value Claude never saw masked where
-      // the shell would interpret it.
+      // the policy's `restoreTools`, and nothing for a shell tool, whose
+      // placeholders it lists so the call is refused (SECURITY.md).
       const r = (await sidecar($, 'POST', '/restore', { value: args, tool: e.tool })) as Restored;
       counts.held += r.heldForTool ?? 0;
       const kept = r.shellKeptMasked ?? [];
-      if (kept.length > 0 && !RULE_SHELL_TOOLS.has(e.tool)) {
-        // A shell tool whose command the rule never reads (`PowerShell`).
-        return {
-          deny: `nullpii puts no real value into a ${e.tool} command (${kept.join(', ')}): use the Bash tool with the value only in the text of a quoted heredoc that \`cat\` writes to a document or to standard output, or that \`git commit -F -\` reads as its message, not piped on (unless nullpii's sidecar runs on Windows, where no shell command gets a value), or ask the user to run the command themselves.`,
-        };
-      }
-      if (kept.length > 0) {
-        return {
-          deny: `nullpii will not put the real value of ${kept.join(', ')} into this call: the value came from data you could not read, so it comes back only in the text of a quoted heredoc that one of a few commands writes out, alone on the first line (or after \`git add …\` or \`mkdir …\` and \`&&\`), for example \`git commit -F - <<'EOF'\` (the message), \`cat > notes.md <<'EOF'\` (a plain document such as \`.md\` or \`.csv\`) or \`cat <<'EOF'\`; then the text, then the delimiter alone as the last line. Some values cannot go back even there (for example one with a line break or \`<<\`), only the command gets values (and, for a tool named \`bash\` or \`shell\`, its description and justification), none goes into a working directory or an environment, and a call that sets an environment gets none in its command; a heredoc inside \`$(…)\` never gets values, and when nullpii's sidecar runs on Windows no shell command does. Otherwise ask the user to run the command themselves.`,
-        };
-      }
+      if (kept.length > 0) return { deny: shellDenied(kept) };
       // Rewrite the call only when a placeholder was replaced: a rewritten
       // call is denied in auto mode, so untouched calls must stay as written.
       if (r.replacements > 0) {

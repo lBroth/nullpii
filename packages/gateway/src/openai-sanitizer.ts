@@ -25,7 +25,6 @@ import {
   newRestoreAccumulator,
   parseJson,
   restoreJsonText,
-  restoreShellText,
   restoreString,
   sanitizeJsonSchema,
   sanitizeJsonValue,
@@ -36,7 +35,7 @@ import {
   shouldAppendHint,
   toolMayRestore,
 } from './sanitizer.js';
-import { shellToolOf } from './shell-restore.js';
+import { isShellTool } from './shell-tools.js';
 
 /**
  * Request and response walk for the OpenAI Chat Completions format, with
@@ -412,9 +411,10 @@ function restoreFunctionCall(
 /**
  * Restore a function call's `arguments` (a JSON document held as a
  * string) for the tool `name`: real values only when the tool is in
- * `restoreTools`, with the shell rule for a shell tool's `command`;
- * otherwise every placeholder is kept and counted as held. Shared by the
- * JSON restore and the stream relay, so both decide the same way.
+ * `restoreTools` and is not a shell tool (`isShellTool`, whose input
+ * keeps every placeholder); otherwise every placeholder is kept and
+ * counted as held. Shared by the JSON restore and the stream relay, so
+ * both decide the same way.
  */
 export function restoreFunctionArguments(
   np: NullPii,
@@ -423,14 +423,18 @@ export function restoreFunctionArguments(
   sessionId: string,
   acc: RestoreAccumulator,
 ): string {
+  if (isShellTool(name)) {
+    keepShellField(args, acc);
+    return args;
+  }
   if (!toolMayRestore(name, acc)) return holdForTool(args, acc);
-  return restoreJsonText(np, args, sessionId, acc, shellToolOf(name));
+  return restoreJsonText(np, args, sessionId, acc);
 }
 
 /**
  * Restore a custom (free-form) tool call's `input` for the tool `name`:
- * real values only when the tool is in `restoreTools`, and with the shell
- * rule when it is a shell tool, whose whole input is the command;
+ * real values only when the tool is in `restoreTools` and is not a shell
+ * tool (whose whole input is a command, and keeps every placeholder);
  * otherwise every placeholder is kept and counted as held. Shared by the
  * JSON restore and the stream relay.
  */
@@ -441,14 +445,10 @@ export function restoreCustomInput(
   sessionId: string,
   acc: RestoreAccumulator,
 ): string {
-  if (!toolMayRestore(name, acc)) return holdForTool(input, acc);
-  const shell = shellToolOf(name);
-  if (shell === undefined) return restoreString(np, input, sessionId, acc);
-  // A free-form shell tool's whole input is its command; one with no
-  // command field (`exec_command`, `write_stdin`, …) gets no value.
-  if (shell.commandField === undefined) {
+  if (isShellTool(name)) {
     keepShellField(input, acc);
     return input;
   }
-  return restoreShellText(np, input, sessionId, acc);
+  if (!toolMayRestore(name, acc)) return holdForTool(input, acc);
+  return restoreString(np, input, sessionId, acc);
 }

@@ -5,12 +5,13 @@ import {
   type RestoreAccumulator,
   holdForTool,
   isRecord,
+  isShellCall,
   newRestoreAccumulator,
   restoreJsonText,
   tallyRestore,
   toolCallMayRestore,
 } from './sanitizer.js';
-import { type ShellTool, shellToolOf } from './shell-restore.js';
+import { countPlaceholders } from './shell-tools.js';
 import { FRAME_SEPARATOR, SseFrameSplitter, parseSseFields, serialiseFrame } from './sse-frames.js';
 // The gateway hands `NullPii` directly to `RestoreStream` — both
 // satisfy the `RestoreCapable` structural type the stream needs. No
@@ -63,11 +64,11 @@ export interface SseRelayOptions {
   readonly restoreTools?: ReadonlySet<string>;
 }
 
-/** How a tool call's streamed input is restored at its block's stop: as
- * that shell tool's input (`shell`), or as plain JSON. A block with no
+/** How a tool call's streamed input is restored at its block's stop: not
+ * at all for a shell tool (`shell`), else as plain JSON. A block with no
  * entry keeps its placeholders. */
 interface ToolRestore {
-  readonly shell: ShellTool | undefined;
+  readonly shell: boolean;
 }
 
 /** State of one stream beyond its blocks. */
@@ -127,10 +128,9 @@ interface StreamState {
  *   tool call (`server_tool_use`, `mcp_tool_use`), a tool outside the
  *   list, and input whose `content_block_start` was never seen keep their
  *   placeholders, counted as held (fail closed).
- * - A shell tool call (`shellToolOf`, named in its `content_block_start`)
- *   → its input gets the shell-aware restore (`restoreToolInput`): a value
- *   comes back only where `shell-restore.ts` finds it safe, and is
- *   otherwise left literal and counted.
+ * - A shell tool call (`isShellTool`, named in its `content_block_start`)
+ *   → its input keeps every placeholder, counted as kept masked in a
+ *   shell command.
  * - Anything else (`message_start`, other delta types, …) → passed
  *   through unchanged but for its line ends, which become LF.
  */
@@ -164,7 +164,11 @@ export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCou
     // no-op but the explicit short-circuit makes the intent obvious.
     if (buf.length === 0) return '';
     if (mode === undefined) return holdForTool(buf, acc);
-    return restoreJsonText(np, buf, sessionId, acc, mode.shell);
+    if (mode.shell) {
+      acc.unsafeShell += countPlaceholders(buf);
+      return buf;
+    }
+    return restoreJsonText(np, buf, sessionId, acc);
   }
 
   const relay = (frame: string): string[] =>
@@ -338,9 +342,10 @@ function breaksBlockOrder(
 }
 
 /** Remember, at a block's `content_block_start`, whether its tool input
- * gets real values back at `content_block_stop` (`toolCallMayRestore`),
- * and whether with the shell rule. Any other block, server and MCP tool
- * calls included, gets no entry and keeps its placeholders. */
+ * gets real values back at `content_block_stop` (`toolCallMayRestore`), or
+ * is a shell tool's, which keeps them all (`isShellCall`). Any other block,
+ * server and MCP tool calls included, gets no entry and keeps its
+ * placeholders. */
 function noteToolBlock(
   data: Record<string, unknown>,
   toolBlocks: Map<number, ToolRestore>,
@@ -349,8 +354,12 @@ function noteToolBlock(
   const block = data.content_block;
   if (typeof data.index !== 'number' || !isRecord(block)) return;
   toolBlocks.delete(data.index);
+  if (isShellCall(block)) {
+    toolBlocks.set(data.index, { shell: true });
+    return;
+  }
   if (!toolCallMayRestore(block, acc)) return;
-  toolBlocks.set(data.index, { shell: shellToolOf(block.name) });
+  toolBlocks.set(data.index, { shell: false });
 }
 
 /** A frame with no `data` (a comment, a keep-alive), one whose `data` is

@@ -6,17 +6,7 @@ import {
   type NullPii,
   type RestoreResult,
 } from 'nullpii';
-import {
-  SHELL_TEXT_FIELDS,
-  type ShellOptions,
-  type ShellTool,
-  WORKDIR_FIELDS,
-  countPlaceholders,
-  placeholdersIn,
-  restoreShellArgv,
-  restoreShellCommand,
-  shellToolOf,
-} from './shell-restore.js';
+import { countPlaceholders, isShellTool, placeholdersIn } from './shell-tools.js';
 import type {
   AnthropicContentBlock,
   AnthropicMessage,
@@ -641,8 +631,8 @@ export interface RestoredResponse<TBody = AnthropicResponse> {
   readonly replacementsByLabel: Readonly<Partial<Record<string, number>>>;
   readonly unknownPlaceholders: number;
   readonly foreignPlaceholders: number;
-  /** Placeholders left literal in a shell tool's `command`: outside a data
-   * heredoc body, or with a value not safe there (see `shell-restore.ts`). */
+  /** Placeholders left literal in a shell tool's call: no shell command
+   * gets a value (`shell-tools.ts`). */
   readonly unsafeShellPlaceholders: number;
   /** Placeholders left in the input of a tool outside `restoreTools`
    * (network and MCP tools by default), so no value leaves through it. */
@@ -699,6 +689,12 @@ export function toolCallMayRestore(
   return block.type === CLIENT_TOOL_CALL_TYPE && toolMayRestore(block.name, acc);
 }
 
+/** Whether an Anthropic content block is a client call to a shell tool,
+ * whose input never gets a value (`isShellTool`). */
+export function isShellCall(block: Readonly<Record<string, unknown>>): boolean {
+  return block.type === CLIENT_TOOL_CALL_TYPE && isShellTool(block.name);
+}
+
 /** Keep a tool input's placeholders as they are, counting them. */
 export function holdForTool(text: string, acc: RestoreAccumulator): string {
   acc.heldForTool += countPlaceholders(text);
@@ -708,11 +704,12 @@ export function holdForTool(text: string, acc: RestoreAccumulator): string {
 /**
  * Restore an Anthropic response body in place against `sessionId`: every
  * `text` block, and the input of each client tool call (`tool_use`) to a
- * tool in `restoreTools` (a shell tool's `command` by the shell rule). A
- * tool outside the list, and every server or MCP tool call
- * (`server_tool_use`, `mcp_tool_use`: the upstream runs them), keeps its
- * placeholders, counted as held. Returns the body plus counts; the caller
- * logs the counts, never the values.
+ * tool in `restoreTools`. A shell tool's input keeps its placeholders,
+ * counted as kept masked in a shell command (`isShellTool`); a tool
+ * outside the list, and every server or MCP tool call (`server_tool_use`,
+ * `mcp_tool_use`: the upstream runs them), keeps its placeholders, counted
+ * as held. Returns the body plus counts; the caller logs the counts,
+ * never the values.
  */
 export function restoreResponse(
   np: NullPii,
@@ -726,6 +723,10 @@ export function restoreResponse(
       return { ...block, text: restoreString(np, block.text, sessionId, acc) };
     }
     if (TOOL_CALL_TYPES.has(block.type) && block.input !== undefined) {
+      if (isShellCall(block)) {
+        keepShellField(block.input, acc);
+        return block;
+      }
       if (!toolCallMayRestore(block, acc)) {
         holdForTool(JSON.stringify(block.input), acc);
         return block;
@@ -733,9 +734,8 @@ export function restoreResponse(
       // Mirror SSE path's `restoreJsonBuffer`: walk the tool input tree
       // and restore string leaves. Without this, non-streaming
       // tool-calling workflows leak `{{PII_*}}` placeholders verbatim
-      // to the client. A shell tool's command gets the shell-aware restore.
-      const shell = shellToolOf(block.name);
-      return { ...block, input: restoreToolInput(np, block.input, sessionId, acc, shell) };
+      // to the client.
+      return { ...block, input: restoreJsonValue(np, block.input, sessionId, acc) };
     }
     return block;
   });
@@ -757,9 +757,8 @@ export interface RestoredValue {
   readonly replacementsByLabel: Readonly<Partial<Record<string, number>>>;
   readonly unknownPlaceholders: number;
   readonly foreignPlaceholders: number;
-  /** With `shell`: the distinct placeholders left masked in the command
-   * (outside a data heredoc body, or with a value not safe there) or in a
-   * field other than `SHELL_TEXT_FIELDS`. Placeholders, never values. */
+  /** With `shell`: the distinct placeholders of the shell tool's input,
+   * all left masked. Placeholders, never values. */
   readonly shellKeptMasked?: readonly string[];
 }
 
@@ -768,44 +767,27 @@ export interface RestoredValue {
  * every other key keeps its placeholders, so a caller can put real values
  * back into the arguments a tool writes to disk and nowhere else.
  *
- * With `shell` (the value is that shell tool's input), each top-level
- * field restored goes through `restoreShellToolField`; the placeholders
- * left masked are listed in `shellKeptMasked`. */
+ * With `shell` (the value is a shell tool's input), nothing is restored:
+ * every placeholder is kept and listed in `shellKeptMasked`. */
 export function restoreValue(
   np: NullPii,
   value: unknown,
   sessionId: string,
   fields?: readonly string[],
-  shell?: ShellTool,
+  shell = false,
 ): RestoredValue {
   const acc = newRestoreAccumulator();
   const keptMasked: string[] = [];
-  const options = workdirOptions(value);
-  const restoreField = (key: string, field: unknown): unknown =>
-    shell !== undefined
-      ? restoreShellToolField(
-          np,
-          shell.commandField,
-          key,
-          field,
-          sessionId,
-          acc,
-          options,
-          keptMasked,
-        )
-      : restoreJsonValue(np, field, sessionId, acc);
   const obj = isRecord(value) ? value : undefined;
   let out: unknown;
-  if (obj === undefined && shell !== undefined) {
+  if (shell) {
     out = keepShellField(value, acc, keptMasked);
-  } else if (obj === undefined || (fields === undefined && shell === undefined)) {
+  } else if (obj === undefined || fields === undefined) {
     out = restoreJsonValue(np, value, sessionId, acc);
   } else {
     const restored: Record<string, unknown> = { ...obj };
-    for (const key of fields ?? Object.keys(obj)) {
-      if (!Object.hasOwn(obj, key)) continue;
-      if (shell !== undefined) keepShellField(key, acc, keptMasked); // keys stay as written
-      restored[key] = restoreField(key, obj[key]);
+    for (const key of fields) {
+      if (Object.hasOwn(obj, key)) restored[key] = restoreJsonValue(np, obj[key], sessionId, acc);
     }
     out = restored;
   }
@@ -861,82 +843,6 @@ export function restoreJsonValue(
   return out;
 }
 
-/**
- * Restore a tool call's input. For a tool a shell runs (`shell`), each
- * top-level field goes through `restoreShellToolField`: the command field
- * gets the shell-aware restore, the descriptive fields their values, and
- * any other field (`workdir`, `env`, …) keeps its placeholders. Every
- * field of any other tool gets its real values back as usual.
- */
-export function restoreToolInput(
-  np: NullPii,
-  input: unknown,
-  sessionId: string,
-  acc: RestoreAccumulator,
-  shell: ShellTool | undefined,
-): unknown {
-  if (shell === undefined) return restoreJsonValue(np, input, sessionId, acc);
-  // An input that is not an object has no command field to judge.
-  if (!isRecord(input)) return keepShellField(input, acc);
-  const options = workdirOptions(input);
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(input)) {
-    keepShellField(key, acc); // a placeholder in a key stays as written
-    out[key] = restoreShellToolField(np, shell.commandField, key, value, sessionId, acc, options);
-  }
-  return out;
-}
-
-/**
- * One top-level field of a shell tool's input: `command` by the shell
- * rule (`restoreShellField`), the text shown to the user
- * (`SHELL_TEXT_FIELDS`) as usual, and any other field left masked and
- * counted as unsafe: `workdir`, `cwd` or `env` choose where or how the
- * command runs, as a `cd` argument or an assignment would.
- */
-function restoreShellToolField(
-  np: NullPii,
-  commandField: string | undefined,
-  key: string,
-  field: unknown,
-  sessionId: string,
-  acc: RestoreAccumulator,
-  options: ShellOptions,
-  keptMasked?: string[],
-): unknown {
-  // A tool whose command no field may hold a value for gets none at all.
-  if (commandField === undefined) return keepShellField(field, acc, keptMasked);
-  if (key === commandField)
-    return restoreShellField(np, field, sessionId, acc, keptMasked, options);
-  if (SHELL_TEXT_FIELDS.has(key)) return restoreJsonValue(np, field, sessionId, acc);
-  return keepShellField(field, acc, keptMasked);
-}
-
-/**
- * Shell-aware restore of a shell tool's `command`: a string is a script
- * (`restoreShellText`), an array of strings an argv the program gets
- * without a shell (`restoreShellArgv`). Any other shape keeps every
- * placeholder, counted as unsafe: there is no telling how it is run.
- */
-export function restoreShellField(
-  np: NullPii,
-  command: unknown,
-  sessionId: string,
-  acc: RestoreAccumulator,
-  keptMasked?: string[],
-  options: ShellOptions = {},
-): unknown {
-  if (typeof command === 'string') {
-    return restoreShellText(np, command, sessionId, acc, keptMasked, options);
-  }
-  if (Array.isArray(command) && command.every((w) => typeof w === 'string')) {
-    const r = restoreShellArgv(np, command, sessionId, options);
-    tallyShell(acc, r, keptMasked);
-    return r.argv;
-  }
-  return keepShellField(command, acc, keptMasked);
-}
-
 /** Leave every placeholder in `field` (part of a shell tool's input)
  * masked, counted as unsafe and listed in `keptMasked` when given. */
 export function keepShellField(
@@ -950,51 +856,6 @@ export function keepShellField(
   return field;
 }
 
-/** How a shell tool's input sets where and how its command runs: a
- * working directory of its own (`WORKDIR_FIELDS`, `movedDir`), or an
- * environment (`env`, `keepAll`: nothing comes back, as with an
- * assignment in the command). */
-function workdirOptions(input: unknown): ShellOptions {
-  if (!isRecord(input)) return {};
-  const set = (d: unknown): boolean => d !== undefined && d !== null && d !== '';
-  const env = input[ENV_FIELD];
-  return {
-    movedDir: [...WORKDIR_FIELDS].some((k) => set(input[k])),
-    keepAll: set(env) && !(isRecord(env) && Object.keys(env).length === 0),
-  };
-}
-
-/** The input field that sets a shell tool's environment. */
-const ENV_FIELD = 'env';
-
-/** Shell-aware restore of one command string (see `shell-restore.ts`),
- * tallying counts into `acc` and, when given, appending the placeholders
- * it left masked to `keptMasked`. */
-export function restoreShellText(
-  np: NullPii,
-  command: string,
-  sessionId: string,
-  acc: RestoreAccumulator,
-  keptMasked?: string[],
-  options: ShellOptions = {},
-): string {
-  const r = restoreShellCommand(np, command, sessionId, options);
-  tallyShell(acc, r, keptMasked);
-  return r.command;
-}
-
-/** Add a shell restore's counts to `acc`, and the placeholders it left
- * masked to `keptMasked` when given. */
-function tallyShell(
-  acc: RestoreAccumulator,
-  r: { readonly results: readonly RestoreResult[]; readonly keptMasked: readonly string[] },
-  keptMasked?: string[],
-): void {
-  for (const result of r.results) tallyRestore(acc, result);
-  acc.unsafeShell += r.keptMasked.length;
-  keptMasked?.push(...r.keptMasked);
-}
-
 /**
  * Restore a JSON document held as a string: tool-call arguments, or the
  * tool input a stream assembles from `input_json_delta` shards. It is
@@ -1004,11 +865,6 @@ function tallyShell(
  * off mid-stream) is restored as plain text rather than dropped; one with
  * nothing to restore is returned exactly as it came.
  *
- * With `shell`, the input's command field gets the shell-aware restore
- * (`restoreToolInput`), and input that does not parse keeps every
- * placeholder: without its JSON structure there is no telling which part
- * a shell would run.
- *
  * @param acc - restore counts are added here.
  */
 export function restoreJsonText(
@@ -1016,15 +872,10 @@ export function restoreJsonText(
   text: string,
   sessionId: string,
   acc: RestoreAccumulator,
-  shell?: ShellTool,
 ): string {
   const parsed = parseJson(text);
-  if (parsed === undefined && shell !== undefined) {
-    acc.unsafeShell += countPlaceholders(text);
-    return text;
-  }
   if (parsed === undefined) return restoreString(np, text, sessionId, acc);
-  const restored = restoreToolInput(np, parsed.value, sessionId, acc, shell);
+  const restored = restoreJsonValue(np, parsed.value, sessionId, acc);
   const next = JSON.stringify(restored);
   return next === JSON.stringify(parsed.value) ? text : next;
 }

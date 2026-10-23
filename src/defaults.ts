@@ -961,13 +961,12 @@ export const CONFIG_FILE_NAME = 'config.json';
 export const MAX_CONFIG_FILE_BYTES = 64 * 1024;
 
 /** Tools whose arguments get real values back when no `restoreTools` is
- * configured: Claude Code's tools that run on this machine. Tools that
- * send data elsewhere (`WebFetch`, `WebSearch`, MCP tools) keep the
- * placeholders. A shell command gets values only as text a few fixed
- * commands write out as data (SECURITY.md). */
+ * configured: the file tools of coding agents, which run on this machine.
+ * Tools that send data elsewhere (`WebFetch`, `WebSearch`, MCP tools)
+ * keep the placeholders, and so does every shell tool (`Bash`, `bash`,
+ * `shell`, …), whatever this list says (SECURITY.md). */
 export const DEFAULT_RESTORE_TOOLS: readonly string[] = [
   // Claude Code.
-  'Bash',
   'Read',
   'Edit',
   'MultiEdit',
@@ -975,9 +974,7 @@ export const DEFAULT_RESTORE_TOOLS: readonly string[] = [
   'NotebookEdit',
   'Grep',
   'Glob',
-  // Local shell and patch tools of OpenAI-compatible coding agents.
-  'bash',
-  'shell',
+  // The patch tool of OpenAI-compatible coding agents (Codex).
   'apply_patch',
 ];
 

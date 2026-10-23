@@ -5,7 +5,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { type NullPii, type NullPiiFileConfig, TextTooLongError } from 'nullpii';
 import { SanitizeCache } from '../sanitize-cache.js';
 import { restoreValue, sanitizeValue } from '../sanitizer.js';
-import { countPlaceholders, shellToolOf } from '../shell-restore.js';
+import { countPlaceholders, isShellTool } from '../shell-tools.js';
 import { type SessionRefusal, SidecarSessions, isValidSessionKey } from '../sidecar-sessions.js';
 
 /** What the sidecar routes need: the engine, the bearer token, session
@@ -339,10 +339,12 @@ export async function registerSidecarRoutes(
         if (tool !== undefined && !isObject) {
           return reply.code(400).send({ error: 'tool_requires_object_value' });
         }
-        if (tool !== undefined && !opts.restoreTools.has(tool)) {
+        // A shell tool's input never gets a value: every placeholder is
+        // listed back so the caller can refuse the call.
+        const shell = isShellTool(tool);
+        if (tool !== undefined && !shell && !opts.restoreTools.has(tool)) {
           return sendHeld(req, reply, value);
         }
-        const shell = shellToolOf(tool);
         const r = restoreValue(np, value, session.vaultId, fields, shell);
         req.log.info(
           {

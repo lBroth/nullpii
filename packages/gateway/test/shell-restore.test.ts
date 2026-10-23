@@ -1538,6 +1538,33 @@ describe('shell restore · round-10 layout and redirections', () => {
   });
 
   it.each([
+    ['@probe', 0],
+    ['probe%x%', 0],
+    ['//probe/share/notes.md', 0],
+    [EMAIL, 1],
+    ['probe@host', 1],
+  ])(
+    'restores %j as a plain word only if no Windows shell layer reads it: expected %i',
+    (value, expected) => {
+      const { np, vault, sessionId } = harness();
+      const word = bake(vault, sessionId, value, 'secret');
+
+      expect(restored(restoreShellCommand(np, `grep ${word} notes.md`, sessionId))).toBe(expected);
+    },
+  );
+
+  it.each([
+    (p: string) => `touch //probe/share/${p}.md`,
+    (p: string) => `cat //${p}.probe.example/x`,
+    (p: string) => `grep ${p} //probe/share/notes.md`,
+  ])('keeps every value in a command that names a network path: %#', (build) => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, 'probe', 'secret');
+
+    expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(0);
+  });
+
+  it.each([
     [['bash', '-c'], 1],
     [['/bin/bash', '-c'], 1],
     [['/usr/bin/sh', '-c'], 1],
@@ -2283,6 +2310,7 @@ describe('shell restore · tool input fields', () => {
     [{ cmd: 'grep W notes.md', shell: '/usr/local/bin/bash' }, 'exec_command', 'cmd', 0],
     [{ command: 'grep W notes.md' }, 'shell_command', 'command', 0],
     [{ chars: 'W', description: 'W' }, 'write_stdin', 'description', 0],
+    [{ command: 'grep W notes.md' }, 'PowerShell', 'command', 0],
   ])(
     "gives Codex's exec_command, shell_command and write_stdin no value: %j as %s",
     (input, tool, field, expected) => {

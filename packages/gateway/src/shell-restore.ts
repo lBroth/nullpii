@@ -21,7 +21,7 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  * constructs nest and end. Within that grammar, every program must be on a
  * closed list of programs that read their arguments as data
  * (`ARG_DATA_PROGRAMS`), and a value comes back only as one plain word:
- * letters, digits and `@%+:,./_=-`, not starting with `-`, `=` or `~`.
+ * letters, digits and `@+:,./_=-`, not starting with `-`, `=`, `~`, `@` or `//`.
  * Otherwise the placeholder stays literal, and the command works on the
  * placeholder text, which is harmless.
  *
@@ -82,8 +82,9 @@ export interface ShellTool {
 /** Tools whose input a shell runs, as each agent names them: Claude
  * Code's `Bash` and Anthropic's `bash` (a POSIX shell), the `shell` tool
  * of OpenAI-style agents such as Codex (an argv array), and Codex's
- * `exec_command`, `shell_command` and `write_stdin`, which get no value
- * at all: the first two run in the user's default shell or one Codex
+ * `exec_command`, `shell_command` and `write_stdin`, and Claude Code's
+ * `PowerShell` tool, which get no value at all (PowerShell reads a plain
+ * word differently from a POSIX shell): the first two run in the user's default shell or one Codex
  * picks from a `shell` field it reads only as a hint (PowerShell or
  * `cmd.exe` on Windows, where a plain word can read a variable), and the
  * last writes to a running process. */
@@ -94,6 +95,7 @@ const SHELL_TOOL_SPECS: ReadonlyMap<string, ShellTool> = new Map([
   ['exec_command', { commandField: undefined }],
   ['shell_command', { commandField: undefined }],
   ['write_stdin', { commandField: undefined }],
+  ['PowerShell', { commandField: undefined }],
 ]);
 export const SHELL_TOOLS: ReadonlySet<string> = new Set(SHELL_TOOL_SPECS.keys());
 
@@ -106,8 +108,8 @@ export interface ShellOptions {
   /** The call sets the working directory itself (`WORKDIR_FIELDS`). */
   readonly movedDir?: boolean;
 }
-/** The other input fields of a shell tool that get values back: text
- * shown to the user. Any other field (`workdir`, `cwd`, `env`, `timeout`
+/** The other input fields of a shell tool that get values back, for a
+ * tool with a command field: text shown to the user. Any other field (`workdir`, `cwd`, `env`, `timeout`
  * or one nullpii does not know) keeps its placeholders: it can set where
  * or how the command runs, which a `cd` argument or an assignment in the
  * command never gets to. */
@@ -128,10 +130,14 @@ const DATA_BODY_CONTEXTS: ReadonlySet<QuoteContext> = new Set<DataBodyContext>([
 ]);
 
 /** A value that may be restored outside a data heredoc body: one plain
- * word, with no character any shell or quoting gives a meaning to, and
- * not starting with `-` (an option), `=` (zsh's `=cmd` expansion) or `~`
- * (a home directory). */
-const PLAIN_WORD = /^(?![-=~])[\p{L}\p{N}@%+:,./_=-]+$/u;
+ * word, with no character any shell or quoting gives a meaning to (no `%`,
+ * which `cmd.exe` expands), and not starting with `-` (an option), `=`
+ * (zsh's `=cmd` expansion), `~` (a home directory), `@` (PowerShell
+ * splatting) or `//` (a network path under Windows' POSIX layers). */
+const PLAIN_WORD = /^(?![-=~@])(?!\/\/)[\p{L}\p{N}@+:,./_=-]+$/u;
+/** A word of shell code that starts as a network path (`//host/…`), which
+ * Git Bash and Cygwin programs open over the network. */
+const NETWORK_PATH = /(?:^|[\s'"=<>|;&])\/\/[\w.-]/;
 
 /** What a value may hold in a data heredoc body. */
 const DATA_BODY_SAFE: Readonly<Record<DataBodyContext, RegExp>> = {
@@ -1059,7 +1065,8 @@ function judge(command: string, targets: readonly number[], movedDir = false): V
     NETWORK_CLIENT.test(code) ||
     programs.some(sendsOut) ||
     (strict && NETWORK_IN_CODE.test(code)) ||
-    (URL_SCHEME.test(code) && !programs.every(isDataProgram));
+    (URL_SCHEME.test(code) && !programs.every(isDataProgram)) ||
+    NETWORK_PATH.test(code);
   // A data body goes to standard output or to a plain document file; one
   // written elsewhere (`.git/config`, `Makefile`, `run.sh`) may be read
   // as code later.
@@ -2076,7 +2083,7 @@ function argvSendsOffMachine(argv: readonly string[]): boolean {
   if (script >= 0 && sendsOffMachine(argv[script] ?? '')) return true;
   const words = argv.filter((_, k) => k !== script);
   if (words.some((a) => ANY_DELIMITER_IN_TEXT.test(a))) return true;
-  if (words.some((a) => NETWORK_CLIENT.test(a))) return true;
+  if (words.some((a) => NETWORK_CLIENT.test(a) || NETWORK_PATH.test(a))) return true;
   // As in a string command: a URL handed to a program that is not a data one.
   if (words.some((a) => URL_SCHEME.test(a)) && !(program !== undefined && isDataProgram(program))) {
     return true;

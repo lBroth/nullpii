@@ -12,7 +12,6 @@ import {
   type ShellTool,
   WORKDIR_FIELDS,
   countPlaceholders,
-  judgedCommandField,
   placeholdersIn,
   restoreShellArgv,
   restoreShellCommand,
@@ -783,11 +782,18 @@ export function restoreValue(
   const acc = newRestoreAccumulator();
   const keptMasked: string[] = [];
   const options = { movedDir: setsWorkdir(value) };
-  const judged =
-    shell !== undefined && isRecord(value) ? judgedCommandField(shell, value) : undefined;
   const restoreField = (key: string, field: unknown): unknown =>
     shell !== undefined
-      ? restoreShellToolField(np, judged, key, field, sessionId, acc, options, keptMasked)
+      ? restoreShellToolField(
+          np,
+          shell.commandField,
+          key,
+          field,
+          sessionId,
+          acc,
+          options,
+          keptMasked,
+        )
       : restoreJsonValue(np, field, sessionId, acc);
   const obj = isRecord(value) ? value : undefined;
   let out: unknown;
@@ -855,8 +861,8 @@ export function restoreJsonValue(
 }
 
 /**
- * Restore a tool call's input. For a tool a shell runs (`runsInShell`),
- * each top-level field goes through `restoreShellToolField`: `command`
+ * Restore a tool call's input. For a tool a shell runs (`shell`), each
+ * top-level field goes through `restoreShellToolField`: the command field
  * gets the shell-aware restore, the descriptive fields their values, and
  * any other field (`workdir`, `env`, …) keeps its placeholders. Every
  * field of any other tool gets its real values back as usual.
@@ -872,10 +878,9 @@ export function restoreToolInput(
   // An input that is not an object has no command field to judge.
   if (!isRecord(input)) return keepShellField(input, acc);
   const options = { movedDir: setsWorkdir(input) };
-  const judged = judgedCommandField(shell, input);
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(input)) {
-    out[key] = restoreShellToolField(np, judged, key, value, sessionId, acc, options);
+    out[key] = restoreShellToolField(np, shell.commandField, key, value, sessionId, acc, options);
   }
   return out;
 }
@@ -989,7 +994,7 @@ function tallyShell(
  * off mid-stream) is restored as plain text rather than dropped; one with
  * nothing to restore is returned exactly as it came.
  *
- * With `runsInShell`, the input's `command` gets the shell-aware restore
+ * With `shell`, the input's command field gets the shell-aware restore
  * (`restoreToolInput`), and input that does not parse keeps every
  * placeholder: without its JSON structure there is no telling which part
  * a shell would run.

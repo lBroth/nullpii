@@ -445,9 +445,8 @@ export function restoreCustomInput(
   const shell = shellToolOf(name);
   if (shell === undefined) return restoreString(np, input, sessionId, acc);
   // A free-form shell tool's whole input is its command; one with no
-  // command field (`write_stdin`), or that names its shell in a field this
-  // input cannot have (`exec_command`), gets no value.
-  if (shell.commandField === undefined || shell.interpreterField !== undefined) {
+  // command field (`exec_command`, `write_stdin`, …) gets no value.
+  if (shell.commandField === undefined) {
     keepShellField(input, acc);
     return input;
   }

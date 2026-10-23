@@ -74,25 +74,24 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  */
 
 /** A shell tool, as its input is restored: the field the shell interprets
- * (`undefined` when no field may get a value), and the field that names
- * the shell, when the call chooses it. */
+ * (`undefined` when no field may get a value). */
 export interface ShellTool {
   readonly commandField: string | undefined;
-  readonly interpreterField?: string;
 }
 
 /** Tools whose input a shell runs, as each agent names them: Claude
  * Code's `Bash` and Anthropic's `bash` (a POSIX shell), the `shell` tool
- * of OpenAI-style agents such as Codex (an argv array), Codex's
- * `exec_command`, whose `cmd` runs in the shell its `shell` field names
- * (the user's default shell without it, PowerShell on Windows), and its
- * `shell_command` (always the default shell) and `write_stdin` (input to a
- * running process), which get no value at all. */
+ * of OpenAI-style agents such as Codex (an argv array), and Codex's
+ * `exec_command`, `shell_command` and `write_stdin`, which get no value
+ * at all: the first two run in the user's default shell or one Codex
+ * picks from a `shell` field it reads only as a hint (PowerShell or
+ * `cmd.exe` on Windows, where a plain word can read a variable), and the
+ * last writes to a running process. */
 const SHELL_TOOL_SPECS: ReadonlyMap<string, ShellTool> = new Map([
   ['Bash', { commandField: 'command' }],
   ['bash', { commandField: 'command' }],
   ['shell', { commandField: 'command' }],
-  ['exec_command', { commandField: 'cmd', interpreterField: 'shell' }],
+  ['exec_command', { commandField: undefined }],
   ['shell_command', { commandField: undefined }],
   ['write_stdin', { commandField: undefined }],
 ]);
@@ -985,19 +984,6 @@ export function isShellTool(name: unknown): boolean {
 /** The shell tool `name` is, or `undefined` for any other tool. */
 export function shellToolOf(name: unknown): ShellTool | undefined {
   return typeof name === 'string' ? SHELL_TOOL_SPECS.get(name) : undefined;
-}
-
-/** The field of `input` that the shell rule judges, for the shell tool
- * `shell`: its command field, unless the call names its shell and that is
- * not a POSIX one (`isPosixShell`), whose reading the rule is; `undefined`
- * when no field may get a value. */
-export function judgedCommandField(
-  shell: ShellTool,
-  input: Readonly<Record<string, unknown>>,
-): string | undefined {
-  if (shell.interpreterField === undefined) return shell.commandField;
-  const named = input[shell.interpreterField];
-  return typeof named === 'string' && isPosixShell(named) ? shell.commandField : undefined;
 }
 
 /** True when `command` sends data off the machine: a network client or an

@@ -71,7 +71,11 @@ export {
   resolveConfigFile,
   toEngineConfig,
 } from './config-file.js';
-export { DEFAULT_RESTORE_TOOLS, DEFAULT_URL_RELEASES } from './defaults.js';
+export {
+  DEFAULT_DISABLED_CATEGORIES,
+  DEFAULT_RESTORE_TOOLS,
+  DEFAULT_URL_RELEASES,
+} from './defaults.js';
 
 // LLM-prompt helper
 export { LLM_PRESERVATION_HINT, wrapForLLM } from './wrap-for-llm.js';

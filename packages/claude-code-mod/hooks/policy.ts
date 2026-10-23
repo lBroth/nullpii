@@ -230,6 +230,9 @@ export interface Policy {
   file: string;
   loaded: boolean;
   config: Readonly<Record<string, unknown>>;
+  /** The categories left readable, defaults included (absent from an
+   * older sidecar). */
+  disabledCategories?: readonly string[];
   restoreTools: readonly string[];
 }
 
@@ -283,11 +286,11 @@ export function formatBand(counts: Counts, problem: string | undefined): string 
 /** The policy lines of the `/pii` reply. */
 export function formatPolicy(policy: Policy | undefined): string[] {
   if (policy === undefined) return ['Policy: unknown (the sidecar has not answered)'];
-  const disabled = policy.config.disabledCategories;
+  const disabled = policy.disabledCategories ?? policy.config.disabledCategories;
   const off = Array.isArray(disabled) && disabled.length > 0 ? disabled.join(', ') : 'none';
   return [
     `Policy file: ${policy.file} (${policy.loaded ? 'loaded' : 'not present: built-in defaults'})`,
-    `Categories turned off: ${off}`,
+    `Categories left readable: ${off}`,
     `Tools that get real values back: ${policy.restoreTools.join(', ')}`,
     'Changes to the file apply when nullpii-gateway restarts.',
   ];

@@ -65,7 +65,13 @@ describe('NullPii windowing on dense input', () => {
   it('hands every word to the model even when every window is cut', async () => {
     seenWords.length = 0;
     const words = Array.from({ length: 1000 }, (_, i) => `tok${i}`);
-    const np = new NullPii({ modelDir: '/fake', backend: 'cpu', recognizers: 'none' });
+    const np = new NullPii({
+      modelDir: '/fake',
+      backend: 'cpu',
+      recognizers: 'none',
+      // Every label prompted: these tests size windows by the full prompt.
+      disabledCategories: [],
+    });
     await np.sanitize(words.join(' '));
     expect(new Set(seenWords)).toEqual(new Set(words));
     await np.dispose();
@@ -73,7 +79,13 @@ describe('NullPii windowing on dense input', () => {
 
   it('counts the words the model could not read, and still reads the rest', async () => {
     seenWords.length = 0;
-    const np = new NullPii({ modelDir: '/fake', backend: 'cpu', recognizers: 'none' });
+    const np = new NullPii({
+      modelDir: '/fake',
+      backend: 'cpu',
+      recognizers: 'none',
+      // Every label prompted: these tests size windows by the full prompt.
+      disabledCategories: [],
+    });
     const plain = (await np.sanitize('alpha beta gamma')).modelUnscannedWords;
     const result = await np.sanitize(`alpha ${BLOB}${'x'.repeat(64)} beta gamma`);
     expect(plain).toBe(0);
@@ -98,7 +110,13 @@ describe('NullPii windowing on dense input', () => {
 describe('NullPii zero-word windows', () => {
   it('never hands a window with zero words to the model', async () => {
     seenWords.length = 0;
-    const np = new NullPii({ modelDir: '/fake', backend: 'cpu', recognizers: 'none' });
+    const np = new NullPii({
+      modelDir: '/fake',
+      backend: 'cpu',
+      recognizers: 'none',
+      // Every label prompted: these tests size windows by the full prompt.
+      disabledCategories: [],
+    });
     const out = await np.sanitize('   ');
     expect(out.spans).toEqual([]);
     await np.dispose();

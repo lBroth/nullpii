@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_DISABLED_CATEGORIES } from '../src/defaults.js';
 import { EngineDisposedError, SessionMismatchError, SessionNotFoundError } from '../src/errors.js';
 import { InvalidConfigError } from '../src/errors.js';
 import { NullPii } from '../src/nullpii.js';
@@ -149,12 +150,29 @@ describe('NullPii e2e pipeline (mocked ONNX)', () => {
     await n.dispose();
   });
 
-  it('prompts every category by default, extended ones included', async () => {
-    const n = new NullPii({ modelDir: '/fake', backend: 'cpu' });
+  it('prompts every category when none is disabled, extended ones included', async () => {
+    const n = new NullPii({ modelDir: '/fake', backend: 'cpu', disabledCategories: [] });
     await n.sanitize('Send to alice@acme.io today.');
     expect(prompt.labels).toContain('private_organization');
     expect(prompt.labels).toContain('private_sensitive');
     expect(prompt.labels.slice(0, 8)).toEqual(GLINER_MODEL_CATEGORIES);
+    await n.dispose();
+  });
+
+  it('by default leaves readable what an agent needs and masks the dangerous rest', async () => {
+    const n = new NullPii({ modelDir: '/fake', backend: 'cpu' });
+    await n.sanitize('Send to alice@acme.io today.');
+    for (const label of DEFAULT_DISABLED_CATEGORIES) expect(prompt.labels).not.toContain(label);
+    for (const label of [
+      'private_person',
+      'private_email',
+      'private_phone',
+      'private_address',
+      'account_number',
+      'secret',
+    ]) {
+      expect(prompt.labels).toContain(label);
+    }
     await n.dispose();
   });
 

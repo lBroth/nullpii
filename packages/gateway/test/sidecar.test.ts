@@ -6,7 +6,7 @@
 
 import type { FastifyInstance } from 'fastify';
 import type { NullPii } from 'nullpii';
-import { PiiVault, TextTooLongError } from 'nullpii';
+import { DEFAULT_DISABLED_CATEGORIES, PiiVault, TextTooLongError } from 'nullpii';
 
 import { createHmac } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -273,9 +273,17 @@ describe('sidecar · status', () => {
         file: '/home/node/.config/nullpii/config.json',
         loaded: true,
         config: { disabledCategories: ['private_title'], restoreTools: ['Read'] },
+        disabledCategories: ['private_title'],
         restoreTools: ['Read'],
       },
     });
+  });
+
+  it('reports the default readable categories when the policy sets none', async () => {
+    const { app } = await setup();
+    const res = await app.inject({ method: 'GET', url: '/v1/sidecar/status', headers: AUTH });
+    const policy = (res.json() as { policy: { disabledCategories: string[] } }).policy;
+    expect(policy.disabledCategories).toEqual([...DEFAULT_DISABLED_CATEGORIES]);
   });
 });
 

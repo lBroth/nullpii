@@ -74,7 +74,7 @@ One JSON file sets the policy for the library, the CLI, the gateway and the Clau
 }
 ```
 
-- `disabledCategories`: categories left readable.
+- `disabledCategories`: categories left readable. It replaces the default list (dates, companies, jobs, honorifics, demographic and sensitive attributes); `[]` masks every category.
 - `categoryThresholds`, `threshold`: confidence cuts in `[0, 1]`; lower masks more.
 - `urlAllowlist`: how much of a clean URL stays readable on each host (`full`, `host` or `mask`), or `"none"` to mask every URL. Code hosts, package registries and documentation stay readable by default; a URL with a credential in its query never does. A code-host URL can name a person or a private repository (`github.com/<user>/<repo>`): set that host to `host` or `mask` if that matters to you.
 - `restoreTools`: the tools whose arguments get real values back (gateway and mod).
@@ -146,7 +146,7 @@ or from a shell with `claude plugin marketplace add lBroth/nullpii@v0.5.0`, then
 | `private_sensitive` | religion, political views, sexual orientation, health, when stated | model |
 | `private_title` | honorifics and titles before a name | model |
 
-The last five categories are on by default; turn off the ones your text needs readable (`disabledCategories`). They find what is written out: nullpii does not infer a health condition or a belief from indirect wording. Add your own patterns with `np.addRecognizer({ id, pattern, label, confidence, validate? })`.
+By default nullpii masks what is dangerous to hand to a coding agent's model (names, contact details and addresses, ids and accounts, secrets) and leaves readable what the agent needs to work and identifies no one on its own: `private_date` (the model does not tell a birth date from a deadline) and the last five categories (`DEFAULT_DISABLED_CATEGORIES`). Set `disabledCategories` to choose otherwise; `[]` masks every category. They find what is written out: nullpii does not infer a health condition or a belief from indirect wording. Add your own patterns with `np.addRecognizer({ id, pattern, label, confidence, validate? })`.
 
 Obfuscated input is decoded before detection: Unicode look-alikes and fullwidth characters, zero-width characters, spaced-out text, percent-encoding (two levels deep), HTML entities, and base64 blobs.
 

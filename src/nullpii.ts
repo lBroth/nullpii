@@ -12,6 +12,7 @@ import {
   DEFAULT_CATEGORY_THRESHOLDS,
   DEFAULT_DECODE_THRESHOLD,
   DEFAULT_DEDUPE_IOU,
+  DEFAULT_DISABLED_CATEGORIES,
   DEFAULT_POST_FILTER_THRESHOLD,
   DEFAULT_RECOGNIZERS,
   DEFAULT_RECOGNIZERS_ENABLED,
@@ -126,7 +127,7 @@ export class NullPii {
     // Fail on an unknown variant here, not at the first sanitize().
     onnxCandidates(config.variant ?? DEFAULT_VARIANT, config.backend ?? DEFAULT_BACKEND);
     this.config = config;
-    this.disabled = new Set(config.disabledCategories ?? []);
+    this.disabled = new Set(config.disabledCategories ?? DEFAULT_DISABLED_CATEGORIES);
     this.promptLabels = GLINER_LABELS.filter((l) => !this.disabled.has(l));
     this.urlPolicy = config.urlAllowlist === 'none' ? null : urlPolicy(config.urlAllowlist);
     if (config.recognizers === 'none') return;

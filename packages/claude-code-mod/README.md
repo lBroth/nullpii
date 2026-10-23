@@ -38,7 +38,7 @@ The sidecar reads the masking policy from `~/.config/nullpii/config.json`, or fr
 }
 ```
 
-- **`disabledCategories`**: categories that reach Claude unmasked.
+- **`disabledCategories`**: categories that reach Claude unmasked. It replaces the default list (dates, companies, jobs, honorifics, demographic and sensitive attributes, which identify no one on their own and which Claude often needs); `[]` masks every category. `/pii` shows the list in effect.
 - **`categoryThresholds`** and **`threshold`**: confidence cuts in `[0, 1]`. Lower masks more.
 - **`urlAllowlist`**: how much of a clean URL stays readable, per host.
 - **`restoreTools`**: the tools that get real values back. It replaces the default list.

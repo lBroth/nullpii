@@ -2,7 +2,12 @@
 
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { type NullPii, type NullPiiFileConfig, TextTooLongError } from 'nullpii';
+import {
+  DEFAULT_DISABLED_CATEGORIES,
+  type NullPii,
+  type NullPiiFileConfig,
+  TextTooLongError,
+} from 'nullpii';
 import { SanitizeCache } from '../sanitize-cache.js';
 import { restoreValue, sanitizeValue } from '../sanitizer.js';
 import { countPlaceholders, isShellTool } from '../shell-tools.js';
@@ -98,8 +103,8 @@ interface SanitizeRequest extends SessionRequest {
 
 interface RestoreRequest extends SessionRequest {
   /** `tool`: the value is that tool's input. A tool outside the policy's
-   * `restoreTools` gets nothing back; a shell tool's `command` gets the
-   * shell-aware restore (see `shell-restore.ts`). */
+   * `restoreTools` gets nothing back, and neither does a shell tool, whose
+   * placeholders are listed (`shell-tools.ts`). */
   Body: { value: unknown; fields?: string[]; tool?: string };
 }
 
@@ -257,6 +262,7 @@ export async function registerSidecarRoutes(
         file: opts.policyFile,
         loaded: opts.policyLoaded,
         config: opts.policy,
+        disabledCategories: opts.policy.disabledCategories ?? DEFAULT_DISABLED_CATEGORIES,
         restoreTools: [...opts.restoreTools],
       },
     }));

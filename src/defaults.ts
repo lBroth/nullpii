@@ -8,7 +8,7 @@
 // Strict TS index-access fallbacks (e.g. `arr[i] ?? 0` under
 // `noUncheckedIndexedAccess`) are NOT user-facing defaults and stay inline.
 
-import type { BackendName, ModelVariant, UrlRelease } from './types/index.js';
+import type { BackendName, ModelVariant, PiiCategory, UrlRelease } from './types/index.js';
 import type { Recognizer } from './types/recognizer.js';
 import {
   base58CheckValid,
@@ -959,6 +959,23 @@ export const CONFIG_FILE_NAME = 'config.json';
 /** Largest config file accepted. The policy is a few hundred bytes; a
  * larger file is a mistake, not a policy. */
 export const MAX_CONFIG_FILE_BYTES = 64 * 1024;
+
+/** Categories left readable when no `disabledCategories` is configured.
+ * nullpii is built for coding agents: by default it masks what is
+ * dangerous to hand to a model (secrets, contact details and addresses,
+ * ids and accounts, people's names) and leaves readable what the agent
+ * needs to do its work and identifies no one on its own: companies, jobs,
+ * honorifics, demographic and sensitive attributes, and dates (the model
+ * does not tell a birth date from a deadline). Set `disabledCategories`
+ * to `[]` to mask every category. */
+export const DEFAULT_DISABLED_CATEGORIES: readonly PiiCategory[] = [
+  'private_organization',
+  'private_occupation',
+  'private_demographic',
+  'private_sensitive',
+  'private_title',
+  'private_date',
+];
 
 /** Tools whose arguments get real values back when no `restoreTools` is
  * configured: the file tools of coding agents, which run on this machine.

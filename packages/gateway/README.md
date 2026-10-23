@@ -215,7 +215,7 @@ What gets masked comes from the shared policy file. Everything else is set with 
 
 | Key | Effect |
 |---|---|
-| `disabledCategories` | Categories that are not masked |
+| `disabledCategories` | Categories that are not masked. Default: dates, companies, jobs, honorifics, demographic and sensitive attributes (`DEFAULT_DISABLED_CATEGORIES`); `[]` masks every category. |
 | `categoryThresholds`, `threshold` | Confidence cuts in `[0, 1]`, per category or for all. Lower masks more. |
 | `urlAllowlist` | `"none"` masks every URL. `{ hosts, replaceDefaults }` sets, per host (`docs.python.org`, or `*.github.com` for a domain and its subdomains), how much of a clean URL stays readable: `full`, `host` or `mask`. |
 | `restoreTools` | Tools whose arguments get real values back. It replaces the default list (`DEFAULT_RESTORE_TOOLS`: the tools that run on this machine). Any other tool keeps the placeholders. |

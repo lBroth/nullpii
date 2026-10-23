@@ -94,7 +94,7 @@ describe('score thresholds run before dedupe and recognizer deferral', () => {
   it('a model span that clears its threshold still takes priority over core:mac', async () => {
     const text = `device ${MAC} joined`;
     model.spans = [at(text, MAC, 'private_date', 0.5)];
-    const n = new NullPii({ modelDir: '/fake', backend: 'cpu' });
+    const n = new NullPii({ modelDir: '/fake', backend: 'cpu', disabledCategories: [] });
     const out = await n.sanitize(text);
     expect(out.spans.map((s) => [s.label, s.text])).toEqual([['private_date', MAC]]);
     await n.dispose();

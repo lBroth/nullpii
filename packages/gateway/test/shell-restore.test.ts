@@ -1428,12 +1428,34 @@ describe('shell restore · round-10 layout and redirections', () => {
     expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(0);
   });
 
-  it('still restores beside a printf or test that assigns nothing', () => {
+  it.each([
+    (p: string) => `printf '%s\\n' done; grep ${p} notes.md`,
+    (p: string) => `[ -f notes.md ] && grep ${p} notes.md`,
+    (p: string) => `test -f notes.md && grep ${p} notes.md`,
+  ])(
+    'keeps every value in a command that runs printf, test or [, which are off the list: %#',
+    (build) => {
+      const { np, vault, sessionId } = harness();
+      const word = bake(vault, sessionId, EMAIL, 'private_email');
+
+      expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(0);
+    },
+  );
+
+  it.each([
+    [(p: string) => `LC_ALL=C.UTF-8 grep ${p} notes.md`, 1],
+    [(p: string) => `LANGUAGE=en_US:en grep ${p} notes.md`, 1],
+    [(p: string) => `TZ=Europe/Rome git log --author=${p}`, 1],
+    [(p: string) => `LANG=de_DE@euro; grep ${p} notes.md`, 1],
+    [(p: string) => `TZ=/tmp/zone git log --author=${p}`, 0],
+    [(p: string) => `TZ=../zone git log --author=${p}`, 0],
+    [(p: string) => `LC_ALL=/tmp/locale grep ${p} notes.md`, 0],
+    [(p: string) => `LC_ALL=a=b grep ${p} notes.md`, 0],
+  ])('allows the locale and time zone only with a plain name: %#', (build, expected) => {
     const { np, vault, sessionId } = harness();
     const word = bake(vault, sessionId, EMAIL, 'private_email');
-    const command = `printf '%s\\n' done; [ -f notes.md ] && grep ${word} notes.md`;
 
-    expect(restored(restoreShellCommand(np, command, sessionId))).toBe(1);
+    expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(expected);
   });
 
   it.each([

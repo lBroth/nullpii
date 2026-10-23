@@ -33,8 +33,8 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  *   (`COMMAND_OPTIONS`, abbreviations and short-option clusters included);
  * - a placeholder that is, or is part of, the program a simple command
  *   runs, a redirection target, an assignment, an argument of `export` or
- *   `alias`, a `cd` argument, an argument of `printf`, `test` or `[`, or
- *   a placeholder written in shell code directly before `<` or `>` stays
+ *   `alias`, a `cd` argument, or a placeholder written in shell code
+ *   directly before `<` or `>` stays
  *   masked: a value must not choose what runs, what is written or the
  *   directory later commands (git among them) run in;
  * - within the list, a command that sends data off the machine (a URL,
@@ -315,9 +315,7 @@ const COMMAND_OPTIONS: ReadonlyMap<string, RegExp> = new Map([
   // Writing where an option points chooses what is overwritten.
   ['sort', optionPattern(shortOption('o'), longOption('output'), longOption('compress-program'))],
   ['base64', optionPattern(shortOption('o'), longOption('output'))],
-  // `printf -v NAME` assigns a shell variable, also in a cluster zsh
-  // accepts (`-:v`); `file -C` writes a file.
-  ['printf', optionPattern(shortOption('v'))],
+  // `file -C` writes a file.
   ['file', optionPattern(shortOption('C'), longOption('compile'))],
   ['fzf', /^--(?:preview|bind)/],
 ]);
@@ -560,7 +558,6 @@ const NETWORK_IN_CODE =
 const DATA_PROGRAMS: ReadonlySet<string> = new Set([
   'cat',
   'echo',
-  'printf',
   'mkdir',
   'cd',
   'touch',
@@ -599,7 +596,6 @@ const ARG_DATA_PROGRAMS: ReadonlySet<string> = new Set([
   'tr',
   'jq',
   'echo',
-  'printf',
   'mkdir',
   'cd',
   'pwd',
@@ -617,10 +613,12 @@ const ARG_DATA_PROGRAMS: ReadonlySet<string> = new Set([
   'nl',
   'true',
   'false',
-  'test',
-  '[',
   ':',
 ]);
+
+// `printf`, `test` and `[` are left off: zsh and ksh93 may read their
+// arguments as arithmetic, which can assign a variable for every later
+// command, in more forms than a rule can list. `echo` prints a value.
 
 /** `git` subcommands a value may be restored into. */
 const ARG_DATA_GIT_SUBCOMMANDS: ReadonlySet<string> = new Set([
@@ -654,19 +652,6 @@ const DATA_GIT_SUBCOMMANDS: ReadonlySet<string> = new Set([
  * code, so a command that runs one keeps every placeholder. */
 const ANY_DELIMITER_PROGRAMS: ReadonlySet<string> = new Set(['sed', 'gsed', 'perl', 'ruby', 'irb']);
 const ANY_DELIMITER_IN_TEXT = /(?<![\w.-])(?:g?sed|perl|ruby|irb)(?![\w.-])/;
-
-/** Builtins that zsh or ksh93 may read an argument of as arithmetic,
- * which can assign (`HOME=0`, `PATH++`): `printf` for a numeric
- * conversion (with formats, options and escapes each shell reads its own
- * way: zsh `-:`, ksh93 `-+`, `\U00000025` for `%`), ksh93's `test` and
- * `[` on integer comparisons, zsh's `test -t`. No value comes back into
- * their arguments; `echo` prints a value. */
-const ARITHMETIC_BUILTINS: ReadonlySet<string> = new Set(['printf', 'test', '[']);
-/** An arithmetic assignment the model may write into an argument of one
- * of those (`probe=7`, `x+=1`, `x<<=2`, `x++`, `--x`): it sets a variable
- * for every later command, as `PATH=…; grep …` does. */
-const ARITHMETIC_ASSIGNMENT =
-  /[A-Za-z_]\w*\s*(?:[-+*/%&|^]|<<|>>)?=(?!=)|[A-Za-z_]\w*\s*(?:\+\+|--)|(?:\+\+|--)\s*[A-Za-z_]/;
 
 /** A redirection operator at the start of a word, with its descriptor. */
 const REDIRECTION_OPERATOR =
@@ -822,8 +807,12 @@ const COMMENT_PRECEDERS: ReadonlySet<string> = new Set([
 ]);
 
 const ENV_ASSIGNMENT = /^[A-Za-z_]\w*=/;
-/** Variables a command with listed programs may assign. */
-const SAFE_ASSIGNMENT = /^(?:LANG|LANGUAGE|LC_[A-Z]+|TZ)$/;
+/** Assignments a command with listed programs may make: the locale or
+ * the time zone, each with a plain value, a locale name (`C.UTF-8`,
+ * `de_DE@euro`, `en_US:en`) or a zone name (`UTC`, `Europe/Rome`). A path
+ * or an expression could choose what is loaded or evaluated. */
+const SAFE_ASSIGNMENT =
+  /^(?:(?:LANG|LANGUAGE|LC_[A-Z]+)=[A-Za-z0-9_.@:-]*|TZ=(?:[A-Za-z0-9_+-]+(?:\/[A-Za-z0-9_+-]+)*)?)$/;
 const LEADING_TABS = /^\t+/;
 /** The start of a word that a following `<` or `>` continues: nothing,
  * a descriptor number, or the operator so far (`2>`, `>`, `<`). */
@@ -917,7 +906,7 @@ interface Program {
   /** The program word as written; `undefined` for a wrapper that runs
    * on its own (`xargs`). */
   readonly literal: string | undefined;
-  /** Names assigned before the program (`NAME=value cmd`). */
+  /** Assignments before the program, as written (`NAME=value cmd`). */
   readonly assigned: readonly string[];
 }
 
@@ -1105,7 +1094,6 @@ function readCommands(
     // Assignments with no program after them (`PATH=…; grep …`) hold for
     // every later command.
     if (p === undefined && !assignsOnlyLocale(words)) return undefined;
-    if (p !== undefined && assignsInArithmetic(p)) return undefined;
     if (p !== undefined) programs.push(p);
   }
   return { programs, wordsAt };
@@ -1113,23 +1101,13 @@ function readCommands(
 
 /** True when every assignment among `words` sets the locale or time zone. */
 function assignsOnlyLocale(words: readonly Word[]): boolean {
-  return words.every((w) => !isAssignment(w) || SAFE_ASSIGNMENT.test(assignedName(w)));
-}
-
-/** True when `p` is a builtin zsh or ksh93 may read arguments of as
- * arithmetic and one of them assigns (`printf '%d' probe=7`). */
-function assignsInArithmetic(p: Program): boolean {
-  return ARITHMETIC_BUILTINS.has(p.name) && p.args.some((a) => ARITHMETIC_ASSIGNMENT.test(a));
+  return words.every((w) => !isAssignment(w) || SAFE_ASSIGNMENT.test(w.text));
 }
 
 /** True when `w` is an assignment as a shell reads one: `NAME=` written
  * unquoted. */
 function isAssignment(w: Word): boolean {
   return ENV_ASSIGNMENT.test(w.text) && w.text.indexOf('=') < w.bare;
-}
-
-function assignedName(w: Word): string {
-  return w.text.slice(0, w.text.indexOf('='));
 }
 
 /** The target of the redirection `w` is, read with its operator written
@@ -1163,7 +1141,7 @@ function withoutRanges(text: string, ranges: ReadonlyArray<readonly [number, num
  * in the program word of the simple command around it (the words before
  * it are only assignments, redirections and wrappers), in an assignment,
  * in a redirection target, or in the arguments of `cd`, `export`, `alias`
- * and the like, or of `printf`, `test` and `[`. A command past the
+ * and the like. A command past the
  * read window never gets here: `judge` keeps every placeholder of it. */
 function holdsAt(
   index: number,
@@ -1195,7 +1173,7 @@ function holdsAt(
   // configuration and hooks there).
   const program = programOf(before);
   if (program === undefined) return false;
-  if (program.name === 'cd' || ARITHMETIC_BUILTINS.has(program.name)) return true;
+  if (program.name === 'cd') return true;
   return ENVIRONMENT_BUILTINS.has(program.name);
 }
 
@@ -1286,7 +1264,7 @@ function isDataProgram(p: Program): boolean {
  * (`GIT_EDITOR=…` and the like choose what a listed program runs). */
 function listedAsWritten(p: Program): boolean {
   if (p.literal === undefined || p.wrappers.length > 0 || p.byPath) return false;
-  return p.assigned.every((name) => SAFE_ASSIGNMENT.test(name));
+  return p.assigned.every((assignment) => SAFE_ASSIGNMENT.test(assignment));
 }
 
 /** The words at the start of a simple command, up to `MAX_WORDS`, each
@@ -1366,7 +1344,7 @@ function programOf(words: readonly Word[]): Program | undefined {
   let k = skipPrefix(words, 0);
   const prefix = words.slice(0, k);
   const redirectedPrefix = prefix.some((w) => !isAssignment(w));
-  const assigned = prefix.filter(isAssignment).map(assignedName);
+  const assigned = prefix.filter(isAssignment).map((w) => w.text);
   const first = words[k];
   if (first === undefined) return undefined;
   const wrappers: string[] = [];
@@ -1936,10 +1914,10 @@ export function restoreShellArgv(
   // shell runs, which is judged as a string command; nowhere else.
   const runs = argvProgram(argv);
   const code = argvRunsCode(argv) || runs === undefined || !takesDataArgs(runs);
-  // As in shell code, the arguments of `cd`, `export`, `printf`, `test`
-  // and the like get no value.
+  // As in shell code, the arguments of `cd`, `export` and the like get no
+  // value.
   const name = runs?.name ?? '';
-  const held = name === 'cd' || ENVIRONMENT_BUILTINS.has(name) || ARITHMETIC_BUILTINS.has(name);
+  const held = name === 'cd' || ENVIRONMENT_BUILTINS.has(name);
   const first = restoreArgvWords(
     np,
     argv,

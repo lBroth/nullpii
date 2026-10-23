@@ -911,6 +911,51 @@ describe('shell restore · OpenAI route', () => {
     expect(frames.at(-1)).toBe('data: [DONE]');
   });
 
+  it.each([
+    ['named differently by two choices gets no value', 'Bash', false],
+    ['named alike by two choices gets its values in both (control)', 'Read', true],
+  ])('SSE: a call index %s', async (_what, otherName, restores) => {
+    const app = await serve((body) => {
+      const [, person] = placeholdersIn(forwardedUserText(body));
+      const args = JSON.stringify({ command: `echo ${person}`, file_path: `/tmp/${person}.md` });
+      const open = (choice: number, name: string) => ({
+        index: choice,
+        delta: {
+          tool_calls: [
+            { index: 0, id: `c${choice}`, type: 'function', function: { name, arguments: args } },
+          ],
+        },
+      });
+      return sseResponse([
+        openAiFrame([open(1, otherName)]),
+        openAiFrame([open(0, 'Read')]),
+        openAiFrame([
+          { index: 1, delta: {}, finish_reason: 'tool_calls' },
+          { index: 0, delta: {}, finish_reason: 'tool_calls' },
+        ]),
+        'data: [DONE]\n\n',
+      ]);
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: {
+        model: 'gpt-test',
+        stream: true,
+        messages: [{ role: 'user', content: USER_TEXT }],
+      },
+    });
+
+    expect(res.body.includes(FULL_NAME)).toBe(restores);
+    // The closing chunks carry one choice each, for readers that take `choices[0]`.
+    const closing = res.body
+      .split('\n\n')
+      .filter((f) => f.includes('"finish_reason":"tool_calls"'))
+      .map((f) => (JSON.parse(f.slice('data: '.length)) as { choices: unknown[] }).choices.length);
+    expect(closing).toEqual([1, 1]);
+  });
+
   it('SSE: nothing after [DONE] gets a value', async () => {
     const app = await serve((body) => {
       const [, person] = placeholdersIn(forwardedUserText(body));

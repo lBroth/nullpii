@@ -46,8 +46,8 @@ import type { SseRelayCounters, SseRelayOptions } from './sse-relay.js';
  *   with the chunk that carries its `finish_reason`. A choice with a call
  *   holds its `finish_reason` back too, and `[DONE]` (or the end of the
  *   stream, when the upstream was cut off) is preceded by one synthesised
- *   chunk carrying, for every open choice, the text still held, the
- *   restored arguments and that `finish_reason`: a chunk after it could
+ *   chunk per open choice carrying the text still held, the restored
+ *   arguments and that `finish_reason`: a chunk after it could
  *   still rename a call, and a value sent cannot be taken back.
  * - Chunks the relay does not change, `[DONE]`, comments and error events
  *   are forwarded unchanged but for their line ends, which become LF. A
@@ -138,6 +138,8 @@ class ChatRelay {
   private readonly state = { degraded: false };
   /** Choices that sent their `finish_reason`. */
   private readonly finished = new Set<number>();
+  /** Tool-call names across choices (`CallNames`). */
+  private readonly names = new CallNames();
   /** The `finish_reason` of a finished choice that holds a tool call: it
    * goes out with the call's restored input only when the stream ends
    * (`[DONE]`), so a chunk that renames the call after it cannot relabel
@@ -176,19 +178,22 @@ class ChatRelay {
     return [changed ? serialiseFrame(event, chunk) : passthrough];
   }
 
-  /** One synthesised chunk carrying what is still held for each choice,
-   * with the `finish_reason` it sent; nothing when nothing is held. */
+  /** One synthesised chunk per choice carrying what it still holds, with
+   * the `finish_reason` it sent; nothing for a choice that holds nothing. */
   flushOpenChoices(): string[] {
-    const choices: ChatChunkChoice[] = [];
+    const frames: string[] = [];
     for (const [index, restorer] of this.choices) {
       const delta: ChatDelta = {};
       const held = restorer.flushInto(delta);
       const finish = this.deferred.get(index) ?? null;
-      if (held || finish !== null) choices.push({ index, delta, finish_reason: finish });
+      if (!held && finish === null) continue;
+      // One chunk per choice: some readers take only `choices[0]`.
+      const choice: ChatChunkChoice = { index, delta, finish_reason: finish };
+      frames.push(serialiseFrame(null, { ...this.envelope, choices: [choice] }));
     }
     this.choices.clear();
-    if (choices.length === 0) return [];
-    return [serialiseFrame(null, { ...this.envelope, choices })];
+    this.deferred.clear();
+    return frames;
   }
 
   counters(): SseRelayCounters {
@@ -229,12 +234,32 @@ class ChatRelay {
   private restorerFor(index: number): ChoiceRestorer {
     let restorer = this.choices.get(index);
     if (restorer === undefined) {
-      restorer = new ChoiceRestorer(this.np, this.sessionId, this.acc, this.state);
+      restorer = new ChoiceRestorer(this.np, this.sessionId, this.acc, this.state, this.names);
       this.choices.set(index, restorer);
     }
     return restorer;
   }
 }
+
+/** Each tool call's kind and name as every choice sent it, by call index
+ * (`function_call` for the deprecated call). A client that reads a
+ * chunk's `choices` by position joins the same call index across choices,
+ * so two choices that name one index differently make that call ambiguous
+ * in all of them: it gets no value. */
+class CallNames {
+  private readonly names = new Map<string, string | null>();
+
+  note(key: string, kindAndName: string): void {
+    this.names.set(key, nextName(this.names.get(key), kindAndName));
+  }
+
+  agreed(key: string): boolean {
+    return this.names.get(key) !== null;
+  }
+}
+
+/** The `CallNames` key of the deprecated `function_call`. */
+const FUNCTION_CALL_KEY = 'function_call';
 
 /** What one choice holds back: a text restorer per field, and the
  * argument or input shards of each tool call (plus the deprecated
@@ -256,6 +281,7 @@ class ChoiceRestorer {
     private readonly sessionId: string,
     private readonly acc: RestoreAccumulator,
     private readonly state: { readonly degraded: boolean },
+    private readonly names: CallNames,
   ) {}
 
   /** Restore `delta` in place: text as far as it is safe, argument shards
@@ -306,7 +332,10 @@ class ChoiceRestorer {
       held = { kind, name: undefined, text: null };
       this.calls.set(index, held);
     }
-    if (typeof payload.name === 'string') held.name = nextName(held.name, payload.name);
+    if (typeof payload.name === 'string') {
+      held.name = nextName(held.name, payload.name);
+      this.names.note(String(index), `${kind}:${payload.name}`);
+    }
     const field = CALL_TEXT_FIELD[kind];
     const shard = payload[field];
     if (typeof shard !== 'string' || shard.length === 0) return false;
@@ -316,7 +345,10 @@ class ChoiceRestorer {
   }
 
   private holdFunctionArgs(fn: ChatFunctionCall): boolean {
-    if (typeof fn.name === 'string') this.functionName = nextName(this.functionName, fn.name);
+    if (typeof fn.name === 'string') {
+      this.functionName = nextName(this.functionName, fn.name);
+      this.names.note(FUNCTION_CALL_KEY, fn.name);
+    }
     if (typeof fn.arguments !== 'string' || fn.arguments.length === 0) return false;
     this.functionArgs = (this.functionArgs ?? '') + fn.arguments;
     fn.arguments = '';
@@ -342,20 +374,21 @@ class ChoiceRestorer {
     let added = false;
     for (const [index, held] of this.calls) {
       if (held.text === null) continue;
-      setCallText(delta, index, held.kind, this.restoreCall(held, held.text));
+      setCallText(delta, index, held.kind, this.restoreCall(index, held, held.text));
       added = true;
     }
     this.calls.clear();
     if (this.functionArgs !== null) {
-      const args = this.state.degraded
-        ? holdForTool(this.functionArgs, this.acc)
-        : restoreFunctionArguments(
-            this.np,
-            this.functionName,
-            this.functionArgs,
-            this.sessionId,
-            this.acc,
-          );
+      const args =
+        this.state.degraded || !this.names.agreed(FUNCTION_CALL_KEY)
+          ? holdForTool(this.functionArgs, this.acc)
+          : restoreFunctionArguments(
+              this.np,
+              this.functionName,
+              this.functionArgs,
+              this.sessionId,
+              this.acc,
+            );
       delta.function_call = { ...delta.function_call, arguments: args };
       this.functionArgs = null;
       added = true;
@@ -365,8 +398,9 @@ class ChoiceRestorer {
 
   /** Restore one call's assembled text with the helper the JSON restore
    * uses for that kind of call. */
-  private restoreCall(held: HeldCall, text: string): string {
-    if (this.state.degraded) return holdForTool(text, this.acc);
+  private restoreCall(index: number, held: HeldCall, text: string): string {
+    if (this.state.degraded || !this.names.agreed(String(index)))
+      return holdForTool(text, this.acc);
     const restore = held.kind === 'function' ? restoreFunctionArguments : restoreCustomInput;
     return restore(this.np, held.name, text, this.sessionId, this.acc);
   }

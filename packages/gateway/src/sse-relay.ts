@@ -72,9 +72,10 @@ interface ToolRestore {
 
 /** State of one stream beyond its blocks. */
 interface StreamState {
-  /** A frame's `data` was not JSON: from then on, the relay can no longer
-   * be sure which block a tool input belongs to, so every tool input
-   * keeps its placeholders. */
+  /** A frame's `data` was not JSON, or the stream numbered its blocks
+   * otherwise than clients count them (`breaksBlockOrder`): from then on,
+   * the relay can no longer be sure which block a tool input belongs to,
+   * so every tool input keeps its placeholders. */
   degraded: boolean;
   /** How many `content_block_start` frames the stream has sent. */
   starts: number;
@@ -129,7 +130,7 @@ interface StreamState {
  *   comes back only where `shell-restore.ts` finds it safe, and is
  *   otherwise left literal and counted.
  * - Anything else (`message_start`, other delta types, …) → passed
- *   through byte-for-byte.
+ *   through unchanged but for its line ends, which become LF.
  */
 export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCounters> {
   const { np, sessionId, upstream, write, onUpstreamChunk, restoreTools } = opts;

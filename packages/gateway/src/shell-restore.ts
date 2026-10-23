@@ -34,10 +34,9 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  * - a placeholder that is, or is part of, the program a simple command
  *   runs, a redirection target, an assignment, an argument of `export` or
  *   `alias`, a `cd` argument, an argument of `printf`, `test` or `[`, or
- *   a placeholder written in
- *   shell code directly before `<` or `>` stays masked: a value must not choose what
- *   runs, what is written or the directory later commands (git among them)
- *   run in;
+ *   a placeholder written in shell code directly before `<` or `>` stays
+ *   masked: a value must not choose what runs, what is written or the
+ *   directory later commands (git among them) run in;
  * - within the list, a command that sends data off the machine (a URL,
  *   `/dev/tcp`) or runs code through an option (`find -exec`, `rg --pre`,
  *   `git -c`) keeps every placeholder, also when judged again with the
@@ -663,6 +662,12 @@ const ANY_DELIMITER_IN_TEXT = /(?<![\w.-])(?:g?sed|perl|ruby|irb)(?![\w.-])/;
  * `[` on integer comparisons, zsh's `test -t`. No value comes back into
  * their arguments; `echo` prints a value. */
 const ARITHMETIC_BUILTINS: ReadonlySet<string> = new Set(['printf', 'test', '[']);
+/** An arithmetic assignment the model may write into an argument of one
+ * of those (`probe=7`, `x+=1`, `x<<=2`, `x++`, `--x`): it sets a variable
+ * for every later command, as `PATH=…; grep …` does. */
+const ARITHMETIC_ASSIGNMENT =
+  /[A-Za-z_]\w*\s*(?:[-+*/%&|^]|<<|>>)?=(?!=)|[A-Za-z_]\w*\s*(?:\+\+|--)|(?:\+\+|--)\s*[A-Za-z_]/;
+
 /** A redirection operator at the start of a word, with its descriptor. */
 const REDIRECTION_OPERATOR =
   /^(?:\d+|\{[A-Za-z_]\w*\})?(?:&>>?[|!]?|>>?[|!]|>&|<&|<<<|<<-?|<>|>>?|<)/;
@@ -1100,6 +1105,7 @@ function readCommands(
     // Assignments with no program after them (`PATH=…; grep …`) hold for
     // every later command.
     if (p === undefined && !assignsOnlyLocale(words)) return undefined;
+    if (p !== undefined && assignsInArithmetic(p)) return undefined;
     if (p !== undefined) programs.push(p);
   }
   return { programs, wordsAt };
@@ -1108,6 +1114,12 @@ function readCommands(
 /** True when every assignment among `words` sets the locale or time zone. */
 function assignsOnlyLocale(words: readonly Word[]): boolean {
   return words.every((w) => !isAssignment(w) || SAFE_ASSIGNMENT.test(assignedName(w)));
+}
+
+/** True when `p` is a builtin zsh or ksh93 may read arguments of as
+ * arithmetic and one of them assigns (`printf '%d' probe=7`). */
+function assignsInArithmetic(p: Program): boolean {
+  return ARITHMETIC_BUILTINS.has(p.name) && p.args.some((a) => ARITHMETIC_ASSIGNMENT.test(a));
 }
 
 /** True when `w` is an assignment as a shell reads one: `NAME=` written
@@ -1924,9 +1936,10 @@ export function restoreShellArgv(
   // shell runs, which is judged as a string command; nowhere else.
   const runs = argvProgram(argv);
   const code = argvRunsCode(argv) || runs === undefined || !takesDataArgs(runs);
-  // As in shell code, the arguments of `cd`, `export` and the like get no
-  // value.
-  const held = runs?.name === 'cd' || ENVIRONMENT_BUILTINS.has(runs?.name ?? '');
+  // As in shell code, the arguments of `cd`, `export`, `printf`, `test`
+  // and the like get no value.
+  const name = runs?.name ?? '';
+  const held = name === 'cd' || ENVIRONMENT_BUILTINS.has(name) || ARITHMETIC_BUILTINS.has(name);
   const first = restoreArgvWords(
     np,
     argv,

@@ -1336,12 +1336,15 @@ describe('shell restore · round-10 layout and redirections', () => {
     [(p: string) => `printf '%s\\n' ${p}`, EMAIL, 0],
     [(p: string) => `printf -- '%5.2s|%%|%c' ${p}`, EMAIL, 0],
     [(p: string) => `echo ${p}`, 'probe=7', 1],
-  ])('holds the arguments zsh or ksh93 may read as arithmetic: %#', (build, value, expected) => {
-    const { np, vault, sessionId } = harness();
-    const word = bake(vault, sessionId, value, 'secret');
+  ])(
+    "holds the arguments zsh or ksh93 may read as arithmetic, not echo's: %#",
+    (build, value, expected) => {
+      const { np, vault, sessionId } = harness();
+      const word = bake(vault, sessionId, value, 'secret');
 
-    expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(expected);
-  });
+      expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(expected);
+    },
+  );
 
   it.each([
     [(p: string) => `'LC_ALL=C/x' grep probe ${p}`, 0],
@@ -1410,6 +1413,38 @@ describe('shell restore · round-10 layout and redirections', () => {
     const word = bake(vault, sessionId, value, 'secret');
 
     expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(0);
+  });
+
+  it.each([
+    (p: string) => `printf '%d' probe=7; grep ${p} notes.md`,
+    (p: string) => `test -t probe=7 || grep ${p} notes.md`,
+    (p: string) => `[ 1 -eq probe++ ] || grep ${p} notes.md`,
+    (p: string) => `printf '%d' x+=1 && grep ${p} notes.md`,
+    (p: string) => `printf -:v PATH x; grep ${p} notes.md`,
+  ])('keeps every value when printf, test or [ assigns through arithmetic: %#', (build) => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, EMAIL, 'private_email');
+
+    expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(0);
+  });
+
+  it('still restores beside a printf or test that assigns nothing', () => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, EMAIL, 'private_email');
+    const command = `printf '%s\\n' done; [ -f notes.md ] && grep ${word} notes.md`;
+
+    expect(restored(restoreShellCommand(np, command, sessionId))).toBe(1);
+  });
+
+  it.each([
+    ['printf', '%s'],
+    ['test', '-n'],
+    ['[', '-n'],
+  ])('argv: holds the arguments of %s as in shell code', (program, option) => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, EMAIL, 'private_email');
+
+    expect(restored(restoreShellArgv(np, [program, option, word], sessionId))).toBe(0);
   });
 
   it.each([

@@ -557,6 +557,45 @@ describe('shell restore · Anthropic route', () => {
       content: `${INJECTION} ${FULL_NAME}`,
     });
   });
+
+  it('SSE: a block index started twice gets no value (clients differ on which block it is)', async () => {
+    const app = await serve((body) => {
+      const [secret, person] = placeholdersIn(forwardedUserText(body));
+      const input = JSON.stringify({ command: `echo ${secret} ${person}` });
+      const start = (name: string) =>
+        anthropicFrame('content_block_start', {
+          type: 'content_block_start',
+          index: 0,
+          content_block: { type: 'tool_use', id: 'tu_0', name, input: {} },
+        });
+      return sseResponse([
+        start('Bash'),
+        start('Write'),
+        anthropicFrame('content_block_delta', {
+          type: 'content_block_delta',
+          index: 0,
+          delta: { type: 'input_json_delta', partial_json: input },
+        }),
+        anthropicFrame('content_block_stop', { type: 'content_block_stop', index: 0 }),
+        anthropicFrame('message_stop', { type: 'message_stop' }),
+      ]);
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/messages',
+      payload: {
+        model: 'claude-test',
+        stream: true,
+        messages: [{ role: 'user', content: USER_TEXT }],
+      },
+    });
+
+    const command = (JSON.parse(streamedInputs(res.body).get(0) ?? '') as { command: string })
+      .command;
+    expect(command).not.toContain(INJECTION);
+    expect(command).not.toContain(FULL_NAME);
+  });
 });
 
 describe('shell restore · OpenAI route', () => {

@@ -76,6 +76,11 @@ interface StreamState {
    * be sure which block a tool input belongs to, so every tool input
    * keeps its placeholders. */
   degraded: boolean;
+  /** Block indexes a `content_block_start` has opened. A second start for
+   * one of them makes that block ambiguous: clients differ on whether it
+   * replaces the first block or is appended after it, so it gets no
+   * values. */
+  readonly started: Set<number>;
 }
 
 /**
@@ -138,7 +143,7 @@ export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCou
    * Input of any other block keeps its placeholders. */
   const toolBlocks = new Map<number, ToolRestore>();
   const acc = newRestoreAccumulator(restoreTools);
-  const state: StreamState = { degraded: false };
+  const state: StreamState = { degraded: false, started: new Set() };
 
   function getRestorer(index: number): RestoreStream {
     let rs = restorers.get(index);
@@ -296,7 +301,7 @@ function processFrame(
   }
 
   if (data.type === 'content_block_start') {
-    if (!state.degraded) noteToolBlock(data, toolBlocks, acc);
+    if (!state.degraded) noteToolBlock(data, toolBlocks, acc, state.started);
     // Re-serialised, so the client reads the block the relay judged.
     return [serialiseFrame(parsed.event, data)];
   }
@@ -307,16 +312,20 @@ function processFrame(
 /** Remember, at a block's `content_block_start`, whether its tool input
  * gets real values back at `content_block_stop` (`toolCallMayRestore`),
  * and whether with the shell rule. Any other block, server and MCP tool
- * calls included, gets no entry and keeps its placeholders. */
+ * calls included, and a block whose index was already started, gets no
+ * entry and keeps its placeholders. */
 function noteToolBlock(
   data: Record<string, unknown>,
   toolBlocks: Map<number, ToolRestore>,
   acc: RestoreAccumulator,
+  started: Set<number>,
 ): void {
   const block = data.content_block;
   if (typeof data.index !== 'number' || !isRecord(block)) return;
   toolBlocks.delete(data.index);
-  if (!toolCallMayRestore(block, acc)) return;
+  const again = started.has(data.index);
+  started.add(data.index);
+  if (again || !toolCallMayRestore(block, acc)) return;
   toolBlocks.set(data.index, { shell: shellToolOf(block.name) });
 }
 

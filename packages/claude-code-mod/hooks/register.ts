@@ -410,12 +410,12 @@ export function register(on, options) {
       if (kept.length > 0 && e.tool !== 'Bash') {
         // A shell tool whose command the rule never reads (`PowerShell`).
         return {
-          deny: `nullpii puts no real value into a ${e.tool} command (${kept.join(', ')}): use the Bash tool, or ask the user to run the command themselves.`,
+          deny: `nullpii puts no real value into a ${e.tool} command (${kept.join(', ')}): use the Bash tool (on macOS or Linux; on Windows no shell command gets a value), or ask the user to run the command themselves.`,
         };
       }
       if (kept.length > 0) {
         return {
-          deny: `nullpii will not put the real value of ${kept.join(', ')} into this command: the value came from data you could not read, so it comes back only in the body of a quoted heredoc in one of these commands, alone on the first line (or after \`git add …\` or \`mkdir …\` and \`&&\`): \`git commit -F - <<'EOF'\` (the message), \`cat > notes.md <<'EOF'\` (a document: \`.md\`, \`.csv\`, …) or \`cat <<'EOF'\`; then the text, then \`EOF\` as the last line. A placeholder anywhere else, or in any other command, keeps its placeholder; a heredoc inside \`$(…)\` never gets values, and on Windows no shell command does. Otherwise ask the user to run the command themselves.`,
+          deny: `nullpii will not put the real value of ${kept.join(', ')} into this command: the value came from data you could not read, so it comes back only in the body of a quoted heredoc in one of these commands, alone on the first line (or after \`git add …\` or \`mkdir …\` and \`&&\`): \`git commit -F - <<'EOF'\` (the message), \`cat > notes.md <<'EOF'\` (a document: \`.md\`, \`.csv\`, …) or \`cat <<'EOF'\`; then the text, then \`EOF\` as the last line. The document is not hidden and not under \`bin/\` or \`etc/\`; the value holds no line break, control character, \`<<\` or \`EOF\`, and no line of the text starts with \`EOF\`. A placeholder anywhere else, or in any other command, keeps its placeholder; if the value itself is refused, rewriting the command will not help; a heredoc inside \`$(…)\` never gets values, and on Windows no shell command does. Otherwise ask the user to run the command themselves.`,
         };
       }
       // Rewrite the call only when a placeholder was replaced: a rewritten

@@ -803,7 +803,9 @@ export function restoreValue(
   } else {
     const restored: Record<string, unknown> = { ...obj };
     for (const key of fields ?? Object.keys(obj)) {
-      if (Object.hasOwn(obj, key)) restored[key] = restoreField(key, obj[key]);
+      if (!Object.hasOwn(obj, key)) continue;
+      if (shell !== undefined) keepShellField(key, acc, keptMasked); // keys stay as written
+      restored[key] = restoreField(key, obj[key]);
     }
     out = restored;
   }
@@ -879,6 +881,7 @@ export function restoreToolInput(
   const options = workdirOptions(input);
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(input)) {
+    keepShellField(key, acc); // a placeholder in a key stays as written
     out[key] = restoreShellToolField(np, shell.commandField, key, value, sessionId, acc, options);
   }
   return out;

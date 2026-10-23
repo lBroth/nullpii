@@ -126,6 +126,11 @@ const UNSAFE_IN_BODY = /[\u0000-\u0008\u000a-\u001f\u007f-\u009f\u2028\u2029]/;
  * runs by looking for one) could take for a second heredoc. */
 const HEREDOC_OPERATOR = '<<';
 
+/** How many heredoc operators `text` holds. */
+function operatorCount(text: string): number {
+  return text.split(HEREDOC_OPERATOR).length - 1;
+}
+
 /** A data heredoc's body (`start`, `end`) and its delimiter. */
 interface DataBody {
   readonly start: number;
@@ -183,8 +188,8 @@ export interface ShellRestore {
  * data heredoc (`parseDataHeredoc`), only when every placeholder of the
  * command stands there, and only values with no line break or other
  * control character but tab, no `<<` and not the delimiter. The command
- * with the values put back must still parse the same way; otherwise every
- * placeholder stays literal.
+ * with the values put back must still parse the same way, with no new
+ * `<<`; otherwise every placeholder stays literal.
  *
  * @param np - the engine whose vault holds `sessionId`.
  */
@@ -208,7 +213,10 @@ export function restoreShellCommand(
     !value.includes(HEREDOC_OPERATOR) &&
     !value.includes(body.delimiter);
   const restored = restoreEach(np, command, sessionId, safe);
-  if (parseDataHeredoc(restored.command, movedDir) !== undefined) return restored;
+  // Values side by side could still form a heredoc operator or a body line
+  // that starts with the delimiter: read the result again.
+  const sameOperators = operatorCount(restored.command) === operatorCount(command);
+  if (sameOperators && parseDataHeredoc(restored.command, movedDir) !== undefined) return restored;
   return restoreEach(np, command, sessionId, () => false);
 }
 

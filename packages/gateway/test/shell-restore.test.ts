@@ -241,6 +241,18 @@ describe('shell restore · the data forms', () => {
     expect(r.keptMasked).toEqual([bad]);
   });
 
+  it('keeps every placeholder when values side by side form a heredoc operator', () => {
+    const { np, vault, sessionId } = harness();
+    const left = bake(vault, sessionId, 'a<', 'secret');
+    const right = bake(vault, sessionId, "<'X'", 'private_person');
+    const command = `cat > notes.md <<'EOF'\n${left}${right}\nEOF`;
+
+    const r = restoreShellCommand(np, command, sessionId);
+
+    expect(restored(r)).toBe(0);
+    expect(r.command).toBe(command);
+  });
+
   it('keeps every placeholder when a body line starts with the delimiter (ksh93 may end the body there)', () => {
     const { np, vault, sessionId } = harness();
     const name = bake(vault, sessionId, FULL_NAME, 'private_person');
@@ -803,6 +815,16 @@ describe('shell restore · tool input fields', () => {
       expect(restoreToolInput(np, input, sessionId, acc, shellToolOf('shell'))).toEqual(input);
       expect(acc.unsafeShell).toBe(1);
     }
+  });
+
+  it('counts a placeholder in a key of a shell tool input as kept masked', () => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, EMAIL, 'private_email');
+    const input = { command: 'git status', [word]: 'x' };
+    const acc = newRestoreAccumulator();
+
+    expect(restoreToolInput(np, input, sessionId, acc, shellToolOf('Bash'))).toEqual(input);
+    expect(acc.unsafeShell).toBe(1);
   });
 
   it('gives no shell tool a value when the gateway runs on Windows', () => {

@@ -28,26 +28,44 @@ The vault that maps placeholders to values lives only in the sidecar's memory, n
 
 ## Choose what gets masked
 
-The sidecar reads the masking policy from `~/.config/nullpii/config.json`, or from the file `NULLPII_CONFIG` names, when it starts. The `nullpii` CLI and the gateway use the same file. Every key is optional:
+By default the mod masks what is dangerous to hand to a model: people's names, contact details and addresses, ids and accounts, secrets. Dates, companies, jobs, honorifics, demographic and sensitive attributes stay readable, since they identify no one on their own and Claude often needs them.
+
+Change it at the prompt with `/pii`; a change applies at once and is saved in the policy file:
+
+| Command | Effect |
+|---|---|
+| `/pii` | Shows what was masked in the session, and the mode of every category |
+| `/pii preset agent` | The default above (`/pii reset` does the same) |
+| `/pii preset secrets` | Masks secrets only (API keys, tokens, passwords, private keys) |
+| `/pii preset all` | Masks every category |
+| `/pii mask url email` | Masks those categories |
+| `/pii off date` | Leaves those categories readable |
+| `/pii ask url` | Masks those categories, but first asks you about each value of them in your own prompt: mask it, send it readable, or send it readable and stop asking for that category |
+
+Categories: `person`, `email`, `phone`, `address`, `url`, `ip`, `mac`, `location`, `passport`, `license`, `vehicle`, `account`, `secret`, `date`, `organization`, `occupation`, `demographic`, `sensitive`, `title`. The question about an `ask` value shows the value on this machine only; a question you dismiss, or that no one can answer (`claude -p`), keeps the value masked. Text Claude reads from tools is never put to you: it follows the policy.
+
+The policy lives in `~/.config/nullpii/config.json`, or in the file `NULLPII_CONFIG` names; the `nullpii` CLI and the gateway use the same file. Every key is optional:
 
 ```json
 {
-  "disabledCategories": ["private_organization", "private_occupation"],
+  "categories": { "private_url": "ask", "private_date": "mask" },
   "urlAllowlist": { "hosts": { "*.github.com": "host" } },
   "restoreTools": ["Read", "Edit", "MultiEdit", "Write", "NotebookEdit", "Grep", "Glob", "apply_patch"]
 }
 ```
+
+- **`categories`**: the mode of each category named: `mask`, `ask` or `off` (readable). It overrides `disabledCategories`.
 
 - **`disabledCategories`**: categories that reach Claude unmasked. It replaces the default list (dates, companies, jobs, honorifics, demographic and sensitive attributes, which identify no one on their own and which Claude often needs); `[]` masks every category. `/pii` shows the list in effect.
 - **`categoryThresholds`** and **`threshold`**: confidence cuts in `[0, 1]`. Lower masks more.
 - **`urlAllowlist`**: how much of a clean URL stays readable, per host.
 - **`restoreTools`**: the tools that get real values back. It replaces the default list.
 
-`npx nullpii config` validates the file and prints it. Restart the sidecar after a change; `/pii` then shows the new policy. You can also ask Claude, for example "stop masking company names". The plugin's `nullpii-policy` skill tells Claude how to edit the file safely, and the edit is put to you before it is written.
+`npx nullpii config` validates the file and prints it. An edit by hand applies when the sidecar restarts; a change made with `/pii` applies at once.
 
 ## Fails closed
 
-If the sidecar cannot be reached, the mod has no sidecar token, or `sidecar_url` is not an address on this machine:
+If the sidecar cannot be reached (or the one the mod started is still starting), the mod has no sidecar token, or `sidecar_url` is not an address on this machine:
 
 - a prompt is not sent, and goes back into the prompt box with the reason;
 - a tool call is refused, or its result is withheld;
@@ -60,11 +78,16 @@ Claude is told only that the call was refused or its result withheld. The reason
 
 Mods load in Claude Code 2.1.287 or later.
 
-1. In a terminal of its own, start a 0.5 gateway with the sidecar API on. The sidecar API changed in 0.5 (session secrets, `restore` by tool name) and this mod speaks only that one, so the command pins the gateway, and the `nullpii` it runs, to 0.5:
+1. Make a sidecar token, which you give to the mod next:
 
    ```bash
-   export NULLPII_SIDECAR_TOKEN=$(openssl rand -hex 32)
-   echo "$NULLPII_SIDECAR_TOKEN"   # you give this to the mod next
+   openssl rand -hex 32
+   ```
+
+   When no sidecar answers, the mod starts one for the session with this token (option **Start the sidecar**, on by default): a 0.5 gateway run with `npx`, whose first start downloads the model, and which stops with the session. To keep one running across sessions instead, start it yourself in a terminal of its own; the sidecar API changed in 0.5 (session secrets, `restore` by tool name) and this mod speaks only that one, so the command pins the gateway, and the `nullpii` it runs, to 0.5:
+
+   ```bash
+   export NULLPII_SIDECAR_TOKEN=<the token>
    npx -p nullpii@0.5 -p onnxruntime-node -p @lbroth/nullpii-gateway@0.5 nullpii-gateway
    ```
 

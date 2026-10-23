@@ -25,6 +25,7 @@ import {
   formatPolicy,
   formatReport,
   hasPlaceholder,
+  optionFlag,
   optionString,
   restorableArgs,
   sameText,
@@ -58,6 +59,29 @@ const NOT_LOOPBACK =
 const UNREACHABLE =
   'nullpii-gateway did not answer at the sidecar address: start it with NULLPII_SIDECAR_TOKEN set';
 const NOT_JSON = 'the sidecar answered with something that is not JSON';
+const STARTING = 'starting nullpii-gateway for this session (its first start downloads the model)';
+const NOT_STARTED = 'the nullpii-gateway this session started did not answer in time';
+/** The release line of the packages the mod starts the sidecar from. */
+const GATEWAY_RELEASE = '0.5';
+/** The command that starts the sidecar: the release's CLI, gateway and
+ * ONNX runtime, with npx (no shell). */
+const GATEWAY_ARGV = [
+  'npx',
+  '-y',
+  '-p',
+  `nullpii@${GATEWAY_RELEASE}`,
+  '-p',
+  'onnxruntime-node',
+  '-p',
+  `@lbroth/nullpii-gateway@${GATEWAY_RELEASE}`,
+  'nullpii-gateway',
+];
+/** How long a sidecar the mod started may take to answer, and how often
+ * the mod checks: the first start downloads the model. */
+const STARTUP_WAIT_MS = 10 * 60 * 1000;
+const STARTUP_POLL_MS = 2_000;
+/** The port nullpii-gateway listens on when the address names none. */
+const DEFAULT_SIDECAR_PORT = '8787';
 const NOT_SIDECAR =
   'the process at the sidecar address did not prove it holds the sidecar token, so nothing was sent to it: run nullpii-gateway 0.5 or later there, with the same NULLPII_SIDECAR_TOKEN';
 const TIMED_OUT = 'the sidecar took too long to answer';
@@ -72,6 +96,8 @@ const OWN_REASONS: ReadonlySet<string> = new Set([
   UNREACHABLE,
   NOT_JSON,
   NOT_SIDECAR,
+  STARTING,
+  NOT_STARTED,
 ]);
 /** SidecarError's text, the one with a variable part. */
 const SIDECAR_STATUS = /^nullpii sidecar answered \d{3}$/;
@@ -322,6 +348,55 @@ function blocked($, event: string, failure: Failure): string {
   return reason;
 }
 
+/**
+ * Start nullpii-gateway, with its sidecar, for this session's life: the
+ * token and the address go to it through its environment, and it is
+ * stopped with the session (or the mod). Its output, request counts
+ * only, is drained and not shown.
+ */
+function startSidecar($, origin: string, secretToken: string): void {
+  const address = new URL(origin);
+  const child = $.process.spawn({
+    argv: GATEWAY_ARGV,
+    env: {
+      NULLPII_SIDECAR_TOKEN: secretToken,
+      NULLPII_HOST: address.hostname.replace(/^\[|\]$/g, ''),
+      NULLPII_PORT: address.port === '' ? DEFAULT_SIDECAR_PORT : address.port,
+    },
+  });
+  void (async () => {
+    try {
+      for await (const _piece of child) {
+        // Drained: the gateway logs counts, and the mod shows its own state.
+      }
+      $.ui.log('nullpii: the nullpii-gateway this session started has exited', { to: 'debug' });
+    } catch (err) {
+      $.ui.log(`nullpii: nullpii-gateway did not start (${errorName(err)})`, { to: 'debug' });
+    }
+  })();
+}
+
+/** Open the session once the sidecar the mod started answers, or give up
+ * after `STARTUP_WAIT_MS`; the band shows which. */
+async function waitForSidecar($): Promise<void> {
+  const deadline = (await $.clock.now()) + STARTUP_WAIT_MS;
+  while ((await $.clock.now()) < deadline) {
+    await $.clock.sleep(STARTUP_POLL_MS);
+    try {
+      await openSession($);
+      $.ui.invalidate('ui.render');
+      $.ui.toast('nullpii is on');
+      return;
+    } catch (err) {
+      if (!(err instanceof Error) || err.message !== UNREACHABLE) {
+        blocked($, 'sidecar start', failureOf(err));
+        return;
+      }
+    }
+  }
+  blocked($, 'sidecar start', { kind: THROW_KIND, message: NOT_STARTED });
+}
+
 /** Send the policy file contents `config` to the sidecar, which writes
  * and applies it; resolves to the policy now in effect. */
 async function putPolicy($, config: Readonly<Record<string, unknown>>): Promise<Policy> {
@@ -405,6 +480,16 @@ export function register(on, options) {
     try {
       await openSession($);
     } catch (err) {
+      // No sidecar answers: start one for this session when allowed. The
+      // band says so, and prompts wait (they are refused) until it answers.
+      const unreachable = err instanceof Error && err.message === UNREACHABLE;
+      if (unreachable && optionFlag(options, 'autostart', true) && sidecarUrl && token) {
+        startSidecar($, sidecarUrl, token);
+        problem = STARTING;
+        $.ui.invalidate('ui.render');
+        void waitForSidecar($).catch((err) => blocked($, 'sidecar start', failureOf(err)));
+        return next(e);
+      }
       const reason = blocked($, 'session.start', failureOf(err));
       $.ui.toast(`nullpii is blocking prompts and tool results: ${reason}`);
     }

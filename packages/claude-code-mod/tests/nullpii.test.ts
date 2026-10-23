@@ -388,24 +388,28 @@ test('an errored tool result reaches Claude masked, as a refusal', async ($, on)
   expect(out.deny).not.toContain('John');
 });
 
-test('with the sidecar down, a prompt is handed back and a tool call is refused', async ($, on) => {
-  const sidecar = fakeSidecar({ down: true });
-  stubSession(on, sidecar);
-  const ran: string[] = [];
-  on('prompt.submit', ($, e) => ({ text: e.text }));
-  on('tool.call', ($, e) => {
-    ran.push(e.tool);
-    return { result: 'ok' };
-  });
-  await start($);
-  const prompt = await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
-  expect(prompt.drop).toMatch(/nullpii could not mask this prompt/);
-  const call = await $.tool.call({ tool: 'Bash', command: 'ls' });
-  expect(call.deny).toMatch(/nullpii could not prepare this tool call/);
-  expect(ran).toEqual([]);
-  const status = await $.command.run({ command: 'pii', args: '' });
-  expect(status.text).toContain('Status: blocking (nullpii-gateway did not answer');
-});
+test(
+  'with the sidecar down, a prompt is handed back and a tool call is refused',
+  { options: { autostart: false } },
+  async ($, on) => {
+    const sidecar = fakeSidecar({ down: true });
+    stubSession(on, sidecar);
+    const ran: string[] = [];
+    on('prompt.submit', ($, e) => ({ text: e.text }));
+    on('tool.call', ($, e) => {
+      ran.push(e.tool);
+      return { result: 'ok' };
+    });
+    await start($);
+    const prompt = await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+    expect(prompt.drop).toMatch(/nullpii could not mask this prompt/);
+    const call = await $.tool.call({ tool: 'Bash', command: 'ls' });
+    expect(call.deny).toMatch(/nullpii could not prepare this tool call/);
+    expect(ran).toEqual([]);
+    const status = await $.command.run({ command: 'pii', args: '' });
+    expect(status.text).toContain('Status: blocking (nullpii-gateway did not answer');
+  },
+);
 
 test('without a token, the mod blocks instead of sending data unmasked', async ($, on) => {
   const sidecar = fakeSidecar();
@@ -447,17 +451,21 @@ test('the band above the prompt shows what was masked, by type', async ($, on) =
   await ui.unmount();
 });
 
-test('the band turns into a warning when the mod is blocking', async ($, on) => {
-  const sidecar = fakeSidecar({ down: true });
-  stubSession(on, sidecar);
-  on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
-  await start($);
-  const ui = await $.ui.mount(BAND);
-  const line = await ui.find({ type: 'Text', text: /^nullpii · blocking:/ });
-  expect(line).toBeDefined();
-  expect(line?.props.color).toBe('red');
-  await ui.unmount();
-});
+test(
+  'the band turns into a warning when the mod is blocking',
+  { options: { autostart: false } },
+  async ($, on) => {
+    const sidecar = fakeSidecar({ down: true });
+    stubSession(on, sidecar);
+    on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
+    await start($);
+    const ui = await $.ui.mount(BAND);
+    const line = await ui.find({ type: 'Text', text: /^nullpii · blocking:/ });
+    expect(line).toBeDefined();
+    expect(line?.props.color).toBe('red');
+    await ui.unmount();
+  },
+);
 
 function messageSite(text: string) {
   return {
@@ -524,21 +532,27 @@ test("the first message's context reaches Claude masked", async ($, on) => {
   expect(out.blocks.map((b) => b.name)).toEqual(['userEmail', 'currentDate']);
 });
 
-test('with the sidecar down, attachments are left out and the context is emptied', async ($, on) => {
-  const sidecar = fakeSidecar({ down: true });
-  stubSession(on, sidecar);
-  on('prompt.attachment', ($, e) => ({ text: e.text }));
-  on('prompt.context', ($, e) => ({ blocks: e.blocks }));
-  await start($);
-  const attachment = await $.prompt.attachment({
-    type: 'file',
-    text: 'John',
-    origin: { kind: 'engine' },
-  });
-  expect(attachment.text).toBe(null);
-  const context = await $.prompt.context({ blocks: [{ name: 'userEmail', text: 'john@acme.io' }] });
-  expect(context.blocks).toEqual([]);
-});
+test(
+  'with the sidecar down, attachments are left out and the context is emptied',
+  { options: { autostart: false } },
+  async ($, on) => {
+    const sidecar = fakeSidecar({ down: true });
+    stubSession(on, sidecar);
+    on('prompt.attachment', ($, e) => ({ text: e.text }));
+    on('prompt.context', ($, e) => ({ blocks: e.blocks }));
+    await start($);
+    const attachment = await $.prompt.attachment({
+      type: 'file',
+      text: 'John',
+      origin: { kind: 'engine' },
+    });
+    expect(attachment.text).toBe(null);
+    const context = await $.prompt.context({
+      blocks: [{ name: 'userEmail', text: 'john@acme.io' }],
+    });
+    expect(context.blocks).toEqual([]);
+  },
+);
 
 test('/pii reports counts by type, never values', async ($, on) => {
   const sidecar = fakeSidecar();
@@ -1094,4 +1108,27 @@ test('an `ask` value stays masked when the user says so, and "Always readable" c
 
   expect(sent).toEqual(['see https://docs.acme.io/a']);
   expect(sidecar.policyBodies).toEqual([{ categories: { private_url: 'off' } }]);
+});
+
+test('with no sidecar answering, the mod starts nullpii-gateway for the session', async ($, on) => {
+  const sidecar = fakeSidecar({ down: true });
+  stubSession(on, sidecar);
+  mock.clock(on, { now: 1_700_000_000_000 });
+  const spawned: { argv: readonly string[]; env?: Readonly<Record<string, string>> }[] = [];
+  // biome-ignore lint/correctness/useYield: a stand-in child that writes nothing.
+  on('process.spawn', async function* ($, e) {
+    spawned.push({ argv: e.argv, env: e.env });
+    return { value: { code: 0, signal: null } };
+  });
+  await start($);
+
+  expect(spawned).toHaveLength(1);
+  expect(spawned[0]?.argv.at(-1)).toBe('nullpii-gateway');
+  expect(spawned[0]?.env).toMatchObject({
+    NULLPII_SIDECAR_TOKEN: TOKEN,
+    NULLPII_HOST: '127.0.0.1',
+    NULLPII_PORT: '8787',
+  });
+  const report = await $.command.run({ command: 'pii', args: '' });
+  expect(report.text).toContain('starting nullpii-gateway');
 });

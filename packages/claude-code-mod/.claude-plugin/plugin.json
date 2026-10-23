@@ -19,6 +19,12 @@
       "title": "Sidecar URL",
       "description": "Where nullpii-gateway listens: http:// on 127.0.0.1 or [::1], the literal address the gateway listens on, with an optional port. Any other address, localhost included, is refused.",
       "default": "http://127.0.0.1:8787"
+    },
+    "autostart": {
+      "type": "boolean",
+      "title": "Start the sidecar",
+      "description": "When no nullpii-gateway answers at the sidecar URL, start one for the session (npx with this release's packages; its first start downloads the model). It uses the sidecar token above and stops with the session.",
+      "default": true
     }
   }
 }

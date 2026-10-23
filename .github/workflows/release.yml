@@ -81,15 +81,16 @@ jobs:
               status=1
             fi
           done
-          # The mod's policy skill runs the CLI of this release: `X.Y` for a
-          # release, the exact version for a pre-release (`X.Y` matches none).
+          # The mod starts the sidecar from the packages of this release:
+          # `X.Y` for a release, the exact version for a pre-release (`X.Y`
+          # matches none).
           case "$TAG_VERSION" in
             *-*) pin="$TAG_VERSION" ;;
             *) pin="${TAG_VERSION%.*}" ;;
           esac
-          pins=$(grep -oE 'npx -y nullpii@[^ ]+ config' packages/claude-code-mod/skills/nullpii-policy/SKILL.md | sort -u)
-          if [ "$pins" != "npx -y nullpii@$pin config" ]; then
-            echo "the nullpii-policy skill must run nullpii@$pin everywhere, found: $pins"
+          pins=$(grep -oE "GATEWAY_RELEASE = '[^']+'" packages/claude-code-mod/hooks/register.ts)
+          if [ "$pins" != "GATEWAY_RELEASE = '$pin'" ]; then
+            echo "the mod must start the sidecar from release $pin, found: $pins"
             status=1
           fi
           # A release moves the marketplace pin in the install commands.

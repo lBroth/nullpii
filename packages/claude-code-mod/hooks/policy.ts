@@ -54,6 +54,16 @@ export function optionString(
   return typeof value === 'string' && value !== '' ? value : undefined;
 }
 
+/** The boolean option `key`, else `fallback` (an option left unset). */
+export function optionFlag(
+  options: Readonly<Record<string, unknown>> | undefined,
+  key: string,
+  fallback: boolean,
+): boolean {
+  const value = options?.[key];
+  return typeof value === 'boolean' ? value : fallback;
+}
+
 /** The sidecar speaks plain HTTP: it listens on this machine only. */
 const SIDECAR_PROTOCOL = 'http:';
 /** The host names the sidecar answers to: it refuses a request whose

@@ -826,6 +826,32 @@ describe('shell restore · OpenAI route', () => {
     expect(res.body.includes(FULL_NAME)).toBe(what.includes('(control)'));
   });
 
+  it('SSE: nothing after [DONE] gets a value', async () => {
+    const app = await serve((body) => {
+      const [, person] = placeholdersIn(forwardedUserText(body));
+      const call = (fn: Record<string, string>) =>
+        openAiFrame([{ index: 0, delta: { tool_calls: [{ index: 0, function: fn }] } }]);
+      return sseResponse([
+        call({ name: 'bash', arguments: '{"command":"echo ' }),
+        'data: [DONE]\n\n',
+        call({ name: 'Write', arguments: `${person}"}` }),
+        openAiFrame([{ index: 0, delta: {}, finish_reason: 'tool_calls' }]),
+      ]);
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: {
+        model: 'gpt-test',
+        stream: true,
+        messages: [{ role: 'user', content: USER_TEXT }],
+      },
+    });
+
+    expect(res.body).not.toContain(FULL_NAME);
+  });
+
   it('SSE: a tool call sent after its choice finished holds every later tool input', async () => {
     const app = await serve((body) => {
       const [, person] = placeholdersIn(forwardedUserText(body));

@@ -148,7 +148,13 @@ class ChatRelay {
     if (frame.length === 0) return [];
     const passthrough = `${frame}${FRAME_SEPARATOR}`;
     const { event, data } = parseSseFields(frame);
-    if (data === DONE_SENTINEL) return [...this.flushOpenChoices(), passthrough];
+    if (data === DONE_SENTINEL) {
+      const flushed = this.flushOpenChoices();
+      // The stream is over: a client that reads on would join what follows
+      // to calls the relay already closed, so nothing later gets a value.
+      this.state.degraded = true;
+      return [...flushed, passthrough];
+    }
     const value = data === null ? undefined : parseJson(data)?.value;
     if (data !== null && (!isRecord(value) || misreadable(value, this.finished))) {
       this.state.degraded = true;

@@ -120,6 +120,13 @@ function toolStartFrame(index: number, name: string, type = 'tool_use'): string 
   });
 }
 
+/** The text block a real stream opens at index 0 before a tool block. */
+const TEXT_START_0 = sseFrame('content_block_start', {
+  type: 'content_block_start',
+  index: 0,
+  content_block: { type: 'text', text: '' },
+});
+
 function inputJsonFrame(index: number, partialJson: string): string {
   return sseFrame('content_block_delta', {
     type: 'content_block_delta',
@@ -146,6 +153,7 @@ describe('relaySseStream · framing', () => {
 
   it('restores tool input in a CRLF stream', async () => {
     const frames = [
+      TEXT_START_0,
       toolStartFrame(1, LOCAL_TOOL),
       inputJsonFrame(1, '{"iban":"PH"}'),
       sseFrame('content_block_stop', { type: 'content_block_stop', index: 1 }),
@@ -153,6 +161,40 @@ describe('relaySseStream · framing', () => {
 
     expect(await relay(frames)).toContain('IT60X0542811101000001023456');
   });
+
+  it.each([
+    ['a block that starts out of order', [toolStartFrame(1, LOCAL_TOOL)]],
+    ['a block index started twice', [TEXT_START_0, toolStartFrame(0, LOCAL_TOOL)]],
+    [
+      'a frame named other than its type',
+      [
+        TEXT_START_0,
+        `event: ping\ndata: ${JSON.stringify({ type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: 'x', name: LOCAL_TOOL, input: {} } })}\n\n`,
+      ],
+    ],
+    [
+      'a message_start that already holds content',
+      [
+        sseFrame('message_start', {
+          type: 'message_start',
+          message: { content: [{ type: 'text', text: 'hi' }] },
+        }),
+        TEXT_START_0,
+        toolStartFrame(1, LOCAL_TOOL),
+      ],
+    ],
+  ])(
+    'keeps tool input masked after %s (clients would number the blocks differently)',
+    async (_what, head) => {
+      const joined = await relay([
+        ...head,
+        inputJsonFrame(1, '{"iban":"PH"}'),
+        sseFrame('content_block_stop', { type: 'content_block_stop', index: 1 }),
+      ]);
+
+      expect(joined).not.toContain('IT60X0542811101000001023456');
+    },
+  );
 
   it('keeps every later tool input masked once a frame is not JSON', async () => {
     const joined = await relay([
@@ -317,6 +359,7 @@ describe('relaySseStream', () => {
     const head = ph.slice(0, 8);
     const tail = ph.slice(8);
     const frames: string[] = [
+      TEXT_START_0,
       toolStartFrame(1, LOCAL_TOOL),
       sseFrame('content_block_delta', {
         type: 'content_block_delta',
@@ -354,6 +397,7 @@ describe('relaySseStream', () => {
     const address = 'Via "Roma" 1\nRome';
     const ph = bake(vault, sessionId, address, 'private_address');
     const frames: string[] = [
+      TEXT_START_0,
       toolStartFrame(1, LOCAL_TOOL),
       inputJsonFrame(1, `{"address":"${ph.slice(0, 8)}`),
       inputJsonFrame(1, `${ph.slice(8)}","floor":2}`),

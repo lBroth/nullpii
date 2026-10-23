@@ -76,11 +76,8 @@ interface StreamState {
    * be sure which block a tool input belongs to, so every tool input
    * keeps its placeholders. */
   degraded: boolean;
-  /** Block indexes a `content_block_start` has opened. A second start for
-   * one of them makes that block ambiguous: clients differ on whether it
-   * replaces the first block or is appended after it, so it gets no
-   * values. */
-  readonly started: Set<number>;
+  /** How many `content_block_start` frames the stream has sent. */
+  starts: number;
 }
 
 /**
@@ -143,7 +140,7 @@ export async function relaySseStream(opts: SseRelayOptions): Promise<SseRelayCou
    * Input of any other block keeps its placeholders. */
   const toolBlocks = new Map<number, ToolRestore>();
   const acc = newRestoreAccumulator(restoreTools);
-  const state: StreamState = { degraded: false, started: new Set() };
+  const state: StreamState = { degraded: false, starts: 0 };
 
   function getRestorer(index: number): RestoreStream {
     let rs = restorers.get(index);
@@ -252,6 +249,10 @@ function processFrame(
   if (parsed.kind !== 'json') return [`${frame}${FRAME_SEPARATOR}`];
 
   const data = parsed.data;
+  if (breaksBlockOrder(parsed.event, data, state)) {
+    state.degraded = true;
+    toolBlocks.clear();
+  }
   if (data.type === 'content_block_delta' && isTextDelta(data)) {
     const rs = getRestorer(data.index);
     const incoming = data.delta.text ?? '';
@@ -301,7 +302,7 @@ function processFrame(
   }
 
   if (data.type === 'content_block_start') {
-    if (!state.degraded) noteToolBlock(data, toolBlocks, acc, state.started);
+    if (!state.degraded) noteToolBlock(data, toolBlocks, acc);
     // Re-serialised, so the client reads the block the relay judged.
     return [serialiseFrame(parsed.event, data)];
   }
@@ -309,23 +310,43 @@ function processFrame(
   return [`${frame}${FRAME_SEPARATOR}`];
 }
 
+/** True when a frame breaks the order in which clients number blocks.
+ * The relay finds a block by its `index`; the Anthropic SDKs append a
+ * block at each `content_block_start` and find it by position, and drop
+ * a frame whose event name is not its `data.type`. The two readings agree
+ * only when every frame is named by its type, `message_start` holds no
+ * content, and blocks start at 0, 1, 2… in order; otherwise a tool input
+ * could land in another block than the one the relay judged, so the
+ * stream holds every tool input from then on. */
+function breaksBlockOrder(
+  event: string | null,
+  data: Record<string, unknown>,
+  state: StreamState,
+): boolean {
+  if (event !== data.type) return true;
+  if (data.type === 'message_start') {
+    const content = isRecord(data.message) ? data.message.content : undefined;
+    return Array.isArray(content) && content.length > 0;
+  }
+  if (data.type !== 'content_block_start') return false;
+  const expected = state.starts;
+  state.starts += 1;
+  return data.index !== expected;
+}
+
 /** Remember, at a block's `content_block_start`, whether its tool input
  * gets real values back at `content_block_stop` (`toolCallMayRestore`),
  * and whether with the shell rule. Any other block, server and MCP tool
- * calls included, and a block whose index was already started, gets no
- * entry and keeps its placeholders. */
+ * calls included, gets no entry and keeps its placeholders. */
 function noteToolBlock(
   data: Record<string, unknown>,
   toolBlocks: Map<number, ToolRestore>,
   acc: RestoreAccumulator,
-  started: Set<number>,
 ): void {
   const block = data.content_block;
   if (typeof data.index !== 'number' || !isRecord(block)) return;
   toolBlocks.delete(data.index);
-  const again = started.has(data.index);
-  started.add(data.index);
-  if (again || !toolCallMayRestore(block, acc)) return;
+  if (!toolCallMayRestore(block, acc)) return;
   toolBlocks.set(data.index, { shell: shellToolOf(block.name) });
 }
 

@@ -258,6 +258,9 @@ class CallNames {
   }
 }
 
+/** The only choice index whose tool calls get values (`misreadable`). */
+const FIRST_CHOICE = 0;
+
 /** The `CallNames` key of the deprecated `function_call`. */
 const FUNCTION_CALL_KEY = 'function_call';
 
@@ -448,7 +451,9 @@ function misreadable(chunk: Record<string, unknown>, finished: ReadonlySet<numbe
 }
 
 function misreadableChoice(choice: unknown, finished: ReadonlySet<number>): boolean {
-  if (!isRecord(choice) || typeof choice.index !== 'number') return true;
+  // A second choice: readers that take `choices[0]` by position join
+  // choices, so with more than one no tool call gets a value.
+  if (!isRecord(choice) || choice.index !== FIRST_CHOICE) return true;
   const delta = choice.delta;
   if (delta === undefined || delta === null) return false;
   if (!isRecord(delta)) return true;

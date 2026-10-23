@@ -913,7 +913,11 @@ describe('shell restore · OpenAI route', () => {
 
   it.each([
     ['named differently by two choices gets no value', 'Bash', false],
-    ['named alike by two choices gets its values in both (control)', 'Read', true],
+    [
+      'named alike by two choices gets no value either (a second choice holds every call)',
+      'Read',
+      false,
+    ],
   ])('SSE: a call index %s', async (_what, otherName, restores) => {
     const app = await serve((body) => {
       const [, person] = placeholdersIn(forwardedUserText(body));

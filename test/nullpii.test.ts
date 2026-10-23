@@ -159,6 +159,17 @@ describe('NullPii e2e pipeline (mocked ONNX)', () => {
     await n.dispose();
   });
 
+  it('updatePolicy changes what a running engine prompts and leaves readable', async () => {
+    const n = new NullPii({ modelDir: '/fake', backend: 'cpu' });
+    await n.sanitize('Send to alice@acme.io today.');
+    expect(prompt.labels).not.toContain('private_date');
+    n.updatePolicy({ disabledCategories: ['private_email'] });
+    await n.sanitize('Send to alice@acme.io today.');
+    expect(prompt.labels).toContain('private_date');
+    expect(prompt.labels).not.toContain('private_email');
+    await n.dispose();
+  });
+
   it('by default leaves readable what an agent needs and masks the dangerous rest', async () => {
     const n = new NullPii({ modelDir: '/fake', backend: 'cpu' });
     await n.sanitize('Send to alice@acme.io today.');

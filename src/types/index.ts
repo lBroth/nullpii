@@ -26,6 +26,7 @@ export type {
 } from './results.js';
 export type {
   BackendName,
+  EnginePolicy,
   ModelVariant,
   NullPiiConfig,
   UrlAllowlistConfig,

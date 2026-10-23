@@ -103,3 +103,10 @@ export interface UrlAllowlistConfig {
   /** `true`: use only `hosts`, without the built-in policy. Default `false`. */
   readonly replaceDefaults?: boolean;
 }
+
+/** The settings of `NullPiiConfig` a running engine can replace
+ * (`NullPii.updatePolicy`): what is masked, not how the model runs. */
+export type EnginePolicy = Pick<
+  NullPiiConfig,
+  'disabledCategories' | 'categoryThresholds' | 'threshold' | 'urlAllowlist'
+>;

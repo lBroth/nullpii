@@ -31,6 +31,7 @@ export {
   PLACEHOLDER_TEMPLATE,
   SESSION_PREFIX_LEN,
   type BackendName,
+  type EnginePolicy,
   type InferenceInputs,
   type InferenceOutputs,
   type ModelVariant,
@@ -63,6 +64,8 @@ export { NullPii } from './nullpii.js';
 
 // Shared masking-policy config file (library, CLI, gateway, Claude Code mod)
 export {
+  type CategoryMode,
+  categoryModes,
   configFilePath,
   defaultConfigPath,
   loadConfigFile,

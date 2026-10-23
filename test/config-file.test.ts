@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  categoryModes,
   configFilePath,
   defaultConfigPath,
   loadConfigFile,
@@ -64,8 +65,40 @@ describe('parseConfig', () => {
     ['a malformed host', '{"urlAllowlist": {"hosts": {"https://github.com": "full"}}}'],
     ['an unknown release', '{"urlAllowlist": {"hosts": {"github.com": "partial"}}}'],
     ['an invalid tool name', '{"restoreTools": ["rm -rf"]}'],
+    ['a mode for an unknown category', '{"categories": {"private_pet": "mask"}}'],
+    ['an unknown mode', '{"categories": {"private_url": "maybe"}}'],
+    ['categories that are not an object', '{"categories": ["private_url"]}'],
   ])('rejects %s', (_case, body) => {
     expect(() => parseConfig(body, 'test')).toThrow(InvalidConfigError);
+  });
+});
+
+describe('category modes', () => {
+  it('by default masks the dangerous categories and leaves the others readable', () => {
+    const modes = categoryModes({});
+    expect(modes.secret).toBe('mask');
+    expect(modes.private_person).toBe('mask');
+    expect(modes.private_url).toBe('mask');
+    expect(modes.private_date).toBe('off');
+    expect(modes.private_organization).toBe('off');
+  });
+
+  it('starts from disabledCategories when given, then applies each categories entry', () => {
+    const config = parseConfig(
+      JSON.stringify({
+        disabledCategories: ['private_title'],
+        categories: { private_url: 'ask', private_date: 'mask', private_person: 'off' },
+      }),
+      'test',
+    );
+    const modes = categoryModes(config);
+    expect(modes.private_title).toBe('off');
+    expect(modes.private_organization).toBe('mask');
+    expect(modes.private_url).toBe('ask');
+    expect(modes.private_date).toBe('mask');
+    expect(modes.private_person).toBe('off');
+    // `ask` is masked by the engine: only `off` is left readable.
+    expect(toEngineConfig(config).disabledCategories).toEqual(['private_person', 'private_title']);
   });
 });
 

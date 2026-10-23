@@ -4,7 +4,12 @@ import { readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { NULLPII_CONFIG, XDG_CONFIG_HOME, readEnvVar } from './config.js';
-import { CONFIG_DIR_NAME, CONFIG_FILE_NAME, MAX_CONFIG_FILE_BYTES } from './defaults.js';
+import {
+  CONFIG_DIR_NAME,
+  CONFIG_FILE_NAME,
+  DEFAULT_DISABLED_CATEGORIES,
+  MAX_CONFIG_FILE_BYTES,
+} from './defaults.js';
 import { InvalidConfigError } from './errors.js';
 import type { NullPiiConfig, PiiCategory, UrlAllowlistConfig } from './types/index.js';
 import { PII_LABELS } from './types/labels.js';
@@ -16,9 +21,19 @@ import { urlPolicy } from './url-filter.js';
  * the Claude Code mod it serves. Every key is optional;
  * an unknown key is an error, so a typo never silently changes nothing.
  */
+/** What happens to one category: masked (`mask`), masked after the
+ * Claude Code mod asks the user about a value in their own prompt
+ * (`ask`; masked everywhere else), or left readable (`off`). */
+export type CategoryMode = 'mask' | 'ask' | 'off';
+
 export interface NullPiiFileConfig {
-  /** As `NullPiiConfig.disabledCategories`. */
+  /** As `NullPiiConfig.disabledCategories`. `categories` overrides it per
+   * category. */
   readonly disabledCategories?: readonly PiiCategory[];
+  /** The mode of each category named (`CategoryMode`); a category left
+   * out keeps the mode `disabledCategories`, else the default, gives it
+   * (`categoryModes`). */
+  readonly categories?: Readonly<Partial<Record<PiiCategory, CategoryMode>>>;
   /** As `NullPiiConfig.categoryThresholds`, each in `[0, 1]`. */
   readonly categoryThresholds?: Readonly<Partial<Record<PiiCategory, number>>>;
   /** As `NullPiiConfig.threshold`, in `[0, 1]`. */
@@ -32,6 +47,7 @@ export interface NullPiiFileConfig {
 
 const KEYS: ReadonlySet<string> = new Set([
   'disabledCategories',
+  'categories',
   'categoryThresholds',
   'threshold',
   'urlAllowlist',
@@ -111,6 +127,9 @@ export function parseConfig(text: string, source: string): NullPiiFileConfig {
       `${source}: disabledCategories`,
     );
   }
+  if (value.categories !== undefined) {
+    out.categories = modeMap(value.categories, `${source}: categories`);
+  }
   if (value.categoryThresholds !== undefined) {
     out.categoryThresholds = thresholds(value.categoryThresholds, `${source}: categoryThresholds`);
   }
@@ -123,10 +142,48 @@ export function parseConfig(text: string, source: string): NullPiiFileConfig {
   return out;
 }
 
-/** The engine settings of a file config (everything but `restoreTools`). */
+/** The engine settings of a file config: every category whose mode is
+ * `off` left readable (`categoryModes`), and the thresholds and URL
+ * allowlist as given. */
 export function toEngineConfig(file: NullPiiFileConfig): NullPiiConfig {
-  const { restoreTools: _restoreTools, ...engine } = file;
-  return engine;
+  const {
+    restoreTools: _restoreTools,
+    categories: _categories,
+    disabledCategories: _disabled,
+    ...engine
+  } = file;
+  const modes = categoryModes(file);
+  const off = (Object.keys(modes) as PiiCategory[]).filter((c) => modes[c] === 'off');
+  return { ...engine, disabledCategories: off };
+}
+
+/** The mode of every category under `file`: `off` for the categories in
+ * its `disabledCategories` (else in `DEFAULT_DISABLED_CATEGORIES`),
+ * `mask` for the others, then each `categories` entry. */
+export function categoryModes(
+  file: NullPiiFileConfig,
+): Readonly<Record<PiiCategory, CategoryMode>> {
+  const off = new Set<string>(file.disabledCategories ?? DEFAULT_DISABLED_CATEGORIES);
+  const modes = {} as Record<PiiCategory, CategoryMode>;
+  for (const category of CATEGORIES as ReadonlySet<PiiCategory>) {
+    modes[category] = file.categories?.[category] ?? (off.has(category) ? 'off' : 'mask');
+  }
+  return modes;
+}
+
+const MODES: ReadonlySet<string> = new Set(['mask', 'ask', 'off']);
+
+function modeMap(value: unknown, where: string): Partial<Record<PiiCategory, CategoryMode>> {
+  if (!isRecord(value)) throw new InvalidConfigError(`${where} must be an object`);
+  for (const [category, mode] of Object.entries(value)) {
+    if (!CATEGORIES.has(category)) {
+      throw new InvalidConfigError(`${where}: unknown category ${JSON.stringify(category)}`);
+    }
+    if (typeof mode !== 'string' || !MODES.has(mode)) {
+      throw new InvalidConfigError(`${where}.${category} must be "mask", "ask" or "off"`);
+    }
+  }
+  return value as Partial<Record<PiiCategory, CategoryMode>>;
 }
 
 function categoryList(value: unknown, where: string): PiiCategory[] {

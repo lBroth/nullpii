@@ -37,6 +37,7 @@ import { escapePlaceholders, unescapePlaceholders } from './placeholder-escape.j
 import { dropSpansInsidePublicDigests } from './public-digests.js';
 import { runRecognizers } from './recognizers.js';
 import {
+  type EnginePolicy,
   GLINER_EXTENDED_CATEGORIES,
   GLINER_MODEL_CATEGORIES,
   GLINER_ZERO_SHOT_EXTRA,
@@ -107,12 +108,12 @@ function toEscapedSpans(
  * `sessionId`. Call `dispose` to release native resources.
  */
 export class NullPii {
-  private readonly config: NullPiiConfig;
+  private config: NullPiiConfig;
   /** `GLINER_LABELS` minus `config.disabledCategories`. */
-  private readonly promptLabels: readonly string[];
-  private readonly disabled: ReadonlySet<string>;
+  private promptLabels: readonly string[] = [];
+  private disabled: ReadonlySet<string> = new Set();
   /** How much of a clean URL stays readable; `null` masks every URL. */
-  private readonly urlPolicy: UrlPolicy | null;
+  private urlPolicy: UrlPolicy | null = null;
   private readonly vault = new PiiVault();
   private readonly recognizers: Recognizer[] = [];
   private backend: OrtBackend | null = null;
@@ -127,9 +128,7 @@ export class NullPii {
     // Fail on an unknown variant here, not at the first sanitize().
     onnxCandidates(config.variant ?? DEFAULT_VARIANT, config.backend ?? DEFAULT_BACKEND);
     this.config = config;
-    this.disabled = new Set(config.disabledCategories ?? DEFAULT_DISABLED_CATEGORIES);
-    this.promptLabels = GLINER_LABELS.filter((l) => !this.disabled.has(l));
-    this.urlPolicy = config.urlAllowlist === 'none' ? null : urlPolicy(config.urlAllowlist);
+    this.derivePolicy();
     if (config.recognizers === 'none') return;
     if (Array.isArray(config.recognizers)) {
       this.recognizers.push(...(config.recognizers as readonly Recognizer[]));
@@ -138,6 +137,28 @@ export class NullPii {
     if (DEFAULT_RECOGNIZERS_ENABLED) {
       this.recognizers.push(...DEFAULT_RECOGNIZERS);
     }
+  }
+
+  /**
+   * Replace the masking policy of a running engine: the categories left
+   * readable, the thresholds and the URL allowlist. Every later
+   * `sanitize()` uses it; a key the policy leaves out takes its default.
+   * The model, backend and recognizers keep their settings.
+   */
+  updatePolicy(policy: EnginePolicy): void {
+    const { disabledCategories, categoryThresholds, threshold, urlAllowlist, ...rest } =
+      this.config;
+    this.config = { ...rest, ...policy };
+    this.derivePolicy();
+  }
+
+  /** Recompute what the policy settings decide: the categories left
+   * readable, the labels prompted to the model, the URL policy. */
+  private derivePolicy(): void {
+    const config = this.config;
+    this.disabled = new Set(config.disabledCategories ?? DEFAULT_DISABLED_CATEGORIES);
+    this.promptLabels = GLINER_LABELS.filter((l) => !this.disabled.has(l));
+    this.urlPolicy = config.urlAllowlist === 'none' ? null : urlPolicy(config.urlAllowlist);
   }
 
   /** Register a custom regex-based recognizer. ML matches take priority on overlap. */

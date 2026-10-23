@@ -31,8 +31,8 @@ import type { SseRelayCounters, SseRelayOptions } from './sse-relay.js';
  *   and an open `{{…` is held until its `}}` arrives.
  * - `delta.tool_calls[].function.arguments` shards (and the deprecated
  *   `delta.function_call.arguments`) are buffered per choice and tool-call
- *   index, as Anthropic `input_json_delta`s are, and forwarded once, when
- *   the choice finishes. The assembled string is parsed and only its
+ *   index, as Anthropic `input_json_delta`s are, and forwarded once (see
+ *   the flush points below). The assembled string is parsed and only its
  *   string leaves are restored, so a value holding a quote or a newline is
  *   re-escaped instead of breaking the JSON. A custom tool call's
  *   `custom.input` shards are buffered the same way and restored as text.
@@ -405,8 +405,8 @@ function isWholeFrame(frame: string): boolean {
  * tool call that is not an object or has no numeric `index`, a `delta`,
  * `function`, `custom` or `function_call` that is not an object, a tool
  * name that is not a string, or a tool call for a choice that already
- * sent its `finish_reason` (the relay starts that choice afresh; a client
- * appends to the finished call). */
+ * sent its `finish_reason` (a client appends it to the finished call,
+ * whatever it renames). */
 function misreadable(chunk: Record<string, unknown>, finished: ReadonlySet<number>): boolean {
   if (chunk.choices === undefined) return false;
   if (!Array.isArray(chunk.choices)) return true;

@@ -16,7 +16,7 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  *     cat <<'EOF'                  standard output
  *     git commit -F - <<'EOF'      a commit message
  *
- * on the first line, optionally after `git add …` or `mkdir -p …` joined by
+ * on the first line, optionally after `git add …` or `mkdir …` joined by
  * `&&`; the body follows, and the closing line is the last line. A quoted
  * delimiter makes the body literal: the shell expands nothing in it. No
  * body line may start with the delimiter (ksh93 ends the body at such a

@@ -66,6 +66,9 @@ const OWN_REASONS: ReadonlySet<string> = new Set([
 /** SidecarError's text, the one with a variable part. */
 const SIDECAR_STATUS = /^nullpii sidecar answered \d{3}$/;
 const TIMEOUT_KIND = 'timeout';
+/** Shell tools whose command the sidecar judges by the shell rule
+ * (SECURITY.md); any other shell tool gets no value in its command. */
+const RULE_SHELL_TOOLS: ReadonlySet<string> = new Set(['Bash', 'bash', 'shell']);
 const THROW_KIND = 'throw';
 // What Claude reads when the mod refuses a call: fixed text, never the
 // failure's own, which can quote real values. The reason is the user's.
@@ -407,15 +410,15 @@ export function register(on, options) {
       const r = (await sidecar($, 'POST', '/restore', { value: args, tool: e.tool })) as Restored;
       counts.held += r.heldForTool ?? 0;
       const kept = r.shellKeptMasked ?? [];
-      if (kept.length > 0 && e.tool !== 'Bash') {
+      if (kept.length > 0 && !RULE_SHELL_TOOLS.has(e.tool)) {
         // A shell tool whose command the rule never reads (`PowerShell`).
         return {
-          deny: `nullpii puts no real value into a ${e.tool} command (${kept.join(', ')}): use the Bash tool (when nullpii runs on macOS or Linux; on Windows no shell command gets a value), or ask the user to run the command themselves.`,
+          deny: `nullpii puts no real value into a ${e.tool} command (${kept.join(', ')}): use the Bash tool (unless nullpii's sidecar runs on Windows, where no shell command gets a value), or ask the user to run the command themselves.`,
         };
       }
       if (kept.length > 0) {
         return {
-          deny: `nullpii will not put the real value of ${kept.join(', ')} into this command: the value came from data you could not read, so it comes back only in the text of a quoted heredoc that one of a few commands writes out, alone on the first line (or after \`git add …\` or \`mkdir …\` and \`&&\`), for example \`git commit -F - <<'EOF'\` (the message), \`cat > notes.md <<'EOF'\` (a plain document such as \`.md\` or \`.csv\`) or \`cat <<'EOF'\`; then the text, then the delimiter alone as the last line. Some values cannot go back even there (for example one with a line break or \`<<\`); a heredoc inside \`$(…)\` never gets values, and when nullpii runs on Windows no shell command does. Otherwise ask the user to run the command themselves.`,
+          deny: `nullpii will not put the real value of ${kept.join(', ')} into this command: the value came from data you could not read, so it comes back only in the text of a quoted heredoc that one of a few commands writes out, alone on the first line (or after \`git add …\` or \`mkdir …\` and \`&&\`), for example \`git commit -F - <<'EOF'\` (the message), \`cat > notes.md <<'EOF'\` (a plain document such as \`.md\` or \`.csv\`) or \`cat <<'EOF'\`; then the text, then the delimiter alone as the last line. Some values cannot go back even there (for example one with a line break or \`<<\`); a heredoc inside \`$(…)\` never gets values, and when nullpii's sidecar runs on Windows no shell command does. Otherwise ask the user to run the command themselves.`,
         };
       }
       // Rewrite the call only when a placeholder was replaced: a rewritten

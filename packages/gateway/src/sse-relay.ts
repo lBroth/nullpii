@@ -122,7 +122,7 @@ interface StreamState {
  *   tool call (`server_tool_use`, `mcp_tool_use`), a tool outside the
  *   list, and input whose `content_block_start` was never seen keep their
  *   placeholders, counted as held (fail closed).
- * - A shell tool call (`SHELL_TOOLS`, named in its `content_block_start`)
+ * - A shell tool call (`shellToolOf`, named in its `content_block_start`)
  *   → its input gets the shell-aware restore (`restoreToolInput`): a value
  *   comes back only where `shell-restore.ts` finds it safe, and is
  *   otherwise left literal and counted.

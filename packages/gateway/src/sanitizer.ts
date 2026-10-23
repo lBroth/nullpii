@@ -950,7 +950,7 @@ export function keepShellField(
 
 /** How a shell tool's input sets where and how its command runs: a
  * working directory of its own (`WORKDIR_FIELDS`, `movedDir`), or an
- * environment (`env`, `offMachine`: nothing comes back, as with an
+ * environment (`env`, `keepAll`: nothing comes back, as with an
  * assignment in the command). */
 function workdirOptions(input: unknown): ShellOptions {
   if (!isRecord(input)) return {};
@@ -958,7 +958,7 @@ function workdirOptions(input: unknown): ShellOptions {
   const env = input[ENV_FIELD];
   return {
     movedDir: [...WORKDIR_FIELDS].some((k) => set(input[k])),
-    offMachine: set(env) && !(isRecord(env) && Object.keys(env).length === 0),
+    keepAll: set(env) && !(isRecord(env) && Object.keys(env).length === 0),
   };
 }
 

@@ -28,8 +28,8 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  * On top of that:
  * - a listed program counts only by name exactly as written, with no
  *   wrapper, no path, no redirection before it, no assignment other than
- *   the locale or time zone (before it, or as a command of its own:
- *   `PATH=…; grep …`), and with none of the options that run or write
+ *   the locale or time zone with a plain value (`SAFE_ASSIGNMENT`; before
+ *   it, or as a command of its own: `PATH=…; grep …`), and with none of the options that run or write
  *   (`COMMAND_OPTIONS`, abbreviations and short-option clusters included);
  * - a placeholder that is, or is part of, the program a simple command
  *   runs, a redirection target, an assignment, an argument of `export` or
@@ -317,6 +317,12 @@ const COMMAND_OPTIONS: ReadonlyMap<string, RegExp> = new Map([
   ['base64', optionPattern(shortOption('o'), longOption('output'))],
   // `file -C` writes a file.
   ['file', optionPattern(shortOption('C'), longOption('compile'))],
+  // Builtins a shell can load in their place set a variable through these:
+  // zsh's `zsh/stat` (`stat -A`/`-H NAME`), bash's loadable `stat`,
+  // `realpath -a` and `cut -a`. No GNU or BSD build uses the letters.
+  ['stat', optionPattern(shortOption('A'), shortOption('H'))],
+  ['realpath', optionPattern(shortOption('a'))],
+  ['cut', optionPattern(shortOption('a'))],
   ['fzf', /^--(?:preview|bind)/],
 ]);
 
@@ -809,10 +815,12 @@ const COMMENT_PRECEDERS: ReadonlySet<string> = new Set([
 const ENV_ASSIGNMENT = /^[A-Za-z_]\w*=/;
 /** Assignments a command with listed programs may make: the locale or
  * the time zone, each with a plain value, a locale name (`C.UTF-8`,
- * `de_DE@euro`, `en_US:en`) or a zone name (`UTC`, `Europe/Rome`). A path
- * or an expression could choose what is loaded or evaluated. */
+ * `de_DE@euro`, `en_US:en`) or a zone name (`UTC`, `Europe/Rome`), each
+ * part starting with a letter, digit or `_`. A path (`..` included:
+ * libintl looks catalogs up under `<localedir>/<value>/`) or an expression
+ * could choose what is loaded or evaluated. */
 const SAFE_ASSIGNMENT =
-  /^(?:(?:LANG|LANGUAGE|LC_[A-Z]+)=[A-Za-z0-9_.@:-]*|TZ=(?:[A-Za-z0-9_+-]+(?:\/[A-Za-z0-9_+-]+)*)?)$/;
+  /^(?:(?:LANG|LANGUAGE|LC_[A-Z]+)=(?:[A-Za-z0-9_][A-Za-z0-9_.@-]*(?::[A-Za-z0-9_][A-Za-z0-9_.@-]*)*)?|TZ=(?:[A-Za-z0-9_][A-Za-z0-9_+-]*(?:\/[A-Za-z0-9_][A-Za-z0-9_+-]*)*)?)$/;
 const LEADING_TABS = /^\t+/;
 /** The start of a word that a following `<` or `>` continues: nothing,
  * a descriptor number, or the operator so far (`2>`, `>`, `<`). */
@@ -1068,8 +1076,8 @@ function judge(command: string, targets: readonly number[]): Verdict {
 /** The words and program of every simple command `scan` met (heredoc
  * bodies lie between commands, never in one); `undefined` when a command
  * is past the read window, has a reserved word where its program would
- * stand, or assigns a variable other than the locale or time zone with
- * no program after it. */
+ * stand, or assigns a variable other than the locale or time zone (to a
+ * plain value) with no program after it. */
 function readCommands(
   command: string,
   scan: Scan,
@@ -1099,7 +1107,8 @@ function readCommands(
   return { programs, wordsAt };
 }
 
-/** True when every assignment among `words` sets the locale or time zone. */
+/** True when every assignment among `words` sets the locale or time zone
+ * to a plain value (`SAFE_ASSIGNMENT`). */
 function assignsOnlyLocale(words: readonly Word[]): boolean {
   return words.every((w) => !isAssignment(w) || SAFE_ASSIGNMENT.test(w.text));
 }
@@ -1261,7 +1270,8 @@ function isDataProgram(p: Program): boolean {
 /** True when `p` may count as a listed program at all: named exactly as a
  * list names it (no other case, version suffix, `.exe` or path), with no
  * wrapper, and with no assignment before it but the locale and time zone
- * (`GIT_EDITOR=…` and the like choose what a listed program runs). */
+ * to a plain value (`GIT_EDITOR=…` and the like choose what a listed
+ * program runs). */
 function listedAsWritten(p: Program): boolean {
   if (p.literal === undefined || p.wrappers.length > 0 || p.byPath) return false;
   return p.assigned.every((assignment) => SAFE_ASSIGNMENT.test(assignment));

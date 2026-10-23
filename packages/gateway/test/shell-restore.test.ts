@@ -1451,6 +1451,12 @@ describe('shell restore · round-10 layout and redirections', () => {
     [(p: string) => `TZ=../zone git log --author=${p}`, 0],
     [(p: string) => `LC_ALL=/tmp/locale grep ${p} notes.md`, 0],
     [(p: string) => `LC_ALL=a=b grep ${p} notes.md`, 0],
+    [(p: string) => `LANGUAGE=.. git log --author=${p}`, 0],
+    [(p: string) => `LC_ALL=.. grep ${p} notes.md`, 0],
+    [(p: string) => `LANGUAGE=en:.. diff a.md ${p}`, 0],
+    [(p: string) => `LANG=.; grep ${p} notes.md`, 0],
+    [(p: string) => `TZ=Etc/GMT+1 git log --author=${p}`, 1],
+    [(p: string) => `LANG= grep ${p} notes.md`, 1],
   ])('allows the locale and time zone only with a plain name: %#', (build, expected) => {
     const { np, vault, sessionId } = harness();
     const word = bake(vault, sessionId, EMAIL, 'private_email');
@@ -1468,6 +1474,21 @@ describe('shell restore · round-10 layout and redirections', () => {
 
     expect(restored(restoreShellArgv(np, [program, option, word], sessionId))).toBe(0);
   });
+
+  it.each([
+    (p: string) => `stat -A probe notes.md; grep ${p} notes.md`,
+    (p: string) => `stat -nH probe notes.md; grep ${p} notes.md`,
+    (p: string) => `realpath -a probe notes.md; grep ${p} notes.md`,
+    (p: string) => `cut -a probe -f1 notes.md; grep ${p} notes.md`,
+  ])(
+    'keeps every value with the options a loadable builtin sets a variable through: %#',
+    (build) => {
+      const { np, vault, sessionId } = harness();
+      const word = bake(vault, sessionId, EMAIL, 'private_email');
+
+      expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(0);
+    },
+  );
 
   it.each([
     [['bash', '-c'], 1],

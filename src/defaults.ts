@@ -963,8 +963,8 @@ export const MAX_CONFIG_FILE_BYTES = 64 * 1024;
 /** Tools whose arguments get real values back when no `restoreTools` is
  * configured: Claude Code's tools that run on this machine. Tools that
  * send data elsewhere (`WebFetch`, `WebSearch`, MCP tools) keep the
- * placeholders. A shell command can still reach the network, which the
- * gateway's shell rule guards only as far as SECURITY.md describes. */
+ * placeholders. A shell command gets values only as text a few fixed
+ * commands write out as data (SECURITY.md). */
 export const DEFAULT_RESTORE_TOOLS: readonly string[] = [
   // Claude Code.
   'Bash',

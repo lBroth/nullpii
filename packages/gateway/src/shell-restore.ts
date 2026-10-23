@@ -42,12 +42,12 @@ import { PLACEHOLDER_REGEX, type RestoreCapable, type RestoreResult } from 'null
  *   `git -c`) keeps every placeholder, also when judged again with the
  *   values put back, and so does one that writes any file but a document
  *   (`PLAIN_DATA_FILE`; `/dev/null` and the standard streams are no
- *   file);
+ *   file), or a relative file in a command that also runs `cd`;
  * - judged again with the values put back, the command must also split
  *   into the same simple commands and heredoc bodies as before, or it
  *   keeps every placeholder;
  * - the one exception to the plain-word rule is the body of a heredoc that
- *   `cat` writes to standard output or to a document file (`.md`, `.txt`,
+ *   `cat` writes to standard output or to a document file (`.md`, `.csv`,
  *   …; `PLAIN_DATA_FILE`), or that `git commit -F -` reads as its message,
  *   in a command that runs nothing else that could read it as code
  *   (`cat > notes.md <<'EOF'`, `git commit -F - <<'EOF'`): that body is
@@ -80,6 +80,12 @@ export const SHELL_TOOLS: ReadonlySet<string> = new Set(['Bash', 'bash', 'shell'
 
 /** The input field of a shell tool that the shell interprets. */
 export const SHELL_COMMAND_FIELD = 'command';
+/** The other input fields of a shell tool that get values back: text
+ * shown to the user. Any other field (`workdir`, `cwd`, `env`, `timeout`
+ * or one nullpii does not know) keeps its placeholders: it can set where
+ * or how the command runs, which a `cd` argument or an assignment in the
+ * command never gets to. */
+export const SHELL_TEXT_FIELDS: ReadonlySet<string> = new Set(['description', 'justification']);
 
 /** Where a placeholder stands. `heredoc` is the body of a quoted-delimiter
  * heredoc and `heredoc-expanding` that of a bare one, both only while the
@@ -681,7 +687,7 @@ const ENVIRONMENT_BUILTINS: ReadonlySet<string> = new Set([
 /** Files a shell, git or a hook runner executes later: a heredoc written
  * to one is code, not data. */
 const EXECUTED_LATER =
-  /(?:^|[\s/'"])(?:\.git\/hooks\/|\.husky\/|\.githooks\/|\.(?:bash|zsh|ksh|mksh|tcsh|csh)rc\b|\.(?:bash_)?profile\b|\.zprofile\b|\.zshenv\b|\.zlogin\b|\.envrc\b|\.config\/fish\/|crontab\b|\/etc\/|s?bin\/|LaunchAgents\/|systemd\/)/i;
+  /(?:^|[\s/'"])(?:\.git\/hooks\/|\.husky\/|\.githooks\/|\.(?:bash|zsh|ksh|mksh|tcsh|csh)rc\b|\.(?:bash_)?profile\b|\.zprofile\b|\.zshenv\b|\.zlogin\b|\.envrc\b|\.config\/fish\/|crontab\b|(?:private\/)?etc\/|s?bin\/|LaunchAgents\/|systemd\/)/i;
 
 /** A `>&` target that copies or closes a descriptor rather than naming a
  * file. */
@@ -702,20 +708,18 @@ const TARGET_ENDS: ReadonlySet<string> = new Set([
   ')',
 ]);
 /** A document a data heredoc may be written to: no hidden directory or
- * file on its path (`./` and `../` aside), and a text extension. Case is
- * ignored, as on the default macOS and Windows file systems. */
-const PLAIN_DATA_FILE =
-  /^(?!.*(?:^|\/)\.(?!\.?\/))[\w./+-]*\.(?:md|markdown|txt|csv|tsv|log|rst)$/i;
-/** `.txt` files that tools read as input: CMake's `CMakeLists.txt`, pip's
- * requirements and constraints files (`requirements/base.txt`,
- * `dev-requirements.txt`), pytest's doctest files (`test*.txt`). */
-const BUILD_INPUT_TXT =
-  /(?:^|\/)(?:cmakelists|test[^/]*|[^/]*(?:requirements|constraints)[^/]*)\.txt$|(?:^|\/)(?:requirements|constraints)\//i;
+ * file on its path (`./` and `../` aside), and a text extension no tool
+ * reads as code or input by its name. Not `.txt`: pip reads requirements
+ * and constraints files, CMake `CMakeLists.txt`, pytest `test*.txt`, and
+ * a relative `base.txt` lands in whatever directory an earlier command
+ * left (`requirements/`), which nullpii does not see. Case is ignored, as
+ * on the default macOS and Windows file systems. */
+const PLAIN_DATA_FILE = /^(?!.*(?:^|\/)\.(?!\.?\/))[\w./+-]*\.(?:md|markdown|csv|tsv|log|rst)$/i;
 
 /** True when the redirection target `target` is a document: a file no
  * shell, build tool or test runner reads as code or configuration. */
 function isDocument(target: string): boolean {
-  return PLAIN_DATA_FILE.test(target) && !BUILD_INPUT_TXT.test(target);
+  return PLAIN_DATA_FILE.test(target);
 }
 /** Characters read of a redirection target: a longer one is no document. */
 const MAX_TARGET_CHARS = 256;
@@ -1028,11 +1032,13 @@ function judge(command: string, targets: readonly number[]): Verdict {
   // A data body goes to standard output or to a plain document file; one
   // written elsewhere (`.git/config`, `Makefile`, `run.sh`) may be read
   // as code later.
-  // A file written after a `cd` lands where the `cd` points, not where its
-  // target reads (`cd .git && echo … > notes.md`): a command that does
-  // both writes no plain file. (A directory an earlier command left is
+  // A relative file written after a `cd` lands where the `cd` points, not
+  // where its target reads (`cd .git && echo … > notes.md`): a command
+  // that does both writes no plain file. (A directory an earlier command left is
   // not seen: a relative target is judged as written.)
-  const movesThenWrites = written.length > 0 && programs.some((p) => p.name === 'cd');
+  const movesThenWrites =
+    written.some((t) => !t.startsWith('/') && !t.startsWith('~')) &&
+    programs.some((p) => p.name === 'cd');
   const toPlainFiles = written.every(isDocument) && !movesThenWrites;
   const bodyContext = dataBodyContext(
     programs,

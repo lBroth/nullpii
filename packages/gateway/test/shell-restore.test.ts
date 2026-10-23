@@ -205,7 +205,9 @@ describe('shell restore · quoting context', () => {
     [`cat <<"EOF"\n${MARKER}\nEOF`, 'heredoc'],
     [`cat <<\\EOF\n${MARKER}\nEOF`, 'heredoc'],
     [`cat <<-'EOF'\n\t${MARKER}\n\tEOF`, 'heredoc'],
-    [`cat <<'EOF' > notes.txt\n${MARKER}\nEOF`, 'heredoc'],
+    [`cat <<'EOF' > notes.md\n${MARKER}\nEOF`, 'heredoc'],
+    // `.txt` is read as input by pip, CMake and pytest: no document.
+    [`cat <<'EOF' > notes.txt\n${MARKER}\nEOF`, 'none'],
     // `tee` writes where an argument points: not a data command.
     [`tee notes.txt <<'EOF'\n${MARKER}\nEOF`, 'none'],
     [commitSubst(`Thanks ${MARKER}`), 'none'],
@@ -775,7 +777,7 @@ describe('shell restore · v3 hardening', () => {
     },
   );
 
-  it.each([(p: string) => `grep x ${p} > out.txt`, (p: string) => `grep x ${p} 2>/dev/null`])(
+  it.each([(p: string) => `grep x ${p} > out.md`, (p: string) => `grep x ${p} 2>/dev/null`])(
     'a write to a document or to /dev/null still gets values back: %#',
     (build) => {
       const { np, vault, sessionId } = harness();
@@ -1514,6 +1516,9 @@ describe('shell restore · round-10 layout and redirections', () => {
     [(p: string) => `echo ${p} > BIN/notes.md`, 0],
     [(p: string) => `echo ${p} > /ETC/notes.md`, 0],
     [(p: string) => `cd docs && grep ${p} notes.md`, 1],
+    [(p: string) => `cd docs && grep ${p} notes.md > /tmp/hits.md`, 1],
+    [(p: string) => `echo ${p} > /private/etc/notes.md`, 0],
+    [(p: string) => `echo ${p} > notes.txt`, 0],
     [(p: string) => `git add bin/cli.js && grep ${p} notes.md > hits.md`, 1],
   ])('judges a write after a cd, and bin directories as targets only: %#', (build, expected) => {
     const { np, vault, sessionId } = harness();
@@ -1889,6 +1894,44 @@ describe('shell restore · Anthropic route', () => {
     }>;
     const [secret, person] = placeholdersIn(bash?.input.command);
     expect(bash?.input.command).toBe(expectedCommand(secret, person));
+  });
+
+  it('JSON: a shell tool gets values in command and description only, never in workdir or env', async () => {
+    const app = await serve((body) => {
+      const [, person] = placeholdersIn(forwardedUserText(body));
+      const response: AnthropicResponse = {
+        id: 'msg',
+        type: 'message',
+        role: 'assistant',
+        content: [
+          {
+            type: 'tool_use',
+            id: 'tu_1',
+            name: 'shell',
+            input: {
+              command: ['bash', '-lc', 'echo probe > notes.md'],
+              workdir: person,
+              env: { NAME: person },
+              description: `Greet ${person}`,
+            },
+          },
+        ],
+      };
+      return new Response(JSON.stringify(response));
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/messages',
+      payload: { model: 'claude-test', messages: [{ role: 'user', content: USER_TEXT }] },
+    });
+
+    const [shell] = (res.json() as AnthropicResponse).content as Array<{
+      input: { workdir: string; env: { NAME: string }; description: string };
+    }>;
+    expect(shell?.input.workdir).toMatch(PLACEHOLDER);
+    expect(shell?.input.env.NAME).toMatch(PLACEHOLDER);
+    expect(shell?.input.description).toBe(`Greet ${FULL_NAME}`);
   });
 
   it('JSON: restores a Bash command only where safe, a Write tool fully', async () => {

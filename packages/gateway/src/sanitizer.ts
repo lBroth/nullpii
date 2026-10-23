@@ -8,6 +8,7 @@ import {
 } from 'nullpii';
 import {
   SHELL_COMMAND_FIELD,
+  SHELL_TEXT_FIELDS,
   countPlaceholders,
   isShellTool,
   placeholdersIn,
@@ -779,8 +780,8 @@ export function restoreValue(
   const acc = newRestoreAccumulator();
   const keptMasked: string[] = [];
   const restoreField = (key: string, field: unknown): unknown =>
-    shell && key === SHELL_COMMAND_FIELD
-      ? restoreShellField(np, field, sessionId, acc, keptMasked)
+    shell
+      ? restoreShellToolField(np, key, field, sessionId, acc, keptMasked)
       : restoreJsonValue(np, field, sessionId, acc);
   const obj = isRecord(value) ? value : undefined;
   let out: unknown;
@@ -847,10 +848,10 @@ export function restoreJsonValue(
 
 /**
  * Restore a tool call's input. For a tool a shell runs (`runsInShell`),
- * the top-level `command` gets the shell-aware restore
- * (`restoreShellField`): each placeholder is put back only when its value
- * is safe where it stands. Every other field, and every field of any
- * other tool, gets its real values back as usual.
+ * each top-level field goes through `restoreShellToolField`: `command`
+ * gets the shell-aware restore, the descriptive fields their values, and
+ * any other field (`workdir`, `env`, …) keeps its placeholders. Every
+ * field of any other tool gets its real values back as usual.
  */
 export function restoreToolInput(
   np: NullPii,
@@ -862,12 +863,32 @@ export function restoreToolInput(
   if (!runsInShell || !isRecord(input)) return restoreJsonValue(np, input, sessionId, acc);
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(input)) {
-    out[key] =
-      key === SHELL_COMMAND_FIELD
-        ? restoreShellField(np, value, sessionId, acc)
-        : restoreJsonValue(np, value, sessionId, acc);
+    out[key] = restoreShellToolField(np, key, value, sessionId, acc);
   }
   return out;
+}
+
+/**
+ * One top-level field of a shell tool's input: `command` by the shell
+ * rule (`restoreShellField`), the text shown to the user
+ * (`SHELL_TEXT_FIELDS`) as usual, and any other field left masked and
+ * counted as unsafe: `workdir`, `cwd` or `env` choose where or how the
+ * command runs, as a `cd` argument or an assignment would.
+ */
+function restoreShellToolField(
+  np: NullPii,
+  key: string,
+  field: unknown,
+  sessionId: string,
+  acc: RestoreAccumulator,
+  keptMasked?: string[],
+): unknown {
+  if (key === SHELL_COMMAND_FIELD) return restoreShellField(np, field, sessionId, acc, keptMasked);
+  if (SHELL_TEXT_FIELDS.has(key)) return restoreJsonValue(np, field, sessionId, acc);
+  const text = JSON.stringify(field) ?? '';
+  acc.unsafeShell += countPlaceholders(text);
+  keptMasked?.push(...placeholdersIn(text));
+  return field;
 }
 
 /**

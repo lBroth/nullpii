@@ -42,13 +42,17 @@ import type { SseRelayCounters, SseRelayOptions } from './sse-relay.js';
  *   placeholders. The first delta of each call is still forwarded at once,
  *   so its `id` and name arrive on time. A delta with no numeric `index`
  *   is forwarded as it is.
- * - Flush points: the chunk that carries a choice's `finish_reason` also
- *   carries the text still held and the restored arguments; `[DONE]` (or
- *   the end of the stream, when the upstream was cut off) is preceded by
- *   one synthesised chunk for every choice that never finished.
+ * - Flush points: a choice with no tool call flushes what it still holds
+ *   with the chunk that carries its `finish_reason`. A choice with a call
+ *   holds its `finish_reason` back too, and `[DONE]` (or the end of the
+ *   stream, when the upstream was cut off) is preceded by one synthesised
+ *   chunk carrying, for every open choice, the text still held, the
+ *   restored arguments and that `finish_reason`: a chunk after it could
+ *   still rename a call, and a value sent cannot be taken back.
  * - Chunks the relay does not change, `[DONE]`, comments and error events
- *   are forwarded unchanged but for their line ends, which become LF. A chunk whose payload is held back is
- *   still forwarded with that field emptied, so per-chunk metadata (ids,
+ *   are forwarded unchanged but for their line ends, which become LF. A
+ *   chunk whose payload is held back is still forwarded with that field
+ *   emptied, so per-chunk metadata (ids,
  *   `usage`, provider extensions) is never lost.
  */
 
@@ -134,6 +138,11 @@ class ChatRelay {
   private readonly state = { degraded: false };
   /** Choices that sent their `finish_reason`. */
   private readonly finished = new Set<number>();
+  /** The `finish_reason` of a finished choice that holds a tool call: it
+   * goes out with the call's restored input only when the stream ends
+   * (`[DONE]`), so a chunk that renames the call after it cannot relabel
+   * a value already sent. */
+  private readonly deferred = new Map<number, string>();
 
   constructor(
     private readonly np: NullPii,
@@ -167,13 +176,15 @@ class ChatRelay {
     return [changed ? serialiseFrame(event, chunk) : passthrough];
   }
 
-  /** One synthesised chunk carrying what is still held for choices that
-   * never sent a `finish_reason`; nothing when nothing is held. */
+  /** One synthesised chunk carrying what is still held for each choice,
+   * with the `finish_reason` it sent; nothing when nothing is held. */
   flushOpenChoices(): string[] {
     const choices: ChatChunkChoice[] = [];
     for (const [index, restorer] of this.choices) {
       const delta: ChatDelta = {};
-      if (restorer.flushInto(delta)) choices.push({ index, delta, finish_reason: null });
+      const held = restorer.flushInto(delta);
+      const finish = this.deferred.get(index) ?? null;
+      if (held || finish !== null) choices.push({ index, delta, finish_reason: finish });
     }
     this.choices.clear();
     if (choices.length === 0) return [];
@@ -197,14 +208,21 @@ class ChatRelay {
     const restorer = this.restorerFor(choice.index);
     let changed = isRecord(choice.delta) && restorer.rewrite(choice.delta);
     if (choice.finish_reason === null || choice.finish_reason === undefined) return changed;
-    // The choice is done: what it still holds goes out with this chunk.
+    this.finished.add(choice.index);
+    if (restorer.holdsCall()) {
+      // What a call holds, and the finish_reason, go out only when the
+      // stream ends: a later chunk could still rename the call.
+      this.deferred.set(choice.index, String(choice.finish_reason));
+      choice.finish_reason = null;
+      return true;
+    }
+    // A choice with no call: what it still holds goes out with this chunk.
     const delta: ChatDelta = isRecord(choice.delta) ? choice.delta : {};
     if (restorer.flushInto(delta)) {
       choice.delta = delta;
       changed = true;
     }
     this.choices.delete(choice.index);
-    this.finished.add(choice.index);
     return changed;
   }
 
@@ -227,6 +245,11 @@ class ChoiceRestorer {
   private readonly calls = new Map<number, HeldCall>();
   private functionArgs: string | null = null;
   private functionName: string | null | undefined;
+
+  /** True when the choice has started a tool call or a function call. */
+  holdsCall(): boolean {
+    return this.calls.size > 0 || this.functionArgs !== null || this.functionName !== undefined;
+  }
 
   constructor(
     private readonly np: NullPii,

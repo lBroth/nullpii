@@ -826,6 +826,91 @@ describe('shell restore · OpenAI route', () => {
     expect(res.body.includes(FULL_NAME)).toBe(what.includes('(control)'));
   });
 
+  it.each([
+    ['renamed to a shell tool in a later chunk', 'Bash', false],
+    ['renamed to a tool outside restoreTools in a later chunk', 'WebFetch', false],
+    ['renamed in the same chunk as its finish', 'Bash', true],
+  ])('SSE: a call %s gets no value', async (_what, rename, sameChunk) => {
+    const app = await serve((body) => {
+      const [, person] = placeholdersIn(forwardedUserText(body));
+      const args = JSON.stringify({ command: `echo ${person}`, url: `https://x.test/${person}` });
+      const first = {
+        index: 0,
+        delta: {
+          tool_calls: [
+            { index: 0, id: 'c', type: 'function', function: { name: 'Read', arguments: args } },
+          ],
+        },
+      };
+      const finish = { index: 0, delta: {}, finish_reason: 'tool_calls' };
+      const renamed = {
+        index: 0,
+        delta: { tool_calls: [{ index: 0, function: { name: rename } }] },
+      };
+      return sseResponse([
+        openAiFrame([first]),
+        ...(sameChunk
+          ? [openAiFrame([finish, renamed])]
+          : [openAiFrame([finish]), openAiFrame([renamed])]),
+        'data: [DONE]\n\n',
+      ]);
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: {
+        model: 'gpt-test',
+        stream: true,
+        messages: [{ role: 'user', content: USER_TEXT }],
+      },
+    });
+
+    expect(res.body).not.toContain(FULL_NAME);
+  });
+
+  it('SSE: a call that keeps its name gets its values with its finish_reason, before [DONE]', async () => {
+    const app = await serve((body) => {
+      const [, person] = placeholdersIn(forwardedUserText(body));
+      const args = JSON.stringify({ file_path: `/tmp/${person}.md` });
+      return sseResponse([
+        openAiFrame([
+          {
+            index: 0,
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: 'c',
+                  type: 'function',
+                  function: { name: 'Read', arguments: args },
+                },
+              ],
+            },
+          },
+        ]),
+        openAiFrame([{ index: 0, delta: {}, finish_reason: 'tool_calls' }]),
+        'data: [DONE]\n\n',
+      ]);
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: {
+        model: 'gpt-test',
+        stream: true,
+        messages: [{ role: 'user', content: USER_TEXT }],
+      },
+    });
+
+    const frames = res.body.split('\n\n').filter((f) => f.length > 0);
+    const last = frames.at(-2) ?? '';
+    expect(last).toContain(FULL_NAME);
+    expect(last).toContain('"finish_reason":"tool_calls"');
+    expect(frames.at(-1)).toBe('data: [DONE]');
+  });
+
   it('SSE: nothing after [DONE] gets a value', async () => {
     const app = await serve((body) => {
       const [, person] = placeholdersIn(forwardedUserText(body));

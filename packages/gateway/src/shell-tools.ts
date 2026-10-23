@@ -4,9 +4,9 @@ import { PLACEHOLDER_REGEX } from 'nullpii';
 
 /**
  * Tools whose input a shell runs, as each agent names them: Claude Code's
- * `Bash` and `PowerShell`, Anthropic's `bash`, the `shell` tool of
- * OpenAI-style agents such as Codex, and Codex's `exec_command`,
- * `shell_command` and `write_stdin`.
+ * `Bash` and `PowerShell`, Anthropic's `bash`, and the `shell`,
+ * `exec_command`, `shell_command` and `write_stdin` tools of OpenAI-style
+ * coding agents.
  *
  * None of them gets a real value back, in any field. A masked value comes
  * from data the model could not read, so put back into a command it could

@@ -164,7 +164,7 @@ With `stream: true`, text deltas are restored as they stream, holding back only 
 
 ## OpenAI-compatible route
 
-`POST /v1/chat/completions` takes the OpenAI Chat Completions format, so the OpenAI SDKs, and any client that lets you set an OpenAI base URL, can go through the gateway. It works like the Messages route: one vault session per request, sanitize, forward to `NULLPII_OPENAI_UPSTREAM`, restore the JSON response or the SSE stream, destroy the session.
+`POST /v1/chat/completions` takes the OpenAI Chat Completions format, so the OpenAI SDKs, and any client that lets you set an OpenAI base URL and speaks Chat Completions, can go through the gateway. The Responses API is not served: a client that speaks only that, such as the Codex CLI (which refuses `wire_api = "chat"`), cannot use the gateway. It works like the Messages route: one vault session per request, sanitize, forward to `NULLPII_OPENAI_UPSTREAM`, restore the JSON response or the SSE stream, destroy the session.
 
 ```bash
 export OPENAI_BASE_URL=http://127.0.0.1:8787/v1

@@ -47,7 +47,7 @@ import type { SseRelayCounters, SseRelayOptions } from './sse-relay.js';
  *   the end of the stream, when the upstream was cut off) is preceded by
  *   one synthesised chunk for every choice that never finished.
  * - Chunks the relay does not change, `[DONE]`, comments and error events
- *   are forwarded byte for byte. A chunk whose payload is held back is
+ *   are forwarded unchanged but for their line ends, which become LF. A chunk whose payload is held back is
  *   still forwarded with that field emptied, so per-chunk metadata (ids,
  *   `usage`, provider extensions) is never lost.
  */
@@ -111,7 +111,7 @@ export async function relayChatSseStream(opts: SseRelayOptions): Promise<SseRela
     }
   }
   // A last frame without its blank line is still relayed when it is
-  // whole (`[DONE]` or a complete JSON payload). A half frame is dropped,
+  // whole (`[DONE]` or a complete JSON object). A half frame is dropped,
   // as in the Anthropic relay: strict SDKs choke on a truncated payload.
   for (const frame of splitter.push(decoder.decode()).concat(splitter.end())) {
     if (isWholeFrame(frame)) {
@@ -127,10 +127,13 @@ class ChatRelay {
   private readonly choices = new Map<number, ChoiceRestorer>();
   private readonly acc: RestoreAccumulator;
   private envelope: Record<string, unknown> = {};
-  /** A frame's `data` was neither JSON nor `[DONE]`: from then on, which
-   * call a shard belongs to is no longer certain, so every tool call
-   * keeps its placeholders. */
+  /** A frame's `data` was neither a JSON object nor `[DONE]`, or a chunk
+   * had a shape clients may read otherwise than the relay
+   * (`misreadable`): from then on, which call a shard belongs to is no
+   * longer certain, so every tool call keeps its placeholders. */
   private readonly state = { degraded: false };
+  /** Choices that sent their `finish_reason`. */
+  private readonly finished = new Set<number>();
 
   constructor(
     private readonly np: NullPii,
@@ -146,7 +149,10 @@ class ChatRelay {
     const passthrough = `${frame}${FRAME_SEPARATOR}`;
     const { event, data } = parseSseFields(frame);
     if (data === DONE_SENTINEL) return [...this.flushOpenChoices(), passthrough];
-    if (data !== null && !isRecord(parseJson(data)?.value)) this.state.degraded = true;
+    const value = data === null ? undefined : parseJson(data)?.value;
+    if (data !== null && (!isRecord(value) || misreadable(value, this.finished))) {
+      this.state.degraded = true;
+    }
     const chunk = data === null ? null : parseChunk(data);
     if (chunk === null) return [passthrough];
     this.envelope = pickEnvelope(chunk);
@@ -192,6 +198,7 @@ class ChatRelay {
       changed = true;
     }
     this.choices.delete(choice.index);
+    this.finished.add(choice.index);
     return changed;
   }
 
@@ -362,6 +369,45 @@ function setCallText(delta: ChatDelta, index: number, kind: CallKind, text: stri
 function isWholeFrame(frame: string): boolean {
   const { data } = parseSseFields(frame);
   return data !== null && (data === DONE_SENTINEL || isRecord(parseJson(data)?.value));
+}
+
+/** True when a chunk has a shape the relay skips or reads one way while a
+ * client may read it another: `choices` that is not an array, a choice or
+ * tool call that is not an object or has no numeric `index`, a `delta`,
+ * `function`, `custom` or `function_call` that is not an object, a tool
+ * name that is not a string, or a tool call for a choice that already
+ * sent its `finish_reason` (the relay starts that choice afresh; a client
+ * appends to the finished call). */
+function misreadable(chunk: Record<string, unknown>, finished: ReadonlySet<number>): boolean {
+  if (chunk.choices === undefined) return false;
+  if (!Array.isArray(chunk.choices)) return true;
+  return chunk.choices.some((choice) => misreadableChoice(choice, finished));
+}
+
+function misreadableChoice(choice: unknown, finished: ReadonlySet<number>): boolean {
+  if (!isRecord(choice) || typeof choice.index !== 'number') return true;
+  const delta = choice.delta;
+  if (delta === undefined || delta === null) return false;
+  if (!isRecord(delta)) return true;
+  const calls = delta.tool_calls;
+  const hasCalls = calls !== undefined && calls !== null;
+  if (hasCalls && (!Array.isArray(calls) || calls.some(misreadableCall))) return true;
+  const fn = delta.function_call;
+  const hasFn = fn !== undefined && fn !== null;
+  if (hasFn && misreadablePayload(fn)) return true;
+  return (hasCalls || hasFn) && finished.has(choice.index);
+}
+
+function misreadableCall(call: unknown): boolean {
+  if (!isRecord(call) || typeof call.index !== 'number') return true;
+  return [call.function, call.custom].some(
+    (p) => p !== undefined && p !== null && misreadablePayload(p),
+  );
+}
+
+function misreadablePayload(payload: unknown): boolean {
+  if (!isRecord(payload)) return true;
+  return payload.name !== undefined && payload.name !== null && typeof payload.name !== 'string';
 }
 
 /** The chunk in a `data:` payload, or null for anything that is not a

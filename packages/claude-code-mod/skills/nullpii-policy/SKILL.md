@@ -64,5 +64,5 @@ The sidecar reads the file when it starts. Tell the user to restart `nullpii-gat
 
 - **Change only what the user asked for.** Keep every other key as it is.
 - **Turning masking off sends real data to the model.** Turning off a category or releasing more of a URL means Claude reads those values unmasked. Say so in one sentence when the user asks for it.
-- **`restoreTools` is the riskiest key.** Never add a tool that sends its input off the machine (`WebFetch`, `WebSearch`, an `mcp__…` tool) unless the user names that tool and accepts that real values will then leave the machine through it.
+- **`restoreTools` is the riskiest key.** Never add a tool that sends its input off the machine (`WebFetch`, `WebSearch`, an `mcp__…` tool) unless the user names that tool and accepts that real values will then leave the machine through it. Never add a shell tool under a name other than `Bash`, `bash` or `shell` (an `mcp__…` shell, say): only those names are judged by the shell rule, and any other gets every value back in its command.
 - **Setting `restoreTools` replaces the default list.** Start from the list `nullpii config` prints, then add to it or remove from it.

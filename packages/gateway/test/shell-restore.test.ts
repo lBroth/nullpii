@@ -776,6 +776,89 @@ describe('shell restore · OpenAI route', () => {
     PLACEHOLDER.lastIndex = 0;
   });
 
+  it.each([
+    ['a well-formed empty chunk (control) restores', { choices: [{ index: 0, delta: {} }] }],
+    ['a choice index given as a string', { choices: [{ index: '0', delta: {} }] }],
+    [
+      'a tool call index given as a string',
+      {
+        choices: [
+          { index: 0, delta: { tool_calls: [{ index: '0', function: { name: 'Bash' } }] } },
+        ],
+      },
+    ],
+    [
+      'a tool name that is not a string',
+      {
+        choices: [
+          { index: 0, delta: { tool_calls: [{ index: 0, function: { name: ['Bash'] } }] } },
+        ],
+      },
+    ],
+    ['choices sent as an object', { choices: { 0: { index: 0, delta: {} } } }],
+  ])('SSE: %s, else the chunk holds every later tool input', async (what, odd) => {
+    const app = await serve((body) => {
+      const [, person] = placeholdersIn(forwardedUserText(body));
+      const args = JSON.stringify({ file_path: `/tmp/${person}.md` });
+      return sseResponse([
+        openAiFrame([
+          {
+            index: 0,
+            delta: { tool_calls: [{ index: 0, function: { name: 'Read', arguments: args } }] },
+          },
+        ]),
+        `data: ${JSON.stringify({ id: 'c1', object: 'chat.completion.chunk', ...odd })}\n\n`,
+        openAiFrame([{ index: 0, delta: {}, finish_reason: 'tool_calls' }]),
+        'data: [DONE]\n\n',
+      ]);
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: {
+        model: 'gpt-test',
+        stream: true,
+        messages: [{ role: 'user', content: USER_TEXT }],
+      },
+    });
+
+    expect(res.body.includes(FULL_NAME)).toBe(what.includes('(control)'));
+  });
+
+  it('SSE: a tool call sent after its choice finished holds every later tool input', async () => {
+    const app = await serve((body) => {
+      const [, person] = placeholdersIn(forwardedUserText(body));
+      const args = JSON.stringify({ file_path: `/tmp/${person}.md` });
+      const call = (fn: Record<string, string>, finish?: string) =>
+        openAiFrame([
+          {
+            index: 0,
+            delta: { tool_calls: [{ index: 0, function: fn }] },
+            ...(finish !== undefined && { finish_reason: finish }),
+          },
+        ]);
+      return sseResponse([
+        call({ name: 'Read', arguments: '' }, 'tool_calls'),
+        call({ name: 'Read', arguments: args }),
+        openAiFrame([{ index: 0, delta: {}, finish_reason: 'tool_calls' }]),
+        'data: [DONE]\n\n',
+      ]);
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: {
+        model: 'gpt-test',
+        stream: true,
+        messages: [{ role: 'user', content: USER_TEXT }],
+      },
+    });
+
+    expect(res.body).not.toContain(FULL_NAME);
+  });
+
   it('SSE: a frame whose data is JSON but not an object holds every later tool input', async () => {
     const app = await serve((body) => {
       const [secret, person] = placeholdersIn(forwardedUserText(body));

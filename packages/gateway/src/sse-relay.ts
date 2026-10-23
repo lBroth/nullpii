@@ -72,7 +72,7 @@ interface ToolRestore {
 
 /** State of one stream beyond its blocks. */
 interface StreamState {
-  /** A frame's `data` was not JSON, or the stream numbered its blocks
+  /** A frame's `data` was not a JSON object, or the stream numbered its blocks
    * otherwise than clients count them (`breaksBlockOrder`): from then on,
    * the relay can no longer be sure which block a tool input belongs to,
    * so every tool input keeps its placeholders. */
@@ -85,9 +85,11 @@ interface StreamState {
  * Anthropic SSE streaming relay. The Messages API streams a response
  * as a sequence of `event: <name>\ndata: <json>\n\n` frames. Only
  * `content_block_delta` frames carrying a `text_delta` need text
- * mutation; everything else (`message_start`, `content_block_start`,
- * `content_block_stop`, `message_delta`, `message_stop`, `ping`,
- * `error`, anything we don't recognise) is forwarded byte-for-byte.
+ * mutation, and `content_block_start` is re-serialised as the relay read
+ * it; everything else (`message_start`, `content_block_stop`,
+ * `message_delta`, `message_stop`, `ping`, `error`, anything we don't
+ * recognise) is forwarded unchanged but for its line ends, which become
+ * LF. Tool input is held per block and restored at its stop.
  *
  * Per-block `RestoreStream` (one per `index`): the upstream emits
  * text in small deltas (typically token-sized), and a placeholder can

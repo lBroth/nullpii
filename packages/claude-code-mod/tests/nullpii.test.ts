@@ -209,7 +209,7 @@ function fakeSidecar(
         return real;
       });
     };
-    const shellBody = body.tool === 'Bash';
+    const shellBody = ['Bash', 'bash', 'shell'].includes(body.tool ?? '');
     const input = body.value as Record<string, unknown>;
     const value = shellBody
       ? Object.fromEntries(
@@ -571,7 +571,7 @@ test('a masked value that the shell would interpret is not put into a command', 
   expect(ran).toEqual([]);
 });
 
-test('inside single quotes the same value is refused too: a program could read it again', async ($, on) => {
+test('inside single quotes the same value is refused too: values come back only in a data heredoc body', async ($, on) => {
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);
   const ran: string[] = [];

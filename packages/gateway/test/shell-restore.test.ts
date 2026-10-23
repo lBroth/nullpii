@@ -510,7 +510,8 @@ describe('shell restore · programs that read the value again', () => {
     // double-quote rule, not the body's own.
     [`cat > notes.md <<'EOF'\n${MARKER}\nEOF\ngit add notes.md`, 'heredoc'],
     [`cat > notes.md <<'EOF'\n${MARKER}\nEOF\ngit push`, 'double'],
-    [`cd docs && cat > notes.md <<'EOF'\n${MARKER}\nEOF`, 'heredoc'],
+    // A file written after a `cd` lands where the `cd` points: no plain file.
+    [`cd docs && cat > notes.md <<'EOF'\n${MARKER}\nEOF`, 'none'],
     // `$'…'` honours backslash escapes; a redirection is not a separator.
     [`echo $'it\\'s' '${MARKER}'`, 'none'],
     [`echo $'a\\'' ${MARKER}`, 'none'],
@@ -1505,6 +1506,28 @@ describe('shell restore · round-10 layout and redirections', () => {
     const word = bake(vault, sessionId, EMAIL, 'private_email');
 
     expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(0);
+  });
+
+  it.each([
+    [(p: string) => `cd requirements && echo ${p} > base.txt`, 0],
+    [(p: string) => `cd .git && echo ${p} > notes.md`, 0],
+    [(p: string) => `echo ${p} > BIN/notes.md`, 0],
+    [(p: string) => `echo ${p} > /ETC/notes.md`, 0],
+    [(p: string) => `cd docs && grep ${p} notes.md`, 1],
+    [(p: string) => `git add bin/cli.js && grep ${p} notes.md > hits.md`, 1],
+  ])('judges a write after a cd, and bin directories as targets only: %#', (build, expected) => {
+    const { np, vault, sessionId } = harness();
+    const word = bake(vault, sessionId, EMAIL, 'private_email');
+
+    expect(restored(restoreShellCommand(np, build(word), sessionId))).toBe(expected);
+  });
+
+  it('restores a commit message beside a git add of a bin path', () => {
+    const { np, vault, sessionId } = harness();
+    const name = bake(vault, sessionId, FULL_NAME, 'private_person');
+    const command = `git add bin/cli.js && git commit -F - <<'EOF'\nFix for ${name}\nEOF`;
+
+    expect(restored(restoreShellCommand(np, command, sessionId))).toBe(1);
   });
 
   it.each([

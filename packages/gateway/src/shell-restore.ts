@@ -681,18 +681,8 @@ const ENVIRONMENT_BUILTINS: ReadonlySet<string> = new Set([
 /** Files a shell, git or a hook runner executes later: a heredoc written
  * to one is code, not data. */
 const EXECUTED_LATER =
-  /(?:^|[\s/'"])(?:\.git\/hooks\/|\.husky\/|\.githooks\/|\.(?:bash|zsh|ksh|mksh|tcsh|csh)rc\b|\.(?:bash_)?profile\b|\.zprofile\b|\.zshenv\b|\.zlogin\b|\.envrc\b|\.config\/fish\/|crontab\b|\/etc\/|s?bin\/|LaunchAgents\/|systemd\/)/;
+  /(?:^|[\s/'"])(?:\.git\/hooks\/|\.husky\/|\.githooks\/|\.(?:bash|zsh|ksh|mksh|tcsh|csh)rc\b|\.(?:bash_)?profile\b|\.zprofile\b|\.zshenv\b|\.zlogin\b|\.envrc\b|\.config\/fish\/|crontab\b|\/etc\/|s?bin\/|LaunchAgents\/|systemd\/)/i;
 
-/** Programs that put a file in place, whose destination may run later. */
-const FILE_WRITERS: ReadonlySet<string> = new Set([
-  'cp',
-  'mv',
-  'ln',
-  'install',
-  'tee',
-  'dd',
-  'rsync',
-]);
 /** A `>&` target that copies or closes a descriptor rather than naming a
  * file. */
 const DESCRIPTOR_TARGET = /^(?:\d+|-)$/;
@@ -1022,15 +1012,11 @@ function judge(command: string, targets: readonly number[]): Verdict {
   // A data body written to a file that a shell, git or a hook runs later
   // is code: `cat > .git/hooks/pre-commit <<'EOF'`, `cat >> ~/.bashrc`.
   const written = scan.outputs.filter((t) => !NO_FILE_TARGETS.has(t));
-  const writesFiles =
-    scan.dataBodies.length > 0 ||
-    written.length > 0 ||
-    programs.some((p) => FILE_WRITERS.has(p.name));
-  // A command that names a file run later (a git hook, a shell start-up
-  // file, a directory on PATH) can put a value there by any means:
-  // `cp {{…}} .git/hooks/pre-commit`, `mv {{…}} ~/.zshrc`.
-  const writesExecuted =
-    writesFiles && (EXECUTED_LATER.test(code) || written.some((t) => EXECUTED_LATER.test(` ${t}`)));
+  // A file written where something runs it later (a git hook, a shell
+  // start-up file, a `bin/` directory), in any letter case (macOS file
+  // systems ignore it). Programs that put a file in place by an argument
+  // (`cp`, `mv`) are off the list, so only these targets need reading.
+  const writesExecuted = written.some((t) => EXECUTED_LATER.test(` ${t}`));
   // `offMachine` also covers a program whose code no word is safe in.
   const offMachine =
     ANY_DELIMITER_IN_TEXT.test(code) ||
@@ -1042,7 +1028,12 @@ function judge(command: string, targets: readonly number[]): Verdict {
   // A data body goes to standard output or to a plain document file; one
   // written elsewhere (`.git/config`, `Makefile`, `run.sh`) may be read
   // as code later.
-  const toPlainFiles = written.every(isDocument);
+  // A file written after a `cd` lands where the `cd` points, not where its
+  // target reads (`cd .git && echo … > notes.md`): a command that does
+  // both writes no plain file. (A directory an earlier command left is
+  // not seen: a relative target is judged as written.)
+  const movesThenWrites = written.length > 0 && programs.some((p) => p.name === 'cd');
+  const toPlainFiles = written.every(isDocument) && !movesThenWrites;
   const bodyContext = dataBodyContext(
     programs,
     strict || !closed || writesExecuted || !toPlainFiles,

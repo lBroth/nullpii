@@ -169,6 +169,8 @@ How the numbers are produced, and every rule that keeps them honest: [`packages/
 - **Competitors:** each runs as its authors ship it (the few departures, such as windowing long texts, are listed in METHOD.md), at its default and at an operating point tuned on the same tuning set as nullpii; each is shown at its better row.
 - **Confidence:** paired bootstrap, 95% intervals of nullpii minus the tool, the test fixed before the run; intervals corrected for multiple comparisons (Bonferroni, 99.67%), a check added afterwards, are in METHOD.md.
 
+Two of the datasets and tools compared here are built for documents. PIILO is a set of student essays, human-annotated for a Kaggle competition, where among names only the students' own are gold. rizzo-pii is a document anonymiser whose desktop app extracts text from PDFs; the pipeline run here is the app's own `analyze()`, and its model and training corpus are Italian-first. Both measure document anonymisation, which is a different job from masking a coding agent's traffic (prompts, file reads, shell output, logs, tool-call arguments), the job nullpii's default is built for.
+
 <!-- matrix:begin -->
 | Tool | Macro char-F2 | F0.5 | Recall | Precision | CI of nullpii − tool (F2) |
 |---|---:|---:|---:|---:|---|

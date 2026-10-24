@@ -7,7 +7,7 @@
 Mask personal data and secrets before they reach an LLM, and put them back on the way out. Detection runs on your machine: a fine-tuned GLiNER model plus validated recognizers, with a reversible in-memory vault.
 
 - **Measured on held-out data.** On five datasets chosen before any tool was run on them (four public sets and a synthetic coding-agent trace set built for this benchmark), with under 1% measured overlap with nullpii's training data and the public training sets the compared tools declare (a few declared sets were not compared; METHOD.md), nullpii ranks second on macro char-F2 among 15 open-source detectors, behind rizzo-pii (0.770): 0.756 with its five extended categories off, as the datasets do not label them, and 0.747 for its default configuration counted on the same labels. It lets less personal data through than any other tool's best-scoring configuration (recall 0.960). Much of its lead over the other 13 comes from one dataset, clinical notes in Greek and German: without it nullpii is third, and three more tools are within the interval. On English text alone it is fifth. Scored by us with the PIIMB leaderboard's method (not a submitted entry), its average F2 of 0.851 is above the 35 listed tools; without the one task from its training family it is 0.831, not clearly ahead. It gets there by masking generously: on precision-weighted scores most tools rank above it. [Results](#benchmark).
-- **Works with any model.** Mask before your LLM call and restore after it. Or run the gateway in front of the Anthropic or OpenAI API, or the Claude Code mod.
+- **Works with any model.** Mask before your LLM call and restore after it. Or run the gateway in front of the Anthropic or OpenAI API, or the Claude Code mod. Claude Code is the coding agent nullpii is built and tested with, through the mod (recommended) or the gateway. The gateway proxies the Anthropic Messages API and OpenAI Chat Completions only, so the Codex CLI, which speaks only the Responses API, cannot use it.
 - **Built for coding agents.** It masks tool output (files, logs, command results), not just prompts; it keeps public links to code hosts and documentation readable; and it never puts a hidden value back into a shell command (see SECURITY.md).
 
 Status: pre-1.0. The API can still change between minor versions. nullpii pseudonymizes with a measured leak rate; it is not anonymization and not a compliance certification.
@@ -70,11 +70,13 @@ One JSON file sets the policy for the library, the CLI, the gateway and the Clau
 ```json
 {
   "disabledCategories": ["private_organization", "private_occupation"],
+  "categories": { "private_url": "ask" },
   "urlAllowlist": { "hosts": { "*.github.com": "host" } }
 }
 ```
 
 - `disabledCategories`: categories left readable. It replaces the default list (dates, companies, jobs, honorifics, demographic and sensitive attributes); `[]` masks every category.
+- `categories`: the mode of each category named: `mask`, `ask` or `off` (readable). It overrides `disabledCategories` for those categories. `ask` is the Claude Code mod's per-category confirmation: before your prompt is sent, the mod asks you about each value of that category, and the value stays masked unless you choose to send it readable (see below).
 - `categoryThresholds`, `threshold`: confidence cuts in `[0, 1]`; lower masks more.
 - `urlAllowlist`: how much of a clean URL stays readable on each host (`full`, `host` or `mask`), or `"none"` to mask every URL. Code hosts, package registries and documentation stay readable by default; a URL with a credential in its query never does. A code-host URL can name a person or a private repository (`github.com/<user>/<repo>`): set that host to `host` or `mask` if that matters to you.
 - `restoreTools`: the tools whose arguments get real values back (gateway and mod).
@@ -94,11 +96,12 @@ claude
 
 The first request downloads the model (1.2 GB) into the container's cache volume and waits for it; [`examples/claude-code`](https://github.com/lBroth/nullpii/tree/main/examples/claude-code) shows how to fetch it beforehand. The image is also published as `ghcr.io/lbroth/nullpii-gateway`.
 
-Your API key or Claude subscription login is passed through unchanged. For clients of the OpenAI Chat Completions API (the OpenAI SDKs, Aider, LiteLLM), set `OPENAI_BASE_URL=http://127.0.0.1:8787/v1`. The Responses API is not proxied.
+Your API key or Claude subscription login is passed through unchanged. For clients of the OpenAI Chat Completions API (the OpenAI SDKs, Aider, LiteLLM), set `OPENAI_BASE_URL=http://127.0.0.1:8787/v1`. The Responses API is not proxied, so the Codex CLI, which refuses to speak Chat Completions, cannot use the gateway.
 
-- Real values go back only into the tools listed in the policy's `restoreTools`, by default the tools that run on your machine (`Bash`, `Read`, `Edit`, `Write`, …). Web and MCP tools, and tools the upstream runs itself, keep the placeholders.
+- Real values go back only into the tools listed in the policy's `restoreTools`, by default the file tools that run on your machine (`Read`, `Edit`, `Write`, `Grep`, `Glob`, …). A tool a shell runs (`Bash`, `PowerShell`, …) is never one of them: it keeps every placeholder, whatever the policy says. Web and MCP tools, and tools the upstream runs itself, keep the placeholders too.
 - The request log carries counts, never values.
 - The gateway has no authentication of its own: keep it on `127.0.0.1`.
+- The policy is read at startup; a change sent through the sidecar (`PUT /v1/sidecar/policy`, which the mod's `/pii` uses) applies to the running gateway at once.
 
 Details, the full list of scanned fields, and the sidecar API: [`packages/gateway`](https://github.com/lBroth/nullpii/tree/main/packages/gateway). A worked Claude Code setup: [`examples/claude-code`](https://github.com/lBroth/nullpii/tree/main/examples/claude-code).
 
@@ -111,9 +114,16 @@ Details, the full list of scanned fields, and the sidecar API: [`packages/gatewa
 - real values go back only into the tools the policy lists;
 - a band above the prompt shows what was masked, by type, and `/pii` shows the counts and the policy in effect.
 
-It talks to the gateway's local sidecar and fails closed when the sidecar is down: nothing is sent unmasked.
+It talks to the gateway's local sidecar, starts one for the session when none answers, and fails closed when the sidecar is unreachable: nothing is sent unmasked.
 
-With the gateway running and its sidecar token at hand ([set up](https://github.com/lBroth/nullpii/tree/main/packages/claude-code-mod#set-up)), install it at the prompt of a Claude Code session:
+`/pii` changes the policy at once, and the change is saved in the policy file:
+
+- `/pii preset agent` (the default), `/pii preset secrets` (secrets only) or `/pii preset all` (every category); `/pii reset` is the `agent` preset;
+- `/pii mask <category…>`, `/pii off <category…>` (readable) and `/pii ask <category…>`, one mode per category named.
+
+For a category in `ask` mode, the mod asks you about each of its values in your own prompt before it is sent: mask it, send it readable, or send it readable and stop asking for that category. A dialog you dismiss, or that no one can answer (`claude -p`), keeps the value masked. Text the mod reads from a tool's result is never put to you; it follows the policy. Categories: `person`, `email`, `phone`, `address`, `url`, `ip`, `mac`, `location`, `passport`, `license`, `vehicle`, `account`, `secret`, `date`, `organization`, `occupation`, `demographic`, `sensitive`, `title`.
+
+With a sidecar token at hand (the mod starts the gateway itself when none answers; [set up](https://github.com/lBroth/nullpii/tree/main/packages/claude-code-mod#set-up)), install it at the prompt of a Claude Code session:
 
 ```text
 /plugin marketplace add lBroth/nullpii@v0.5.0

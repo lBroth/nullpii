@@ -54,6 +54,48 @@ class LabelCut:
         return score >= self.thresholds.get(label, self.default)
 
 
+# Prefix of the label a span is kept under when its native label has no
+# nullpii equivalent and `keep_unmapped_labels` is on.
+UNMAPPED_LABEL_PREFIX = "unmapped:"
+
+
+def _unmapped_or_none(native: str, keep_unmapped_labels: bool) -> str | None:
+    """AB-1: the label a dropped native label is kept under, else None."""
+    return f"{UNMAPPED_LABEL_PREFIX}{native}" if keep_unmapped_labels else None
+
+
+def _kept_label(
+    native: str,
+    label_map: Mapping[str, str | None] | None,
+    *,
+    tool: str,
+    keep_unmapped_labels: bool,
+    score: float = 1.0,
+    label_cut: LabelCut | None = None,
+) -> str | None:
+    """The label a tool's span is kept under, None when it is dropped.
+
+    `label_map=None` keeps `native` as it is (a model prompted with our own
+    labels has nothing to remap). A native label that maps to None is a
+    deliberate drop — the category is not in nullpii's schema. `score` and
+    `label_cut` are the tool's own operating point; a tool that records no
+    per-span score leaves both out.
+
+    AB-1 scores label-agnostically: a tool that masks a secret under a label
+    our schema does not have still masked it, so charging it a leak would be
+    unfair. With `keep_unmapped_labels` the span is kept as
+    `unmapped:<native>` instead of dropped, and no `label_cut` operating
+    point is applied to it — the tool masks it at its own default. With the
+    option off the drop is unchanged, byte for byte.
+    """
+    mapped = native if label_map is None else _map_native_label(native, dict(label_map), tool=tool)
+    if mapped is None:
+        return _unmapped_or_none(native, keep_unmapped_labels)
+    if label_cut is not None and not label_cut.keeps(mapped, score):
+        return None
+    return mapped
+
+
 def _scored_result(spans_with_scores: list[tuple[Span, float]], kept: list[Span], elapsed_ms: float) -> ToolResult:
     """The `kept` spans (a subset of the same objects) with their scores."""
     score_by_id = {id(sp): sc for sp, sc in spans_with_scores}
@@ -221,6 +263,7 @@ def piiranha_predictor(
     batch_size: int = 32,
     o_bias: float = 0.0,
     label_cut: LabelCut | None = None,
+    keep_unmapped_labels: bool = False,
 ) -> BatchPredictor:
     """`iiiorg/piiranha-v1-detect-personal-information` — multilingual
     DeBERTa-v3-based PII detector (en/es/fr/de/it/nl, 17 labels, 256 tok).
@@ -268,9 +311,12 @@ def piiranha_predictor(
         spans: list[tuple[Span, float]] = []
         for r in results:
             entity = str(r.get("entity_group") or r.get("entity") or "")
-            label = _map_native_label(_strip_bioes(entity), _PIIRANHA_LABEL_MAP, tool="piiranha")
             score = float(r["score"])
-            if label is None or (label_cut is not None and not label_cut.keeps(label, score)):
+            label = _kept_label(
+                _strip_bioes(entity), _PIIRANHA_LABEL_MAP, tool="piiranha", score=score,
+                label_cut=label_cut, keep_unmapped_labels=keep_unmapped_labels,
+            )
+            if label is None:
                 continue
             start, end = _strip_span(text, int(r["start"]) + offset, int(r["end"]) + offset)
             if start < end:
@@ -415,6 +461,7 @@ def rizzo_pii_predictor(
     batch_size: int = 32,
     o_bias: float = 0.0,
     label_cut: LabelCut | None = None,
+    keep_unmapped_labels: bool = False,
 ) -> BatchPredictor:
     """`rizzoaiacademy/rizzo-pii-0.3B` run the way its desktop app serves it
     (`src/app/app.py` `analyze()`, vendored in `vendor/rizzo_pii_app.py`):
@@ -522,8 +569,11 @@ def rizzo_pii_predictor(
             lead = len(text) - len(text.lstrip())
             spans: list[tuple[Span, float]] = []
             for e in kept:
-                label = _map_native_label(e["label"], _RIZZO_LABEL_MAP, tool="rizzo-pii")
-                if label is None or (label_cut is not None and not label_cut.keeps(label, e["score"])):
+                label = _kept_label(
+                    e["label"], _RIZZO_LABEL_MAP, tool="rizzo-pii", score=e["score"],
+                    label_cut=label_cut, keep_unmapped_labels=keep_unmapped_labels,
+                )
+                if label is None:
                     continue
                 spans.append((Span(label, e["start"] + lead, e["end"] + lead), e["score"]))
             out.append(_scored_result(spans, [sp for sp, _ in spans], per_call))
@@ -577,6 +627,7 @@ def openai_privacy_filter_predictor(
     model: str | Path | None = None,
     label_map: dict[str, str | None] | None = None,
     viterbi_biases: Mapping[str, float] | None = None,
+    keep_unmapped_labels: bool = False,
 ) -> Predictor:
     """`openai/privacy-filter` — gpt-oss-derived bidirectional token
     classifier (1.5B params total / 50M active, 128k context). Loaded
@@ -597,6 +648,11 @@ def openai_privacy_filter_predictor(
     trade-off (rule change 9, item 3). Keys are opf's own
     `VITERBI_BIAS_KEYS`; an unlisted key stays 0. `None` uses the
     checkpoint's shipped calibration.
+
+    `keep_unmapped_labels` keeps a span whose label is not in
+    `label_map` (or, bare, not one of the model's 8 classes) as
+    `unmapped:<native>` instead of dropping it, for AB-1's label-agnostic
+    scoring (see `_kept_label`).
     """
     try:
         from opf import OPF, DecodeOptions
@@ -635,8 +691,11 @@ def openai_privacy_filter_predictor(
 
     def _project(native: str) -> str | None:
         if label_map is None:
-            return native.lower() if native in _OPENAI_PRIVACY_FILTER_OK else None
-        return _map_native_label(native, label_map, tool="opf")
+            if native in _OPENAI_PRIVACY_FILTER_OK:
+                return native.lower()
+            # Outside the model's own 8 classes: an unmapped label (AB-1).
+            return _unmapped_or_none(native, keep_unmapped_labels)
+        return _kept_label(native, label_map, tool="opf", keep_unmapped_labels=keep_unmapped_labels)
 
     def _predict(text: str) -> ToolResult:
         t0 = time.perf_counter()
@@ -837,7 +896,10 @@ _OPF_CALIBRATION_CACHE = Path.home() / ".cache" / "nullpii-eval" / "opf-calibrat
 
 
 def openmed_privacy_filter_predictor(
-    *, device: str | None = None, viterbi_biases: Mapping[str, float] | None = None
+    *,
+    device: str | None = None,
+    viterbi_biases: Mapping[str, float] | None = None,
+    keep_unmapped_labels: bool = False,
 ) -> Predictor:
     """`OpenMed/privacy-filter-multilingual-v2` — full fine-tune of
     `openai/privacy-filter` (same 1.4B-total / 50M-active MoE) with
@@ -854,7 +916,8 @@ def openmed_privacy_filter_predictor(
     checkpoint = ensure_opf_checkpoint(OPENMED_PF_REPO, OPENMED_PF_REVISION, _OPF_CHECKPOINT_CACHE)
     _check_label_coverage(_opf_span_labels(checkpoint), _OPENMED_PF_LABEL_MAP, tool="openmed-pf")
     return openai_privacy_filter_predictor(
-        device=device, model=checkpoint, label_map=_OPENMED_PF_LABEL_MAP, viterbi_biases=viterbi_biases
+        device=device, model=checkpoint, label_map=_OPENMED_PF_LABEL_MAP,
+        viterbi_biases=viterbi_biases, keep_unmapped_labels=keep_unmapped_labels,
     )
 
 
@@ -1002,6 +1065,7 @@ def hf_token_classifier_predictor(
     batch_size: int = 32,
     o_bias: float = 0.0,
     label_cut: LabelCut | None = None,
+    keep_unmapped_labels: bool = False,
 ) -> BatchPredictor:
     """Bare HF token classifier run the way its model card shows
     (`pipeline(..., aggregation_strategy="simple")`), with inputs cut into
@@ -1041,9 +1105,12 @@ def hf_token_classifier_predictor(
         entities = _merge_adjacent_entities(results) if spec.merge_adjacent else results
         spans: list[tuple[Span, float]] = []
         for r in entities:
-            label = _map_native_label(str(r["entity_group"]), spec.label_map, tool=spec.tool)
             score = float(r["score"])
-            if label is None or (label_cut is not None and not label_cut.keeps(label, score)):
+            label = _kept_label(
+                str(r["entity_group"]), spec.label_map, tool=spec.tool, score=score,
+                label_cut=label_cut, keep_unmapped_labels=keep_unmapped_labels,
+            )
+            if label is None:
                 continue
             start, end = _strip_span(text, int(r["start"]) + offset, int(r["end"]) + offset)
             if start < end:
@@ -1156,6 +1223,7 @@ def deberta_pii_predictor(
     aggregation_strategy: str = "first",
     o_bias: float = 0.0,
     label_cut: LabelCut | None = None,
+    keep_unmapped_labels: bool = False,
 ) -> BatchPredictor:
     """`lakshyakh93/deberta_finetuned_pii` — DeBERTa-base English-only PII
     detector with rich label set (~50+ categories). Mapped to nullpii's
@@ -1220,9 +1288,12 @@ def deberta_pii_predictor(
             for offset, _ in chunks:
                 for r in flat_results[cursor]:
                     entity = str(r.get("entity_group") or r.get("entity") or "")
-                    label = _map_native_label(_strip_bioes(entity), _DEBERTA_LABEL_MAP, tool="deberta")
                     score = float(r["score"])
-                    if label is None or (label_cut is not None and not label_cut.keeps(label, score)):
+                    label = _kept_label(
+                        _strip_bioes(entity), _DEBERTA_LABEL_MAP, tool="deberta", score=score,
+                        label_cut=label_cut, keep_unmapped_labels=keep_unmapped_labels,
+                    )
+                    if label is None:
                         continue
                     start, end = _strip_span(text, int(r["start"]) + offset, int(r["end"]) + offset)
                     if start < end:
@@ -1592,6 +1663,7 @@ def gliner_v2_predictor(
     labels: list[str] | None = None,
     label_map: Mapping[str, str | None] | None = None,
     label_cut: LabelCut | None = None,
+    keep_unmapped_labels: bool = False,
     max_window_words: int | None = None,
     batch_size: int = _GLINER_BATCH_SIZE,
 ) -> Predictor:
@@ -1617,7 +1689,9 @@ def gliner_v2_predictor(
     default provider. `dtype` follows the card where it names one
     (gliner-stream-pii: bf16 on CUDA). `threshold` is the run threshold;
     `label_cut` then keeps a span only if its score reaches its label's
-    operating point (rule change 9).
+    operating point (rule change 9). `keep_unmapped_labels` keeps a span
+    whose native label maps to None as `unmapped:<native>` instead of
+    dropping it, for AB-1's label-agnostic scoring (see `_kept_label`).
     """
     from gliner import GLiNER
 
@@ -1637,10 +1711,10 @@ def gliner_v2_predictor(
         raise ValueError(f"[{model_path}] window of {max_words} words cannot overlap by max_width {overlap_words}")
 
     def _project(native: str, score: float) -> str | None:
-        label = native if label_map is None else _map_native_label(native, dict(label_map), tool=model_path)
-        if label is None or (label_cut is not None and not label_cut.keeps(label, score)):
-            return None
-        return label
+        return _kept_label(
+            native, label_map, tool=model_path, score=score,
+            label_cut=label_cut, keep_unmapped_labels=keep_unmapped_labels,
+        )
 
     tokenizer = model.data_processor.transformer_tokenizer
 
@@ -1707,6 +1781,7 @@ def gliner_nemo_server_predictor(
     labels: list[str],
     label_map: Mapping[str, str | None],
     label_cut: LabelCut | None = None,
+    keep_unmapped_labels: bool = False,
 ) -> Predictor:
     """`nvidia/gliner-PII` as NVIDIA serves it: the reference server that
     NeMo Guardrails' GLiNER rail calls (`vendor/nemo_gliner_server.py`).
@@ -1719,6 +1794,9 @@ def gliner_nemo_server_predictor(
     that recurs is masked where the kept entity sits only. `threshold` is
     the server's; `label_cut` then keeps an entity only if its score reaches
     its label's operating point, as a client filtering the response would.
+    `keep_unmapped_labels` keeps an entity whose native label maps to None
+    as `unmapped:<native>` instead of dropping it, for AB-1's label-agnostic
+    scoring (see `_kept_label`).
     """
     from gliner import GLiNER
 
@@ -1740,8 +1818,11 @@ def gliner_nemo_server_predictor(
         spans: list[Span] = []
         scores: list[float] = []
         for ent in sorted(kept.values(), key=lambda e: e["start_position"]):
-            label = _map_native_label(ent["suggested_label"], dict(label_map), tool=model_path)
-            if label is None or (label_cut is not None and not label_cut.keeps(label, ent["score"])):
+            label = _kept_label(
+                ent["suggested_label"], label_map, tool=model_path, score=ent["score"],
+                label_cut=label_cut, keep_unmapped_labels=keep_unmapped_labels,
+            )
+            if label is None:
                 continue
             spans.append(Span(label, ent["start_position"], ent["end_position"]))
             scores.append(ent["score"])

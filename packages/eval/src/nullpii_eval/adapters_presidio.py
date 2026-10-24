@@ -101,7 +101,7 @@ from collections.abc import Callable
 from importlib import resources
 from typing import TYPE_CHECKING
 
-from .adapters import LabelCut, ToolResult, _check_label_coverage, _map_native_label
+from .adapters import LabelCut, ToolResult, _check_label_coverage, _kept_label
 from .datasets import Span
 
 if TYPE_CHECKING:
@@ -338,15 +338,18 @@ def _build_engine(language: str, ner_model_configuration: dict) -> AnalyzerEngin
 
 
 def _map_results(
-    results: list[RecognizerResult], label_cut: LabelCut | None,
+    results: list[RecognizerResult], label_cut: LabelCut | None, keep_unmapped_labels: bool,
 ) -> tuple[list[Span], list[float]]:
     """Presidio results -> nullpii spans and their scores, after the cut."""
     spans: list[Span] = []
     scores: list[float] = []
     for r in results:
-        label = _map_native_label(r.entity_type, _PRESIDIO_LABEL_MAP, tool=TOOL)
         score = float(r.score)
-        if label is None or (label_cut is not None and not label_cut.keeps(label, score)):
+        label = _kept_label(
+            r.entity_type, _PRESIDIO_LABEL_MAP, tool=TOOL, score=score,
+            label_cut=label_cut, keep_unmapped_labels=keep_unmapped_labels,
+        )
+        if label is None:
             continue
         spans.append(Span(label, int(r.start), int(r.end)))
         scores.append(score)
@@ -355,6 +358,7 @@ def _map_results(
 
 def presidio_predictor(
     *, label_cut: LabelCut | None = None, score_threshold: float = 0.0,
+    keep_unmapped_labels: bool = False,
 ) -> Callable[..., ToolResult]:
     """Presidio analyzer per its multilingual docs (see the module docstring).
 
@@ -363,6 +367,9 @@ def presidio_predictor(
     on first use and cached. `score_threshold` goes to `analyze()`;
     `label_cut` then filters the mapped spans by Presidio's score. The
     timing covers `analyze()` and the label mapping, not engine construction.
+    `keep_unmapped_labels` keeps a span whose recognizer entity type maps to
+    None as `unmapped:<type>` instead of dropping it, for AB-1's
+    label-agnostic scoring (see `_kept_label`).
     """
     _install_log_filter()
     ner_model_configuration = _shipped_ner_model_configuration()
@@ -378,7 +385,7 @@ def presidio_predictor(
         analyzer = _engine(resolved)
         t0 = time.perf_counter()
         results = analyzer.analyze(text=text, language=resolved, score_threshold=score_threshold)
-        spans, scores = _map_results(results, label_cut)
+        spans, scores = _map_results(results, label_cut, keep_unmapped_labels)
         elapsed_ms = (time.perf_counter() - t0) * _MS_PER_S
         return ToolResult(spans, elapsed_ms, scores=tuple(scores))
 

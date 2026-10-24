@@ -196,7 +196,7 @@ from .adapters import (
     LabelCut,
     ToolResult,
     _check_label_coverage,
-    _map_native_label,
+    _kept_label,
     _resolve_torch_device,
 )
 from .datasets import Span
@@ -466,7 +466,8 @@ def _entity_bounds(entity: PIIEntity, body: str, lead: int, tool: str) -> tuple[
 
 
 def _project(
-    entities: Iterable[PIIEntity], body: str, lead: int, label_cut: LabelCut | None, tool: str,
+    entities: Iterable[PIIEntity], body: str, lead: int, label_cut: LabelCut | None,
+    keep_unmapped_labels: bool, tool: str,
 ) -> tuple[list[Span], list[float]]:
     """OpenMed entities -> nullpii spans on the caller's text and their
     scores, after the label map and the cut."""
@@ -474,9 +475,12 @@ def _project(
     scores: list[float] = []
     for entity in entities:
         start, end = _entity_bounds(entity, body, lead, tool)
-        label = _map_native_label(entity.label, OPENMED_DEIDENTIFY_LABEL_MAP, tool=tool)
         score = float(entity.confidence)
-        if label is None or (label_cut is not None and not label_cut.keeps(label, score)):
+        label = _kept_label(
+            entity.label, OPENMED_DEIDENTIFY_LABEL_MAP, tool=tool, score=score,
+            label_cut=label_cut, keep_unmapped_labels=keep_unmapped_labels,
+        )
+        if label is None:
             continue
         spans.append(Span(label, start, end))
         scores.append(score)
@@ -491,12 +495,16 @@ def openmed_deidentify_predictor(
     device: str | None = None,
     confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
     label_cut: LabelCut | None = None,
+    keep_unmapped_labels: bool = False,
 ) -> Callable[[str], ToolResult]:
     """`model_id` at `revision` behind `openmed.deidentify` (see the module
     docstring for the call, its settings and the disclosures).
 
     `confidence_threshold` goes to `deidentify`; `label_cut` then filters
-    the mapped spans by the entity's confidence. The returned
+    the mapped spans by the entity's confidence. `keep_unmapped_labels`
+    keeps an entity whose native label maps to None as `unmapped:<label>`
+    instead of dropping it, for AB-1's label-agnostic scoring (see
+    `_kept_label`). The returned
     `_predict(text)` times the `deidentify` call plus the mapping; the model
     is loaded, checked against the pin and warmed here. `_predict.no_output`
     counts the texts the package returned no de-identified text for, by
@@ -542,7 +550,10 @@ def openmed_deidentify_predictor(
         scores: list[float] = []
         if result is not None:
             lead = _leading_offset(result, text, tool)
-            spans, scores = _project(result.pii_entities, result.original_text, lead, label_cut, tool)
+            spans, scores = _project(
+                result.pii_entities, result.original_text, lead, label_cut,
+                keep_unmapped_labels, tool,
+            )
         elapsed_ms = (time.perf_counter() - t0) * _MS_PER_S
         if result is not None:
             _count_shift(result.original_text, config, shifted, tool)

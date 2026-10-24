@@ -433,6 +433,23 @@ def _required_env(name: str) -> str:
 # GPU batch cap for tools whose windows reach 2048 tokens (see below).
 _LONG_WINDOW_BATCH = 8
 
+# Tools whose adapter takes `keep_unmapped_labels` (`--keep-unmapped-labels`,
+# AB-1: score label-agnostically, so a secret a tool masks under a label we do
+# not have still counts as masked). Left out, and why:
+#   - `nullpii`: the npm runtime returns nullpii's own labels, no map involved
+#     (adapters.py:212 lower-cases them and keeps every span).
+#   - `nullpii-bare` (bench_full.py:515) and `gliner-local` (
+#     bench_full.py:554): both call `gliner_v2_predictor` with no `label_map`,
+#     which keeps each native label as it is (adapters.py:91), so no label can
+#     map to None and there is nothing to keep.
+_KEEP_UNMAPPED_TOOLS = frozenset({
+    "piiranha", "rizzo-pii", "deberta", "deberta-simple", "ettin-68m",
+    "pii-identifier", "presidio", "openai-privacy-filter", "openmed-small",
+    "openmed-large", "openmed-pf-multi-v2", "gliner-onnx-pii-fp32",
+    "nemotron-pii-raw", "nemotron-pii-nemo", "gliner-pii-large-v1",
+    "gliner-stream-pii",
+})
+
 
 # gliner-stream-pii's window cap on the 12 GB GPU (see its registry entry).
 _GLINER_STREAM_WINDOW_WORDS = 2048
@@ -473,7 +490,7 @@ def build_tools(args) -> dict[str, Callable]:
         # presidio venv (requirements-presidio.txt) on the CPU.
         "presidio":  lambda **kw: presidio_docs_predictor(**kw),
         "deberta":   lambda **kw: _mark_batch(deberta_pii_predictor(device=backend, batch_size=_BATCH, **kw)),
-        "deberta-simple": lambda: _mark_batch(deberta_pii_predictor(device=backend, batch_size=_BATCH, aggregation_strategy="simple")),
+        "deberta-simple": lambda **kw: _mark_batch(deberta_pii_predictor(device=backend, batch_size=_BATCH, aggregation_strategy="simple", **kw)),
         "piiranha":  lambda **kw: _mark_batch(piiranha_predictor(device=backend, batch_size=_BATCH, **kw)),
         "rizzo-pii": lambda **kw: _mark_batch(rizzo_pii_predictor(device=backend, batch_size=_BATCH, **kw)),
         # ─── GLiNER competitors (rule change 10): each prompted with its
@@ -592,6 +609,11 @@ def build_tools(args) -> dict[str, Callable]:
     }
     requested = [t.strip() for t in args.tools.split(",") if t.strip()]
     configs = _tool_configs(args.tool_config)
+    if args.keep_unmapped_labels:
+        # A per-tool `keep_unmapped_labels` in --tool-config still wins.
+        for t in requested:
+            if t in _KEEP_UNMAPPED_TOOLS:
+                configs[t] = {"keep_unmapped_labels": True, **configs.get(t, {})}
     unknown = sorted(set(configs) - set(requested))
     if unknown:
         raise SystemExit(f"--tool-config names tools not requested: {unknown}")
@@ -789,6 +811,9 @@ def main() -> None:
     parser.add_argument("--gliner-threshold", type=float, default=0.5)
     parser.add_argument("--tool-config", default="",
                         help="JSON file of per-tool builder overrides (operating points); see _tool_configs")
+    parser.add_argument("--keep-unmapped-labels", action="store_true",
+                        help="AB-1: keep a span whose native label has no nullpii equivalent "
+                             "(as `unmapped:<label>`, no operating-point cut) instead of dropping it")
     parser.add_argument("--parallel-tools", type=int, default=1,
                         help="run N tools concurrently within each dataset (1=serial). "
                              "32GB 5090 fits 4-6 ML tools simultaneously.")

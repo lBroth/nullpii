@@ -162,6 +162,21 @@ Obfuscated input is decoded before detection: Unicode look-alikes and fullwidth 
 
 ## Benchmark
 
+### Agent traffic (AB-1)
+
+AB-1 measures the job nullpii's default is built for: hiding what a coding agent must not hand to the model (secrets, contact details and addresses, identifiers and account numbers, names) while leaving readable what the agent needs to work with (dates, versions, paths, hostnames of public services, placeholders, code identifiers). It scores two things per category, with no combined score: the leak rate on the items that must be masked, and the keep rate on the items that must stay readable. No tool has run on it yet, so the table is a placeholder; the method, the limits and the source of every number are under [Agent-traffic benchmark (AB-1)](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md#agent-traffic-benchmark-ab-1) in METHOD.md.
+
+<!-- ab1-a:begin -->
+| Tool | Leak rate | Keep rate | Docs with a leak | CI of nullpii − tool (leak) |
+|---|---:|---:|---:|---|
+| nullpii (agent default) | TBD | TBD | TBD | TBD |
+| … | TBD | TBD | TBD | TBD |
+<!-- ab1-a:end -->
+
+B1 (CredData), B2 (issue secrets) and B3 (bigcode-pii) are in [`METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md).
+
+### Documents (R3)
+
 How the numbers are produced, and every rule that keeps them honest: [`packages/eval/METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md).
 
 - **Metric:** character level and label-agnostic. A character of personal data counts as protected if any span covers it, whatever the label. F2 counts recall as twice as important as precision (β = 2), because a missed character leaks; F0.5, which favours precision, is shown next to it.

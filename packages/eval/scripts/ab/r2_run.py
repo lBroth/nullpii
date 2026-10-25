@@ -29,7 +29,7 @@ R2_SETS = "piimb-mapa-eur-lex,piimb-privy,piimb-gretel,traces-v2"
 DEFAULT_SUFFIX = "@default"
 
 
-def bench(tool: str, config: dict, out: Path, backend: str, datasets: str) -> None:
+def bench(tool: str, config: dict, out: Path, backend: str, datasets: str, keep_unmapped: bool = False) -> None:
     cfg = out / "tool-config.json"
     wanted = json.dumps({tool: config}, sort_keys=True) + "\n" if config else None
     found = cfg.read_text(encoding="utf-8") if cfg.exists() else None
@@ -43,6 +43,8 @@ def bench(tool: str, config: dict, out: Path, backend: str, datasets: str) -> No
     if wanted:
         cfg.write_text(wanted, encoding="utf-8")
         argv += ["--tool-config", str(cfg)]
+    if keep_unmapped:
+        argv.append("--keep-unmapped-labels")
     with (out / "bench.log").open("a", encoding="utf-8") as log:
         subprocess.run(argv, check=True, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
 
@@ -63,16 +65,17 @@ def main() -> None:
     ap.add_argument("--work", type=Path, required=True)
     ap.add_argument("--backend", default="cuda")
     ap.add_argument("--datasets", default=R2_SETS)
+    ap.add_argument("--keep-unmapped-labels", action="store_true", help="forwarded to bench_full.py (AB-1)")
     args = ap.parse_args()
 
     combined = args.work / "checkpoints"
     for tool in args.tools.split(","):
         op = json.loads((args.tuning / tool / "operating-point.json").read_text(encoding="utf-8"))
         config = op["operating_point"]["config"]
-        bench(tool, {}, args.work / tool / "default", args.backend, args.datasets)
+        bench(tool, {}, args.work / tool / "default", args.backend, args.datasets, args.keep_unmapped_labels)
         link(args.work / tool / "default", combined, tool, f"{tool}{DEFAULT_SUFFIX}", args.datasets)
         if config:
-            bench(tool, config, args.work / tool / "tuned", args.backend, args.datasets)
+            bench(tool, config, args.work / tool / "tuned", args.backend, args.datasets, args.keep_unmapped_labels)
             link(args.work / tool / "tuned", combined, tool, tool, args.datasets)
         else:
             link(args.work / tool / "default", combined, tool, tool, args.datasets)

@@ -304,6 +304,26 @@ def _r3(name: str, sha256: str) -> Callable[[int | None], list[Sample]]:
     return _load
 
 
+_AB1 = _RESULTS / "ab1"
+_AB1_B1_SHA256 = "c0fb7082ae95ab1f277ebf59ff0363c23c756b572ff7a002df98aa98cd407106"
+_AB1_B2_SHA256 = "1fb4b330867ef40d58840e0a50ae9b32b0c74fa9c8278f11929d6282c30bb8dd"
+# Pre-freeze build of component A: its dev split, for the smoke run.
+_AB1_A_SHA256 = "3af35d176e48a7d2970cbac7a800b38fa34965c0fcfcb713baddda73943f2ae4"
+# Frozen component A test split, leak-check drops removed (LOG.md, 25 Oct).
+_AB1_A_TEST_SHA256 = "baa5305f7999d1ef04c63831ef51408522b3d2ca6de2818d9947f76c03be7a26"
+
+
+def _ab1(name: str, sha256: str, split: str | None = None) -> Callable[[int | None], list[Sample]]:
+    """AB-1 rows as text only: `agent_metrics.py` scores them on the gold
+    file's items, not the kit, so `spans` stays empty. Rows keep the gold's
+    order (after the `split` filter), which checkpoint `idx` follows."""
+    def _load(n: int | None) -> list[Sample]:
+        rows = [r for r in _frozen_rows(_AB1 / f"{name}.jsonl", sha256) if split is None or r["split"] == split]
+        samples = [Sample(r["text"], (), r["lang"], ()) for r in rows]
+        return samples[:n] if n else samples
+    return _load
+
+
 def _r3_clusters(name: str, sha256: str) -> Callable[[int], list[str]]:
     return lambda n: [r["cluster"] for r in _frozen_rows(_R3 / f"{name}.jsonl", sha256)[:n]]
 
@@ -400,6 +420,11 @@ DATASET_CONFIGS: list[DatasetSpec] = [
     DatasetSpec("r3-mama-deid-val",          _r3("mama-deid-val", _R3_MAMA_DEID_VAL_SHA256),             None, total_n=1_714),
     # traces-v3 with its distractor regions ignored, for precision without them.
     DatasetSpec("r3-traces-v3-nodistract",   _r3("traces-v3-nodistract", _R3_TRACES_V3_NODISTRACT_SHA256), None, total_n=600),
+    # AB-1 secret slices (AGENT_BENCH.md), scored by `agent_metrics.py`.
+    DatasetSpec("ab1-b1",                    _ab1("b1", _AB1_B1_SHA256),                                 None, total_n=4_000),
+    DatasetSpec("ab1-b2",                    _ab1("b2", _AB1_B2_SHA256),                                 None, total_n=11_606),
+    DatasetSpec("ab1-a",                     _ab1("ab1-test", _AB1_A_TEST_SHA256),                      None, total_n=966),
+    DatasetSpec("ab1-a-dev",                 _ab1("ab1", _AB1_A_SHA256, split="dev"),                    None, total_n=200),
 ]
 
 

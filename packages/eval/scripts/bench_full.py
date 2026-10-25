@@ -306,7 +306,7 @@ def _r3(name: str, sha256: str) -> Callable[[int | None], list[Sample]]:
 
 _AB1 = _RESULTS / "ab1"
 _AB1_B1_SHA256 = "c0fb7082ae95ab1f277ebf59ff0363c23c756b572ff7a002df98aa98cd407106"
-_AB1_B2_SHA256 = "1fb4b330867ef40d58840e0a50ae9b32b0c74fa9c8278f11929d6282c30bb8dd"
+_AB1_B2_SHA256 = "41f144c66a247bf8f01826008621aef26f4769dba8836b011150687c6f08b1bb"
 # Pre-freeze build of component A: its dev split, for the smoke run.
 _AB1_A_SHA256 = "3af35d176e48a7d2970cbac7a800b38fa34965c0fcfcb713baddda73943f2ae4"
 # Frozen component A test split, leak-check drops removed (LOG.md, 25 Oct).

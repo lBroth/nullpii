@@ -6,9 +6,13 @@ Every true secret plus an equal seeded sample of non-secrets. A document is
 the issue body around the candidate, 1,000 characters each side, cut at
 whitespace. The scored item is the candidate's core value: its longest run
 of value characters (the candidate string sometimes carries the key name,
-quotes or the next line, which no masker is expected to hide). Rows whose
-candidate is not in the body, or whose core is shorter than 8 characters,
-are dropped and counted; exact duplicate documents are collapsed.
+quotes or the next line, which no masker is expected to hide), without a
+leading `name=` (review, 25 Oct). Rows whose candidate is not in the body,
+or whose longest run is shorter than 8 characters, are dropped and counted;
+exact duplicate documents are collapsed. An item whose value after the
+name is shorter than 8 characters is AMBIGUOUS, scored neither way; its
+document stays, so the document set and order are those of the first
+build, which every tool ran on.
 
 Values are treated as live: this script prints counts only.
 
@@ -29,6 +33,10 @@ WINDOW = 1000
 SEED = 0
 MIN_CORE = 8
 CORE = re.compile(r"[A-Za-z0-9+/_\-.~%=]+")
+# A run that opens with a key name and `=` (`api_key=…`,
+# `spring.datasource.password=…`) carries the name; the value is what
+# follows. A trailing `=` (base64 padding) is not a separator.
+KEY_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_.\-]*=(?=[^=])")
 
 
 def cut(body: str, start: int, end: int) -> tuple[str, int]:
@@ -54,6 +62,12 @@ def core(candidate: str) -> tuple[int, int] | None:
     return best if best[1] - best[0] >= MIN_CORE else None
 
 
+def value_part(candidate: str, run: tuple[int, int]) -> tuple[int, int]:
+    """`run` without a leading key name and `=`."""
+    m = KEY_NAME.match(candidate, run[0], run[1])
+    return (m.end(), run[1]) if m else run
+
+
 def documents(df: pd.DataFrame, stats: collections.Counter) -> list[dict]:
     docs, seen = [], set()
     for row in df.itertuples(index=False):
@@ -74,9 +88,17 @@ def documents(df: pd.DataFrame, stats: collections.Counter) -> list[dict]:
             continue
         seen.add(key)
         secret = int(row.label) == 1
+        v = value_part(cand, c)
+        if v != c:
+            stats[f"key_name_cut_{row.label}"] += 1
+        short = v[1] - v[0] < MIN_CORE
+        if short:
+            stats[f"ambiguous_short_value_{row.label}"] += 1
+        start, end = at - lo + v[0], at - lo + v[1]
         docs.append({
             "text": text,
-            "items": [{"start": start, "end": end, "class": "MUST_MASK" if secret else "MUST_KEEP",
+            "items": [{"start": start, "end": end,
+                       "class": "AMBIGUOUS" if short else "MUST_MASK" if secret else "MUST_KEEP",
                        "category": "secret" if secret else "non_secret", "kind": str(row.secret_type),
                        "encoded_of": None}],
         })

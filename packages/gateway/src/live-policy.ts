@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { createHash } from 'node:crypto';
 import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import {
   type CategoryMode,
   DEFAULT_RESTORE_TOOLS,
   type EnginePolicy,
+  InvalidConfigError,
+  MAX_CONFIG_FILE_BYTES,
   type NullPii,
   type NullPiiFileConfig,
   type PiiCategory,
@@ -17,6 +20,8 @@ import {
 /** The policy directory and file belong to the user alone. */
 const DIR_MODE = 0o700;
 const FILE_MODE = 0o600;
+/** Hex characters of the SHA-256 kept as the policy's version. */
+const VERSION_CHARS = 32;
 
 /**
  * The masking policy a running gateway applies, which the sidecar's
@@ -29,6 +34,7 @@ export class LivePolicy {
   private current: NullPiiFileConfig;
   private wasLoaded: boolean;
   private readonly tools: Set<string>;
+  private stamp: string;
 
   /** @param restoreTools - the tools in effect at start (the gateway's
    *   config, which already resolved the policy's list or the default). */
@@ -41,6 +47,15 @@ export class LivePolicy {
     this.current = config;
     this.wasLoaded = loaded;
     this.tools = new Set(restoreTools);
+    this.stamp = versionOf(config, this.tools);
+  }
+
+  /** The policy's version: a digest of its contents and restore tools,
+   * the same across gateway restarts for the same policy. A caller sends
+   * the version it last saw, and is refused when the policy has changed
+   * since (`routes/sidecar.ts`). */
+  get version(): string {
+    return this.stamp;
   }
 
   /** The policy file's contents now in effect. */
@@ -72,6 +87,12 @@ export class LivePolicy {
    */
   replace(np: NullPii, config: unknown): NullPiiFileConfig {
     const text = `${JSON.stringify(config, null, 2)}\n`;
+    // The file must load at the next start, which refuses a larger one.
+    if (Buffer.byteLength(text) > MAX_CONFIG_FILE_BYTES) {
+      throw new InvalidConfigError(
+        `the policy sent to the sidecar is over the ${MAX_CONFIG_FILE_BYTES}-byte limit`,
+      );
+    }
     const parsed = parseConfig(text, 'the policy sent to the sidecar');
     writeAtomically(this.file, text);
     np.updatePolicy(enginePolicy(parsed));
@@ -79,8 +100,25 @@ export class LivePolicy {
     this.wasLoaded = true;
     this.tools.clear();
     for (const tool of parsed.restoreTools ?? DEFAULT_RESTORE_TOOLS) this.tools.add(tool);
+    this.stamp = versionOf(parsed, this.tools);
     return parsed;
   }
+}
+
+/** A digest of `config` and the restore tools, in a fixed order. */
+function versionOf(config: NullPiiFileConfig, tools: ReadonlySet<string>): string {
+  const text = JSON.stringify({ config: sortedKeys(config), restoreTools: [...tools].sort() });
+  return createHash('sha256').update(text).digest('hex').slice(0, VERSION_CHARS);
+}
+
+/** `value` with every object's keys sorted, for a stable digest. */
+function sortedKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortedKeys);
+  if (value === null || typeof value !== 'object') return value;
+  const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+    a < b ? -1 : a > b ? 1 : 0,
+  );
+  return Object.fromEntries(entries.map(([k, v]) => [k, sortedKeys(v)]));
 }
 
 /** The settings of `file` a running engine takes (`NullPii.updatePolicy`). */

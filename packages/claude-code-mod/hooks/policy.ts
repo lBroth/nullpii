@@ -180,6 +180,9 @@ const POLICY_PATH_TAIL = '/nullpii/config.json';
 const NULLPII_WORD = /nullpii/i;
 const CONFIG_FILE_WORD = /config\.json/i;
 const POLICY_VARIABLE = /NULLPII_CONFIG/i;
+/** The sidecar route that replaces the policy, which the token alone
+ * reaches; the mod also notices a change it did not make (`register.ts`). */
+const POLICY_ROUTE = /sidecar\/+policy/i;
 /** A path that starts at a root: `/`, `~`, or a Windows drive. */
 const ABSOLUTE_PATH = /^(?:[\\/~]|[A-Za-z]:)/;
 
@@ -232,13 +235,15 @@ export function touchesPolicyFile(
 }
 
 function commandNamesPolicy(command: string, policyFile: string | undefined): boolean {
-  if (POLICY_VARIABLE.test(command)) return true;
+  if (POLICY_VARIABLE.test(command) || POLICY_ROUTE.test(command)) return true;
   if (NULLPII_WORD.test(command) && CONFIG_FILE_WORD.test(command)) return true;
   return policyFile !== undefined && command.toLowerCase().includes(policyFile.toLowerCase());
 }
 
 /** The masking policy the sidecar runs with (`GET /v1/sidecar/status`). */
 export interface Policy {
+  /** Changes with every change of the policy, the same for the same policy. */
+  version?: string;
   file: string;
   loaded: boolean;
   config: Readonly<Record<string, unknown>>;

@@ -6,6 +6,8 @@
  * (`PUT /v1/sidecar/policy`). Pure functions, no I/O.
  */
 
+import type { Policy } from './policy.ts';
+
 /** What happens to one category (the policy file's `categories`). */
 export type Mode = 'mask' | 'ask' | 'off';
 
@@ -104,6 +106,24 @@ export function applyPiiCommand(
     ...(disabledCategories !== undefined && { disabledCategories }),
     categories: next,
   };
+}
+
+/** What changed from `before` to `now`, for the user: category modes, the
+ * tools that get real values back, else the other settings. Names only. */
+export function describePolicyChange(before: Policy, now: Policy): string {
+  const parts: string[] = [];
+  const was = before.categories ?? {};
+  const is = now.categories ?? {};
+  for (const category of [...new Set([...Object.keys(was), ...Object.keys(is)])].sort()) {
+    if (was[category] !== is[category]) {
+      parts.push(`${shortName(category)} ${was[category] ?? 'unset'} → ${is[category] ?? 'unset'}`);
+    }
+  }
+  const added = now.restoreTools.filter((t) => !before.restoreTools.includes(t));
+  const removed = before.restoreTools.filter((t) => !now.restoreTools.includes(t));
+  if (added.length > 0) parts.push(`real values now go back into ${added.join(', ')}`);
+  if (removed.length > 0) parts.push(`no longer into ${removed.join(', ')}`);
+  return parts.length > 0 ? parts.join('; ') : 'thresholds or URL settings';
 }
 
 /** The short name of `category` (`private_url` → `url`). */

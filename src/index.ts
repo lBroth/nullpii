@@ -78,6 +78,7 @@ export {
   DEFAULT_DISABLED_CATEGORIES,
   DEFAULT_RESTORE_TOOLS,
   DEFAULT_URL_RELEASES,
+  MAX_CONFIG_FILE_BYTES,
 } from './defaults.js';
 
 // LLM-prompt helper

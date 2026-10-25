@@ -17,6 +17,7 @@ import type { GatewayConfig } from '../src/config.js';
 import {
   CHALLENGE_CONTEXT,
   CHALLENGE_PATH,
+  POLICY_VERSION_HEADER,
   SESSION_SECRET_HEADER,
   SIDECAR_MAX_BYTES,
 } from '../src/routes/sidecar.js';
@@ -282,6 +283,7 @@ describe('sidecar · status', () => {
       status: 'ok',
       sessions: 0,
       policy: {
+        version: expect.stringMatching(/^[0-9a-f]{32}$/),
         file: '/home/node/.config/nullpii/config.json',
         loaded: true,
         config: { disabledCategories: ['private_title'], restoreTools: ['Read'] },
@@ -1006,5 +1008,132 @@ describe('sidecar · policy', () => {
     await putPolicy(app, { categories: { private_person: 'off' } });
 
     expect((await sanitize()).headers['x-nullpii-cache']).toBe('miss');
+  });
+
+  async function versionOf(app: FastifyInstance): Promise<string> {
+    const res = await app.inject({ method: 'GET', url: '/v1/sidecar/status', headers: AUTH });
+    return (res.json() as { policy: { version: string } }).policy.version;
+  }
+
+  it('versions the policy: the same policy has the same version after a restart, a new one another', async () => {
+    const file = join(policyDir, 'config.json');
+    const first = (await setup({ policyFile: file })).app;
+    const second = (await setup({ policyFile: file })).app;
+    const before = await versionOf(first);
+    expect(before).toMatch(/^[0-9a-f]{32}$/);
+    expect(await versionOf(second)).toBe(before);
+
+    const res = await putPolicy(first, { categories: { private_person: 'off' } });
+
+    const after = (res.json() as { policy: { version: string } }).policy.version;
+    expect(after).not.toBe(before);
+    expect(await versionOf(first)).toBe(after);
+  });
+
+  it('a sanitize or restore sent with an older version is refused (412) and nothing runs', async () => {
+    const { app, modelCalls } = await setup({ policyFile: join(policyDir, 'config.json') });
+    await open(app, 's1');
+    const seen = await versionOf(app);
+    // A command holding only the token replaces the policy.
+    await putPolicy(app, { categories: { private_person: 'off' }, restoreTools: ['WebFetch'] });
+    const now = await versionOf(app);
+    const headers = { ...authFor('s1'), [POLICY_VERSION_HEADER]: seen };
+    const calls = modelCalls();
+
+    const sanitized = await app.inject({
+      method: 'POST',
+      url: '/v1/sidecar/sessions/s1/sanitize',
+      headers,
+      payload: { value: `hello ${FULL_NAME}` },
+    });
+    const restored = await app.inject({
+      method: 'POST',
+      url: '/v1/sidecar/sessions/s1/restore',
+      headers,
+      payload: { value: { url: 'https://x.test/' }, tool: 'WebFetch' },
+    });
+
+    for (const res of [sanitized, restored]) {
+      expect(res.statusCode).toBe(412);
+      expect(res.json()).toEqual({ error: 'policy_changed', version: now });
+    }
+    expect(modelCalls()).toBe(calls);
+  });
+
+  it('a sanitize sent with the current version runs', async () => {
+    const { app } = await setup({ policyFile: join(policyDir, 'config.json') });
+    await open(app, 's1');
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/sidecar/sessions/s1/sanitize',
+      headers: { ...authFor('s1'), [POLICY_VERSION_HEADER]: await versionOf(app) },
+      payload: { value: `hello ${FULL_NAME}` },
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('a policy sent on top of an older version is refused (412) and nothing changes', async () => {
+    const engine = buildMockNullPii();
+    const file = join(policyDir, 'config.json');
+    const { app } = await setup({ policyFile: file }, engine);
+    const seen = await versionOf(app);
+    await putPolicy(app, { categories: { private_date: 'mask' } });
+
+    const res = await putPolicy(
+      app,
+      { categories: { private_title: 'off' } },
+      { ...AUTH, [POLICY_VERSION_HEADER]: seen },
+    );
+
+    expect(res.statusCode).toBe(412);
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({
+      categories: { private_date: 'mask' },
+    });
+    expect(engine.policies).toHaveLength(1);
+  });
+
+  it('refuses a policy over the policy file size limit, which the next start would not load', async () => {
+    const file = join(policyDir, 'config.json');
+    const { app } = await setup({ policyFile: file });
+    const big = { urlAllowlist: Array.from({ length: 4_000 }, (_, i) => `host-${i}.example.com`) };
+
+    const res = await putPolicy(app, big);
+
+    expect(res.statusCode).toBe(400);
+    expect(existsSync(file)).toBe(false);
+  });
+
+  it('a sanitize running across a policy change leaves no cached answer for later requests', async () => {
+    const engine = buildMockNullPii();
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const sanitize = engine.np.sanitize.bind(engine.np);
+    let first = true;
+    engine.np.sanitize = (async (text: string, sessionId?: string) => {
+      if (first) {
+        first = false;
+        await gate;
+      }
+      return sanitize(text, sessionId);
+    }) as typeof engine.np.sanitize;
+    const { app } = await setup({ policyFile: join(policyDir, 'config.json') }, engine);
+    await open(app, 's1');
+    const call = () =>
+      app.inject({
+        method: 'POST',
+        url: '/v1/sidecar/sessions/s1/sanitize',
+        headers: authFor('s1'),
+        payload: { value: `hello ${FULL_NAME}` },
+      });
+
+    const running = call();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await putPolicy(app, { categories: { private_person: 'mask' } });
+    release();
+    await running;
+
+    expect((await call()).headers['x-nullpii-cache']).toBe('miss');
   });
 });

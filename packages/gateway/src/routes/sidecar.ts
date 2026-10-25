@@ -35,6 +35,13 @@ const CACHE_HEADER = 'x-nullpii-cache';
 /** The header a caller proves it owns a session with (lower case, as
  * Node presents header names). */
 export const SESSION_SECRET_HEADER = 'x-nullpii-session-secret';
+/** The policy version a caller last saw (`LivePolicy.version`). When it is
+ * sent and the policy has changed since, `sanitize`, `restore` and
+ * `PUT /v1/sidecar/policy` answer 412 and do nothing, so the caller learns
+ * of a change it did not make before it masks, restores or overwrites
+ * under it. */
+export const POLICY_VERSION_HEADER = 'x-nullpii-policy-version';
+const POLICY_CHANGED = 412;
 const REFUSAL_REPLIES: Readonly<Record<SessionRefusal, { status: number; error: string }>> = {
   not_found: { status: 404, error: 'session_not_found' },
   forbidden: { status: 403, error: 'bad_session_secret' },
@@ -117,6 +124,17 @@ function sha256(value: string): Buffer {
 function presentedSecret(req: FastifyRequest): string | undefined {
   const value = req.headers[SESSION_SECRET_HEADER];
   return typeof value === 'string' ? value : undefined;
+}
+
+/** Whether the request names a policy version other than `current`. */
+function staleVersion(req: FastifyRequest, current: string): boolean {
+  const seen = req.headers[POLICY_VERSION_HEADER];
+  if (seen === undefined) return false;
+  return typeof seen !== 'string' || seen !== current;
+}
+
+function sendPolicyChanged(reply: FastifyReply, version: string): FastifyReply {
+  return reply.code(POLICY_CHANGED).send({ error: 'policy_changed', version });
 }
 
 function sendRefusal(reply: FastifyReply, refusal: SessionRefusal): FastifyReply {
@@ -209,6 +227,12 @@ function cappedBody(payload: Record<string, unknown>): string | undefined {
  * every command started from the caller's shell may inherit, does not
  * reach another caller's real values.
  *
+ * The policy has a version (`GET /v1/sidecar/status`). A caller that sends
+ * the version it last saw in `x-nullpii-policy-version` is answered 412,
+ * with nothing done, once the policy has changed since: the token alone can
+ * replace the policy, so a caller holding real values (the mod) checks that
+ * every change was one it made or accepted.
+ *
  * Responses carry counts, never the values that were masked. Requests
  * and responses are capped at 4 MiB, the per-call limit of a mod's
  * `$.http.fetch`.
@@ -258,6 +282,7 @@ export async function registerSidecarRoutes(
     const policyView = () => {
       const modes = opts.policy.modes();
       return {
+        version: opts.policy.version,
         file: opts.policy.file,
         loaded: opts.policy.loaded,
         config: opts.policy.config,
@@ -277,11 +302,15 @@ export async function registerSidecarRoutes(
 
     // Replace the policy: validated, written to the policy file, applied
     // to the engine and the restore tools at once. Cached sanitize
-    // responses were masked under the old policy, so they go.
+    // responses were masked under the old policy, so they go (and the
+    // cache key holds the version, for a sanitize still running).
     scope.put<{ Body: { config: unknown } }>(
       '/v1/sidecar/policy',
       { schema: { body: POLICY_BODY } },
       async (req, reply) => {
+        if (staleVersion(req, opts.policy.version)) {
+          return sendPolicyChanged(reply, opts.policy.version);
+        }
         try {
           opts.policy.replace(np, req.body.config);
         } catch (err) {
@@ -333,7 +362,12 @@ export async function registerSidecarRoutes(
       async (req, reply) => {
         const session = sessions.use(req.params.key, presentedSecret(req));
         if (typeof session === 'string') return sendRefusal(reply, session);
-        const cacheKey = SanitizeCache.keyOf(JSON.stringify(req.body.value));
+        // The version at the start: an answer masked under it is cached
+        // under it, so a policy change while this runs cannot leave an old
+        // answer where the new policy's requests look.
+        const version = opts.policy.version;
+        if (staleVersion(req, version)) return sendPolicyChanged(reply, version);
+        const cacheKey = SanitizeCache.keyOf(`${version}\n${JSON.stringify(req.body.value)}`);
         const cached = session.cache.get(cacheKey);
         if (cached !== undefined) {
           req.log.info({ cache: 'hit' }, 'sidecar.sanitize');
@@ -366,6 +400,9 @@ export async function registerSidecarRoutes(
       async (req, reply) => {
         const session = sessions.use(req.params.key, presentedSecret(req));
         if (typeof session === 'string') return sendRefusal(reply, session);
+        if (staleVersion(req, opts.policy.version)) {
+          return sendPolicyChanged(reply, opts.policy.version);
+        }
         const { value, fields, tool } = req.body;
         const isObject = value !== null && typeof value === 'object' && !Array.isArray(value);
         if (fields !== undefined && !isObject) {

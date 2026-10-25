@@ -389,9 +389,12 @@ export class NullPii {
   ): Promise<{ spans: DecodedSpan[]; unscannedWords: number }> {
     const minScore = this.decodeCut();
     const maxLen = this.config.maxSequenceLength ?? DEFAULT_MAX_SEQUENCE_LENGTH;
+    // One label list for the whole text: `updatePolicy` during the await
+    // below must not encode a window with one list and decode it with another.
+    const labels = this.promptLabels;
     const decoded: DecodedSpan[] = [];
     const walk = await forEachWindow(normalized, async ({ text: chunk, offset }) => {
-      const enc = await tokenizer.encode(chunk, this.promptLabels);
+      const enc = await tokenizer.encode(chunk, labels);
       if (this.config.strictLength === true && enc.truncated) {
         throw new TextTooLongError(enc.seqLen, maxLen);
       }
@@ -417,7 +420,7 @@ export class NullPii {
         out.maxWidth,
         out.numClasses,
         enc.words,
-        this.promptLabels,
+        labels,
         minScore,
       );
       for (const s of spans) {

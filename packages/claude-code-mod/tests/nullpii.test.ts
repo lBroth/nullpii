@@ -60,7 +60,7 @@ function fakeSidecar(
     categories?: Record<string, string>;
   } = {},
 ) {
-  const restoreTools = opts.restoreTools ?? DEFAULT_RESTORE_TOOLS;
+  let restoreTools = opts.restoreTools ?? DEFAULT_RESTORE_TOOLS;
   const vault = new Map<string, string>();
   const sessions = new Map<string, string>(
     (opts.liveKeys ?? []).map((key) => [key, 'someone-else']),
@@ -76,8 +76,24 @@ function fakeSidecar(
   const restoreBodies: string[] = [];
   /** Set it to make `/sanitize` and `/restore` answer this text, not JSON. */
   const state: { garbage?: string } = {};
-  // The policy the status reports, which a PUT replaces as the gateway does.
-  const policy = { config: {} as Record<string, unknown>, categories: opts.categories ?? {} };
+  // The policy the status reports, which a PUT replaces as the gateway does,
+  // with a version that changes with it.
+  const policy = {
+    config: {} as Record<string, unknown>,
+    categories: opts.categories ?? {},
+    revision: 0,
+  };
+  const version = () => `v${policy.revision}`;
+  /** Replace the policy as `PUT /v1/sidecar/policy` does. */
+  const replacePolicy = (config: Record<string, unknown>) => {
+    policy.config = config;
+    policy.categories = {
+      ...policy.categories,
+      ...((config.categories as Record<string, string> | undefined) ?? {}),
+    };
+    restoreTools = (config.restoreTools as string[] | undefined) ?? DEFAULT_RESTORE_TOOLS;
+    policy.revision += 1;
+  };
   const policyBodies: unknown[] = [];
   /** Every `$.ui.log` line the mod wrote. */
   const logs: string[] = [];
@@ -164,6 +180,7 @@ function fakeSidecar(
       }
     }
     const policyView = () => ({
+      version: version(),
       file: opts.policyFile ?? POLICY_FILE,
       loaded: true,
       config: policy.config,
@@ -173,14 +190,16 @@ function fakeSidecar(
     if (path === '/v1/sidecar/status') {
       return respond(200, { status: 'ok', sessions: 1, policy: policyView() });
     }
+    // As the gateway: a call naming an older policy version does nothing.
+    const seen = e.init?.headers?.['x-nullpii-policy-version'];
+    const versioned = /\/(sanitize|restore)$/.test(path) || path === '/v1/sidecar/policy';
+    if (versioned && seen !== undefined && seen !== version()) {
+      return respond(412, { error: 'policy_changed', version: version() });
+    }
     if (path === '/v1/sidecar/policy' && method === 'PUT') {
       const { config } = JSON.parse(e.init?.body ?? '{}') as { config: Record<string, unknown> };
       policyBodies.push(config);
-      policy.config = config;
-      policy.categories = {
-        ...policy.categories,
-        ...((config.categories as Record<string, string> | undefined) ?? {}),
-      };
+      replacePolicy(config);
       return respond(200, { status: 'ok', policy: policyView() });
     }
     const body = JSON.parse(e.init?.body ?? '{}') as { value: unknown; tool?: string };
@@ -224,6 +243,8 @@ function fakeSidecar(
   };
   return {
     handler,
+    /** A policy change this mod did not make (a command with the token). */
+    replacePolicy,
     calls,
     challenges,
     hosts,
@@ -700,6 +721,10 @@ test('a call that may change the policy file is put to the user', async ($, on) 
     { tool: 'Edit', input: { file_path: '/srv/alt/.config/nullpii/config.json' } },
     { tool: 'Bash', input: { command: 'echo {} > ~/.config/nullpii/config.json' } },
     { tool: 'Bash', input: { command: 'export NULLPII_CONFIG=/tmp/loose.json' } },
+    {
+      tool: 'Bash',
+      input: { command: 'curl -X PUT http://127.0.0.1:8787/v1/sidecar//policy -d @p.json' },
+    },
   ];
   for (const call of asks) {
     expect((await $.tool.check(call)).decision).toBe('ask');
@@ -1114,16 +1139,29 @@ test('with no sidecar answering, the mod starts nullpii-gateway for the session'
   const sidecar = fakeSidecar({ down: true });
   stubSession(on, sidecar);
   mock.clock(on, { now: 1_700_000_000_000 });
-  const spawned: { argv: readonly string[]; env?: Readonly<Record<string, string>> }[] = [];
+  const spawned: {
+    argv: readonly string[];
+    cwd?: string;
+    env?: Readonly<Record<string, string>>;
+  }[] = [];
   // biome-ignore lint/correctness/useYield: a stand-in child that writes nothing.
   on('process.spawn', async function* ($, e) {
-    spawned.push({ argv: e.argv, env: e.env });
+    spawned.push({ argv: e.argv, cwd: e.cwd, env: e.env });
     return { value: { code: 0, signal: null } };
   });
   await start($);
 
   expect(spawned).toHaveLength(1);
   expect(spawned[0]?.argv.at(-1)).toBe('nullpii-gateway');
+  // Not the project directory, whose .npmrc could pick the registry; exact versions.
+  expect(spawned[0]?.cwd).toBe('/');
+  expect(spawned[0]?.argv).toEqual(
+    expect.arrayContaining([
+      'nullpii@0.5.0',
+      'onnxruntime-node@1.30.0',
+      '@lbroth/nullpii-gateway@0.5.0',
+    ]),
+  );
   expect(spawned[0]?.env).toMatchObject({
     NULLPII_SIDECAR_TOKEN: TOKEN,
     NULLPII_HOST: '127.0.0.1',
@@ -1131,4 +1169,66 @@ test('with no sidecar answering, the mod starts nullpii-gateway for the session'
   });
   const report = await $.command.run({ command: 'pii', args: '' });
   expect(report.text).toContain('starting nullpii-gateway');
+});
+
+test('a policy changed outside the session is put to the user before anything runs under it: kept on their word', async ($, on) => {
+  const sidecar = fakeSidecar({ categories: { private_person: 'mask' } });
+  stubSession(on, sidecar);
+  const questions: string[] = [];
+  answerDialog(on, 'Keep the change', questions);
+  const sent: string[] = [];
+  on('prompt.submit', ($, e) => {
+    sent.push(e.text);
+    return { text: e.text };
+  });
+  await start($);
+  // A command holding only the token turns names off and adds a web tool.
+  sidecar.replacePolicy({
+    categories: { private_person: 'off' },
+    restoreTools: [...DEFAULT_RESTORE_TOOLS, 'WebFetch'],
+  });
+
+  await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+
+  expect(sidecar.statuses).toContain(412);
+  expect(questions).toHaveLength(1);
+  expect(questions[0]).toContain('person mask → off');
+  expect(questions[0]).toContain('real values now go back into WebFetch');
+  expect(sent).toHaveLength(1);
+  expect(sidecar.policyBodies).toEqual([]);
+});
+
+test('a policy changed outside the session is put back unless the user keeps it, before a tool gets values', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const questions: string[] = [];
+  answerDialog(on, 'Put back the previous policy', questions);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', { tool: 'WebFetch' }, ($, e) => ({ result: { fetched: e.url } }));
+  await start($);
+  await $.prompt.submit({ text: 'John', wait: false, origin: COMPOSER });
+  sidecar.replacePolicy({ restoreTools: [...DEFAULT_RESTORE_TOOLS, 'WebFetch'] });
+
+  const out = await $.tool.call({ tool: 'WebFetch', url: `https://x.test/?q=${ph('PERSON', 0)}` });
+
+  expect(questions).toHaveLength(1);
+  expect(sidecar.policyBodies).toEqual([{}]);
+  expect(JSON.stringify(out)).toContain(ph('PERSON', 0));
+  expect(JSON.stringify(out)).not.toContain('John');
+});
+
+test('/pii applies its change to the policy as it is now, not to the copy read at session start', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  answerDialog(on, 'Keep the change', []);
+  await start($);
+  // Another session masks dates meanwhile.
+  sidecar.replacePolicy({ categories: { private_date: 'mask' } });
+
+  const answer = await $.command.run({ command: 'pii', args: 'off title' });
+
+  expect(answer.text).toContain('Policy changed.');
+  expect(sidecar.policyBodies).toEqual([
+    { categories: { private_date: 'mask', private_title: 'off' } },
+  ]);
 });

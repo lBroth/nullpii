@@ -13,7 +13,13 @@
 // The vault lives in the sidecar's memory; this mod keeps counts only, and
 // the session's secret, which never leaves this process's memory.
 
-import { applyPiiCommand, parsePiiCommand, placeholdersToAsk, shortName } from './categories.ts';
+import {
+  applyPiiCommand,
+  describePolicyChange,
+  parsePiiCommand,
+  placeholdersToAsk,
+  shortName,
+} from './categories.ts';
 import {
   PLACEHOLDER,
   type Policy,
@@ -38,6 +44,16 @@ const DEFAULT_SIDECAR_URL = 'http://127.0.0.1:8787';
 const SESSIONS_PATH = '/v1/sidecar/sessions/';
 const STATUS_PATH = '/v1/sidecar/status';
 const POLICY_PATH = '/v1/sidecar/policy';
+/** The version of the policy this session made or accepted, sent with
+ * every call: the sidecar answers 412 and does nothing once the policy has
+ * changed since (the token alone can change it). */
+const POLICY_VERSION_HEADER = 'x-nullpii-policy-version';
+const POLICY_CHANGED = 412;
+/** The answers of the dialog about a policy change this session did not make. */
+const KEEP_POLICY = 'Keep the change';
+const REVERT_POLICY = 'Put back the previous policy';
+/** The tool `$.ui.ask` puts a question to the user through. */
+const DIALOG_TOOL = 'AskUserQuestion';
 /** The answers of the dialog that asks before masking a value in the
  * user's own prompt (a category whose mode is `ask`). */
 const ASK_MASK = 'Mask';
@@ -61,8 +77,11 @@ const UNREACHABLE =
 const NOT_JSON = 'the sidecar answered with something that is not JSON';
 const STARTING = 'starting nullpii-gateway for this session (its first start downloads the model)';
 const NOT_STARTED = 'the nullpii-gateway this session started did not answer in time';
-/** The release line of the packages the mod starts the sidecar from. */
-const GATEWAY_RELEASE = '0.5';
+/** The release of the packages the mod starts the sidecar from, and the
+ * ONNX runtime that release is built and tested with: exact versions, so
+ * what runs with the token is what this mod was released with. */
+const GATEWAY_RELEASE = '0.5.0';
+const ONNXRUNTIME_RELEASE = '1.30.0';
 /** The command that starts the sidecar: the release's CLI, gateway and
  * ONNX runtime, with npx (no shell). */
 const GATEWAY_ARGV = [
@@ -71,11 +90,15 @@ const GATEWAY_ARGV = [
   '-p',
   `nullpii@${GATEWAY_RELEASE}`,
   '-p',
-  'onnxruntime-node',
+  `onnxruntime-node@${ONNXRUNTIME_RELEASE}`,
   '-p',
   `@lbroth/nullpii-gateway@${GATEWAY_RELEASE}`,
   'nullpii-gateway',
 ];
+/** Where npx runs: the file system root, not the session's directory, so a
+ * repository's `.npmrc` cannot pick the registry the gateway, which gets
+ * the token, comes from. */
+const GATEWAY_CWD = '/';
 /** How long a sidecar the mod started may take to answer, and how often
  * the mod checks: the first start downloads the model. */
 const STARTUP_WAIT_MS = 10 * 60 * 1000;
@@ -164,12 +187,17 @@ let sessionKey = '';
 // The secret the sidecar handed out for `sessionKey`: without it the
 // bearer token alone (which commands may inherit) reads nothing.
 let sessionSecret: string | undefined;
-// The policy the sidecar runs with, read when the session opens.
+// The policy the sidecar runs with, as this session made or accepted it:
+// read when the session opens, replaced by /pii and by the user's answer
+// about a change made elsewhere.
 let policy: Policy | undefined;
 // Why the mod is blocking, shown above the prompt; undefined while healthy.
 let problem: string | undefined = NO_TOKEN;
 // The session (re)opening in flight, which every hook that needs one awaits.
 let opening: Promise<void> | undefined;
+// The review of a policy changed elsewhere, which every call the sidecar
+// refused for it awaits.
+let reviewing: Promise<void> | undefined;
 
 class SidecarError extends Error {
   constructor(readonly status: number) {
@@ -178,16 +206,18 @@ class SidecarError extends Error {
 }
 
 /** Send one request to the sidecar's route `path`, with the session
- * secret when one is given. Nothing is sent, the token included, unless
- * the sidecar's address is a loopback one and the process there has just
- * proved it holds the token: another process could have taken the port
- * since the last request (the gateway stopped, or restarted). */
+ * secret when one is given, and the policy version `version` (by default
+ * the one this session accepted). Nothing is sent, the token included,
+ * unless the sidecar's address is a loopback one and the process there
+ * has just proved it holds the token: another process could have taken
+ * the port since the last request (the gateway stopped, or restarted). */
 async function request(
   $,
   method: string,
   path: string,
   body?: unknown,
   secret?: string,
+  version: string | undefined = policy?.version,
 ): Promise<unknown> {
   if (sidecarUrl === undefined) throw new Error(NOT_LOOPBACK);
   if (token === undefined) throw new Error(NO_TOKEN);
@@ -195,9 +225,10 @@ async function request(
   // A JSON content type with no body is a 400, so PUT and DELETE send neither.
   const json = body === undefined ? {} : JSON_TYPE;
   const owner = secret === undefined ? {} : { [SESSION_SECRET_HEADER]: secret };
+  const seen = version === undefined ? {} : { [POLICY_VERSION_HEADER]: version };
   const res = await fetchSidecar($, sidecarUrl + path, {
     method,
-    headers: { authorization: `Bearer ${token}`, ...json, ...owner },
+    headers: { authorization: `Bearer ${token}`, ...json, ...owner, ...seen },
     ...(body !== undefined && { body: JSON.stringify(body) }),
   });
   if (!res.ok) throw new SidecarError(res.status);
@@ -249,15 +280,69 @@ function errorName(err: unknown): string {
   return err instanceof Error ? err.name : typeof err;
 }
 
-/** Call this session's sidecar route `path` (`/sanitize`, `/restore`). */
+function isStatus(err: unknown, status: number): boolean {
+  return err instanceof SidecarError && err.status === status;
+}
+
+/** Call this session's sidecar route `path` (`/sanitize`, `/restore`). A
+ * call the sidecar refused because the policy changed is made again once
+ * the user has settled the change. */
 async function sidecar($, method: string, path: string, body?: unknown): Promise<unknown> {
-  return request(
-    $,
-    method,
-    SESSIONS_PATH + encodeURIComponent(sessionKey) + path,
-    body,
-    sessionSecret,
-  );
+  const call = () =>
+    request($, method, SESSIONS_PATH + encodeURIComponent(sessionKey) + path, body, sessionSecret);
+  try {
+    return await call();
+  } catch (err) {
+    if (!isStatus(err, POLICY_CHANGED)) throw err;
+    await reviewPolicy($);
+    return call();
+  }
+}
+
+/** Read the policy the sidecar runs with and settle it with the user,
+ * once for every call the sidecar refused meanwhile. */
+function reviewPolicy($): Promise<void> {
+  reviewing ??= (async () => {
+    const status = (await request($, 'GET', STATUS_PATH)) as { policy?: Policy };
+    await settlePolicy($, status.policy);
+  })().finally(() => {
+    reviewing = undefined;
+  });
+  return reviewing;
+}
+
+/**
+ * Take `now`, the policy the sidecar runs with, as this session's. A
+ * change since the policy this session made or accepted (another
+ * session's /pii, a hand edit and a restart, a command holding the sidecar
+ * token) is put to the user: kept on their word, else the previous policy
+ * is put back, which is also what happens when no one can answer. Until
+ * then the sidecar refuses this session's calls, so nothing is masked or
+ * restored under a policy the user has not seen.
+ */
+async function settlePolicy($, now: Policy | undefined): Promise<void> {
+  const before = policy;
+  if (now === undefined || before === undefined || before.version === now.version) {
+    policy = now;
+    return;
+  }
+  let answer = REVERT_POLICY;
+  try {
+    answer = await $.ui.ask(
+      `The nullpii masking policy was changed outside this session's /pii: ${describePolicyChange(before, now)}. Keep the change?`,
+      { header: 'nullpii', options: [KEEP_POLICY, REVERT_POLICY] },
+    );
+  } catch (err) {
+    $.ui.log(`nullpii: no answer about a policy change (${errorName(err)}); putting it back`, {
+      to: 'debug',
+    });
+  }
+  if (answer === KEEP_POLICY) {
+    policy = now;
+    return;
+  }
+  policy = await putPolicy($, before.config, now.version);
+  $.ui.toast('nullpii put back the masking policy this session had');
 }
 
 /** PUT the session `key`, presenting `secret` when there is one; resolves
@@ -299,7 +384,7 @@ async function openSessionOnce($): Promise<void> {
   sessionSecret = secret;
   problem = undefined;
   const status = (await request($, 'GET', STATUS_PATH)) as { policy?: Policy };
-  policy = status.policy;
+  await settlePolicy($, status.policy);
 }
 
 /** Mask every string in `value`. A session the sidecar dropped (restart or
@@ -358,6 +443,7 @@ function startSidecar($, origin: string, secretToken: string): void {
   const address = new URL(origin);
   const child = $.process.spawn({
     argv: GATEWAY_ARGV,
+    cwd: GATEWAY_CWD,
     env: {
       NULLPII_SIDECAR_TOKEN: secretToken,
       NULLPII_HOST: address.hostname.replace(/^\[|\]$/g, ''),
@@ -398,10 +484,38 @@ async function waitForSidecar($): Promise<void> {
 }
 
 /** Send the policy file contents `config` to the sidecar, which writes
- * and applies it; resolves to the policy now in effect. */
-async function putPolicy($, config: Readonly<Record<string, unknown>>): Promise<Policy> {
-  const answer = (await request($, 'PUT', POLICY_PATH, { config })) as { policy: Policy };
+ * and applies it unless the policy is no longer at `version`; resolves to
+ * the policy now in effect. */
+async function putPolicy(
+  $,
+  config: Readonly<Record<string, unknown>>,
+  version: string | undefined = policy?.version,
+): Promise<Policy> {
+  const answer = (await request($, 'PUT', POLICY_PATH, { config }, undefined, version)) as {
+    policy: Policy;
+  };
   return answer.policy;
+}
+
+/** Apply `change` to this session's policy and send it. A policy changed
+ * meanwhile is settled with the user first, and `change` applied to the
+ * policy that comes out of it, so no other change is silently undone. */
+async function changePolicy(
+  $,
+  change: (config: Readonly<Record<string, unknown>>) => Record<string, unknown>,
+): Promise<Policy> {
+  const current = policy;
+  if (current === undefined) throw new Error(UNREACHABLE);
+  try {
+    policy = await putPolicy($, change(current.config));
+  } catch (err) {
+    if (!isStatus(err, POLICY_CHANGED)) throw err;
+    await reviewPolicy($);
+    const settled = policy as Policy | undefined;
+    if (settled === undefined) throw err;
+    policy = await putPolicy($, change(settled.config));
+  }
+  return policy;
 }
 
 /**
@@ -435,7 +549,7 @@ async function confirmed($, text: string): Promise<string> {
   if (answer !== ASK_READABLE && answer !== ASK_ALWAYS_READABLE) return text;
   if (answer === ASK_ALWAYS_READABLE && policy !== undefined) {
     const command = { kind: 'set', mode: 'off', categories } as const;
-    policy = await putPolicy($, applyPiiCommand(policy.config, command));
+    await changePolicy($, (config) => applyPiiCommand(config, command));
   }
   return asked.reduce(
     (out, a, i) => out.split(a.placeholder).join(values[i] ?? a.placeholder),
@@ -547,6 +661,10 @@ export function register(on, options) {
   });
 
   on('tool.call', async ($, e, next) => {
+    // The question this mod is putting about a policy change: its answer
+    // comes back to the mod, and masking it would wait on that same
+    // review, whose policy the sidecar does not take yet.
+    if (reviewing !== undefined && e.tool === DIALOG_TOOL) return next(e);
     // Known to be blocking: reach the sidecar again before the tool runs,
     // so the call is refused up front instead of run with its result
     // withheld, and a sidecar that is back clears the block.
@@ -614,14 +732,25 @@ export function register(on, options) {
 
   on('command.run', { command: 'pii' }, async ($, e) => {
     const command = parsePiiCommand(e.args ?? '');
-    if (command.kind === 'status') return { text: formatReport(counts, problem, policy) };
     if (command.kind === 'error') return { text: command.message };
+    if (command.kind === 'status') {
+      // The policy as the sidecar has it now, a change made elsewhere
+      // settled first; without an answer, the last one this session saw.
+      if (policy !== undefined) {
+        await reviewPolicy($).catch((err) =>
+          $.ui.log(`nullpii: policy not read again: ${shownReason(failureOf(err))}`, {
+            to: 'debug',
+          }),
+        );
+      }
+      return { text: formatReport(counts, problem, policy) };
+    }
     if (policy === undefined) {
       return { text: 'nullpii: the sidecar has not answered, so the policy cannot change now.' };
     }
     try {
-      policy = await putPolicy($, applyPiiCommand(policy.config, command));
-      return { text: ['Policy changed.', ...formatPolicy(policy)].join('\n') };
+      const changed = await changePolicy($, (config) => applyPiiCommand(config, command));
+      return { text: ['Policy changed.', ...formatPolicy(changed)].join('\n') };
     } catch (err) {
       return { text: `nullpii could not change the policy: ${shownReason(failureOf(err))}` };
     }

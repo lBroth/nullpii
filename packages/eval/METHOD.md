@@ -92,6 +92,11 @@ No tool has run on any AB-1 set yet, so the tables below hold placeholders only;
 | … | TBD | TBD | TBD | TBD |
 <!-- ab1-b2:end -->
 
+**Secrets by recognizer coverage.** The secrets' leak rate on the items nullpii's recognizer pack covers (run alone on the raw text, without the model or the base64 pass, it masks every character of the value) and on the rest, in each set; computed after the freeze from the pack itself and only reported. Items: A 87 covered of 585, B1 120 of 2,000, B2 2,079 of 5,803.
+
+<!-- ab1-coverage:begin -->
+<!-- ab1-coverage:end -->
+
 ### Limits
 
 - The injected values of A are fictional and generated. They are format-valid and drawn from real providers' layouts, but a generated key is not a leaked key: AB-1 measures whether a masker finds the shapes, not whether a real credential of that shape is still usable.

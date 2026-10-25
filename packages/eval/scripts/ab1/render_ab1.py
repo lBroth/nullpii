@@ -14,7 +14,8 @@ tool, in percentage points: a negative leak or a positive keep difference
 favours nullpii. Aggregates only; the reports hold no text.
 
   python render_ab1.py --a scores-ab1-a.json --b1 scores-ab1-b1.json \\
-      --b2 scores-ab1-b2.json --readme README.md --method METHOD.md
+      --b2 scores-ab1-b2.json --readme README.md --method METHOD.md \\
+      [--cov-a coverage-ab1-a.json --cov-b1 ... --cov-b2 ...]
 """
 from __future__ import annotations
 
@@ -122,6 +123,21 @@ def secondary(report: dict) -> str:
     return "\n".join(out)
 
 
+def coverage(reports: dict, cov: dict) -> str:
+    """Secrets' leak rate on items the recognizer pack covers and on the rest
+    (`secret_coverage.py`), on the README's rows of each set."""
+    sets = [k for k in ("a", "b1", "b2") if k in cov]
+    head = " | ".join(f"{k.upper()} covered ({cov[k]['covered']:,}) | {k.upper()} not covered ({cov[k]['uncovered']:,})" for k in sets)
+    out = [f"| Tool | {head} |", "|---|" + "---:|---:|" * len(sets)]
+    for key in wanted(reports["a"], readme=True):
+        cells = []
+        for k in sets:
+            t = cov[k]["tools"].get(key)
+            cells += [pct(t["leak_covered"]), pct(t["leak_uncovered"])] if t else ["—", "—"]
+        out.append(f"| {label(key)} | " + " | ".join(cells) + " |")
+    return "\n".join(out)
+
+
 def put(path: Path, marker: str, body: str) -> None:
     text = path.read_text(encoding="utf-8")
     pat = re.compile(rf"(<!-- {marker}:begin -->\n).*?(<!-- {marker}:end -->)", re.S)
@@ -134,6 +150,8 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     for k in ("a", "b1", "b2", "readme", "method"):
         ap.add_argument(f"--{k}", type=Path, required=True)
+    for k in ("a", "b1", "b2"):
+        ap.add_argument(f"--cov-{k}", type=Path, help="secret_coverage.py report")
     args = ap.parse_args()
     reports = {k: json.loads(getattr(args, k).read_text(encoding="utf-8")) for k in ("a", "b1", "b2")}
     for k, r in reports.items():
@@ -143,6 +161,9 @@ def main() -> None:
     put(args.method, "ab1-a", main_table(reports["a"], readme=False) + "\n\n" + secondary(reports["a"]))
     put(args.method, "ab1-b1", main_table(reports["b1"], readme=False))
     put(args.method, "ab1-b2", main_table(reports["b2"], readme=False))
+    cov = {k: json.loads(p.read_text(encoding="utf-8")) for k in ("a", "b1", "b2") if (p := getattr(args, f"cov_{k}"))}
+    if cov:
+        put(args.method, "ab1-coverage", coverage(reports, cov))
 
 
 if __name__ == "__main__":

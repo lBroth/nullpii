@@ -144,7 +144,8 @@ Two of the things compared here are built for documents. PIILO is a set of stude
 - Each tool runs through its authors' inference path: their library or app pipeline, chunker, decoder and rule layers, the label strings of their card, and their recommended device and precision. Where the authors ship a product-level call it is used (rizzo-pii's app `analyze()`, OpenMed's `deidentify`, Presidio's multilingual engine with each text's language). Third-party code is vendored verbatim where needed, with its licence.
 - Departures from that path, each so that every tool reads the whole text:
   - the token classifiers (piiranha, deberta, ettin, pii-identifier, and rizzo-pii's model inside its app) run over token windows of their trained length, stitched by overlap, where their pipelines would truncate;
-  - the GLiNER tools run over word windows of the model's `max_len`, where the library drops the words past it; on dense code a window can reach several thousand subword tokens, beyond the trained length;
+  - the GLiNER tools run over word windows of the model's `max_len`, where the library drops the words past it; on dense code a window can reach several thousand subword tokens, beyond the trained length (in AB-1 a window also holds at most 4,096 tokens, see its departures);
+  - gliner_multi_pii runs as onnx-community's ONNX export of `urchade/gliner_multi_pii-v1`, on the CPU as the library does for ONNX; on 300 AB-1 documents its entities are identical to the original PyTorch weights' (1,777 of 1,777, largest score difference 0.0014);
   - gliner-stream-pii runs in 2,048-word windows, one at a time, because its card's whole-text mode ran out of GPU memory;
   - OpenMed runs with `lang='en'` on every text, because another language silently swaps its Small model;
   - `nvidia/gliner-PII` is shown as run through the GLiNER library with its card's labels and threshold. NVIDIA's reference server (the one NeMo Guardrails calls: 384-character chunks, one entity kept per value) was added after the first R3 look and scores lower (0.591).
@@ -152,6 +153,25 @@ Two of the things compared here are built for documents. PIILO is a set of stude
 - Every tool is run at its default operating point and at one tuned on the tuning set for macro char-F2: the threshold, a bias against the model's "no entity" class for token classifiers, and per-label score cuts, applied by the kit where the tool has no option for it, and through the pipeline's own setting where it has one (OpenMed's `confidence_threshold`, the Viterbi background bias of openai's privacy-filter, the threshold of NVIDIA's server). nullpii's changes were also held to a per-label recall guard and an over-masking cap, which the competitors' tuning was not. The tuned values are in `published-bench/r3/operating-points.json`.
 - Tables show each tool at its better row, chosen on R3 itself; a claim against a tool is tested against that row, which can only favour the tool.
 - Texts a tool refuses or fails on score as no output, and are counted. As a sensitivity check, scores are recomputed for every tool without those texts.
+
+**Languages each model's card declares** (Hugging Face model card metadata and text, 25 Oct 2026). Every tool is run on every document, including those in languages its card does not claim; the English-only results in the README show the comparison without that.
+
+| Tool | Model | Card languages |
+|---|---|---|
+| deberta | `lakshyakh93/deberta_finetuned_pii` | English |
+| piiranha | `iiiorg/piiranha-v1-detect-personal-information` | en, it, fr, de, nl, es |
+| ettin-68m | `kalyan-ks/ettin-68m-nemotron-pii` | English |
+| rizzo-pii | `rizzoaiacademy/rizzo-pii-0.3B` | Italian-first; trained on 8 languages |
+| pii-identifier | `antoniogr7/pii-identifier-v0.1` | English |
+| openai privacy-filter | `openai/privacy-filter` | "Primarily English" |
+| OpenMed privacy-filter-multilingual-v2 | `OpenMed/privacy-filter-multilingual-v2` | 16: ar, bn, de, en, es, fr, hi, it, ja, ko, nl, pt, te, tr, vi, zh |
+| gliner-pii-large-v1 | `knowledgator/gliner-pii-large-v1.0` | English |
+| gliner-stream-pii | `knowledgator/gliner-stream-pii-v1.0` | English |
+| nemotron-pii (library and NVIDIA's server) | `nvidia/gliner-PII` | English |
+| gliner_multi_pii | `urchade/gliner_multi_pii-v1` (ONNX export) | en, fr, de, es, pt, it |
+| OpenMed small, large | `OpenMed/OpenMed-PII-SuperClinical-{Small-44M,Large-434M}-v1` | English (run with `lang='en'`) |
+| Presidio | library, spaCy pipelines | the text's language, through the spaCy pipeline the kit loads for it |
+| nullpii | fine-tuned from `urchade/gliner_multi_pii-v1` | the base's six; the fine-tuning text is mostly English (95% of the rows whose language a stopword count can tell; half the rows are code, records or too short to tell) |
 
 ## Rules that keep the numbers honest
 

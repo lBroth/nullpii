@@ -60,6 +60,8 @@ Each was decided and logged before any tool ran on any AB-1 set.
 - **Unmapped labels** are kept, as label-agnostic scoring requires (see Competitors).
 - **B2 item.** The scored item is the candidate's core value, not the labelled candidate string; 70 true secrets are dropped (see Data).
 - **Leak check.** Stricter than specified, with the name exemption described above.
+- **Canary.** The canary string is in A's README and in `data/CANARY` next to the gold, not inside the gold's rows.
+- **Audit corrections.** The audit's wrong-or-missing share was below the 5% threshold, so no re-audit was required; two annotation rules it exposed were corrected in the generator before the freeze (a UUID right after a session-like key and an encoded dummy credential are AMBIGUOUS, 24 items in all), and nothing else changed.
 
 ### Results
 
@@ -97,6 +99,7 @@ No tool has run on any AB-1 set yet, so the tables below hold placeholders only;
 - The WildChat-1M prompts are written to a chat assistant, not to a coding agent: they are real non-English programming questions, one model of what a user types, not agent traffic.
 - A is one specification's view of agent traffic, built by one agent and audited on 10% of its documents. Claude Code-style tools are the model: another agent's traffic (different tool schemas, different file kinds) is not represented.
 - B1 and B2 hold secrets and secret-looking non-secrets only: they say nothing about names, contact details or the other categories.
+- Real names already in carrier text (for example a signature at the end of a GitHub issue) are not annotated: the builder's carrier pass finds emails, phones, IPs and key-like strings, not names. Masking one counts only in the masked-outside-items figure, never in leak or keep rate. The audit found one in its 120 documents.
 - The components are scored separately and are not averaged into one AB-1 score; a tool can lead on one and trail on another.
 
 ### Licences and attribution

@@ -1586,6 +1586,12 @@ _GLINER_WORD = re.compile(r"\w+(?:[-_]\w+)*|\S")
 # short.
 _GLINER_BATCH_SIZE = 8
 _GLINER_ATTENTION_BUDGET = _GLINER_BATCH_SIZE * 1024 * 1024
+# A window also holds at most this many subword tokens. A few code files
+# (AB-1's B1, minified lines and long blobs) make word windows of up to
+# 76,000 tokens, which fit neither in 12 GB of GPU memory nor, on the CPU
+# fallback, in 31 GB of RAM; no window of prose, logs or issue threads
+# measured comes near it (longest 1,961 tokens), so those stay as they were.
+_GLINER_WINDOW_TOKENS = 4 * 1024
 # PyTorch has no exception class for MPS running out of memory: it raises a
 # RuntimeError with this message (CUDA raises torch.OutOfMemoryError).
 _MPS_OUT_OF_MEMORY = "MPS backend out of memory"
@@ -1606,23 +1612,64 @@ def _empty_device_cache(device: str) -> None:
         torch.mps.empty_cache()
 
 
-def _gliner_windows(text: str, max_words: int, overlap_words: int) -> list[tuple[int, str]]:
-    """(offset, chunk) windows of at most `max_words` GLiNER words, each
+def _gliner_windows(
+    text: str,
+    max_words: int,
+    overlap_words: int,
+    count_tokens: Callable[[list[str]], list[int]],
+    max_tokens: int = _GLINER_WINDOW_TOKENS,
+) -> list[tuple[int, str]]:
+    """(offset, chunk) windows of at most `max_words` GLiNER words and
+    `max_tokens` subword tokens (`count_tokens` gives each word's), each
     starting on a word, consecutive windows sharing `overlap_words` words.
     GLiNER drops every word past its `max_len` without an error, so a longer
     text has to be split; an overlap of the model's `max_width`, the longest
-    span it can emit, keeps an entity cut by one window whole in the next."""
+    span it can emit, keeps an entity cut by one window whole in the next.
+    A window the token cap leaves no longer than the overlap is followed
+    from where it ends; a word longer than the cap is cut into pieces
+    (`_split_long_words`). Below the cap, the windows are word windows."""
     words = [(m.start(), m.end()) for m in _GLINER_WORD.finditer(text)]
-    if len(words) <= max_words:
+    tokens = count_tokens([text[s:e] for s, e in words]) if words else []
+    if len(words) <= max_words and sum(tokens) <= max_tokens:
         return [(0, text)]
-    stride = max_words - overlap_words
+    words, tokens = _split_long_words(text, words, tokens, count_tokens, max_tokens)
     windows: list[tuple[int, str]] = []
-    for i in range(0, len(words), stride):
-        start, end = words[i][0], words[min(i + max_words, len(words)) - 1][1]
+    i = 0
+    while True:
+        j, used = i, 0
+        while j < min(i + max_words, len(words)) and (j == i or used + tokens[j] <= max_tokens):
+            used += tokens[j]
+            j += 1
+        start, end = words[i][0], words[j - 1][1]
         windows.append((start, text[start:end]))
-        if i + max_words >= len(words):
+        if j >= len(words):
             return windows
-    return windows
+        i = j - overlap_words if j - overlap_words > i else j
+
+
+def _split_long_words(
+    text: str,
+    words: list[tuple[int, int]],
+    tokens: list[int],
+    count_tokens: Callable[[list[str]], list[int]],
+    max_tokens: int,
+) -> tuple[list[tuple[int, int]], list[int]]:
+    """`words` and their token counts, each word over `max_tokens` halved by
+    characters until every piece fits."""
+    out_words: list[tuple[int, int]] = []
+    out_tokens: list[int] = []
+    for (start, end), n in zip(words, tokens, strict=True):
+        pending = [(start, end, n)]
+        while pending:
+            s, e, k = pending.pop()
+            if k <= max_tokens or e - s == 1:
+                out_words.append((s, e))
+                out_tokens.append(k)
+                continue
+            mid = (s + e) // 2
+            left, right = count_tokens([text[s:mid], text[mid:e]])
+            pending += [(mid, e, right), (s, mid, left)]
+    return out_words, out_tokens
 
 
 def _dedupe_gliner_spans(spans_with_scores: list[tuple[Span, float]]) -> list[tuple[Span, float]]:
@@ -1677,7 +1724,8 @@ def gliner_v2_predictor(
     is prompted and returned unmapped (nullpii's merged models).
 
     A text longer than the model's `max_len` words, or than
-    `max_window_words` where the hardware cannot hold `max_len`, is cut into
+    `max_window_words` where the hardware cannot hold `max_len`, or than
+    `_GLINER_WINDOW_TOKENS` subword tokens, is cut into
     word windows (`_gliner_windows`), `batch_size` at a time (fewer where
     long windows would exceed `_GLINER_ATTENTION_BUDGET`, halved while a
     batch runs out of GPU memory (CUDA or MPS), on the CPU where one window
@@ -1718,6 +1766,9 @@ def gliner_v2_predictor(
 
     tokenizer = model.data_processor.transformer_tokenizer
 
+    def _count_tokens(pieces: list[str]) -> list[int]:
+        return [len(ids) for ids in tokenizer(pieces, add_special_tokens=False)["input_ids"]]
+
     def _batch_size_for(chunks: list[str]) -> int:
         longest = max(len(ids) for ids in tokenizer(chunks, add_special_tokens=False)["input_ids"])
         return max(1, min(batch_size, _GLINER_ATTENTION_BUDGET // max(1, longest) ** 2))
@@ -1748,7 +1799,7 @@ def gliner_v2_predictor(
 
     def _predict(text: str) -> ToolResult:
         t0 = time.perf_counter()
-        windows = _gliner_windows(text, max_words, overlap_words)
+        windows = _gliner_windows(text, max_words, overlap_words, _count_tokens)
         per_window = _inference([chunk for _, chunk in windows])
         spans_with_scores: list[tuple[Span, float]] = []
         for (offset, _), entities in zip(windows, per_window, strict=True):

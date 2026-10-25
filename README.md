@@ -173,7 +173,7 @@ AB-1 measures the job nullpii's default is built for: hiding what a coding agent
 | … | TBD | TBD | TBD | TBD |
 <!-- ab1-a:end -->
 
-B1 (CredData), B2 (issue secrets) and B3 (bigcode-pii) are in [`METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md).
+B1 (CredData) and B2 (issue secrets) are in [`METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md).
 
 ### Documents (R3)
 

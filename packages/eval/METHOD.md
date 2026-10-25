@@ -22,7 +22,7 @@ nullpii's default is built for a coding agent's traffic (Claude Code): prompts, 
 - **A, counts `(pre-freeze)`.** Test split: 3,482 MUST_MASK, 6,002 MUST_KEEP and 423 AMBIGUOUS items, 200 clean documents. Both splits: 4,002 injected values and 200 encoded copies. These are the built counts, before the audit; the audit can change them.
 - **B1. CredData** ([Samsung/CredData](https://github.com/Samsung/CredData), Apache-2.0, commit `c49ed106…`, values obfuscated upstream). Seed 0: 2,000 true secrets (102 categories) and 2,000 labelled non-secrets (49 categories), stratified by CredData's `Category` (largest remainder). One document is the line(s) of the candidate with 5 lines of context each side; one item per document — a true secret is MUST_MASK `secret`, a labelled non-secret is MUST_KEEP with its CredData category as its kind. The span convention is CredData's own, taken from its scripts. Rows with label `X` (4,082), offsets outside the line (1) or an empty value (4) are dropped and counted. An independent script re-derived all 4,000 documents and found them identical.
 - **B2. Issue secrets** ([Zenodo record 17430335](https://zenodo.org/records/17430335), CC BY 4.0; paper [arXiv 2410.23657](https://arxiv.org/abs/2410.23657)). Every true secret plus an equal seeded sample of labelled non-secrets: 5,803 + 5,803 = 11,606 documents (the record's `main_data.csv` holds 5,873 true secrets, not the 5,881 the specification quoted; 70 are dropped by the rules below). A document is the issue body around the candidate, 1,000 characters each side, cut at whitespace. The scored item is the candidate's core value — its longest run of `[A-Za-z0-9+/_\-.~%=]`, at least 8 characters — because the labelled candidate sometimes carries the key name, quotes or the next line, which no masker is expected to hide. Candidates not found in the body, shorter cores and exact duplicate documents are dropped and counted. These secrets are real: only aggregates are published, never a document or a value.
-- **B3. bigcode/bigcode-pii-dataset** (pre-registered; access requested, not yet granted). 12,099 real code samples of about 50 lines in 31 programming languages, with crowd-annotated character spans. BigCode's own check on 300 files gives EMAIL precision/recall 99/97, NAME 89/94, IP 85/97, PASSWORD 91/86, KEY 91/78, USERNAME 74/86, ID 53/51, and is not claimed exhaustive. MUST_MASK: EMAIL, NAME, USERNAME, IP_ADDRESS, PASSWORD, KEY. Not scored: ID (unreliable labels), `*_EXAMPLE`, `*_LICENSE`, AMBIGUOUS. Because its labels are incomplete, only leak rate per category and overall is reported — no keep rate and no masked-outside-items figure. Its terms allow use only to evaluate PII-removal models and forbid sharing the data or modified versions, so only aggregates are published. Contamination: none of nullpii's 20 training sources is BigCode, no compared tool's model card mentions BigCode or StarPII, and StarPII (trained on it) is not compared. If access is not granted before publication, B3 is reported as not run.
+- **B3, not run.** A third slice, bigcode/bigcode-pii-dataset (real code with crowd-annotated personal data), was planned before any run; its access request was not granted, so AB-1 has no B3.
 
 ### How it was built and frozen
 
@@ -90,15 +90,6 @@ No tool has run on any AB-1 set yet, so the tables below hold placeholders only;
 | … | TBD | TBD | TBD | TBD |
 <!-- ab1-b2:end -->
 
-**B3. bigcode-pii** — leak rate per category and overall; no keep rate, because the labels are incomplete.
-
-<!-- ab1-b3:begin -->
-| Tool | Leak rate | CI of nullpii − tool (leak) |
-|---|---:|---|
-| nullpii (agent default) | TBD | TBD |
-| … | TBD | TBD |
-<!-- ab1-b3:end -->
-
 ### Limits
 
 - The injected values of A are fictional and generated. They are format-valid and drawn from real providers' layouts, but a generated key is not a leaked key: AB-1 measures whether a masker finds the shapes, not whether a real credential of that shape is still usable.
@@ -106,7 +97,6 @@ No tool has run on any AB-1 set yet, so the tables below hold placeholders only;
 - The WildChat-1M prompts are written to a chat assistant, not to a coding agent: they are real non-English programming questions, one model of what a user types, not agent traffic.
 - A is one specification's view of agent traffic, built by one agent and audited on 10% of its documents. Claude Code-style tools are the model: another agent's traffic (different tool schemas, different file kinds) is not represented.
 - B1 and B2 hold secrets and secret-looking non-secrets only: they say nothing about names, contact details or the other categories.
-- B3's labels are incomplete by its own authors' check, which is why it has no keep rate and no over-masking figure, and it may not run at all if access is not granted.
 - The components are scored separately and are not averaged into one AB-1 score; a tool can lead on one and trail on another.
 
 ### Licences and attribution
@@ -114,7 +104,7 @@ No tool has run on any AB-1 set yet, so the tables below hold placeholders only;
 - Component A's carriers: [nebius/SWE-rebench-openhands-trajectories](https://huggingface.co/datasets/nebius/SWE-rebench-openhands-trajectories) CC BY 4.0; [OpenHands/openhands-feedback](https://huggingface.co/datasets/OpenHands/openhands-feedback) MIT; [allenai/WildChat-1M](https://huggingface.co/datasets/allenai/WildChat-1M) ODC-BY 1.0, cited as Zhao, Ren, Hessel, Cardie, Choi, Deng, "WildChat: 1M ChatGPT Interaction Logs in the Wild", ICLR 2024; each GitHub issue keeps the SPDX licence of its repository, recorded per document. Repositories were found through GitHub's Multilingual Repositories Dataset (CC0-1.0, commit `3d63dbdb61f69663486309a1f8805a1c8eb4a353`), which was used only to find repositories.
 - The published gold of A does not redistribute GitHub issue text: it holds the issue URL and the offsets, with a script to rebuild the text.
 - Value lists: Wikidata (CC0) and GeoNames (CC BY 4.0); key formats: gitleaks v8.30.1, commit `83d9cd684c87d95d656c1458ef04895a7f1cbd8e` (MIT).
-- B1: Samsung/CredData (Apache-2.0), source files under their repositories' own licences, published as aggregates only. B2: Zenodo record 17430335 (CC BY 4.0), aggregates only. B3: bigcode/bigcode-pii-dataset, its own terms, aggregates only.
+- B1: Samsung/CredData (Apache-2.0), source files under their repositories' own licences, published as aggregates only. B2: Zenodo record 17430335 (CC BY 4.0), aggregates only.
 - Component A's generator, its handmade lists and its gold are Apache-2.0; carrier excerpts keep their dataset's or repository's licence.
 
 ### Reproduce

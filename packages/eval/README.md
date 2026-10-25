@@ -34,7 +34,7 @@ python scripts/ab/r2_verdict.py --report char.json --baseline nullpii --better-r
 ```
 
 - `char_metrics.py`: character-level recall, precision and F-scores with paired bootstrap CIs; `--language`, `--cluster-rows` and `--exclude` for the breakdowns and sensitivity checks.
-- `core_filter.py`: nullpii's default configuration filtered to the core labels.
+- `core_filter.py`: nullpii with every category masked, filtered to the core labels.
 - `tune_operating_point.py` and `threshold_sim.py`: a competitor's operating point on the tuning set.
 - `openmed_no_output.py`: the texts OpenMed returned no output for.
 - `overlap_check.py`: shingle overlap between a dataset and training or tuning text.

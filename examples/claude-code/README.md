@@ -78,12 +78,13 @@ direct API use.
 
 ## What gets sanitized
 
-nullpii masks 19 categories: person, email, phone, address, date, URL,
-IP, MAC, passport, driving licence, vehicle id, geolocation, account
-number (IBAN, cards, SSN, MRN, national and tax ids) and secret (API
-keys, JWTs, private keys, base64-wrapped values), plus, by default,
-organisation, occupation, demographic and sensitive attributes, and
-titles. Validated recognizers catch structured values (IBAN mod-97,
+nullpii detects 19 categories. By default it masks person, email,
+phone, address, URL, IP, MAC, passport, driving licence, vehicle id,
+geolocation, account number (IBAN, cards, SSN, MRN, national and tax
+ids) and secret (API keys, JWTs, private keys, base64-wrapped values),
+and leaves readable date, organisation, occupation, demographic and
+sensitive attributes, and titles, which an agent often needs and which
+identify no one on their own. Validated recognizers catch structured values (IBAN mod-97,
 Luhn, VIN, coordinate ranges). The full label table, and how to turn
 categories off, is in the root
 [`README.md`](https://github.com/lBroth/nullpii#what-gets-caught).

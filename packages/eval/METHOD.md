@@ -37,8 +37,8 @@ nullpii's default is built for a coding agent's traffic (Claude Code): prompts, 
 - A MUST_MASK item is masked when every character carrying its value is masked, whatever the label; whitespace and `\n`/`\r`/`\t` layout escapes inside the item do not count, so a tool that masks a private key line by line has masked it. Partial masking is a leak. The same rule applies to every tool.
 - A MUST_KEEP item is kept when no character of it is masked. AMBIGUOUS items are scored neither way.
 - These rates are over items, not over characters, which is the difference from the R3 metric above. A tool's leak rate and keep rate are reported per category and overall, with no combined score.
-- Also reported: documents with at least one leak; the share of clean documents (no MUST_MASK item) with anything masked; characters masked outside every item, per 1,000 characters; the encoded leak rate, on the base64/URL-encoded copies alone; whether JSON documents still parse after masking; whether diff hunks still have a consistent line count after masking (carrier pre-images are not shipped, so `git apply --check` is not possible); and the secrets' leak rate split by whether nullpii's recognizer pack covers their key format, a split computed after the freeze from the pack's source and only reported.
-- Uncertainty: paired bootstrap over documents, 1,000 resamples, seed 0, 95% intervals of each rate and of nullpii minus each tool. A difference is called a win or a loss only when its interval excludes 0.
+- Also reported: documents with at least one leak; the share of clean documents (no MUST_MASK item) with anything masked; characters masked outside every item, per 1,000 characters; the encoded leak rate, on the base64/URL-encoded copies alone; whether JSON documents still parse after masking; whether diff hunks still have a consistent line count after masking (carrier pre-images are not shipped, so `git apply --check` is not possible); and the secrets' leak rate split by whether nullpii's recognizer pack covers their key format, a split computed after the freeze from the pack itself (`recognizer_spans.mjs`, `secret_coverage.py`) and only reported.
+- Uncertainty: paired bootstrap over documents, 1,000 resamples, seed 0, 95% intervals of each tool's overall leak and keep rates and of nullpii minus each tool (not per category). A difference is called a win or a loss only when its interval excludes 0.
 - Baseline: nullpii 0.5 in its agent default, the categories the agent policy leaves readable turned off (dates, organisations, occupations, titles, demographic and sensitive attributes).
 
 ### Competitors
@@ -196,7 +196,7 @@ nullpii 0.5 (the release build and the published weights, in fp32) in its core r
 |---|---:|---:|---:|---:|---:|---:|---:|
 | rizzo-pii (default) | 0.818 | 0.849 | 0.623 | 0.840 | 0.718 | 0.770 | 0.750–0.806 |
 | **nullpii** | 0.847 | 0.871 | 0.407 | 0.887 | 0.769 | 0.756 | 0.723–0.844 |
-| nullpii, default configuration, core labels only | 0.827 | 0.872 | 0.402 | 0.880 | 0.757 | 0.747 | 0.714–0.834 |
+| nullpii, every category masked, core labels only | 0.827 | 0.872 | 0.402 | 0.880 | 0.757 | 0.747 | 0.714–0.834 |
 | nvidia/gliner-PII (library) | 0.779 | 0.833 | 0.442 | 0.875 | 0.672 | 0.720 | 0.681–0.790 |
 | OpenMed privacy-filter-multilingual-v2 | 0.784 | 0.874 | 0.480 | 0.725 | 0.725 | 0.717 | 0.678–0.777 |
 | pii-identifier | 0.796 | 0.879 | 0.492 | 0.632 | 0.706 | 0.701 | 0.657–0.753 |
@@ -205,7 +205,7 @@ nullpii 0.5 (the release build and the published weights, in fp32) in its core r
 | OpenMed PII Large | 0.784 | 0.869 | 0.528 | 0.589 | 0.642 | 0.682 | 0.635–0.721 |
 | OpenMed PII Small | 0.777 | 0.866 | 0.478 | 0.609 | 0.635 | 0.673 | 0.625–0.722 |
 | gliner-pii-large | 0.844 | 0.801 | 0.191 | 0.863 | 0.582 | 0.656 | 0.604–0.772 |
-| nullpii, default configuration as shipped | 0.786 | 0.793 | 0.136 | 0.796 | 0.753 | 0.653 | 0.617–0.782 |
+| nullpii, every category masked, all its spans | 0.786 | 0.793 | 0.136 | 0.796 | 0.753 | 0.653 | 0.617–0.782 |
 | piiranha | 0.784 | 0.760 | 0.239 | 0.857 | 0.617 | 0.651 | 0.600–0.755 |
 | gliner_multi_pii (ONNX) | 0.817 | 0.795 | 0.163 | 0.913 | 0.551 | 0.648 | 0.581–0.769 |
 | Presidio | 0.706 | 0.779 | 0.280 | 0.729 | 0.645 | 0.628 | 0.590–0.715 |
@@ -219,9 +219,9 @@ nullpii 0.5 (the release build and the published weights, in fp32) in its core r
 | Tool | RedactionBench | mama-deid | traces-v3, distractors ignored | Macro | LODO |
 |---|---:|---:|---:|---:|---:|
 | **nullpii** | 0.735 | 0.715 | 0.880 | 0.777 | 0.725–0.807 |
-| nullpii, default configuration, core labels only | 0.717 | 0.666 | 0.870 | 0.751 | 0.692–0.793 |
+| nullpii, every category masked, core labels only | 0.717 | 0.666 | 0.870 | 0.751 | 0.692–0.793 |
 | openai privacy-filter | 0.727 | 0.701 | 0.804 | 0.744 | 0.714–0.765 |
-| nullpii, default configuration as shipped | 0.693 | 0.655 | 0.865 | 0.738 | 0.674–0.779 |
+| nullpii, every category masked, all its spans | 0.693 | 0.655 | 0.865 | 0.738 | 0.674–0.779 |
 | ettin-68m | 0.738 | 0.591 | 0.818 | 0.716 | 0.665–0.778 |
 | rizzo-pii | 0.632 | 0.648 | 0.824 | 0.701 | 0.640–0.736 |
 | OpenMed privacy-filter-multilingual-v2 | 0.691 | 0.591 | 0.821 | 0.701 | 0.641–0.756 |
@@ -248,11 +248,11 @@ nullpii 0.5 (the release build and the published weights, in fp32) in its core r
 | pii-identifier (default) | 0.771 | 0.858 | 0.575 | 0.654 | 0.714 | 0.667–0.761 |
 | **nullpii** | 0.790 | 0.871 | 0.407 | 0.784 | 0.713 | 0.661–0.815 |
 | ettin-68m | 0.783 | 0.844 | 0.483 | 0.712 | 0.706 | 0.659–0.780 |
-| nullpii, default configuration, core labels only | 0.768 | 0.872 | 0.402 | 0.773 | 0.704 | 0.648–0.804 |
+| nullpii, every category masked, core labels only | 0.768 | 0.872 | 0.402 | 0.773 | 0.704 | 0.648–0.804 |
 | OpenMed PII Large | 0.772 | 0.869 | 0.528 | 0.630 | 0.700 | 0.643–0.757 |
 | OpenMed PII Small | 0.766 | 0.866 | 0.478 | 0.623 | 0.683 | 0.622–0.751 |
 | nvidia/gliner-PII (library) | 0.746 | 0.833 | 0.442 | 0.666 | 0.672 | 0.618–0.748 |
-| nullpii, default configuration as shipped | 0.717 | 0.793 | 0.136 | 0.769 | 0.604 | 0.541–0.760 |
+| nullpii, every category masked, all its spans | 0.717 | 0.793 | 0.136 | 0.769 | 0.604 | 0.541–0.760 |
 | Presidio | 0.688 | 0.779 | 0.280 | 0.646 | 0.598 | 0.538–0.705 |
 | piiranha | 0.770 | 0.760 | 0.239 | 0.605 | 0.593 | 0.534–0.711 |
 | gliner-pii-large | 0.792 | 0.801 | 0.191 | 0.577 | 0.590 | 0.520–0.723 |
@@ -262,7 +262,7 @@ nullpii 0.5 (the release build and the published weights, in fp32) in its core r
 | nvidia/gliner-PII (NVIDIA server) (default) | 0.619 | 0.751 | 0.291 | 0.501 | 0.540 | 0.470–0.624 |
 | mask everything | 0.323 | 0.278 | 0.004 | 0.393 | 0.249 | 0.202–0.331 |
 
-nullpii's default configuration also masks five categories outside the core labels these datasets are scored on (organisations, occupations, demographic and sensitive attributes, titles), so as shipped it scores lower here: 0.653 on the gated sets, 0.136 on PIILO. Turning those five off gives the core regime above. These rows were measured with the earlier default, which masked every category. The default nullpii now ships for coding agents leaves those five categories and dates readable (`DEFAULT_DISABLED_CATEGORIES`); it is not measured here yet, and it is not the core regime either, since the core labels count dates.
+nullpii with every category masked (the default before 0.5) also masks five categories outside the core labels these datasets are scored on (organisations, occupations, demographic and sensitive attributes, titles), so counted on everything it masks it scores lower here: 0.653 on the gated sets, 0.136 on PIILO. Turning those five off gives the core regime above. The default nullpii now ships for coding agents leaves those five categories and dates readable (`DEFAULT_DISABLED_CATEGORIES`); it is not measured here yet, and it is not the core regime either, since the core labels count dates.
 
 **Comparisons (gated sets, F2).** On the macro over the five sets (not on each set: on PIILO, eight tools are ahead), nullpii is significantly ahead of every tool but one, at that tool's better row: the narrowest margins are nvidia/gliner-PII [+0.024, +0.050] and OpenMed privacy-filter-multilingual-v2 [+0.030, +0.048]. rizzo-pii at its default is significantly ahead of nullpii, [−0.021, −0.005], all of it on PIILO; this is the test fixed before the run. With 99.67% intervals (a Bonferroni correction for 15 comparisons, added after the run), the 14 leads hold (13 tools and NVIDIA's server pipeline; narrowest nvidia/gliner-PII [+0.018, +0.056]) and the gap to rizzo-pii, −0.013, is no longer significant, [−0.025, +0.001]. No dataset has a tool with significantly higher recall at matched or better precision. At F0.5 nullpii falls to ninth on these rows (eight tools ahead), and to twelfth with each tool at its best F0.5 row.
 
@@ -281,14 +281,14 @@ Without the clinical notes, the lead over everyone but rizzo-pii is gone: two to
 **Sensitivity checks** (reported, none decides; the first two were run before NVIDIA's server row was added; the third, at 95% and corrected, includes it):
 - without the documents any OpenMed row returned no output for (77 gated documents, for every tool): conclusions unchanged;
 - every set resampled by its recorded clusters: conclusions unchanged (rizzo-pii [−0.022, −0.004]);
-- nullpii's default configuration on the core labels (0.747) as the baseline: ahead of the same 14 rows, also with the Bonferroni correction (narrowest nvidia/gliner-PII [+0.009, +0.047]), and behind rizzo-pii, −0.022, significantly in both tests ([−0.031, −0.013] at 95%, [−0.034, −0.008] corrected).
+- nullpii with every category masked, on the core labels (0.747), as the baseline: ahead of the same 14 rows, also with the Bonferroni correction (narrowest nvidia/gliner-PII [+0.009, +0.047]), and behind rizzo-pii, −0.022, significantly in both tests ([−0.031, −0.013] at 95%, [−0.034, −0.008] corrected).
 
 **OpenMed's texts with no output.** `deidentify` refuses some texts as suspicious content (7 traces-v3 transcripts, 2 PIILO essays, 2 RedactionBench documents and 1 mama-deid text, for both models at both points) and fails its own safety-sweep check on others, more at the tuned points' lower thresholds (Small tuned: 7 REDACT, 41 Tonic, 11 PIILO, 1 eu-clinical, 83 mama-deid; Large tuned: 9 REDACT, 3 Tonic, 1 PIILO, 59 mama-deid). They score as no spans. The package logs no text, so each failure is matched to its document by length and empty output (`scripts/ab/openmed_no_output.py`).
 
-**PIIMB** (`sentences` subset, 150,022 texts, nullpii's default configuration), scored by us with the leaderboard's method (`scripts/ab/piimb_score.py`), not a submitted entry: average F2 0.851, above all 35 listed tools; OpenMed privacy-filter-multilingual-v2 0.836, OpenMed PII SuperClinical Large 0.835. Per task, nullpii's F2: ai4privacy-en 0.960, ai4privacy-multilingual 0.940, nemotron-pii 0.953, Gretel 0.962, privy 0.713, mapa-eur-lex 0.580. Caveats:
+**PIIMB** (`sentences` subset, 150,022 texts, nullpii with every category masked (the default before 0.5)), scored by us with the leaderboard's method (`scripts/ab/piimb_score.py`), not a submitted entry: average F2 0.851, above all 35 listed tools; OpenMed privacy-filter-multilingual-v2 0.836, OpenMed PII SuperClinical Large 0.835. Per task, nullpii's F2: ai4privacy-en 0.960, ai4privacy-multilingual 0.940, nemotron-pii 0.953, Gretel 0.962, privy 0.713, mapa-eur-lex 0.580. Caveats:
 - the nemotron-pii task is in nullpii's training family; without it nullpii averages 0.831, against gliner-stream-pii's 0.826 and privacy-filter-multilingual-v2's 0.822, and the leaderboard gives no intervals;
 - the ai4privacy tasks come from the same family as part of the tuning set;
-- PIIMB shaped a design decision: an earlier result, on which nullpii missed every category it did not mask then, is why the five extended categories exist and are on by default. PIIMB has not been used to tune anything.
+- PIIMB shaped a design decision: an earlier result, on which nullpii missed every category it did not mask then, is why the five extended categories exist. They were masked by default until 0.5; the 0.5 default for coding agents leaves them readable. PIIMB has not been used to tune anything.
 
 **Latency** is in the README; it is measured on idle machines, every tool on the same texts of coding-agent material (code, logs, prose and tool output) at 2,000, 30,000 and 100,000 characters, after a warm-up. On GPU every tool runs the full plan: 60, 12 and 5 texts per size, in three rounds, and the table shows the median of the rounds' medians. On CPU, where the full plan takes hours for a single tool, every tool runs the short plan: one text of each kind at 2,000 and 30,000 characters (6 each) and three at 100,000, timed once, and the table shows their median. The short plan's texts are a subset of the full plan's.
 

@@ -6,7 +6,7 @@
 
 Mask personal data and secrets before they reach an LLM, and put them back on the way out. Detection runs on your machine: a fine-tuned GLiNER model plus validated recognizers, with a reversible in-memory vault.
 
-- **Measured on held-out data.** On five datasets chosen before any tool was run on them (four public sets and a synthetic coding-agent trace set built for this benchmark), with under 1% measured overlap with nullpii's training data and the public training sets the compared tools declare (a few declared sets were not compared; METHOD.md), nullpii ranks second on macro char-F2 among 15 open-source detectors, behind rizzo-pii (0.770): 0.756 with its five extended categories off, as the datasets do not label them, and 0.747 for its default configuration counted on the same labels. It lets less personal data through than any other tool's best-scoring configuration (recall 0.960). Much of its lead over the other 13 comes from one dataset, clinical notes in Greek and German: without it nullpii is third, and three more tools are within the interval. On English text alone it is fifth. Scored by us with the PIIMB leaderboard's method (not a submitted entry), its average F2 of 0.851 is above the 35 listed tools; without the one task from its training family it is 0.831, not clearly ahead. It gets there by masking generously: on precision-weighted scores most tools rank above it. [Results](#benchmark).
+- **Measured on held-out data.** On five datasets chosen before any tool was run on them (four public sets and a synthetic coding-agent trace set built for this benchmark), with under 1% measured overlap with nullpii's training data and the public training sets the compared tools declare (a few declared sets were not compared; METHOD.md), nullpii ranks second on macro char-F2 among 15 open-source detectors, behind rizzo-pii (0.770): 0.756 with its five extended categories off, as the datasets do not label them, and 0.747 with every category masked (the default before 0.5), counted on the same labels. It lets less personal data through than any other tool's best-scoring configuration (recall 0.960). Much of its lead over the other 13 comes from one dataset, clinical notes in Greek and German: without it nullpii is third, and three more tools are within the interval. On English text alone it is fifth. Scored by us with the PIIMB leaderboard's method (not a submitted entry), with every category masked, its average F2 of 0.851 is above the 35 listed tools; without the one task from its training family it is 0.831, not clearly ahead. It gets there by masking generously: on precision-weighted scores most tools rank above it. [Results](#benchmark).
 - **Works with any model.** Mask before your LLM call and restore after it. Or run the gateway in front of the Anthropic or OpenAI API, or the Claude Code mod. Claude Code is the coding agent nullpii is built and tested with, through the mod (recommended) or the gateway. The gateway proxies the Anthropic Messages API and OpenAI Chat Completions only, so the Codex CLI, which speaks only the Responses API, cannot use it.
 - **Built for coding agents.** It masks tool output (files, logs, command results), not just prompts; it keeps public links to code hosts and documentation readable; and it never puts a hidden value back into a shell command (see SECURITY.md).
 
@@ -207,11 +207,11 @@ Two of the datasets and tools compared here are built for documents. PIILO is a 
 | mask everything | 0.260 | | | | |
 <!-- matrix:end -->
 
-nullpii is measured with its five extended categories off, as the datasets do not label them. Its default configuration, which masks them too, scores 0.747 counted on the same labels and 0.653 as shipped, since masking organisations, occupations and the like counts as over-masking here.
+nullpii is measured with its five extended categories off, as the datasets do not label them. With every category masked (the default before 0.5), which masks them too, it scores 0.747 counted on the same labels and 0.653 counted on everything it masks, since masking organisations, occupations and the like counts as over-masking here. The 0.5 default for coding agents leaves those five categories and dates readable; it is measured on agent traffic (AB-1, above), not on these datasets, whose core labels count dates.
 
 **Where nullpii is not ahead.**
 - **One dataset carries much of the lead.** Without the Greek and German clinical notes, nullpii is third (0.723): openai's privacy-filter (+0.032) and rizzo-pii (+0.028) are significantly ahead, and pii-identifier, OpenMed privacy-filter-multilingual-v2 and OpenMed large are within the confidence interval. Without the student essays, nullpii is first (0.844, rizzo-pii 0.037 behind).
-- **rizzo-pii is ahead, on student essays.** On PIILO nullpii scores 0.407 against rizzo-pii's 0.623, with higher recall and much lower precision: it masks a lot the gold does not label. On the other four datasets nullpii is ahead of rizzo-pii. Over all five the gap, −0.013, is significant in the 95% test fixed before the run, [−0.021, −0.005]; with a Bonferroni correction added afterwards (99.67%) it is not, [−0.025, +0.001], while the 13 leads hold. nullpii's default configuration is further behind, −0.022, and significantly so in both tests: [−0.031, −0.013] at 95%, [−0.034, −0.008] corrected.
+- **rizzo-pii is ahead, on student essays.** On PIILO nullpii scores 0.407 against rizzo-pii's 0.623, with higher recall and much lower precision: it masks a lot the gold does not label. On the other four datasets nullpii is ahead of rizzo-pii. Over all five the gap, −0.013, is significant in the 95% test fixed before the run, [−0.021, −0.005]; with a Bonferroni correction added afterwards (99.67%) it is not, [−0.025, +0.001], while the 13 leads hold. With every category masked nullpii is further behind, −0.022, and significantly so in both tests: [−0.031, −0.013] at 95%, [−0.034, −0.008] corrected.
 - **Precision.** nullpii's recall is the highest of any tool's best-scoring row (only rizzo-pii tuned for recall goes higher, 0.967, at F2 0.583), and its precision is among the lowest. Ranked by F0.5 on the rows above it is ninth (eight tools ahead); with each tool at its best F0.5 operating point, eleven are ahead.
 - **Per dataset.** On PIILO, 8 of the 14 tools are ahead of nullpii; on Tonic, three are, by up to 0.008; on the clinical notes, gliner_multi_pii (0.913 against 0.887).
 - **English documents only.** nullpii is fifth (0.713), behind openai's privacy-filter (0.746), rizzo-pii (0.742), OpenMed's privacy-filter-multilingual-v2 (0.717) and pii-identifier (0.714). The first two are significantly ahead; the next two, and ettin-68m and OpenMed large below it, are within the interval.
@@ -235,7 +235,7 @@ nullpii is not the fastest: it is seventh of 13 tools on GPU and fifth of 15 on 
 | pii-identifier | 19 | 407 | 1,411 |
 | gliner-stream-pii | 30 | 412 | 1,421 |
 | **nullpii** (core labels) | **32** | **463** | **1,650** |
-| **nullpii** (default configuration) | **34** | **489** | **1,747** |
+| **nullpii** (every category masked) | **34** | **489** | **1,747** |
 | rizzo-pii | 27 | 494 | 1,715 |
 | deberta PII | 35 | 631 | 2,268 |
 | OpenMed PII Small | 46 | 794 | 3,423 |
@@ -253,7 +253,7 @@ nullpii is not the fastest: it is seventh of 13 tools on GPU and fifth of 15 on 
 | piiranha | 386 | 6,208 | 20,493 |
 | pii-identifier | 326 | 6,609 | 24,116 |
 | **nullpii** (core labels) | **394** | **6,984** | **24,674** |
-| **nullpii** (default configuration) | **432** | **7,655** | **27,048** |
+| **nullpii** (every category masked) | **432** | **7,655** | **27,048** |
 | ettin-68m | 535 | 8,882 | 29,640 |
 | rizzo-pii | 413 | 10,962 | 32,918 |
 | deberta PII | 654 | 11,933 | 42,702 |

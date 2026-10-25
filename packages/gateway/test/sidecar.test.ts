@@ -6,7 +6,12 @@
 
 import type { FastifyInstance } from 'fastify';
 import type { NullPii } from 'nullpii';
-import { DEFAULT_DISABLED_CATEGORIES, PiiVault, TextTooLongError } from 'nullpii';
+import {
+  DEFAULT_DISABLED_CATEGORIES,
+  DEFAULT_RESTORE_TOOLS,
+  PiiVault,
+  TextTooLongError,
+} from 'nullpii';
 
 import { createHmac } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -1135,5 +1140,73 @@ describe('sidecar · policy', () => {
     await running;
 
     expect((await call()).headers['x-nullpii-cache']).toBe('miss');
+  });
+
+  it('a sanitize that runs across a change, even one put back, answers 412 to a caller that named its version, and caches nothing', async () => {
+    // Like NullPii, this engine reads its policy after the model's await.
+    const vault = new PiiVault();
+    let disabled = new Set<string>();
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let first = true;
+    const np = {
+      updatePolicy(policy: { disabledCategories?: string[] }) {
+        disabled = new Set(policy.disabledCategories ?? []);
+      },
+      async sanitize(text: string, sessionId?: string) {
+        if (first) {
+          first = false;
+          await gate;
+        }
+        const id = sessionId ?? vault.createSession();
+        const spans = [...text.matchAll(/Ada Lovelace/g)]
+          .map((m) => ({
+            label: 'private_person' as const,
+            start: m.index ?? 0,
+            end: (m.index ?? 0) + m[0].length,
+            text: m[0],
+            score: 1,
+          }))
+          .filter((span) => !disabled.has(span.label));
+        const r = vault.sanitize(text, spans, id);
+        return { sessionId: id, sanitized: r.sanitized, spans, modelUnscannedWords: 0 };
+      },
+      restore: (text: string, sessionId: string) => vault.restore(text, sessionId),
+      createSession: () => vault.createSession(),
+      destroySession: (sessionId: string) => vault.destroySession(sessionId),
+    } as unknown as NullPii;
+    const { app } = await setup(
+      { policyFile: join(policyDir, 'config.json'), restoreTools: new Set(DEFAULT_RESTORE_TOOLS) },
+      { np, vault },
+    );
+    await open(app, 's1');
+    const v1 = await versionOf(app);
+    const status = await app.inject({ method: 'GET', url: '/v1/sidecar/status', headers: AUTH });
+    const original = (status.json() as { policy: { config: unknown } }).policy.config;
+    const call = () =>
+      app.inject({
+        method: 'POST',
+        url: '/v1/sidecar/sessions/s1/sanitize',
+        headers: { ...authFor('s1'), [POLICY_VERSION_HEADER]: v1 },
+        payload: { value: `hello ${FULL_NAME}` },
+      });
+
+    const running = call();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    // A command holding only the token widens the policy, then puts it back.
+    await putPolicy(app, { disabledCategories: ['private_person'] });
+    release();
+    const answer = await running;
+    await putPolicy(app, original);
+    expect(await versionOf(app)).toBe(v1);
+
+    expect(answer.statusCode).toBe(412);
+    expect(answer.body).not.toContain(FULL_NAME);
+    const after = await call();
+    expect(after.statusCode).toBe(200);
+    expect(after.headers['x-nullpii-cache']).toBe('miss');
+    expect(after.body).not.toContain(FULL_NAME);
   });
 });

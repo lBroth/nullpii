@@ -367,6 +367,7 @@ export async function registerSidecarRoutes(
         // answer where the new policy's requests look.
         const version = opts.policy.version;
         if (staleVersion(req, version)) return sendPolicyChanged(reply, version);
+        const generation = opts.policy.generation;
         const cacheKey = SanitizeCache.keyOf(`${version}\n${JSON.stringify(req.body.value)}`);
         const cached = session.cache.get(cacheKey);
         if (cached !== undefined) {
@@ -374,6 +375,13 @@ export async function registerSidecarRoutes(
           return reply.header(CACHE_HEADER, 'hit').type('application/json').send(cached);
         }
         const r = await sanitizeValue(np, req.body.value, session.vaultId);
+        // The engine reads the policy as it goes, so an answer that ran
+        // across a change (even one put back since) was masked under a mix:
+        // a caller that named its version gets 412, and nothing is cached.
+        const changed = opts.policy.generation !== generation;
+        if (changed && req.headers[POLICY_VERSION_HEADER] !== undefined) {
+          return sendPolicyChanged(reply, opts.policy.version);
+        }
         req.log.info(
           {
             captured: r.captured,
@@ -389,7 +397,7 @@ export async function registerSidecarRoutes(
           modelUnscannedWords: r.modelUnscannedWords,
         });
         if (body === undefined) return reply.code(413).send({ error: 'response_too_large' });
-        session.cache.set(cacheKey, body);
+        if (!changed) session.cache.set(cacheKey, body);
         return reply.header(CACHE_HEADER, 'miss').type('application/json').send(body);
       },
     );

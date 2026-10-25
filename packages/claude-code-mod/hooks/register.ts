@@ -52,8 +52,13 @@ const POLICY_CHANGED = 412;
 /** The answers of the dialog about a policy change this session did not make. */
 const KEEP_POLICY = 'Keep the change';
 const REVERT_POLICY = 'Put back the previous policy';
-/** The tool `$.ui.ask` puts a question to the user through. */
+/** The tool `$.ui.ask` puts a question to the user through, and the
+ * header the mod's own questions carry. */
 const DIALOG_TOOL = 'AskUserQuestion';
+const DIALOG_HEADER = 'nullpii';
+/** Where the mod keeps the policy it last made or accepted, so a change
+ * made between sessions is put to the user at the next one. */
+const ACCEPTED_POLICY_KEY = 'acceptedPolicy';
 /** The answers of the dialog that asks before masking a value in the
  * user's own prompt (a category whose mode is `ask`). */
 const ASK_MASK = 'Mask';
@@ -77,9 +82,11 @@ const UNREACHABLE =
 const NOT_JSON = 'the sidecar answered with something that is not JSON';
 const STARTING = 'starting nullpii-gateway for this session (its first start downloads the model)';
 const NOT_STARTED = 'the nullpii-gateway this session started did not answer in time';
+const NO_POLICY =
+  'the sidecar reported no policy version: run nullpii-gateway 0.5.0 or later there';
 /** The release of the packages the mod starts the sidecar from, and the
- * ONNX runtime that release is built and tested with: exact versions, so
- * what runs with the token is what this mod was released with. */
+ * ONNX runtime that release is built and tested with, at exact versions
+ * (their own dependencies are resolved by npx at the time). */
 const GATEWAY_RELEASE = '0.5.0';
 const ONNXRUNTIME_RELEASE = '1.30.0';
 /** The command that starts the sidecar: the release's CLI, gateway and
@@ -121,6 +128,7 @@ const OWN_REASONS: ReadonlySet<string> = new Set([
   NOT_SIDECAR,
   STARTING,
   NOT_STARTED,
+  NO_POLICY,
 ]);
 /** SidecarError's text, the one with a variable part. */
 const SIDECAR_STATUS = /^nullpii sidecar answered \d{3}$/;
@@ -198,6 +206,10 @@ let opening: Promise<void> | undefined;
 // The review of a policy changed elsewhere, which every call the sidecar
 // refused for it awaits.
 let reviewing: Promise<void> | undefined;
+// The question the mod is putting about a policy change, while it waits for
+// the answer: the one dialog whose tool call is not masked (its answer comes
+// back to the mod, and masking it would wait on the same review).
+let ownQuestion: string | undefined;
 
 class SidecarError extends Error {
   constructor(readonly status: number) {
@@ -284,10 +296,12 @@ function isStatus(err: unknown, status: number): boolean {
   return err instanceof SidecarError && err.status === status;
 }
 
-/** Call this session's sidecar route `path` (`/sanitize`, `/restore`). A
- * call the sidecar refused because the policy changed is made again once
- * the user has settled the change. */
+/** Call this session's sidecar route `path` (`/sanitize`, `/restore`),
+ * always under a policy version this session accepted. A call the sidecar
+ * refused because the policy changed is made again once the user has
+ * settled the change. */
 async function sidecar($, method: string, path: string, body?: unknown): Promise<unknown> {
+  if (policy === undefined) await reviewPolicy($);
   const call = () =>
     request($, method, SESSIONS_PATH + encodeURIComponent(sessionKey) + path, body, sessionSecret);
   try {
@@ -321,28 +335,41 @@ function reviewPolicy($): Promise<void> {
  * restored under a policy the user has not seen.
  */
 async function settlePolicy($, now: Policy | undefined): Promise<void> {
-  const before = policy;
-  if (now === undefined || before === undefined || before.version === now.version) {
-    policy = now;
+  if (now?.version === undefined) throw new Error(NO_POLICY);
+  // At a session's first look, the policy the mod accepted last time.
+  const before = policy ?? ((await $.store.get(ACCEPTED_POLICY_KEY)) as Policy | undefined);
+  if (before === undefined || before.version === now.version) {
+    await accept($, now);
     return;
   }
+  const since = policy === undefined ? 'since your last session' : "outside this session's /pii";
+  const question = `The nullpii masking policy was changed ${since}: ${describePolicyChange(before, now)}. Keep the change?`;
   let answer = REVERT_POLICY;
+  ownQuestion = question;
   try {
-    answer = await $.ui.ask(
-      `The nullpii masking policy was changed outside this session's /pii: ${describePolicyChange(before, now)}. Keep the change?`,
-      { header: 'nullpii', options: [KEEP_POLICY, REVERT_POLICY] },
-    );
+    answer = await $.ui.ask(question, {
+      header: DIALOG_HEADER,
+      options: [KEEP_POLICY, REVERT_POLICY],
+    });
   } catch (err) {
     $.ui.log(`nullpii: no answer about a policy change (${errorName(err)}); putting it back`, {
       to: 'debug',
     });
+  } finally {
+    ownQuestion = undefined;
   }
   if (answer === KEEP_POLICY) {
-    policy = now;
+    await accept($, now);
     return;
   }
-  policy = await putPolicy($, before.config, now.version);
-  $.ui.toast('nullpii put back the masking policy this session had');
+  await accept($, await putPolicy($, before.config, now.version));
+  $.ui.toast('nullpii put back the masking policy you had accepted');
+}
+
+/** Make `accepted` this session's policy, and remember it for the next. */
+async function accept($, accepted: Policy): Promise<void> {
+  policy = accepted;
+  await $.store.set(ACCEPTED_POLICY_KEY, accepted);
 }
 
 /** PUT the session `key`, presenting `secret` when there is one; resolves
@@ -382,9 +409,8 @@ async function openSessionOnce($): Promise<void> {
   }
   sessionKey = key;
   sessionSecret = secret;
+  await reviewPolicy($);
   problem = undefined;
-  const status = (await request($, 'GET', STATUS_PATH)) as { policy?: Policy };
-  await settlePolicy($, status.policy);
 }
 
 /** Mask every string in `value`. A session the sidecar dropped (restart or
@@ -507,15 +533,15 @@ async function changePolicy(
   const current = policy;
   if (current === undefined) throw new Error(UNREACHABLE);
   try {
-    policy = await putPolicy($, change(current.config));
+    await accept($, await putPolicy($, change(current.config)));
   } catch (err) {
     if (!isStatus(err, POLICY_CHANGED)) throw err;
     await reviewPolicy($);
     const settled = policy as Policy | undefined;
     if (settled === undefined) throw err;
-    policy = await putPolicy($, change(settled.config));
+    await accept($, await putPolicy($, change(settled.config)));
   }
-  return policy;
+  return policy as Policy;
 }
 
 /**
@@ -555,6 +581,16 @@ async function confirmed($, text: string): Promise<string> {
     (out, a, i) => out.split(a.placeholder).join(values[i] ?? a.placeholder),
     text,
   );
+}
+
+/** Whether `call` is the question the mod is putting about a policy
+ * change right now (its text and header), and no other dialog. */
+function isOwnQuestion(call: Readonly<Record<string, unknown>>): boolean {
+  if (ownQuestion === undefined || call.tool !== DIALOG_TOOL) return false;
+  const questions = call.questions;
+  if (!Array.isArray(questions) || questions.length !== 1) return false;
+  const [only] = questions as { question?: unknown; header?: unknown }[];
+  return only?.question === ownQuestion && only?.header === DIALOG_HEADER;
 }
 
 /** `value` cut to `ASK_PREVIEW_CHARS`, for the dialog. */
@@ -661,10 +697,7 @@ export function register(on, options) {
   });
 
   on('tool.call', async ($, e, next) => {
-    // The question this mod is putting about a policy change: its answer
-    // comes back to the mod, and masking it would wait on that same
-    // review, whose policy the sidecar does not take yet.
-    if (reviewing !== undefined && e.tool === DIALOG_TOOL) return next(e);
+    if (isOwnQuestion(e)) return next(e);
     // Known to be blocking: reach the sidecar again before the tool runs,
     // so the call is refused up front instead of run with its result
     // withheld, and a sidecar that is back clears the block.

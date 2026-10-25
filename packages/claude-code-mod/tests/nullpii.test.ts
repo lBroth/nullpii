@@ -58,6 +58,8 @@ function fakeSidecar(
     policyFile?: string;
     /** The mode of each category the status reports. */
     categories?: Record<string, string>;
+    /** What the mod's plugin store holds at the start. */
+    stored?: Record<string, unknown>;
   } = {},
 ) {
   let restoreTools = opts.restoreTools ?? DEFAULT_RESTORE_TOOLS;
@@ -245,6 +247,7 @@ function fakeSidecar(
     handler,
     /** A policy change this mod did not make (a command with the token). */
     replacePolicy,
+    stored: opts.stored ?? {},
     calls,
     challenges,
     hosts,
@@ -266,6 +269,7 @@ function stubSession(
   cwd = '/work',
 ) {
   mock.env(on, env);
+  mock.store(on, sidecar.stored);
   on('session.start', () => ({ cwd }));
   on('session.cwd', () => ({ value: cwd }));
   on('command.register', () => ({ value: undefined }));
@@ -1231,4 +1235,51 @@ test('/pii applies its change to the policy as it is now, not to the copy read a
   expect(sidecar.policyBodies).toEqual([
     { categories: { private_date: 'mask', private_title: 'off' } },
   ]);
+});
+
+test('a policy changed between sessions is put to the user when the next one opens', async ($, on) => {
+  const accepted = {
+    version: 'v-earlier',
+    file: POLICY_FILE,
+    loaded: true,
+    config: { categories: { private_person: 'mask' } },
+    categories: { private_person: 'mask' },
+    restoreTools: DEFAULT_RESTORE_TOOLS,
+  };
+  const sidecar = fakeSidecar({
+    categories: { private_person: 'off' },
+    stored: { acceptedPolicy: accepted },
+  });
+  stubSession(on, sidecar);
+  const questions: string[] = [];
+  answerDialog(on, 'Put back the previous policy', questions);
+  await start($);
+
+  expect(questions).toHaveLength(1);
+  expect(questions[0]).toContain('since your last session');
+  expect(questions[0]).toContain('person mask → off');
+  expect(sidecar.policyBodies).toEqual([accepted.config]);
+});
+
+test('after a sidecar restart with another policy, the change is put to the user once', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const questions: string[] = [];
+  answerDialog(on, 'Keep the change', questions);
+  const sent: string[] = [];
+  on('prompt.submit', ($, e) => {
+    sent.push(e.text);
+    return { text: e.text };
+  });
+  await start($);
+  await $.prompt.submit({ text: 'one', wait: false, origin: COMPOSER });
+  // The sidecar restarts (sessions gone) with a policy edited by hand.
+  sidecar.sessions.clear();
+  sidecar.replacePolicy({ threshold: 0.9 });
+
+  await $.prompt.submit({ text: 'two', wait: false, origin: COMPOSER });
+
+  expect(questions).toHaveLength(1);
+  expect(questions[0]).toContain('threshold changed');
+  expect(sent).toEqual(['one', 'two']);
 });

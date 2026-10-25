@@ -5,9 +5,10 @@ Which rows go where was fixed before any score was read (LOG, 25 Oct):
 - README (component A only): one row per tool, its tuned `+agent` row (its
   operating point tuned on the tuning set, with the agent-policy post-filter),
   and nullpii's agent default.
-- METHOD (A, B1, B2): every row, tuned and default, each raw and `+agent`;
-  then, for A, the secondary metrics and the leak rate per category on the
-  README's rows.
+- METHOD (A, B1, B2): every competitor row, tuned and default, each raw and
+  `+agent`, and nullpii's agent default (its `+agent` row is left out: with
+  the readable categories off it emits none of them); then, for A, the
+  secondary metrics and the leak rate per category on the README's rows.
 Rows are sorted by leak rate, then by keep rate (higher first); there is no
 combined score. Intervals are paired bootstrap 95% CIs of nullpii minus the
 tool, in percentage points: a negative leak or a positive keep difference

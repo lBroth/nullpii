@@ -5,7 +5,7 @@
 // item's format. Writes checkpoint rows `{"idx", "spans"}` with code-point
 // offsets; prints counts only, never text.
 //
-//   node recognizer_spans.mjs --dist <abs dist> --gold <gold.jsonl> --out <spans.jsonl>
+//   node recognizer_spans.mjs --dist <abs dist> --gold <gold.jsonl> --out <spans.jsonl> [--split test]
 import { createReadStream, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -56,7 +56,10 @@ const rows = [];
 let spans = 0;
 for await (const line of jsonlLines(args.gold)) {
   if (line.trim() === '') continue;
-  const { text } = JSON.parse(line);
+  const row = JSON.parse(line);
+  // The rows `secret_coverage.py --split` scores, in the same order.
+  if (args.split !== undefined && row.split !== args.split) continue;
+  const { text } = row;
   const cp = codePointOffsets(text);
   const found = runRecognizers(text, DEFAULT_RECOGNIZERS, []).map((s) => [cp(s.start), cp(s.end), s.label]);
   spans += found.length;

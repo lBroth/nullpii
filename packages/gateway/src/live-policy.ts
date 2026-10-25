@@ -35,6 +35,7 @@ export class LivePolicy {
   private wasLoaded: boolean;
   private readonly tools: Set<string>;
   private stamp: string;
+  private changes = 0;
 
   /** @param restoreTools - the tools in effect at start (the gateway's
    *   config, which already resolved the policy's list or the default). */
@@ -56,6 +57,14 @@ export class LivePolicy {
    * since (`routes/sidecar.ts`). */
   get version(): string {
     return this.stamp;
+  }
+
+  /** How many times the policy was replaced since the gateway started.
+   * Unlike `version`, it never comes back to an earlier value, so a
+   * request can tell that the policy changed while it ran, even when it
+   * was then put back. */
+  get generation(): number {
+    return this.changes;
   }
 
   /** The policy file's contents now in effect. */
@@ -101,6 +110,7 @@ export class LivePolicy {
     this.tools.clear();
     for (const tool of parsed.restoreTools ?? DEFAULT_RESTORE_TOOLS) this.tools.add(tool);
     this.stamp = versionOf(parsed, this.tools);
+    this.changes += 1;
     return parsed;
   }
 }

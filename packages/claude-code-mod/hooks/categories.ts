@@ -108,8 +108,16 @@ export function applyPiiCommand(
   };
 }
 
+/** Policy keys whose change the category modes already show. */
+const SHOWN_AS_MODES: ReadonlySet<string> = new Set([
+  'categories',
+  'disabledCategories',
+  'restoreTools',
+]);
+
 /** What changed from `before` to `now`, for the user: category modes, the
- * tools that get real values back, else the other settings. Names only. */
+ * tools that get real values back, and the other settings by name. Names
+ * only, never values. */
 export function describePolicyChange(before: Policy, now: Policy): string {
   const parts: string[] = [];
   const was = before.categories ?? {};
@@ -123,7 +131,13 @@ export function describePolicyChange(before: Policy, now: Policy): string {
   const removed = before.restoreTools.filter((t) => !now.restoreTools.includes(t));
   if (added.length > 0) parts.push(`real values now go back into ${added.join(', ')}`);
   if (removed.length > 0) parts.push(`no longer into ${removed.join(', ')}`);
-  return parts.length > 0 ? parts.join('; ') : 'thresholds or URL settings';
+  const keys = new Set([...Object.keys(before.config), ...Object.keys(now.config)]);
+  const other = [...keys]
+    .filter((k) => !SHOWN_AS_MODES.has(k))
+    .filter((k) => JSON.stringify(before.config[k]) !== JSON.stringify(now.config[k]))
+    .sort();
+  if (other.length > 0) parts.push(`${other.join(', ')} changed`);
+  return parts.length > 0 ? parts.join('; ') : 'settings changed';
 }
 
 /** The short name of `category` (`private_url` → `url`). */

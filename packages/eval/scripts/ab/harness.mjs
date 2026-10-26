@@ -26,7 +26,9 @@ import { performance } from 'node:perf_hooks';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
-const CORPUS_COMMIT = '5130a64';
+// The A/B loop's base commit, 5130a64 before the pre-release rewrite of
+// unpublished history (same files; its log now carries noreply emails).
+const CORPUS_COMMIT = 'f07f927';
 const DATASETS = join(REPO, 'packages', 'eval', 'datasets');
 
 const SIZES = [2_000, 30_000, 100_000];

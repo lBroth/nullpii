@@ -34,6 +34,7 @@ import {
   hasPlaceholder,
   optionFlag,
   optionString,
+  placeholderGuide,
   restorableArgs,
   sameText,
   sidecarOrigin,
@@ -83,6 +84,8 @@ const UNREACHABLE =
 const NOT_JSON = 'the sidecar answered with something that is not JSON';
 const STARTING = 'starting nullpii-gateway for this session (its first start downloads the model)';
 const NOT_STARTED = 'the nullpii-gateway this session started did not answer in time';
+const STARTED_EXITED =
+  'the nullpii-gateway this session started exited before it answered: run its npx command (README, Set up) in a terminal to see why';
 const NO_POLICY =
   'the sidecar reported no policy version: run nullpii-gateway 0.5.0 or later there';
 /** The release of the packages the mod starts the sidecar from, and the
@@ -129,6 +132,7 @@ const OWN_REASONS: ReadonlySet<string> = new Set([
   NOT_SIDECAR,
   STARTING,
   NOT_STARTED,
+  STARTED_EXITED,
   NO_POLICY,
 ]);
 /** SidecarError's text, the one with a variable part. */
@@ -202,6 +206,9 @@ let sessionSecret: string | undefined;
 let policy: Policy | undefined;
 // Why the mod is blocking, shown above the prompt; undefined while healthy.
 let problem: string | undefined = NO_TOKEN;
+// The sidecar this session started, until it answers: `running`, or
+// `exited` once its process ended first.
+let started: 'running' | 'exited' | undefined;
 // The session (re)opening in flight, which every hook that needs one awaits.
 let opening: Promise<void> | undefined;
 // The review of a policy changed elsewhere, which every call the sidecar
@@ -452,7 +459,10 @@ function shownReason(failure: Failure): string {
 /** Turn the band red with why `event` failed, and log the same to the
  * debug log, with only the length of a text that is not shown. */
 function blocked($, event: string, failure: Failure): string {
-  const reason = shownReason(failure);
+  // While the sidecar this session started comes up, say so, not that no
+  // sidecar runs (which would send the user off to start a second one).
+  const reason =
+    started === 'running' && failure.message === UNREACHABLE ? STARTING : shownReason(failure);
   problem = reason;
   const withheld =
     reason === HIDDEN_REASON && failure.message !== undefined
@@ -489,6 +499,7 @@ function startSidecar($, origin: string, secretToken: string): void {
     } catch (err) {
       $.ui.log(`nullpii: nullpii-gateway did not start (${errorName(err)})`, { to: 'debug' });
     }
+    if (started === 'running') started = 'exited';
   })();
 }
 
@@ -500,16 +511,26 @@ async function waitForSidecar($): Promise<void> {
     await $.clock.sleep(STARTUP_POLL_MS);
     try {
       await openSession($);
+      started = undefined;
       $.ui.invalidate('ui.render');
       $.ui.toast('nullpii is on');
       return;
     } catch (err) {
       if (!(err instanceof Error) || err.message !== UNREACHABLE) {
+        started = undefined;
         blocked($, 'sidecar start', failureOf(err));
         return;
       }
     }
+    // Nothing answers and the process is gone (npx found no package, or
+    // the port was taken): no point in waiting out the deadline.
+    if (started === 'exited') {
+      started = undefined;
+      blocked($, 'sidecar start', { kind: THROW_KIND, message: STARTED_EXITED });
+      return;
+    }
   }
+  started = undefined;
   blocked($, 'sidecar start', { kind: THROW_KIND, message: NOT_STARTED });
 }
 
@@ -638,6 +659,7 @@ export function register(on, options) {
       // band says so, and prompts wait (they are refused) until it answers.
       const unreachable = err instanceof Error && err.message === UNREACHABLE;
       if (unreachable && optionFlag(options, 'autostart', true) && sidecarUrl && token) {
+        started = 'running';
         startSidecar($, sidecarUrl, token);
         problem = STARTING;
         $.ui.invalidate('ui.render');
@@ -672,9 +694,24 @@ export function register(on, options) {
     return next({ ...e, text, ...(e.context !== undefined && { context: out.context }) });
   }).catch(async ($, e, next) => {
     if (next.called) return next(e);
-    return {
-      drop: `nullpii could not mask this prompt, so it was not sent (${blocked($, 'prompt.submit', next.error)}). Start nullpii-gateway with its sidecar token set, or disable the nullpii mod.`,
-    };
+    const reason = blocked($, 'prompt.submit', next.error);
+    const fix =
+      reason === STARTING
+        ? 'Send it again once nullpii is on.'
+        : 'Start nullpii-gateway with its sidecar token set, or disable the nullpii mod.';
+    return { drop: `nullpii could not mask this prompt, so it was not sent (${reason}). ${fix}` };
+  });
+
+  // Tell Claude what the placeholders are. Without it Claude asks the user
+  // for the real values, or says a file it wrote holds a placeholder.
+  on('prompt.compose', async ($, e, next) => {
+    const composed = await next(e);
+    const section = {
+      id: 'nullpii:placeholders',
+      text: placeholderGuide(policy?.restoreTools),
+      scope: 'session',
+    } as const;
+    return { sections: [...composed.sections, section] };
   });
 
   // Text Claude Code adds for Claude on its own: @-mentioned files, edited

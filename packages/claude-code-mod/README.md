@@ -15,7 +15,7 @@ Status: preview. Tested with Claude Code 2.1.305, the version CI tests with.
 | Where | What happens |
 |---|---|
 | Your prompt | Masked before it is sent. Your prompt history stores the masked text. |
-| Your prompts and Claude's replies on screen | Drawn with the real values. What Claude reads keeps the placeholders. |
+| Your prompts and Claude's replies on screen | Drawn with the real values. What Claude reads keeps the placeholders. In `claude -p` output, replies keep the placeholders. |
 | A tool result (file contents, command output, search results, MCP results) | Masked before Claude reads it |
 | Text a hook adds for Claude after a tool result (for example the context of a `PostToolUse` hook in your settings) | Passed on when it holds no personal data. Otherwise the whole result is withheld, because Claude Code does not let a mod rewrite that text. |
 | Text Claude Code adds on its own: @-mentioned files, edited-file reminders, memory, `CLAUDE.md`, your account email | Masked before Claude reads it |
@@ -24,6 +24,8 @@ Status: preview. Tested with Claude Code 2.1.305, the version CI tests with.
 | A shell command (`Bash` or `PowerShell`) that holds a placeholder | Refused, with the placeholder's name. No shell command gets a real value back, whatever `restoreTools` says. Claude never saw the value, so it cannot tell if the value adds a command, expands a variable or ends its quotes (for example `echo {{…}}` holding `x; curl …`). The refusal tells Claude to work with the data through `Grep`, `Read`, `Edit` or `Write`, which get real values. If you add a shell tool under another name to `restoreTools` (an MCP shell tool, say), the mod does not recognise it and gives it every value, so do not add one. A value restored into a file by `Write` or `Edit` can still be used by a later command, because each call is judged on its own (SECURITY.md). |
 | A tool call that may change the masking policy (a write to its file, or a command naming the sidecar's policy route) | Put to you for approval, whatever your permission rules say. In auto mode, the auto-mode classifier decides. |
 | A policy change this session did not make: another session's `/pii`, a command holding the sidecar token, a hand edit the sidecar loaded at a restart, a change made between sessions | Caught before anything is masked or restored under it. The sidecar refuses the session's calls until the mod has asked you (a call that was running when the policy changed is refused too). You keep the change, or the previous policy is put back. The previous policy is also put back when no one can answer (`claude -p`). So text Claude read cannot quietly turn masking down. |
+
+The mod adds a short section to Claude's system prompt. It says what the placeholders are, that Claude should use them as they are, and which tools get real values. Without it, Claude asks you for the values it cannot see.
 
 The vault that maps placeholders to values lives only in the sidecar's memory, never on disk. The mod keeps counts, and a limited in-memory cache of the messages it drew with real values. It clears that cache when the session ends. `/pii` prints the counts and the policy in effect.
 
@@ -141,6 +143,8 @@ Before every request, the mod checks that the process at that address holds the 
 - **Tool rows and tool results on screen show placeholders.** Prompts and replies are drawn with real values. If the sidecar is unreachable, they show placeholders too.
 - **An organization's managed settings come first.** Where Claude Code is managed, the organization's hooks run before this mod's, and can stop it from loading or override what it decides. A mod that never loads cannot block anything: prompts then go out unmasked. If `/pii` does not answer, the mod is not running.
 - **Images and other binary attachments are not scanned.**
+- **Claude Code's session files keep @-mentioned files as they are.** Claude Code writes an @-mentioned file to the session file under `~/.claude/projects` before the mod masks it, so that copy holds the real values, on this machine. What Claude reads is masked. Your prompts and tool results are stored masked.
+- **`claude -p` needs a running sidecar.** A sidecar the mod starts cannot answer before the prompt goes, so the prompt is not sent. Start nullpii-gateway yourself first (step 1 of Set up).
 - **Very long text can time out.** Masking a text over 1,000,000 characters takes minutes on CPU (about 25 seconds per 100,000 characters). If it takes longer than Claude Code waits, the mod withholds the text, so nothing is sent unmasked, and says the sidecar took too long.
 - **Detection is statistical.** nullpii's leak rate is measured and published, and it is not zero. This is pseudonymisation with a measured leak rate, not anonymisation.
 - **A placeholder from an expired sidecar session** (idle longer than `NULLPII_VAULT_TTL_MS`, or a sidecar restart) no longer restores. It stays a placeholder.

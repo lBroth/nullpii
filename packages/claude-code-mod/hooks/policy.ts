@@ -336,6 +336,28 @@ function formatUrlAllowlist(allowlist: unknown): string {
   return named.length > 0 ? `the built-in hosts, plus ${named.join(', ')}` : 'the built-in hosts';
 }
 
+/** The system prompt section that tells Claude what the placeholders are:
+ * values to copy as they are, which `restoreTools` (unknown before the
+ * sidecar answers) fill in, and which no shell command gets. */
+export function placeholderGuide(restoreTools: readonly string[] | undefined): string {
+  return [
+    'nullpii masks personal data and secrets in this session before you read them.',
+    "Text such as `{{PII_PRIVATE_EMAIL_<n>_<hex>}}` is a placeholder for a real value that stays on the user's machine.",
+    'Use a placeholder as you would use its value, and copy it exactly and in full, hex part included.',
+    'Do not ask the user for the real value, and do not tell them it is hidden: nullpii shows them the real values.',
+    restoringTools(restoreTools),
+    'A shell command that holds a placeholder is refused.',
+  ].join(' ');
+}
+
+function restoringTools(restoreTools: readonly string[] | undefined): string {
+  if (restoreTools === undefined) {
+    return 'The file tools that run on this machine put the real values back before they run, so a file they write holds the real values.';
+  }
+  if (restoreTools.length === 0) return 'No tool gets the real values back.';
+  return `These tools put the real values back before they run: ${restoreTools.join(', ')}. So a file they write holds the real values.`;
+}
+
 /** The policy lines of the `/pii` reply. */
 export function formatPolicy(policy: Policy | undefined): string[] {
   if (policy === undefined) return ['Policy: unknown (the sidecar has not answered)'];

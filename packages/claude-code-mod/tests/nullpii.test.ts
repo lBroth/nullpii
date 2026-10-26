@@ -436,6 +436,27 @@ test(
   },
 );
 
+test('the system prompt says what the placeholders are and which tools get values', async ($, on) => {
+  const sidecar = fakeSidecar({ restoreTools: ['Read', 'Write'] });
+  stubSession(on, sidecar);
+  on('prompt.compose', () => ({
+    sections: [{ id: 'intro', text: 'You are Claude Code.', scope: 'shared' }],
+  }));
+  await start($);
+  const { sections } = await $.prompt.compose({
+    model: 'claude-test',
+    promptModel: 'claude-test',
+    surfaces: ['terminal'],
+    tools: ['Read', 'Write', 'Bash'],
+    outputStyle: null,
+    traits: [],
+  });
+  expect(sections.map((s) => s.id)).toEqual(['intro', 'nullpii:placeholders']);
+  expect(sections[1].scope).toBe('session');
+  expect(sections[1].text).toContain('put the real values back before they run: Read, Write.');
+  expect(sections[1].text).toContain('Do not ask the user for the real value');
+});
+
 test('without a token, the mod blocks instead of sending data unmasked', async ($, on) => {
   const sidecar = fakeSidecar();
   stubSession(on, sidecar, {});
@@ -1173,6 +1194,42 @@ test('with no sidecar answering, the mod starts nullpii-gateway for the session'
   });
   const report = await $.command.run({ command: 'pii', args: '' });
   expect(report.text).toContain('starting nullpii-gateway');
+});
+
+test('while the sidecar the mod started comes up, a prompt is handed back saying so', async ($, on) => {
+  const sidecar = fakeSidecar({ down: true });
+  stubSession(on, sidecar);
+  mock.clock(on);
+  // biome-ignore lint/correctness/useYield: a stand-in child that writes nothing.
+  on('process.spawn', async function* ($) {
+    // Still starting: the child runs until the test's clock moves.
+    await $.clock.sleep(60_000);
+    return { value: { code: 0, signal: null } };
+  });
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  await start($);
+  const prompt = await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  expect(prompt.drop).toContain('starting nullpii-gateway for this session');
+  expect(prompt.drop).toContain('Send it again once nullpii is on.');
+  expect(prompt.drop).not.toContain('did not answer');
+});
+
+test('a sidecar the mod started that exits before it answers is reported at once', async ($, on) => {
+  const sidecar = fakeSidecar({ down: true });
+  stubSession(on, sidecar);
+  const clock = mock.clock(on);
+  // biome-ignore lint/correctness/useYield: a stand-in child that fails at once.
+  on('process.spawn', async function* () {
+    return { value: { code: 1, signal: null } };
+  });
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  await start($);
+  await clock.advance(2_000);
+  const status = await $.command.run({ command: 'pii', args: '' });
+  expect(status.text).toContain('exited before it answered');
+  // Nothing is starting any more: the prompt says no sidecar answers.
+  const prompt = await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  expect(prompt.drop).toContain('did not answer at the sidecar address');
 });
 
 test('a policy changed outside the session is put to the user before anything runs under it: kept on their word', async ($, on) => {

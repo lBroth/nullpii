@@ -80,9 +80,10 @@ export interface NullPiiConfig {
   readonly boundaryRefine?: boolean;
   /** Which URLs stay readable. A URL is released only when it holds no
    * credentials, no second URL and no other PII span. Default: the
-   * built-in policy (`DEFAULT_URL_RELEASES`): code hosts such as
-   * github.com keep only their host readable, reference and package
-   * hosts the whole URL. Pass `'none'` to mask every URL, or a
+   * built-in policy (`DEFAULT_URL_RELEASES`): URLs on code hosts such
+   * as github.com, package registries, reference sites and this
+   * machine's loopback addresses stay readable whole. Pass `'none'` to
+   * mask every URL, or a
    * {@link UrlAllowlistConfig} to change hosts. */
   readonly urlAllowlist?: 'none' | UrlAllowlistConfig;
 }

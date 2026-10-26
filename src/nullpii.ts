@@ -29,6 +29,7 @@ import {
   DEFAULT_MAX_SPAN_WIDTH,
   GlinerTokenizer,
 } from './gliner-tokenizer.js';
+import { dropModelIpv4Spans } from './ip-filter.js';
 import { logf } from './log.js';
 import { dropDatesInsideMachineTimestamps } from './machine-timestamps.js';
 import { ModelManager } from './model-manager.js';
@@ -54,6 +55,7 @@ import {
 } from './types/index.js';
 import type { ScoredSpan } from './types/scored-span.js';
 import { type UrlPolicy, dropCleanPublicUrlSpans, urlPolicy } from './url-filter.js';
+import { resolveUuidAccountNumbers } from './uuid-filter.js';
 import { PiiVault } from './vault.js';
 
 const LOG_SCOPE = 'nullpii';
@@ -311,13 +313,22 @@ export class NullPii {
     // than after — keeps them masked under the right label and lets them
     // merge with the model's own address candidate for the same region.
     // See `geo-filter.ts`.
-    const geoFiltered = resolveNonCoordinateGeolocation(decodedRaw, normalized);
+    const geoResolved = resolveNonCoordinateGeolocation(decodedRaw, normalized);
+    // An IPv4 address belongs to the `core:ipv4` recognizer, whatever label
+    // the model gave it (`ip-filter.ts`). A UUID labelled `account_number`
+    // is an id software minted, unless a credential key comes right before
+    // it (`uuid-filter.ts`). Both are resolved here too, so no recognizer
+    // defers to a span that is then dropped.
+    const shaped = resolveUuidAccountNumbers(
+      dropModelIpv4Spans(geoResolved, normalized),
+      normalized,
+    );
     // Score cut BEFORE any dedupe or recognizer deferral: a span the
     // thresholds will drop must not first absorb, outrank or silence
     // another one. A 0.06 `private_date` guess on a MAC address made
     // `core:mac` defer to it, then fell under the 0.125 date threshold
     // and left the address in the clear.
-    const decoded = dedupeOverlappingSpans(this.applyConfiguredThresholds(geoFiltered));
+    const decoded = dedupeOverlappingSpans(this.applyConfiguredThresholds(shaped));
     // Remap span offsets from the normalised text back to the escaped
     // text so they align with the regex pack and vault output.
     return { spans: toEscapedSpans(decoded, surfaces), unscannedWords };

@@ -89,6 +89,8 @@ const IPV4_LINK_LOCAL = /^169\.254\./;
 const IPV4_MULTICAST = /^(?:22[4-9]|23\d)\./;
 /** RFC5737 documentation IPv4: 192.0.2/24, 198.51.100/24, 203.0.113/24. */
 const IPV4_RFC5737_DOCS = /^(?:192\.0\.2\.|198\.51\.100\.|203\.0\.113\.)/;
+/** The unspecified IPv4 address, which servers bind to (`0.0.0.0:3000`). */
+const IPV4_UNSPECIFIED = /^0\.0\.0\.0$/;
 /** RFC3849 documentation IPv6 prefix `2001:db8::/32`. */
 const IPV6_DOCS = /^2001:0?db8:/i;
 /** IPv6 loopback `::1` (also full form `0000:...:0001`). */
@@ -96,7 +98,6 @@ const IPV6_LOOPBACK = /^(?:::1|0{1,4}(?::0{1,4}){0,6}:0{0,3}1)$/i;
 /** IPv6 link-local `fe80::/10`. */
 const IPV6_LINK_LOCAL = /^fe[89ab][0-9a-f]?:/i;
 const RFC6761_RESERVED = /(?:^|[@.])(?:example\.(?:com|net|org)|test|invalid|localhost|local)$/i;
-const NULL_UUID = /^0{8}-0{4}-0{4}-0{4}-0{12}$/;
 const ZERO_MAC = /^(?:[0:]{17}|(?:00[:-]){5}00)$/;
 
 function isNeverPii(value: string, label: string): boolean {
@@ -107,7 +108,8 @@ function isNeverPii(value: string, label: string): boolean {
       IPV4_LOOPBACK.test(value) ||
       IPV4_LINK_LOCAL.test(value) ||
       IPV4_MULTICAST.test(value) ||
-      IPV4_RFC5737_DOCS.test(value)
+      IPV4_RFC5737_DOCS.test(value) ||
+      IPV4_UNSPECIFIED.test(value)
     ) {
       return true;
     }
@@ -116,7 +118,6 @@ function isNeverPii(value: string, label: string): boolean {
     }
   }
   if (label === 'private_mac' && ZERO_MAC.test(value)) return true;
-  if (label === 'account_number' && NULL_UUID.test(value)) return true;
   if ((label === 'private_url' || label === 'private_email') && RFC6761_RESERVED.test(value)) {
     return true;
   }

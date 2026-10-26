@@ -458,13 +458,6 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     label: 'account_number',
     confidence: 0.95,
   },
-  {
-    id: 'core:uuid-v4',
-    pattern:
-      /\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}\b/g,
-    label: 'account_number',
-    confidence: 0.85,
-  },
   // MAC — lookbehind/lookahead bound to single-octet boundary. Labelled
   // `private_mac` (separate from `private_ip`) so consumers that group
   // spans by label keep hardware identifiers distinct from IPv4/IPv6.
@@ -862,6 +855,15 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
  * (`console.aws.amazon.com`, `console.anthropic.com`) are listed exactly,
  * so those consoles stay masked. */
 export const DEFAULT_URL_RELEASES: Readonly<Record<string, UrlRelease>> = {
+  // This machine: a coding agent calls its own dev servers and local
+  // services (`curl http://127.0.0.1:8787/health`), and a masked URL
+  // there would stop the command. Only the loopback names and addresses
+  // and the unspecified address servers bind to; a private-network
+  // address is not on this list.
+  localhost: 'full',
+  '127.0.0.1': 'full',
+  '[::1]': 'full',
+  '0.0.0.0': 'full',
   // Source hosting. Paths name users and repositories, private ones
   // included; set these to 'host' to keep only the host readable. Whole
   // URLs are the default because links to public repositories and issues

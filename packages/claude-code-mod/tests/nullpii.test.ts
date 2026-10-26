@@ -1507,9 +1507,9 @@ test('with no sidecar answering, the mod starts nullpii-gateway for the session'
   expect(spawned[0]?.cwd).toBe('/');
   expect(spawned[0]?.argv).toEqual(
     expect.arrayContaining([
-      'nullpii@0.5.1',
+      'nullpii@0.5.2',
       'onnxruntime-node@1.30.0',
-      '@lbroth/nullpii-gateway@0.5.1',
+      '@lbroth/nullpii-gateway@0.5.2',
     ]),
   );
   expect(spawned[0]?.env).toMatchObject({

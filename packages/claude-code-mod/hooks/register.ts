@@ -132,7 +132,7 @@ const NO_POLICY =
 /** The release of the packages the mod starts the sidecar from, and the
  * ONNX runtime that release is built and tested with, at exact versions
  * (their own dependencies are resolved by npx at the time). */
-const GATEWAY_RELEASE = '0.5.1';
+const GATEWAY_RELEASE = '0.5.2';
 const ONNXRUNTIME_RELEASE = '1.30.0';
 /** The command that starts the sidecar: the release's CLI, gateway and
  * ONNX runtime, with npx (no shell). */
@@ -599,7 +599,7 @@ function startSidecar($, origin: string, secretToken: string): void {
 }
 
 /** One step of the sidecar's own start-up, as its status reports it (the
- * `startup` field, nullpii-gateway 0.5.1): a model file downloading, the
+ * `startup` field, nullpii-gateway 0.5.1 and later): a model file downloading, the
  * model loading, or the model ready. */
 interface StartupReport {
   readonly phase?: unknown;

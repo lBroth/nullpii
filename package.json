@@ -1,6 +1,6 @@
 {
   "name": "nullpii",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Mask PII and secrets in text locally, with a reversible in-memory vault. Detection runs on your machine (GLiNER ONNX on CPU, CUDA or CoreML via onnxruntime).",
   "license": "Apache-2.0",
   "type": "module",
@@ -90,7 +90,7 @@
   "bugs": {
     "url": "https://github.com/lBroth/nullpii/issues"
   },
-  "homepage": "https://github.com/lBroth/nullpii#readme",
+  "homepage": "https://lbroth.github.io/nullpii/",
   "author": "nullpii contributors",
   "keywords": ["pii", "redaction", "pseudonymization", "sanitize", "privacy", "onnx", "local"],
   "overrides": {

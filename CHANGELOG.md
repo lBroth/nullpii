@@ -3,10 +3,11 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.2] — 2026-10-26
 
 ### Added
 
+- The packages' and the mod's `homepage` is the documentation site.
 - Mod: a status line pinned under the prompt, always there: `[nullpii] on · 8 masked`, `starting`, `not protected yet · starting`, `paused · what you send is not masked`, `blocking`.
 - Mod: `/pii` with no arguments opens a menu instead of printing the status: the state, the three presets, `mask`/`ask`/`off` for a category (a page of categories at a time), and pause, reset and help. Every entry carries the line `/pii help` prints for it, and every entry runs the same code as the command it names, so every guard holds: a pause asks first and only comes from the person's own command, and a change that masks less is put to the person with its values. Where the menu cannot be answered (a `claude -p` run, a dismissed dialog), `/pii` prints the status and the help.
 - Mod: `/pii help` lists every command with the one line that says what it does, in a short table, and the command is registered with the argument hint `[status|preset|mask|ask|off|reset|pause|resume|help]`.

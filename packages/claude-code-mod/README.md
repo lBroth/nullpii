@@ -70,11 +70,11 @@ The policy lives in `~/.config/nullpii/config.json`, or in the file that `NULLPI
 
 The first start of a sidecar the mod starts takes a while: it installs packages and downloads the model (1.2 GB). The band says which phase it is in, with the download's progress, and its padlock is amber and open. A prompt you send meanwhile asks you first:
 
-- **Wait for nullpii**: the prompt goes back into the prompt box, to send again once the band says nullpii is on;
+- **Wait for nullpii**: the prompt is held, and sent masked as soon as the band says nullpii is on. If it is not on within 5 minutes, or the start fails, the prompt goes back into the prompt box with the reason;
 - **Send it now, unprotected**: this prompt reaches Claude as you typed it;
 - **Send now, and do not ask again until nullpii is ready**: every prompt of this start-up does, with the band saying `not protected yet`.
 
-The option **While nullpii starts** (`while_starting`) sets this: `ask` (the default), `block` (always wait) or `pass` (always send unprotected). Text the engine adds, such as file contents Claude reads, goes out unprotected too while you chose to send unprotected. What was sent before nullpii was ready stays in the conversation as it was, so do not send personal data that way. Dismissing the dialog, or a run no one can answer (`claude -p`), waits.
+The option **While nullpii starts** (`while_starting`) sets this: `ask` (the default), `block` (always wait, as above) or `pass` (always send unprotected). Text the engine adds, such as file contents Claude reads, goes out unprotected too while you chose to send unprotected. What was sent before nullpii was ready stays in the conversation as it was, so do not send personal data that way. Dismissing the dialog, or a run no one can answer (`claude -p`), waits.
 
 ## Fails closed
 

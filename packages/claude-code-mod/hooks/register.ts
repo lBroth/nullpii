@@ -95,7 +95,7 @@ const NO_TOKEN =
 const NOT_LOOPBACK =
   'sidecar_url is not a local sidecar address (http:// on 127.0.0.1 or [::1], the address the gateway listens on, with an optional port and nothing after it): fix it with /plugin configure';
 const UNREACHABLE =
-  'nullpii-gateway did not answer at the sidecar address: start it with NULLPII_SIDECAR_TOKEN set';
+  'nullpii-gateway did not answer at the sidecar address: start it with NULLPII_SIDECAR_TOKEN set (with npx, or the Docker image: start Docker first), or turn on the "Start the sidecar" option';
 const NOT_JSON = 'the sidecar answered with something that is not JSON';
 /** One phase of the start of a sidecar this session started: its packages
  * installing, the model downloading, the model loading. While the mod is
@@ -823,11 +823,25 @@ function padlockLook(): [boolean, PadlockTone] {
 
 /** The answers of the dialog put to the person who sends a prompt while
  * nullpii is still starting. */
-const WAIT_FOR_NULLPII = 'Wait for nullpii';
+const WAIT_FOR_NULLPII = 'Wait for nullpii (the prompt is sent masked when it is ready)';
 const SEND_UNPROTECTED = 'Send it now, unprotected';
 const SEND_UNPROTECTED_UNTIL_READY = 'Send now, and do not ask again until nullpii is ready';
 const STARTING_QUESTION =
   'nullpii is still starting, so this prompt would not be protected: what you send reaches Claude as you typed it. Wait for nullpii, or send it now?';
+
+/** How long a prompt is held for a sidecar still coming up, and how often
+ * the hold looks: past it the prompt goes back to the person, as before. */
+const HOLD_MAX_MS = 5 * 60 * 1000;
+const HOLD_POLL_MS = 1_000;
+
+/** Hold the prompt while the sidecar this session started comes up. True
+ * once it is ready, so the prompt goes on to be masked and sent; false when
+ * the start gave up or took longer than `HOLD_MAX_MS`. */
+async function holdUntilReady($): Promise<boolean> {
+  const deadline = (await $.clock.now()) + HOLD_MAX_MS;
+  while (starting() && (await $.clock.now()) < deadline) await $.clock.sleep(HOLD_POLL_MS);
+  return !starting() && problem === undefined;
+}
 
 /** Whether a prompt the person typed goes out unprotected while nullpii
  * starts: their answer to the dialog, or the `while_starting` option. A
@@ -995,6 +1009,8 @@ export function register(on, options) {
     // Still starting: a prompt the person typed asks them (or follows the
     // option); one the engine made waits like any other.
     if (e.isMeta !== true && (await sendUnprotectedWhileStarting($))) return next(e);
+    // Not sent unprotected: it waits for the sidecar, then goes masked.
+    if (e.isMeta !== true && starting()) await holdUntilReady($);
     const out = (await masked($, { text: e.text, context: e.context ?? [] })) as {
       text: string;
       context: string[];
@@ -1007,7 +1023,7 @@ export function register(on, options) {
     const reason = blocked($, 'prompt.submit', next.error);
     const fix = reason.startsWith(STARTING_PREFIX)
       ? 'Send it again once nullpii is on.'
-      : 'Start nullpii-gateway with its sidecar token set, or disable the nullpii mod.';
+      : 'Start nullpii-gateway with its sidecar token set (npx, or Docker: ghcr.io/lbroth/nullpii-gateway:0.5, and start Docker itself first), turn on the mod option "Start the sidecar", or disable the nullpii mod.';
     return { drop: `nullpii could not mask this prompt, so it was not sent (${reason}). ${fix}` };
   });
 

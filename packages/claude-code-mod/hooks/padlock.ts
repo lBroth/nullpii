@@ -25,6 +25,8 @@ const BLANK = 0x20;
  * broken (the sidecar cannot be reached). The body's colour goes by column,
  * left to right, as the logo's does. */
 export type PadlockTone = 'teal' | 'amber' | 'red' | 'grey';
+/** The red of a broken padlock's cross. */
+const CROSS = 0x00ef4444;
 const TONES: Record<PadlockTone, { body: readonly number[]; shackle: number }> = {
   teal: { body: [0x0000fdfd, 0x0000c5d3, 0x00007594], shackle: 0x0000cbd7 },
   amber: { body: [0x00fde68a, 0x00fbbf24, 0x00d97706], shackle: 0x00fcd34d },
@@ -47,6 +49,11 @@ function padlockPixels(open: boolean, shackle: number, body: readonly number[]) 
 export function padlockCells(open: boolean, tone: PadlockTone): string {
   const { body, shackle } = TONES[tone];
   const pixels = padlockPixels(open, shackle, body);
+  // A broken padlock carries a red cross over its body.
+  if (tone === 'grey') {
+    pixels[2] = [CROSS, body[1], CROSS];
+    pixels[3] = [body[0], CROSS, body[2]];
+  }
   const words = new Uint32Array(PADLOCK_COLUMNS * PADLOCK_ROWS * 3);
   let at = 0;
   for (let y = 0; y < PADLOCK_ROWS; y++) {

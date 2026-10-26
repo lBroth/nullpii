@@ -1247,9 +1247,10 @@ test('while the sidecar the mod started comes up, a prompt is handed back saying
 /** A sidecar the mod started that is still coming up: a stand-in child that
  * runs on, and a fake that does not answer. */
 function stillStarting($, on) {
-  const sidecar = fakeSidecar({ down: true });
+  const opts = { down: true };
+  const sidecar = fakeSidecar(opts);
   stubSession(on, sidecar, { NULLPII_SIDECAR_TOKEN: TOKEN });
-  mock.clock(on);
+  const clock = mock.clock(on);
   // biome-ignore lint/correctness/useYield: a stand-in child that writes nothing.
   on('process.spawn', async function* () {
     // Still running: the test never lets its sidecar answer.
@@ -1260,15 +1261,18 @@ function stillStarting($, on) {
     sent.push(e.text);
     return { text: e.text };
   });
-  return { sidecar, sent };
+  return { sidecar, sent, opts, clock };
 }
 
-test('a prompt sent while nullpii starts asks first: waiting sends nothing', async ($, on) => {
-  const { sent } = stillStarting($, on);
+test('a prompt sent while nullpii starts asks first: waiting holds it, and it goes back if nullpii never comes up', async ($, on) => {
+  const { sent, clock } = stillStarting($, on);
   const questions: string[] = [];
-  answerDialog(on, 'Wait for nullpii', questions);
+  answerDialog(on, 'Wait for nullpii (the prompt is sent masked when it is ready)', questions);
   await start($);
-  const prompt = await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  // Held for a while; the sidecar never comes up, so it goes back.
+  const pending = $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  await clock.advance(6 * 60_000);
+  const prompt = await pending;
   expect(questions).toHaveLength(1);
   expect(questions[0]).toContain('would not be protected');
   expect(prompt.drop).toContain('Send it again once nullpii is on.');
@@ -1311,15 +1315,36 @@ test('"do not ask again until ready" sends every prompt of this start-up, and th
   await ui.unmount();
 });
 
+test('a held prompt is sent masked once nullpii is ready', async ($, on) => {
+  const { sent, opts, sidecar, clock } = stillStarting($, on);
+  answerDialog(on, 'Wait for nullpii (the prompt is sent masked when it is ready)', []);
+  await start($);
+  const pending = $.prompt.submit({
+    text: 'Mail John at john@acme.io',
+    wait: false,
+    origin: COMPOSER,
+  });
+  await clock.advance(1_000);
+  opts.down = false;
+  sidecar.state.startup = { phase: 'ready' };
+  await clock.advance(5_000);
+  const out = await pending;
+  expect(out.drop).toBeUndefined();
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).not.toContain('john@acme.io');
+});
+
 test(
   'while_starting = block never asks and never sends',
   { options: { while_starting: 'block' } },
   async ($, on) => {
-    const { sent } = stillStarting($, on);
+    const { sent, clock } = stillStarting($, on);
     const asked: string[] = [];
     answerDialog(on, 'Send it now, unprotected', asked);
     await start($);
-    const dropped = await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+    const pending = $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+    await clock.advance(6 * 60_000);
+    const dropped = await pending;
     expect(dropped.drop).toContain('Send it again once nullpii is on.');
     expect(asked).toEqual([]);
     expect(sent).toEqual([]);

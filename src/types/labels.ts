@@ -62,9 +62,10 @@ export const GLINER_ZERO_SHOT_EXTRA = [
 /** Quasi-identifiers and GDPR special-category data. Alone they rarely
  * name a person; combined with each other or with context they often do,
  * and Art. 9 data (religion, political opinion, sexual orientation,
- * health) is sensitive in itself. Prompted by default, after the labels
- * above so the established prompt prefix is unchanged; switch any of them
- * off with `NullPiiConfig.disabledCategories`.
+ * health) is sensitive in itself. Off by default (`DEFAULT_DISABLED_CATEGORIES`):
+ * a disabled category is not prompted. When on, they are prompted after
+ * the labels above, so the established prompt prefix is unchanged. Turn
+ * them on through `NullPiiConfig.disabledCategories`.
  *
  * - `private_organization`: a company, employer or other organisation
  * - `private_occupation`: a job title, employment status or education level

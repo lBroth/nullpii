@@ -6,15 +6,15 @@
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/lBroth/nullpii/blob/main/LICENSE) [![npm](https://img.shields.io/npm/v/nullpii)](https://www.npmjs.com/package/nullpii) [![CI](https://github.com/lBroth/nullpii/actions/workflows/ci.yml/badge.svg)](https://github.com/lBroth/nullpii/actions/workflows/ci.yml)
 
-Mask personal data and secrets before they reach an LLM, and put them back on the way out. Detection runs on your machine: a fine-tuned GLiNER model plus validated recognizers, with a reversible in-memory vault.
+nullpii hides personal data and secrets before your text goes to an LLM, and puts the real values back in the reply. It runs on your machine. A fine-tuned GLiNER model and a set of pattern recognizers find the values, and an in-memory vault swaps each one for a placeholder and back.
 
 ![How nullpii works: text from your app or Claude Code is decoded, scanned by the model and the recognizers, and each value the policy masks becomes a placeholder kept in an in-memory vault. The LLM provider sees only placeholders. The reply gets the real values back, file tools get real values, shell commands keep the placeholders.](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/how-it-works.svg)
 
-- **Built for coding agents.** It masks tool output (files, logs, command results), not just prompts, keeps public links to code hosts and documentation readable, and never puts a hidden value back into a shell command (see SECURITY.md). Claude Code is the agent it is built and tested with, through the mod (recommended) or the gateway.
-- **Works with any model.** Mask before your LLM call and restore after it, or run the gateway in front of the Anthropic Messages API or OpenAI Chat Completions. The Codex CLI speaks only the Responses API, so it cannot use the gateway.
-- **Measured, losses included.** On agent traffic it lets 9.5% of the values that must be hidden through and keeps 81.9% of what must stay readable; only rizzo-pii lets fewer through (8.1%), keeping 44.5%. On five held-out document sets it is second of 15 detectors, and fifth on English text alone. [Benchmark](#benchmark).
+- **Built for coding agents.** It masks tool output (files, logs, command output), not only prompts. It keeps links to code hosts and documentation readable. It never puts a real value into a shell command (see SECURITY.md). It is built and tested with Claude Code, through the mod (recommended) or the gateway.
+- **Works with any model.** Mask before your LLM call and restore after it. Or run the gateway in front of the Anthropic Messages API or OpenAI Chat Completions. The Codex CLI only speaks the Responses API, so it cannot use the gateway.
+- **Measured, losses included.** On coding-agent traffic it lets 9.5% of the values that must be hidden through, and keeps 81.9% of the text that must stay readable. Only rizzo-pii lets fewer through (8.1%), but it keeps only 44.5% readable. On five held-out document sets it is second of 15 tools, and fifth on English text alone. [Benchmark](#benchmark).
 
-Status: pre-1.0. The API can still change between minor versions. nullpii pseudonymizes with a measured leak rate; it is not anonymization and not a compliance certification.
+Status: before 1.0, so the API can still change between minor versions. nullpii replaces values with placeholders it can reverse, and it misses some values. This is pseudonymisation, not anonymisation, and not a compliance certification.
 
 Documentation: [lbroth.github.io/nullpii](https://lbroth.github.io/nullpii/).
 
@@ -24,9 +24,9 @@ Documentation: [lbroth.github.io/nullpii](https://lbroth.github.io/nullpii/).
 npm install nullpii onnxruntime-node
 ```
 
-Node 22 or later. The first run downloads the model from Hugging Face into `~/.cache/nullpii/` (1.2 GB in fp32; on CUDA, 0.6 GB in fp16), and every file is checked against a SHA-256 pinned in the library. Pre-fetch it with `npx nullpii prefetch`, or point `NULLPII_MODEL_DIR` at a copy you staged.
+You need Node 22 or later. On first use nullpii downloads the model from Hugging Face into `~/.cache/nullpii/`: 1.2 GB in fp32, or 0.6 GB in fp16 on CUDA. It checks every file against a SHA-256 written into the library. To download the model ahead of time, run `npx nullpii prefetch`, or point `NULLPII_MODEL_DIR` at a copy you put there yourself.
 
-On Linux x64, `onnxruntime-node`'s install script also downloads its CUDA execution provider from NuGet, without checking a hash. The CPU runtime is already in the npm package, so on a machine without an NVIDIA GPU skip that download:
+On Linux x64, the install script of `onnxruntime-node` also downloads its CUDA support from NuGet, without checking a hash. The CPU runtime is already in the npm package, so on a machine without an NVIDIA GPU, skip that download:
 
 ```bash
 ONNXRUNTIME_NODE_INSTALL=skip npm install nullpii onnxruntime-node
@@ -54,7 +54,12 @@ np.destroySession(safe.sessionId); // drop the session's values from memory
 await np.dispose();                // when you are done with the engine
 ```
 
-Keep one engine for the life of your process: loading the model (a file of about 1.2 GB) is its slowest step. The vault lives in memory only. A placeholder is bound to the session that minted it, so a placeholder from one conversation cannot be restored in another, and one value always gets the same placeholder within a session. Once a session has masked a value, every occurrence of it in that session's later calls is masked too, as a whole word of three characters or more, even where the detector misses it: a value restored into a tool call and echoed back in the tool's output stays masked.
+Keep one engine for the whole life of your process: loading the model (about 1.2 GB) is the slowest step. How the vault works:
+
+- It lives in memory only.
+- A placeholder belongs to the session that made it. You cannot restore it in another session.
+- In one session, one value always gets the same placeholder.
+- Once a session has masked a value, nullpii masks it again in that session's later calls, even where the detector misses it (for a whole word of three characters or more). So a value restored into a tool call and echoed in the tool's output stays masked.
 
 Streaming restore, for replies that arrive in chunks:
 
@@ -65,11 +70,11 @@ for await (const chunk of yourLlmStream(prompt)) process.stdout.write(stream.pus
 process.stdout.write(stream.end().restored);
 ```
 
-`safe.modelUnscannedWords` counts words the model could not read (a single word longer than its input budget, such as a minified blob); the recognizers still scanned them.
+`safe.modelUnscannedWords` counts the words the model could not read, such as one very long minified blob. The recognizers still scanned them.
 
 ## Choose what gets masked
 
-One JSON file sets the policy for the library, the CLI, the gateway and the Claude Code mod: `~/.config/nullpii/config.json`, or the file `NULLPII_CONFIG` names.
+One JSON file sets the policy for the library, the CLI, the gateway and the Claude Code mod. It is `~/.config/nullpii/config.json`, or the file that `NULLPII_CONFIG` names.
 
 ```json
 {
@@ -79,17 +84,17 @@ One JSON file sets the policy for the library, the CLI, the gateway and the Clau
 }
 ```
 
-- `disabledCategories`: categories left readable. It replaces the default list (dates, companies, jobs, honorifics, demographic and sensitive attributes); `[]` masks every category.
-- `categories`: the mode of each category named: `mask`, `ask` or `off` (readable). It overrides `disabledCategories` for those categories. `ask` is the Claude Code mod's per-category confirmation: before your prompt is sent, the mod asks you about each value of that category, and the value stays masked unless you choose to send it readable (see below).
-- `categoryThresholds`, `threshold`: confidence cuts in `[0, 1]`; lower masks more.
-- `urlAllowlist`: how much of a clean URL stays readable on each host (`full`, `host` or `mask`), or `"none"` to mask every URL. Code hosts, package registries and documentation stay readable by default; a URL with a credential in its query never does. A code-host URL can name a person or a private repository (`github.com/<user>/<repo>`): set that host to `host` or `mask` if that matters to you.
+- `disabledCategories`: the categories left readable. It replaces the default list: dates, companies, jobs, honorifics, and demographic and sensitive attributes. `[]` masks every category.
+- `categories`: a mode for each category you name: `mask`, `ask` or `off` (readable). It wins over `disabledCategories` for those categories. `ask` works in the Claude Code mod: before your prompt is sent, the mod asks you about each value of that category. The value stays masked unless you choose to send it readable (see below).
+- `categoryThresholds`, `threshold`: confidence cuts between 0 and 1. Lower masks more.
+- `urlAllowlist`: how much of a clean URL stays readable on each host: `full`, `host` or `mask`. Use `"none"` to mask every URL. By default, code hosts, package registries and documentation stay readable. A URL with a credential in its query is always masked. A code-host URL can name a person or a private repository (`github.com/<user>/<repo>`); if that matters to you, set that host to `host` or `mask`.
 - `restoreTools`: the tools whose arguments get real values back (gateway and mod).
 
-`npx nullpii config` validates the file and prints it. In code, `resolveConfigFile()` and `toEngineConfig()` load it, or pass the same options to `new NullPii({...})`.
+`npx nullpii config` checks the file and prints it. In code, load it with `resolveConfigFile()` and `toEngineConfig()`, or pass the same options to `new NullPii({...})`.
 
 ## Gateway
 
-An HTTP proxy for the Anthropic Messages API (`/v1/messages`) and the OpenAI Chat Completions API (`/v1/chat/completions`). Point your client's base URL at it and work as before: requests are masked before they leave your machine, and responses, streaming included, are restored before they reach you.
+An HTTP proxy for the Anthropic Messages API (`/v1/messages`) and the OpenAI Chat Completions API (`/v1/chat/completions`). Point your client's base URL at it and work as before. It masks requests before they leave your machine, and it restores responses, streaming included, before they reach you.
 
 ```bash
 git clone https://github.com/lBroth/nullpii.git && cd nullpii
@@ -98,14 +103,15 @@ export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
 claude
 ```
 
-The first request downloads the model (1.2 GB) into the container's cache volume and waits for it; [`examples/claude-code`](https://github.com/lBroth/nullpii/tree/main/examples/claude-code) shows how to fetch it beforehand. The image is also published as `ghcr.io/lbroth/nullpii-gateway`.
+The first request downloads the model (1.2 GB) into the container's cache volume and waits for it. [`examples/claude-code`](https://github.com/lBroth/nullpii/tree/main/examples/claude-code) shows how to download it first. The image is also published as `ghcr.io/lbroth/nullpii-gateway`.
 
-Your API key or Claude subscription login is passed through unchanged. For clients of the OpenAI Chat Completions API (the OpenAI SDKs, Aider, LiteLLM), set `OPENAI_BASE_URL=http://127.0.0.1:8787/v1`. The Responses API is not proxied, so the Codex CLI, which refuses to speak Chat Completions, cannot use the gateway.
+Your API key or Claude subscription login passes through unchanged. For OpenAI Chat Completions clients (the OpenAI SDKs, Aider, LiteLLM), set `OPENAI_BASE_URL=http://127.0.0.1:8787/v1`. The gateway does not proxy the Responses API, so the Codex CLI, which refuses to speak Chat Completions, cannot use it.
 
-- Real values go back only into the tools listed in the policy's `restoreTools`, by default the file tools that run on your machine (`Read`, `Edit`, `Write`, `Grep`, `Glob`, …). A tool a shell runs (`Bash`, `PowerShell`, …) is never one of them: it keeps every placeholder, whatever the policy says. Web and MCP tools, and tools the upstream runs itself, keep the placeholders too.
-- The request log carries counts, never values.
-- The gateway has no authentication of its own: keep it on `127.0.0.1`.
-- The policy is read at startup; a change sent through the sidecar (`PUT /v1/sidecar/policy`, which the mod's `/pii` uses) applies to the running gateway at once.
+- Real values go back only into the tools in the policy's `restoreTools`. By default these are the file tools that run on your machine (`Read`, `Edit`, `Write`, `Grep`, `Glob`, …).
+- A tool that runs a shell (`Bash`, `PowerShell`, …) never gets a real value back, whatever the policy says. Web and MCP tools, and tools the upstream runs itself, keep the placeholders too.
+- The request log has counts, never values.
+- The gateway has no authentication of its own. Keep it on `127.0.0.1`.
+- It reads the policy at startup. A change sent through the sidecar (`PUT /v1/sidecar/policy`, which the mod's `/pii` uses) applies to the running gateway at once.
 
 Details, the full list of scanned fields, and the sidecar API: [`packages/gateway`](https://github.com/lBroth/nullpii/tree/main/packages/gateway). A worked Claude Code setup: [`examples/claude-code`](https://github.com/lBroth/nullpii/tree/main/examples/claude-code).
 
@@ -113,28 +119,28 @@ Details, the full list of scanned fields, and the sidecar API: [`packages/gatewa
 
 [`packages/claude-code-mod`](https://github.com/lBroth/nullpii/tree/main/packages/claude-code-mod) masks inside Claude Code itself:
 
-- prompts, tool results, @-mentioned files and `CLAUDE.md` are masked before Claude reads them;
-- your prompts and Claude's replies are drawn on screen with the real values;
-- real values go back only into the tools the policy lists;
-- a band above the prompt shows what was masked, by type, and `/pii` shows the counts and the policy in effect.
+- It masks prompts, tool results, @-mentioned files and `CLAUDE.md` before Claude reads them.
+- It shows your prompts and Claude's replies on screen with the real values.
+- It puts real values back only into the tools the policy lists.
+- A band above the prompt shows what was masked, by type. `/pii` shows the counts and the policy in effect.
 
-It talks to the gateway's local sidecar, starts one for the session when none answers, and fails closed when the sidecar is unreachable: nothing is sent unmasked.
+The mod talks to the gateway's local sidecar. If no sidecar answers, it starts one for the session. If it cannot reach the sidecar, it sends nothing unmasked.
 
-`/pii` changes the policy at once, and the change is saved in the policy file:
+`/pii` changes the policy at once and saves the change in the policy file:
 
-- `/pii preset agent` (the default), `/pii preset secrets` (secrets only) or `/pii preset all` (every category); `/pii reset` is the `agent` preset;
-- `/pii mask <category…>`, `/pii off <category…>` (readable) and `/pii ask <category…>`, one mode per category named.
+- `/pii preset agent` (the default), `/pii preset secrets` (secrets only) or `/pii preset all` (every category). `/pii reset` goes back to `agent`.
+- `/pii mask <category…>`, `/pii off <category…>` (readable) and `/pii ask <category…>` set one mode for each category you name.
 
-For a category in `ask` mode, the mod asks you about each of its values in your own prompt before it is sent: mask it, send it readable, or send it readable and stop asking for that category. A dialog you dismiss, or that no one can answer (`claude -p`), keeps the value masked. Text the mod reads from a tool's result is never put to you; it follows the policy. Categories: `person`, `email`, `phone`, `address`, `url`, `ip`, `mac`, `location`, `passport`, `license`, `vehicle`, `account`, `secret`, `date`, `organization`, `occupation`, `demographic`, `sensitive`, `title`.
+For a category in `ask` mode, the mod asks you about each of its values in your own prompt before the prompt is sent. You can mask it, send it readable, or send it readable and stop asking for that category. If you close the question, or no one can answer it (`claude -p`), the value stays masked. The mod only asks about your own prompt: values in a tool's result follow the policy without a question. Categories: `person`, `email`, `phone`, `address`, `url`, `ip`, `mac`, `location`, `passport`, `license`, `vehicle`, `account`, `secret`, `date`, `organization`, `occupation`, `demographic`, `sensitive`, `title`.
 
-With a sidecar token at hand (the mod starts the gateway itself when none answers; [set up](https://github.com/lBroth/nullpii/tree/main/packages/claude-code-mod#set-up)), install it at the prompt of a Claude Code session:
+To install it you need a sidecar token ([set up](https://github.com/lBroth/nullpii/tree/main/packages/claude-code-mod#set-up); the mod starts the gateway itself when none answers). Then, at the prompt of a Claude Code session:
 
 ```text
 /plugin marketplace add lBroth/nullpii@v0.5.0
 /plugin install nullpii@nullpii
 ```
 
-or from a shell with `claude plugin marketplace add lBroth/nullpii@v0.5.0`, then `claude plugin install nullpii@nullpii`. The `@v0.5.0` pins the mod to the release: without it you get whatever `main` holds.
+Or from a shell: `claude plugin marketplace add lBroth/nullpii@v0.5.0`, then `claude plugin install nullpii@nullpii`. The `@v0.5.0` pins the mod to this release. Without it you get whatever `main` holds.
 
 ## What gets caught
 
@@ -160,24 +166,24 @@ or from a shell with `claude plugin marketplace add lBroth/nullpii@v0.5.0`, then
 | `private_sensitive` | religion, political views, sexual orientation, health, when stated | model |
 | `private_title` | honorifics and titles before a name | model |
 
-By default nullpii masks what is dangerous to hand to a coding agent's model (names, contact details and addresses, ids and accounts, secrets) and leaves readable what the agent needs to work and identifies no one on its own: `private_date` (the model does not tell a birth date from a deadline) and the last five categories (`DEFAULT_DISABLED_CATEGORIES`). Set `disabledCategories` to choose otherwise; `[]` masks every category. They find what is written out: nullpii does not infer a health condition or a belief from indirect wording. Add your own patterns with `np.addRecognizer({ id, pattern, label, confidence, validate? })`.
+By default nullpii masks what is risky to give to a coding agent's model: names, contact details and addresses, ids and accounts, secrets. It leaves readable what the agent needs and what names no one on its own: `private_date` (the model cannot tell a birth date from a deadline) and the last five categories (`DEFAULT_DISABLED_CATEGORIES`). Set `disabledCategories` to change this; `[]` masks every category. nullpii finds values that are written out. It does not infer a health condition or a belief from indirect wording. Add your own patterns with `np.addRecognizer({ id, pattern, label, confidence, validate? })`.
 
-Obfuscated input is decoded before detection: Unicode look-alikes and fullwidth characters, zero-width characters, spaced-out text, percent-encoding (two levels deep), HTML entities, and base64 blobs.
+nullpii decodes hidden input before it looks for values: Unicode look-alikes and fullwidth characters, zero-width characters, spaced-out text, percent-encoding (two levels deep), HTML entities, and base64 blobs.
 
 ## Benchmark
 
-Every test below was fixed before the run, and the results are published where nullpii loses too. How the numbers are produced: [`METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md).
+Every test was fixed before the run. The results include the cases nullpii loses. How the numbers are made: [`METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md).
 
 ### Agent traffic (AB-1)
 
-What a coding agent must not hand to the model (secrets, contact details and addresses, identifiers and account numbers, names) against what it needs to read (dates, versions, paths, hostnames of public services, placeholders, code identifiers). Leak rate and keep rate are scored per item, with no combined score; every tool ran on the frozen test set on 25 October 2026. Method and limits: [AB-1 in METHOD.md](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md#agent-traffic-benchmark-ab-1).
+AB-1 checks two things in a coding agent's traffic. What the agent must not give to the model (secrets, contact details and addresses, ids and account numbers, names) should be masked. What it needs to read (dates, versions, paths, hostnames of public services, placeholders, code identifiers) should stay readable. Each item is scored: the leak rate on items that must be hidden, and the keep rate on items that must stay readable. There is no combined score. Every tool ran on the frozen test set on 25 October 2026. Method and limits: [AB-1 in METHOD.md](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md#agent-traffic-benchmark-ab-1).
 
 ![Agent traffic, 966 documents, leak rate and keep rate per tool: rizzo-pii 8.1% and 44.5%, nullpii 0.5 9.5% and 81.9%, then openai privacy-filter 14.5% and 77.9%; every other tool lets 15.7% to 55.1% through. The table below has every value.](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/ab1-agent-traffic.svg)
 
-- **Only rizzo-pii lets fewer through** (8.1%, an interval that touches 0), and it masks more than half of what the agent needs to read. Every other tool lets 5 to 46 points more through; gliner-pii-large keeps more readable (85.5%) and lets 15.9% through.
+- **Only rizzo-pii lets fewer through** (8.1%; the gap is within the margin of error), and it masks more than half of what the agent needs to read. Every other tool lets 5 to 46 points more through. gliner-pii-large keeps more readable (85.5%) but lets 15.9% through.
 - **Weakest categories:** person names (24% let through) and URLs (31%).
-- **Secrets alone, nullpii does not lead.** On CredData openai's privacy-filter (13.2%), nemotron-pii run as a library (14.5%) and nullpii (14.6%) are within each other's intervals; on secrets in GitHub issues openai's privacy-filter lets fewer through (8.2% against 11.2%) and keeps more readable (74.6% against 69.2%).
-- **One scoring rule changed after the scores were first read, against nullpii's interest:** punctuation left between masked pieces of a value (the comma between a street and a city) no longer counts as a leak. With the first rule nullpii led (11.0% against rizzo-pii's 15.0%). Both scorings are published.
+- **On secrets alone, nullpii does not lead.** On CredData, openai's privacy-filter (13.2%), nemotron-pii run as a library (14.5%) and nullpii (14.6%) are too close to call. On secrets in GitHub issues, openai's privacy-filter lets fewer through (8.2% against 11.2%) and keeps more readable (74.6% against 69.2%).
+- **One scoring rule was changed after the scores were first read, and the change works against nullpii.** Punctuation left between masked pieces of a value (like the comma between a street and a city) no longer counts as a leak. With the first rule nullpii led (11.0% against rizzo-pii's 15.0%). Both scorings are published.
 
 <details>
 <summary>Table, with the intervals</summary>
@@ -205,28 +211,28 @@ What a coding agent must not hand to the model (secrets, contact details and add
 | deberta PII (tuned, +agent) | 55.1% | 64.2% | 81.2% | [−48.7, −42.4] | [+14.0, +21.2] |
 <!-- ab1-a:end -->
 
-Each tool's row is its tuned operating point with the agent-policy filter; every other row, B1 (CredData), B2 (issue secrets), the leak rate per category and the secrets split by recognizer coverage are in [`METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md#results), and the raw aggregates in [`published-bench/ab1/`](https://github.com/lBroth/nullpii/blob/main/packages/eval/published-bench/ab1).
+Each row is the tool at its tuned setting, with the agent-policy filter. [`METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md#results) has every other row, B1 (CredData), B2 (issue secrets), the leak rate per category, and the secrets split by recognizer coverage. The raw numbers are in [`published-bench/ab1/`](https://github.com/lBroth/nullpii/blob/main/packages/eval/published-bench/ab1).
 
 </details>
 
 ### Documents (R3)
 
-Document anonymisation, a different job from agent traffic: five datasets frozen before any tool ran on them (REDACT, TonicAI's human-annotated Privacy-Bench, PIILO student essays, Greek and German clinical notes, and a synthetic coding-agent trace set built for this benchmark from a specification we wrote), with under 1% measured overlap with nullpii's training data and the public training sets the compared tools declare. Scored per character and label-agnostic, with F2, which counts recall twice as much as precision because a missed character leaks.
+R3 measures document anonymisation, a different job from agent traffic. It uses five datasets, frozen before any tool ran on them: REDACT, TonicAI's human-annotated Privacy-Bench, PIILO student essays, Greek and German clinical notes, and a synthetic coding-agent trace set built for this benchmark from a specification we wrote. Each has under 1% measured overlap with nullpii's training data and with the public training sets the other tools declare. The score is per character and ignores labels. F2 counts recall twice as much as precision, because a missed character leaks.
 
 ![Documents, macro char-F2 per tool over five sets and over English documents only: rizzo-pii 0.770 and 0.742, nullpii 0.756 and 0.713, nvidia/gliner-PII 0.720 and 0.672, OpenMed privacy-filter-multilingual-v2 0.717 and 0.717, openai privacy-filter 0.693 and 0.746. The table below has every value.](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/r3-documents.svg)
 
-- **Second of 15.** rizzo-pii is ahead (0.770 against 0.756), all of it on PIILO's student essays (0.623 against 0.407), where nullpii masks much that the gold does not label; on PIILO 8 of the 14 other tools are ahead of nullpii. The gap is significant in the 95% test fixed before the run, not with a Bonferroni correction added afterwards.
-- **One dataset carries much of the lead.** Without the clinical notes nullpii is third (0.723), and three more tools are within the interval. On English documents alone it is fifth (0.713).
-- **Recall first.** Its recall is the highest of any tool's best row (0.960) and its precision among the lowest: ranked by F0.5 it is ninth.
-- **PIIMB**, scored by us with the leaderboard's method (not a submitted entry): average F2 0.851, above the 35 listed tools; 0.831 without the one task from its training family, not clearly ahead.
+- **Second of 15.** rizzo-pii is ahead (0.770 against 0.756), all of it on PIILO's student essays (0.623 against 0.407). There nullpii masks a lot that the gold does not label, and 8 of the 14 other tools are ahead of it. The gap to rizzo-pii is significant in the 95% test fixed before the run, but not with a Bonferroni correction added later.
+- **One dataset carries much of the lead.** Without the clinical notes, nullpii is third (0.723), and three more tools are too close to call. On English documents alone it is fifth (0.713).
+- **It favours recall.** Its recall is the highest of any tool's best row (0.960), and its precision is among the lowest. Ranked by F0.5, which favours precision, it is ninth.
+- **PIIMB**, scored by us with the leaderboard's method (not a submitted entry): average F2 0.851, above the 35 listed tools. Without the one task from its training family it is 0.831, not clearly ahead.
 
-Two of the things compared here are built for documents: PIILO, where among names only the students' own are gold, and rizzo-pii, a document anonymiser (the pipeline run is its app's own `analyze()`; its model and training corpus are Italian-first).
+Two things compared here are built for documents: PIILO, where only the students' own names count as gold, and rizzo-pii, a document anonymiser (we run its app's own `analyze()`; its model and training data are Italian-first).
 
 <details>
 <summary>Table, with the intervals, and how the tools were run</summary>
 
-- **Competitors:** each runs as its authors ship it (the few departures, such as windowing long texts, are listed in METHOD.md), at its default and at an operating point tuned on the same tuning set as nullpii; each is shown at its better row. Nine of the thirteen compared models (Presidio, a library, aside) declare English only on their cards (openai's privacy-filter "primarily English"), yet every tool runs on every document; the languages are listed in METHOD.md.
-- **Confidence:** paired bootstrap, 95% intervals of nullpii minus the tool, the test fixed before the run; intervals corrected for multiple comparisons (Bonferroni, 99.67%), a check added afterwards, are in METHOD.md.
+- **Competitors:** each tool runs the way its authors ship it. METHOD.md lists the few changes, such as splitting long texts into windows. Each tool runs at its default and at a setting tuned on the same tuning set as nullpii, and is shown at its better one. Nine of the thirteen compared models (Presidio, a library, aside) declare English only on their cards (openai's privacy-filter says "primarily English"). Every tool still runs on every document; METHOD.md lists the languages.
+- **Confidence:** paired bootstrap, 95% intervals of nullpii minus the tool. This test was fixed before the run. METHOD.md also has intervals corrected for multiple comparisons (Bonferroni, 99.67%), a check added later.
 
 <!-- matrix:begin -->
 | Tool | Macro char-F2 | F0.5 | Recall | Precision | CI of nullpii − tool (F2) |
@@ -249,17 +255,17 @@ Two of the things compared here are built for documents: PIILO, where among name
 | mask everything | 0.260 | | | | |
 <!-- matrix:end -->
 
-nullpii is measured with its five extended categories off, as the datasets do not label them. With every category masked (the default before 0.5), which masks them too, it scores 0.747 counted on the same labels and 0.653 counted on everything it masks, since masking organisations, occupations and the like counts as over-masking here. The 0.5 default for coding agents leaves those five categories and dates readable; it is measured on agent traffic (AB-1, above), not on these datasets, whose core labels count dates.
+nullpii is measured with its five extended categories off, because the datasets do not label them. With every category masked (the default before 0.5), it scores 0.747 on the same labels, and 0.653 when everything it masks counts, because masking organisations, occupations and the like counts as over-masking here. The 0.5 default for coding agents leaves those five categories and dates readable. That default is measured on agent traffic (AB-1, above), not on these datasets, which label dates.
 
 **Where nullpii is not ahead, in detail.**
-- **One dataset carries much of the lead.** Without the Greek and German clinical notes, nullpii is third (0.723): openai's privacy-filter (+0.032) and rizzo-pii (+0.028) are significantly ahead, and pii-identifier, OpenMed privacy-filter-multilingual-v2 and OpenMed large are within the confidence interval. Without the student essays, nullpii is first (0.844, rizzo-pii 0.037 behind).
-- **rizzo-pii is ahead, on student essays.** On PIILO nullpii scores 0.407 against rizzo-pii's 0.623, with higher recall and much lower precision: it masks a lot the gold does not label. On the other four datasets nullpii is ahead of rizzo-pii. Over all five the gap, −0.013, is significant in the 95% test fixed before the run, [−0.021, −0.005]; with a Bonferroni correction added afterwards (99.67%) it is not, [−0.025, +0.001], while the 13 leads hold. With every category masked nullpii is further behind, −0.022, and significantly so in both tests: [−0.031, −0.013] at 95%, [−0.034, −0.008] corrected.
-- **Precision.** nullpii's recall is the highest of any tool's best-scoring row (only rizzo-pii tuned for recall goes higher, 0.967, at F2 0.583), and its precision is among the lowest. Ranked by F0.5 on the rows above it is ninth (eight tools ahead); with each tool at its best F0.5 operating point, eleven are ahead.
-- **Per dataset.** On PIILO, 8 of the 14 tools are ahead of nullpii; on Tonic, three are, by up to 0.008; on the clinical notes, gliner_multi_pii (0.913 against 0.887).
-- **English documents only.** nullpii is fifth (0.713), behind openai's privacy-filter (0.746), rizzo-pii (0.742), OpenMed's privacy-filter-multilingual-v2 (0.717) and pii-identifier (0.714). The first two are significantly ahead; the next two, and ettin-68m and OpenMed large below it, are within the interval.
-- **PIIMB** ([leaderboard](https://huggingface.co/spaces/piimb/pii-masking-benchmark-leaderboard), `sentences` subset, scored by us with the leaderboard's method, not a submitted entry): average F2 0.851, above all 35 listed tools; OpenMed's privacy-filter-multilingual-v2 is next at 0.836. One of the six tasks, nemotron-pii, is from nullpii's training family (2.5% of its sampled text overlaps nullpii's training corpus, 5.2% Nemotron-PII's); without it nullpii averages 0.831, against gliner-stream-pii's 0.826 and privacy-filter-multilingual-v2's 0.822, a lead the leaderboard's lack of intervals cannot call significant. nullpii trails on the ai4privacy and Gretel tasks, and on privy, where it over-masks.
+- **One dataset carries much of the lead.** Without the Greek and German clinical notes, nullpii is third (0.723). openai's privacy-filter (+0.032) and rizzo-pii (+0.028) are significantly ahead. pii-identifier, OpenMed privacy-filter-multilingual-v2 and OpenMed Large are too close to call. Without the student essays, nullpii is first (0.844; rizzo-pii is 0.037 behind).
+- **rizzo-pii is ahead on student essays.** On PIILO nullpii scores 0.407 and rizzo-pii 0.623. nullpii has higher recall and much lower precision there, because it masks a lot the gold does not label. On the other four datasets nullpii is ahead of rizzo-pii. Over all five the gap is −0.013. It is significant in the 95% test fixed before the run, [−0.021, −0.005], but not with a Bonferroni correction added later (99.67%), [−0.025, +0.001]; the 13 leads still hold with it. With every category masked, nullpii is further behind (−0.022), and that gap is significant in both tests: [−0.031, −0.013] at 95%, [−0.034, −0.008] corrected.
+- **Precision.** nullpii's recall is the highest of any tool's best row; only rizzo-pii tuned for recall goes higher (0.967, at F2 0.583). Its precision is among the lowest. Ranked by F0.5 on the rows above, it is ninth (eight tools ahead). With each tool at its best F0.5 setting, eleven are ahead.
+- **Per dataset.** On PIILO, 8 of the 14 other tools are ahead of nullpii. On Tonic, three are, by up to 0.008. On the clinical notes, gliner_multi_pii is ahead (0.913 against 0.887).
+- **English documents only.** nullpii is fifth (0.713), behind openai's privacy-filter (0.746), rizzo-pii (0.742), OpenMed's privacy-filter-multilingual-v2 (0.717) and pii-identifier (0.714). The first two are significantly ahead. The next two, and ettin-68m and OpenMed Large below nullpii, are too close to call.
+- **PIIMB** ([leaderboard](https://huggingface.co/spaces/piimb/pii-masking-benchmark-leaderboard), `sentences` subset, scored by us with the leaderboard's method, not a submitted entry): average F2 0.851, above all 35 listed tools. Next is OpenMed's privacy-filter-multilingual-v2 at 0.836. One of the six tasks, nemotron-pii, comes from nullpii's training family: 2.5% of its sampled text overlaps nullpii's training data, and 5.2% overlaps Nemotron-PII's. Without that task nullpii averages 0.831, against 0.826 for gliner-stream-pii and 0.822 for privacy-filter-multilingual-v2. The leaderboard gives no intervals, so this lead cannot be called significant. nullpii trails on the ai4privacy and Gretel tasks, and on privy, where it masks too much.
 
-The three reported (not gated) sets, the per-dataset numbers and the sensitivity checks are in [`METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md).
+[`METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md) has the three reported (not gated) sets, the numbers per dataset, and the sensitivity checks.
 
 </details>
 
@@ -267,13 +273,13 @@ The three reported (not gated) sets, the per-dataset numbers and the sensitivity
 
 ![GPU latency at 30,000 characters, median milliseconds per call: from ettin-68m at 157 to NVIDIA's nemotron server pipeline at 2,835; nullpii 463 with its core labels and 489 with every category masked, seventh of 13 tools. The tables below have every value.](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/latency-gpu.svg)
 
-nullpii is not the fastest: seventh of 13 tools on GPU and fifth of 15 on CPU, at 30,000 characters. Every tool times the same coding-agent texts on the same idle machine, after a warm-up, at its default operating point.
+nullpii is not the fastest: it is seventh of 13 tools on GPU and fifth of 15 on CPU, at 30,000 characters. Every tool runs the same coding-agent texts on the same idle machine, after a warm-up, at its default setting.
 
 <details>
 <summary>Tables: GPU and CPU, 2,000 to 100,000 characters</summary>
 
 <!-- latency:begin -->
-nullpii is not the fastest: it is seventh of 13 tools on GPU and fifth of 15 on CPU (at 30k, counting nullpii once and NVIDIA's two nemotron pipelines as one tool). Median time per call, in milliseconds, for texts of 2,000, 30,000 and 100,000 characters of coding-agent material (code, logs, prose, tool output); every tool times the same texts on the same idle machine, after a warm-up, at its default operating point. How the texts are chosen: [`METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md).
+The tables show the median time per call, in milliseconds, for texts of 2,000, 30,000 and 100,000 characters of coding-agent material (code, logs, prose, tool output). The ranks above count nullpii once and NVIDIA's two nemotron pipelines as one tool. How the texts are chosen: [`METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md).
 
 **GPU** (Linux, NVIDIA RTX 4070 Ti; 60, 12 and 5 texts per size, three rounds). nullpii loads `model_fp16.onnx` on CUDA.
 
@@ -295,7 +301,7 @@ nullpii is not the fastest: it is seventh of 13 tools on GPU and fifth of 15 on 
 | gliner-pii-large-v1 | 83 | 1,892 | 6,550 |
 | nemotron-pii (NVIDIA server pipeline) | 189 | 2,835 | 9,966 |
 
-**CPU** (Linux, Intel Core i7-13700KF, every tool on CPU; 6, 6 and 3 texts per size, timed once, since the full plan takes hours per tool here).
+**CPU** (Linux, Intel Core i7-13700KF, every tool on CPU; 6, 6 and 3 texts per size, timed once, because the full plan takes hours per tool here).
 
 | Tool | 2k | 30k | 100k |
 |---|---:|---:|---:|
@@ -317,7 +323,7 @@ nullpii is not the fastest: it is seventh of 13 tools on GPU and fifth of 15 on 
 | OpenMed privacy-filter-multilingual-v2 | 9,133 | 132,528 | 448,206 |
 | openai privacy-filter | 9,514 | 137,526 | 467,769 |
 
-Presidio is fast because it is mostly patterns plus a small spaCy model; its macro char-F2 is 0.628. OpenMed Large's time depends strongly on the text (at 100k, a median of 22 s and a 95th percentile of 63 s), so its 100k figure, from three texts, is rough. On CPU nullpii's two references, at the start and at the end of the run, agree within 1% (0.2% at 2k, 0.3% at 30k, 0.7% at 100k). gliner_multi_pii (ONNX) runs on CPU only and Presidio has no GPU path, so they are not in the GPU table.
+Presidio is fast because it is mostly patterns plus a small spaCy model; its macro char-F2 is 0.628. OpenMed Large's time depends a lot on the text (at 100k, a median of 22 s and a 95th percentile of 63 s), so its 100k figure, from three texts, is rough. On CPU, nullpii's two reference runs, at the start and at the end, agree within 1% (0.2% at 2k, 0.3% at 30k, 0.7% at 100k). gliner_multi_pii (ONNX) runs on CPU only, and Presidio has no GPU path, so neither is in the GPU table.
 <!-- latency:end -->
 
 </details>
@@ -330,25 +336,25 @@ new NullPii({ backend: 'cuda' });  // NVIDIA GPU, fp16 when the model ships it; 
 new NullPii({ backend: 'mps' });   // Apple Silicon through CoreML; slower than 'cpu' today, see below
 ```
 
-`backend: 'cuda'` needs the CUDA libraries the installed `onnxruntime-node` was built against: for 1.30 on Linux x64, CUDA 13 (`libcudart.so.13`, `libcublas.so.13`, `libcublasLt.so.13`) and cuDNN 9, although its installer calls the build `cuda12`. When a session with the CUDA or CoreML provider cannot be created (a missing library, an unsupported graph, too little memory), nullpii runs on the CPU instead and emits a process warning with code `NULLPII_BACKEND_FALLBACK` that names the cause (listen with `process.on('warning', …)`). A model downloaded for CUDA holds only the fp16 file; the CPU runs it too, but the benchmark measures the fp32 file (accuracy on CUDA, the CPU latency table on the CPU).
+`backend: 'cuda'` needs the CUDA libraries that the installed `onnxruntime-node` was built with. For 1.30 on Linux x64 that is CUDA 13 (`libcudart.so.13`, `libcublas.so.13`, `libcublasLt.so.13`) and cuDNN 9, even though its installer calls the build `cuda12`. If nullpii cannot start a CUDA or CoreML session (a missing library, an unsupported graph, too little memory), it runs on the CPU instead. It then emits a process warning with code `NULLPII_BACKEND_FALLBACK` that names the cause (listen with `process.on('warning', …)`). A model downloaded for CUDA has only the fp16 file. The CPU can run it too, but the benchmark measures the fp32 file (accuracy on CUDA, the CPU latency table on the CPU).
 
-On Apple Silicon use `cpu`: with CoreML the model was slower than on the CPU at every size measured (1.3 to 8 times, depending on the CoreML settings; measured on earlier builds), and its first call took 18 to 26 seconds while CoreML compiled the graph, which the GLiNER head's dynamic shapes split into many partitions (#51).
+On Apple Silicon, use `cpu`. With CoreML the model was slower than on the CPU at every size measured (1.3 to 8 times slower, depending on the CoreML settings; measured on earlier builds). Its first call also took 18 to 26 seconds while CoreML compiled the graph, which the GLiNER head's dynamic shapes split into many parts (#51).
 
 `intraOpNumThreads` and `interOpNumThreads` are passed to ONNX Runtime.
 
 ## What it doesn't do
 
-- **It does not catch everything.** Detection is statistical; the benchmark shows the leak rate. Don't make it your only privacy control.
-- **It is not a HIPAA or GDPR tool.** It finds explicit spans, not facts inferred from context.
-- **Images and other binary attachments** pass through the gateway unscanned, and are counted.
-- **Long inputs are slow, not refused.** A text over 1,000,000 characters is read in overlapping windows of up to that size and masked once; expect about 25 seconds per 100,000 characters on CPU, under 2 on GPU.
+- **It does not catch everything.** Detection is statistical, and the benchmark shows how much leaks. Do not make it your only privacy control.
+- **It is not a HIPAA or GDPR tool.** It finds values that are written out, not facts inferred from context.
+- **Images and other binary attachments** pass through the gateway without a scan. The gateway counts them.
+- **Long inputs are slow, not refused.** nullpii reads a text over 1,000,000 characters in overlapping windows of up to that size, and masks it once. Expect about 25 seconds per 100,000 characters on CPU, and under 2 seconds on GPU.
 
 ## Privacy and security
 
-- Detection runs on your machine. nullpii sends your text nowhere; its one network call is the model download.
+- Detection runs on your machine. nullpii sends your text nowhere. Its only network call is the model download.
 - The vault lives in memory and is never written to disk.
-- Logs carry counts and short ids, never values. The exception is the gateway's `NULLPII_LOG_TRAFFIC=wire` debugging dump, which prints what was sent upstream, including anything the detector missed (see SECURITY.md).
-- Restoring a value into a shell command can inject, because the model never saw the value. So no shell command gets a real value back: the gateway keeps the placeholder, and the mod refuses the call and points Claude to `Grep`, `Read`, `Edit` or `Write`, which get real values. A shell tool under another name that you add to `restoreTools` is not recognised and gets every value, so do not add one. If you call `restore()` yourself, read [SECURITY.md](https://github.com/lBroth/nullpii/blob/main/SECURITY.md).
+- Logs have counts and short ids, never values. One exception: the gateway's `NULLPII_LOG_TRAFFIC=wire` debug dump prints what was sent upstream, including anything the detector missed (see SECURITY.md).
+- Putting a real value into a shell command can inject code, because the model never saw the value. So no shell command gets a real value back. The gateway keeps the placeholder. The mod refuses the call and points Claude to `Grep`, `Read`, `Edit` or `Write`, which do get real values. If you add a shell tool under another name to `restoreTools`, nullpii does not recognise it and gives it every value, so do not add one. If you call `restore()` yourself, read [SECURITY.md](https://github.com/lBroth/nullpii/blob/main/SECURITY.md).
 
 Report a vulnerability privately: [security advisories](https://github.com/lBroth/nullpii/security/advisories/new).
 

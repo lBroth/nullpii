@@ -81,13 +81,10 @@ jobs:
               status=1
             fi
           done
-          # The mod starts the sidecar from the packages of this release:
-          # `X.Y` for a release, the exact version for a pre-release (`X.Y`
-          # matches none).
-          case "$TAG_VERSION" in
-            *-*) pin="$TAG_VERSION" ;;
-            *) pin="${TAG_VERSION%.*}" ;;
-          esac
+          # The mod starts the sidecar, which gets its token, from exactly
+          # this release's packages (no range: what runs with the token is
+          # what the mod was released with).
+          pin="$TAG_VERSION"
           pins=$(grep -oE "GATEWAY_RELEASE = '[^']+'" packages/claude-code-mod/hooks/register.ts)
           if [ "$pins" != "GATEWAY_RELEASE = '$pin'" ]; then
             echo "the mod must start the sidecar from release $pin, found: $pins"
@@ -97,14 +94,14 @@ jobs:
           case "$TAG_VERSION" in
             *-*) ;;
             *)
-              for doc in README.md packages/claude-code-mod/README.md; do
+              for doc in README.md packages/claude-code-mod/README.md docs/start.md; do
                 stale=$(grep -oE 'lBroth/nullpii@v[0-9A-Za-z.-]+' "$doc" | sort -u | grep -vxF "lBroth/nullpii@v$TAG_VERSION" || true)
                 if [ -n "$stale" ]; then
                   echo "$doc still pins $stale, the tag says lBroth/nullpii@v$TAG_VERSION"
                   status=1
                 fi
               done
-              # The mod README's gateway command installs this minor line.
+              # The mod README's gateway command installs this exact release.
               stale=$(grep -oE '(@lbroth/nullpii-gateway|nullpii)@[0-9][0-9A-Za-z.-]*' packages/claude-code-mod/README.md \
                 | sort -u | grep -vxF -e "nullpii@$pin" -e "@lbroth/nullpii-gateway@$pin" || true)
               if [ -n "$stale" ]; then

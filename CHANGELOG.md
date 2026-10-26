@@ -3,7 +3,7 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.0] — 2026-10-26
 
 nullpii 0.5.0: a retrained model, a gateway and a Claude Code mod built for coding agents, one policy file for every surface, and a benchmark rebuilt on held-out data. 0.4.0 was prepared but never published; its changes are included here. Changes marked **Breaking** need code or configuration changes, or change output, relative to the published 0.3.0.
 

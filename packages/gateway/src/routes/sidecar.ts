@@ -48,8 +48,9 @@ const REFUSAL_REPLIES: Readonly<Record<SessionRefusal, { status: number; error: 
 };
 const LOOPBACK_HOSTNAMES: ReadonlySet<string> = new Set(['127.0.0.1', 'localhost', '[::1]']);
 /** The `Authorization` value that carries the token; the scheme name is
- * case-insensitive (RFC 9110, section 11.1). */
-const BEARER = /^bearer[ \t]+(.*)$/i;
+ * case-insensitive (RFC 9110, section 11.1). The token holds no blank, so
+ * the pattern is linear: blanks and token cannot trade characters. */
+const BEARER = /^bearer[ \t]+([^ \t]*)$/i;
 /** The route a caller checks the sidecar knows the token on, before it
  * sends the token or any text. */
 export const CHALLENGE_PATH = '/v1/sidecar/challenge';

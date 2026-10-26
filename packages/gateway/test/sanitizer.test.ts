@@ -370,3 +370,17 @@ describe('restoreResponse: object keys', () => {
     expect(out.replacements).toBe(1);
   });
 });
+
+describe('sanitizeRequest: a key from the request stays a key', () => {
+  it('passes `__proto__` and `constructor` keys on as plain keys, their values masked', async () => {
+    // JSON.parse makes `__proto__` an own key, as a request body would.
+    const input = JSON.parse(`{"__proto__": {"note": "${CANARY}"}, "constructor": "${CANARY}"}`);
+    const { json, out } = await walk([{ type: 'tool_use', id: 'toolu_p', name: 'lookup', input }]);
+    expect(json).not.toContain(CANARY);
+    const sent = JSON.parse(json) as { messages: { content: { input: object }[] }[] };
+    const sentInput = sent.messages[0]?.content[0]?.input ?? {};
+    expect(Object.keys(sentInput)).toEqual(['__proto__', 'constructor']);
+    const body = out.body as { messages: { content: { input: object }[] }[] };
+    expect(Object.getPrototypeOf(body.messages[0]?.content[0]?.input)).toBe(Object.prototype);
+  });
+});

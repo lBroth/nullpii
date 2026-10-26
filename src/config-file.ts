@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { readFileSync, statSync } from 'node:fs';
+import { constants, closeSync, fstatSync, openSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { NULLPII_CONFIG, XDG_CONFIG_HOME, readEnvVar } from './config.js';
@@ -90,9 +90,28 @@ export function resolveConfigFile(explicitPath?: string): NullPiiFileConfig | nu
  * {@link InvalidConfigError} when it is missing, not a regular file,
  * larger than `MAX_CONFIG_FILE_BYTES`, not JSON, or invalid. */
 export function loadConfigFile(path: string): NullPiiFileConfig {
+  // One descriptor for the checks and the read, so the file cannot be
+  // swapped between them. Non-blocking, so a FIFO is refused, not waited on
+  // (Windows has no O_NONBLOCK and no FIFOs).
+  let fd: number;
+  try {
+    fd = openSync(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
+  } catch (err) {
+    throw new InvalidConfigError(`cannot read ${path}`, { cause: err });
+  }
+  try {
+    return parseConfig(readOpenConfig(fd, path), path);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/** The text of the config file open as `fd`, if it is a regular file
+ * within the size limit. */
+function readOpenConfig(fd: number, path: string): string {
   let size: number;
   try {
-    const st = statSync(path);
+    const st = fstatSync(fd);
     if (!st.isFile()) throw new InvalidConfigError(`${path} is not a regular file`);
     size = st.size;
   } catch (err) {
@@ -104,7 +123,7 @@ export function loadConfigFile(path: string): NullPiiFileConfig {
       `${path} is ${size} bytes, over the ${MAX_CONFIG_FILE_BYTES}-byte limit`,
     );
   }
-  return parseConfig(readFileSync(path, 'utf8'), path);
+  return readFileSync(fd, 'utf8');
 }
 
 /** Validate config file contents; `source` names it in errors. */

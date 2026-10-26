@@ -23,6 +23,7 @@ import {
   keepShellField,
   newCaptureAccumulator,
   newRestoreAccumulator,
+  ownRecord,
   parseJson,
   restoreJsonText,
   restoreString,
@@ -190,13 +191,12 @@ async function sanitizePart(
     return part;
   }
   if (part.type === FILE_PART_TYPE) return sanitizeFilePart(np, part, sessionId, acc);
-  const out: ChatContentPart = { ...part };
+  const entries: [string, unknown][] = [];
   for (const [key, value] of Object.entries(part)) {
-    if (!PART_STRUCTURAL_KEYS.has(key)) {
-      out[key] = await sanitizeJsonValue(np, value, sessionId, acc);
-    }
+    const keep = PART_STRUCTURAL_KEYS.has(key);
+    entries.push([key, keep ? value : await sanitizeJsonValue(np, value, sessionId, acc)]);
   }
-  return out;
+  return ownRecord(entries) as ChatContentPart;
 }
 
 /** Counted as unscanned (the file itself cannot be read); only the

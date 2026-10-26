@@ -57,6 +57,14 @@ export interface CaptureAccumulator {
 }
 
 /** A zeroed capture accumulator for one request walk. */
+/** An object of `entries` as own properties. A key from the request, even
+ * `__proto__` or `constructor`, stays a plain key: assigning it with
+ * `out[key] = …` would set the object's prototype instead and drop the key
+ * from the JSON passed on. */
+export function ownRecord(entries: Iterable<readonly [string, unknown]>): Record<string, unknown> {
+  return Object.fromEntries(entries);
+}
+
 export function newCaptureAccumulator(): CaptureAccumulator {
   return { count: 0, byLabel: {}, unscanned: 0, modelUnscannedWords: 0, keys: new Map() };
 }
@@ -367,11 +375,11 @@ async function sanitizeToolDef(
   sessionId: string,
   acc: CaptureAccumulator,
 ): Promise<AnthropicToolDef> {
-  const out: Record<string, unknown> = {};
+  const entries: [string, unknown][] = [];
   for (const [key, value] of Object.entries(tool)) {
-    out[key] = await sanitizeToolDefField(np, key, value, sessionId, acc);
+    entries.push([key, await sanitizeToolDefField(np, key, value, sessionId, acc)]);
   }
-  return out as AnthropicToolDef;
+  return ownRecord(entries) as AnthropicToolDef;
 }
 
 function sanitizeToolDefField(
@@ -423,11 +431,11 @@ export async function sanitizeJsonSchema(
     return Promise.all(schema.map((s) => sanitizeJsonSchema(np, s, sessionId, acc)));
   }
   if (!isRecord(schema)) return schema;
-  const out: Record<string, unknown> = {};
+  const entries: [string, unknown][] = [];
   for (const [keyword, value] of Object.entries(schema)) {
-    out[keyword] = await sanitizeSchemaKeyword(np, keyword, value, sessionId, acc);
+    entries.push([keyword, await sanitizeSchemaKeyword(np, keyword, value, sessionId, acc)]);
   }
-  return out;
+  return ownRecord(entries);
 }
 
 async function sanitizeSchemaKeyword(
@@ -512,11 +520,11 @@ async function sanitizeFields(
     acc.unscanned += 1;
     return value;
   }
-  const out: Record<string, unknown> = {};
+  const entries: [string, unknown][] = [];
   for (const [k, v] of Object.entries(obj)) {
-    out[k] = STRUCTURAL_KEYS.has(k) ? v : await sanitizeChild(np, v, sessionId, acc);
+    entries.push([k, STRUCTURAL_KEYS.has(k) ? v : await sanitizeChild(np, v, sessionId, acc)]);
   }
-  return out;
+  return ownRecord(entries);
 }
 
 function sanitizeChild(
@@ -601,12 +609,12 @@ async function walkJson(
     return Promise.all(value.map((v) => walkJson(np, v, sessionId, acc, keys)));
   }
   if (!isRecord(value)) return value;
-  const out: Record<string, unknown> = {};
+  const entries: [string, unknown][] = [];
   for (const [k, v] of Object.entries(value)) {
     const key = keys ? await sanitizeKey(np, k, sessionId, acc) : k;
-    out[key] = await walkJson(np, v, sessionId, acc, keys);
+    entries.push([key, await walkJson(np, v, sessionId, acc, keys)]);
   }
-  return out;
+  return ownRecord(entries);
 }
 
 /** Sanitize an object key once per walk (see `CaptureAccumulator.keys`). */
@@ -835,12 +843,12 @@ function restoreJsonValue(
   if (typeof value === 'string') return restoreString(np, value, sessionId, acc);
   if (Array.isArray(value)) return value.map((v) => restoreJsonValue(np, v, sessionId, acc));
   if (!isRecord(value)) return value;
-  const out: Record<string, unknown> = {};
+  const entries: [string, unknown][] = [];
   for (const [k, v] of Object.entries(value)) {
     const key = countPlaceholders(k) > 0 ? restoreString(np, k, sessionId, acc) : k;
-    out[key] = restoreJsonValue(np, v, sessionId, acc);
+    entries.push([key, restoreJsonValue(np, v, sessionId, acc)]);
   }
-  return out;
+  return ownRecord(entries);
 }
 
 /** Leave every placeholder in `field` (part of a shell tool's input)

@@ -76,8 +76,10 @@ function fakeSidecar(
   const hosts: string[] = [];
   const secretsSent: Array<string | undefined> = [];
   const restoreBodies: string[] = [];
-  /** Set it to make `/sanitize` and `/restore` answer this text, not JSON. */
-  const state: { garbage?: string } = {};
+  /** Set it to make `/sanitize` and `/restore` answer this text, not JSON.
+   * Set `startup` to make the status answer that field, as a gateway does
+   * while its model warms up (absent: a gateway that reports none). */
+  const state: { garbage?: string; startup?: unknown } = {};
   // The policy the status reports, which a PUT replaces as the gateway does,
   // with a version that changes with it.
   const policy = {
@@ -99,6 +101,8 @@ function fakeSidecar(
   const policyBodies: unknown[] = [];
   /** Every `$.ui.log` line the mod wrote. */
   const logs: string[] = [];
+  /** Every toast the mod showed. */
+  const toasts: string[] = [];
   /** The status of every answer. */
   const statuses: number[] = [];
   let next = 0;
@@ -190,7 +194,12 @@ function fakeSidecar(
       restoreTools,
     });
     if (path === '/v1/sidecar/status') {
-      return respond(200, { status: 'ok', sessions: 1, policy: policyView() });
+      return respond(200, {
+        status: 'ok',
+        sessions: 1,
+        policy: policyView(),
+        ...(state.startup !== undefined && { startup: state.startup }),
+      });
     }
     // As the gateway: a call naming an older policy version does nothing.
     const seen = e.init?.headers?.['x-nullpii-policy-version'];
@@ -252,6 +261,7 @@ function fakeSidecar(
     challenges,
     hosts,
     logs,
+    toasts,
     restoreBodies,
     policyBodies,
     secretsSent,
@@ -274,7 +284,10 @@ function stubSession(
   on('session.cwd', () => ({ value: cwd }));
   on('command.register', () => ({ value: undefined }));
   on('session.id', () => ({ value: 'session-1' }));
-  on('ui.toast', () => ({ value: undefined }));
+  on('ui.toast', ($, e) => {
+    sidecar.toasts.push(e.text);
+    return { value: undefined };
+  });
   on('ui.log', ($, e) => {
     sidecar.logs.push(e.text);
     return { value: undefined };
@@ -1199,9 +1212,9 @@ test('with no sidecar answering, the mod starts nullpii-gateway for the session'
   expect(spawned[0]?.cwd).toBe('/');
   expect(spawned[0]?.argv).toEqual(
     expect.arrayContaining([
-      'nullpii@0.5.0',
+      'nullpii@0.6.0',
       'onnxruntime-node@1.30.0',
-      '@lbroth/nullpii-gateway@0.5.0',
+      '@lbroth/nullpii-gateway@0.6.0',
     ]),
   );
   expect(spawned[0]?.env).toMatchObject({
@@ -1243,10 +1256,402 @@ test('a sidecar the mod started that exits before it answers is reported at once
   await start($);
   await clock.advance(2_000);
   const status = await $.command.run({ command: 'pii', args: '' });
-  expect(status.text).toContain('exited before it answered');
+  expect(status.text).toContain('exited while installing its packages');
   // Nothing is starting any more: the prompt says no sidecar answers.
   const prompt = await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
   expect(prompt.drop).toContain('did not answer at the sidecar address');
+});
+
+/** The fake sidecar, stubs and a still clock, for a sidecar the mod starts:
+ * the fake answers once the test flips `opts.down` and sets its
+ * `state.startup`, as a gateway does while its model warms up. The test
+ * registers its own child before calling `start($)`. */
+function beforeStart($, on, opts: { down: boolean }) {
+  const sidecar = fakeSidecar(opts);
+  stubSession(on, sidecar);
+  const clock = mock.clock(on, { now: 1_700_000_000_000 });
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  return { sidecar, clock };
+}
+
+test('the band walks the start-up phases, with the model download moving', async ($, on) => {
+  const opts = { down: true };
+  const { sidecar, clock } = beforeStart($, on, opts);
+  // biome-ignore lint/correctness/useYield: a stand-in child that runs on.
+  on('process.spawn', async function* () {
+    // Still running: its sidecar answers when the test flips the fake.
+    await new Promise<never>(() => undefined);
+  });
+  on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
+  await start($);
+  const ui = await $.ui.mount(BAND);
+  expect(
+    await ui.find({
+      type: 'Text',
+      text: 'nullpii · blocking: starting nullpii-gateway for this session (installing its packages)',
+    }),
+  ).toBeDefined();
+  // The padlock is drawn from the start: open while the sidecar comes up.
+  expect(await ui.find({ type: 'Raster', key: 'nullpii-lock' })).toBeDefined();
+
+  // The sidecar comes up and reports the model downloading: the bytes move.
+  opts.down = false;
+  sidecar.state.startup = {
+    phase: 'downloading',
+    file: 'model.onnx',
+    received: 640_000_000,
+    total: 1_160_000_000,
+  };
+  await clock.advance(2_000);
+  expect(
+    await ui.find({
+      type: 'Text',
+      text: 'nullpii · blocking: starting nullpii-gateway for this session (downloading the model · 640 / 1,160 MB, model.onnx)',
+    }),
+  ).toBeDefined();
+  sidecar.state.startup = {
+    phase: 'downloading',
+    file: 'model.onnx',
+    received: 1_100_000_000,
+    total: 1_160_000_000,
+  };
+  await clock.advance(2_000);
+  expect(
+    await ui.find({
+      type: 'Text',
+      text: 'nullpii · blocking: starting nullpii-gateway for this session (downloading the model · 1,100 / 1,160 MB, model.onnx)',
+    }),
+  ).toBeDefined();
+
+  // The session's model loads: still nothing sent, still the phase shown.
+  sidecar.state.startup = { phase: 'loading' };
+  await clock.advance(2_000);
+  expect(
+    await ui.find({
+      type: 'Text',
+      text: 'nullpii · blocking: starting nullpii-gateway for this session (loading the model)',
+    }),
+  ).toBeDefined();
+  const held = await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  expect(held.drop).toContain('starting nullpii-gateway for this session (loading the model)');
+  expect(held.drop).toContain('Send it again once nullpii is on.');
+
+  // Ready: the band is back to the counts, the user is told, and a prompt
+  // that was held back goes through once it is sent again.
+  sidecar.state.startup = { phase: 'ready' };
+  await clock.advance(2_000);
+  expect(sidecar.toasts).toContain('nullpii is on');
+  expect(await ui.find({ type: 'Text', text: 'nullpii · on · nothing masked yet' })).toBeDefined();
+  const sent = await $.prompt.submit({
+    text: 'Mail John at john@acme.io',
+    wait: false,
+    origin: COMPOSER,
+  });
+  expect(sent.drop).toBeUndefined();
+  expect(sent.text).not.toContain('john@acme.io');
+  await ui.unmount();
+});
+
+test('a warmup that fails says which phase it failed in, and prompts go the normal way', async ($, on) => {
+  const opts = { down: true };
+  const { sidecar, clock } = beforeStart($, on, opts);
+  // biome-ignore lint/correctness/useYield: a stand-in child that runs on.
+  on('process.spawn', async function* () {
+    await new Promise<never>(() => undefined);
+  });
+  await start($);
+  await clock.advance(2_000);
+  opts.down = false;
+  sidecar.state.startup = {
+    phase: 'downloading',
+    file: 'model.onnx',
+    received: 640_000_000,
+    total: 1_160_000_000,
+  };
+  await clock.advance(2_000);
+  // The warmup failed: the report is read while the gateway still answers.
+  sidecar.state.startup = { phase: 'failed', while: 'downloading' };
+  await clock.advance(2_000);
+  // Its model is dead, so it answers no more; the start is over.
+  opts.down = true;
+  const status = await $.command.run({ command: 'pii', args: '' });
+  expect(status.text).toContain(
+    'the nullpii-gateway this session started failed while downloading the model',
+  );
+  // The start is over: a prompt is not held back for it, but fail closed
+  // as usual.
+  const prompt = await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  expect(prompt.drop).toContain('did not answer at the sidecar address');
+});
+
+test('a start that never gets the model ready in time says which phase it was in', async ($, on) => {
+  const opts = { down: true };
+  const { sidecar, clock } = beforeStart($, on, opts);
+  // biome-ignore lint/correctness/useYield: a stand-in child that runs on.
+  on('process.spawn', async function* () {
+    await new Promise<never>(() => undefined);
+  });
+  await start($);
+  await clock.advance(2_000);
+  opts.down = false;
+  sidecar.state.startup = {
+    phase: 'downloading',
+    file: 'model.onnx',
+    received: 640_000_000,
+    total: 1_160_000_000,
+  };
+  await clock.advance(2_000);
+  await clock.advance(10 * 60 * 1000);
+  const status = await $.command.run({ command: 'pii', args: '' });
+  expect(status.text).toContain(
+    'did not get the model ready in time (still downloading the model)',
+  );
+  // The gateway answers all the same: masking works, so the next prompt
+  // goes through masked instead of being held back for the dead start.
+  const prompt = await $.prompt.submit({
+    text: 'Mail John at john@acme.io',
+    wait: false,
+    origin: COMPOSER,
+  });
+  expect(prompt.drop).toBeUndefined();
+  expect(prompt.text).not.toContain('john@acme.io');
+});
+
+test('a gateway with no start-up field to report counts as ready, and the session opens', async ($, on) => {
+  const opts = { down: true };
+  const { sidecar, clock } = beforeStart($, on, opts);
+  // biome-ignore lint/correctness/useYield: a stand-in child that runs on.
+  on('process.spawn', async function* () {
+    await new Promise<never>(() => undefined);
+  });
+  await start($);
+  await clock.advance(2_000);
+  opts.down = false;
+  await clock.advance(2_000);
+  expect(sidecar.toasts).toContain('nullpii is on');
+  const prompt = await $.prompt.submit({
+    text: 'Mail John at john@acme.io',
+    wait: false,
+    origin: COMPOSER,
+  });
+  expect(prompt.drop).toBeUndefined();
+  expect(prompt.text).not.toContain('john@acme.io');
+});
+
+test('the band toggle pauses masking once the user confirms it, and everything then goes out as typed', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: { question: string; options: string[] }[] = [];
+  on('tool.call', { tool: 'AskUserQuestion' }, ($, e) => {
+    const q = e.questions[0];
+    asked.push({ question: q?.question ?? '', options: (q?.options ?? []).map((o) => o.label) });
+    return {
+      result: { questions: e.questions, answers: { [q?.question ?? '']: 'Pause masking' } },
+    };
+  });
+  const sent: string[] = [];
+  on('prompt.submit', ($, e) => {
+    sent.push(e.text);
+    return { text: e.text };
+  });
+  on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: 'owner: John', stderr: '' } }));
+  on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
+  await start($);
+  const ui = await $.ui.mount(BAND);
+  // The padlock beside a toggle with no hotkey of its own: a bare digit in
+  // an empty prompt must never pause masking.
+  const closed = (await ui.find({ type: 'Raster', key: 'nullpii-lock' }))?.props.cells;
+  const toggle = await ui.find({ type: 'Button', key: 'nullpii-toggle' });
+  expect(toggle?.props.label).toBe('on');
+  expect(toggle?.props.hotkey).toBeUndefined();
+
+  await ui.press({ key: 'nullpii-toggle' });
+  expect(asked).toHaveLength(1);
+  expect(asked[0]?.question).toContain(
+    'Everything you send until nullpii is turned on again reaches Claude unmasked',
+  );
+  // Keeping it on comes first, so a quick confirm keeps masking on.
+  expect(asked[0]?.options[0]).toBe('Keep masking');
+
+  // Paused: the band is red and says so, the padlock is drawn differently,
+  // and the toggle reads off.
+  const line = await ui.find({
+    type: 'Text',
+    text: 'nullpii · paused: everything you send reaches Claude unmasked',
+  });
+  expect(line).toBeDefined();
+  expect(line?.props.color).toBe('red');
+  expect((await ui.find({ type: 'Button', key: 'nullpii-toggle' }))?.props.label).toBe('off');
+  expect((await ui.find({ type: 'Raster', key: 'nullpii-lock' }))?.props.cells).not.toBe(closed);
+
+  // Everything goes out as it came: the prompt as typed, the tool result as
+  // it came out of the tool.
+  const prompt = await $.prompt.submit({
+    text: 'Mail John at john@acme.io',
+    wait: false,
+    origin: COMPOSER,
+  });
+  expect(prompt.text).toBe('Mail John at john@acme.io');
+  const out = await $.tool.call({ tool: 'Bash', command: 'id' });
+  expect(JSON.stringify(out)).toContain('John');
+  const status = await $.command.run({ command: 'pii', args: '' });
+  expect(status.text).toContain('Status: paused');
+
+  // The toggle turns masking back on at once, with no dialog about it.
+  await ui.press({ key: 'nullpii-toggle' });
+  expect(asked).toHaveLength(1);
+  expect(await ui.find({ type: 'Text', text: 'nullpii · on · nothing masked yet' })).toBeDefined();
+  const back = await $.prompt.submit({
+    text: 'Mail John at john@acme.io',
+    wait: false,
+    origin: COMPOSER,
+  });
+  expect(back.text).not.toContain('john@acme.io');
+  await ui.unmount();
+});
+
+test('while paused, placeholders already in the conversation still get their values back in local tools', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const questions: string[] = [];
+  answerDialog(on, 'Pause masking', questions);
+  const sent: string[] = [];
+  on('prompt.submit', ($, e) => {
+    sent.push(e.text);
+    return { text: e.text };
+  });
+  const written: string[] = [];
+  on('tool.call', { tool: 'Write' }, ($, e) => {
+    written.push(e.content);
+    return { result: 'wrote notes.md' };
+  });
+  on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
+  await start($);
+  // Masked while nullpii was on: the placeholder is already in the
+  // conversation, so the pause cannot unmask it.
+  await $.prompt.submit({ text: 'note john@acme.io', wait: false, origin: COMPOSER });
+  const placeholder = ph('EMAIL', 0);
+  expect(sent).toEqual([`note ${placeholder}`]);
+
+  const ui = await $.ui.mount(BAND);
+  await ui.press({ key: 'nullpii-toggle' });
+  expect(questions).toHaveLength(1);
+
+  // A local tool still gets the real value back, and the file it writes holds
+  // it; the tool's answer goes to Claude unmasked, like everything else.
+  const out = await $.tool.call({
+    tool: 'Write',
+    file_path: 'notes.md',
+    content: `Contact: ${placeholder}`,
+  });
+  expect(written).toEqual(['Contact: john@acme.io']);
+  expect(JSON.stringify(out)).not.toContain(placeholder);
+  // A shell command still never gets one: the call is refused as before.
+  const shell = await $.tool.call({ tool: 'Bash', command: `echo ${placeholder}` });
+  expect(shell.deny).toContain(`no real value into a shell command (${placeholder})`);
+  await ui.unmount();
+});
+
+test('a pause the user does not confirm keeps masking on', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const questions: string[] = [];
+  answerDialog(on, 'Keep masking', questions);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
+  await start($);
+  const ui = await $.ui.mount(BAND);
+  await ui.press({ key: 'nullpii-toggle' });
+  expect(questions).toHaveLength(1);
+  // Masking never paused: the band and the toggle read as on.
+  expect(await ui.find({ type: 'Text', text: 'nullpii · on · nothing masked yet' })).toBeDefined();
+  expect((await ui.find({ type: 'Button', key: 'nullpii-toggle' }))?.props.label).toBe('on');
+  const prompt = await $.prompt.submit({
+    text: 'Mail John at john@acme.io',
+    wait: false,
+    origin: COMPOSER,
+  });
+  expect(prompt.text).not.toContain('john@acme.io');
+  await ui.unmount();
+});
+
+test('a pause no one can answer keeps masking on', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  // The dialog is denied: as in a `claude -p` run, no one answers it.
+  on('tool.call', { tool: 'AskUserQuestion' }, () => ({ deny: 'dismissed' }));
+  on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
+  await start($);
+  const ui = await $.ui.mount(BAND);
+  await ui.press({ key: 'nullpii-toggle' });
+  expect(await ui.find({ type: 'Text', text: 'nullpii · on · nothing masked yet' })).toBeDefined();
+  expect((await ui.find({ type: 'Button', key: 'nullpii-toggle' }))?.props.label).toBe('on');
+  const prompt = await $.prompt.submit({
+    text: 'Mail John at john@acme.io',
+    wait: false,
+    origin: COMPOSER,
+  });
+  expect(prompt.text).not.toContain('john@acme.io');
+  await ui.unmount();
+});
+
+test('a pause the person did not type themselves is refused, and masking stays on', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  // The dialog would say yes: a pause that is not the person's never asks.
+  answerDialog(on, 'Pause masking', []);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  await start($);
+  // The test kit's `$.command.run` carries no origin: the engine stamps one
+  // only for a person's own typed command, so this run is not the person's.
+  const pause = await $.command.run({ command: 'pii', args: 'pause' });
+  expect(pause.text).toContain('pauses masking only when you ask for it yourself');
+  const resume = await $.command.run({ command: 'pii', args: 'resume' });
+  expect(resume.text).toContain('pauses masking only when you ask for it yourself');
+  const prompt = await $.prompt.submit({
+    text: 'Mail John at john@acme.io',
+    wait: false,
+    origin: COMPOSER,
+  });
+  expect(prompt.text).not.toContain('john@acme.io');
+});
+
+test('a pause ends with its session: the next one starts masked, and the policy file is never touched', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const questions: string[] = [];
+  answerDialog(on, 'Pause masking', questions);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
+  await start($);
+  const ui = await $.ui.mount(BAND);
+  await ui.press({ key: 'nullpii-toggle' });
+  expect(questions).toHaveLength(1);
+  expect(
+    await ui.find({
+      type: 'Text',
+      text: 'nullpii · paused: everything you send reaches Claude unmasked',
+    }),
+  ).toBeDefined();
+
+  // The pause was this session's alone, in memory: the policy file was never
+  // written for it.
+  expect(sidecar.policyBodies).toEqual([]);
+  // The next session starts masked again, on its own: the sidecar has no
+  // session left under that key, as when a new Claude Code session opens.
+  sidecar.sessions.delete('session-1');
+  await start($);
+  const line = await ui.find({ type: 'Text', text: 'nullpii · on · nothing masked yet' });
+  expect(line).toBeDefined();
+  expect(line?.props.color).toBe('green');
+  const prompt = await $.prompt.submit({
+    text: 'Mail John at john@acme.io',
+    wait: false,
+    origin: COMPOSER,
+  });
+  expect(prompt.text).not.toContain('john@acme.io');
+  await ui.unmount();
 });
 
 test('a policy changed outside the session is put to the user before anything runs under it: kept on their word', async ($, on) => {

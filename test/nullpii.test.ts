@@ -60,6 +60,8 @@ const gate = vi.hoisted(() => ({ hold: null as Promise<void> | null, released: 0
 
 vi.mock('../src/backend/backend.js', () => {
   class OrtBackend {
+    async load(): Promise<void> {}
+
     async infer(): Promise<{
       logits: Float32Array;
       textLength: number;
@@ -86,6 +88,8 @@ vi.mock('../src/gliner-tokenizer.js', async () => {
     '../src/gliner-tokenizer.js',
   );
   class GlinerTokenizer {
+    async load(): Promise<void> {}
+
     // Reports every word as consumed, like the real encoder on short
     // input, so the window scheduler sees an uncut window.
     async encode(
@@ -119,6 +123,24 @@ vi.mock('../src/gliner-tokenizer.js', async () => {
   };
 });
 
+// The model manager is stubbed too, so a warmup without a local `modelDir`
+// reports a download's progress without touching the network.
+vi.mock('../src/model-manager.js', () => {
+  class ModelManager {
+    async ensure(
+      options: {
+        onBytes?: (file: string, received: number, total: number | undefined) => void;
+      } = {},
+    ): Promise<{ modelDir: string; onnxFile: string }> {
+      options.onBytes?.('tokenizer.json', 12, 12);
+      options.onBytes?.('model.onnx', 640, 1160);
+      options.onBytes?.('model.onnx', 1160, 1160);
+      return { modelDir: '/fake', onnxFile: 'model.onnx' };
+    }
+  }
+  return { ModelManager };
+});
+
 describe('NullPii e2e pipeline (mocked ONNX)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -126,6 +148,28 @@ describe('NullPii e2e pipeline (mocked ONNX)', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('warmup reports downloading, loading, ready, and shares its init with sanitize', async () => {
+    const n = new NullPii({ backend: 'cpu' });
+    const seen: string[] = [];
+    await n.warmup((p) =>
+      seen.push(
+        p.phase === 'downloading' ? `downloading ${p.file} ${p.received}/${p.total}` : p.phase,
+      ),
+    );
+    expect(seen).toEqual([
+      'downloading tokenizer.json 12/12',
+      'downloading model.onnx 640/1160',
+      'downloading model.onnx 1160/1160',
+      'loading',
+      'ready',
+    ]);
+    // The init the warmup ran is the one the first sanitize shares: no
+    // second manager round trip, and the recognizer pack runs as usual.
+    const out = await n.sanitize('Send to alice@acme.io today.');
+    expect(out.spans.length).toBeGreaterThan(0);
+    await n.dispose();
   });
 
   it('sanitize → restore round-trips via the recognizer pack', async () => {

@@ -44,17 +44,19 @@ const PRESETS = ['agent', 'secrets', 'all'] as const;
 type Preset = (typeof PRESETS)[number];
 
 /** The usage line `/pii` answers an unreadable argument with. */
-export const PII_USAGE = `Usage: /pii · /pii preset agent|secrets|all · /pii mask|ask|off <category…> · /pii reset. Categories: ${Object.keys(CATEGORY_NAMES).join(', ')}`;
+export const PII_USAGE = `Usage: /pii · /pii preset agent|secrets|all · /pii mask|ask|off <category…> · /pii reset · /pii pause|resume. Categories: ${Object.keys(CATEGORY_NAMES).join(', ')}`;
 
 export type PiiCommand =
   | { readonly kind: 'status' }
   | { readonly kind: 'preset'; readonly preset: Preset }
   | { readonly kind: 'set'; readonly mode: Mode; readonly categories: readonly string[] }
+  | { readonly kind: 'pause' }
+  | { readonly kind: 'resume' }
   | { readonly kind: 'error'; readonly message: string };
 
 /** Read `/pii`'s arguments. Category names are the short ones
  * (`CATEGORY_NAMES`) or the full ones (`private_url`); `reset` is the
- * `agent` preset. */
+ * `agent` preset; `pause` and `resume` stand alone. */
 export function parsePiiCommand(args: string): PiiCommand {
   const words = args
     .trim()
@@ -64,6 +66,8 @@ export function parsePiiCommand(args: string): PiiCommand {
   const [verb, ...rest] = words;
   if (verb === undefined) return { kind: 'status' };
   if (verb === 'reset' && rest.length === 0) return { kind: 'preset', preset: 'agent' };
+  if (verb === 'pause' && rest.length === 0) return { kind: 'pause' };
+  if (verb === 'resume' && rest.length === 0) return { kind: 'resume' };
   if (verb === 'preset') {
     const preset = PRESETS.find((p) => p === rest[0]);
     if (preset === undefined || rest.length !== 1) return { kind: 'error', message: PII_USAGE };
@@ -87,7 +91,10 @@ export function parsePiiCommand(args: string): PiiCommand {
  * categories it names. */
 export function applyPiiCommand(
   config: Readonly<Record<string, unknown>>,
-  command: Exclude<PiiCommand, { kind: 'status' } | { kind: 'error' }>,
+  command: Exclude<
+    PiiCommand,
+    { kind: 'status' } | { kind: 'pause' } | { kind: 'resume' } | { kind: 'error' }
+  >,
 ): Record<string, unknown> {
   const { disabledCategories, categories, ...rest } = config;
   if (command.kind === 'preset') {

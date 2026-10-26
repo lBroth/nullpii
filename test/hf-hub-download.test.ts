@@ -96,4 +96,38 @@ describe('ensureFile', () => {
     writeFileSync(join(dir, 'model.onnx.sha256'), SHA);
     expect(await isCachedFile(dir, 'model.onnx')).toBe(false);
   });
+
+  it('reports the bytes received so far, with the size when the hub names it', async () => {
+    vi.stubGlobal('fetch', async (url: string) => {
+      calls.push(url);
+      return new Response(BODY, {
+        status: 200,
+        headers: { 'content-length': String(BODY.length) },
+      });
+    });
+    const seen: Array<[number, number | undefined]> = [];
+    await ensureFile('org/name', 'main', 'model.onnx', dir, {
+      ...OPTS,
+      onBytes: (received, total) => seen.push([received, total]),
+    });
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every(([r, t]) => t === BODY.length && r <= BODY.length)).toBe(true);
+    expect(seen.reduce((max, [r]) => Math.max(max, r), 0)).toBe(BODY.length);
+  });
+
+  it('reports no size when the hub does not name one, and nothing for a cached copy', async () => {
+    serve(200);
+    const seen: Array<[number, number | undefined]> = [];
+    await ensureFile('org/name', 'main', 'model.onnx', dir, {
+      ...OPTS,
+      onBytes: (received, total) => seen.push([received, total]),
+    });
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every(([r, t]) => t === undefined && r <= BODY.length)).toBe(true);
+    // A cached copy needs no network call and reports nothing.
+    const reported = seen.length;
+    await ensureFile('org/name', 'main', 'model.onnx', dir, OPTS);
+    expect(seen.length).toBe(reported);
+    expect(calls).toHaveLength(1);
+  });
 });

@@ -96,6 +96,7 @@ interface Detected {
 /** Spans found on `surfaces.normalized`, moved onto `surfaces.escaped`
  * (unchanged when normalisation changed nothing) with their text read
  * there. */
+
 function toEscapedSpans(
   spans: ReadonlyArray<{ label: string; start: number; end: number; score: number }>,
   surfaces: Surfaces,
@@ -113,6 +114,20 @@ function toEscapedSpans(
     };
   });
 }
+
+/** One step of the engine's first start-up, as `warmup` reports it: a
+ * model file downloading (with the bytes received so far and its full
+ * size when the hub names it), the ONNX session being created, or the
+ * model ready for the first call. */
+export type InitProgress =
+  | {
+      readonly phase: 'downloading';
+      readonly file: string;
+      readonly received: number;
+      readonly total?: number;
+    }
+  | { readonly phase: 'loading' }
+  | { readonly phase: 'ready' };
 
 /**
  * Public entry point. Construct with optional `NullPiiConfig`; call
@@ -180,16 +195,33 @@ export class NullPii {
   }
 
   /** Singleton-promise init, triggered automatically on the first
-   * `sanitize()` call. Internal — users don't need to call this directly. */
-  private ensureInit(): Promise<void> {
+   * `sanitize()` call. Internal — users don't need to call this directly.
+   * `onProgress` is heard only by the call that starts the init: a listener
+   * that joins one already running gets its end, not its middle. */
+  private ensureInit(onProgress?: (progress: InitProgress) => void): Promise<void> {
     if (this.disposed) return Promise.reject(new EngineDisposedError());
     if (this.initPromise === null) {
-      this.initPromise = this.runInit().catch((err) => {
+      this.initPromise = this.runInit(onProgress).catch((err) => {
         this.initPromise = null;
         throw err;
       });
     }
     return this.initPromise;
+  }
+
+  /** Bring the model up before the first request needs it: download its
+   * files if missing and create the ONNX session, reporting each step to
+   * `onProgress`. The first `sanitize()` does the same work on demand and
+   * shares this init; this is for a caller that starts before any request
+   * (a server), so the download's progress can be shown while it runs. */
+  async warmup(onProgress?: (progress: InitProgress) => void): Promise<void> {
+    if (this.disposed) throw new EngineDisposedError();
+    await this.ensureInit(onProgress);
+    onProgress?.({ phase: 'loading' });
+    const { tokenizer, backend } = await this.readyModel();
+    await backend.load();
+    await tokenizer.load();
+    onProgress?.({ phase: 'ready' });
   }
 
   /** Detect PII in `text`, replace with vault placeholders, return
@@ -530,7 +562,7 @@ export class NullPii {
     this.vault.clear();
   }
 
-  private async runInit(): Promise<void> {
+  private async runInit(onProgress?: (progress: InitProgress) => void): Promise<void> {
     const manager = new ModelManager();
     // Resolution order for the model directory:
     //   1. explicit `config.modelDir` (caller intent)
@@ -553,6 +585,15 @@ export class NullPii {
         backend: backendName,
         ...(this.config.downloadTimeoutMs !== undefined && {
           timeoutMs: this.config.downloadTimeoutMs,
+        }),
+        ...(onProgress !== undefined && {
+          onBytes: (file, received, total) =>
+            onProgress({
+              phase: 'downloading',
+              file,
+              received,
+              ...(total !== undefined && { total }),
+            }),
         }),
       });
       this.modelDir = ensured.modelDir;

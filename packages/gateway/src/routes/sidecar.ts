@@ -8,6 +8,7 @@ import { SanitizeCache } from '../sanitize-cache.js';
 import { restoreValue, sanitizeValue } from '../sanitizer.js';
 import { countPlaceholders, isShellTool } from '../shell-tools.js';
 import { type SessionRefusal, SidecarSessions, isValidSessionKey } from '../sidecar-sessions.js';
+import type { StartupTracker } from '../startup.js';
 
 /** What the sidecar routes need: the engine, the bearer token, session
  * limits, and the masking policy. */
@@ -20,6 +21,10 @@ export interface SidecarRouteOptions {
    * a `restore` with `tool` may put real values into), which
    * `PUT /v1/sidecar/policy` replaces. */
   readonly policy: LivePolicy;
+  /** The engine's first start-up, which the status route reports as a
+   * `startup` field. Absent when the server was built with a pre-built
+   * engine. */
+  readonly startup?: StartupTracker;
   /** Clock, injectable for tests. */
   readonly now?: () => number;
 }
@@ -299,6 +304,7 @@ export async function registerSidecarRoutes(
       status: 'ok',
       sessions: sessions.size,
       policy: policyView(),
+      ...(opts.startup !== undefined && { startup: opts.startup.current }),
     }));
 
     // Replace the policy: validated, written to the policy file, applied

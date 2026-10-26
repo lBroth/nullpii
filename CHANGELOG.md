@@ -3,6 +3,13 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Mod: the band shows each phase of the sidecar's first start (packages installing, the model downloading with its progress, the model loading), from the gateway's `startup` field in `GET /v1/sidecar/status`.
+- Mod: a pixel padlock in the band, and a toggle to pause masking for the session: `/pii pause` and `/pii resume`, or the band's `on`/`off` button. Pausing asks first, lasts for the session only, never touches the policy file, and only the person's own typed command or press can do it. While paused the padlock is open and red.
+
 ## [0.5.0] — 2026-10-26
 
 nullpii 0.5.0: a retrained model, a gateway and a Claude Code mod built for coding agents, one policy file for every surface, and a benchmark rebuilt on held-out data. 0.4.0 was prepared but never published; its changes are included here. Changes marked **Breaking** need code or configuration changes, or change output, relative to the published 0.3.0.

@@ -101,7 +101,10 @@ export class GlinerTokenizer {
     private readonly maxSequenceLength: number = DEFAULT_MAX_SEQUENCE_LENGTH,
   ) {}
 
-  private async load(): Promise<Tokenizer> {
+  /** Load the tokenizer now, as the first `encode()` would: a caller that
+   * warms the model up before any request (a server) finishes before the
+   * first call, or surfaces the failure then, not mid-request. */
+  async load(): Promise<Tokenizer> {
     if (this.impl !== null) return this.impl;
     const path = join(this.modelDir, TOKENIZER_FILE);
     if (!(await fileExists(path))) {

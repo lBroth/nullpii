@@ -214,10 +214,12 @@ let opening: Promise<void> | undefined;
 // The review of a policy changed elsewhere, which every call the sidecar
 // refused for it awaits.
 let reviewing: Promise<void> | undefined;
-// The question the mod is putting about a policy change, while it waits for
-// the answer: the one dialog whose tool call is not masked (its answer comes
-// back to the mod, and masking it would wait on the same review).
-let ownQuestion: string | undefined;
+// The questions the mod is putting to the user, while it waits for the
+// answers: the dialogs whose tool calls this mod's tool.call hook leaves
+// alone. An answer comes back to the mod, and masking it would lose it (the
+// result names the question, which shows the real value being asked about)
+// or wait on the same policy review.
+const ownQuestions = new Set<string>();
 
 class SidecarError extends Error {
   constructor(readonly status: number) {
@@ -355,19 +357,13 @@ async function settlePolicy($, now: Policy | undefined): Promise<void> {
   const warning = less.length > 0 ? ` This change masks less: ${less.join('; ')}.` : '';
   const question = `The nullpii masking policy was changed ${since}: ${describePolicyChange(before, now)}.${warning} Keep the change?`;
   let answer = REVERT_POLICY;
-  ownQuestion = question;
   try {
-    answer = await $.ui.ask(question, {
-      header: DIALOG_HEADER,
-      // Putting the policy back comes first, so a quick confirm keeps it.
-      options: [REVERT_POLICY, KEEP_POLICY],
-    });
+    // Putting the policy back comes first, so a quick confirm keeps it.
+    answer = await askUser($, question, [REVERT_POLICY, KEEP_POLICY]);
   } catch (err) {
     $.ui.log(`nullpii: no answer about a policy change (${errorName(err)}); putting it back`, {
       to: 'debug',
     });
-  } finally {
-    ownQuestion = undefined;
   }
   if (answer === KEEP_POLICY) {
     await accept($, now);
@@ -587,10 +583,11 @@ async function confirmed($, text: string): Promise<string> {
   const categories = [...new Set(asked.map((a) => a.category))];
   let answer: string;
   try {
-    answer = await $.ui.ask(`nullpii would mask ${listed.join(', ')} in your prompt. Mask?`, {
-      header: 'nullpii',
-      options: [ASK_MASK, ASK_READABLE, ASK_ALWAYS_READABLE],
-    });
+    answer = await askUser($, `nullpii would mask ${listed.join(', ')} in your prompt. Mask?`, [
+      ASK_MASK,
+      ASK_READABLE,
+      ASK_ALWAYS_READABLE,
+    ]);
   } catch (err) {
     $.ui.log(`nullpii: no answer to the mask dialog (${errorName(err)}); kept masked`, {
       to: 'debug',
@@ -608,14 +605,29 @@ async function confirmed($, text: string): Promise<string> {
   );
 }
 
-/** Whether `call` is the question the mod is putting about a policy
- * change right now (its text and header), and no other dialog. */
+/** Put `question` to the user in the mod's own dialog, which the mod's
+ * tool.call hook then leaves alone (`isOwnQuestion`). */
+async function askUser($, question: string, options: readonly string[]): Promise<string> {
+  ownQuestions.add(question);
+  try {
+    return await $.ui.ask(question, { header: DIALOG_HEADER, options });
+  } finally {
+    ownQuestions.delete(question);
+  }
+}
+
+/** Whether `call` is a question the mod is putting right now (its text and
+ * header), and no other dialog. */
 function isOwnQuestion(call: Readonly<Record<string, unknown>>): boolean {
-  if (ownQuestion === undefined || call.tool !== DIALOG_TOOL) return false;
+  if (call.tool !== DIALOG_TOOL) return false;
   const questions = call.questions;
   if (!Array.isArray(questions) || questions.length !== 1) return false;
   const [only] = questions as { question?: unknown; header?: unknown }[];
-  return only?.question === ownQuestion && only?.header === DIALOG_HEADER;
+  return (
+    typeof only?.question === 'string' &&
+    ownQuestions.has(only.question) &&
+    only.header === DIALOG_HEADER
+  );
 }
 
 /** `value` cut to `ASK_PREVIEW_CHARS`, for the dialog. */

@@ -346,6 +346,7 @@ export function placeholderGuide(restoreTools: readonly string[] | undefined): s
     'Use a placeholder as you would use its value, and copy it exactly and in full, hex part included.',
     'Do not ask the user for the real value, and do not tell them it is hidden: nullpii shows them the real values.',
     restoringTools(restoreTools),
+    'Every other tool, such as a web fetch or an MCP tool, gets the placeholder itself, never the value.',
     'A shell command that holds a placeholder is refused.',
   ].join(' ');
 }

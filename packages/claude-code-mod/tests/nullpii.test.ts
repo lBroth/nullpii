@@ -1140,6 +1140,10 @@ test('a value of an `ask` category in the prompt is put to the user first: sent 
 
   expect(questions[0]).toContain('url "https://docs.acme.io/guide"');
   expect(sent).toEqual([`read https://docs.acme.io/guide for ${ph('PERSON', 0)}`]);
+  // The dialog is the mod's own: its answer, which names the question and
+  // so the real value, comes back to the mod unmasked. In Claude Code a
+  // masked answer no longer matched the question and read as no answer.
+  expect(sidecar.calls.filter((c) => c.endsWith('/sanitize'))).toHaveLength(1);
 });
 
 test('an `ask` value stays masked when the user says so, and "Always readable" changes the policy', async ($, on) => {

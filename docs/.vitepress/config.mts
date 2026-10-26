@@ -9,9 +9,25 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitepress';
 
 const REPO = 'https://github.com/lBroth/nullpii';
+
+/** The READMEs load their figures from GitHub's `main`, which only has them
+ * once a release is merged. The site bundles the repository's own copy
+ * instead, so its pages never wait on `main`. */
+const RAW_MAIN = 'https://raw.githubusercontent.com/lBroth/nullpii/main/';
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+/** `src` as a path from the page file `pagePath` to the repository's own
+ * copy, when `src` is a `main` URL; else `src` unchanged. */
+function localFigure(src: string, pagePath: string): string {
+  if (!src.startsWith(RAW_MAIN)) return src;
+  const rel = relative(dirname(pagePath), join(REPO_ROOT, src.slice(RAW_MAIN.length)));
+  const posix = rel.split(sep).join('/');
+  return posix.startsWith('.') ? posix : `./${posix}`;
+}
 
 /** A wrapper page: one `<!--@include: path-->`, optionally inside
  * `::: v-pre` … `:::`, and nothing else. Group 1 is the included path. */
@@ -60,6 +76,17 @@ export default defineConfig({
     ['meta', { name: 'theme-color', media: '(prefers-color-scheme: light)', content: '#ffffff' }],
     ['meta', { name: 'theme-color', media: '(prefers-color-scheme: dark)', content: '#1b1b1f' }],
   ],
+  markdown: {
+    config(md) {
+      const image = md.renderer.rules.image;
+      if (image === undefined) throw new Error('markdown-it has no image rule');
+      md.renderer.rules.image = (tokens, idx, options, env, self) => {
+        const src = tokens[idx].attrGet('src');
+        if (src !== null) tokens[idx].attrSet('src', localFigure(src, env.path));
+        return image(tokens, idx, options, env, self);
+      };
+    },
+  },
   transformPageData(pageData, { siteConfig }) {
     if (pageData.filePath === '') return; // a virtual page, such as the 404
     const source = sourceOf(siteConfig.srcDir, pageData.filePath);

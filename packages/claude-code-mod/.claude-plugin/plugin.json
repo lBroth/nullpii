@@ -1,12 +1,12 @@
 {
   "name": "nullpii",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Masks personal data and secrets in prompts and tool results before Claude reads them, using a local nullpii sidecar, and shows what it masked above the prompt",
   "author": {
     "name": "nullpii contributors"
   },
   "license": "Apache-2.0",
-  "homepage": "https://github.com/lBroth/nullpii",
+  "homepage": "https://lbroth.github.io/nullpii/",
   "userConfig": {
     "sidecar_token": {
       "type": "string",

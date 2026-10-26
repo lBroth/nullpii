@@ -2,7 +2,7 @@
 
 A [Claude Code mod](https://code.claude.com/docs/en/plugins/mods/overview) that masks personal data and secrets before Claude reads them. Every prompt and every tool result goes through a local nullpii sidecar first. Names, emails, phone numbers, keys and similar values reach the model as placeholders, such as `{{PII_PRIVATE_EMAIL_0_…}}`.
 
-A band above the prompt shows what was masked in the session, by type:
+A line under the prompt always shows the state in a few words (`[nullpii] on · 8 masked`, `paused`, `starting`, `blocking`). A band above the prompt shows what was masked in the session, by type:
 
 ```text
 nullpii · 12 masked (person 5 · email 3 · secret 2 · phone 2) · 4 restored to local tools
@@ -37,15 +37,22 @@ Change it at the prompt with `/pii`. A change applies at once and is saved in th
 
 | Command | Effect |
 |---|---|
-| `/pii` | Shows what was masked in the session, and the mode of every category |
+| `/pii` | Opens the menu: each entry is one of the commands below, and picking it runs what typing it runs |
+| `/pii status` | Shows what was masked in the session, and the mode of every category |
 | `/pii preset agent` | The default above (`/pii reset` does the same) |
 | `/pii preset secrets` | Masks secrets only (API keys, tokens, passwords, private keys) |
 | `/pii preset all` | Masks every category |
 | `/pii mask url email` | Masks those categories |
 | `/pii off date` | Leaves those categories readable |
 | `/pii ask url` | Masks those categories, but first asks you about each value of them in your own prompt: mask it, send it readable, or send it readable and stop asking for that category |
+| `/pii reset` | Back to the default preset |
+| `/pii pause` | Pauses masking for this session, after asking you first |
+| `/pii resume` | Turns masking back on |
+| `/pii help` | Lists every command and what it does |
 
 Categories: `person`, `email`, `phone`, `address`, `url`, `ip`, `mac`, `location`, `passport`, `license`, `vehicle`, `account`, `secret`, `date`, `organization`, `occupation`, `demographic`, `sensitive`, `title`. When the mod asks about an `ask` value, it shows the value on this machine only. If you dismiss the question, or no one can answer it (`claude -p`), the value stays masked. The mod never asks about text Claude reads from tools: that text follows the policy.
+
+`/pii` with no arguments shows the menu instead of the status: the state, the presets, `mask`/`ask`/`off` for a category (one page of categories at a time, `More categories…` for the next), and pause, reset and help. Every entry carries the line `/pii help` prints for it, and every entry runs the command it names, guards included: only your own `/pii pause` can pause masking, and a change that masks less is still put to you with its values. Where the menu cannot be answered (a `claude -p` run, a dismissed dialog), `/pii` prints the status and the help instead, as it printed the status before the menu.
 
 The policy lives in `~/.config/nullpii/config.json`, or in the file that `NULLPII_CONFIG` names. The `nullpii` CLI and the gateway use the same file. Every key is optional:
 
@@ -97,30 +104,30 @@ Mods load in Claude Code 2.1.287 or later.
    openssl rand -hex 32
    ```
 
-   When no sidecar answers, the mod starts one for the session with this token (option **Start the sidecar**, on by default). It runs the 0.5.1 gateway, `nullpii` and the ONNX runtime at exact versions, with `npx`, from the file system root, so a repository's `.npmrc` does not choose the registry they come from. Its first start downloads the model, and it stops with the session. To keep one sidecar running across sessions instead, start it yourself in its own terminal. The sidecar API changed in 0.5 (session secrets, `restore` by tool name, policy versions), and this mod speaks only that version, so the command pins the gateway, the `nullpii` it runs, and the runtime:
+   When no sidecar answers, the mod starts one for the session with this token (option **Start the sidecar**, on by default). It runs the 0.5.2 gateway, `nullpii` and the ONNX runtime at exact versions, with `npx`, from the file system root, so a repository's `.npmrc` does not choose the registry they come from. Its first start downloads the model, and it stops with the session. To keep one sidecar running across sessions instead, start it yourself in its own terminal. The sidecar API changed in 0.5 (session secrets, `restore` by tool name, policy versions), and this mod speaks only that version, so the command pins the gateway, the `nullpii` it runs, and the runtime:
 
    ```bash
    export NULLPII_SIDECAR_TOKEN=<the token>
-   npx -p nullpii@0.5.1 -p onnxruntime-node@1.30.0 -p @lbroth/nullpii-gateway@0.5.1 nullpii-gateway
+   npx -p nullpii@0.5.2 -p onnxruntime-node@1.30.0 -p @lbroth/nullpii-gateway@0.5.2 nullpii-gateway
    ```
 
 2. Install the mod. At the prompt of a Claude Code session in a terminal:
 
    ```text
-   /plugin marketplace add lBroth/nullpii@v0.5.1
+   /plugin marketplace add lBroth/nullpii@v0.5.2
    /plugin install nullpii@nullpii
    ```
 
-   `@v0.5.1` pins the marketplace, and so the mod, to the release tag. This mod sees every prompt and tool result, so install a release, not whatever `main` holds. Read the plugin's details and pick a scope (**Install for you** puts it in every project on this machine). Claude Code then asks for the plugin's options. Paste the token from step 1 into **Sidecar token**. Keep the default **Sidecar URL** unless the gateway listens on another port. The dialog hides the token and keeps it in your system's secure storage, and Claude Code does not pass it to the commands Claude runs.
+   `@v0.5.2` pins the marketplace, and so the mod, to the release tag. This mod sees every prompt and tool result, so install a release, not whatever `main` holds. Read the plugin's details and pick a scope (**Install for you** puts it in every project on this machine). Claude Code then asks for the plugin's options. Paste the token from step 1 into **Sidecar token**. Keep the default **Sidecar URL** unless the gateway listens on another port. The dialog hides the token and keeps it in your system's secure storage, and Claude Code does not pass it to the commands Claude runs.
 
    From a shell, which does not ask for the options:
 
    ```bash
-   claude plugin marketplace add lBroth/nullpii@v0.5.1
+   claude plugin marketplace add lBroth/nullpii@v0.5.2
    claude plugin install nullpii@nullpii
    ```
 
-   In the desktop app, where `/plugin` does not run: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `lBroth/nullpii@v0.5.1`, then **Add plugin**.
+   In the desktop app, where `/plugin` does not run: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `lBroth/nullpii@v0.5.2`, then **Add plugin**.
 
 3. Set or change the options at any time with `/plugin configure nullpii@nullpii` at the prompt. From the shell that holds the token, without the dialog:
 

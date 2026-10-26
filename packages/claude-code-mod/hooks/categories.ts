@@ -3,13 +3,14 @@
 /**
  * The `/pii` command's arguments: what a user can change about what
  * nullpii masks, read into a new policy file for the sidecar
- * (`PUT /v1/sidecar/policy`). Pure functions, no I/O.
+ * (`PUT /v1/sidecar/policy`), and the one-line descriptions `/pii help`
+ * and the command's menu entries share. Pure functions, no I/O.
  */
 
 import type { Policy } from './policy.ts';
 
 /** What happens to one category (the policy file's `categories`). */
-type Mode = 'mask' | 'ask' | 'off';
+export type Mode = 'mask' | 'ask' | 'off';
 
 const MODES: ReadonlySet<string> = new Set(['mask', 'ask', 'off']);
 
@@ -38,16 +39,81 @@ const CATEGORY_NAMES: Readonly<Record<string, string>> = {
 
 const ALL_CATEGORIES: readonly string[] = Object.values(CATEGORY_NAMES);
 
+/** The categories by the name `/pii` takes, in the order the menu lists
+ * them and the order they read in. */
+export const CATEGORY_SHORT_NAMES: readonly string[] = Object.keys(CATEGORY_NAMES);
+
 /** The presets: `agent` is nullpii's default (what is dangerous to hand to
  * a model), `secrets` masks secrets alone, `all` every category. */
 const PRESETS = ['agent', 'secrets', 'all'] as const;
 type Preset = (typeof PRESETS)[number];
 
+/** One `/pii` command: what the person types after `/pii`, and the one
+ * line that says what it does. `/pii help` prints the line, and the
+ * command's menu entry says the same text, so there is one copy. */
+export interface PiiCommandLine {
+  /** The arguments, as typed (`''` for `/pii` itself). */
+  readonly args: string;
+  readonly description: string;
+}
+
+/** Every `/pii` command, in the order `/pii help` lists them, and the one
+ * place their descriptions live. */
+export const PII_COMMANDS: readonly PiiCommandLine[] = [
+  {
+    args: '',
+    description: 'Open this menu: pick a command, and the same code runs as if you typed it',
+  },
+  { args: 'status', description: 'Show what nullpii masked, and the policy in effect' },
+  {
+    args: 'preset agent',
+    description: 'Preset: agent (the default: names, contacts, ids and secrets)',
+  },
+  {
+    args: 'preset secrets',
+    description: 'Preset: secrets only (keys, tokens, passwords, private keys)',
+  },
+  { args: 'preset all', description: 'Preset: everything (every category masked)' },
+  { args: 'mask <category…>', description: 'Mask a category: the ones you choose' },
+  {
+    args: 'ask <category…>',
+    description: 'Ask first about a category: ask about each value in your prompt',
+  },
+  { args: 'off <category…>', description: 'Leave a category readable: the ones you choose' },
+  { args: 'reset', description: 'Reset to the default (the agent preset)' },
+  { args: 'pause', description: 'Pause masking for this session' },
+  { args: 'resume', description: 'Turn masking back on' },
+  { args: 'help', description: 'Help: every command and what it does' },
+];
+
+/** The description of the command `/pii <args>` takes: its `/pii help`
+ * row and the text of its menu entry. Fails loud on an argument no
+ * command takes, which only the mod's own menu can ask for. */
+export function piiCommandDescription(args: string): string {
+  const line = PII_COMMANDS.find((c) => c.args === args);
+  if (line === undefined) throw new Error(`no /pii command takes "${args}"`);
+  return line.description;
+}
+
+/** The width of the widest command, so the help table's columns line up. */
+const HELP_COLUMN = Math.max(...PII_COMMANDS.map((c) => c.args.length));
+
+/** The `/pii help` table: every command with the line that describes it. */
+export function formatPiiHelp(): string {
+  return [
+    'The /pii commands:',
+    ...PII_COMMANDS.map((c) => `  /pii ${c.args.padEnd(HELP_COLUMN)}  ${c.description}`),
+    `Categories: ${CATEGORY_SHORT_NAMES.join(', ')}`,
+  ].join('\n');
+}
+
 /** The usage line `/pii` answers an unreadable argument with. */
-export const PII_USAGE = `Usage: /pii · /pii preset agent|secrets|all · /pii mask|ask|off <category…> · /pii reset · /pii pause|resume. Categories: ${Object.keys(CATEGORY_NAMES).join(', ')}`;
+export const PII_USAGE = `Usage: /pii · /pii preset agent|secrets|all · /pii mask|ask|off <category…> · /pii reset · /pii pause|resume · /pii help. Categories: ${CATEGORY_SHORT_NAMES.join(', ')}`;
 
 export type PiiCommand =
+  | { readonly kind: 'menu' }
   | { readonly kind: 'status' }
+  | { readonly kind: 'help' }
   | { readonly kind: 'preset'; readonly preset: Preset }
   | { readonly kind: 'set'; readonly mode: Mode; readonly categories: readonly string[] }
   | { readonly kind: 'pause' }
@@ -56,7 +122,8 @@ export type PiiCommand =
 
 /** Read `/pii`'s arguments. Category names are the short ones
  * (`CATEGORY_NAMES`) or the full ones (`private_url`); `reset` is the
- * `agent` preset; `pause` and `resume` stand alone. */
+ * `agent` preset; `pause` and `resume` stand alone. No arguments at all
+ * (`/pii`) is the menu. */
 export function parsePiiCommand(args: string): PiiCommand {
   const words = args
     .trim()
@@ -64,7 +131,9 @@ export function parsePiiCommand(args: string): PiiCommand {
     .split(/\s+/)
     .filter((w) => w !== '');
   const [verb, ...rest] = words;
-  if (verb === undefined) return { kind: 'status' };
+  if (verb === undefined) return { kind: 'menu' };
+  if (verb === 'status' && rest.length === 0) return { kind: 'status' };
+  if (verb === 'help' && rest.length === 0) return { kind: 'help' };
   if (verb === 'reset' && rest.length === 0) return { kind: 'preset', preset: 'agent' };
   if (verb === 'pause' && rest.length === 0) return { kind: 'pause' };
   if (verb === 'resume' && rest.length === 0) return { kind: 'resume' };
@@ -93,7 +162,12 @@ export function applyPiiCommand(
   config: Readonly<Record<string, unknown>>,
   command: Exclude<
     PiiCommand,
-    { kind: 'status' } | { kind: 'pause' } | { kind: 'resume' } | { kind: 'error' }
+    | { kind: 'menu' }
+    | { kind: 'status' }
+    | { kind: 'help' }
+    | { kind: 'pause' }
+    | { kind: 'resume' }
+    | { kind: 'error' }
   >,
 ): Record<string, unknown> {
   const { disabledCategories, categories, ...rest } = config;

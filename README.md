@@ -341,7 +341,7 @@ On Apple Silicon use `cpu`: with CoreML the model was slower than on the CPU at 
 - **It does not catch everything.** Detection is statistical; the benchmark shows the leak rate. Don't make it your only privacy control.
 - **It is not a HIPAA or GDPR tool.** It finds explicit spans, not facts inferred from context.
 - **Images and other binary attachments** pass through the gateway unscanned, and are counted.
-- **Inputs over 1,000,000 characters are refused.** Split them yourself.
+- **Long inputs are slow, not refused.** A text over 1,000,000 characters is read in overlapping windows of up to that size and masked once; expect about 25 seconds per 100,000 characters on CPU, under 2 on GPU.
 
 ## Privacy and security
 

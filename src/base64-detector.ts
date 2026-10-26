@@ -84,7 +84,8 @@ const MAX_BASE64_BLOB_BYTES = 1_000_000;
  *
  * Inputs above `MAX_INPUT_CHARS` are refused upfront — matches the
  * recognizer-pack / normalize policy and stops adversarial multi-MB
- * payloads from running the full decode + classify pipeline. */
+ * payloads from running the full decode + classify pipeline;
+ * `sanitize()` hands a longer text over in windows within the cap. */
 export function detectBase64Pii(text: string): PiiSpan[] {
   if (text.length > MAX_INPUT_CHARS) return [];
   const out: PiiSpan[] = [];

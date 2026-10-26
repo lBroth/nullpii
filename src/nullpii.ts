@@ -18,6 +18,7 @@ import {
   DEFAULT_RECOGNIZERS_ENABLED,
   DEFAULT_VARIANT,
   MAX_INPUT_CHARS,
+  SEGMENT_OVERLAP_CHARS,
 } from './defaults.js';
 import { EngineDisposedError, ModelNotInitializedError, TextTooLongError } from './errors.js';
 import { resolveNonCoordinateGeolocation } from './geo-filter.js';
@@ -36,6 +37,7 @@ import { normalizeForDetection, remapSpan } from './normalize.js';
 import { escapePlaceholders, unescapePlaceholders } from './placeholder-escape.js';
 import { dropSpansInsidePublicDigests } from './public-digests.js';
 import { runRecognizers } from './recognizers.js';
+import { segmentWindows } from './segments.js';
 import {
   type EnginePolicy,
   GLINER_EXTENDED_CATEGORIES,
@@ -79,6 +81,13 @@ interface Surfaces {
   readonly escaped: string;
   readonly normalized: string;
   readonly normToOrig: readonly number[];
+}
+
+/** What detection found on a text, before the final cuts: the model's and
+ * the recognizers' spans, and the words the model could not read. */
+interface Detected {
+  readonly spans: PiiSpan[];
+  readonly unscannedWords: number;
 }
 
 /** Spans found on `surfaces.normalized`, moved onto `surfaces.escaped`
@@ -186,7 +195,8 @@ export class NullPii {
    * Pipeline: escape `[[` → adversarial-normalise → chunk + GLiNER infer
    * (ONNX model) → recognizer pack on escaped + normalized + base64 →
    * cross-label dedupe + threshold → boundary refine → address-part join →
-   * vault sanitize.
+   * vault sanitize. A text longer than `MAX_INPUT_CHARS` is detected in
+   * overlapping windows of at most that size and masked once.
    *
    * A window whose words exceed `max_len=384` subwords is cut, and the
    * next window restarts from the last word the encoder kept, so no word
@@ -212,17 +222,13 @@ export class NullPii {
     sessionId: string | undefined,
     options: SanitizeOptions,
   ): Promise<SanitizeResult> {
-    // Hard cap: it bounds the work of every pass (`MAX_INPUT_CHARS`).
-    // Refuse upfront so callers learn to chunk.
-    if (text.length > MAX_INPUT_CHARS) {
-      throw new TextTooLongError(text.length, MAX_INPUT_CHARS, 'characters');
-    }
     const { tokenizer, backend } = await this.readyModel();
     const escaped = escapePlaceholders(text);
-    const surfaces: Surfaces = { escaped, ...normalizeForDetection(escaped) };
-    const ml = await this.modelSpans(surfaces, tokenizer, backend);
-    const recoSpans = this.recognizerSpans(surfaces, ml.spans);
-    const spans = this.finalSpans(escaped, [...ml.spans, ...recoSpans]);
+    const detected =
+      escaped.length > MAX_INPUT_CHARS
+        ? await this.detectInSegments(escaped, tokenizer, backend)
+        : await this.detect(escaped, tokenizer, backend);
+    const spans = this.finalSpans(escaped, detected.spans);
 
     const session = sessionId ?? this.vault.createSession();
     logf(LOG_SCOPE, 'sanitize', {
@@ -234,8 +240,44 @@ export class NullPii {
     return {
       ...result,
       sanitized: unescapePlaceholders(result.sanitized),
-      modelUnscannedWords: ml.unscannedWords,
+      modelUnscannedWords: detected.unscannedWords,
     };
+  }
+
+  /** The model's and the recognizers' spans on `escaped`, at most
+   * `MAX_INPUT_CHARS` long, before the final cuts and dedupe. */
+  private async detect(
+    escaped: string,
+    tokenizer: GlinerTokenizer,
+    backend: OrtBackend,
+  ): Promise<Detected> {
+    const surfaces: Surfaces = { escaped, ...normalizeForDetection(escaped) };
+    const ml = await this.modelSpans(surfaces, tokenizer, backend);
+    const recoSpans = this.recognizerSpans(surfaces, ml.spans);
+    return { spans: [...ml.spans, ...recoSpans], unscannedWords: ml.unscannedWords };
+  }
+
+  /** `detect` over overlapping windows of a text longer than
+   * `MAX_INPUT_CHARS` (`segmentWindows`), each window's spans moved onto
+   * the whole text. A value two windows both see comes back twice, or cut
+   * short by the first window's end; `finalSpans`' dedupe keeps the whole
+   * one, which contains the cut piece. Words the model could not read in
+   * an overlap are counted once per window. */
+  private async detectInSegments(
+    escaped: string,
+    tokenizer: GlinerTokenizer,
+    backend: OrtBackend,
+  ): Promise<Detected> {
+    const windows = segmentWindows(escaped, MAX_INPUT_CHARS, SEGMENT_OVERLAP_CHARS);
+    const spans: PiiSpan[] = [];
+    let unscannedWords = 0;
+    for (const { start, end } of windows) {
+      const part = await this.detect(escaped.slice(start, end), tokenizer, backend);
+      unscannedWords += part.unscannedWords;
+      for (const s of part.spans) spans.push({ ...s, start: s.start + start, end: s.end + start });
+    }
+    logf(LOG_SCOPE, 'segmented', { chunks: windows.length, spans: spans.length });
+    return { spans, unscannedWords };
   }
 
   /** The tokenizer and backend, initialising them on first use. */

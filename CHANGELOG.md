@@ -17,7 +17,7 @@ On coding-agent traffic (AB-1, pre-registered before any tool ran on it), the 0.
 
 - **The module-level `sanitize()` and `restore()` are removed.** They kept a cache of engines that was never released. Create an engine with `new NullPii(config)`, keep it, and call `dispose()` when done.
 - **An engine used after `dispose()` throws `EngineDisposedError`.** `dispose()` waits for calls in flight and for an initialisation in progress.
-- **`TextTooLongError` reports characters,** not bytes: the input cap (1,000,000) always counted `string.length`.
+- **A text over 1,000,000 characters is no longer refused.** `sanitize()` reads it in windows of at most 1,000,000 characters that overlap by 32,768, so a value that crosses one window's end lies whole in the next, and masks it once in one session; 0.3.0 threw `TextTooLongError`. Expect about 25 seconds per 100,000 characters on CPU. `TextTooLongError` is now thrown only with `strictLength`, and reports what it measured.
 - **`ModelVariant` is `'fp32' | 'fp16' | 'auto'`.** `'int4'`, which was accepted and ignored, is gone; an unknown variant throws.
 - **`PiiVault.sanitize` returns `MaskResult`;** `SanitizeResult` extends it with `modelUnscannedWords`.
 - **CLI:** `nullpii models download` is removed (use `nullpii prefetch --backend --variant`); `nullpii sanitize` no longer takes `--session` or prints a session id.

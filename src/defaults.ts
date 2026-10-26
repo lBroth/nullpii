@@ -1044,10 +1044,16 @@ export const DEFAULT_POST_FILTER_THRESHOLD = 0;
  * treated as duplicates; higher-scoring one wins. */
 export const DEFAULT_DEDUPE_IOU = 0.5;
 
-/** Hard cap on `sanitize()` input, in UTF-16 code units. It bounds the
- * work of every pass: the model windows, normalisation, and the
- * recognizer pack, whose patterns are all linear-time (bounded
+/** Most characters one detection pass reads, in UTF-16 code units. It
+ * bounds the work of every pass: the model windows, normalisation, and
+ * the recognizer pack, whose patterns are all linear-time (bounded
  * quantifiers, `test/recognizers-linear.test.ts`). Normalised text can be
  * longer than the input (transliteration), and the recognizers scan it
- * whole. */
+ * whole. `sanitize()` reads a longer text in overlapping windows of at
+ * most this size (`segments.ts`) and masks it once. */
 export const MAX_INPUT_CHARS = 1_000_000;
+
+/** Overlap between two windows of a text longer than `MAX_INPUT_CHARS`:
+ * a value shorter than this that crosses a window's end lies whole in the
+ * next window. Longer than any PEM key block or address. */
+export const SEGMENT_OVERLAP_CHARS = 32_768;

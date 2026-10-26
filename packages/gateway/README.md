@@ -280,7 +280,7 @@ Calls on an unknown session answer 404 `session_not_found`; a missing or wrong s
 - **Sessions** expire after `NULLPII_VAULT_TTL_MS` without a call, and their vault entries are dropped with them. A placeholder from an expired session no longer restores and is counted in `unknownPlaceholders`. All sessions are dropped when the server stops.
 - **Limits:**
   - requests and responses are capped at 4 MiB (413 `response_too_large` for the latter); placeholders are longer than most of the values they replace, so a response can exceed the cap even when its request did not;
-  - a single string over 1,000,000 characters fails with 413 `text_too_long`, so split it.
+  - a single string over 1,000,000 characters is read in overlapping windows and masked whole, so the 4 MiB cap is the limit; expect about 25 seconds per 100,000 characters on CPU.
 - **Refused before the token check:** a `Host` other than `127.0.0.1`, `localhost` or `[::1]` (DNS rebinding), and any request with an `Origin` header (a browser).
 - **Responses carry counts, never masked values.** Logs carry counts only.
 - **Repeated values are served from a cache.** A `sanitize` request whose value the session has already masked gets the same response without running the model (header `x-nullpii-cache: hit`). Coding agents re-read the same files often. The cache keeps only masked output, at most 512 responses or 8 Mi characters per session, and is dropped with its session. The answer is identical to a fresh run because the vault mints one placeholder per value.

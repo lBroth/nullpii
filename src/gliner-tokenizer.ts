@@ -12,8 +12,8 @@ import { MAX_SEQUENCE_LENGTH } from './types/constants.js';
 const LOG_SCOPE = 'nullpii:gliner-tokenizer';
 
 /** GLiNER special tokens (from `gliner_config.json`). */
-export const ENT_TOKEN = '<<ENT>>';
-export const SEP_TOKEN = '<<SEP>>';
+const ENT_TOKEN = '<<ENT>>';
+const SEP_TOKEN = '<<SEP>>';
 
 /** Sequence wrappers, by backbone convention: BERT and DeBERTa use
  * `[CLS]` / `[SEP]`, RoBERTa and XLM-R (e5, for example) `<s>` / `</s>`.
@@ -26,7 +26,7 @@ export const DEFAULT_MAX_SPAN_WIDTH = 12;
 export const DEFAULT_MAX_SEQUENCE_LENGTH = MAX_SEQUENCE_LENGTH;
 
 /** Defence-in-depth word cap; chunker is the primary bound. */
-export const MAX_TEXT_WORDS = 500;
+const MAX_TEXT_WORDS = 500;
 
 /** Word splitter — `\w+(?:[-_]\w+)*|\S` matches word blobs +
  * single non-whitespace symbols (port of upstream GLiNER's regex). */

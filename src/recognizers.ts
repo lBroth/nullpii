@@ -16,7 +16,7 @@ import type { PiiSpan, Recognizer } from './types/index.js';
  * 0.9999). Stays strictly below `BASE64_SCORE` (0.99999) so a base64-
  * wrapped recognizer hit can still override a validator-passing
  * surface match if needed. */
-export const VALIDATED_RECOGNIZER_SCORE = 0.99998;
+const VALIDATED_RECOGNIZER_SCORE = 0.99998;
 
 /**
  * Run every recognizer against `text`, return non-overlapping spans.

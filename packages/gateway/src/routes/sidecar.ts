@@ -150,7 +150,7 @@ function hostnameOf(host: string): string {
 
 /** The proof that the sidecar holds `token`, for a caller's `nonce`:
  * HMAC-SHA256 keyed by the token, in lower-case hex. */
-export function challengeProof(token: string, nonce: string): string {
+function challengeProof(token: string, nonce: string): string {
   return createHmac('sha256', token)
     .update(CHALLENGE_CONTEXT + nonce)
     .digest('hex');

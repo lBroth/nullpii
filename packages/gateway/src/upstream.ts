@@ -48,7 +48,7 @@ const FORWARD_HEADERS = [
 const FORWARD_HEADER_PREFIXES = ['x-stainless-'];
 
 /** Default policy: the Anthropic Messages API. */
-export const ANTHROPIC_HEADER_POLICY: HeaderForwardPolicy = {
+const ANTHROPIC_HEADER_POLICY: HeaderForwardPolicy = {
   exact: FORWARD_HEADERS,
   prefixes: FORWARD_HEADER_PREFIXES,
 };

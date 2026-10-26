@@ -294,7 +294,7 @@ export async function sanitizeText(
 
 /** Add one `sanitize()` result's spans to `acc` (counts and labels only),
  * and the words its model could not read. */
-export function bump(
+function bump(
   acc: CaptureAccumulator,
   r: { spans: ReadonlyArray<{ label: string }>; modelUnscannedWords?: number },
 ): void {
@@ -826,7 +826,7 @@ export function restoreString(
 
 /** Restore every string leaf of a parsed JSON value, and every object key
  * that holds a placeholder (the request walk masks keys too). */
-export function restoreJsonValue(
+function restoreJsonValue(
   np: NullPii,
   value: unknown,
   sessionId: string,

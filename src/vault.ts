@@ -37,7 +37,7 @@ interface KnownValue {
 const VALUE_KEY_SEPARATOR = '\u0000';
 /** Shortest value the known-value pass looks for: a shorter one (`Li`,
  * `12`) would mask unrelated text too often. */
-export const MIN_KNOWN_VALUE_LENGTH = 3;
+const MIN_KNOWN_VALUE_LENGTH = 3;
 /** Score of a span the known-value pass adds: an exact match. */
 const KNOWN_VALUE_SCORE = 1;
 /** A letter, digit or underscore: a match that touches one on its outer
@@ -241,7 +241,7 @@ export class PiiVault {
  * least {@link MIN_KNOWN_VALUE_LENGTH} long. Overlaps with other spans
  * are left to `mergeOverlappingSpans`.
  */
-export function knownValueSpans(
+function knownValueSpans(
   text: string,
   values: ReadonlyArray<Pick<PiiSpan, 'label' | 'text'>>,
 ): PiiSpan[] {
@@ -279,7 +279,7 @@ function isWholeWord(text: string, start: number, end: number): boolean {
  * the label of its highest-scoring member and that member's score; its
  * `text` is re-sliced from `text` because the vault stores it verbatim.
  */
-export function mergeOverlappingSpans(text: string, spans: readonly PiiSpan[]): PiiSpan[] {
+function mergeOverlappingSpans(text: string, spans: readonly PiiSpan[]): PiiSpan[] {
   const clamped = spans
     .map((s) => ({ ...s, start: Math.max(0, s.start), end: Math.min(text.length, s.end) }))
     .filter((s) => s.end > s.start)

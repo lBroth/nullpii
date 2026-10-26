@@ -14,7 +14,7 @@ import { PII_USAGE, shortName } from './categories.ts';
  * in the shared config file), so the mod and the gateway follow one list.
  * A tool missing from this table sends every argument it has.
  */
-export const RESTORE_FIELDS: Readonly<Record<string, readonly string[]>> = {
+const RESTORE_FIELDS: Readonly<Record<string, readonly string[]>> = {
   Bash: ['command'],
   Read: ['file_path'],
   Edit: ['file_path', 'old_string', 'new_string'],
@@ -191,7 +191,7 @@ const ABSOLUTE_PATH = /^(?:[\\/~]|[A-Za-z]:)/;
  * and repeated separators resolved, lower case (macOS and Windows disks
  * ignore case by default). A relative path is resolved against `cwd`.
  */
-export function normalizePath(path: string, cwd: string | undefined): string {
+function normalizePath(path: string, cwd: string | undefined): string {
   const joined = ABSOLUTE_PATH.test(path) || cwd === undefined ? path : `${cwd}/${path}`;
   const segments: string[] = [];
   for (const segment of joined.replace(/\\/g, '/').split('/')) {
@@ -287,7 +287,7 @@ function shortLabel(label: string): string {
 }
 
 /** Labels by count, largest first: `person 5 · email 3`. */
-export function formatLabels(byLabel: Readonly<Record<string, number>>, limit: number): string {
+function formatLabels(byLabel: Readonly<Record<string, number>>, limit: number): string {
   return Object.entries(byLabel)
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, limit)

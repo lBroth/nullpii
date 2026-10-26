@@ -21,7 +21,7 @@ const SSE_CONTENT_TYPE = 'text/event-stream';
 
 /** Restore counts a round trip logs: a `RestoredResponse` or the counters
  * of a streamed relay, which use the same names. */
-export type RestoreCounts = Pick<
+type RestoreCounts = Pick<
   RestoredResponse,
   | 'replacements'
   | 'replacementsByLabel'

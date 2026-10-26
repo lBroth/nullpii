@@ -6,7 +6,7 @@
  * safe and effectively never appears in natural text or LLM output.
  */
 
-export const PLACEHOLDER_OPEN = '{{';
+const PLACEHOLDER_OPEN = '{{';
 /** First char of the 2-char PUA sentinel pair (U+E000). */
 export const PLACEHOLDER_SENTINEL_LEFT = '\uE000';
 /** Second char of the 2-char PUA sentinel pair (U+E001). */

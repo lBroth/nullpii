@@ -87,7 +87,7 @@ export interface ChatCompletionRequest {
 }
 
 /** One choice of a non-streaming response. */
-export interface ChatChoice {
+interface ChatChoice {
   index: number;
   message?: ChatMessage;
   finish_reason?: string | null;

@@ -9,12 +9,12 @@
 import type { Policy } from './policy.ts';
 
 /** What happens to one category (the policy file's `categories`). */
-export type Mode = 'mask' | 'ask' | 'off';
+type Mode = 'mask' | 'ask' | 'off';
 
 const MODES: ReadonlySet<string> = new Set(['mask', 'ask', 'off']);
 
 /** Every category, by the short name `/pii` takes. */
-export const CATEGORY_NAMES: Readonly<Record<string, string>> = {
+const CATEGORY_NAMES: Readonly<Record<string, string>> = {
   person: 'private_person',
   email: 'private_email',
   phone: 'private_phone',
@@ -40,8 +40,8 @@ const ALL_CATEGORIES: readonly string[] = Object.values(CATEGORY_NAMES);
 
 /** The presets: `agent` is nullpii's default (what is dangerous to hand to
  * a model), `secrets` masks secrets alone, `all` every category. */
-export const PRESETS = ['agent', 'secrets', 'all'] as const;
-export type Preset = (typeof PRESETS)[number];
+const PRESETS = ['agent', 'secrets', 'all'] as const;
+type Preset = (typeof PRESETS)[number];
 
 /** The usage line `/pii` answers an unreadable argument with. */
 export const PII_USAGE = `Usage: /pii · /pii preset agent|secrets|all · /pii mask|ask|off <category…> · /pii reset. Categories: ${Object.keys(CATEGORY_NAMES).join(', ')}`;

@@ -97,30 +97,30 @@ Mods load in Claude Code 2.1.287 or later.
    openssl rand -hex 32
    ```
 
-   When no sidecar answers, the mod starts one for the session with this token (option **Start the sidecar**, on by default). It runs the 0.5.0 gateway, `nullpii` and the ONNX runtime at exact versions, with `npx`, from the file system root, so a repository's `.npmrc` does not choose the registry they come from. Its first start downloads the model, and it stops with the session. To keep one sidecar running across sessions instead, start it yourself in its own terminal. The sidecar API changed in 0.5 (session secrets, `restore` by tool name, policy versions), and this mod speaks only that version, so the command pins the gateway, the `nullpii` it runs, and the runtime:
+   When no sidecar answers, the mod starts one for the session with this token (option **Start the sidecar**, on by default). It runs the 0.5.1 gateway, `nullpii` and the ONNX runtime at exact versions, with `npx`, from the file system root, so a repository's `.npmrc` does not choose the registry they come from. Its first start downloads the model, and it stops with the session. To keep one sidecar running across sessions instead, start it yourself in its own terminal. The sidecar API changed in 0.5 (session secrets, `restore` by tool name, policy versions), and this mod speaks only that version, so the command pins the gateway, the `nullpii` it runs, and the runtime:
 
    ```bash
    export NULLPII_SIDECAR_TOKEN=<the token>
-   npx -p nullpii@0.5.0 -p onnxruntime-node@1.30.0 -p @lbroth/nullpii-gateway@0.5.0 nullpii-gateway
+   npx -p nullpii@0.5.1 -p onnxruntime-node@1.30.0 -p @lbroth/nullpii-gateway@0.5.1 nullpii-gateway
    ```
 
 2. Install the mod. At the prompt of a Claude Code session in a terminal:
 
    ```text
-   /plugin marketplace add lBroth/nullpii@v0.5.0
+   /plugin marketplace add lBroth/nullpii@v0.5.1
    /plugin install nullpii@nullpii
    ```
 
-   `@v0.5.0` pins the marketplace, and so the mod, to the release tag. This mod sees every prompt and tool result, so install a release, not whatever `main` holds. Read the plugin's details and pick a scope (**Install for you** puts it in every project on this machine). Claude Code then asks for the plugin's options. Paste the token from step 1 into **Sidecar token**. Keep the default **Sidecar URL** unless the gateway listens on another port. The dialog hides the token and keeps it in your system's secure storage, and Claude Code does not pass it to the commands Claude runs.
+   `@v0.5.1` pins the marketplace, and so the mod, to the release tag. This mod sees every prompt and tool result, so install a release, not whatever `main` holds. Read the plugin's details and pick a scope (**Install for you** puts it in every project on this machine). Claude Code then asks for the plugin's options. Paste the token from step 1 into **Sidecar token**. Keep the default **Sidecar URL** unless the gateway listens on another port. The dialog hides the token and keeps it in your system's secure storage, and Claude Code does not pass it to the commands Claude runs.
 
    From a shell, which does not ask for the options:
 
    ```bash
-   claude plugin marketplace add lBroth/nullpii@v0.5.0
+   claude plugin marketplace add lBroth/nullpii@v0.5.1
    claude plugin install nullpii@nullpii
    ```
 
-   In the desktop app, where `/plugin` does not run: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `lBroth/nullpii@v0.5.0`, then **Add plugin**.
+   In the desktop app, where `/plugin` does not run: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `lBroth/nullpii@v0.5.1`, then **Add plugin**.
 
 3. Set or change the options at any time with `/plugin configure nullpii@nullpii` at the prompt. From the shell that holds the token, without the dialog:
 

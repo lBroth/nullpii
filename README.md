@@ -32,7 +32,7 @@ Status: before 1.0, so the API can still change between minor versions. nullpii 
 At the prompt of a Claude Code session (2.1.287 or later, with Node 22 or later):
 
 ```text
-/plugin marketplace add lBroth/nullpii@v0.5.0
+/plugin marketplace add lBroth/nullpii@v0.5.1
 /plugin install nullpii@nullpii
 ```
 
@@ -156,11 +156,11 @@ For a category in `ask` mode, the mod asks you about each of its values in your 
 To install it you need a sidecar token ([set up](https://github.com/lBroth/nullpii/tree/main/packages/claude-code-mod#set-up); the mod starts the gateway itself when none answers). Then, at the prompt of a Claude Code session:
 
 ```text
-/plugin marketplace add lBroth/nullpii@v0.5.0
+/plugin marketplace add lBroth/nullpii@v0.5.1
 /plugin install nullpii@nullpii
 ```
 
-Or from a shell: `claude plugin marketplace add lBroth/nullpii@v0.5.0`, then `claude plugin install nullpii@nullpii`. The `@v0.5.0` pins the mod to this release. Without it you get whatever `main` holds.
+Or from a shell: `claude plugin marketplace add lBroth/nullpii@v0.5.1`, then `claude plugin install nullpii@nullpii`. The `@v0.5.1` pins the mod to this release. Without it you get whatever `main` holds.
 
 ## What gets caught
 

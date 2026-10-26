@@ -1,0 +1,54 @@
+[
+  {
+    "number": 900,
+    "title": "No puedo compilar el módulo nuevo",
+    "body": "Buenos días, desde la última actualización el proyecto no compila en mi máquina.\n\nCuando ejecuto el comando de instalación todo parece correcto, pero al arrancar la aplicación aparece un error que no consigo entender. He borrado también la carpeta de dependencias y las he vuelto a instalar desde cero, y el problema sigue igual. ¿Alguien sabe qué puede estar pasando? Adjunto la salida de la consola para que se vea el fallo completo y la versión del sistema que estoy usando. Muchas gracias por la ayuda.\n\n```\n$ npm run build\nERROR: no se pudo compilar el módulo\n    at Proyecto.build(archivo.js:42:7)\n```\n\nVersión 3.10.4",
+    "html_url": "https://github.com/acme-ejemplo/proyecto-pruebas/pull/900",
+    "created_at": "2026-01-04T09:12:33Z",
+    "pull_request": {
+      "url": "https://api.github.com/repos/acme-ejemplo/proyecto-pruebas/pulls/900"
+    }
+  },
+  {
+    "number": 901,
+    "title": "Error al guardar",
+    "body": "No funciona.",
+    "html_url": "https://github.com/acme-ejemplo/proyecto-pruebas/issues/901",
+    "created_at": "2026-01-05T10:00:00Z"
+  },
+  {
+    "number": 902,
+    "title": "Build fails on my machine after the last update",
+    "body": "Hi, I am trying to build this project on my machine and it fails every time.\n\nThe installation step looks fine, but when the application starts I get an error that I do not understand. I have also removed the dependency folder and installed everything again, and the same problem happens. Does anyone know what could be wrong here? I am attaching the console output so that the whole failure is visible. Thanks a lot for your help and for keeping this project alive for all of us who use it every day at work.",
+    "html_url": "https://github.com/acme-ejemplo/proyecto-pruebas/issues/902",
+    "created_at": "2026-01-06T11:30:00Z"
+  },
+  {
+    "number": 903,
+    "title": "No puedo instalar la biblioteca en el servidor de pruebas",
+    "body": "Hola a todos, intento instalar la biblioteca en el servidor de pruebas y siempre recibo el mismo error al terminar la descarga.\n\nHe probado con dos versiones distintas de la biblioteca y con el gestor de paquetes actualizado, y el resultado no cambia nunca. También he revisado los permisos de la carpeta donde se guardan los archivos temporales, porque pensaba que el problema venía de ahí, pero todo parece correcto. ¿A alguien le ha pasado algo parecido? Dejo abajo la salida del comando que utilizo habitualmente, con la versión del gestor incluida. Gracias por la ayuda.",
+    "html_url": "https://github.com/acme-ejemplo/proyecto-pruebas/issues/903",
+    "created_at": "2026-01-07T08:45:00Z"
+  },
+  {
+    "number": 904,
+    "title": "El programa se cierra solo al abrir el archivo de configuración",
+    "body": "Buenas tardes, al abrir el archivo de configuración el programa se cierra sin mostrar ningún mensaje.\n\nEsto ocurre siempre, tanto en mi ordenador como en el del trabajo, así que no parece un problema de la máquina. He comparado el archivo con el que usaba antes y la única diferencia que veo es una línea nueva que añadí ayer por la tarde. Si borro esa línea todo vuelve a funcionar, pero entonces pierdo la configuración que necesito para el servidor. ¿Cómo puedo escribir esa línea sin que el programa se cierre? Adjunto la salida del comando para que se vea el error completo. Muchas gracias.\n\n$ proyecto --check config.yaml",
+    "html_url": "https://github.com/acme-ejemplo/proyecto-pruebas/issues/904",
+    "created_at": "2026-01-08T14:05:00Z"
+  },
+  {
+    "number": 905,
+    "title": "Das Projekt lässt sich nicht mehr bauen",
+    "body": "Guten Tag, seit dem letzten Update lässt sich das Projekt auf meinem Rechner nicht mehr bauen.\n\nWenn ich den Installationsbefehl ausführe, sieht zunächst alles richtig aus, aber beim Start der Anwendung erscheint eine Fehlermeldung, die ich nicht verstehe. Ich habe auch den Ordner mit den Abhängigkeiten gelöscht und alles neu installiert, doch das Problem bleibt gleich. Hat jemand eine Idee, woran das liegen könnte? Ich hänge die Ausgabe der Konsole an, damit der vollständige Fehler sichtbar wird. Vielen Dank für die Hilfe.\n\n$ npm run build\nFehler: das Modul konnte nicht kompiliert werden\n\nVersion 3.10.4",
+    "html_url": "https://github.com/acme-ejemplo/proyecto-pruebas/issues/905",
+    "created_at": "2026-01-09T07:20:00Z"
+  },
+  {
+    "number": 906,
+    "title": "Documentación desactualizada",
+    "body": null,
+    "html_url": "https://github.com/acme-ejemplo/proyecto-pruebas/issues/906",
+    "created_at": "2026-01-10T16:40:00Z"
+  }
+]

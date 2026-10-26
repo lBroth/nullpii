@@ -3,95 +3,88 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.0] — first public release
+## [0.5.0] — 2026-10-26
 
-Initial Apache-2.0 public release. Published packages:
+nullpii 0.5.0: a retrained model, a gateway and a Claude Code mod built for coding agents, one policy file for every surface, and a benchmark rebuilt on held-out data. 0.4.0 was prepared but never published; its changes are included here. Changes marked **Breaking** need code or configuration changes, or change output, relative to the published 0.3.0.
 
-- **`nullpii@0.3.0`** — core PII sanitization library (npm). GA: stable
-  public API surface (`NullPii`, `sanitize`, `restore`, `wrapForLLM`,
-  `RestoreStream`, recognizers).
-- **`@lbroth/nullpii-gateway@0.0.3`** — Anthropic Messages API drop-in proxy
-  (npm + multi-arch Docker). Versioned as a preview (`0.x`) while the
-  gateway surface settles around streaming + tool_use coverage; pins
-  `nullpii >=0.3.0 <0.4.0` as a peer.
+### Measured
 
-### Detection schema (12 PII categories)
+On five datasets chosen before any tool ran on them, with under 1% measured overlap with nullpii's training data and the public training sets the compared tools declare (four public sets and a synthetic coding-agent trace set built for this benchmark; a few declared training sets were not compared; `packages/eval/METHOD.md`), nullpii's macro char-F2 is second of 15 open-source detectors behind rizzo-pii (0.770): 0.758 with its five extended categories off, as the datasets do not label them, and 0.748 with every category masked (the default before 0.5), counted on the same labels. Its recall (0.958) is the highest of any tool's best-scoring configuration, and its precision among the lowest. Much of its lead over the other 13 comes from one dataset, clinical notes in Greek and German: without it nullpii is third, and two more tools are within the interval. On English text alone it is fifth. Scored by us with the PIIMB leaderboard's method (not a submitted entry), with every category masked, its average F2 (0.851) is above the 35 listed tools; without the one task from its training family it is 0.831, not clearly ahead.
 
-- ML-trained (8): `account_number`, `private_address`, `private_date`,
-  `private_email`, `private_person`, `private_phone`, `private_url`,
-  `secret`.
-- Zero-shot prompted + recognizer post-pass (4): `private_passport`,
-  `private_driver_license`, `private_vehicle_id`, `private_geolocation`.
-- Pure recognizer post-pass (2): `private_ip`, `private_mac`.
+On coding-agent traffic (AB-1, pre-registered before any tool ran on it), the 0.5 default lets 9.5% of the values that must be hidden through and keeps 85.4% of what must stay readable; only rizzo-pii lets fewer through (8.1%), keeping 44.5%. On two sets of secrets alone it does not lead: on secrets in GitHub issues openai's privacy-filter lets fewer through (nullpii keeps more readable), and on CredData nullpii lets 24.5% through and 7 of the 15 other tools let fewer through. More than half of those leaks are UUIDs that CredData counts as credentials and nullpii, like the benchmark's own specification, keeps readable as ids; without them nullpii lets 13.0% through, the fewest of all tools (an analysis made after the scores were read). One scoring rule was corrected after the scores were first read, against nullpii's interest; both scorings are published. nullpii's rows were measured again on 26 October after three detection rules from end-to-end testing (UUIDs, IP addresses, "Claude"); the earlier rows are in `packages/eval/METHOD.md`.
 
-### Runtime pipeline
+### Breaking
 
-- GLiNER ONNX detection (`urchade/gliner_multi_pii-v1` base, merged-LoRA
-  fine-tune). Backends: CPU, CUDA, CoreML (`mps`).
-- Adversarial-input preprocessor — NFKC + ASCII translit (fullwidth /
-  Cyrillic / Greek homoglyphs), base64 decode-then-classify, iterative
-  URL `%XX` + HTML-entity decode, zero-width strip with offset remap.
-- Default recognizer pack (50+ patterns) with validators:
-  IBAN mod-97 · Luhn · base58check · CPF · Codice Fiscale · MAC
-  reserved-range guard · VIN ISO 3779 mod-11 · lat/lon range check.
-- Reversible in-memory vault. Placeholders are session-scoped
-  (`{{PII_<LABEL>_<idx>_<sessionPrefix>}}`); `restore()` surfaces
-  foreign-prefix + unknown-idx placeholders or throws under `strict`.
-- `RestoreStream` — SSE chunk-safe placeholder reassembly across delta
-  boundaries.
+- **The module-level `sanitize()` and `restore()` are removed.** They kept a cache of engines that was never released. Create an engine with `new NullPii(config)`, keep it, and call `dispose()` when done.
+- **An engine used after `dispose()` throws `EngineDisposedError`.** `dispose()` waits for calls in flight and for an initialisation in progress.
+- **A text over 1,000,000 characters is no longer refused.** `sanitize()` reads it in windows of at most 1,000,000 characters and masks it once in one session; 0.3.0 threw `TextTooLongError`. The windows overlap by 32,768 characters, so a value shorter than that which crosses a window's end lies whole in the next window; a window that would end inside a run with no whitespace (an encoded blob of up to 500,000 characters) is followed by one that starts at that run. Expect about 25 seconds per 100,000 characters on CPU. `TextTooLongError` is now thrown only with `strictLength`, and reports what it measured.
+- **`ModelVariant` is `'fp32' | 'fp16' | 'auto'`.** `'int4'`, which was accepted and ignored, is gone; an unknown variant throws.
+- **`PiiVault.sanitize` returns `MaskResult`;** `SanitizeResult` extends it with `modelUnscannedWords`.
+- **CLI:** `nullpii models download` is removed (use `nullpii prefetch --backend --variant`); `nullpii sanitize` no longer takes `--session` or prints a session id.
+- **Gateway:** real values go back only into the tools in `restoreTools` (by default the file tools that run on this machine); web and MCP tools keep the placeholders. JSON replies and streams decide alike: Anthropic server and MCP tool calls (`server_tool_use`, `mcp_tool_use`) never get values back, whatever their name, nor does streamed tool input whose tool was never named; a streamed OpenAI custom tool call gets them like a non-streamed one. No shell command gets a value back. Environment variables are parsed strictly, and a value outside the documented ones stops the gateway at startup: integers must be whole and in range, and `NULLPII_UPSTREAM` and `NULLPII_OPENAI_UPSTREAM` must be `https:` base URLs (`http:` only on the literal `127.0.0.1` or `[::1]`, since the request carries the API key) without credentials, query string, fragment or trailing `/v1`.
+- **Dates are left readable by default,** and so are five new categories: organisations, occupations, demographic and sensitive attributes, and titles (`private_organization`, `private_occupation`, `private_demographic`, `private_sensitive`, `private_title`; `DEFAULT_DISABLED_CATEGORIES`, see Security below). `disabledCategories: []` masks every category.
+- **`onnxruntime-node` 1.30 or later** is required (peer `^1.30.0`): the version nullpii is measured with, and the first whose installer carries no known advisory. The gateway declares it as a required peer (the core keeps it optional), so npm installs it with the gateway.
 
-### `@lbroth/nullpii-gateway`
+### Added
 
-- Fastify-based drop-in HTTP proxy for the Anthropic Messages API.
-  Sanitises every text content block before forwarding to
-  `api.anthropic.com`, restores placeholders in the response. Streaming
-  SSE supported.
-- Tool-calling coverage: walks `tool_use.input` on both request and
-  response (non-streaming JSON path mirrors SSE `input_json_delta`
-  buffering), and sanitises `tools[].description` system-level tool
-  defs so PII never ships in tool metadata.
-- Auto-injects `LLM_PRESERVATION_HINT` as system prompt so upstream
-  LLM preserves placeholders verbatim instead of fabricating realistic
-  values inside tool calls.
-- Client-abort handling: downstream socket close cancels the upstream
-  Anthropic call (`AbortController` wired to `req.raw.on('close')`),
-  stopping token billing on disconnected requests.
-- Upstream error passthrough: forwards `retry-after` + full
-  `anthropic-ratelimit-*` header family verbatim on 429 / 529 with a
-  structured warn-log carrying status + body snippet.
-- Optional wire-format traffic dump for debugging
-  (`NULLPII_LOG_TRAFFIC=wire`). Only logs sanitised /
-  placeholder-bearing payloads, never real PII. 64 KB cap per dump.
-- Claude-Code-style boxed startup banner + per-request coloured stdout
-  summary with per-label capture/restore counts.
-- Multi-arch Docker (`linux/amd64`, `linux/arm64`).
-- Claude Code quickstart in `examples/claude-code/`.
+- **A retrained detection model** (`docs/WEIGHTS_PROVENANCE.md`): same base and size, trained only on licence-clean sources, covering secrets, financial and developer identifiers, and five extended categories. Each file nullpii downloads is checked against a SHA-256 pinned in the library (`DEFAULT_MODEL_SHA256`, `ModelRef.sha256`), and a release refuses to publish until the default names a Hugging Face commit.
+- **A URL policy, `urlAllowlist`:** `'none'`, or `{ hosts, replaceDefaults }` mapping each host (`docs.python.org`, or `*.github.com` for a domain and its subdomains) to `'full'`, `'host'` or `'mask'`, over the defaults in `DEFAULT_URL_RELEASES`.
+- **One policy file for every surface:** `~/.config/nullpii/config.json` (or `NULLPII_CONFIG`) sets `disabledCategories`, `categoryThresholds`, `threshold`, `urlAllowlist` and `restoreTools` for the library (`resolveConfigFile`, `toEngineConfig`, `configFilePath`), the CLI (`--config`, `nullpii config`), the gateway and the mod. Unknown keys are errors.
+- **fp16 on CUDA:** `backend: 'cuda'` loads `model_fp16.onnx` when the model ships it (14–15% less time per call at 30,000 and 100,000 characters; the same macro recall on R3, 0.9577 in both).
+- **Claude Code mod** (`packages/claude-code-mod`, preview): masks prompts, tool results, attachments and `CLAUDE.md` before Claude reads them, restores real values only into the tools the policy lists, draws the transcript with real values, shows what was masked above the prompt and in `/pii`, asks the user before a tool call it recognises as writing the policy file (best effort), and fails closed. A section it adds to Claude's system prompt says what the placeholders are and which tools get real values, so Claude uses them instead of asking the user for the values. `/pii` shows the policy and changes it at once: `preset agent|secrets|all`, `mask|ask|off <category…>`, `reset`; a category set to `ask` is masked after the mod asks you about a value in your own prompt; when no sidecar answers, the mod starts nullpii-gateway for the session (option `autostart`), says so to a prompt sent while it starts, and reports at once a start whose process exits before it answers. The repository is its marketplace, pinned to the release: `/plugin marketplace add lBroth/nullpii@v0.5.0`, then `/plugin install nullpii@nullpii`.
+- **Gateway:** `nullpii-gateway --version` and `--help` answer without starting a server, and any other argument, or more than one, is an error that starts no server; an OpenAI-compatible route (`/v1/chat/completions`), and a sidecar API (`/v1/sidecar/*`) with per-session vaults whose calls each need the session's secret (`x-nullpii-session-secret`), an idle TTL, a session cap, a per-session cache of masked results, the policy in `GET /v1/sidecar/status`, and `PUT /v1/sidecar/policy`, which validates a policy, writes the policy file (mode 0600) and applies it to the running gateway at once (the mod's `/pii` uses it).
+- **Gateway image on the GitHub Container Registry:** each release publishes `ghcr.io/lbroth/nullpii-gateway` for linux/amd64 and linux/arm64, tagged `X.Y.Z`, `X.Y` and `latest`; `edge` follows `main`.
+- **`SanitizeResult.modelUnscannedWords`** counts words the model could not read (a single word longer than its input budget); the gateway reports them too.
+- **Italian Partita IVA** next to its keyword or with the `IT` prefix, and omocodic and lowercase codici fiscali.
+- **One placeholder per value** in a session, so the model can still tell one person from another.
+- **Known values stay masked in a session:** every whole-word occurrence (three characters or more) of a value an earlier call on the session masked is masked again, even where the detector misses it, such as a value restored into a tool call and echoed back in its result. The gateway's session is one request, whose content blocks are masked in order; the sidecar's is the conversation. A single `sanitize()` without a session, as the benchmark runs it, is unchanged.
 
-### Bench harness
+### Changed
 
-- 9-tool × 16-dataset published matrix at
-  `packages/eval/published-bench/matrix.{csv,json}` (M5 Pro CPU, cap
-  5,000 / dataset, fair-serial). Tools: `nullpii`, `nullpii-bare`,
-  `nemotron-pii-raw`, `gliner-pii-large-v1`, `gliner-onnx-pii-fp32`,
-  `deberta`, `piiranha`, `presidio`, `openai-privacy-filter` (opf).
-  Bench uses 12-class macro-F1 with sklearn-standard zero-support
-  exclusion — symmetric across every tool.
-- argilla-pii sample parity: all 8 incumbent tools + opf benched on
-  the full n=2,096 split (no per-tool sample-size asymmetry).
-- Independent gold rule for `nullpii-bench`: re-annotation scripts use
-  regex-only (no `nullpii` import), so the gold is not biased toward
-  the system under test.
-- Methodology disclosures in README footnotes: nemotron threshold 0.3
-  per its upstream model card vs the 0.5 GLiNER-family parity;
-  per-tool upstream-recommended chunkers (140-word/30 for nullpii,
-  1400-char/200 for gliner-bare, 1000-char/200 for piiranha).
-- Out-of-distribution macro for `nullpii`: **0.7784** across
-  `presidio-synthetic`, `isotonic-{en,de,fr,it}-heldout`,
-  `ai4privacy-300k-heldout`, `tab-echr`.
+- **Recall first:** a lower decode threshold (0.05) with per-label cuts; fewer characters leak, at some cost in over-masking.
+- **Less over-masking on developer content:** log-record timestamps, subresource-integrity digests, package-registry, CI and badge URLs, and code-host and documentation links stay readable; a span across two links is judged one URL at a time; only the URL token itself is ever released.
+- **URLs that stay readable are chosen per host:** customer consoles under a vendor domain (`console.aws.amazon.com`) are masked, and a URL whose query carries a credential is never released.
+- **One address, one placeholder:** parts of an address split by the model are joined across short separators; a geolocation that is not a coordinate is masked as an address.
+- **Gateway image:** runs as the unprivileged `node` user with production dependencies only, `LICENSE` and `NOTICE`, a base pinned by digest, and examples that publish the port on `127.0.0.1` only. No dependency install script runs while it is built, so it no longer carries the CUDA libraries `onnxruntime-node` downloaded from NuGet on x64 (its `cuda12` package, which links the CUDA 13 runtime), which the CPU image never used; onnxruntime's licence and third-party notices ship next to its native library. The licences of abstract-logging and onnxruntime-common, which ship none, are added too; npm and corepack are removed from the runtime image; the base image is pinned on each `FROM` line, where Dependabot can bump it.
+- **Gateway image, first start:** the image carries the `nullpii` CLI, so `node bin/nullpii.mjs prefetch` can fill its model cache before the first request needs the model. The health check's start period drops from 120 s to 30 s: `/health` answers once the server listens, and never waited for the model. The compose examples pass `NULLPII_SIDECAR_TOKEN` through to the container, for the Claude Code mod. They also show how to mount the host's policy file, read-only.
+- **Eval kit:** competitors run as their authors ship them, at pinned revisions (`packages/eval/METHOD.md`); the bench file drops 1,617 rows derived from ai4privacy text, whose licence restricts commercial use.
+- **Ids and addresses an agent works with stay readable.** A UUID the model labels an account number stays readable, unless a credential-named key (`api_key=`, `"token": "`, `Bearer `) comes right before it on its line, where it is masked as a secret; the `core:uuid-v4` recognizer is gone. A model span on an IPv4 address is left to the IP recognizer, which labels a public address `private_ip` and leaves documentation, loopback, private and link-local ones readable (the model had called them phone or account numbers); `0.0.0.0` joins those ranges, and URLs on `localhost`, `127.0.0.1`, `[::1]` and `0.0.0.0` are in the built-in URL policy. "Claude" alone, or with a product word (Code, Opus, Agent SDK…), is no longer a person. All three were found in the first end-to-end run in Claude Code, where they made the mod refuse shell commands on paths with UUIDs and masked most of Claude Code's own instructions.
+
+### Fixed
+
+- A window cut by the encoder's budget hid the rest of dense text from the model; windows now advance by what the encoder kept.
+- Overlapping spans broke the byte-exact restore; they are merged before masking, and a kept span grows to cover what its duplicates covered.
+- A low-scoring model span could silence a recognizer or another span before the threshold dropped it; thresholds now run first, and recognizers defer only to a model span that covers their whole match.
+- Decoded `%XX` and HTML escapes mapped to the end of their sequence, leaving the first escaped character visible.
+- A double encoding (`%2540`, `&#x26;#64;`) was not decoded, so a double-encoded email was masked only in part: the escape's second round is now completed by the characters after it, as a decoder reads it (#49).
+- `backend: 'cuda'` (and `'mps'`) threw when its provider library could not be loaded: ONNX Runtime fails the whole session, so the CPU listed after it was never used. A session the accelerator cannot create, for this or any other reason, is now retried on the CPU, with a `NULLPII_BACKEND_FALLBACK` process warning naming the cause; the README names the CUDA and cuDNN versions `onnxruntime-node` 1.30 needs (#52).
+- Empty input, whitespace, and words longer than the model's budget crashed `sanitize()`.
+- Punctuation was trimmed off `secret` spans; two cold calls each loaded an ONNX session; some recognizer patterns could backtrack quadratically on long input (all are bounded now).
+- Gateway: streams are read as the SSE specification defines them (CRLF and CR line ends, comments, several `data:` lines, one space dropped after the colon); a frame whose data is not a JSON object is forwarded as it came (with LF line ends); a streamed tool call is restored in one piece once the gateway has all of it, and a stream holds every tool input from the first frame that clients could read otherwise than the gateway (for example a block started at an unexpected index, a second choice, a tool call renamed after its `finish_reason`, anything after `[DONE]`; the full list is in SECURITY.md, "Streamed tool calls"); the `content_block_start` the gateway judged is the one the client receives.
+- Gateway: a client disconnecting mid-stream did not cancel the upstream call; streams ignored backpressure; a failed request leaked its vault session; streamed tool input could come back as invalid JSON.
+- Model download: a file is checked against its pinned hash before it replaces the cached copy. With pins, an ONNX variant the pins leave out is skipped for one they cover (`auto` on CUDA falls back to a pinned fp32), and a pin that is not 64 lower-case hex digits is refused.
+- Mod: hooks that found the sidecar session gone at the same time (a sidecar restart, its idle TTL) each reopened it, and one could move the session to a new key while the others still used the old one: calls were refused with a 403 and a session stayed open until its TTL. The session now reopens once for all of them, and its key and secret change together.
+- Gateway: a JSON key named `__proto__` in a request or response set the copy's prototype and was dropped from the JSON passed on; every key now stays a key.
 
 ### Security
 
-- Detection fully local; no network socket after the first model
-  download (HF Hub only — air-gappable via `modelDir` /
-  `NULLPII_MODEL_DIR`).
-- Vault never serialised. Debug logs carry counts + short ids only.
+- **Codex is not supported.** The Codex CLI now speaks only the OpenAI Responses API (it refuses `wire_api = "chat"`; checked with Codex CLI 0.158.0), and the gateway serves Chat Completions only.
+- **Default masking for coding agents.** With no `disabledCategories`, nullpii now masks what is dangerous to hand to a model (names, contact details and addresses, ids and accounts, secrets) and leaves readable dates, companies, jobs, honorifics, demographic and sensitive attributes (`DEFAULT_DISABLED_CATEGORIES`), which rarely identify someone on their own and which an agent often needs. Health, religion or sexual orientation written in a prompt therefore reaches the model by default; masking `private_sensitive` changes that. `disabledCategories: []` masks every category, as the default did before. The sidecar's status reports the categories in effect, and the mod's `/pii` shows them.
+- **No real value goes back into a shell command.** A tool a shell runs (`Bash`, `bash`, `shell`, `PowerShell`, `exec_command`, `shell_command`, `write_stdin`) keeps every placeholder in every field, whatever `restoreTools` says; the gateway counts them (`unsafeShellPlaceholders`), and the mod refuses the call and points Claude to `Grep`, `Read`, `Edit` or `Write`, which get real values. Shell tools are no longer in the default `restoreTools`. See `SECURITY.md`.
+- **Gateway requests are scanned whole:** every content block (documents, search results, citations, MCP blocks, unknown block types), `metadata`, every tool definition (schema descriptions and enums, `input_examples`, web search's `user_location`, fields the gateway does not know; names, types and the web tools' domain filters stay as written), the structured-output schema (`output_config.format`, `output_format`), tool-input object keys, and on the OpenAI route `user`, `metadata`, function parameters, `response_format` and `web_search_options.user_location`. Images and binary documents are counted as unscanned.
+- **Gateway logs keep no part of an upstream error body:** an error can quote the request, unscanned fields included. Both routes log its status, length and identifier-shaped `type` / `code`; the Anthropic route used to log its first 500 characters.
+- **Sidecar sessions need their own secret,** so a command that inherited the bearer token cannot read another session's values. The mod keeps the secret in memory and its token in a sensitive plugin option.
+- **A policy change the session did not make is put to the user.** The bearer token alone can replace the policy (`PUT /v1/sidecar/policy`), so the policy has a version (in `GET /v1/sidecar/status`); a `sanitize`, `restore` or policy `PUT` that sends `x-nullpii-policy-version` with an older one answers 412 and does nothing. A sanitize during which the policy was replaced answers 412 too, even if the policy was put back. The mod sends the version it last made or accepted with every call; on a 412 it shows the user what changed and keeps the change only on their word, else puts the previous policy back (also when no one can answer). It remembers the accepted policy in its plugin store, so a change made between sessions is put to the user when the next one opens. `/pii` applies its change to the policy as it is then, so it no longer undoes another session's change. The policy guard also asks before a shell command that names the sidecar's policy route.
+- **The mod starts the sidecar from the file system root, at exact versions** (`nullpii@0.5.0`, `onnxruntime-node@1.30.0`, `@lbroth/nullpii-gateway@0.5.0`), so a repository's `.npmrc` cannot choose the registry the process that gets the token comes from.
+- **Sidecar cache and policy changes:** a sanitize answer is cached under the policy version it was masked with, and not at all when the policy changed while it ran, so it is not served to later calls; a policy over the policy file's 64 KiB limit is refused, as the next start would refuse the file.
+- **The mod checks the sidecar before every request.** The sidecar proves it holds the token by signing a fresh nonce (`POST /v1/sidecar/challenge`, HMAC-SHA256), and the mod sends the token and any text only after a valid proof, so a process that took the port while the gateway was down gets neither.
+- **The mod refuses a call whose policy path appears only once real values are back** (`NULLPII_CONFIG=/Users/<name>/…`, whose name segment the model sees masked): the permission check judged the masked call, so the call is refused with fixed text instead of run.
+- **The mod talks only to a sidecar on this machine.** `sidecar_url` must be `http://` on the literal `127.0.0.1` or `[::1]` (not `localhost`, which can resolve to the other loopback address); any other address blocks the mod before its token or any text is sent. The address comes from the plugin option alone, never from an environment variable, which a repository's `.claude/settings.json` can set.
+- **The mod's refusals carry no error text.** When it cannot prepare a tool call or mask its result, Claude reads a fixed refusal. The band, `/pii`, the dropped-prompt notice and the debug log show only reasons the mod wrote: an error text from a tool, another hook, the host or a sidecar answer that is not JSON (whose parse error quotes it) can hold a real value, and is replaced.
+- **Release pipeline:** npm trusted publishing (no token in the repository), no dependency install scripts in publish jobs, release tags only from main, the versions of the library, the gateway and the mod checked against the tag before anything publishes, image pushes only after tests, only from `main` or a release tag on it, and for a release only once npm has both packages; a release whose default model is not pinned to a commit stops before it publishes; pre-release tags publish under npm's `next` dist-tag.
+- **Paths:** user-supplied paths are sandboxed with a separator-aware check, and model repository and revision names are validated.
+- **Dependencies:** the gateway's fastify is 5.12.5, with its URI and router dependencies pinned to patched releases (advisories in 5.8: schema and header validation bypasses, request body replacement); `npm audit --omit=dev` reports nothing. Development tools (vitest, vite, tsx and its esbuild, cyclonedx) are on patched releases too, except the vite 5 and esbuild 0.21 that vitepress bundles to build the docs site, for which no fix exists yet; their advisories concern the development server (`docs:dev`, `docs:preview`), not `docs:build` or anything published. The tokenizer binding is Hugging Face's own `tokenizers` 0.23 (Apache-2.0), in place of `@anush008/tokenizers` 0.6.0, which was archived upstream in September 2026 and printed a deprecation warning at install. Token ids are identical on all 792,646 distinct words of the AB-1, R3, R4 and tuning texts, and on the special tokens, so detection does not change. The pure-JavaScript `@huggingface/tokenizers` was not taken: it gave different ids for 5 of the 28,954 distinct words of AB-1's component A.
+
+## [0.3.0] — withdrawn
+
+First public release (npm `nullpii@0.3.0` and `@lbroth/nullpii-gateway@0.0.3`, and the Hugging Face model it downloaded). Withdrawn with 0.5.0: its benchmark used test sets that overlapped the training distribution, and its package shipped a demo video. Use 0.5.0.

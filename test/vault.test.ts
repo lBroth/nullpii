@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { describe, expect, it } from 'vitest';
 import { SessionMismatchError, SessionNotFoundError } from '../src/errors.js';
 import { sessionPrefixOf as expectedPrefix } from '../src/session-prefix.js';
@@ -55,6 +57,99 @@ describe('PiiVault.sanitize', () => {
     expect(result.sanitized).toBe(
       `{{PII_PRIVATE_PERSON_0_${p}}} and {{PII_PRIVATE_PERSON_1_${p}}} met.`,
     );
+  });
+
+  it('reuses one placeholder for a value that recurs in the text (#50)', () => {
+    const v = new PiiVault();
+    const id = v.createSession();
+    const p = expectedPrefix(id);
+    const text = 'Mario saw Lucia, then Mario left.';
+    const spans = [
+      span('private_person', 0, 5, 'Mario'),
+      span('private_person', 10, 15, 'Lucia'),
+      span('private_person', 22, 27, 'Mario'),
+    ];
+    const result = v.sanitize(text, spans, id);
+    expect(result.sanitized).toBe(
+      `{{PII_PRIVATE_PERSON_0_${p}}} saw {{PII_PRIVATE_PERSON_1_${p}}}, then {{PII_PRIVATE_PERSON_0_${p}}} left.`,
+    );
+    expect(v.restore(result.sanitized, id).restored).toBe(text);
+  });
+
+  it('reuses the placeholder across calls in one session (#50)', () => {
+    const v = new PiiVault();
+    const id = v.createSession();
+    const p = expectedPrefix(id);
+    const first = v.sanitize('to Mario', [span('private_person', 3, 8, 'Mario')], id);
+    const second = v.sanitize('Mario replied', [span('private_person', 0, 5, 'Mario')], id);
+    expect(first.sanitized).toBe(`to {{PII_PRIVATE_PERSON_0_${p}}}`);
+    expect(second.sanitized).toBe(`{{PII_PRIVATE_PERSON_0_${p}}} replied`);
+  });
+
+  it('keeps a differently spelled value apart, so restore stays byte-exact', () => {
+    const v = new PiiVault();
+    const id = v.createSession();
+    const p = expectedPrefix(id);
+    const text = 'Mario and MARIO';
+    const spans = [span('private_person', 0, 5, 'Mario'), span('private_person', 10, 15, 'MARIO')];
+    const result = v.sanitize(text, spans, id);
+    expect(result.sanitized).toBe(
+      `{{PII_PRIVATE_PERSON_0_${p}}} and {{PII_PRIVATE_PERSON_1_${p}}}`,
+    );
+    expect(v.restore(result.sanitized, id).restored).toBe(text);
+  });
+
+  it('gives the same value under two labels two placeholders', () => {
+    const v = new PiiVault();
+    const id = v.createSession();
+    const p = expectedPrefix(id);
+    const text = 'Acme at Acme';
+    const spans = [span('private_person', 0, 4, 'Acme'), span('private_address', 8, 12, 'Acme')];
+    const result = v.sanitize(text, spans, id);
+    expect(result.sanitized).toBe(
+      `{{PII_PRIVATE_PERSON_0_${p}}} at {{PII_PRIVATE_ADDRESS_0_${p}}}`,
+    );
+    expect(v.restore(result.sanitized, id).restored).toBe(text);
+  });
+
+  it('masks a value the session masked before, where the detector missed it', () => {
+    const v = new PiiVault();
+    const id = v.createSession();
+    const p = expectedPrefix(id);
+    v.sanitize('Write to Mario', [span('private_person', 9, 14, 'Mario')], id);
+    // A tool result echoing the value, which the detector did not flag.
+    const echoed = v.sanitize('error: no user Mario.', [], id);
+    expect(echoed.sanitized).toBe(`error: no user {{PII_PRIVATE_PERSON_0_${p}}}.`);
+    expect(v.restore(echoed.sanitized, id).restored).toBe('error: no user Mario.');
+  });
+
+  it('does not search a text for the values detected in it', () => {
+    const v = new PiiVault();
+    const id = v.createSession();
+    const r = v.sanitize('Mario wrote; Mario left', [span('private_person', 0, 5, 'Mario')], id);
+    expect(r.spans).toHaveLength(1);
+  });
+
+  it('matches known values only as whole words, and not when shorter than three characters', () => {
+    const v = new PiiVault();
+    const id = v.createSession();
+    v.sanitize(
+      'Ann and Li',
+      [span('private_person', 0, 3, 'Ann'), span('private_person', 8, 10, 'Li')],
+      id,
+    );
+    const r = v.sanitize('Annual Lisbon_Ann, Li.', [], id);
+    expect(r.sanitized).toBe('Annual Lisbon_Ann, Li.');
+    expect(v.sanitize('(Ann)', [], id).spans).toHaveLength(1);
+  });
+
+  it('does not reuse a placeholder across sessions', () => {
+    const v = new PiiVault();
+    const a = v.createSession();
+    const b = v.createSession();
+    const ra = v.sanitize('Mario', [span('private_person', 0, 5, 'Mario')], a);
+    const rb = v.sanitize('Mario', [span('private_person', 0, 5, 'Mario')], b);
+    expect(ra.sanitized).not.toBe(rb.sanitized);
   });
 
   it('preserves char offsets when many spans are present (back-to-front)', () => {

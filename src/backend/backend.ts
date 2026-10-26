@@ -2,6 +2,7 @@
 
 import { join } from 'node:path';
 import type { InferenceSession, Tensor as TensorType } from 'onnxruntime-node';
+import { MODEL_FILES } from '../defaults.js';
 import { ModelNotFoundError, OrtNotInstalledError } from '../errors.js';
 import { logf } from '../log.js';
 import { fileExists } from '../paths.js';
@@ -9,19 +10,30 @@ import type { InferenceInputs, InferenceOutputs } from '../types/index.js';
 
 const LOG_SCOPE = 'nullpii:backend';
 
-const ONNX_FILE = 'model.onnx';
-
 /** Reused dim tuples — `text_lengths` is always a `[1, 1]` int64 scalar,
  * and `[1]` is the dim for the scalar's data buffer. ORT clones the dim
  * array on Tensor construction, so this is purely an allocation
  * micro-optimisation (no aliasing concerns). */
 const DIMS_SCALAR_1_1: readonly number[] = [1, 1];
 
+type ExecutionProvider = NonNullable<InferenceSession.SessionOptions['executionProviders']>[number];
+
+const CPU_PROVIDER = 'cpu';
+
+/** `code` of the process warning emitted when an accelerator fails to
+ * load and the session runs on the CPU instead. */
+export const BACKEND_FALLBACK_WARNING = 'NULLPII_BACKEND_FALLBACK';
+
 export interface BackendOptions {
+  /** ONNX files to load from the model directory, best first; the first
+   * that exists is used (`onnxCandidates`). Default: `['model.onnx']`. */
+  readonly onnxFiles?: readonly string[];
+  /** ONNX files to load, best first, when the accelerator in
+   * `executionProviders` fails to load and the session falls back to the
+   * CPU. Default: `onnxFiles`. */
+  readonly cpuFallbackOnnxFiles?: readonly string[];
   /** ORT execution providers, in priority order. Default: `['cpu']`. */
-  readonly executionProviders?: ReadonlyArray<
-    NonNullable<InferenceSession.SessionOptions['executionProviders']>[number]
-  >;
+  readonly executionProviders?: ReadonlyArray<ExecutionProvider>;
   /** ORT intra-op thread count. `0` (default) = ORT picks based on host. */
   readonly intraOpNumThreads?: number;
   /** ORT inter-op thread count. `0` (default) = ORT picks based on host. */
@@ -33,7 +45,8 @@ export interface BackendOptions {
 
 /** GLiNER ONNX backend.
  *
- * Loads `<modelDir>/model.onnx` lazily on first `infer()`. Every input
+ * Loads the first existing `onnxFiles` entry of `<modelDir>` (by default
+ * `model.onnx`) lazily on first `infer()`. Every input
  * runs through one unified ONNX — no per-domain dispatch.
  * `onnxruntime-node` is an optional peer; imported dynamically so
  * recognizer-only / vault-only callers never trigger the load.
@@ -42,9 +55,10 @@ export interface BackendOptions {
  * tensors per call. Required for safety under
  * `Promise.all([np.sanitize(a), np.sanitize(b)])` — pooled scratch
  * would be clobbered by the second caller before ORT consumed the
- * first. Cost is one `BigInt64Array(1)` + `Uint8Array(N)` per inference. */
+ * first. Cost is one `BigInt64Array(1)` + `Uint8Array(N)` per inference.
+ * The session itself loads once: concurrent first calls share one load. */
 export class OrtBackend {
-  private session: InferenceSession | null = null;
+  private sessionLoad: Promise<InferenceSession> | null = null;
   private TensorCtor: typeof TensorType | null = null;
 
   constructor(
@@ -52,17 +66,50 @@ export class OrtBackend {
     private readonly options: BackendOptions = {},
   ) {}
 
-  private async ensureSession(): Promise<InferenceSession> {
-    if (this.session !== null) return this.session;
-    const onnxPath = join(this.modelDir, ONNX_FILE);
-    if (!(await fileExists(onnxPath))) {
-      throw new ModelNotFoundError(onnxPath);
+  /** One load per backend. A failed load is forgotten, so the next call
+   * retries instead of replaying the error. */
+  private ensureSession(): Promise<InferenceSession> {
+    if (this.sessionLoad === null) {
+      this.sessionLoad = this.loadSession().catch((err: unknown) => {
+        this.sessionLoad = null;
+        throw err;
+      });
     }
+    return this.sessionLoad;
+  }
+
+  /** ORT fails the whole session when an execution provider's library
+   * cannot be loaded (a missing CUDA or cuDNN library), so listing `cpu`
+   * after it is no fallback. A failed accelerator load is retried on the
+   * CPU alone, with a process warning naming the cause. */
+  private async loadSession(): Promise<InferenceSession> {
+    const files = this.options.onnxFiles ?? [MODEL_FILES.fp32];
+    const onnxPath = await this.firstExistingOnnx(files);
     const ort = await (this.options.ortLoader ?? loadOrt)();
     this.TensorCtor = ort.Tensor;
-    logf(LOG_SCOPE, 'session.load', { path: onnxPath });
+    const providers = this.options.executionProviders ?? [CPU_PROVIDER];
+    try {
+      return await this.createSession(ort, onnxPath, providers);
+    } catch (err) {
+      const accelerators = providers.filter((p) => providerName(p) !== CPU_PROVIDER);
+      if (accelerators.length === 0) throw err;
+      const cpuPath = await this.firstExistingOnnx(this.options.cpuFallbackOnnxFiles ?? files);
+      process.emitWarning(
+        `nullpii: the ${accelerators.map(providerName).join('/')} execution provider failed to load, so the model runs on the CPU: ${errorMessage(err)}`,
+        { code: BACKEND_FALLBACK_WARNING },
+      );
+      return this.createSession(ort, cpuPath, [CPU_PROVIDER]);
+    }
+  }
+
+  private createSession(
+    ort: typeof import('onnxruntime-node'),
+    onnxPath: string,
+    providers: ReadonlyArray<ExecutionProvider>,
+  ): Promise<InferenceSession> {
+    logf(LOG_SCOPE, 'session.load', { path: onnxPath, providers: providers.map(providerName) });
     const sessionOptions: InferenceSession.SessionOptions = {
-      executionProviders: [...(this.options.executionProviders ?? ['cpu'])],
+      executionProviders: [...providers],
       graphOptimizationLevel: 'all',
     };
     if (this.options.intraOpNumThreads !== undefined && this.options.intraOpNumThreads > 0) {
@@ -71,8 +118,15 @@ export class OrtBackend {
     if (this.options.interOpNumThreads !== undefined && this.options.interOpNumThreads > 0) {
       sessionOptions.interOpNumThreads = this.options.interOpNumThreads;
     }
-    this.session = await ort.InferenceSession.create(onnxPath, sessionOptions);
-    return this.session;
+    return ort.InferenceSession.create(onnxPath, sessionOptions);
+  }
+
+  private async firstExistingOnnx(files: readonly string[]): Promise<string> {
+    for (const f of files) {
+      const path = join(this.modelDir, f);
+      if (await fileExists(path)) return path;
+    }
+    throw new ModelNotFoundError(files.map((f) => join(this.modelDir, f)).join(' or '));
   }
 
   /** Run GLiNER inference against the unified ONNX. */
@@ -120,13 +174,25 @@ export class OrtBackend {
   }
 
   async dispose(): Promise<void> {
-    if (this.session !== null) {
-      logf(LOG_SCOPE, 'session.release');
-      await this.session.release();
-      this.session = null;
-      this.TensorCtor = null;
-    }
+    const load = this.sessionLoad;
+    if (load === null) return;
+    this.sessionLoad = null;
+    this.TensorCtor = null;
+    // A load that failed has no session to release; its error already
+    // reached the `infer()` call that started it.
+    const session = await load.catch(() => null);
+    if (session === null) return;
+    logf(LOG_SCOPE, 'session.release');
+    await session.release();
   }
+}
+
+function providerName(provider: ExecutionProvider): string {
+  return typeof provider === 'string' ? provider : provider.name;
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 async function loadOrt(): Promise<typeof import('onnxruntime-node')> {

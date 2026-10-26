@@ -1,0 +1,130 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="578" viewBox="0 0 880 578" role="img" aria-labelledby="t d">
+<title id="t">Agent traffic: leak rate and keep rate per tool</title>
+<desc id="d">rizzo-pii: leak 8.1%, keep 44.5%; nullpii 0.5: leak 9.5%, keep 85.4%; openai privacy-filter: leak 14.5%, keep 77.9%; OpenMed PII Large: leak 15.7%, keep 82.2%; gliner-pii-large: leak 15.9%, keep 85.5%; nemotron-pii, NVIDIA's server: leak 16.0%, keep 75.8%; OpenMed PII Small: leak 16.1%, keep 83.0%; gliner-stream-pii: leak 16.4%, keep 67.5%; nemotron-pii, library: leak 17.6%, keep 68.4%; ettin-68m: leak 17.7%, keep 65.3%; pii-identifier: leak 18.8%, keep 77.7%; gliner_multi_pii (ONNX): leak 19.2%, keep 56.9%; OpenMed privacy-filter-multilingual-v2: leak 20.1%, keep 81.6%; piiranha: leak 23.8%, keep 68.8%; Presidio: leak 40.6%, keep 82.3%; deberta PII: leak 55.1%, keep 64.2%</desc>
+<style>svg { --bg: #ffffff; --zone: #f6f8fa; --fg: #1f2328; --muted: #59636e; --grid: #d1d9e0; --other: #818b98; --a: #0d9488; --band: #0d948814; }
+@media (prefers-color-scheme: dark) { svg { --bg: #0d1117; --zone: #151b23; --fg: #f0f6fc; --muted: #9198a1; --grid: #3d444d; --other: #6e7681; --a: #2dd4bf; --band: #2dd4bf1f; } }
+.bg { fill: var(--bg); } .zone { fill: var(--zone); stroke: var(--grid); }
+text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif; fill: var(--fg); }
+.title { font-size: 17px; font-weight: 600; } .sub { font-size: 13px; fill: var(--muted); }
+.ptitle { font-size: 14px; font-weight: 600; } .hint { font-size: 12px; font-weight: 400; fill: var(--muted); }
+.label { font-size: 13px; } .np { font-weight: 600; } .val { font-size: 12px; font-variant-numeric: tabular-nums; }
+.axis { font-size: 11px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+.note { font-size: 11.5px; fill: var(--muted); } .grid { stroke: var(--grid); stroke-width: 1; }
+.bar-other { fill: var(--other); } .bar-np { fill: var(--a); } .band { fill: var(--band); }
+.dot-a { fill: var(--a); stroke: var(--bg); stroke-width: 2; } .dot-b { fill: var(--bg); stroke: var(--a); stroke-width: 2; }
+.link { stroke: var(--grid); stroke-width: 2; }
+.box { fill: var(--bg); stroke: var(--grid); stroke-width: 1.5; } .step { font-size: 14px; font-weight: 600; }
+.small { font-size: 12px; fill: var(--muted); } .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; font-size: 11.5px; }
+.zlabel { font-size: 12px; font-weight: 600; fill: var(--muted); letter-spacing: .04em; }
+.arrow { stroke: var(--muted); stroke-width: 1.6; fill: none; } .head { fill: var(--muted); }
+</style>
+<rect class="bg" width="880" height="578" rx="8"/>
+<defs><image id="np-logo" width="18" height="18" href="data:image/png;base64,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"/></defs>
+<text x="16.0" y="30.0" class="title">Agent traffic (AB-1, component A)</text>
+<text x="16.0" y="50.0" class="sub">966 documents. Each tool at its tuned operating point, with the agent-policy filter.</text>
+<text x="298" y="84" class="ptitle">Leak rate <tspan class="hint">lower is better</tspan></text>
+<line class="grid" x1="298.0" x2="298.0" y1="98" y2="520"/>
+<text x="298.0" y="536.0" class="axis" text-anchor="middle">0%</text>
+<line class="grid" x1="353.0" x2="353.0" y1="98" y2="520"/>
+<text x="353.0" y="536.0" class="axis" text-anchor="middle">25%</text>
+<line class="grid" x1="408.0" x2="408.0" y1="98" y2="520"/>
+<text x="408.0" y="536.0" class="axis" text-anchor="middle">50%</text>
+<line class="grid" x1="463.0" x2="463.0" y1="98" y2="520"/>
+<text x="463.0" y="536.0" class="axis" text-anchor="middle">75%</text>
+<line class="grid" x1="518.0" x2="518.0" y1="98" y2="520"/>
+<text x="518.0" y="536.0" class="axis" text-anchor="middle">100%</text>
+<text x="604" y="84" class="ptitle">Keep rate <tspan class="hint">higher is better</tspan></text>
+<line class="grid" x1="604.0" x2="604.0" y1="98" y2="520"/>
+<text x="604.0" y="536.0" class="axis" text-anchor="middle">0%</text>
+<line class="grid" x1="659.0" x2="659.0" y1="98" y2="520"/>
+<text x="659.0" y="536.0" class="axis" text-anchor="middle">25%</text>
+<line class="grid" x1="714.0" x2="714.0" y1="98" y2="520"/>
+<text x="714.0" y="536.0" class="axis" text-anchor="middle">50%</text>
+<line class="grid" x1="769.0" x2="769.0" y1="98" y2="520"/>
+<text x="769.0" y="536.0" class="axis" text-anchor="middle">75%</text>
+<line class="grid" x1="824.0" x2="824.0" y1="98" y2="520"/>
+<text x="824.0" y="536.0" class="axis" text-anchor="middle">100%</text>
+<text x="282.0" y="121.5" class="label" text-anchor="end">rizzo-pii</text>
+<path class="bar-other" d="M298.0,110.0H311.8A4,4 0 0 1 315.8,114.0V120.0A4,4 0 0 1 311.8,124.0H298.0Z"/>
+<text x="321.8" y="121.0" class="val">8.1%</text>
+<path class="bar-other" d="M604.0,110.0H697.8A4,4 0 0 1 701.8,114.0V120.0A4,4 0 0 1 697.8,124.0H604.0Z"/>
+<text x="707.8" y="121.0" class="val">44.5%</text>
+<rect class="band" x="8" y="130" width="864" height="26" rx="4"/>
+<text x="282.0" y="147.5" class="label np" text-anchor="end">nullpii 0.5</text>
+<use href="#np-logo" x="18" y="134.0"/>
+<path class="bar-np" d="M298.0,136.0H314.8A4,4 0 0 1 318.8,140.0V146.0A4,4 0 0 1 314.8,150.0H298.0Z"/>
+<text x="324.8" y="147.0" class="val np">9.5%</text>
+<path class="bar-np" d="M604.0,136.0H788.0A4,4 0 0 1 792.0,140.0V146.0A4,4 0 0 1 788.0,150.0H604.0Z"/>
+<text x="798.0" y="147.0" class="val np">85.4%</text>
+<text x="282.0" y="173.5" class="label" text-anchor="end">openai privacy-filter</text>
+<path class="bar-other" d="M298.0,162.0H325.8A4,4 0 0 1 329.8,166.0V172.0A4,4 0 0 1 325.8,176.0H298.0Z"/>
+<text x="335.8" y="173.0" class="val">14.5%</text>
+<path class="bar-other" d="M604.0,162.0H771.3A4,4 0 0 1 775.3,166.0V172.0A4,4 0 0 1 771.3,176.0H604.0Z"/>
+<text x="781.3" y="173.0" class="val">77.9%</text>
+<text x="282.0" y="199.5" class="label" text-anchor="end">OpenMed PII Large</text>
+<path class="bar-other" d="M298.0,188.0H328.6A4,4 0 0 1 332.6,192.0V198.0A4,4 0 0 1 328.6,202.0H298.0Z"/>
+<text x="338.6" y="199.0" class="val">15.7%</text>
+<path class="bar-other" d="M604.0,188.0H780.9A4,4 0 0 1 784.9,192.0V198.0A4,4 0 0 1 780.9,202.0H604.0Z"/>
+<text x="790.9" y="199.0" class="val">82.2%</text>
+<text x="282.0" y="225.5" class="label" text-anchor="end">gliner-pii-large</text>
+<path class="bar-other" d="M298.0,214.0H329.1A4,4 0 0 1 333.1,218.0V224.0A4,4 0 0 1 329.1,228.0H298.0Z"/>
+<text x="339.1" y="225.0" class="val">15.9%</text>
+<path class="bar-other" d="M604.0,214.0H788.1A4,4 0 0 1 792.1,218.0V224.0A4,4 0 0 1 788.1,228.0H604.0Z"/>
+<text x="798.1" y="225.0" class="val">85.5%</text>
+<text x="282.0" y="251.5" class="label" text-anchor="end">nemotron-pii, NVIDIA's server</text>
+<path class="bar-other" d="M298.0,240.0H329.2A4,4 0 0 1 333.2,244.0V250.0A4,4 0 0 1 329.2,254.0H298.0Z"/>
+<text x="339.2" y="251.0" class="val">16.0%</text>
+<path class="bar-other" d="M604.0,240.0H766.8A4,4 0 0 1 770.8,244.0V250.0A4,4 0 0 1 766.8,254.0H604.0Z"/>
+<text x="776.8" y="251.0" class="val">75.8%</text>
+<text x="282.0" y="277.5" class="label" text-anchor="end">OpenMed PII Small</text>
+<path class="bar-other" d="M298.0,266.0H329.4A4,4 0 0 1 333.4,270.0V276.0A4,4 0 0 1 329.4,280.0H298.0Z"/>
+<text x="339.4" y="277.0" class="val">16.1%</text>
+<path class="bar-other" d="M604.0,266.0H782.6A4,4 0 0 1 786.6,270.0V276.0A4,4 0 0 1 782.6,280.0H604.0Z"/>
+<text x="792.6" y="277.0" class="val">83.0%</text>
+<text x="282.0" y="303.5" class="label" text-anchor="end">gliner-stream-pii</text>
+<path class="bar-other" d="M298.0,292.0H330.0A4,4 0 0 1 334.0,296.0V302.0A4,4 0 0 1 330.0,306.0H298.0Z"/>
+<text x="340.0" y="303.0" class="val">16.4%</text>
+<path class="bar-other" d="M604.0,292.0H748.5A4,4 0 0 1 752.5,296.0V302.0A4,4 0 0 1 748.5,306.0H604.0Z"/>
+<text x="758.5" y="303.0" class="val">67.5%</text>
+<text x="282.0" y="329.5" class="label" text-anchor="end">nemotron-pii, library</text>
+<path class="bar-other" d="M298.0,318.0H332.7A4,4 0 0 1 336.7,322.0V328.0A4,4 0 0 1 332.7,332.0H298.0Z"/>
+<text x="342.7" y="329.0" class="val">17.6%</text>
+<path class="bar-other" d="M604.0,318.0H750.5A4,4 0 0 1 754.5,322.0V328.0A4,4 0 0 1 750.5,332.0H604.0Z"/>
+<text x="760.5" y="329.0" class="val">68.4%</text>
+<text x="282.0" y="355.5" class="label" text-anchor="end">ettin-68m</text>
+<path class="bar-other" d="M298.0,344.0H332.9A4,4 0 0 1 336.9,348.0V354.0A4,4 0 0 1 332.9,358.0H298.0Z"/>
+<text x="342.9" y="355.0" class="val">17.7%</text>
+<path class="bar-other" d="M604.0,344.0H743.6A4,4 0 0 1 747.6,348.0V354.0A4,4 0 0 1 743.6,358.0H604.0Z"/>
+<text x="753.6" y="355.0" class="val">65.3%</text>
+<text x="282.0" y="381.5" class="label" text-anchor="end">pii-identifier</text>
+<path class="bar-other" d="M298.0,370.0H335.3A4,4 0 0 1 339.3,374.0V380.0A4,4 0 0 1 335.3,384.0H298.0Z"/>
+<text x="345.3" y="381.0" class="val">18.8%</text>
+<path class="bar-other" d="M604.0,370.0H771.0A4,4 0 0 1 775.0,374.0V380.0A4,4 0 0 1 771.0,384.0H604.0Z"/>
+<text x="781.0" y="381.0" class="val">77.7%</text>
+<text x="282.0" y="407.5" class="label" text-anchor="end">gliner_multi_pii (ONNX)</text>
+<path class="bar-other" d="M298.0,396.0H336.2A4,4 0 0 1 340.2,400.0V406.0A4,4 0 0 1 336.2,410.0H298.0Z"/>
+<text x="346.2" y="407.0" class="val">19.2%</text>
+<path class="bar-other" d="M604.0,396.0H725.2A4,4 0 0 1 729.2,400.0V406.0A4,4 0 0 1 725.2,410.0H604.0Z"/>
+<text x="735.2" y="407.0" class="val">56.9%</text>
+<text x="282.0" y="433.5" class="label" text-anchor="end">OpenMed privacy-filter-multilingual-v2</text>
+<path class="bar-other" d="M298.0,422.0H338.1A4,4 0 0 1 342.1,426.0V432.0A4,4 0 0 1 338.1,436.0H298.0Z"/>
+<text x="348.1" y="433.0" class="val">20.1%</text>
+<path class="bar-other" d="M604.0,422.0H779.5A4,4 0 0 1 783.5,426.0V432.0A4,4 0 0 1 779.5,436.0H604.0Z"/>
+<text x="789.5" y="433.0" class="val">81.6%</text>
+<text x="282.0" y="459.5" class="label" text-anchor="end">piiranha</text>
+<path class="bar-other" d="M298.0,448.0H346.3A4,4 0 0 1 350.3,452.0V458.0A4,4 0 0 1 346.3,462.0H298.0Z"/>
+<text x="356.3" y="459.0" class="val">23.8%</text>
+<path class="bar-other" d="M604.0,448.0H751.4A4,4 0 0 1 755.4,452.0V458.0A4,4 0 0 1 751.4,462.0H604.0Z"/>
+<text x="761.4" y="459.0" class="val">68.8%</text>
+<text x="282.0" y="485.5" class="label" text-anchor="end">Presidio</text>
+<path class="bar-other" d="M298.0,474.0H383.3A4,4 0 0 1 387.3,478.0V484.0A4,4 0 0 1 383.3,488.0H298.0Z"/>
+<text x="393.3" y="485.0" class="val">40.6%</text>
+<path class="bar-other" d="M604.0,474.0H781.0A4,4 0 0 1 785.0,478.0V484.0A4,4 0 0 1 781.0,488.0H604.0Z"/>
+<text x="791.0" y="485.0" class="val">82.3%</text>
+<text x="282.0" y="511.5" class="label" text-anchor="end">deberta PII</text>
+<path class="bar-other" d="M298.0,500.0H415.3A4,4 0 0 1 419.3,504.0V510.0A4,4 0 0 1 415.3,514.0H298.0Z"/>
+<text x="425.3" y="511.0" class="val">55.1%</text>
+<path class="bar-other" d="M604.0,500.0H741.3A4,4 0 0 1 745.3,504.0V510.0A4,4 0 0 1 741.3,514.0H604.0Z"/>
+<text x="751.3" y="511.0" class="val">64.2%</text>
+<text x="16.0" y="564.0" class="note">Intervals, B1 and B2 and every other row: METHOD.md. Data: packages/eval/published-bench/ab1/scores-ab1-a.json.</text>
+</svg>

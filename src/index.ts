@@ -7,6 +7,8 @@
 
 // Errors
 export {
+  EngineDisposedError,
+  InvalidConfigError,
   InvalidPathError,
   ModelNotFoundError,
   ModelNotInitializedError,
@@ -20,6 +22,7 @@ export {
 
 // Types & constants
 export {
+  GLINER_EXTENDED_CATEGORIES,
   GLINER_MODEL_CATEGORIES,
   MAX_SEQUENCE_LENGTH,
   MODEL_DOWNLOAD_TIMEOUT_MS,
@@ -28,6 +31,7 @@ export {
   PLACEHOLDER_TEMPLATE,
   SESSION_PREFIX_LEN,
   type BackendName,
+  type EnginePolicy,
   type InferenceInputs,
   type InferenceOutputs,
   type ModelVariant,
@@ -39,7 +43,10 @@ export {
   type RestoreOptions,
   type RestoreResult,
   type SanitizeOptions,
+  type MaskResult,
   type SanitizeResult,
+  type UrlAllowlistConfig,
+  type UrlRelease,
   type VaultToken,
 } from './types/index.js';
 
@@ -52,8 +59,27 @@ export { PiiVault } from './vault.js';
 // Streaming restore — SSE-safe placeholder buffer
 export { RestoreStream, type RestoreCapable } from './restore-stream.js';
 
-// Public engine + functional wrappers
-export { NullPii, restore, sanitize } from './nullpii.js';
+// Public engine
+export { NullPii } from './nullpii.js';
+
+// Shared masking-policy config file (library, CLI, gateway, Claude Code mod)
+export {
+  type CategoryMode,
+  categoryModes,
+  configFilePath,
+  defaultConfigPath,
+  loadConfigFile,
+  type NullPiiFileConfig,
+  parseConfig,
+  resolveConfigFile,
+  toEngineConfig,
+} from './config-file.js';
+export {
+  DEFAULT_DISABLED_CATEGORIES,
+  DEFAULT_RESTORE_TOOLS,
+  DEFAULT_URL_RELEASES,
+  MAX_CONFIG_FILE_BYTES,
+} from './defaults.js';
 
 // LLM-prompt helper
 export { LLM_PRESERVATION_HINT, wrapForLLM } from './wrap-for-llm.js';
@@ -62,7 +88,7 @@ export { LLM_PRESERVATION_HINT, wrapForLLM } from './wrap-for-llm.js';
 // canonical implementations instead of duplicating them. Each returns
 // `true` only when the candidate satisfies the well-defined checksum
 // for its format (mod-97 IBAN, Luhn cards, base58check BTC,
-// mod-11 × 2 CPF, weighted-position Codice Fiscale).
+// mod-11 × 2 CPF, weighted-position Codice Fiscale, Luhn-style Partita IVA).
 export {
   base58CheckValid,
   codiceFiscaleValid,
@@ -71,5 +97,6 @@ export {
   latLonPairInRange,
   luhnValid,
   macAddressNonReserved,
+  partitaIvaValid,
   vinValid,
 } from './validators.js';

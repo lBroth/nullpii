@@ -1,24 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
+// Word splitting ported from the GLiNER library (Apache-2.0); see NOTICE.
 
 import { join } from 'node:path';
-import { Tokenizer } from '@anush008/tokenizers';
+import { Tokenizer } from 'tokenizers';
 import { TOKENIZER_FILE } from './defaults.js';
 import { ModelNotFoundError } from './errors.js';
 import { logf } from './log.js';
 import { fileExists } from './paths.js';
+import { MAX_SEQUENCE_LENGTH } from './types/constants.js';
 
 const LOG_SCOPE = 'nullpii:gliner-tokenizer';
 
 /** GLiNER special tokens (from `gliner_config.json`). */
-export const ENT_TOKEN = '<<ENT>>';
-export const SEP_TOKEN = '<<SEP>>';
+const ENT_TOKEN = '<<ENT>>';
+const SEP_TOKEN = '<<SEP>>';
+
+/** Sequence wrappers, by backbone convention: BERT and DeBERTa use
+ * `[CLS]` / `[SEP]`, RoBERTa and XLM-R (e5, for example) `<s>` / `</s>`.
+ * The first name the vocabulary has wins. */
+const CLS_TOKEN_CANDIDATES = ['[CLS]', '<s>'] as const;
+const SEP_TOKEN_CANDIDATES = ['[SEP]', '</s>'] as const;
 
 /** From `gliner_config.json`: max_width=12, max_len=384. */
 export const DEFAULT_MAX_SPAN_WIDTH = 12;
-export const DEFAULT_MAX_SEQUENCE_LENGTH = 384;
+export const DEFAULT_MAX_SEQUENCE_LENGTH = MAX_SEQUENCE_LENGTH;
 
 /** Defence-in-depth word cap; chunker is the primary bound. */
-export const MAX_TEXT_WORDS = 500;
+const MAX_TEXT_WORDS = 500;
 
 /** Word splitter — `\w+(?:[-_]\w+)*|\S` matches word blobs +
  * single non-whitespace symbols (port of upstream GLiNER's regex). */
@@ -51,10 +59,6 @@ export interface GlinerEncodeResult {
   readonly seqLen: number;
   readonly words: readonly Word[];
   readonly numWords: number;
-  /** Number of "prompt" input tokens before the actual text words.
-   * Equals `2 * labels.length + 1` (each label has its `<<ENT>>` token,
-   * plus the final `<<SEP>>`). Used for `words_mask` `seen_words` skip. */
-  readonly promptLength: number;
   /** True if the encoder hit the configured `maxSequenceLength` and
    * truncated subwords. Caller may want to chunk the input or warn. */
   readonly truncated: boolean;
@@ -63,8 +67,9 @@ export interface GlinerEncodeResult {
 /**
  * GLiNER multi-PII tokenizer wrapper.
  *
- * Wraps the upstream HF SentencePiece tokenizer (loaded via
- * `@anush008/tokenizers` from `tokenizer.json` shipped with the model).
+ * Wraps the upstream HF SentencePiece tokenizer (loaded via Hugging
+ * Face's `tokenizers` Node binding from `tokenizer.json` shipped with
+ * the model).
  * Adds the GLiNER-specific prompt-formatting and `words_mask` computation
  * on top.
  *
@@ -80,6 +85,14 @@ export interface GlinerEncodeResult {
  *   - `text_lengths` = `result.numWords`.
  *   - `span_idx` / `span_mask` are built downstream in `gliner-spans.ts`.
  */
+function firstTokenId(tok: Tokenizer, names: readonly string[]): number | null {
+  for (const name of names) {
+    const id = tok.tokenToId(name);
+    if (id !== null && id !== undefined) return id;
+  }
+  return null;
+}
+
 export class GlinerTokenizer {
   private impl: Tokenizer | null = null;
 
@@ -109,9 +122,9 @@ export class GlinerTokenizer {
    * the prompt prefix and the model's output `num_classes` dimension —
    * caller must pass the same array to the span decoder.
    *
-   * Implementation: the underlying `@anush008/tokenizers` napi binding
-   * doesn't honor `isPretokenized: true` for arrays (rejects with
-   * `StringExpected`). Workaround: encode each prompt token + each
+   * Implementation: the napi binding nullpii used before `tokenizers`
+   * (`@anush008/tokenizers`) did not honor `isPretokenized: true` for
+   * arrays (rejected with `StringExpected`). So: encode each prompt token + each
    * text word separately with `addSpecialTokens: false`, concatenate
    * the ids, and track our own word index. CLS/SEP wrappers are added
    * manually using ids resolved via `tok.tokenToId()`.
@@ -121,11 +134,11 @@ export class GlinerTokenizer {
 
     const words = splitWords(text);
 
-    // Resolve special tokens by name. CLS / SEP names are mDeBERTa-v3
-    // conventions ([CLS] / [SEP]); ENT/SEP_TOKEN are GLiNER additions.
-    // If any of these is missing the encoder is unusable — fail loud.
-    const clsId = tok.tokenToId('[CLS]');
-    const sepId = tok.tokenToId('[SEP]');
+    // Resolve special tokens by name: the backbone's sequence wrappers,
+    // and ENT/SEP_TOKEN, which GLiNER adds. If any of these is missing
+    // the encoder is unusable — fail loud.
+    const clsId = firstTokenId(tok, CLS_TOKEN_CANDIDATES);
+    const sepId = firstTokenId(tok, SEP_TOKEN_CANDIDATES);
     const entId = tok.tokenToId(ENT_TOKEN);
     const sepGlinerId = tok.tokenToId(SEP_TOKEN);
     if (clsId === null || sepId === null || entId === null || sepGlinerId === null) {
@@ -218,7 +231,6 @@ export class GlinerTokenizer {
       });
     }
 
-    const promptLength = 2 * labels.length + 1; // ENT-per-label + final SEP-token
     const truncatedWords = words.slice(0, numTextWords);
 
     return {
@@ -228,7 +240,6 @@ export class GlinerTokenizer {
       seqLen,
       words: truncatedWords,
       numWords: numTextWords,
-      promptLength,
       truncated: truncatedSubwords,
     };
   }

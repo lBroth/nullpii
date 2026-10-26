@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { describe, expect, it } from 'vitest';
 import { normalizeForDetection, remapSpan } from '../src/normalize.js';
 import { PLACEHOLDER_OPEN_ESCAPED, escapePlaceholders } from '../src/placeholder-escape.js';
@@ -94,11 +96,56 @@ describe('normalizeForDetection', () => {
     expect(origEnd).toBe(text.length);
   });
 
+  it('remaps a span starting on an escape to the start of that escape', () => {
+    // A name whose first letters are encoded: the span must cover the
+    // first escape too, or `&#74;` (J) stays readable.
+    for (const text of ['&#74;&#111;hn Smith', '%4A%6Fhn Smith']) {
+      const r = normalizeForDetection(text);
+      expect(r.normalized).toBe('John Smith');
+      expect(remapSpan(0, r.normalized.length, r.normToOrig)).toEqual([0, text.length]);
+    }
+  });
+
+  it('remaps a span ending inside a run of escapes at the next escape', () => {
+    const text = '&#74;&#111;&#104;&#110;';
+    const r = normalizeForDetection(text);
+    expect(r.normalized).toBe('John');
+    // `Jo` ends where `&#104;` begins.
+    expect(remapSpan(0, 2, r.normToOrig)).toEqual([0, text.indexOf('&#104;')]);
+  });
+
+  it('keeps offsets aligned after an entity that decodes to an astral code point', () => {
+    const text = '&#x1F600; John';
+    const r = normalizeForDetection(text);
+    expect(r.normalized).toBe('\u{1F600} John');
+    expect(r.normToOrig).toHaveLength(r.normalized.length + 1);
+    const start = r.normalized.indexOf('John');
+    expect(remapSpan(start, start + 4, r.normToOrig)).toEqual([text.indexOf('John'), text.length]);
+  });
+
   it('decodes HTML numeric entities for email anchors', () => {
     // `&#64;` = @, `&#46;` = .
     const text = 'user&#64;example&#46;com';
     const r = normalizeForDetection(text);
     expect(r.normalized).toBe('user@example.com');
+  });
+
+  it('decodes a double encoding, whose second round is completed by the text after the escape', () => {
+    // `%25` decodes to `%`, which with the following `40` reads `%40`.
+    for (const text of ['bob.jones%2540company.io', 'bob.jones&#x26;#64;company.io']) {
+      const r = normalizeForDetection(text);
+      expect(r.normalized).toBe('bob.jones@company.io');
+      expect(remapSpan(0, r.normalized.length, r.normToOrig)).toEqual([0, text.length]);
+    }
+  });
+
+  it.each([
+    ['a%252540b', 'a%252540b'],
+    ['a%25%40b', 'a%25@b'],
+    ['a%25 b', 'a%25 b'],
+    ['a&#38; b', 'a&#38; b'],
+  ])('stops after two rounds and leaves an escaped lone introducer: %s', (text, normalized) => {
+    expect(normalizeForDetection(text).normalized).toBe(normalized);
   });
 
   it('decodes HTML numeric entities', () => {

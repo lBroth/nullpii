@@ -35,9 +35,10 @@ export class ModelNotInitializedError extends NullPiiError {
   }
 }
 
-/** Thrown when input exceeds a configured size cap. Two raise sites today:
- *  - tokenizer subword cap (`MAX_SEQUENCE_LENGTH`, unit = "tokens")
- *  - upfront byte cap on `sanitize()` input (`MAX_INPUT_BYTES`, unit = "bytes")
+/** Thrown when input exceeds a configured size cap. One raise site today:
+ * a model window over the tokenizer's subword cap (`MAX_SEQUENCE_LENGTH`,
+ * unit = "tokens") with `strictLength: true`. `sanitize()` no longer
+ * refuses a long text: it reads one over `MAX_INPUT_CHARS` in windows.
  *
  * `unit` defaults to "tokens" for backwards-compatible message shape. */
 export class TextTooLongError extends NullPiiError {
@@ -50,7 +51,7 @@ export class TextTooLongError extends NullPiiError {
   constructor(
     observed: number,
     limit: number,
-    unit: 'tokens' | 'bytes' = 'tokens',
+    unit: 'tokens' | 'characters' = 'tokens',
     options?: { cause?: unknown },
   ) {
     super(`input too long: ${observed} ${unit} > limit ${limit}`, options);
@@ -72,6 +73,24 @@ export class InvalidPathError extends NullPiiError {
   /** @param path the offending path, as provided */
   constructor(path: string, options?: { cause?: unknown }) {
     super(`unsafe or invalid path: ${path}`, options);
+  }
+}
+
+/** Thrown when a configuration value is invalid: an unknown key, a value of
+ * the wrong type, or a malformed host. */
+export class InvalidConfigError extends NullPiiError {
+  override readonly code = 'NULLPII_INVALID_CONFIG';
+  /** @param message what is wrong and where */
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(`invalid nullpii config: ${message}`, options);
+  }
+}
+
+/** Thrown when an engine is used after `dispose()`. */
+export class EngineDisposedError extends NullPiiError {
+  override readonly code = 'NULLPII_DISPOSED';
+  constructor(options?: { cause?: unknown }) {
+    super('this NullPii engine was disposed — create a new one', options);
   }
 }
 

@@ -1,0 +1,4 @@
+# Python 3.12 (built with CPython 3.12.13). Licences: Apache-2.0 / BSD / MIT.
+huggingface-hub==2.3.0
+pyarrow==26.0.0
+pyahocorasick==2.3.1

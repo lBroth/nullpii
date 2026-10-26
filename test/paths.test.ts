@@ -1,7 +1,9 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { writeFileSync } from 'node:fs';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { InvalidPathError } from '../src/errors.js';
 import { fileExists, resolveSafePath } from '../src/paths.js';
@@ -34,6 +36,12 @@ describe('resolveSafePath', () => {
   it('rejects an absolute path outside cwd', () => {
     const cwd = mkdtempSync(join(tmpdir(), 'nullpii-cwd-'));
     expect(() => resolveSafePath('/etc/passwd', cwd)).toThrow(InvalidPathError);
+  });
+
+  it('rejects a sibling directory that shares the prefix', () => {
+    const base = resolve(tmpdir(), 'nullpii-cache');
+    expect(() => resolveSafePath(`${base}-evil/model.onnx`, base)).toThrow(InvalidPathError);
+    expect(() => resolveSafePath('../nullpii-cache-evil/x', base)).toThrow(InvalidPathError);
   });
 
   it('accepts an absolute path inside cwd', () => {

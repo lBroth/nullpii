@@ -1,7 +1,7 @@
 {
   "name": "@lbroth/nullpii-gateway",
-  "version": "0.0.3",
-  "description": "Self-hosted HTTP gateway that sanitizes PII before forwarding to Anthropic Claude, restores in the response. baseURL drop-in.",
+  "version": "0.5.0",
+  "description": "Self-hosted HTTP gateway for the Anthropic Messages and OpenAI Chat Completions APIs: masks PII and secrets before the request leaves your machine and restores them in the response. Base-URL drop-in.",
   "license": "Apache-2.0",
   "keywords": [
     "pii",
@@ -14,11 +14,10 @@
     "proxy",
     "llm-proxy",
     "anthropic-proxy",
-    "gdpr",
-    "hipaa",
     "privacy",
     "local-pii",
-    "self-hosted"
+    "self-hosted",
+    "openai"
   ],
   "repository": {
     "type": "git",
@@ -34,7 +33,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "nullpii-gateway": "./bin/nullpii-gateway.mjs"
+    "nullpii-gateway": "bin/nullpii-gateway.mjs"
   },
   "exports": {
     ".": {
@@ -50,16 +49,19 @@
     "prepublishOnly": "rm -rf dist && mkdir -p node_modules/nullpii && cp -R ../../dist ../../package.json ../../README.md ../../LICENSE ../../NOTICE node_modules/nullpii/ && tsc -p tsconfig.json"
   },
   "dependencies": {
-    "fastify": "^5.2.0"
+    "fastify": "^5.12.5"
   },
   "peerDependencies": {
-    "nullpii": ">=0.3.0 <0.4.0"
+    "nullpii": ">=0.5.0-0 <0.6.0",
+    "onnxruntime-node": "^1.30.0"
   },
   "engines": {
     "node": ">=22.0.0"
   },
   "publishConfig": {
     "access": "public",
-    "provenance": true
+    "provenance": true,
+    "registry": "https://registry.npmjs.org/",
+    "@lbroth:registry": "https://registry.npmjs.org/"
   }
 }

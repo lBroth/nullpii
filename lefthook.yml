@@ -16,3 +16,13 @@ pre-commit:
     circular-check:
       glob: '*.ts'
       run: npm run circular-check
+    # Leak gates (see SECURITY.md, "Supply chain and leak gates").
+    hygiene:
+      run: node scripts/check-repo-hygiene.mjs
+    secrets:
+      run: |
+        if command -v gitleaks >/dev/null 2>&1; then
+          gitleaks git --pre-commit --staged --config .gitleaks.toml --redact --no-banner
+        else
+          echo "gitleaks is not installed: secrets were NOT scanned locally (CI still blocks them). Install: brew install gitleaks" >&2
+        fi

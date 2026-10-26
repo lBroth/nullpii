@@ -1,0 +1,53 @@
+# Presidio venv for the bench's `presidio` row (src/nullpii_eval/adapters_presidio.py):
+# presidio-analyzer run per its multilingual docs, one spaCy NER model per
+# language, plus what scripts/bench_full.py needs to import and load datasets.
+# The spaCy models are pinned wheels (release 3.8.0, compatible with spaCy
+# 3.8.x) with their SHA-256, so pip verifies each download. About 10 GB.
+#
+# Create it (tested with Python 3.12):
+#   python3.12 -m venv ~/.cache/nullpii-eval/venv-presidio
+#   ~/.cache/nullpii-eval/venv-presidio/bin/pip install -r packages/eval/requirements-presidio.txt
+#   ~/.cache/nullpii-eval/venv-presidio/bin/pip install -e packages/eval --no-deps
+# Run the bench with that venv's python:
+#   ~/.cache/nullpii-eval/venv-presidio/bin/python packages/eval/scripts/bench_full.py --tools presidio ...
+
+presidio-analyzer==2.2.364
+spacy==3.8.16
+numpy==2.4.4
+datasets==4.8.5
+# Transitive, pinned because they change what Presidio detects: phone
+# metadata, the regex engine of its pattern recognizers, e-mail domain checks.
+phonenumbers==9.0.41
+regex==2026.9.29
+tldextract==5.4.0
+# Tokenizers and morphology the ja, zh and ru pipelines require.
+SudachiPy==0.7.0
+sudachidict-core==20261015
+spacy-pkuseg==1.0.1
+pymorphy3==2.0.6
+pymorphy3-dicts-ru==2.4.417150.4580142
+
+# One NER model per language (adapters_presidio.SPACY_MODEL_BY_LANGUAGE).
+# Largest CPU pipeline where spaCy ships one for the language:
+en_core_web_lg @ https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl#sha256=293e9547a655b25499198ab15a525b05b9407a75f10255e405e8c3854329ab63
+de_core_news_lg @ https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0-py3-none-any.whl#sha256=36fda650e476b54d5e87803635e36dadd1e8e034c4b5962088586d684f4c9fed
+fr_core_news_lg @ https://github.com/explosion/spacy-models/releases/download/fr_core_news_lg-3.8.0/fr_core_news_lg-3.8.0-py3-none-any.whl#sha256=da5bf7fc860af64293d88638b4416b3de3a29005b785bfff67d09b06c77345de
+it_core_news_lg @ https://github.com/explosion/spacy-models/releases/download/it_core_news_lg-3.8.0/it_core_news_lg-3.8.0-py3-none-any.whl#sha256=b78582d0b2d05fd6509995f68ab7452efed7a27c6fbc5a071e9a9787a58c1e87
+es_core_news_lg @ https://github.com/explosion/spacy-models/releases/download/es_core_news_lg-3.8.0/es_core_news_lg-3.8.0-py3-none-any.whl#sha256=7c6c212715a12f31aacde3361754436945ff7376fb24cde57d0c277c9c9b050b
+nl_core_news_lg @ https://github.com/explosion/spacy-models/releases/download/nl_core_news_lg-3.8.0/nl_core_news_lg-3.8.0-py3-none-any.whl#sha256=19a3cb18b92f775a0df0e61026e2a0f874e73aabb1b744b16230dfe573a3e34e
+pt_core_news_lg @ https://github.com/explosion/spacy-models/releases/download/pt_core_news_lg-3.8.0/pt_core_news_lg-3.8.0-py3-none-any.whl#sha256=2561c9a72a938d37141e9694e1a36d25061a44ce7e4f3bad2d3fa3bb836191af
+pl_core_news_lg @ https://github.com/explosion/spacy-models/releases/download/pl_core_news_lg-3.8.0/pl_core_news_lg-3.8.0-py3-none-any.whl#sha256=3bc7296cd4d67fa9ee0904b25401b0e9a9a772d5c4756edf54143a2ff4c9dcc0
+ro_core_news_lg @ https://github.com/explosion/spacy-models/releases/download/ro_core_news_lg-3.8.0/ro_core_news_lg-3.8.0-py3-none-any.whl#sha256=f8c71487a60125af5a84cdf487fc1670ec9cd1e28cfd9f7ef9561be0e25d2c8e
+da_core_news_lg @ https://github.com/explosion/spacy-models/releases/download/da_core_news_lg-3.8.0/da_core_news_lg-3.8.0-py3-none-any.whl#sha256=a3a7184f775c6b5da6fcfebad4fe6819c588b8a405936d023c56f554a5811ec7
+fi_core_news_lg @ https://github.com/explosion/spacy-models/releases/download/fi_core_news_lg-3.8.0/fi_core_news_lg-3.8.0-py3-none-any.whl#sha256=203c224d2684788ec13e5540b59d6e56684e9a349d7181eb2f9898704b026deb
+sv_core_news_lg @ https://github.com/explosion/spacy-models/releases/download/sv_core_news_lg-3.8.0/sv_core_news_lg-3.8.0-py3-none-any.whl#sha256=1f1db1cb811dc21e7eaab023bb0ea4afe66038d0e6f0837b537f736503bcede3
+lt_core_news_lg @ https://github.com/explosion/spacy-models/releases/download/lt_core_news_lg-3.8.0/lt_core_news_lg-3.8.0-py3-none-any.whl#sha256=295f2a9e7e305748c4e016969331390892e8c2afaaab77ac25851a78ba5d2389
+el_core_news_lg @ https://github.com/explosion/spacy-models/releases/download/el_core_news_lg-3.8.0/el_core_news_lg-3.8.0-py3-none-any.whl#sha256=3bf603778bda163a1770f66aadf6b9b1030d9ecb3cbdb24d690c060bbf4d598c
+hr_core_news_lg @ https://github.com/explosion/spacy-models/releases/download/hr_core_news_lg-3.8.0/hr_core_news_lg-3.8.0-py3-none-any.whl#sha256=70db4632c9fdf87b800a4956ec4d5ec56d9567ef7bcafad9f8b85af7734ada26
+sl_core_news_lg @ https://github.com/explosion/spacy-models/releases/download/sl_core_news_lg-3.8.0/sl_core_news_lg-3.8.0-py3-none-any.whl#sha256=1358fa16bcb2c1309451f748096a801688f6a2b2a251bed94a1bd170df86179f
+ja_core_news_lg @ https://github.com/explosion/spacy-models/releases/download/ja_core_news_lg-3.8.0/ja_core_news_lg-3.8.0-py3-none-any.whl#sha256=4e2e9e9e5a4d58804046fa4a08153f52f705e6deb686c7e94177fddd8752b95f
+ko_core_news_lg @ https://github.com/explosion/spacy-models/releases/download/ko_core_news_lg-3.8.0/ko_core_news_lg-3.8.0-py3-none-any.whl#sha256=f703b419511ebbbe2812728708fb2dac8a6ed767871a18e87e29ce9444ead3d3
+ru_core_news_lg @ https://github.com/explosion/spacy-models/releases/download/ru_core_news_lg-3.8.0/ru_core_news_lg-3.8.0-py3-none-any.whl#sha256=90bd584be86772b647e1b15cdc62e09d3a7182284ee23da95e19c2bf71aa0189
+zh_core_web_lg @ https://github.com/explosion/spacy-models/releases/download/zh_core_web_lg-3.8.0/zh_core_web_lg-3.8.0-py3-none-any.whl#sha256=eb39f5deb382752d3faef4052fb61570b7f45441076082b2a1fdbe50a8848e7c
+# Multilingual WikiNER model for bg, cs, et, ga, hu, lv, mt, sk, sr, ar, hi, id, th, vi (no spaCy pipeline):
+xx_ent_wiki_sm @ https://github.com/explosion/spacy-models/releases/download/xx_ent_wiki_sm-3.8.0/xx_ent_wiki_sm-3.8.0-py3-none-any.whl#sha256=6f3c4b853852ea9e9d2dc76cc950dddb10a7e4c42d813308caefe6c5e8be2f0a

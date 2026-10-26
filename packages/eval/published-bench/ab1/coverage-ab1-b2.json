@@ -1,0 +1,255 @@
+{
+ "covered": 1979,
+ "secrets": 5776,
+ "tools": {
+  "deberta": {
+   "leak_covered": 0.4557857503789793,
+   "leak_uncovered": 0.5988938635765078
+  },
+  "deberta+agent": {
+   "leak_covered": 0.4562910560889338,
+   "leak_uncovered": 0.599157229391625
+  },
+  "deberta@default": {
+   "leak_covered": 0.42546740778170794,
+   "leak_uncovered": 0.5522781143007638
+  },
+  "deberta@default+agent": {
+   "leak_covered": 0.426478019201617,
+   "leak_uncovered": 0.552541480115881
+  },
+  "ettin-68m": {
+   "leak_covered": 0.1955533097524002,
+   "leak_uncovered": 0.39952594153278903
+  },
+  "ettin-68m+agent": {
+   "leak_covered": 0.1955533097524002,
+   "leak_uncovered": 0.39978930734790624
+  },
+  "ettin-68m@default": {
+   "leak_covered": 0.5361293582617483,
+   "leak_uncovered": 0.7055570186989729
+  },
+  "ettin-68m@default+agent": {
+   "leak_covered": 0.5361293582617483,
+   "leak_uncovered": 0.7055570186989729
+  },
+  "gliner-onnx-pii-fp32": {
+   "leak_covered": 0.28600303183425974,
+   "leak_uncovered": 0.3226231235185673
+  },
+  "gliner-onnx-pii-fp32+agent": {
+   "leak_covered": 0.28650833754421423,
+   "leak_uncovered": 0.32420331840927047
+  },
+  "gliner-onnx-pii-fp32@default": {
+   "leak_covered": 0.8064679130874179,
+   "leak_uncovered": 0.617856202264946
+  },
+  "gliner-onnx-pii-fp32@default+agent": {
+   "leak_covered": 0.8069732187973724,
+   "leak_uncovered": 0.6183829338951804
+  },
+  "gliner-pii-large-v1": {
+   "leak_covered": 0.17635169277412835,
+   "leak_uncovered": 0.23176191730313406
+  },
+  "gliner-pii-large-v1+agent": {
+   "leak_covered": 0.17635169277412835,
+   "leak_uncovered": 0.23176191730313406
+  },
+  "gliner-pii-large-v1@default": {
+   "leak_covered": 0.3996968165740273,
+   "leak_uncovered": 0.4440347642875955
+  },
+  "gliner-pii-large-v1@default+agent": {
+   "leak_covered": 0.3996968165740273,
+   "leak_uncovered": 0.4442981301027127
+  },
+  "gliner-stream-pii": {
+   "leak_covered": 0.22182920667003536,
+   "leak_uncovered": 0.25414801158809586
+  },
+  "gliner-stream-pii+agent": {
+   "leak_covered": 0.22182920667003536,
+   "leak_uncovered": 0.25546484066368186
+  },
+  "gliner-stream-pii@default": {
+   "leak_covered": 0.7468418393127843,
+   "leak_uncovered": 0.5970503028706874
+  },
+  "gliner-stream-pii@default+agent": {
+   "leak_covered": 0.7468418393127843,
+   "leak_uncovered": 0.5973136686858046
+  },
+  "nemotron-pii-nemo": {
+   "leak_covered": 0.45831227892875187,
+   "leak_uncovered": 0.2233342112193837
+  },
+  "nemotron-pii-nemo+agent": {
+   "leak_covered": 0.45831227892875187,
+   "leak_uncovered": 0.22359757703450092
+  },
+  "nemotron-pii-nemo@default": {
+   "leak_covered": 0.61899949469429,
+   "leak_uncovered": 0.3231498551488017
+  },
+  "nemotron-pii-nemo@default+agent": {
+   "leak_covered": 0.61899949469429,
+   "leak_uncovered": 0.3234132209639189
+  },
+  "nemotron-pii-raw": {
+   "leak_covered": 0.5517938352703385,
+   "leak_uncovered": 0.20410850671582828
+  },
+  "nemotron-pii-raw+agent": {
+   "leak_covered": 0.5517938352703385,
+   "leak_uncovered": 0.2043718725309455
+  },
+  "nemotron-pii-raw@default": {
+   "leak_covered": 0.6124305204648812,
+   "leak_uncovered": 0.30023702923360546
+  },
+  "nemotron-pii-raw@default+agent": {
+   "leak_covered": 0.6124305204648812,
+   "leak_uncovered": 0.30050039504872267
+  },
+  "nullpii-H3b-cuda-agent": {
+   "leak_covered": 0.006568974229408792,
+   "leak_uncovered": 0.17197787727153016
+  },
+  "nullpii-H3b-cuda-agent+agent": {
+   "leak_covered": 0.006568974229408792,
+   "leak_uncovered": 0.17197787727153016
+  },
+  "openai-privacy-filter": {
+   "leak_covered": 0.04345629105608893,
+   "leak_uncovered": 0.10192257045035555
+  },
+  "openai-privacy-filter+agent": {
+   "leak_covered": 0.04345629105608893,
+   "leak_uncovered": 0.10192257045035555
+  },
+  "openai-privacy-filter@default": {
+   "leak_covered": 0.08489135927235977,
+   "leak_uncovered": 0.16065314722149066
+  },
+  "openai-privacy-filter@default+agent": {
+   "leak_covered": 0.08489135927235977,
+   "leak_uncovered": 0.16065314722149066
+  },
+  "openmed-large": {
+   "leak_covered": 0.5083375442142496,
+   "leak_uncovered": 0.334211219383724
+  },
+  "openmed-large+agent": {
+   "leak_covered": 0.5103587670540677,
+   "leak_uncovered": 0.3350013168290756
+  },
+  "openmed-large@default": {
+   "leak_covered": 0.7337038908539667,
+   "leak_uncovered": 0.8014221754016329
+  },
+  "openmed-large@default+agent": {
+   "leak_covered": 0.7342091965639211,
+   "leak_uncovered": 0.8019489070318673
+  },
+  "openmed-pf-multi-v2": {
+   "leak_covered": 0.40020212228398183,
+   "leak_uncovered": 0.3326310244930208
+  },
+  "openmed-pf-multi-v2+agent": {
+   "leak_covered": 0.40020212228398183,
+   "leak_uncovered": 0.332894390308138
+  },
+  "openmed-pf-multi-v2@default": {
+   "leak_covered": 0.4562910560889338,
+   "leak_uncovered": 0.37371609165130365
+  },
+  "openmed-pf-multi-v2@default+agent": {
+   "leak_covered": 0.4562910560889338,
+   "leak_uncovered": 0.37397945746642086
+  },
+  "openmed-small": {
+   "leak_covered": 0.45224861040929765,
+   "leak_uncovered": 0.2488806952857519
+  },
+  "openmed-small+agent": {
+   "leak_covered": 0.45275391611925214,
+   "leak_uncovered": 0.24914406110086912
+  },
+  "openmed-small@default": {
+   "leak_covered": 0.6331480545730167,
+   "leak_uncovered": 0.543323676586779
+  },
+  "openmed-small@default+agent": {
+   "leak_covered": 0.6336533602829711,
+   "leak_uncovered": 0.5435870424018963
+  },
+  "pii-identifier": {
+   "leak_covered": 0.27993936331480546,
+   "leak_uncovered": 0.42322886489333683
+  },
+  "pii-identifier+agent": {
+   "leak_covered": 0.27993936331480546,
+   "leak_uncovered": 0.42349223070845404
+  },
+  "pii-identifier@default": {
+   "leak_covered": 0.7251136937847398,
+   "leak_uncovered": 0.7887806162760074
+  },
+  "pii-identifier@default+agent": {
+   "leak_covered": 0.7251136937847398,
+   "leak_uncovered": 0.7890439820911246
+  },
+  "piiranha": {
+   "leak_covered": 0.9631126831733199,
+   "leak_uncovered": 0.9025546484066368
+  },
+  "piiranha+agent": {
+   "leak_covered": 0.9631126831733199,
+   "leak_uncovered": 0.9025546484066368
+  },
+  "piiranha@default": {
+   "leak_covered": 0.9964628600303184,
+   "leak_uncovered": 0.9876218066894917
+  },
+  "piiranha@default+agent": {
+   "leak_covered": 0.9964628600303184,
+   "leak_uncovered": 0.9876218066894917
+  },
+  "presidio": {
+   "leak_covered": 0.4537645275391612,
+   "leak_uncovered": 0.9565446405056623
+  },
+  "presidio+agent": {
+   "leak_covered": 0.4593228903486609,
+   "leak_uncovered": 0.9631287858835923
+  },
+  "presidio@default": {
+   "leak_covered": 0.43708943911066195,
+   "leak_uncovered": 0.9465367395312089
+  },
+  "presidio@default+agent": {
+   "leak_covered": 0.4426478019201617,
+   "leak_uncovered": 0.9528575190940216
+  },
+  "rizzo-pii": {
+   "leak_covered": 0.12076806467913087,
+   "leak_uncovered": 0.23413220963918882
+  },
+  "rizzo-pii+agent": {
+   "leak_covered": 0.12076806467913087,
+   "leak_uncovered": 0.23439557545430603
+  },
+  "rizzo-pii@default": {
+   "leak_covered": 0.44163719050025263,
+   "leak_uncovered": 0.9109823544903871
+  },
+  "rizzo-pii@default+agent": {
+   "leak_covered": 0.44163719050025263,
+   "leak_uncovered": 0.9112457203055043
+  }
+ },
+ "uncovered": 3797
+}

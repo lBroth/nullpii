@@ -19,9 +19,10 @@ export type AnthropicContentBlock =
   | { type: 'tool_result'; content?: string | AnthropicContentBlock[]; [k: string]: unknown }
   | { type: string; [k: string]: unknown };
 
-/** Top-level tool definition (request `tools[]`). Only `description`
- * carries free text the gateway needs to scrub; `input_schema` and
- * `name` are passed through untouched. */
+/** Top-level tool definition (request `tools[]`): a client tool, a server
+ * tool or an MCP toolset. `name`, `type` and a few settings meant for the
+ * upstream are structure; `input_schema` is walked as a JSON schema and
+ * every other field as data (`sanitizeToolDef`). */
 export interface AnthropicToolDef {
   name: string;
   description?: string;

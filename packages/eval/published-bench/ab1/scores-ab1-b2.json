@@ -1,0 +1,11464 @@
+{
+ "deberta": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    -0.030443637762040312,
+    -0.0007000532198364025
+   ],
+   "baseline_minus_tool_leak": [
+    -0.45078755632107587,
+    -0.4178782592857243
+   ],
+   "keep": [
+    0.7773416693756443,
+    0.7977629696709677
+   ],
+   "leak": [
+    0.5368646337944589,
+    0.5627370869249554
+   ]
+  },
+  "clean_docs_masked": 0.8392795883361921,
+  "diff_consistent_rate": 0.0,
+  "docs": 11606,
+  "docs_with_leak": 0.5498614958448753,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.5454545454545454,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.8,
+    5
+   ],
+   "AWS API Secret": [
+    0.4691358024691358,
+    162
+   ],
+   "Abstract API": [
+    0.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.8484848484848485,
+    33
+   ],
+   "Alibaba API": [
+    0.7379310344827587,
+    145
+   ],
+   "Anypoint API": [
+    0.7890625,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.59375,
+    32
+   ],
+   "Auth0 Domain URL": [
+    1.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    1.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.5170454545454546,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    1.0,
+    3
+   ],
+   "Azure Client Secret": [
+    0.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    0.25,
+    4
+   ],
+   "CloudFlare API Token": [
+    1.0,
+    3
+   ],
+   "Confluent API Key": [
+    0.5,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.7843137254901961,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.812760055478502,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.0,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.7215189873417721,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    1.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.5,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.5,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.6097560975609756,
+    41
+   ],
+   "Uri": [
+    0.7142857142857143,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.9590909090909091,
+    220
+   ]
+  },
+  "keep_rate": 0.7878251636878428,
+  "leak_by_category": {
+   "secret": [
+    0.5498614958448753,
+    5776
+   ]
+  },
+  "leak_rate": 0.5498614958448753,
+  "outside_per_1k": 201.49698521408527
+ },
+ "deberta+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    -0.035019698484866385,
+    -0.005127261980473729
+   ],
+   "baseline_minus_tool_leak": [
+    -0.4508219076005962,
+    -0.41823643468369964
+   ],
+   "keep": [
+    0.7820489643584501,
+    0.8020299054117163
+   ],
+   "leak": [
+    0.5375550038010064,
+    0.5629429760590696
+   ]
+  },
+  "clean_docs_masked": 0.8358490566037736,
+  "diff_consistent_rate": 0.0,
+  "docs": 11606,
+  "docs_with_leak": 0.550207756232687,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.5454545454545454,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.8,
+    5
+   ],
+   "AWS API Secret": [
+    0.4691358024691358,
+    162
+   ],
+   "Abstract API": [
+    0.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.8484848484848485,
+    33
+   ],
+   "Alibaba API": [
+    0.7379310344827587,
+    145
+   ],
+   "Anypoint API": [
+    0.8125,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.59375,
+    32
+   ],
+   "Auth0 Domain URL": [
+    1.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    1.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.5170454545454546,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    1.0,
+    3
+   ],
+   "Azure Client Secret": [
+    0.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    0.25,
+    4
+   ],
+   "CloudFlare API Token": [
+    1.0,
+    3
+   ],
+   "Confluent API Key": [
+    0.5,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.7843137254901961,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.8130374479889043,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.0,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.7215189873417721,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    1.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.5,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.5,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.6097560975609756,
+    41
+   ],
+   "Uri": [
+    0.7142857142857143,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.9590909090909091,
+    220
+   ]
+  },
+  "keep_rate": 0.792249159440807,
+  "leak_by_category": {
+   "secret": [
+    0.550207756232687,
+    5776
+   ]
+  },
+  "leak_rate": 0.550207756232687,
+  "outside_per_1k": 198.4177795648301
+ },
+ "deberta@default": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.05882301159900581,
+    0.09173584914305505
+   ],
+   "baseline_minus_tool_leak": [
+    -0.40916150104827403,
+    -0.3774758806744447
+   ],
+   "keep": [
+    0.6861983822673428,
+    0.7090752795929963
+   ],
+   "leak": [
+    0.495383981792068,
+    0.522243156019503
+   ]
+  },
+  "clean_docs_masked": 0.9228130360205832,
+  "diff_consistent_rate": 0.0,
+  "docs": 11606,
+  "docs_with_leak": 0.5088296398891967,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.2727272727272727,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.6,
+    5
+   ],
+   "AWS API Secret": [
+    0.37037037037037035,
+    162
+   ],
+   "Abstract API": [
+    0.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.7878787878787878,
+    33
+   ],
+   "Alibaba API": [
+    0.6068965517241379,
+    145
+   ],
+   "Anypoint API": [
+    0.7509765625,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.59375,
+    32
+   ],
+   "Auth0 Domain URL": [
+    1.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    1.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.44886363636363635,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    1.0,
+    3
+   ],
+   "Azure Client Secret": [
+    0.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    0.25,
+    4
+   ],
+   "CloudFlare API Token": [
+    1.0,
+    3
+   ],
+   "Confluent API Key": [
+    0.5,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.7254901960784313,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    0.0,
+    2
+   ],
+   "GCP API Key": [
+    0.5,
+    2
+   ],
+   "Generic Pattern": [
+    0.7004160887656034,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.0,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.6835443037974683,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    1.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.5,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.5,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.5853658536585366,
+    41
+   ],
+   "Uri": [
+    0.7142857142857143,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.9227272727272727,
+    220
+   ]
+  },
+  "keep_rate": 0.6972217306671386,
+  "leak_by_category": {
+   "secret": [
+    0.5088296398891967,
+    5776
+   ]
+  },
+  "leak_rate": 0.5088296398891967,
+  "outside_per_1k": 265.80902249155287
+ },
+ "deberta@default+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.054781637630316946,
+    0.08674782329636715
+   ],
+   "baseline_minus_tool_leak": [
+    -0.40952657375547685,
+    -0.377797080800537
+   ],
+   "keep": [
+    0.6906897319099815,
+    0.7130290087021126
+   ],
+   "leak": [
+    0.4959011874995517,
+    0.5227547709207343
+   ]
+  },
+  "clean_docs_masked": 0.9217838765008576,
+  "diff_consistent_rate": 0.0,
+  "docs": 11606,
+  "docs_with_leak": 0.5093490304709142,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.2727272727272727,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.6,
+    5
+   ],
+   "AWS API Secret": [
+    0.37037037037037035,
+    162
+   ],
+   "Abstract API": [
+    0.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.7878787878787878,
+    33
+   ],
+   "Alibaba API": [
+    0.6068965517241379,
+    145
+   ],
+   "Anypoint API": [
+    0.775390625,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.59375,
+    32
+   ],
+   "Auth0 Domain URL": [
+    1.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    1.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.44886363636363635,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    1.0,
+    3
+   ],
+   "Azure Client Secret": [
+    0.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    0.25,
+    4
+   ],
+   "CloudFlare API Token": [
+    1.0,
+    3
+   ],
+   "Confluent API Key": [
+    0.5,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.7254901960784313,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    0.0,
+    2
+   ],
+   "GCP API Key": [
+    0.5,
+    2
+   ],
+   "Generic Pattern": [
+    0.7004160887656034,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.0,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.6835443037974683,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    1.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.5,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.5,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.5853658536585366,
+    41
+   ],
+   "Uri": [
+    0.7142857142857143,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.9227272727272727,
+    220
+   ]
+  },
+  "keep_rate": 0.7016457264201026,
+  "leak_by_category": {
+   "secret": [
+    0.5093490304709142,
+    5776
+   ]
+  },
+  "leak_rate": 0.5093490304709142,
+  "outside_per_1k": 262.1323886728644
+ },
+ "ettin-68m": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.20833277836973899,
+    0.23848157112651908
+   ],
+   "baseline_minus_tool_leak": [
+    -0.22724976844947486,
+    -0.20059156097368677
+   ],
+   "keep": [
+    0.5359745825042296,
+    0.5626699866302124
+   ],
+   "leak": [
+    0.3180671531552895,
+    0.3420871751108473
+   ]
+  },
+  "clean_docs_masked": 0.9025728987993139,
+  "diff_consistent_rate": 1.0,
+  "docs": 11606,
+  "docs_with_leak": 0.3296398891966759,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.7272727272727273,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.2,
+    5
+   ],
+   "AWS API Secret": [
+    0.08641975308641975,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    1.0,
+    1
+   ],
+   "Airtable API": [
+    0.7878787878787878,
+    33
+   ],
+   "Alibaba API": [
+    0.7448275862068966,
+    145
+   ],
+   "Anypoint API": [
+    0.015625,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.15625,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.14204545454545456,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.6666666666666666,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    0.75,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.3333333333333333,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.23529411764705882,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.7350901525658807,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.0,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    1.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.1,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.4634146341463415,
+    41
+   ],
+   "Uri": [
+    0.23809523809523808,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.8590909090909091,
+    220
+   ]
+  },
+  "keep_rate": 0.5494602725181383,
+  "leak_by_category": {
+   "secret": [
+    0.3296398891966759,
+    5776
+   ]
+  },
+  "leak_rate": 0.3296398891966759,
+  "outside_per_1k": 133.26274391166237
+ },
+ "ettin-68m+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.20711400227530766,
+    0.23726505780124413
+   ],
+   "baseline_minus_tool_leak": [
+    -0.22749615033848428,
+    -0.20059156097368677
+   ],
+   "keep": [
+    0.537523723884559,
+    0.5638075842016788
+   ],
+   "leak": [
+    0.3182268151909218,
+    0.3421713998707981
+   ]
+  },
+  "clean_docs_masked": 0.8890222984562607,
+  "diff_consistent_rate": 1.0,
+  "docs": 11606,
+  "docs_with_leak": 0.3298130193905817,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.7272727272727273,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.2,
+    5
+   ],
+   "AWS API Secret": [
+    0.08641975308641975,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    1.0,
+    1
+   ],
+   "Airtable API": [
+    0.7878787878787878,
+    33
+   ],
+   "Alibaba API": [
+    0.7448275862068966,
+    145
+   ],
+   "Anypoint API": [
+    0.015625,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.15625,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.14204545454545456,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.6666666666666666,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    0.75,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.3333333333333333,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.23529411764705882,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.7370319001386962,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.0,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    1.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.1,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.4634146341463415,
+    41
+   ],
+   "Uri": [
+    0.23809523809523808,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.8590909090909091,
+    220
+   ]
+  },
+  "keep_rate": 0.5506989913289684,
+  "leak_by_category": {
+   "secret": [
+    0.3298130193905817,
+    5776
+   ]
+  },
+  "leak_rate": 0.3298130193905817,
+  "outside_per_1k": 121.96548934556533
+ },
+ "ettin-68m@default": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.10022389441568191,
+    0.13018933277225198
+   ],
+   "baseline_minus_tool_leak": [
+    -0.5450829305972885,
+    -0.5185808489980742
+   ],
+   "keep": [
+    0.6449321097739091,
+    0.6692112107211701
+   ],
+   "leak": [
+    0.6360305971831902,
+    0.6598148807364668
+   ]
+  },
+  "clean_docs_masked": 0.7632933104631218,
+  "diff_consistent_rate": 1.0,
+  "docs": 11606,
+  "docs_with_leak": 0.6475069252077562,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.7272727272727273,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.8,
+    5
+   ],
+   "AWS API Secret": [
+    0.30864197530864196,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    1.0,
+    1
+   ],
+   "Airtable API": [
+    0.9393939393939394,
+    33
+   ],
+   "Alibaba API": [
+    0.8482758620689655,
+    145
+   ],
+   "Anypoint API": [
+    0.0458984375,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.28125,
+    32
+   ],
+   "Auth0 Domain URL": [
+    1.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.38636363636363635,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    1.0,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.3333333333333333,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.5294117647058824,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.8507628294036061,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.012658227848101266,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    1.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.5,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.3,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.7317073170731707,
+    41
+   ],
+   "Uri": [
+    0.8095238095238095,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.9045454545454545,
+    220
+   ]
+  },
+  "keep_rate": 0.6572288090603433,
+  "leak_by_category": {
+   "secret": [
+    0.6475069252077562,
+    5776
+   ]
+  },
+  "leak_rate": 0.6475069252077562,
+  "outside_per_1k": 83.82497026793804
+ },
+ "ettin-68m@default+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.09881551425206915,
+    0.1285964438240022
+   ],
+   "baseline_minus_tool_leak": [
+    -0.5450829305972885,
+    -0.5185808489980742
+   ],
+   "keep": [
+    0.6466389601086715,
+    0.6708688386484905
+   ],
+   "leak": [
+    0.6360305971831902,
+    0.6598148807364668
+   ]
+  },
+  "clean_docs_masked": 0.7413379073756432,
+  "diff_consistent_rate": 1.0,
+  "docs": 11606,
+  "docs_with_leak": 0.6475069252077562,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.8181818181818182,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.8,
+    5
+   ],
+   "AWS API Secret": [
+    0.30864197530864196,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    1.0,
+    1
+   ],
+   "Airtable API": [
+    0.9393939393939394,
+    33
+   ],
+   "Alibaba API": [
+    0.8482758620689655,
+    145
+   ],
+   "Anypoint API": [
+    0.0458984375,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.28125,
+    32
+   ],
+   "Auth0 Domain URL": [
+    1.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.38636363636363635,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    1.0,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.3333333333333333,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.5294117647058824,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.8529819694868238,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.012658227848101266,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    1.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.5,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.3,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.7317073170731707,
+    41
+   ],
+   "Uri": [
+    0.8095238095238095,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.9045454545454545,
+    220
+   ]
+  },
+  "keep_rate": 0.6586444877012918,
+  "leak_by_category": {
+   "secret": [
+    0.6475069252077562,
+    5776
+   ]
+  },
+  "leak_rate": 0.6475069252077562,
+  "outside_per_1k": 73.97730388002847
+ },
+ "gliner-onnx-pii-fp32": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.3058788935546775,
+    0.33871750916350035
+   ],
+   "baseline_minus_tool_leak": [
+    -0.20729030401782164,
+    -0.18245257533052756
+   ],
+   "keep": [
+    0.4352247724319782,
+    0.4628636197103572
+   ],
+   "leak": [
+    0.29859107511806376,
+    0.3213453482218615
+   ]
+  },
+  "clean_docs_masked": 0.9967409948542024,
+  "diff_consistent_rate": 0.8571428571428571,
+  "docs": 11606,
+  "docs_with_leak": 0.31007617728531855,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.7272727272727273,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.0,
+    5
+   ],
+   "AWS API Secret": [
+    0.5679012345679012,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.7272727272727273,
+    33
+   ],
+   "Alibaba API": [
+    0.6620689655172414,
+    145
+   ],
+   "Anypoint API": [
+    0.3251953125,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.6875,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.25,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.625,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.0,
+    3
+   ],
+   "Azure Client Secret": [
+    0.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    0.75,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.3333333333333333,
+    3
+   ],
+   "Confluent API Key": [
+    0.5,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.6078431372549019,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    0.5,
+    2
+   ],
+   "GCP API Key": [
+    0.5,
+    2
+   ],
+   "Generic Pattern": [
+    0.43828016643550627,
+    3605
+   ],
+   "Gitlab API Key": [
+    1.0,
+    2
+   ],
+   "Host API Key": [
+    0.9,
+    10
+   ],
+   "Jdbc Token": [
+    0.0,
+    1
+   ],
+   "Lob API Key": [
+    0.8481012658227848,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    0.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.5,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.6,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    0.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.5365853658536586,
+    41
+   ],
+   "Uri": [
+    0.38095238095238093,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.5681818181818182,
+    220
+   ]
+  },
+  "keep_rate": 0.4496549283312688,
+  "leak_by_category": {
+   "secret": [
+    0.31007617728531855,
+    5776
+   ]
+  },
+  "leak_rate": 0.31007617728531855,
+  "outside_per_1k": 163.6890398230562
+ },
+ "gliner-onnx-pii-fp32+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.3034343755846692,
+    0.3368701190913903
+   ],
+   "baseline_minus_tool_leak": [
+    -0.2085277173938329,
+    -0.18346475965615802
+   ],
+   "keep": [
+    0.43753950020470506,
+    0.46526685478437024
+   ],
+   "leak": [
+    0.2997567763331433,
+    0.3228045776349031
+   ]
+  },
+  "clean_docs_masked": 0.9965694682675815,
+  "diff_consistent_rate": 0.8571428571428571,
+  "docs": 11606,
+  "docs_with_leak": 0.3112880886426593,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.7272727272727273,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.0,
+    5
+   ],
+   "AWS API Secret": [
+    0.5802469135802469,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.7272727272727273,
+    33
+   ],
+   "Alibaba API": [
+    0.6758620689655173,
+    145
+   ],
+   "Anypoint API": [
+    0.3251953125,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.6875,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.25,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.6306818181818182,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.0,
+    3
+   ],
+   "Azure Client Secret": [
+    0.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    0.75,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.3333333333333333,
+    3
+   ],
+   "Confluent API Key": [
+    0.5,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.6078431372549019,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    0.5,
+    2
+   ],
+   "GCP API Key": [
+    0.5,
+    2
+   ],
+   "Generic Pattern": [
+    0.440499306518724,
+    3605
+   ],
+   "Gitlab API Key": [
+    1.0,
+    2
+   ],
+   "Host API Key": [
+    0.9,
+    10
+   ],
+   "Jdbc Token": [
+    0.0,
+    1
+   ],
+   "Lob API Key": [
+    0.8481012658227848,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    0.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.5,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.7,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    0.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.5365853658536586,
+    41
+   ],
+   "Uri": [
+    0.38095238095238093,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.5681818181818182,
+    220
+   ]
+  },
+  "keep_rate": 0.45213236595292866,
+  "leak_by_category": {
+   "secret": [
+    0.3112880886426593,
+    5776
+   ]
+  },
+  "leak_rate": 0.3112880886426593,
+  "outside_per_1k": 158.10800360904275
+ },
+ "gliner-onnx-pii-fp32@default": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.007486541571988292,
+    0.03681507474779418
+   ],
+   "baseline_minus_tool_leak": [
+    -0.5799886736060184,
+    -0.5538929473939661
+   ],
+   "keep": [
+    0.7398299128558394,
+    0.760763129313697
+   ],
+   "leak": [
+    0.670384532068503,
+    0.6940830432519295
+   ]
+  },
+  "clean_docs_masked": 0.9224699828473414,
+  "diff_consistent_rate": 1.0,
+  "docs": 11606,
+  "docs_with_leak": 0.6824792243767313,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.9090909090909091,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.0,
+    5
+   ],
+   "AWS API Secret": [
+    0.9259259259259259,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    1.0,
+    1
+   ],
+   "Airtable API": [
+    0.9090909090909091,
+    33
+   ],
+   "Alibaba API": [
+    0.8896551724137931,
+    145
+   ],
+   "Anypoint API": [
+    0.873046875,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.90625,
+    32
+   ],
+   "Auth0 Domain URL": [
+    1.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    1.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.875,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    1.0,
+    3
+   ],
+   "Azure Client Secret": [
+    0.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.6666666666666666,
+    3
+   ],
+   "Confluent API Key": [
+    0.5,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.8431372549019608,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.6901525658807213,
+    3605
+   ],
+   "Gitlab API Key": [
+    1.0,
+    2
+   ],
+   "Host API Key": [
+    0.9,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.9746835443037974,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    0.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    1.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.5,
+    2
+   ],
+   "Sparkpost API Key": [
+    1.0,
+    10
+   ],
+   "Sugester API Domain": [
+    1.0,
+    1
+   ],
+   "Telegram API Token": [
+    0.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.926829268292683,
+    41
+   ],
+   "Uri": [
+    0.8095238095238095,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.6454545454545455,
+    220
+   ]
+  },
+  "keep_rate": 0.750486639532826,
+  "leak_by_category": {
+   "secret": [
+    0.6824792243767313,
+    5776
+   ]
+  },
+  "leak_rate": 0.6824792243767313,
+  "outside_per_1k": 60.628291981373565
+ },
+ "gliner-onnx-pii-fp32@default+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.005448525060900486,
+    0.03481246537498793
+   ],
+   "baseline_minus_tool_leak": [
+    -0.5804867909853921,
+    -0.5542442791311957
+   ],
+   "keep": [
+    0.7417587453069608,
+    0.7628360925075153
+   ],
+   "leak": [
+    0.670763078046591,
+    0.6944095635353708
+   ]
+  },
+  "clean_docs_masked": 0.9085763293310463,
+  "diff_consistent_rate": 1.0,
+  "docs": 11606,
+  "docs_with_leak": 0.6829986149584487,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.9090909090909091,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.0,
+    5
+   ],
+   "AWS API Secret": [
+    0.9382716049382716,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    1.0,
+    1
+   ],
+   "Airtable API": [
+    0.9090909090909091,
+    33
+   ],
+   "Alibaba API": [
+    0.896551724137931,
+    145
+   ],
+   "Anypoint API": [
+    0.873046875,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.90625,
+    32
+   ],
+   "Auth0 Domain URL": [
+    1.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    1.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.8806818181818182,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    1.0,
+    3
+   ],
+   "Azure Client Secret": [
+    0.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.6666666666666666,
+    3
+   ],
+   "Confluent API Key": [
+    0.5,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.8431372549019608,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.6920943134535368,
+    3605
+   ],
+   "Gitlab API Key": [
+    1.0,
+    2
+   ],
+   "Host API Key": [
+    0.9,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.9746835443037974,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    0.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    1.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.5,
+    2
+   ],
+   "Sparkpost API Key": [
+    1.0,
+    10
+   ],
+   "Sugester API Domain": [
+    1.0,
+    1
+   ],
+   "Telegram API Token": [
+    0.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.926829268292683,
+    41
+   ],
+   "Uri": [
+    0.8095238095238095,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.6454545454545455,
+    220
+   ]
+  },
+  "keep_rate": 0.7524331976641302,
+  "leak_by_category": {
+   "secret": [
+    0.6829986149584487,
+    5776
+   ]
+  },
+  "leak_rate": 0.6829986149584487,
+  "outside_per_1k": 56.669889895750224
+ },
+ "gliner-pii-large-v1": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.0904652052610208,
+    0.12106456484563712
+   ],
+   "baseline_minus_tool_leak": [
+    -0.1089000226328168,
+    -0.08612997296447435
+   ],
+   "keep": [
+    0.6545911632808041,
+    0.6785809272977358
+   ],
+   "leak": [
+    0.20274657184069553,
+    0.22297722731632408
+   ]
+  },
+  "clean_docs_masked": 0.9408233276157805,
+  "diff_consistent_rate": 1.0,
+  "docs": 11606,
+  "docs_with_leak": 0.21277700831024932,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 1.0,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.0,
+    5
+   ],
+   "AWS API Secret": [
+    0.7098765432098766,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.7878787878787878,
+    33
+   ],
+   "Alibaba API": [
+    0.8206896551724138,
+    145
+   ],
+   "Anypoint API": [
+    0.6650390625,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.71875,
+    32
+   ],
+   "Auth0 Domain URL": [
+    1.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    1.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.7045454545454546,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    1.0,
+    3
+   ],
+   "Azure Client Secret": [
+    0.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.6666666666666666,
+    3
+   ],
+   "Confluent API Key": [
+    0.5,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.8627450980392157,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    0.0,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.6535367545076283,
+    3605
+   ],
+   "Gitlab API Key": [
+    1.0,
+    2
+   ],
+   "Host API Key": [
+    0.8,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.8987341772151899,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.6,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.8536585365853658,
+    41
+   ],
+   "Uri": [
+    0.7619047619047619,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.5227272727272727,
+    220
+   ]
+  },
+  "keep_rate": 0.6664307202265086,
+  "leak_by_category": {
+   "secret": [
+    0.21277700831024932,
+    5776
+   ]
+  },
+  "leak_rate": 0.21277700831024932,
+  "outside_per_1k": 90.14329370702802
+ },
+ "gliner-pii-large-v1+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.08974802394011339,
+    0.12029626944544489
+   ],
+   "baseline_minus_tool_leak": [
+    -0.1089000226328168,
+    -0.08612997296447435
+   ],
+   "keep": [
+    0.6552442580670178,
+    0.6791274214508054
+   ],
+   "leak": [
+    0.20274657184069553,
+    0.22297722731632408
+   ]
+  },
+  "clean_docs_masked": 0.9245283018867925,
+  "diff_consistent_rate": 1.0,
+  "docs": 11606,
+  "docs_with_leak": 0.21277700831024932,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 1.0,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.0,
+    5
+   ],
+   "AWS API Secret": [
+    0.7098765432098766,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.7878787878787878,
+    33
+   ],
+   "Alibaba API": [
+    0.8206896551724138,
+    145
+   ],
+   "Anypoint API": [
+    0.6650390625,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.71875,
+    32
+   ],
+   "Auth0 Domain URL": [
+    1.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    1.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.7045454545454546,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    1.0,
+    3
+   ],
+   "Azure Client Secret": [
+    0.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.6666666666666666,
+    3
+   ],
+   "Confluent API Key": [
+    0.5,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.8627450980392157,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    0.0,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.6546463245492372,
+    3605
+   ],
+   "Gitlab API Key": [
+    1.0,
+    2
+   ],
+   "Host API Key": [
+    0.8,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.8987341772151899,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.6,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.8536585365853658,
+    41
+   ],
+   "Uri": [
+    0.7619047619047619,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.5227272727272727,
+    220
+   ]
+  },
+  "keep_rate": 0.6671385595469829,
+  "leak_by_category": {
+   "secret": [
+    0.21277700831024932,
+    5776
+   ]
+  },
+  "leak_rate": 0.21277700831024932,
+  "outside_per_1k": 86.37741405026763
+ },
+ "gliner-pii-large-v1@default": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.03187979176159556,
+    0.058205311718069544
+   ],
+   "baseline_minus_tool_leak": [
+    -0.3257304477560023,
+    -0.3012419899833785
+   ],
+   "keep": [
+    0.7164145423325848,
+    0.7395300650403801
+   ],
+   "leak": [
+    0.4166991431970795,
+    0.44090136504317334
+   ]
+  },
+  "clean_docs_masked": 0.825728987993139,
+  "diff_consistent_rate": 1.0,
+  "docs": 11606,
+  "docs_with_leak": 0.42884349030470914,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 1.0,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.2,
+    5
+   ],
+   "AWS API Secret": [
+    0.8024691358024691,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.8787878787878788,
+    33
+   ],
+   "Alibaba API": [
+    0.9448275862068966,
+    145
+   ],
+   "Anypoint API": [
+    0.75390625,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.84375,
+    32
+   ],
+   "Auth0 Domain URL": [
+    1.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.8011363636363636,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.6666666666666666,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.3333333333333333,
+    3
+   ],
+   "Confluent API Key": [
+    0.5,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.6666666666666666,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.707628294036061,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.9240506329113924,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.5,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.7,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.5609756097560976,
+    41
+   ],
+   "Uri": [
+    0.6190476190476191,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.6272727272727273,
+    220
+   ]
+  },
+  "keep_rate": 0.7273049017872942,
+  "leak_by_category": {
+   "secret": [
+    0.42884349030470914,
+    5776
+   ]
+  },
+  "leak_rate": 0.42884349030470914,
+  "outside_per_1k": 40.68642798882742
+ },
+ "gliner-pii-large-v1@default+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.031762965340173706,
+    0.05788548702499021
+   ],
+   "baseline_minus_tool_leak": [
+    -0.3258515578207032,
+    -0.30127367238658787
+   ],
+   "keep": [
+    0.7168795541526471,
+    0.7398894715946599
+   ],
+   "leak": [
+    0.41675319095596064,
+    0.44103626018428477
+   ]
+  },
+  "clean_docs_masked": 0.8072041166380789,
+  "diff_consistent_rate": 1.0,
+  "docs": 11606,
+  "docs_with_leak": 0.42901662049861494,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 1.0,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.2,
+    5
+   ],
+   "AWS API Secret": [
+    0.8024691358024691,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.8787878787878788,
+    33
+   ],
+   "Alibaba API": [
+    0.9448275862068966,
+    145
+   ],
+   "Anypoint API": [
+    0.75390625,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.84375,
+    32
+   ],
+   "Auth0 Domain URL": [
+    1.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.8011363636363636,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.6666666666666666,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.3333333333333333,
+    3
+   ],
+   "Confluent API Key": [
+    0.5,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.6666666666666666,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.7081830790568655,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.9240506329113924,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.5,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.7,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.5609756097560976,
+    41
+   ],
+   "Uri": [
+    0.6190476190476191,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.6272727272727273,
+    220
+   ]
+  },
+  "keep_rate": 0.7276588214475314,
+  "leak_by_category": {
+   "secret": [
+    0.42901662049861494,
+    5776
+   ]
+  },
+  "leak_rate": 0.42901662049861494,
+  "outside_per_1k": 39.38419474787282
+ },
+ "gliner-stream-pii": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.17459752019432617,
+    0.20690560030427774
+   ],
+   "baseline_minus_tool_leak": [
+    -0.13900445544740037,
+    -0.11559078102927936
+   ],
+   "keep": [
+    0.5695655966809915,
+    0.5943965016108215
+   ],
+   "leak": [
+    0.23217622727370554,
+    0.2540471168936002
+   ]
+  },
+  "clean_docs_masked": 0.9994854202401372,
+  "diff_consistent_rate": 0.14285714285714285,
+  "docs": 11606,
+  "docs_with_leak": 0.24307479224376732,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.6363636363636364,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.0,
+    5
+   ],
+   "AWS API Secret": [
+    0.7098765432098766,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    1.0,
+    1
+   ],
+   "Airtable API": [
+    0.6666666666666666,
+    33
+   ],
+   "Alibaba API": [
+    0.7241379310344828,
+    145
+   ],
+   "Anypoint API": [
+    0.8251953125,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.4375,
+    32
+   ],
+   "Auth0 Domain URL": [
+    1.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.75,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.6761363636363636,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    1.0,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.6666666666666666,
+    3
+   ],
+   "Confluent API Key": [
+    0.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.7058823529411765,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.48904299583911237,
+    3605
+   ],
+   "Gitlab API Key": [
+    1.0,
+    2
+   ],
+   "Host API Key": [
+    0.7,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.9746835443037974,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    0.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    0.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.6,
+    10
+   ],
+   "Sugester API Domain": [
+    1.0,
+    1
+   ],
+   "Telegram API Token": [
+    0.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.7073170731707317,
+    41
+   ],
+   "Uri": [
+    0.5714285714285714,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.509090909090909,
+    220
+   ]
+  },
+  "keep_rate": 0.5818439214298354,
+  "leak_by_category": {
+   "secret": [
+    0.24307479224376732,
+    5776
+   ]
+  },
+  "leak_rate": 0.24307479224376732,
+  "outside_per_1k": 145.12930107439047
+ },
+ "gliner-stream-pii+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.17103972651563934,
+    0.2038066185553059
+   ],
+   "baseline_minus_tool_leak": [
+    -0.13994343110671809,
+    -0.11662750229606561
+   ],
+   "keep": [
+    0.5730801589654466,
+    0.5975616299743338
+   ],
+   "leak": [
+    0.23301091360007334,
+    0.2546912579035651
+   ]
+  },
+  "clean_docs_masked": 0.9991423670668954,
+  "diff_consistent_rate": 0.14285714285714285,
+  "docs": 11606,
+  "docs_with_leak": 0.2439404432132964,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.6363636363636364,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.0,
+    5
+   ],
+   "AWS API Secret": [
+    0.7222222222222222,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    1.0,
+    1
+   ],
+   "Airtable API": [
+    0.6666666666666666,
+    33
+   ],
+   "Alibaba API": [
+    0.7241379310344828,
+    145
+   ],
+   "Anypoint API": [
+    0.828125,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.4375,
+    32
+   ],
+   "Auth0 Domain URL": [
+    1.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.75,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.6761363636363636,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    1.0,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.6666666666666666,
+    3
+   ],
+   "Confluent API Key": [
+    0.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.7843137254901961,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.4915395284327323,
+    3605
+   ],
+   "Gitlab API Key": [
+    1.0,
+    2
+   ],
+   "Host API Key": [
+    0.7,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.9746835443037974,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    0.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    0.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.6,
+    10
+   ],
+   "Sugester API Domain": [
+    1.0,
+    1
+   ],
+   "Telegram API Token": [
+    0.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.7073170731707317,
+    41
+   ],
+   "Uri": [
+    0.5714285714285714,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.509090909090909,
+    220
+   ]
+  },
+  "keep_rate": 0.5850291983719695,
+  "leak_by_category": {
+   "secret": [
+    0.2439404432132964,
+    5776
+   ]
+  },
+  "leak_rate": 0.2439404432132964,
+  "outside_per_1k": 134.40974192961033
+ },
+ "gliner-stream-pii@default": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    -0.04526547461258587,
+    -0.01676326866671181
+   ],
+   "baseline_minus_tool_leak": [
+    -0.5465054101918206,
+    -0.5195017183811192
+   ],
+   "keep": [
+    0.7940058267736908,
+    0.8141316034883188
+   ],
+   "leak": [
+    0.6355578334332898,
+    0.6610627949020466
+   ]
+  },
+  "clean_docs_masked": 0.9375643224699829,
+  "diff_consistent_rate": 0.8571428571428571,
+  "docs": 11606,
+  "docs_with_leak": 0.6483725761772853,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 1.0,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.4,
+    5
+   ],
+   "AWS API Secret": [
+    0.8827160493827161,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    1.0,
+    1
+   ],
+   "Airtable API": [
+    0.9090909090909091,
+    33
+   ],
+   "Alibaba API": [
+    0.9448275862068966,
+    145
+   ],
+   "Anypoint API": [
+    0.9443359375,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.90625,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.5,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.8863636363636364,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    1.0,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.6666666666666666,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.8431372549019608,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.7406380027739251,
+    3605
+   ],
+   "Gitlab API Key": [
+    1.0,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    1.0,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.8,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.8048780487804879,
+    41
+   ],
+   "Uri": [
+    0.8095238095238095,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.8590909090909091,
+    220
+   ]
+  },
+  "keep_rate": 0.8037515483985135,
+  "leak_by_category": {
+   "secret": [
+    0.6483725761772853,
+    5776
+   ]
+  },
+  "leak_rate": 0.6483725761772853,
+  "outside_per_1k": 45.862686596998536
+ },
+ "gliner-stream-pii@default+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    -0.04798273873187626,
+    -0.019771439035323357
+   ],
+   "baseline_minus_tool_leak": [
+    -0.5466981943250215,
+    -0.5196765638180089
+   ],
+   "keep": [
+    0.7971509390580377,
+    0.8166170485495918
+   ],
+   "leak": [
+    0.6357415301497192,
+    0.6612401870271455
+   ]
+  },
+  "clean_docs_masked": 0.9113207547169812,
+  "diff_consistent_rate": 0.8571428571428571,
+  "docs": 11606,
+  "docs_with_leak": 0.6485457063711911,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 1.0,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.4,
+    5
+   ],
+   "AWS API Secret": [
+    0.8888888888888888,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    1.0,
+    1
+   ],
+   "Airtable API": [
+    0.9090909090909091,
+    33
+   ],
+   "Alibaba API": [
+    0.9448275862068966,
+    145
+   ],
+   "Anypoint API": [
+    0.947265625,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.90625,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.5,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.8863636363636364,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    1.0,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.6666666666666666,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.8823529411764706,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.7434119278779473,
+    3605
+   ],
+   "Gitlab API Key": [
+    1.0,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    1.0,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.8,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.8048780487804879,
+    41
+   ],
+   "Uri": [
+    0.8095238095238095,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.8590909090909091,
+    220
+   ]
+  },
+  "keep_rate": 0.8065829056804106,
+  "leak_by_category": {
+   "secret": [
+    0.6485457063711911,
+    5776
+   ]
+  },
+  "leak_rate": 0.6485457063711911,
+  "outside_per_1k": 36.67862996554906
+ },
+ "nemotron-pii-nemo": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.2119020088783716,
+    0.24543001038901152
+   ],
+   "baseline_minus_tool_leak": [
+    -0.20171383068126392,
+    -0.1753149248852121
+   ],
+   "keep": [
+    0.5318205187192945,
+    0.5573873616164956
+   ],
+   "leak": [
+    0.29159406225704554,
+    0.31561718317117277
+   ]
+  },
+  "clean_docs_masked": 0.9879931389365352,
+  "diff_consistent_rate": 0.5714285714285714,
+  "docs": 11606,
+  "docs_with_leak": 0.30384349030470914,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.7272727272727273,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.6,
+    5
+   ],
+   "AWS API Secret": [
+    0.3271604938271605,
+    162
+   ],
+   "Abstract API": [
+    0.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.7272727272727273,
+    33
+   ],
+   "Alibaba API": [
+    0.5793103448275863,
+    145
+   ],
+   "Anypoint API": [
+    0.1669921875,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.28125,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.75,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.3125,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.3333333333333333,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    0.25,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.0,
+    3
+   ],
+   "Confluent API Key": [
+    0.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.5882352941176471,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    0.5,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.6687933425797503,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    0.8,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.13924050632911392,
+    79
+   ],
+   "Mite API Key": [
+    0.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.3,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    0.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.9024390243902439,
+    41
+   ],
+   "Uri": [
+    0.7619047619047619,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.6727272727272727,
+    220
+   ]
+  },
+  "keep_rate": 0.5446823571049372,
+  "leak_by_category": {
+   "secret": [
+    0.30384349030470914,
+    5776
+   ]
+  },
+  "leak_rate": 0.30384349030470914,
+  "outside_per_1k": 141.83450874522723
+ },
+ "nemotron-pii-nemo+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.21034263319443963,
+    0.24355739997618153
+   ],
+   "baseline_minus_tool_leak": [
+    -0.20186831249964232,
+    -0.17548973780210173
+   ],
+   "keep": [
+    0.5330488210433437,
+    0.55876742413248
+   ],
+   "leak": [
+    0.2919149901022718,
+    0.31571743290278453
+   ]
+  },
+  "clean_docs_masked": 0.9866209262435678,
+  "diff_consistent_rate": 0.5714285714285714,
+  "docs": 11606,
+  "docs_with_leak": 0.30401662049861494,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.7272727272727273,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.6,
+    5
+   ],
+   "AWS API Secret": [
+    0.3271604938271605,
+    162
+   ],
+   "Abstract API": [
+    0.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.7272727272727273,
+    33
+   ],
+   "Alibaba API": [
+    0.5793103448275863,
+    145
+   ],
+   "Anypoint API": [
+    0.1669921875,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.28125,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.75,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.3125,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.3333333333333333,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    0.25,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.0,
+    3
+   ],
+   "Confluent API Key": [
+    0.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.5882352941176471,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    0.5,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.6710124826629681,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    0.8,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.13924050632911392,
+    79
+   ],
+   "Mite API Key": [
+    0.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.3,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    0.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.9024390243902439,
+    41
+   ],
+   "Uri": [
+    0.7619047619047619,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.6727272727272727,
+    220
+   ]
+  },
+  "keep_rate": 0.5460980357458857,
+  "leak_by_category": {
+   "secret": [
+    0.30401662049861494,
+    5776
+   ]
+  },
+  "leak_rate": 0.30401662049861494,
+  "outside_per_1k": 135.42303135886047
+ },
+ "nemotron-pii-nemo@default": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.11004689943706479,
+    0.14014619457695382
+   ],
+   "baseline_minus_tool_leak": [
+    -0.3228486996778219,
+    -0.29505947091470197
+   ],
+   "keep": [
+    0.6349860696361469,
+    0.659669139993721
+   ],
+   "leak": [
+    0.4110253118172296,
+    0.437353433745315
+   ]
+  },
+  "clean_docs_masked": 0.9485420240137221,
+  "diff_consistent_rate": 0.7142857142857143,
+  "docs": 11606,
+  "docs_with_leak": 0.4245152354570637,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.7272727272727273,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.6,
+    5
+   ],
+   "AWS API Secret": [
+    0.4506172839506173,
+    162
+   ],
+   "Abstract API": [
+    0.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.8787878787878788,
+    33
+   ],
+   "Alibaba API": [
+    0.8275862068965517,
+    145
+   ],
+   "Anypoint API": [
+    0.3349609375,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.28125,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.5,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.2897727272727273,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.3333333333333333,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    0.75,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.3333333333333333,
+    3
+   ],
+   "Confluent API Key": [
+    0.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.6274509803921569,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    0.5,
+    2
+   ],
+   "Generic Pattern": [
+    0.7511789181692095,
+    3605
+   ],
+   "Gitlab API Key": [
+    1.0,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.4810126582278481,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.3,
+    10
+   ],
+   "Sugester API Domain": [
+    1.0,
+    1
+   ],
+   "Telegram API Token": [
+    0.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.8292682926829268,
+    41
+   ],
+   "Uri": [
+    0.7619047619047619,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.7772727272727272,
+    220
+   ]
+  },
+  "keep_rate": 0.6476729782339409,
+  "leak_by_category": {
+   "secret": [
+    0.4245152354570637,
+    5776
+   ]
+  },
+  "leak_rate": 0.4245152354570637,
+  "outside_per_1k": 93.66699872781436
+ },
+ "nemotron-pii-nemo@default+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.10848682590437676,
+    0.13800728279350177
+   ],
+   "baseline_minus_tool_leak": [
+    -0.3230586367655333,
+    -0.29539866880005056
+   ],
+   "keep": [
+    0.6368607464833491,
+    0.66137737645031
+   ],
+   "leak": [
+    0.41139568613213773,
+    0.43754498882535625
+   ]
+  },
+  "clean_docs_masked": 0.9415094339622642,
+  "diff_consistent_rate": 0.7142857142857143,
+  "docs": 11606,
+  "docs_with_leak": 0.4246883656509695,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.7272727272727273,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.6,
+    5
+   ],
+   "AWS API Secret": [
+    0.4506172839506173,
+    162
+   ],
+   "Abstract API": [
+    0.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.8787878787878788,
+    33
+   ],
+   "Alibaba API": [
+    0.8275862068965517,
+    145
+   ],
+   "Anypoint API": [
+    0.3359375,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.28125,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.5,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.2897727272727273,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.3333333333333333,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    0.75,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.3333333333333333,
+    3
+   ],
+   "Confluent API Key": [
+    0.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.6274509803921569,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    0.5,
+    2
+   ],
+   "Generic Pattern": [
+    0.7533980582524272,
+    3605
+   ],
+   "Gitlab API Key": [
+    1.0,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.4810126582278481,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.3,
+    10
+   ],
+   "Sugester API Domain": [
+    1.0,
+    1
+   ],
+   "Telegram API Token": [
+    0.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.8292682926829268,
+    41
+   ],
+   "Uri": [
+    0.7619047619047619,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.7772727272727272,
+    220
+   ]
+  },
+  "keep_rate": 0.6492656167050079,
+  "leak_by_category": {
+   "secret": [
+    0.4246883656509695,
+    5776
+   ]
+  },
+  "leak_rate": 0.4246883656509695,
+  "outside_per_1k": 85.96475615865155
+ },
+ "nemotron-pii-raw": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.2118568652916945,
+    0.24437757796780685
+   ],
+   "baseline_minus_tool_leak": [
+    -0.22082680469845892,
+    -0.19467024632674643
+   ],
+   "keep": [
+    0.5318983861361107,
+    0.5574120221242043
+   ],
+   "leak": [
+    0.31126932556331055,
+    0.3354208315488648
+   ]
+  },
+  "clean_docs_masked": 0.9849056603773585,
+  "diff_consistent_rate": 0.7142857142857143,
+  "docs": 11606,
+  "docs_with_leak": 0.32323407202216065,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.8181818181818182,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.0,
+    5
+   ],
+   "AWS API Secret": [
+    0.2839506172839506,
+    162
+   ],
+   "Abstract API": [
+    0.0,
+    1
+   ],
+   "Agora API": [
+    1.0,
+    1
+   ],
+   "Airtable API": [
+    0.8181818181818182,
+    33
+   ],
+   "Alibaba API": [
+    0.7655172413793103,
+    145
+   ],
+   "Anypoint API": [
+    0.3759765625,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.46875,
+    32
+   ],
+   "Auth0 Domain URL": [
+    1.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.5,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.5170454545454546,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.3333333333333333,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    0.5,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.3333333333333333,
+    3
+   ],
+   "Confluent API Key": [
+    0.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.8235294117647058,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    0.5,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.5908460471567267,
+    3605
+   ],
+   "Gitlab API Key": [
+    1.0,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.3924050632911392,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.3,
+    10
+   ],
+   "Sugester API Domain": [
+    1.0,
+    1
+   ],
+   "Telegram API Token": [
+    0.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.5121951219512195,
+    41
+   ],
+   "Uri": [
+    0.7142857142857143,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.5727272727272728,
+    220
+   ]
+  },
+  "keep_rate": 0.5439745177844629,
+  "leak_by_category": {
+   "secret": [
+    0.32323407202216065,
+    5776
+   ]
+  },
+  "leak_rate": 0.32323407202216065,
+  "outside_per_1k": 144.75040668360992
+ },
+ "nemotron-pii-raw+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.21043306002754505,
+    0.24315378694581286
+   ],
+   "baseline_minus_tool_leak": [
+    -0.22108315442050577,
+    -0.19479511355392337
+   ],
+   "keep": [
+    0.5335312321580893,
+    0.5589548862113211
+   ],
+   "leak": [
+    0.31130900732742156,
+    0.3356032760597498
+   ]
+  },
+  "clean_docs_masked": 0.9840480274442539,
+  "diff_consistent_rate": 0.7142857142857143,
+  "docs": 11606,
+  "docs_with_leak": 0.3234072022160665,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.8181818181818182,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.0,
+    5
+   ],
+   "AWS API Secret": [
+    0.29012345679012347,
+    162
+   ],
+   "Abstract API": [
+    0.0,
+    1
+   ],
+   "Agora API": [
+    1.0,
+    1
+   ],
+   "Airtable API": [
+    0.8181818181818182,
+    33
+   ],
+   "Alibaba API": [
+    0.7655172413793103,
+    145
+   ],
+   "Anypoint API": [
+    0.3759765625,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.46875,
+    32
+   ],
+   "Auth0 Domain URL": [
+    1.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.5,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.5170454545454546,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.3333333333333333,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    0.5,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.3333333333333333,
+    3
+   ],
+   "Confluent API Key": [
+    0.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.8235294117647058,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    0.5,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.5930651872399445,
+    3605
+   ],
+   "Gitlab API Key": [
+    1.0,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.3924050632911392,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.3,
+    10
+   ],
+   "Sugester API Domain": [
+    1.0,
+    1
+   ],
+   "Telegram API Token": [
+    0.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.5121951219512195,
+    41
+   ],
+   "Uri": [
+    0.7142857142857143,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.5727272727272728,
+    220
+   ]
+  },
+  "keep_rate": 0.54556715625553,
+  "leak_by_category": {
+   "secret": [
+    0.3234072022160665,
+    5776
+   ]
+  },
+  "leak_rate": 0.3234072022160665,
+  "outside_per_1k": 140.0818178678881
+ },
+ "nemotron-pii-raw@default": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.0593406891151829,
+    0.08761214031228773
+   ],
+   "baseline_minus_tool_leak": [
+    -0.3049327166436248,
+    -0.2787021669200247
+   ],
+   "keep": [
+    0.6878117958345622,
+    0.7105372759691535
+   ],
+   "leak": [
+    0.3944444378939624,
+    0.4204532408615136
+   ]
+  },
+  "clean_docs_masked": 0.8939965694682676,
+  "diff_consistent_rate": 1.0,
+  "docs": 11606,
+  "docs_with_leak": 0.407202216066482,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 1.0,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.2,
+    5
+   ],
+   "AWS API Secret": [
+    0.3950617283950617,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    1.0,
+    1
+   ],
+   "Airtable API": [
+    0.8484848484848485,
+    33
+   ],
+   "Alibaba API": [
+    0.903448275862069,
+    145
+   ],
+   "Anypoint API": [
+    0.546875,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.5625,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.25,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.5625,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.3333333333333333,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.6666666666666666,
+    3
+   ],
+   "Confluent API Key": [
+    0.5,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.7254901960784313,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.7533980582524272,
+    3605
+   ],
+   "Gitlab API Key": [
+    1.0,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.6329113924050633,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.5,
+    10
+   ],
+   "Sugester API Domain": [
+    1.0,
+    1
+   ],
+   "Telegram API Token": [
+    0.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.8048780487804879,
+    41
+   ],
+   "Uri": [
+    0.7142857142857143,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.7136363636363636,
+    220
+   ]
+  },
+  "keep_rate": 0.6988143691382056,
+  "leak_by_category": {
+   "secret": [
+    0.407202216066482,
+    5776
+   ]
+  },
+  "leak_rate": 0.407202216066482,
+  "outside_per_1k": 86.1262699833316
+ },
+ "nemotron-pii-raw@default+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.05721793685843872,
+    0.08579041870262445
+   ],
+   "baseline_minus_tool_leak": [
+    -0.30538318132663,
+    -0.2787021669200247
+   ],
+   "keep": [
+    0.6895330972473549,
+    0.7123586804583016
+   ],
+   "leak": [
+    0.39461930783885685,
+    0.42063420120857614
+   ]
+  },
+  "clean_docs_masked": 0.8778730703259006,
+  "diff_consistent_rate": 1.0,
+  "docs": 11606,
+  "docs_with_leak": 0.4073753462603878,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 1.0,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.2,
+    5
+   ],
+   "AWS API Secret": [
+    0.4012345679012346,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    1.0,
+    1
+   ],
+   "Airtable API": [
+    0.8484848484848485,
+    33
+   ],
+   "Alibaba API": [
+    0.903448275862069,
+    145
+   ],
+   "Anypoint API": [
+    0.546875,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.5625,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.25,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.5625,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.3333333333333333,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.6666666666666666,
+    3
+   ],
+   "Confluent API Key": [
+    0.5,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.7254901960784313,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.7561719833564494,
+    3605
+   ],
+   "Gitlab API Key": [
+    1.0,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.6329113924050633,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.5,
+    10
+   ],
+   "Sugester API Domain": [
+    1.0,
+    1
+   ],
+   "Telegram API Token": [
+    0.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.8048780487804879,
+    41
+   ],
+   "Uri": [
+    0.7142857142857143,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.7136363636363636,
+    220
+   ]
+  },
+  "keep_rate": 0.7007609272695098,
+  "leak_by_category": {
+   "secret": [
+    0.4073753462603878,
+    5776
+   ]
+  },
+  "leak_rate": 0.4073753462603878,
+  "outside_per_1k": 75.0358889356367
+ },
+ "nullpii-H3b-cuda-agent": {
+  "ci": {
+   "keep": [
+    0.7609949844225432,
+    0.7837779734969846
+   ],
+   "leak": [
+    0.10730506017767341,
+    0.12365995477571591
+   ]
+  },
+  "clean_docs_masked": 0.7205831903945111,
+  "diff_consistent_rate": 0.8571428571428571,
+  "docs": 11606,
+  "docs_with_leak": 0.11530470914127423,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.7272727272727273,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.0,
+    5
+   ],
+   "AWS API Secret": [
+    0.6790123456790124,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.7575757575757576,
+    33
+   ],
+   "Alibaba API": [
+    0.8413793103448276,
+    145
+   ],
+   "Anypoint API": [
+    0.8603515625,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.375,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.25,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.4034090909090909,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.6666666666666666,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.6666666666666666,
+    3
+   ],
+   "Confluent API Key": [
+    0.5,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.5490196078431373,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    0.5,
+    2
+   ],
+   "Generic Pattern": [
+    0.7653259361997226,
+    3605
+   ],
+   "Gitlab API Key": [
+    1.0,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    1.0,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.6,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    0.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.6097560975609756,
+    41
+   ],
+   "Uri": [
+    0.3333333333333333,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.9318181818181818,
+    220
+   ]
+  },
+  "keep_rate": 0.7720757388072907,
+  "leak_by_category": {
+   "secret": [
+    0.11530470914127423,
+    5776
+   ]
+  },
+  "leak_rate": 0.11530470914127423,
+  "outside_per_1k": 116.77539218676714
+ },
+ "nullpii-H3b-cuda-agent+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.0,
+    0.0
+   ],
+   "baseline_minus_tool_leak": [
+    0.0,
+    0.0
+   ],
+   "keep": [
+    0.7609949844225432,
+    0.7837779734969846
+   ],
+   "leak": [
+    0.10730506017767341,
+    0.12365995477571591
+   ]
+  },
+  "clean_docs_masked": 0.7205831903945111,
+  "diff_consistent_rate": 0.8571428571428571,
+  "docs": 11606,
+  "docs_with_leak": 0.11530470914127423,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.7272727272727273,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.0,
+    5
+   ],
+   "AWS API Secret": [
+    0.6790123456790124,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.7575757575757576,
+    33
+   ],
+   "Alibaba API": [
+    0.8413793103448276,
+    145
+   ],
+   "Anypoint API": [
+    0.8603515625,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.375,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.25,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.4034090909090909,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.6666666666666666,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.6666666666666666,
+    3
+   ],
+   "Confluent API Key": [
+    0.5,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.5490196078431373,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    0.5,
+    2
+   ],
+   "Generic Pattern": [
+    0.7653259361997226,
+    3605
+   ],
+   "Gitlab API Key": [
+    1.0,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    1.0,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.6,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    0.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.6097560975609756,
+    41
+   ],
+   "Uri": [
+    0.3333333333333333,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.9318181818181818,
+    220
+   ]
+  },
+  "keep_rate": 0.7720757388072907,
+  "leak_by_category": {
+   "secret": [
+    0.11530470914127423,
+    5776
+   ]
+  },
+  "leak_rate": 0.11530470914127423,
+  "outside_per_1k": 116.77539218676714
+ },
+ "openai-privacy-filter": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.012563449440521027,
+    0.04186797661366977
+   ],
+   "baseline_minus_tool_leak": [
+    0.02467208131499445,
+    0.04247043833911581
+   ],
+   "keep": [
+    0.733775912901841,
+    0.7565567635527762
+   ],
+   "leak": [
+    0.07470998697540808,
+    0.0887882285031128
+   ]
+  },
+  "clean_docs_masked": 0.5910806174957118,
+  "diff_consistent_rate": 0.5714285714285714,
+  "docs": 11606,
+  "docs_with_leak": 0.08189058171745152,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.45454545454545453,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.2,
+    5
+   ],
+   "AWS API Secret": [
+    0.5555555555555556,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.9090909090909091,
+    33
+   ],
+   "Alibaba API": [
+    0.7862068965517242,
+    145
+   ],
+   "Anypoint API": [
+    0.3115234375,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.34375,
+    32
+   ],
+   "Auth0 Domain URL": [
+    1.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.75,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.5738636363636364,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    1.0,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.6666666666666666,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.8235294117647058,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    0.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.8754507628294036,
+    3605
+   ],
+   "Gitlab API Key": [
+    1.0,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.569620253164557,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    1.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.5,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.926829268292683,
+    41
+   ],
+   "Uri": [
+    0.38095238095238093,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.9636363636363636,
+    220
+   ]
+  },
+  "keep_rate": 0.7453548044593877,
+  "leak_by_category": {
+   "secret": [
+    0.08189058171745152,
+    5776
+   ]
+  },
+  "leak_rate": 0.08189058171745152,
+  "outside_per_1k": 124.99766954963398
+ },
+ "openai-privacy-filter+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.012006099681095245,
+    0.04115594339803778
+   ],
+   "baseline_minus_tool_leak": [
+    0.02467208131499445,
+    0.04247043833911581
+   ],
+   "keep": [
+    0.7341961551916144,
+    0.7571225787336558
+   ],
+   "leak": [
+    0.07470998697540808,
+    0.0887882285031128
+   ]
+  },
+  "clean_docs_masked": 0.5886792452830188,
+  "diff_consistent_rate": 0.5714285714285714,
+  "docs": 11606,
+  "docs_with_leak": 0.08189058171745152,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.45454545454545453,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.2,
+    5
+   ],
+   "AWS API Secret": [
+    0.5555555555555556,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.9090909090909091,
+    33
+   ],
+   "Alibaba API": [
+    0.7862068965517242,
+    145
+   ],
+   "Anypoint API": [
+    0.3115234375,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.34375,
+    32
+   ],
+   "Auth0 Domain URL": [
+    1.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.75,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.5738636363636364,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    1.0,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.6666666666666666,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.8235294117647058,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    0.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.8762829403606103,
+    3605
+   ],
+   "Gitlab API Key": [
+    1.0,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.569620253164557,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    1.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.5,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.926829268292683,
+    41
+   ],
+   "Uri": [
+    0.38095238095238093,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.9636363636363636,
+    220
+   ]
+  },
+  "keep_rate": 0.7458856839497434,
+  "leak_by_category": {
+   "secret": [
+    0.08189058171745152,
+    5776
+   ]
+  },
+  "leak_rate": 0.08189058171745152,
+  "outside_per_1k": 122.44118952337149
+ },
+ "openai-privacy-filter@default": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    -0.10249427487980382,
+    -0.07558849628938905
+   ],
+   "baseline_minus_tool_leak": [
+    -0.02955866736369244,
+    -0.00909890553097562
+   ],
+   "keep": [
+    0.8530075140204236,
+    0.8707123493335782
+   ],
+   "leak": [
+    0.12621026382807612,
+    0.14293322114552165
+   ]
+  },
+  "clean_docs_masked": 0.3102915951972556,
+  "diff_consistent_rate": 0.8571428571428571,
+  "docs": 11606,
+  "docs_with_leak": 0.13469529085872575,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.5454545454545454,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.6,
+    5
+   ],
+   "AWS API Secret": [
+    0.7469135802469136,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    1.0,
+    1
+   ],
+   "Airtable API": [
+    0.9393939393939394,
+    33
+   ],
+   "Alibaba API": [
+    0.8827586206896552,
+    145
+   ],
+   "Anypoint API": [
+    0.5595703125,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.625,
+    32
+   ],
+   "Auth0 Domain URL": [
+    1.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.75,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.7784090909090909,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    1.0,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.6666666666666666,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.9215686274509803,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.9509015256588073,
+    3605
+   ],
+   "Gitlab API Key": [
+    1.0,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.7088607594936709,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    1.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.9,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.926829268292683,
+    41
+   ],
+   "Uri": [
+    0.7619047619047619,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.9954545454545455,
+    220
+   ]
+  },
+  "keep_rate": 0.8616174128472837,
+  "leak_by_category": {
+   "secret": [
+    0.13469529085872575,
+    5776
+   ]
+  },
+  "leak_rate": 0.13469529085872575,
+  "outside_per_1k": 88.43058086483381
+ },
+ "openai-privacy-filter@default+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    -0.10284217158524962,
+    -0.07587736736606826
+   ],
+   "baseline_minus_tool_leak": [
+    -0.02955866736369244,
+    -0.00909890553097562
+   ],
+   "keep": [
+    0.8531215796418298,
+    0.8707154676879657
+   ],
+   "leak": [
+    0.12621026382807612,
+    0.14293322114552165
+   ]
+  },
+  "clean_docs_masked": 0.3077186963979417,
+  "diff_consistent_rate": 0.8571428571428571,
+  "docs": 11606,
+  "docs_with_leak": 0.13469529085872575,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.5454545454545454,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.6,
+    5
+   ],
+   "AWS API Secret": [
+    0.7469135802469136,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    1.0,
+    1
+   ],
+   "Airtable API": [
+    0.9393939393939394,
+    33
+   ],
+   "Alibaba API": [
+    0.8827586206896552,
+    145
+   ],
+   "Anypoint API": [
+    0.5595703125,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.625,
+    32
+   ],
+   "Auth0 Domain URL": [
+    1.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.75,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.7784090909090909,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    1.0,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.6666666666666666,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.9215686274509803,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.9511789181692094,
+    3605
+   ],
+   "Gitlab API Key": [
+    1.0,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.7088607594936709,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    1.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.9,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.926829268292683,
+    41
+   ],
+   "Uri": [
+    0.7619047619047619,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.9954545454545455,
+    220
+   ]
+  },
+  "keep_rate": 0.8617943726774022,
+  "leak_by_category": {
+   "secret": [
+    0.13469529085872575,
+    5776
+   ]
+  },
+  "leak_rate": 0.13469529085872575,
+  "outside_per_1k": 87.43375674813537
+ },
+ "openmed-large": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    -0.018879571303120138,
+    0.006685252373963632
+   ],
+   "baseline_minus_tool_leak": [
+    -0.2929409441784963,
+    -0.2638725587456491
+   ],
+   "keep": [
+    0.767936849583553,
+    0.7892376079984693
+   ],
+   "leak": [
+    0.38161998335661673,
+    0.4067594678789093
+   ]
+  },
+  "clean_docs_masked": 0.7205831903945111,
+  "diff_consistent_rate": 1.0,
+  "docs": 11606,
+  "docs_with_leak": 0.39387119113573404,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 1.0,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.4,
+    5
+   ],
+   "AWS API Secret": [
+    0.30864197530864196,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.9090909090909091,
+    33
+   ],
+   "Alibaba API": [
+    0.8482758620689655,
+    145
+   ],
+   "Anypoint API": [
+    0.6953125,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.3125,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.25,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.30113636363636365,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.6666666666666666,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    0.75,
+    4
+   ],
+   "CloudFlare API Token": [
+    1.0,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.27450980392156865,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.8443828016643551,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    1.0,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    1.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.5,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.5121951219512195,
+    41
+   ],
+   "Uri": [
+    0.5238095238095238,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.95,
+    220
+   ]
+  },
+  "keep_rate": 0.7786232525216776,
+  "leak_by_category": {
+   "secret": [
+    0.39387119113573404,
+    5776
+   ]
+  },
+  "leak_rate": 0.39387119113573404,
+  "outside_per_1k": 97.95316944773484
+ },
+ "openmed-large+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    -0.022541588699586505,
+    0.0026400202258572564
+   ],
+   "baseline_minus_tool_leak": [
+    -0.2944550958938864,
+    -0.26557443321282653
+   ],
+   "keep": [
+    0.7718717616115126,
+    0.7929182837152327
+   ],
+   "leak": [
+    0.38309209376670367,
+    0.4080361869412607
+   ]
+  },
+  "clean_docs_masked": 0.6890222984562607,
+  "diff_consistent_rate": 1.0,
+  "docs": 11606,
+  "docs_with_leak": 0.39508310249307477,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 1.0,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.4,
+    5
+   ],
+   "AWS API Secret": [
+    0.3148148148148148,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.9090909090909091,
+    33
+   ],
+   "Alibaba API": [
+    0.8482758620689655,
+    145
+   ],
+   "Anypoint API": [
+    0.6962890625,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.3125,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.25,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.32954545454545453,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.6666666666666666,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    0.75,
+    4
+   ],
+   "CloudFlare API Token": [
+    1.0,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.35294117647058826,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.8471567267683773,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    1.0,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    1.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.5,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.5121951219512195,
+    41
+   ],
+   "Uri": [
+    0.5238095238095238,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.95,
+    220
+   ]
+  },
+  "keep_rate": 0.7823394089541674,
+  "leak_by_category": {
+   "secret": [
+    0.39508310249307477,
+    5776
+   ]
+  },
+  "leak_rate": 0.39508310249307477,
+  "outside_per_1k": 88.85944779954552
+ },
+ "openmed-large@default": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.19824034445765834,
+    0.2317790832040733
+   ],
+   "baseline_minus_tool_leak": [
+    -0.6755984080715893,
+    -0.6499449096397586
+   ],
+   "keep": [
+    0.543254102717934,
+    0.5693626656280688
+   ],
+   "leak": [
+    0.7680319987323404,
+    0.7894939694582986
+   ]
+  },
+  "clean_docs_masked": 0.9300171526586621,
+  "diff_consistent_rate": 1.0,
+  "docs": 11606,
+  "docs_with_leak": 0.7782202216066482,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.9090909090909091,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.8,
+    5
+   ],
+   "AWS API Secret": [
+    0.5493827160493827,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    1.0,
+    1
+   ],
+   "Airtable API": [
+    0.7878787878787878,
+    33
+   ],
+   "Alibaba API": [
+    0.8758620689655172,
+    145
+   ],
+   "Anypoint API": [
+    0.18359375,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.78125,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.4772727272727273,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.0,
+    3
+   ],
+   "Azure Client Secret": [
+    0.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.0,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.2549019607843137,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    0.0,
+    2
+   ],
+   "GCP API Key": [
+    0.5,
+    2
+   ],
+   "Generic Pattern": [
+    0.6471567267683772,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    0.9,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.0,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    1.0,
+    1
+   ],
+   "Slack Token V2": [
+    1.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.6,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.2682926829268293,
+    41
+   ],
+   "Uri": [
+    0.38095238095238093,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.95,
+    220
+   ]
+  },
+  "keep_rate": 0.5577773845337108,
+  "leak_by_category": {
+   "secret": [
+    0.7782202216066482,
+    5776
+   ]
+  },
+  "leak_rate": 0.7782202216066482,
+  "outside_per_1k": 115.84724828429201
+ },
+ "openmed-large@default+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.1947416187961807,
+    0.22809984152625065
+   ],
+   "baseline_minus_tool_leak": [
+    -0.6761128046003089,
+    -0.6506511902560501
+   ],
+   "keep": [
+    0.5473673368008883,
+    0.5728640951092726
+   ],
+   "leak": [
+    0.7687240410680484,
+    0.7900196350334423
+   ]
+  },
+  "clean_docs_masked": 0.9238421955403088,
+  "diff_consistent_rate": 1.0,
+  "docs": 11606,
+  "docs_with_leak": 0.7787396121883656,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.9090909090909091,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.8,
+    5
+   ],
+   "AWS API Secret": [
+    0.5555555555555556,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    1.0,
+    1
+   ],
+   "Airtable API": [
+    0.7878787878787878,
+    33
+   ],
+   "Alibaba API": [
+    0.8758620689655172,
+    145
+   ],
+   "Anypoint API": [
+    0.1845703125,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.78125,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.5056818181818182,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.0,
+    3
+   ],
+   "Azure Client Secret": [
+    0.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.0,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.3333333333333333,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    0.0,
+    2
+   ],
+   "GCP API Key": [
+    0.5,
+    2
+   ],
+   "Generic Pattern": [
+    0.6496532593619972,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    0.9,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.0,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    1.0,
+    1
+   ],
+   "Slack Token V2": [
+    1.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.6,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.2682926829268293,
+    41
+   ],
+   "Uri": [
+    0.38095238095238093,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.95,
+    220
+   ]
+  },
+  "keep_rate": 0.5613165811360821,
+  "leak_by_category": {
+   "secret": [
+    0.7787396121883656,
+    5776
+   ]
+  },
+  "leak_rate": 0.7787396121883656,
+  "outside_per_1k": 108.62422959795614
+ },
+ "openmed-pf-multi-v2": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.10738773476898016,
+    0.1376666527232899
+   ],
+   "baseline_minus_tool_leak": [
+    -0.25426693703042624,
+    -0.22717713774513143
+   ],
+   "keep": [
+    0.6371634606670605,
+    0.6619564590200802
+   ],
+   "leak": [
+    0.3436527193673285,
+    0.3684498152437165
+   ]
+  },
+  "clean_docs_masked": 0.8734133790737564,
+  "diff_consistent_rate": 0.8571428571428571,
+  "docs": 11606,
+  "docs_with_leak": 0.3557825484764543,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.5454545454545454,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.2,
+    5
+   ],
+   "AWS API Secret": [
+    0.4691358024691358,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.8181818181818182,
+    33
+   ],
+   "Alibaba API": [
+    0.7931034482758621,
+    145
+   ],
+   "Anypoint API": [
+    0.193359375,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.4375,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.25,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.48295454545454547,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.3333333333333333,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.0,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.19607843137254902,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    0.5,
+    2
+   ],
+   "Generic Pattern": [
+    0.788626907073509,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.20253164556962025,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    1.0,
+    1
+   ],
+   "Slack Token V2": [
+    1.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.8,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.6341463414634146,
+    41
+   ],
+   "Uri": [
+    0.6190476190476191,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.9363636363636364,
+    220
+   ]
+  },
+  "keep_rate": 0.6497964961953636,
+  "leak_by_category": {
+   "secret": [
+    0.3557825484764543,
+    5776
+   ]
+  },
+  "leak_rate": 0.3557825484764543,
+  "outside_per_1k": 131.15640118496435
+ },
+ "openmed-pf-multi-v2+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.10588254664665651,
+    0.13642104697384513
+   ],
+   "baseline_minus_tool_leak": [
+    -0.25445901042917723,
+    -0.22731074252561645
+   ],
+   "keep": [
+    0.6389584053735494,
+    0.6635764038649277
+   ],
+   "leak": [
+    0.34386765196033875,
+    0.3684498152437165
+   ]
+  },
+  "clean_docs_masked": 0.8641509433962264,
+  "diff_consistent_rate": 0.8571428571428571,
+  "docs": 11606,
+  "docs_with_leak": 0.3559556786703601,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.5454545454545454,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.2,
+    5
+   ],
+   "AWS API Secret": [
+    0.4691358024691358,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.8181818181818182,
+    33
+   ],
+   "Alibaba API": [
+    0.7931034482758621,
+    145
+   ],
+   "Anypoint API": [
+    0.193359375,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.4375,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.25,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.48295454545454547,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.3333333333333333,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.0,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.19607843137254902,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    0.5,
+    2
+   ],
+   "Generic Pattern": [
+    0.7908460471567268,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.20253164556962025,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    1.0,
+    1
+   ],
+   "Slack Token V2": [
+    1.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.8,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.6341463414634146,
+    41
+   ],
+   "Uri": [
+    0.6190476190476191,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.9363636363636364,
+    220
+   ]
+  },
+  "keep_rate": 0.6512121748363121,
+  "leak_by_category": {
+   "secret": [
+    0.3559556786703601,
+    5776
+   ]
+  },
+  "leak_rate": 0.3559556786703601,
+  "outside_per_1k": 120.85347210836917
+ },
+ "openmed-pf-multi-v2@default": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.059658623072005465,
+    0.08958935269649669
+   ],
+   "baseline_minus_tool_leak": [
+    -0.30040045263782383,
+    -0.2738731143787186
+   ],
+   "keep": [
+    0.6856097447112265,
+    0.7097058855381484
+   ],
+   "leak": [
+    0.38962137769868666,
+    0.41466959915121876
+   ]
+  },
+  "clean_docs_masked": 0.8197255574614065,
+  "diff_consistent_rate": 0.8571428571428571,
+  "docs": 11606,
+  "docs_with_leak": 0.4020083102493075,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.6363636363636364,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.2,
+    5
+   ],
+   "AWS API Secret": [
+    0.5370370370370371,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.8484848484848485,
+    33
+   ],
+   "Alibaba API": [
+    0.8068965517241379,
+    145
+   ],
+   "Anypoint API": [
+    0.318359375,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.53125,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.25,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.5284090909090909,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.3333333333333333,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.0,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.23529411764705882,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    0.5,
+    2
+   ],
+   "Generic Pattern": [
+    0.8180305131761443,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.2911392405063291,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    1.0,
+    1
+   ],
+   "Slack Token V2": [
+    1.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.8,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.6341463414634146,
+    41
+   ],
+   "Uri": [
+    0.6666666666666666,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.95,
+    220
+   ]
+  },
+  "keep_rate": 0.6979295699876128,
+  "leak_by_category": {
+   "secret": [
+    0.4020083102493075,
+    5776
+   ]
+  },
+  "leak_rate": 0.4020083102493075,
+  "outside_per_1k": 116.52719521857574
+ },
+ "openmed-pf-multi-v2@default+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.058526235170915486,
+    0.08811751346593437
+   ],
+   "baseline_minus_tool_leak": [
+    -0.30067107877211474,
+    -0.2740698643233882
+   ],
+   "keep": [
+    0.6873083027048577,
+    0.7110589183322805
+   ],
+   "leak": [
+    0.3898834762641303,
+    0.4148243386429427
+   ]
+  },
+  "clean_docs_masked": 0.8032590051457976,
+  "diff_consistent_rate": 0.8571428571428571,
+  "docs": 11606,
+  "docs_with_leak": 0.4021814404432133,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.6363636363636364,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.2,
+    5
+   ],
+   "AWS API Secret": [
+    0.5370370370370371,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.8484848484848485,
+    33
+   ],
+   "Alibaba API": [
+    0.8068965517241379,
+    145
+   ],
+   "Anypoint API": [
+    0.318359375,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.53125,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.25,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.5284090909090909,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.3333333333333333,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.0,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.23529411764705882,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    0.5,
+    2
+   ],
+   "Generic Pattern": [
+    0.8202496532593619,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.2911392405063291,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    1.0,
+    1
+   ],
+   "Slack Token V2": [
+    1.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.8,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.6341463414634146,
+    41
+   ],
+   "Uri": [
+    0.6666666666666666,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.95,
+    220
+   ]
+  },
+  "keep_rate": 0.6993452486285613,
+  "leak_by_category": {
+   "secret": [
+    0.4021814404432133,
+    5776
+   ]
+  },
+  "leak_rate": 0.4021814404432133,
+  "outside_per_1k": 106.61161742481102
+ },
+ "openmed-small": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    -0.034496150920388796,
+    -0.010448632643431209
+   ],
+   "baseline_minus_tool_leak": [
+    -0.2163485640662047,
+    -0.1900145766215772
+   ],
+   "keep": [
+    0.7847478209585532,
+    0.8055783586333752
+   ],
+   "leak": [
+    0.3070420577789193,
+    0.33075554856783235
+   ]
+  },
+  "clean_docs_masked": 0.7123499142367067,
+  "diff_consistent_rate": 0.8571428571428571,
+  "docs": 11606,
+  "docs_with_leak": 0.3185595567867036,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 1.0,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.6,
+    5
+   ],
+   "AWS API Secret": [
+    0.37037037037037035,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.9393939393939394,
+    33
+   ],
+   "Alibaba API": [
+    0.8689655172413793,
+    145
+   ],
+   "Anypoint API": [
+    0.712890625,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.3125,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.5,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.38636363636363635,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    1.0,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    0.75,
+    4
+   ],
+   "CloudFlare API Token": [
+    1.0,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.49019607843137253,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.8515950069348127,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.9873417721518988,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    1.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.5,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.6,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.5853658536585366,
+    41
+   ],
+   "Uri": [
+    0.5714285714285714,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.9545454545454546,
+    220
+   ]
+  },
+  "keep_rate": 0.7949035568925854,
+  "leak_by_category": {
+   "secret": [
+    0.3185595567867036,
+    5776
+   ]
+  },
+  "leak_rate": 0.3185595567867036,
+  "outside_per_1k": 93.98996230981042
+ },
+ "openmed-small+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    -0.037908119506832025,
+    -0.014520766492858288
+   ],
+   "baseline_minus_tool_leak": [
+    -0.21639814709667649,
+    -0.1903648500666224
+   ],
+   "keep": [
+    0.7883750986621373,
+    0.8094217125030364
+   ],
+   "leak": [
+    0.30748075490955024,
+    0.33090337319494584
+   ]
+  },
+  "clean_docs_masked": 0.6795883361921098,
+  "diff_consistent_rate": 0.8571428571428571,
+  "docs": 11606,
+  "docs_with_leak": 0.3189058171745152,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 1.0,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.6,
+    5
+   ],
+   "AWS API Secret": [
+    0.3765432098765432,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.9393939393939394,
+    33
+   ],
+   "Alibaba API": [
+    0.8689655172413793,
+    145
+   ],
+   "Anypoint API": [
+    0.7138671875,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.3125,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.5,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.4147727272727273,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    1.0,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    0.75,
+    4
+   ],
+   "CloudFlare API Token": [
+    1.0,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.6274509803921569,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.8538141470180305,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.9873417721518988,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    1.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.5,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.6,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.5853658536585366,
+    41
+   ],
+   "Uri": [
+    0.5714285714285714,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.9545454545454546,
+    220
+   ]
+  },
+  "keep_rate": 0.7987966731551938,
+  "leak_by_category": {
+   "secret": [
+    0.3189058171745152,
+    5776
+   ]
+  },
+  "leak_rate": 0.3189058171745152,
+  "outside_per_1k": 85.44997488879667
+ },
+ "openmed-small@default": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.21235827600840218,
+    0.24484351018085493
+   ],
+   "baseline_minus_tool_leak": [
+    -0.47354886663031,
+    -0.4448687609439429
+   ],
+   "keep": [
+    0.5308784020628228,
+    0.5569648492793571
+   ],
+   "leak": [
+    0.5611324328248488,
+    0.5864222595689191
+   ]
+  },
+  "clean_docs_masked": 0.930188679245283,
+  "diff_consistent_rate": 0.8571428571428571,
+  "docs": 11606,
+  "docs_with_leak": 0.5740997229916898,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.9090909090909091,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.6,
+    5
+   ],
+   "AWS API Secret": [
+    0.4012345679012346,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.7878787878787878,
+    33
+   ],
+   "Alibaba API": [
+    0.8413793103448276,
+    145
+   ],
+   "Anypoint API": [
+    0.17578125,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.625,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.39204545454545453,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.0,
+    3
+   ],
+   "Azure Client Secret": [
+    0.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.0,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.19607843137254902,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    0.0,
+    2
+   ],
+   "GCP API Key": [
+    0.5,
+    2
+   ],
+   "Generic Pattern": [
+    0.6418862690707351,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    0.9,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.012658227848101266,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    1.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.5,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.4,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.2926829268292683,
+    41
+   ],
+   "Uri": [
+    0.5714285714285714,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.95,
+    220
+   ]
+  },
+  "keep_rate": 0.5439745177844629,
+  "leak_by_category": {
+   "secret": [
+    0.5740997229916898,
+    5776
+   ]
+  },
+  "leak_rate": 0.5740997229916898,
+  "outside_per_1k": 139.10844240641887
+ },
+ "openmed-small@default+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.20886883170241075,
+    0.24161356314212606
+   ],
+   "baseline_minus_tool_leak": [
+    -0.47394094239339074,
+    -0.44514892431460584
+   ],
+   "keep": [
+    0.5341308030499794,
+    0.5601485323811854
+   ],
+   "leak": [
+    0.5616655009116664,
+    0.5866809098806195
+   ]
+  },
+  "clean_docs_masked": 0.9259005145797599,
+  "diff_consistent_rate": 0.8571428571428571,
+  "docs": 11606,
+  "docs_with_leak": 0.5744459833795014,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.9090909090909091,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.6,
+    5
+   ],
+   "AWS API Secret": [
+    0.4074074074074074,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.7878787878787878,
+    33
+   ],
+   "Alibaba API": [
+    0.8413793103448276,
+    145
+   ],
+   "Anypoint API": [
+    0.1767578125,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.625,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.42045454545454547,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.0,
+    3
+   ],
+   "Azure Client Secret": [
+    0.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.0,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.27450980392156865,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    0.0,
+    2
+   ],
+   "GCP API Key": [
+    0.5,
+    2
+   ],
+   "Generic Pattern": [
+    0.6441054091539529,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    0.9,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.012658227848101266,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    1.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.5,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.4,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.2926829268292683,
+    41
+   ],
+   "Uri": [
+    0.5714285714285714,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.95,
+    220
+   ]
+  },
+  "keep_rate": 0.5473367545567156,
+  "leak_by_category": {
+   "secret": [
+    0.5744459833795014,
+    5776
+   ]
+  },
+  "leak_rate": 0.5744459833795014,
+  "outside_per_1k": 132.40712426525144
+ },
+ "pii-identifier": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.0016011445614032703,
+    0.029468750000000002
+   ],
+   "baseline_minus_tool_leak": [
+    -0.272759987104049,
+    -0.2457476846832848
+   ],
+   "keep": [
+    0.7452553220512448,
+    0.767478492070881
+   ],
+   "leak": [
+    0.3624183354365669,
+    0.38618885095877686
+   ]
+  },
+  "clean_docs_masked": 0.7574614065180103,
+  "diff_consistent_rate": 1.0,
+  "docs": 11606,
+  "docs_with_leak": 0.37413434903047094,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 1.0,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.4,
+    5
+   ],
+   "AWS API Secret": [
+    0.38271604938271603,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.8787878787878788,
+    33
+   ],
+   "Alibaba API": [
+    0.7931034482758621,
+    145
+   ],
+   "Anypoint API": [
+    0.3994140625,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.15625,
+    32
+   ],
+   "Auth0 Domain URL": [
+    1.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    1.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.4602272727272727,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    1.0,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    0.75,
+    4
+   ],
+   "CloudFlare API Token": [
+    1.0,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.8235294117647058,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.8812760055478502,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.7848101265822784,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.5,
+    10
+   ],
+   "Sugester API Domain": [
+    1.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.5609756097560976,
+    41
+   ],
+   "Uri": [
+    0.9047619047619048,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.9181818181818182,
+    220
+   ]
+  },
+  "keep_rate": 0.7563263139267387,
+  "leak_by_category": {
+   "secret": [
+    0.37413434903047094,
+    5776
+   ]
+  },
+  "leak_rate": 0.37413434903047094,
+  "outside_per_1k": 102.64962756680288
+ },
+ "pii-identifier+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    -0.0012418344512506977,
+    0.026586685940547083
+   ],
+   "baseline_minus_tool_leak": [
+    -0.27282738584439836,
+    -0.2459998393893287
+   ],
+   "keep": [
+    0.7481892605057954,
+    0.7704318658132487
+   ],
+   "leak": [
+    0.3626633854917346,
+    0.3864321929610552
+   ]
+  },
+  "clean_docs_masked": 0.7300171526586621,
+  "diff_consistent_rate": 1.0,
+  "docs": 11606,
+  "docs_with_leak": 0.37430747922437674,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 1.0,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.4,
+    5
+   ],
+   "AWS API Secret": [
+    0.38271604938271603,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.8787878787878788,
+    33
+   ],
+   "Alibaba API": [
+    0.7931034482758621,
+    145
+   ],
+   "Anypoint API": [
+    0.3994140625,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.15625,
+    32
+   ],
+   "Auth0 Domain URL": [
+    1.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    1.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.48863636363636365,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    1.0,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    0.75,
+    4
+   ],
+   "CloudFlare API Token": [
+    1.0,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.8431372549019608,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.8840499306518724,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.7848101265822784,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.5,
+    10
+   ],
+   "Sugester API Domain": [
+    1.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.5609756097560976,
+    41
+   ],
+   "Uri": [
+    0.9047619047619048,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.9181818181818182,
+    220
+   ]
+  },
+  "keep_rate": 0.7591576712086356,
+  "leak_by_category": {
+   "secret": [
+    0.37430747922437674,
+    5776
+   ]
+  },
+  "leak_rate": 0.37430747922437674,
+  "outside_per_1k": 91.33039789484893
+ },
+ "pii-identifier@default": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.05101228177584835,
+    0.08002524532766016
+   ],
+   "baseline_minus_tool_leak": [
+    -0.6634535583272194,
+    -0.6395390909144795
+   ],
+   "keep": [
+    0.6950091320216522,
+    0.7188817786344601
+   ],
+   "leak": [
+    0.7556551060663594,
+    0.7781960402147102
+   ]
+  },
+  "clean_docs_masked": 0.7404802744425386,
+  "diff_consistent_rate": 1.0,
+  "docs": 11606,
+  "docs_with_leak": 0.7669667590027701,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 1.0,
+  "keep_by_kind": {
+   "AWS API ID": [
+    1.0,
+    5
+   ],
+   "AWS API Secret": [
+    0.42592592592592593,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.8181818181818182,
+    33
+   ],
+   "Alibaba API": [
+    0.9379310344827586,
+    145
+   ],
+   "Anypoint API": [
+    0.3046875,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.53125,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.3977272727272727,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.6666666666666666,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.0,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.3137254901960784,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    0.5,
+    2
+   ],
+   "Generic Pattern": [
+    0.8482662968099861,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.012658227848101266,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    1.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.4,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.5609756097560976,
+    41
+   ],
+   "Uri": [
+    0.5714285714285714,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.9681818181818181,
+    220
+   ]
+  },
+  "keep_rate": 0.7069545213236595,
+  "leak_by_category": {
+   "secret": [
+    0.7669667590027701,
+    5776
+   ]
+  },
+  "leak_rate": 0.7669667590027701,
+  "outside_per_1k": 80.21849021284524
+ },
+ "pii-identifier@default+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.04971590160013693,
+    0.07862235643985863
+   ],
+   "baseline_minus_tool_leak": [
+    -0.6637569425254963,
+    -0.6395435219672977
+   ],
+   "keep": [
+    0.6966663732394366,
+    0.7208445003906094
+   ],
+   "leak": [
+    0.7558355888826365,
+    0.7782686883206162
+   ]
+  },
+  "clean_docs_masked": 0.7171526586620927,
+  "diff_consistent_rate": 1.0,
+  "docs": 11606,
+  "docs_with_leak": 0.7671398891966759,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 1.0,
+  "keep_by_kind": {
+   "AWS API ID": [
+    1.0,
+    5
+   ],
+   "AWS API Secret": [
+    0.42592592592592593,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.8181818181818182,
+    33
+   ],
+   "Alibaba API": [
+    0.9379310344827586,
+    145
+   ],
+   "Anypoint API": [
+    0.3046875,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.53125,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.3977272727272727,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.6666666666666666,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.0,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.3137254901960784,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    0.5,
+    2
+   ],
+   "Generic Pattern": [
+    0.8507628294036061,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.012658227848101266,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    1.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.4,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.5609756097560976,
+    41
+   ],
+   "Uri": [
+    0.5714285714285714,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.9681818181818181,
+    220
+   ]
+  },
+  "keep_rate": 0.7085471597947266,
+  "leak_by_category": {
+   "secret": [
+    0.7671398891966759,
+    5776
+   ]
+  },
+  "leak_rate": 0.7671398891966759,
+  "outside_per_1k": 70.46211981865605
+ },
+ "piiranha": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.029127599770610534,
+    0.06085038387358286
+   ],
+   "baseline_minus_tool_leak": [
+    -0.8180910463799578,
+    -0.7972616002049128
+   ],
+   "keep": [
+    0.7157267159971811,
+    0.739009893571479
+   ],
+   "leak": [
+    0.9168104714109527,
+    0.9302039037103333
+   ]
+  },
+  "clean_docs_masked": 0.9632933104631218,
+  "diff_consistent_rate": 0.7142857142857143,
+  "docs": 11606,
+  "docs_with_leak": 0.923303324099723,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.2727272727272727,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.2,
+    5
+   ],
+   "AWS API Secret": [
+    0.3333333333333333,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.7878787878787878,
+    33
+   ],
+   "Alibaba API": [
+    0.8551724137931035,
+    145
+   ],
+   "Anypoint API": [
+    0.419921875,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.71875,
+    32
+   ],
+   "Auth0 Domain URL": [
+    1.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.5,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.625,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.6666666666666666,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    0.25,
+    4
+   ],
+   "CloudFlare API Token": [
+    1.0,
+    3
+   ],
+   "Confluent API Key": [
+    0.5,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.5098039215686274,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    0.0,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.8280166435506241,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.5063291139240507,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    0.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.6,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.7073170731707317,
+    41
+   ],
+   "Uri": [
+    0.6666666666666666,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.9590909090909091,
+    220
+   ]
+  },
+  "keep_rate": 0.7273049017872942,
+  "leak_by_category": {
+   "secret": [
+    0.923303324099723,
+    5776
+   ]
+  },
+  "leak_rate": 0.923303324099723,
+  "outside_per_1k": 79.10865126602557
+ },
+ "piiranha+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.027983064145918328,
+    0.05914126694401668
+   ],
+   "baseline_minus_tool_leak": [
+    -0.8180910463799578,
+    -0.7972616002049128
+   ],
+   "keep": [
+    0.7171070320825175,
+    0.7401542651526932
+   ],
+   "leak": [
+    0.9168104714109527,
+    0.9302039037103333
+   ]
+  },
+  "clean_docs_masked": 0.962607204116638,
+  "diff_consistent_rate": 0.7142857142857143,
+  "docs": 11606,
+  "docs_with_leak": 0.923303324099723,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.2727272727272727,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.2,
+    5
+   ],
+   "AWS API Secret": [
+    0.3333333333333333,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.7878787878787878,
+    33
+   ],
+   "Alibaba API": [
+    0.8551724137931035,
+    145
+   ],
+   "Anypoint API": [
+    0.419921875,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.71875,
+    32
+   ],
+   "Auth0 Domain URL": [
+    1.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.5,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.6420454545454546,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.6666666666666666,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    0.25,
+    4
+   ],
+   "CloudFlare API Token": [
+    1.0,
+    3
+   ],
+   "Confluent API Key": [
+    0.5,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.5686274509803921,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    0.0,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.8282940360610264,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.5063291139240507,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    0.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.6,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.7073170731707317,
+    41
+   ],
+   "Uri": [
+    0.6666666666666666,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.9590909090909091,
+    220
+   ]
+  },
+  "keep_rate": 0.7285436205981243,
+  "leak_by_category": {
+   "secret": [
+    0.923303324099723,
+    5776
+   ]
+  },
+  "leak_rate": 0.923303324099723,
+  "outside_per_1k": 76.73835099958862
+ },
+ "piiranha@default": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    -0.21995861290162275,
+    -0.1967203067407803
+   ],
+   "baseline_minus_tool_leak": [
+    -0.8837316446844398,
+    -0.8670589859758734
+   ],
+   "keep": [
+    0.9772393982606207,
+    0.9844625615723938
+   ],
+   "leak": [
+    0.9880491093576336,
+    0.9930788054524697
+   ]
+  },
+  "clean_docs_masked": 0.45385934819897084,
+  "diff_consistent_rate": 1.0,
+  "docs": 11606,
+  "docs_with_leak": 0.9906509695290858,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.8181818181818182,
+  "keep_by_kind": {
+   "AWS API ID": [
+    1.0,
+    5
+   ],
+   "AWS API Secret": [
+    0.9506172839506173,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    1.0,
+    1
+   ],
+   "Airtable API": [
+    0.9696969696969697,
+    33
+   ],
+   "Alibaba API": [
+    0.993103448275862,
+    145
+   ],
+   "Anypoint API": [
+    0.98828125,
+    1024
+   ],
+   "Artifactory API Key": [
+    1.0,
+    32
+   ],
+   "Auth0 Domain URL": [
+    1.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    1.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.9659090909090909,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    1.0,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    1.0,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.9215686274509803,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.9800277392510403,
+    3605
+   ],
+   "Gitlab API Key": [
+    1.0,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    1.0,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    1.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.5,
+    2
+   ],
+   "Sparkpost API Key": [
+    1.0,
+    10
+   ],
+   "Sugester API Domain": [
+    1.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    1.0,
+    41
+   ],
+   "Uri": [
+    1.0,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.990909090909091,
+    220
+   ]
+  },
+  "keep_rate": 0.9810652981773138,
+  "leak_by_category": {
+   "secret": [
+    0.9906509695290858,
+    5776
+   ]
+  },
+  "leak_rate": 0.9906509695290858,
+  "outside_per_1k": 7.684367774602813
+ },
+ "piiranha@default+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    -0.21995861290162275,
+    -0.1967203067407803
+   ],
+   "baseline_minus_tool_leak": [
+    -0.8837316446844398,
+    -0.8670589859758734
+   ],
+   "keep": [
+    0.9772393982606207,
+    0.9844625615723938
+   ],
+   "leak": [
+    0.9880491093576336,
+    0.9930788054524697
+   ]
+  },
+  "clean_docs_masked": 0.45385934819897084,
+  "diff_consistent_rate": 1.0,
+  "docs": 11606,
+  "docs_with_leak": 0.9906509695290858,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.8181818181818182,
+  "keep_by_kind": {
+   "AWS API ID": [
+    1.0,
+    5
+   ],
+   "AWS API Secret": [
+    0.9506172839506173,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    1.0,
+    1
+   ],
+   "Airtable API": [
+    0.9696969696969697,
+    33
+   ],
+   "Alibaba API": [
+    0.993103448275862,
+    145
+   ],
+   "Anypoint API": [
+    0.98828125,
+    1024
+   ],
+   "Artifactory API Key": [
+    1.0,
+    32
+   ],
+   "Auth0 Domain URL": [
+    1.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    1.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.9659090909090909,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    1.0,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    1.0,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.9215686274509803,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    1.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.9800277392510403,
+    3605
+   ],
+   "Gitlab API Key": [
+    1.0,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    1.0,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    1.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.5,
+    2
+   ],
+   "Sparkpost API Key": [
+    1.0,
+    10
+   ],
+   "Sugester API Domain": [
+    1.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    1.0,
+    41
+   ],
+   "Uri": [
+    1.0,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.990909090909091,
+    220
+   ]
+  },
+  "keep_rate": 0.9810652981773138,
+  "leak_by_category": {
+   "secret": [
+    0.9906509695290858,
+    5776
+   ]
+  },
+  "leak_rate": 0.9906509695290858,
+  "outside_per_1k": 7.674116996360525
+ },
+ "presidio": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.08779267535288099,
+    0.11941191442208575
+   ],
+   "baseline_minus_tool_leak": [
+    -0.6813836259342951,
+    -0.6564193289615599
+   ],
+   "keep": [
+    0.655323977834551,
+    0.6824958771617045
+   ],
+   "leak": [
+    0.7731145711149084,
+    0.7951164212673014
+   ]
+  },
+  "clean_docs_masked": 0.8965694682675814,
+  "diff_consistent_rate": 1.0,
+  "docs": 11606,
+  "docs_with_leak": 0.7842797783933518,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.7272727272727273,
+  "keep_by_kind": {
+   "AWS API ID": [
+    1.0,
+    5
+   ],
+   "AWS API Secret": [
+    0.6111111111111112,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    1.0,
+    1
+   ],
+   "Airtable API": [
+    0.7878787878787878,
+    33
+   ],
+   "Alibaba API": [
+    0.9310344827586207,
+    145
+   ],
+   "Anypoint API": [
+    0.1640625,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.78125,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.5965909090909091,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.6666666666666666,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.0,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.23529411764705882,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    0.5,
+    2
+   ],
+   "GCP API Key": [
+    0.5,
+    2
+   ],
+   "Generic Pattern": [
+    0.808876560332871,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.0,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    1.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.6,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.5121951219512195,
+    41
+   ],
+   "Uri": [
+    0.6190476190476191,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.9863636363636363,
+    220
+   ]
+  },
+  "keep_rate": 0.669085117678287,
+  "leak_by_category": {
+   "secret": [
+    0.7842797783933518,
+    5776
+   ]
+  },
+  "leak_rate": 0.7842797783933518,
+  "outside_per_1k": 90.29494115764986
+ },
+ "presidio+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.08377246378443401,
+    0.11554913992791187
+   ],
+   "baseline_minus_tool_leak": [
+    -0.6874700135853263,
+    -0.6632047429706102
+   ],
+   "keep": [
+    0.6598637345174044,
+    0.6867992937517272
+   ],
+   "leak": [
+    0.779365973501707,
+    0.8011363675872935
+   ]
+  },
+  "clean_docs_masked": 0.8728987993138937,
+  "diff_consistent_rate": 1.0,
+  "docs": 11606,
+  "docs_with_leak": 0.7905124653739612,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.7272727272727273,
+  "keep_by_kind": {
+   "AWS API ID": [
+    1.0,
+    5
+   ],
+   "AWS API Secret": [
+    0.6172839506172839,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    1.0,
+    1
+   ],
+   "Airtable API": [
+    0.7878787878787878,
+    33
+   ],
+   "Alibaba API": [
+    0.9310344827586207,
+    145
+   ],
+   "Anypoint API": [
+    0.1708984375,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.78125,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.6022727272727273,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.6666666666666666,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.0,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.23529411764705882,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    0.5,
+    2
+   ],
+   "GCP API Key": [
+    0.5,
+    2
+   ],
+   "Generic Pattern": [
+    0.812760055478502,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.0,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    1.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.6,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.5121951219512195,
+    41
+   ],
+   "Uri": [
+    0.6190476190476191,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.9863636363636363,
+    220
+   ]
+  },
+  "keep_rate": 0.673155193771014,
+  "leak_by_category": {
+   "secret": [
+    0.7905124653739612,
+    5776
+   ]
+  },
+  "leak_rate": 0.7905124653739612,
+  "outside_per_1k": 81.21569873372778
+ },
+ "presidio@default": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.2048402897712871,
+    0.23872863832633948
+   ],
+   "baseline_minus_tool_leak": [
+    -0.6689633798836185,
+    -0.6437020159983747
+   ],
+   "keep": [
+    0.5373831413318622,
+    0.563773337572288
+   ],
+   "leak": [
+    0.7605335135055147,
+    0.7832450243823117
+   ]
+  },
+  "clean_docs_masked": 0.9523156089193825,
+  "diff_consistent_rate": 1.0,
+  "docs": 11606,
+  "docs_with_leak": 0.7719875346260388,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.7272727272727273,
+  "keep_by_kind": {
+   "AWS API ID": [
+    1.0,
+    5
+   ],
+   "AWS API Secret": [
+    0.5925925925925926,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    1.0,
+    1
+   ],
+   "Airtable API": [
+    0.7878787878787878,
+    33
+   ],
+   "Alibaba API": [
+    0.8551724137931035,
+    145
+   ],
+   "Anypoint API": [
+    0.1611328125,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.78125,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.5340909090909091,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.0,
+    3
+   ],
+   "Azure Client Secret": [
+    0.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    0.75,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.0,
+    3
+   ],
+   "Confluent API Key": [
+    0.5,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.23529411764705882,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    0.0,
+    2
+   ],
+   "GCP API Key": [
+    0.5,
+    2
+   ],
+   "Generic Pattern": [
+    0.6377253814147018,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    0.9,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.0,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    1.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.5,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.2926829268292683,
+    41
+   ],
+   "Uri": [
+    0.6190476190476191,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.9727272727272728,
+    220
+   ]
+  },
+  "keep_rate": 0.5514068306494426,
+  "leak_by_category": {
+   "secret": [
+    0.7719875346260388,
+    5776
+   ]
+  },
+  "leak_rate": 0.7719875346260388,
+  "outside_per_1k": 123.78807771704405
+ },
+ "presidio@default+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.20109774889208828,
+    0.234868947846803
+   ],
+   "baseline_minus_tool_leak": [
+    -0.6752191630959415,
+    -0.6498270723253349
+   ],
+   "keep": [
+    0.5415640343126035,
+    0.5676880190701351
+   ],
+   "leak": [
+    0.7667224506678626,
+    0.7893918585418036
+   ]
+  },
+  "clean_docs_masked": 0.9437392795883361,
+  "diff_consistent_rate": 1.0,
+  "docs": 11606,
+  "docs_with_leak": 0.7780470914127424,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.7272727272727273,
+  "keep_by_kind": {
+   "AWS API ID": [
+    1.0,
+    5
+   ],
+   "AWS API Secret": [
+    0.5987654320987654,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    1.0,
+    1
+   ],
+   "Airtable API": [
+    0.7878787878787878,
+    33
+   ],
+   "Alibaba API": [
+    0.8551724137931035,
+    145
+   ],
+   "Anypoint API": [
+    0.16796875,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.78125,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.5397727272727273,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.0,
+    3
+   ],
+   "Azure Client Secret": [
+    0.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    0.75,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.0,
+    3
+   ],
+   "Confluent API Key": [
+    0.5,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.23529411764705882,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    0.0,
+    2
+   ],
+   "GCP API Key": [
+    0.5,
+    2
+   ],
+   "Generic Pattern": [
+    0.6410540915395284,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    0.9,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.0,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    1.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    1.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.5,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.2926829268292683,
+    41
+   ],
+   "Uri": [
+    0.6190476190476191,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.9727272727272728,
+    220
+   ]
+  },
+  "keep_rate": 0.5551229870819324,
+  "leak_by_category": {
+   "secret": [
+    0.7780470914127424,
+    5776
+   ]
+  },
+  "leak_rate": 0.7780470914127424,
+  "outside_per_1k": 114.77713110316121
+ },
+ "rizzo-pii": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.22990485346122855,
+    0.2592248809855326
+   ],
+   "baseline_minus_tool_leak": [
+    -0.09214333976684404,
+    -0.0677731123780338
+   ],
+   "keep": [
+    0.5155101540980682,
+    0.5414511335504826
+   ],
+   "leak": [
+    0.18549212429823717,
+    0.20600199893974397
+   ]
+  },
+  "clean_docs_masked": 0.9867924528301887,
+  "diff_consistent_rate": 0.0,
+  "docs": 11606,
+  "docs_with_leak": 0.19529085872576177,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.2727272727272727,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.0,
+    5
+   ],
+   "AWS API Secret": [
+    0.07407407407407407,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.696969696969697,
+    33
+   ],
+   "Alibaba API": [
+    0.6827586206896552,
+    145
+   ],
+   "Anypoint API": [
+    0.0009765625,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.09375,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.08522727272727272,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.0,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    0.25,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.0,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.0784313725490196,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    0.5,
+    2
+   ],
+   "GCP API Key": [
+    0.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.7156726768377254,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.0,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    0.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.1,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    0.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.4634146341463415,
+    41
+   ],
+   "Uri": [
+    0.23809523809523808,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.9227272727272727,
+    220
+   ]
+  },
+  "keep_rate": 0.528579012564148,
+  "leak_by_category": {
+   "secret": [
+    0.19529085872576177,
+    5776
+   ]
+  },
+  "leak_rate": 0.19529085872576177,
+  "outside_per_1k": 208.48884885105753
+ },
+ "rizzo-pii+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.22840357788263776,
+    0.25803142577568916
+   ],
+   "baseline_minus_tool_leak": [
+    -0.09244949081195054,
+    -0.06790282006159377
+   ],
+   "keep": [
+    0.5170673511563404,
+    0.5428544459554204
+   ],
+   "leak": [
+    0.1857329578733949,
+    0.20604170453928136
+   ]
+  },
+  "clean_docs_masked": 0.9866209262435678,
+  "diff_consistent_rate": 0.0,
+  "docs": 11606,
+  "docs_with_leak": 0.1954639889196676,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.2727272727272727,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.0,
+    5
+   ],
+   "AWS API Secret": [
+    0.07407407407407407,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    0.0,
+    1
+   ],
+   "Airtable API": [
+    0.696969696969697,
+    33
+   ],
+   "Alibaba API": [
+    0.6827586206896552,
+    145
+   ],
+   "Anypoint API": [
+    0.0009765625,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.09375,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.08522727272727272,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.0,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    0.25,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.0,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.0784313725490196,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    0.5,
+    2
+   ],
+   "GCP API Key": [
+    0.0,
+    2
+   ],
+   "Generic Pattern": [
+    0.7178918169209432,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.0,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    0.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.0,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.1,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    0.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.4634146341463415,
+    41
+   ],
+   "Uri": [
+    0.23809523809523808,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.9227272727272727,
+    220
+   ]
+  },
+  "keep_rate": 0.5299946912050965,
+  "leak_by_category": {
+   "secret": [
+    0.1954639889196676,
+    5776
+   ]
+  },
+  "leak_rate": 0.1954639889196676,
+  "outside_per_1k": 197.61405448327076
+ },
+ "rizzo-pii@default": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.07625845553853026,
+    0.10669701336252405
+   ],
+   "baseline_minus_tool_leak": [
+    -0.6482365474371475,
+    -0.6214917192725108
+   ],
+   "keep": [
+    0.668697749054779,
+    0.6938179988448704
+   ],
+   "leak": [
+    0.7386219798264133,
+    0.7620219567018347
+   ]
+  },
+  "clean_docs_masked": 0.7699828473413379,
+  "diff_consistent_rate": 1.0,
+  "docs": 11606,
+  "docs_with_leak": 0.7501731301939059,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.6363636363636364,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.8,
+    5
+   ],
+   "AWS API Secret": [
+    0.5,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    1.0,
+    1
+   ],
+   "Airtable API": [
+    0.8484848484848485,
+    33
+   ],
+   "Alibaba API": [
+    0.9310344827586207,
+    145
+   ],
+   "Anypoint API": [
+    0.1455078125,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.4375,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.5284090909090909,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.0,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.0,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.23529411764705882,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    0.5,
+    2
+   ],
+   "Generic Pattern": [
+    0.8446601941747572,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.0,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    0.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.5,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.7,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.4878048780487805,
+    41
+   ],
+   "Uri": [
+    0.6190476190476191,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.9954545454545455,
+    220
+   ]
+  },
+  "keep_rate": 0.6812953459564679,
+  "leak_by_category": {
+   "secret": [
+    0.7501731301939059,
+    5776
+   ]
+  },
+  "leak_rate": 0.7501731301939059,
+  "outside_per_1k": 94.01872855625284
+ },
+ "rizzo-pii@default+agent": {
+  "ci": {
+   "baseline_minus_tool_keep": [
+    0.07450814519930854,
+    0.10481292588160815
+   ],
+   "baseline_minus_tool_leak": [
+    -0.6484316833097292,
+    -0.6217853811419995
+   ],
+   "keep": [
+    0.6703507873646717,
+    0.6955441607613194
+   ],
+   "leak": [
+    0.7386263781374619,
+    0.7620655377038592
+   ]
+  },
+  "clean_docs_masked": 0.7548885077186964,
+  "diff_consistent_rate": 1.0,
+  "docs": 11606,
+  "docs_with_leak": 0.7503462603878116,
+  "encoded_leak_rate": null,
+  "items": {
+   "must_keep": 5651,
+   "must_mask": 5776
+  },
+  "json_parse_rate": 0.6363636363636364,
+  "keep_by_kind": {
+   "AWS API ID": [
+    0.8,
+    5
+   ],
+   "AWS API Secret": [
+    0.5,
+    162
+   ],
+   "Abstract API": [
+    1.0,
+    1
+   ],
+   "Agora API": [
+    1.0,
+    1
+   ],
+   "Airtable API": [
+    0.8484848484848485,
+    33
+   ],
+   "Alibaba API": [
+    0.9310344827586207,
+    145
+   ],
+   "Anypoint API": [
+    0.1455078125,
+    1024
+   ],
+   "Artifactory API Key": [
+    0.4375,
+    32
+   ],
+   "Auth0 Domain URL": [
+    0.0,
+    1
+   ],
+   "Auth0 OAuth Client ID": [
+    0.0,
+    4
+   ],
+   "Auth0 OAuth Client Secret": [
+    0.5284090909090909,
+    176
+   ],
+   "Auth0 OAuth Domain URL": [
+    0.0,
+    3
+   ],
+   "Azure Client Secret": [
+    1.0,
+    1
+   ],
+   "CloudFlare API Key": [
+    1.0,
+    4
+   ],
+   "CloudFlare API Token": [
+    0.0,
+    3
+   ],
+   "Confluent API Key": [
+    1.0,
+    2
+   ],
+   "Contentful API Personal Token": [
+    0.23529411764705882,
+    51
+   ],
+   "Facebook OAuth Secret": [
+    1.0,
+    2
+   ],
+   "GCP API Key": [
+    0.5,
+    2
+   ],
+   "Generic Pattern": [
+    0.8471567267683773,
+    3605
+   ],
+   "Gitlab API Key": [
+    0.5,
+    2
+   ],
+   "Host API Key": [
+    1.0,
+    10
+   ],
+   "Jdbc Token": [
+    1.0,
+    1
+   ],
+   "Lob API Key": [
+    0.0,
+    79
+   ],
+   "Mite API Key": [
+    1.0,
+    1
+   ],
+   "Okta API Token": [
+    0.0,
+    1
+   ],
+   "RazorPay API Secret": [
+    1.0,
+    2
+   ],
+   "Slack Token ": [
+    0.0,
+    1
+   ],
+   "Slack Token V2": [
+    0.5,
+    2
+   ],
+   "Sparkpost API Key": [
+    0.7,
+    10
+   ],
+   "Sugester API Domain": [
+    0.0,
+    1
+   ],
+   "Telegram API Token": [
+    1.0,
+    1
+   ],
+   "Tru API Secret": [
+    0.4878048780487805,
+    41
+   ],
+   "Uri": [
+    0.6190476190476191,
+    21
+   ],
+   "Wit API Key": [
+    1.0,
+    1
+   ],
+   "Zipbooks Password": [
+    0.9954545454545455,
+    220
+   ]
+  },
+  "keep_rate": 0.682887984427535,
+  "leak_by_category": {
+   "secret": [
+    0.7503462603878116,
+    5776
+   ]
+  },
+  "leak_rate": 0.7503462603878116,
+  "outside_per_1k": 83.7794824394879
+ }
+}

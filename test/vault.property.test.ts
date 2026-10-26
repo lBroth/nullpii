@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import * as fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import type { PiiCategory, PiiSpan } from '../src/types/index.js';
@@ -66,6 +68,78 @@ describe('PiiVault — property: sanitize ↔ restore round-trip', () => {
         },
       ),
       { numRuns: 200 },
+    );
+  });
+});
+
+/** Generate arbitrary spans: overlapping, nested, duplicated, and
+ * reaching past either end of `text`, as a detector can emit them. */
+function anySpansArbitrary(text: string): fc.Arbitrary<PiiSpan[]> {
+  return fc.array(
+    fc
+      .tuple(
+        fc.integer({ min: -3, max: text.length + 3 }),
+        fc.integer({ min: 0, max: 12 }),
+        fc.constantFrom(...CATEGORIES),
+        fc.float({ min: 0, max: 1, noNaN: true }),
+      )
+      .map(([start, len, label, score]) => ({
+        label,
+        start,
+        end: start + len,
+        score,
+        text: text.slice(Math.max(0, start), Math.max(0, start + len)),
+      })),
+    { maxLength: 10 },
+  );
+}
+
+describe('PiiVault — property: any span set (overlapping, out of range)', () => {
+  const textAndSpans = fc
+    .string({ minLength: 1, maxLength: 200 })
+    .chain((text) => anySpansArbitrary(text).map((spans) => ({ text, spans })));
+
+  it('sanitize → restore is byte-exact', () => {
+    fc.assert(
+      fc.property(textAndSpans, ({ text, spans }) => {
+        const v = new PiiVault();
+        const id = v.createSession();
+        const out = v.sanitize(text, spans, id);
+        expect(v.restore(out.sanitized, id).restored).toBe(text);
+      }),
+      { numRuns: 500 },
+    );
+  });
+
+  it('every character an input span covered is masked by a returned span', () => {
+    fc.assert(
+      fc.property(textAndSpans, ({ text, spans }) => {
+        const v = new PiiVault();
+        const out = v.sanitize(text, spans, v.createSession());
+        for (const s of spans) {
+          for (let i = Math.max(0, s.start); i < Math.min(text.length, s.end); i++) {
+            expect(out.spans.some((m) => m.start <= i && i < m.end)).toBe(true);
+          }
+        }
+      }),
+      { numRuns: 500 },
+    );
+  });
+
+  it('returned spans are sorted, disjoint, in range, and carry their exact text', () => {
+    fc.assert(
+      fc.property(textAndSpans, ({ text, spans }) => {
+        const v = new PiiVault();
+        const out = v.sanitize(text, spans, v.createSession());
+        let cursor = 0;
+        for (const m of out.spans) {
+          expect(m.start).toBeGreaterThanOrEqual(cursor);
+          expect(m.end).toBeLessThanOrEqual(text.length);
+          expect(m.text).toBe(text.slice(m.start, m.end));
+          cursor = m.end;
+        }
+      }),
+      { numRuns: 500 },
     );
   });
 });

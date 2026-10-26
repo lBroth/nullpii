@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="340" viewBox="0 0 880 340" role="img" aria-labelledby="t d">
+<title id="t">How nullpii works</title>
+<desc id="d">Text from your app or Claude Code is decoded, scanned by the model and the recognizers, and each value the policy masks becomes a placeholder kept in an in-memory vault. The LLM provider sees only placeholders. On the way back the reply gets the real values; file tools get real values; shell commands keep the placeholders.</desc>
+<style>svg { --bg: #ffffff; --zone: #f6f8fa; --fg: #1f2328; --muted: #59636e; --grid: #d1d9e0; --other: #818b98; --a: #0d9488; --band: #0d948814; }
+@media (prefers-color-scheme: dark) { svg { --bg: #0d1117; --zone: #151b23; --fg: #f0f6fc; --muted: #9198a1; --grid: #3d444d; --other: #6e7681; --a: #2dd4bf; --band: #2dd4bf1f; } }
+.bg { fill: var(--bg); } .zone { fill: var(--zone); stroke: var(--grid); }
+text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif; fill: var(--fg); }
+.title { font-size: 17px; font-weight: 600; } .sub { font-size: 13px; fill: var(--muted); }
+.ptitle { font-size: 14px; font-weight: 600; } .hint { font-size: 12px; font-weight: 400; fill: var(--muted); }
+.label { font-size: 13px; } .np { font-weight: 600; } .val { font-size: 12px; font-variant-numeric: tabular-nums; }
+.axis { font-size: 11px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+.note { font-size: 11.5px; fill: var(--muted); } .grid { stroke: var(--grid); stroke-width: 1; }
+.bar-other { fill: var(--other); } .bar-np { fill: var(--a); } .band { fill: var(--band); }
+.dot-a { fill: var(--a); stroke: var(--bg); stroke-width: 2; } .dot-b { fill: var(--bg); stroke: var(--a); stroke-width: 2; }
+.link { stroke: var(--grid); stroke-width: 2; }
+.box { fill: var(--bg); stroke: var(--grid); stroke-width: 1.5; } .step { font-size: 14px; font-weight: 600; }
+.small { font-size: 12px; fill: var(--muted); } .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; font-size: 11.5px; }
+.zlabel { font-size: 12px; font-weight: 600; fill: var(--muted); letter-spacing: .04em; }
+.arrow { stroke: var(--muted); stroke-width: 1.6; fill: none; } .head { fill: var(--muted); }
+</style>
+<rect class="bg" width="880" height="340" rx="8"/>
+<defs><marker id="h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0,0L10,5L0,10z"/></marker></defs>
+<rect class="zone" x="12" y="12" width="682" height="316" rx="10" stroke-dasharray="6 4"/>
+<text x="28.0" y="36.0" class="zlabel">YOUR MACHINE</text>
+<rect class="zone" x="716" y="12" width="152" height="316" rx="10"/>
+<text x="732.0" y="36.0" class="zlabel">LLM PROVIDER</text>
+<rect class="box" x="28" y="56" width="124" height="100" rx="8"/>
+<text x="90.0" y="82.0" class="step" text-anchor="middle">Your app or</text>
+<text x="90.0" y="100.0" class="step" text-anchor="middle">Claude Code</text>
+<text x="90.0" y="122.0" class="small" text-anchor="middle">prompts, files,</text>
+<text x="90.0" y="138.0" class="small" text-anchor="middle">tool output</text>
+<rect class="box" x="174" y="56" width="140" height="100" rx="8"/>
+<text x="244.0" y="82.0" class="step" text-anchor="middle">1  Decode</text>
+<text x="244.0" y="104.0" class="small" text-anchor="middle">look-alikes,</text>
+<text x="244.0" y="120.0" class="small" text-anchor="middle">zero-width chars,</text>
+<text x="244.0" y="136.0" class="small" text-anchor="middle">%-encoding, base64</text>
+<rect class="box" x="336" y="56" width="160" height="100" rx="8"/>
+<text x="416.0" y="82.0" class="step" text-anchor="middle">2  Detect</text>
+<text x="416.0" y="104.0" class="small" text-anchor="middle">GLiNER model</text>
+<text x="416.0" y="120.0" class="small" text-anchor="middle">+ recognizers:</text>
+<text x="416.0" y="136.0" class="small" text-anchor="middle">checksums, key formats</text>
+<rect class="box" x="518" y="56" width="160" height="100" rx="8"/>
+<text x="598.0" y="82.0" class="step" text-anchor="middle">3  Mask</text>
+<text x="598.0" y="104.0" class="small" text-anchor="middle">mask, ask or readable,</text>
+<text x="598.0" y="120.0" class="small" text-anchor="middle">per category;</text>
+<text x="598.0" y="136.0" class="small" text-anchor="middle">value → placeholder</text>
+<rect class="box" x="518" y="200" width="160" height="76" rx="8"/>
+<text x="598.0" y="226.0" class="step" text-anchor="middle">Vault</text>
+<text x="598.0" y="248.0" class="small" text-anchor="middle">in memory only,</text>
+<text x="598.0" y="264.0" class="small" text-anchor="middle">value ↔ placeholder</text>
+<rect class="box" x="174" y="200" width="322" height="112" rx="8"/>
+<text x="335.0" y="226.0" class="step" text-anchor="middle">4  Restore</text>
+<text x="335.0" y="248.0" class="small" text-anchor="middle">your reply: real values back</text>
+<text x="335.0" y="264.0" class="small" text-anchor="middle">file tools (Read, Edit, Write): real values</text>
+<text x="335.0" y="280.0" class="small" text-anchor="middle">shell commands: placeholders stay</text>
+<text x="792.0" y="120.0" class="small" text-anchor="middle">sees only</text>
+<text x="792.0" y="140.0" class="mono" text-anchor="middle">{{PII_PRIVATE_</text>
+<text x="792.0" y="156.0" class="mono" text-anchor="middle">EMAIL_0_…}}</text>
+<text x="792.0" y="200.0" class="small" text-anchor="middle">Anthropic, OpenAI</text>
+<text x="792.0" y="216.0" class="small" text-anchor="middle">or any model</text>
+<text x="606.0" y="302.0" class="small" text-anchor="middle">reply, with placeholders</text>
+<path class="arrow" d="M152,106H172" marker-end="url(#h)"/>
+<path class="arrow" d="M314,106H334" marker-end="url(#h)"/>
+<path class="arrow" d="M496,106H516" marker-end="url(#h)"/>
+<path class="arrow" d="M678,106H714" marker-end="url(#h)"/>
+<path class="arrow" d="M598,156V198" marker-end="url(#h)"/>
+<path class="arrow" d="M714,286H498" marker-end="url(#h)"/>
+<path class="arrow" d="M518,238H498" marker-end="url(#h)"/>
+<path class="arrow" d="M174,256H90V158" marker-end="url(#h)"/>
+</svg>

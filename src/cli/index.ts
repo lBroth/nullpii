@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Command } from 'commander';
 import { NullPiiError } from '../errors.js';
+import { registerConfig } from './commands/config.js';
 import { registerDoctor } from './commands/doctor.js';
 import { registerModels } from './commands/models.js';
 import { registerPrefetch } from './commands/prefetch.js';
@@ -32,6 +33,7 @@ export function buildProgram(): Command {
   registerModels(program);
   registerPrefetch(program);
   registerDoctor(program);
+  registerConfig(program);
   return program;
 }
 

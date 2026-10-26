@@ -1,0 +1,269 @@
+{
+  "_note": "Tuned operating point of every competitor, as run on R3 (bench_full --tool-config). Chosen on the tuning set for macro char-F2 (scripts/ab/tune_operating_point.py); each tool's default row runs with no config. Keys: threshold or o_bias (bias against the no-entity class) or the pipeline's own knob, and label_cut (per-label score cuts applied by the kit).",
+  "deberta": {
+    "label_cut": {
+      "default": 0.0,
+      "thresholds": {
+        "account_number": 0.0,
+        "private_address": 0.0,
+        "private_date": 0.0,
+        "private_email": 0.15,
+        "private_ip": 0.0,
+        "private_mac": 0.0,
+        "private_person": 0.99,
+        "private_phone": 0.2,
+        "private_url": 0.4,
+        "private_vehicle_id": 0.0,
+        "secret": 0.0
+      }
+    },
+    "o_bias": -2.0
+  },
+  "ettin-68m": {
+    "label_cut": {
+      "default": 0.0,
+      "thresholds": {
+        "account_number": 0.125,
+        "private_address": 0.2,
+        "private_date": 0.15,
+        "private_email": 0.6,
+        "private_geolocation": 0.125,
+        "private_ip": 0.001,
+        "private_mac": 0.001,
+        "private_person": 0.3,
+        "private_phone": 0.1,
+        "private_url": 0.2,
+        "private_vehicle_id": 0.001,
+        "secret": 0.125
+      }
+    },
+    "o_bias": 2.0
+  },
+  "gliner-onnx-pii-fp32": {
+    "label_cut": {
+      "default": 0.5,
+      "thresholds": {
+        "account_number": 0.125,
+        "private_address": 0.005,
+        "private_date": 0.35,
+        "private_driver_license": 0.125,
+        "private_email": 0.075,
+        "private_geolocation": 0.1,
+        "private_ip": 0.01,
+        "private_mac": 0.003,
+        "private_passport": 0.125,
+        "private_person": 0.8,
+        "private_phone": 0.05,
+        "private_url": 0.125,
+        "private_vehicle_id": 0.1,
+        "secret": 0.2
+      }
+    },
+    "threshold": 0.001
+  },
+  "gliner-pii-large-v1": {
+    "label_cut": {
+      "default": 0.3,
+      "thresholds": {
+        "account_number": 0.075,
+        "private_address": 0.03,
+        "private_date": 0.075,
+        "private_driver_license": 0.075,
+        "private_email": 0.003,
+        "private_geolocation": 0.02,
+        "private_ip": 0.01,
+        "private_mac": 0.001,
+        "private_passport": 0.05,
+        "private_person": 0.2,
+        "private_phone": 0.03,
+        "private_url": 0.8,
+        "private_vehicle_id": 0.02,
+        "secret": 0.075
+      }
+    },
+    "threshold": 0.001
+  },
+  "gliner-stream-pii": {
+    "label_cut": {
+      "default": 0.5,
+      "thresholds": {
+        "account_number": 0.2,
+        "private_address": 0.2,
+        "private_date": 0.3,
+        "private_driver_license": 0.4,
+        "private_email": 0.1,
+        "private_geolocation": 0.6,
+        "private_ip": 0.001,
+        "private_mac": 0.001,
+        "private_passport": 0.15,
+        "private_person": 0.4,
+        "private_phone": 0.05,
+        "private_url": 0.9,
+        "private_vehicle_id": 0.1,
+        "secret": 0.02
+      }
+    },
+    "threshold": 0.001
+  },
+  "nemotron-pii-nemo": {
+    "label_cut": {
+      "default": 0.5,
+      "thresholds": {
+        "account_number": 0.001,
+        "private_address": 0.001,
+        "private_date": 0.7,
+        "private_email": 0.2,
+        "private_geolocation": 0.001,
+        "private_ip": 0.6,
+        "private_mac": 0.6,
+        "private_person": 0.001,
+        "private_phone": 0.001,
+        "private_url": 0.9995,
+        "private_vehicle_id": 0.001,
+        "secret": 0.2
+      }
+    },
+    "threshold": 0.1
+  },
+  "nemotron-pii-raw": {
+    "label_cut": {
+      "default": 0.3,
+      "thresholds": {
+        "account_number": 0.15,
+        "private_address": 0.125,
+        "private_date": 0.99,
+        "private_email": 0.7,
+        "private_geolocation": 0.1,
+        "private_ip": 0.3,
+        "private_mac": 0.4,
+        "private_person": 0.1,
+        "private_phone": 0.075,
+        "private_url": 0.9999,
+        "private_vehicle_id": 0.03,
+        "secret": 0.1
+      }
+    },
+    "threshold": 0.001
+  },
+  "openai-privacy-filter": {
+    "viterbi_biases": {
+      "transition_bias_background_stay": -4.5
+    }
+  },
+  "openmed-large": {
+    "confidence_threshold": 0.3,
+    "label_cut": {
+      "default": 0.7,
+      "thresholds": {
+        "account_number": 0.1,
+        "private_address": 0.45,
+        "private_date": 0.1,
+        "private_email": 0.1,
+        "private_geolocation": 0.1,
+        "private_ip": 0.1,
+        "private_mac": 0.1,
+        "private_person": 0.1,
+        "private_phone": 0.1,
+        "private_url": 0.9,
+        "private_vehicle_id": 0.1,
+        "secret": 0.1
+      }
+    }
+  },
+  "openmed-pf-multi-v2": {
+    "viterbi_biases": {
+      "transition_bias_background_stay": -0.5
+    }
+  },
+  "openmed-small": {
+    "confidence_threshold": 0.001,
+    "label_cut": {
+      "default": 0.7,
+      "thresholds": {
+        "account_number": 0.1,
+        "private_address": 0.45,
+        "private_date": 0.001,
+        "private_email": 0.4,
+        "private_geolocation": 0.1,
+        "private_ip": 0.1,
+        "private_mac": 0.1,
+        "private_person": 0.35,
+        "private_phone": 0.1,
+        "private_url": 0.9,
+        "private_vehicle_id": 0.2,
+        "secret": 0.125
+      }
+    }
+  },
+  "pii-identifier": {
+    "label_cut": {
+      "default": 0.0,
+      "thresholds": {
+        "account_number": 0.0,
+        "private_address": 0.0,
+        "private_date": 0.0,
+        "private_email": 0.0,
+        "private_geolocation": 0.0,
+        "private_ip": 0.0,
+        "private_mac": 0.0,
+        "private_person": 0.25,
+        "private_phone": 0.0,
+        "private_url": 0.995,
+        "private_vehicle_id": 0.0,
+        "secret": 0.125
+      }
+    },
+    "o_bias": 2.0
+  },
+  "piiranha": {
+    "label_cut": {
+      "default": 0.0,
+      "thresholds": {
+        "account_number": 0.2,
+        "private_address": 0.3,
+        "private_date": 0.15,
+        "private_driver_license": 0.15,
+        "private_email": 0.25,
+        "private_person": 0.35,
+        "private_phone": 0.001,
+        "secret": 0.5
+      }
+    },
+    "o_bias": 12.0
+  },
+  "presidio": {
+    "label_cut": {
+      "default": 0.0,
+      "thresholds": {
+        "account_number": 0.0,
+        "private_address": 0.0,
+        "private_date": 0.0,
+        "private_driver_license": 0.0,
+        "private_email": 0.0,
+        "private_ip": 0.125,
+        "private_mac": 0.0,
+        "private_passport": 0.0,
+        "private_person": 0.0,
+        "private_phone": 0.0,
+        "private_url": 0.6
+      }
+    }
+  },
+  "rizzo-pii": {
+    "label_cut": {
+      "default": 0.0,
+      "thresholds": {
+        "account_number": 0.1,
+        "private_address": 0.001,
+        "private_date": 0.7,
+        "private_email": 0.2,
+        "private_ip": 0.1,
+        "private_person": 0.1,
+        "private_phone": 0.1,
+        "private_url": 0.1,
+        "private_vehicle_id": 0.15
+      }
+    },
+    "o_bias": 10.0
+  }
+}

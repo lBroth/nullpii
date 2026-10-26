@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Buffer } from 'node:buffer';
-import { MAX_INPUT_BYTES } from './defaults.js';
+import { MAX_INPUT_CHARS } from './defaults.js';
 import { normalizeForDetection } from './normalize.js';
 import type { PiiCategory, PiiSpan } from './types/index.js';
 
@@ -68,11 +68,10 @@ function classify(decoded: string): DecodedHit | null {
   return null;
 }
 
-/** Per-blob byte cap. Defence in depth — `MAX_INPUT_BYTES` already caps
- * the whole `text` input, but a deployment that bumps that limit upstream
- * should still skip pathological single-blob payloads inside the
- * detector so a 10 MB base64 run never lands in `Buffer.from` + the
- * classifier regex chain. */
+/** Per-blob byte cap. Defence in depth: `sanitize()` hands this detector
+ * at most `MAX_INPUT_CHARS` at a time, but a caller of
+ * `detectBase64Pii` should still not land a 10 MB base64 run in
+ * `Buffer.from` + the classifier regex chain. */
 const MAX_BASE64_BLOB_BYTES = 1_000_000;
 
 /** Find PII inside base64-wrapped runs. Spans are in `text` coordinates.
@@ -82,11 +81,12 @@ const MAX_BASE64_BLOB_BYTES = 1_000_000;
  * higher `BASE64_SCORE` lets cross-label dedupe pick the correct label
  * downstream rather than us hiding the hit here.
  *
- * Inputs above `MAX_INPUT_BYTES` are refused upfront — matches the
+ * Inputs above `MAX_INPUT_CHARS` are refused upfront — matches the
  * recognizer-pack / normalize policy and stops adversarial multi-MB
- * payloads from running the full decode + classify pipeline. */
+ * payloads from running the full decode + classify pipeline;
+ * `sanitize()` hands a longer text over in windows within the cap. */
 export function detectBase64Pii(text: string): PiiSpan[] {
-  if (text.length > MAX_INPUT_BYTES) return [];
+  if (text.length > MAX_INPUT_CHARS) return [];
   const out: PiiSpan[] = [];
   // Re-create the regex each call so `lastIndex` doesn't bleed across calls.
   const re = new RegExp(BASE64_RUN_RE.source, 'g');

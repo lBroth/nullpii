@@ -1,0 +1,30 @@
+{
+  "name": "nullpii",
+  "version": "0.5.0",
+  "description": "Masks personal data and secrets in prompts and tool results before Claude reads them, using a local nullpii sidecar, and shows what it masked above the prompt",
+  "author": {
+    "name": "nullpii contributors"
+  },
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/lBroth/nullpii",
+  "userConfig": {
+    "sidecar_token": {
+      "type": "string",
+      "title": "Sidecar token",
+      "description": "The NULLPII_SIDECAR_TOKEN that nullpii-gateway was started with. Stored in secure storage and not exported to the commands Claude runs.",
+      "sensitive": true
+    },
+    "sidecar_url": {
+      "type": "string",
+      "title": "Sidecar URL",
+      "description": "Where nullpii-gateway listens: http:// on 127.0.0.1 or [::1], the literal address the gateway listens on, with an optional port. Any other address, localhost included, is refused.",
+      "default": "http://127.0.0.1:8787"
+    },
+    "autostart": {
+      "type": "boolean",
+      "title": "Start the sidecar",
+      "description": "When no nullpii-gateway answers at the sidecar URL, start one for the session (npx with this release's packages; its first start downloads the model). It uses the sidecar token above and stops with the session.",
+      "default": true
+    }
+  }
+}

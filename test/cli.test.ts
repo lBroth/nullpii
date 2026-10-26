@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildProgram } from '../src/cli/index.js';
 

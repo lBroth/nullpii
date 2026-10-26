@@ -17,6 +17,15 @@ export const XDG_CACHE_HOME = 'XDG_CACHE_HOME';
  * `config.modelDir` takes priority over the env var. */
 export const NULLPII_MODEL_DIR = 'NULLPII_MODEL_DIR';
 
+/** XDG_CONFIG_HOME — the config file defaults to
+ * `$XDG_CONFIG_HOME/nullpii/config.json`, else `~/.config/nullpii/config.json`. */
+export const XDG_CONFIG_HOME = 'XDG_CONFIG_HOME';
+
+/** NULLPII_CONFIG — path of the masking-policy config file shared by the
+ * library, the CLI, and the gateway and its Claude Code mod. A path given
+ * here must exist; the default location is optional. */
+export const NULLPII_CONFIG = 'NULLPII_CONFIG';
+
 /** Read an env var, returning `undefined` for both unset AND empty-string. */
 export function readEnvVar(name: string): string | undefined {
   const v = process.env[name];

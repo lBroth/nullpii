@@ -1,0 +1,11 @@
+{
+  "id": 102,
+  "full_name": "acme-ejemplo/proyecto-gpl",
+  "html_url": "https://github.com/acme-ejemplo/proyecto-gpl",
+  "stargazers_count": 7,
+  "license": {
+    "key": "gpl-3.0",
+    "name": "GNU General Public License v3.0",
+    "spdx_id": "GPL-3.0"
+  }
+}

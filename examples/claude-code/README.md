@@ -8,24 +8,43 @@ leave your machine; placeholders are restored in the response. Apache-
 ## Quickstart
 
 ```bash
-# 1. Boot the gateway (first run: ~1.2 GB GLiNER model download)
+# 1. Clone the repository: the compose file builds the image from it
+git clone https://github.com/lBroth/nullpii.git
+cd nullpii
+
+# 2. Download the model (~1.2 GB) into the gateway's cache volume, once
+docker compose -f examples/claude-code/docker-compose.yml run --rm gateway \
+  node bin/nullpii.mjs prefetch --backend cpu
+
+# 3. Start the gateway
 docker compose -f examples/claude-code/docker-compose.yml up -d
 
-# 2. Wait for it to be healthy
+# 4. Wait for it to be healthy
 docker compose -f examples/claude-code/docker-compose.yml ps
-# STATUS should show "healthy" (takes ~30-90s after image build / boot)
+# STATUS shows "healthy" within about 30 seconds
 
-# 3. Smoke test
-curl -fsS http://localhost:8787/health
+# 5. Smoke test
+curl -fsS http://127.0.0.1:8787/health
 # {"status":"ok"}
 
-# 4. Point Claude Code at it
-export ANTHROPIC_BASE_URL=http://localhost:8787
+# 6. Point Claude Code at it
+export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
 export ANTHROPIC_API_KEY=sk-ant-…   # your real key, passed through
 
-# 5. Run Claude Code normally
+# 7. Run Claude Code normally
 claude "summarise the email I just wrote to John Doe at john@acme.io"
 ```
+
+The health check is a liveness probe: `/health` answers as soon as the server listens, and does not wait for the model. If you skip step 2, the first request that needs the model downloads it into the volume and waits for the download, which can take minutes on a slow link. The `nullpii-model-cache` volume keeps the model across restarts and `docker compose down` (not `down -v`).
+
+To use the gateway as the sidecar of the [Claude Code mod](https://github.com/lBroth/nullpii/tree/main/packages/claude-code-mod), set `NULLPII_SIDECAR_TOKEN` in the shell that starts it: the compose file passes it through to the container, and without it the sidecar API stays off.
+
+```bash
+export NULLPII_SIDECAR_TOKEN=$(openssl rand -hex 32)
+docker compose -f examples/claude-code/docker-compose.yml up -d
+```
+
+Give the mod the same token; its default sidecar URL, `http://127.0.0.1:8787`, is the port this compose file publishes.
 
 ### Alternative: persist via Claude Code settings
 
@@ -37,7 +56,7 @@ Project-local (per-repo) — `.claude/settings.local.json`:
 ```json
 {
   "env": {
-    "ANTHROPIC_BASE_URL": "http://localhost:8787",
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:8787",
     "ANTHROPIC_API_KEY": "sk-ant-…"
   }
 }
@@ -59,13 +78,16 @@ direct API use.
 
 ## What gets sanitized
 
-The model recognizes 12 categories: person, email, phone, address,
-date, URL, IP, MAC, passport, driver license, vehicle ID, geolocation,
-plus account number (incl. IBAN / credit card / SSN / MRN) and
-"secret" (AWS / GitHub / OpenAI / Anthropic / 30+ API keys, JWT,
-base64-wrapped PII). Recognizer packs catch structurally-valid
-tokens (IBAN mod-97, Luhn, VIN ISO 3779, lat/lon ranges, etc). See
-the root [`README.md`](../../README.md) for the full label table.
+nullpii detects 19 categories. By default it masks person, email,
+phone, address, URL, IP, MAC, passport, driving licence, vehicle id,
+geolocation, account number (IBAN, cards, SSN, MRN, national and tax
+ids) and secret (API keys, JWTs, private keys, base64-wrapped values),
+and leaves readable date, organisation, occupation, demographic and
+sensitive attributes, and titles, which an agent often needs and which
+identify no one on their own. Validated recognizers catch structured values (IBAN mod-97,
+Luhn, VIN, coordinate ranges). The full label table, and how to turn
+categories off, is in the root
+[`README.md`](https://github.com/lBroth/nullpii#what-gets-caught).
 
 ## Verify the redaction is working
 
@@ -103,17 +125,16 @@ on disk, use the local-model compose variant instead of the default
 HuggingFace download path:
 
 ```bash
-# 1. Prefetch the model on a host with network access. Drops files
-#    into the default cache path.
-NULLPII_MODEL_DIR=~/.cache/nullpii/models/lBroth/nullpii/main \
-  npx nullpii prefetch
+# 1. Prefetch the model on a host with network access. It goes into the
+#    cache, and the command prints the directory ("cached at: …").
+npx -p nullpii -p onnxruntime-node nullpii prefetch
 
 # 2. Point the compose at that directory and boot
-export MODEL_DIR_HOST=~/.cache/nullpii/models/lBroth/nullpii/main
+export MODEL_DIR_HOST=<the directory prefetch printed>
 docker compose -f examples/claude-code/docker-compose.local-model.yml up -d
 
 # 3. Same setup as the quickstart from here on
-export ANTHROPIC_BASE_URL=http://localhost:8787
+export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
 export ANTHROPIC_API_KEY=sk-ant-…
 claude "summarise email to John at john@acme.io"
 ```
@@ -123,15 +144,16 @@ The directory must contain `model.onnx`, `tokenizer.json`,
 
 ## Going further
 
-- **Use a host-mounted model cache** so the model survives a
-  `docker compose down`:
+- **A host directory for the model cache**, to see the files: replace
+  the named volume with a bind mount. The container runs as the `node`
+  user (uid 1000), so the directory must be writable by that uid.
   ```yaml
   volumes:
-    - ./nullpii-model-cache:/root/.cache/nullpii
+    - ./nullpii-model-cache:/home/node/.cache/nullpii
   ```
-- **Air-gapped deployment / pre-release.** Pre-fetch the model on a
-  connected machine (`npx nullpii prefetch` from the repo root with
-  `NULLPII_MODEL_DIR=…` set), then mount it into the container:
+- **Air-gapped deployment.** Pre-fetch the model on a connected
+  machine (`npx nullpii prefetch` prints the directory it filled), copy
+  that directory over, then mount it into the container:
   ```yaml
   environment:
     NULLPII_MODEL_DIR: /models/gliner
@@ -141,16 +163,17 @@ The directory must contain `model.onnx`, `tokenizer.json`,
 - **Higher throughput.** Switch to a GPU host with the CUDA backend:
   `NULLPII_BACKEND=cuda` plus the matching `onnxruntime-node` build.
   See the root [README §Backends](../../README.md).
-- **Multi-replica.** The current in-memory vault assumes
-  sticky-session load balancing — every conversation's response must
-  return to the replica that sanitized the request. A pluggable
-  `VaultStore` (Redis HA) is something I'd write next if the project survives that long — no commitment, hobby project.
+- **Multi-replica.** The vault lives in each replica's memory and is
+  not shared. The Messages and Chat Completions routes keep a session
+  for one request only, so any load balancer works for them. The
+  sidecar API keeps sessions across calls: send each sidecar client to
+  the same replica every time (sticky sessions).
 
 ## Limitations
 
-- **Anthropic only.** OpenAI compat (`/v1/chat/completions`) is
-  not in v0.3. For other backends, use the core `nullpii` library
-  directly — see the root README.
+- **Two APIs.** The gateway serves the Anthropic Messages API and the
+  OpenAI Chat Completions API (`/v1/chat/completions`). For anything
+  else, use the core `nullpii` library directly: see the root README.
 - **No auth on the gateway itself.** Put your own mTLS / API-key
   layer in front (typical enterprise pattern). The gateway speaks
   plain HTTP because operators add the TLS termination they trust.
@@ -162,7 +185,9 @@ The directory must contain `model.onnx`, `tokenizer.json`,
 
 | Symptom | Cause / fix |
 |---|---|
-| Container stuck in `health: starting` for > 2 min | Applies to the **default** `docker-compose.yml` only (`start_period: 120s` covers the cold HF download). Tail logs and check HF reachability. The local-model variant uses `start_period: 30s` because the model is already on disk; if it's stuck there, the volume mount or `NULLPII_MODEL_DIR` path is wrong. |
+| Container in `health: starting` for more than a minute, or `unhealthy` | The server is not listening. `docker compose -f examples/claude-code/docker-compose.yml logs gateway` shows why: an invalid variable or policy file stops the gateway at startup, with the reason. The model plays no part here, since `/health` does not wait for it. |
+| The first request hangs | The model was not prefetched, so that request is downloading it (~1.2 GB). Let it finish, or run step 2 of the quickstart beforehand next time. The container needs to reach `huggingface.co`. |
+| Requests fail with the local-model variant | `MODEL_DIR_HOST` is not a directory holding `model.onnx`, `tokenizer.json`, `gliner_config.json` and `tokenizer_config.json`. The gateway reads the model on the first request, not at startup, so the health check passes either way. |
 | `502 nullpii_upstream_error` | Gateway couldn't reach `api.anthropic.com`. Check `NULLPII_UPSTREAM` and outbound DNS. |
 | Claude Code prints placeholders instead of names | The LLM moved a placeholder across token boundaries in a way the streaming restorer can't reassemble. File a bug with a redacted repro — these are usually fixable. |
 | `unknownPlaceholders > 0` in logs | The LLM made up a placeholder. Usually fine (Claude is told via `LLM_PRESERVATION_HINT` to keep them, but occasionally fabricates). |

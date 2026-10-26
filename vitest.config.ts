@@ -9,9 +9,9 @@ import { defineConfig } from 'vitest/config';
 const E2E_ON = process.env.NULLPII_E2E === '1';
 
 export default defineConfig({
-  // The subpackages under `packages/recognizers-*/` import from `'nullpii'`
-  // to honour the published consumer surface. In this repo there is no
-  // `node_modules/nullpii` (we ARE nullpii), so resolve the import to the
+  // The gateway (`packages/gateway/src`) imports from `'nullpii'`, its
+  // published peer, and its tests run in this suite. In this repo there is
+  // no `node_modules/nullpii` (we ARE nullpii), so resolve the import to the
   // local source. Mirrors the `paths` entry in `tsconfig.json`.
   resolve: {
     alias: {
@@ -28,7 +28,8 @@ export default defineConfig({
       : ['**/node_modules/**', '**/dist/**', 'test/e2e/**'],
     coverage: {
       provider: 'v8',
-      include: ['src/**/*.ts'],
+      // Everything that ships: the core, its CLI, and the gateway.
+      include: ['src/**/*.ts', 'packages/gateway/src/**/*.ts'],
       exclude: [
         '**/*.test.ts',
         '**/*.d.ts',
@@ -38,16 +39,15 @@ export default defineConfig({
         'src/types/results.ts',
         'src/types/config.ts',
         'src/types/backend.ts',
+        'packages/gateway/src/types.ts',
+        'packages/gateway/src/openai-types.ts',
         // Re-export barrels — verified by surface tests, not coverage
         'src/index.ts',
         'src/types/index.ts',
-        // Network I/O — exercised by integration runs, not unit coverage
-        'src/hf-hub.ts',
-        // Hardware-gated backends — covered by gated runners (Linux+GPU)
-        'src/backend/cuda-backend.ts',
-        // CLI — thin layer over public API; exercised by CLI smoke tests
-        'src/cli/**',
-        'bin/**',
+        'packages/gateway/src/index.ts',
+        // Process entry points (signal handling, listen): the gateway's
+        // dev runner, like the bin scripts, is wiring over tested modules
+        'packages/gateway/src/dev.ts',
       ],
       reporter: ['text', 'html', 'lcov'],
       thresholds: {

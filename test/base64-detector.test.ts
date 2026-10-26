@@ -129,7 +129,7 @@ describe('detectBase64Pii', () => {
   // and re-classified via EMAIL_RE / SECRET_PREFIX_RE / LONG_DIGITS_RE —
   // each O(n) over a multi-MB string. Refuse at the entry point so the
   // detector is constant-time on oversized input.
-  it('returns [] for input larger than MAX_INPUT_BYTES even when PII is present', () => {
+  it('returns [] for input larger than MAX_INPUT_CHARS even when PII is present', () => {
     // Embed a real PII blob inside an over-cap payload. Without the cap
     // the detector finds the email; with the cap it refuses the whole
     // input and emits nothing.

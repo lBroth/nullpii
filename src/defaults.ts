@@ -8,7 +8,7 @@
 // Strict TS index-access fallbacks (e.g. `arr[i] ?? 0` under
 // `noUncheckedIndexedAccess`) are NOT user-facing defaults and stay inline.
 
-import type { BackendName, ModelVariant } from './types/index.js';
+import type { BackendName, ModelVariant, PiiCategory, UrlRelease } from './types/index.js';
 import type { Recognizer } from './types/recognizer.js';
 import {
   base58CheckValid,
@@ -18,6 +18,7 @@ import {
   latLonPairInRange,
   luhnValid,
   macAddressNonReserved,
+  partitaIvaValid,
   vinValid,
 } from './validators.js';
 
@@ -27,13 +28,19 @@ import {
  * mapped at session construction in `nullpii.ts`. */
 export const DEFAULT_BACKEND: BackendName = 'auto';
 
-/** Model variant chosen when the user passes nothing (or `'auto'`).
- * Only `fp32` is shipped today; `int8` / `int4` are reserved (see
- * `PLAN.md §4`). */
+/** Model variant chosen when the user passes nothing: fp16 on CUDA when
+ * the model ships it, fp32 otherwise (`onnxCandidates` in
+ * `model-variant.ts`). */
 export const DEFAULT_VARIANT: ModelVariant = 'auto';
 
 /** Tokenizer file name within a model directory. */
 export const TOKENIZER_FILE = 'tokenizer.json';
+
+/** ONNX file of each precision within a model directory. */
+export const MODEL_FILES = {
+  fp32: 'model.onnx',
+  fp16: 'model_fp16.onnx',
+} as const;
 
 /** SHA256 sidecar suffix used by `hf-hub.ts`. */
 export const CHECKSUM_SUFFIX = '.sha256';
@@ -47,23 +54,40 @@ export const CACHE_MODELS_SUBDIR = 'models';
  * (`model.onnx` + tokenizer + config, ~1.16 GB FP32). See
  * `model-manager.ts` for the file manifest. */
 export const DEFAULT_MODEL_REPO = 'lBroth/nullpii';
-export const DEFAULT_MODEL_REVISION = 'main';
+/** The Hugging Face commit nullpii loads. A release refuses to publish
+ * until this names a commit, never a branch (`release.yml`). */
+export const DEFAULT_MODEL_REVISION = '5dd3c7991483c3b1bccb68beba53890d24cbd2d3';
+/** The SHA-256 of every file nullpii fetches from `DEFAULT_MODEL_REVISION`:
+ * a download or a cached copy with another hash is refused, so whoever
+ * controls the repository cannot change what runs. These are the files
+ * nullpii 0.5 was measured with (docs/WEIGHTS_PROVENANCE.md). */
+export const DEFAULT_MODEL_SHA256: Readonly<Record<string, string>> = {
+  'model.onnx': '58b6d795693fc3e79f465134a8e5acd4fa58799c6d614f1b795df24d4253313a',
+  'model_fp16.onnx': '900b2b025915ca437515aa4154ee51467ab47805e67e6d883df37d69c1ae2065',
+  'tokenizer.json': 'c5b8041501fcdee792b9b112dd592861f04391a24633a73fd9f05aaaf6e8eff1',
+  'gliner_config.json': 'dec8f0f8a2d78af7d7c5553cf7144abc9bf06774170d9ebca6b831db6e542790',
+  'tokenizer_config.json': 'c12b7b3bab6cd638f70b203daf1438bf7fedbeab4728a1e155728af9a5a55687',
+};
 
 /** Built-in recognizers auto-registered on every `NullPii` instance
  * unless the user passes `recognizers: 'none'` or supplies their own
  * array via config.
  *
- * These are the regex patterns proved necessary in the iter-N eval loop
- * (high precision, low FP rate). The ML model alone misses ~66% of URLs
- * and most secrets even when they are surrounded by clear context.
+ * Patterns for formats with a fixed shape (URLs, emails, keys and tokens
+ * with a known prefix, IBANs, cards, national ids, …), run after the
+ * model.
  *
- * Order is irrelevant — the runtime dedupes overlapping spans by
- * confidence (ML wins, then highest-confidence recognizer). */
+ * Order is irrelevant: overlapping spans are deduplicated, and a
+ * recognizer defers only to a model span that covers its whole match. */
+// The secret and token patterns below are adapted from gitleaks' default
+// rules (https://github.com/gitleaks/gitleaks, MIT, Copyright (c) 2019
+// Zachary Rice); see NOTICE.
 export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
   // ─── URL / Email ──────────────────────────────────────────────
   // URL: only http(s) + www. — bare-domain.tld dropped (FP-prone).
-  // The optional URL whitelist filter (PUBLIC_URL_HOSTS) lives in
-  // `src/url-filter.ts` and is opt-in.
+  // The URL policy (`DEFAULT_URL_RELEASES`, applied in `src/url-filter.ts`)
+  // runs as a post-filter and is on by default; opt out via
+  // `NullPiiConfig.urlAllowlist: 'none'`.
   {
     id: 'core:url',
     pattern: /\b(?:https?:\/\/|www\.)[^\s<>"]+/g,
@@ -72,7 +96,7 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
   },
   {
     id: 'core:email',
-    pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
+    pattern: /\b[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,63}\b/g,
     label: 'private_email',
     confidence: 0.95,
   },
@@ -434,13 +458,6 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     label: 'account_number',
     confidence: 0.95,
   },
-  {
-    id: 'core:uuid-v4',
-    pattern:
-      /\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}\b/g,
-    label: 'account_number',
-    confidence: 0.85,
-  },
   // MAC — lookbehind/lookahead bound to single-octet boundary. Labelled
   // `private_mac` (separate from `private_ip`) so consumers that group
   // spans by label keep hardware identifiers distinct from IPv4/IPv6.
@@ -492,10 +509,31 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
   // matches that don't satisfy the official checksum).
   {
     id: 'core:cf-italy',
-    pattern: /\b[A-Z]{6}\d{2}[A-EHLMPRST]\d{2}[A-Z]\d{3}[A-Z]\b/g,
+    // Omocodic letters (L–V) may stand in for digits; any case.
+    pattern:
+      /\b[A-Z]{6}[\dLMNPQRSTUV]{2}[A-EHLMPRST][\dLMNPQRSTUV]{2}[A-Z][\dLMNPQRSTUV]{3}[A-Z]\b/gi,
     label: 'account_number',
     confidence: 0.99,
     validate: codiceFiscaleValid,
+  },
+  // Italian Partita IVA. Context REQUIRED: a bare `\d{11}` + checksum
+  // passed ~10% of random 11-digit runs and was removed in #38. Anchored
+  // on the keyword (P.IVA, Partita IVA, VAT number, …) or the `IT` VAT
+  // prefix, then checked on office code and check digit.
+  {
+    id: 'core:piva-italy-context',
+    pattern:
+      /(?<=\b(?:p\.?\s?iva|partita\s{1,3}iva|vat(?:\s{0,3}(?:no|number|nr|n°|id|reg(?:istration)?))?|ust-?id(?:nr)?)[\s:.#n°]{0,8})(?:IT\s?)?\d{11}\b/gi,
+    label: 'account_number',
+    confidence: 0.95,
+    validate: partitaIvaValid,
+  },
+  {
+    id: 'core:piva-italy-prefixed',
+    pattern: /\bIT\d{11}\b/g,
+    label: 'account_number',
+    confidence: 0.9,
+    validate: partitaIvaValid,
   },
 
   // ─── Cloud / payment provider secrets (more than the AKIA + ghp_ already above) ──
@@ -567,7 +605,7 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     // collides with `id_card:` / `License:` / generic ID-number
     // formats (measured precision ~14% on nullpii-bench standalone).
     id: 'core:passport-us-context',
-    pattern: /(?<=\bpassport(?:\s*(?:no|number|nbr|#))?[\s:.]+)[A-HJ-NPR-Z]\d{8}\b/gi,
+    pattern: /(?<=\bpassport(?:\s{0,3}(?:no|number|nbr|#))?[\s:.]{1,8})[A-HJ-NPR-Z]\d{8}\b/gi,
     label: 'private_passport',
     confidence: 0.97,
   },
@@ -577,14 +615,14 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     // model numbers, ISBNs on free text. Generic context fallback
     // (`core:passport-generic-context`) covers prose with the keyword.
     id: 'core:passport-it-context',
-    pattern: /(?<=\b(?:passaporto|passport)[\s:.n°]+)[A-Z]{2}\d{7}\b/gi,
+    pattern: /(?<=\b(?:passaporto|passport)[\s:.n°]{1,8})[A-Z]{2}\d{7}\b/gi,
     label: 'private_passport',
     confidence: 0.97,
   },
   {
     // UK passport: 9 digits. Pure digits — context REQUIRED.
     id: 'core:passport-uk-context',
-    pattern: /(?<=\bpassport(?:\s*(?:no|number))?[\s:.#]+)\d{9}\b/gi,
+    pattern: /(?<=\bpassport(?:\s{0,3}(?:no|number))?[\s:.#]{1,8})\d{9}\b/gi,
     label: 'private_passport',
     confidence: 0.95,
   },
@@ -593,14 +631,14 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     // Uncontexted variant dropped — `[CFGRPT][0-9A-Z]{9}` collides
     // with serial numbers and product codes on free text.
     id: 'core:passport-de-context',
-    pattern: /(?<=\b(?:passnummer|reisepass|passport)[\s:.#]+)[CFGRPT][0-9A-Z]{9}\b/gi,
+    pattern: /(?<=\b(?:passnummer|reisepass|passport)[\s:.#]{1,8})[CFGRPT][0-9A-Z]{9}\b/gi,
     label: 'private_passport',
     confidence: 0.95,
   },
   {
     // French passport: 9 alphanumeric chars, typically 2 digit + 2 letter + 5 digit.
     id: 'core:passport-fr-context',
-    pattern: /(?<=\b(?:passeport|passport)[\s:.n°]+)[0-9]{2}[A-Z]{2}[0-9]{5}\b/gi,
+    pattern: /(?<=\b(?:passeport|passport)[\s:.n°]{1,8})[0-9]{2}[A-Z]{2}[0-9]{5}\b/gi,
     label: 'private_passport',
     confidence: 0.95,
   },
@@ -609,7 +647,7 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     // Uncontexted variant dropped — overlaps with airline locators,
     // booking refs, ISBN-like sequences. Keep context-anchored only.
     id: 'core:passport-es-context',
-    pattern: /(?<=\b(?:pasaporte|passport)[\s:.n°#]+)[A-Z]{3}\d{6}\b/gi,
+    pattern: /(?<=\b(?:pasaporte|passport)[\s:.n°#]{1,8})[A-Z]{3}\d{6}\b/gi,
     label: 'private_passport',
     confidence: 0.95,
   },
@@ -619,7 +657,7 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     // after a passport keyword; required context keeps FP low.
     id: 'core:passport-generic-context',
     pattern:
-      /(?<=\b(?:passport|passeport|passaporto|passnummer|reisepass|pasaporte|paszport|paspoort)[\s:.n°#-]+)[A-Z0-9]{6,12}\b/gi,
+      /(?<=\b(?:passport|passeport|passaporto|passnummer|reisepass|pasaporte|paszport|paspoort)[\s:.n°#-]{1,8})[A-Z0-9]{6,12}\b/gi,
     label: 'private_passport',
     confidence: 0.9,
   },
@@ -631,28 +669,29 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
   {
     id: 'core:driver-license-generic-context',
     pattern:
-      /(?<=\b(?:driver(?:'s|s)?\s*(?:lic(?:ence|ense)|dl)|dln|dl#|patente|permis(?:\s*de\s*conduire)?|f[üu]hrerschein|carnet\s*de\s*conducir|rijbewijs|cnh|c[aá]rt[ae]\s*de\s*condu[çc][ãa]o)[\s:.#]+)[A-Z0-9][A-Z0-9\-]{4,18}[A-Z0-9]\b/gi,
+      /(?<=\b(?:driver(?:'s|s)?\s{0,3}(?:lic(?:ence|ense)|dl)|dln|dl#|patente|permis(?:\s{0,3}de\s{0,3}conduire)?|f[üu]hrerschein|carnet\s{0,3}de\s{0,3}conducir|rijbewijs|cnh|c[aá]rt[ae]\s{0,3}de\s{0,3}condu[çc][ãa]o)[\s:.#]{1,8})[A-Z0-9][A-Z0-9\-]{4,18}[A-Z0-9]\b/gi,
     label: 'private_driver_license',
     confidence: 0.95,
   },
   {
     // California: letter + 7 digits.
     id: 'core:driver-license-ca-context',
-    pattern: /(?<=\b(?:DL|driver\s*license)[\s:.#]+)[A-Z]\d{7}\b/gi,
+    pattern: /(?<=\b(?:DL|driver\s{0,3}license)[\s:.#]{1,8})[A-Z]\d{7}\b/gi,
     label: 'private_driver_license',
     confidence: 0.95,
   },
   {
     // New York: 9 digits OR 1 letter + 18 digits.
     id: 'core:driver-license-ny-context',
-    pattern: /(?<=\b(?:NY\s*DL|driver\s*license)[\s:.#]+)(?:\d{9}|[A-Z]\d{18})\b/gi,
+    pattern: /(?<=\b(?:NY\s{0,3}DL|driver\s{0,3}license)[\s:.#]{1,8})(?:\d{9}|[A-Z]\d{18})\b/gi,
     label: 'private_driver_license',
     confidence: 0.95,
   },
   {
     // Italian patente: 1 letter + 1 alpha + 7 digits + 1 letter (10 chars).
     id: 'core:driver-license-it-context',
-    pattern: /(?<=\b(?:patente(?:\s*di\s*guida)?|n\.?\s*patente)[\s:.#]+)[A-Z]{1,2}\d{7}[A-Z]\b/gi,
+    pattern:
+      /(?<=\b(?:patente(?:\s{0,3}di\s{0,3}guida)?|n\.?\s{0,3}patente)[\s:.#]{1,8})[A-Z]{1,2}\d{7}[A-Z]\b/gi,
     label: 'private_driver_license',
     confidence: 0.95,
   },
@@ -706,7 +745,8 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
   {
     // US plates — too varied per state; context-anchored only.
     id: 'core:plate-us-context',
-    pattern: /(?<=\b(?:license\s*plate|plate(?:\s*number)?|tag)[\s:.#]+)[A-Z0-9\-]{3,8}\b/gi,
+    pattern:
+      /(?<=\b(?:license\s{0,3}plate|plate(?:\s{0,3}number)?|tag)[\s:.#]{1,8})[A-Z0-9\-]{3,8}\b/gi,
     label: 'private_vehicle_id',
     confidence: 0.9,
   },
@@ -735,7 +775,7 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     // requirement when the user explicitly says "latitude: X").
     id: 'core:geo-context',
     pattern:
-      /(?<=\b(?:lat(?:itude)?|lon(?:gitude)?|lng|gps|coord(?:inate)?s?)[\s:=]+)-?\d{1,3}\.\d{2,8}\b/gi,
+      /(?<=\b(?:lat(?:itude)?|lon(?:gitude)?|lng|gps|coord(?:inate)?s?)[\s:=]{1,8})-?\d{1,3}\.\d{2,8}\b/gi,
     label: 'private_geolocation',
     confidence: 0.9,
   },
@@ -765,7 +805,7 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     // (CMS-spec NPI Luhn requires prefixing `80840` for the full
     // 15-digit check — not implemented here; context anchor is enough.)
     id: 'core:npi-us-context',
-    pattern: /(?<=\b(?:npi|provider(?:\s*(?:id|number|#))?)[\s:.#]+)\d{10}\b/gi,
+    pattern: /(?<=\b(?:npi|provider(?:\s{0,3}(?:id|number|#))?)[\s:.#]{1,8})\d{10}\b/gi,
     label: 'account_number',
     confidence: 0.9,
   },
@@ -773,7 +813,7 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     // Insurance policy / member number (context-anchored).
     id: 'core:insurance-policy-context',
     pattern:
-      /(?<=\b(?:policy(?:\s*(?:no|number|#))?|member(?:\s*id)?|subscriber(?:\s*id)?|group(?:\s*(?:no|#))?)[\s:.#]+)[A-Z0-9][A-Z0-9\-]{5,18}[A-Z0-9]\b/gi,
+      /(?<=\b(?:policy(?:\s{0,3}(?:no|number|#))?|member(?:\s{0,3}id)?|subscriber(?:\s{0,3}id)?|group(?:\s{0,3}(?:no|#))?)[\s:.#]{1,8})[A-Z0-9][A-Z0-9\-]{5,18}[A-Z0-9]\b/gi,
     label: 'account_number',
     confidence: 0.9,
   },
@@ -781,7 +821,7 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     // Professional / certificate licence (context-anchored).
     id: 'core:certificate-context',
     pattern:
-      /(?<=\b(?:cert(?:ificate)?(?:\s*(?:no|number|#))?|licen[cs]e(?:\s*(?:no|number|#))?(?!\s*plate)|registration(?:\s*(?:no|#))?)[\s:.#]+)[A-Z0-9][A-Z0-9\-]{4,18}[A-Z0-9]\b/gi,
+      /(?<=\b(?:cert(?:ificate)?(?:\s{0,3}(?:no|number|#))?|licen[cs]e(?:\s{0,3}(?:no|number|#))?(?!\s{0,8}plate)|registration(?:\s{0,3}(?:no|#))?)[\s:.#]{1,8})[A-Z0-9][A-Z0-9\-]{4,18}[A-Z0-9]\b/gi,
     label: 'account_number',
     confidence: 0.85,
   },
@@ -789,7 +829,7 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     // Device serial (context-anchored — generic device IDs).
     id: 'core:device-serial-context',
     pattern:
-      /(?<=\b(?:s\/?n|serial(?:\s*(?:no|number|#))?|imei|udid|device\s*id)[\s:.#]+)[A-Z0-9][A-Z0-9\-]{6,30}[A-Z0-9]\b/gi,
+      /(?<=\b(?:s\/?n|serial(?:\s{0,3}(?:no|number|#))?|imei|udid|device\s{0,3}id)[\s:.#]{1,8})[A-Z0-9][A-Z0-9\-]{6,30}[A-Z0-9]\b/gi,
     label: 'account_number',
     confidence: 0.85,
   },
@@ -799,11 +839,162 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     // anchor on an explicit IMEI / device keyword to avoid asymmetric
     // FPs vs competitors that don't ship a standalone IMEI rule.
     id: 'core:imei-context',
-    pattern: /(?<=\b(?:imei|device(?:\s*(?:id|imei|#))?)[\s:.#]+)\d{15}\b/gi,
+    pattern: /(?<=\b(?:imei|device(?:\s{0,3}(?:id|imei|#))?)[\s:.#]{1,8})\d{15}\b/gi,
     label: 'account_number',
     confidence: 0.95,
     validate: luhnValid,
   },
+];
+
+/** Built-in URL policy (`NullPiiConfig.urlAllowlist`): how much of a clean
+ * URL on each host stays readable (a URL with credentials, a second URL,
+ * a credential-like query parameter or another PII span inside it is
+ * never released). A key is an exact host, or `*.` and a
+ * domain for the domain and every subdomain; a host matching no key is
+ * masked. Hosts that serve customer consoles under a subdomain
+ * (`console.aws.amazon.com`, `console.anthropic.com`) are listed exactly,
+ * so those consoles stay masked. */
+export const DEFAULT_URL_RELEASES: Readonly<Record<string, UrlRelease>> = {
+  // This machine: a coding agent calls its own dev servers and local
+  // services (`curl http://127.0.0.1:8787/health`), and a masked URL
+  // there would stop the command. Only the loopback names and addresses
+  // and the unspecified address servers bind to; a private-network
+  // address is not on this list.
+  localhost: 'full',
+  '127.0.0.1': 'full',
+  '[::1]': 'full',
+  '0.0.0.0': 'full',
+  // Source hosting. Paths name users and repositories, private ones
+  // included; set these to 'host' to keep only the host readable. Whole
+  // URLs are the default because links to public repositories and issues
+  // are most of what a coding agent reads, and masking their paths cost
+  // the traces 0.04 of char-F2 on the tuning set. A link
+  // whose query carries a credential is never released (url-filter).
+  '*.github.com': 'full',
+  '*.githubusercontent.com': 'full',
+  '*.gitlab.com': 'full',
+  '*.bitbucket.org': 'full',
+  '*.codeberg.org': 'full',
+  '*.sourceforge.net': 'full',
+  '*.huggingface.co': 'full',
+  // Package registries and the tarball hosts lockfiles cite
+  // (`registry.npmjs.org`, `files.pythonhosted.org`): paths name public
+  // packages.
+  '*.npmjs.com': 'full',
+  '*.npmjs.org': 'full',
+  '*.yarnpkg.com': 'full',
+  '*.pypi.org': 'full',
+  '*.pythonhosted.org': 'full',
+  '*.crates.io': 'full',
+  '*.rubygems.org': 'full',
+  '*.packagist.org': 'full',
+  '*.nuget.org': 'full',
+  '*.maven.org': 'full',
+  // Reference, standards and language documentation.
+  '*.wikipedia.org': 'full',
+  '*.wikimedia.org': 'full',
+  '*.mozilla.org': 'full',
+  '*.w3.org': 'full',
+  '*.whatwg.org': 'full',
+  '*.rfc-editor.org': 'full',
+  '*.ietf.org': 'full',
+  '*.iso.org': 'full',
+  '*.unicode.org': 'full',
+  '*.iana.org': 'full',
+  '*.apache.org': 'full',
+  '*.python.org': 'full',
+  '*.nodejs.org': 'full',
+  '*.rust-lang.org': 'full',
+  '*.golang.org': 'full',
+  '*.go.dev': 'full',
+  '*.kotlinlang.org': 'full',
+  '*.scala-lang.org': 'full',
+  '*.typescriptlang.org': 'full',
+  // Vendor sites: the public site and its documentation only.
+  'anthropic.com': 'full',
+  'docs.anthropic.com': 'full',
+  'openai.com': 'full',
+  'deepmind.com': 'full',
+  'mistral.ai': 'full',
+  'docs.mistral.ai': 'full',
+  'oracle.com': 'full',
+  'docs.oracle.com': 'full',
+  'aws.amazon.com': 'full',
+  'docs.aws.amazon.com': 'full',
+  'cloud.google.com': 'full',
+  'azure.microsoft.com': 'full',
+  'docs.microsoft.com': 'full',
+  'learn.microsoft.com': 'full',
+  // Q&A.
+  '*.stackoverflow.com': 'full',
+  '*.stackexchange.com': 'full',
+  '*.serverfault.com': 'full',
+  '*.superuser.com': 'full',
+  // Project infrastructure READMEs link to: status badges, CI, coverage,
+  // dependency and funding pages, public package CDNs.
+  '*.shields.io': 'full',
+  '*.badgen.net': 'full',
+  '*.fury.io': 'full',
+  '*.nodei.co': 'full',
+  '*.npm.im': 'full',
+  '*.packagequality.com': 'full',
+  '*.travis-ci.org': 'full',
+  '*.travis-ci.com': 'full',
+  '*.circleci.com': 'full',
+  '*.appveyor.com': 'full',
+  '*.coveralls.io': 'full',
+  '*.codecov.io': 'full',
+  '*.david-dm.org': 'full',
+  '*.snyk.io': 'full',
+  '*.tidelift.com': 'full',
+  '*.opencollective.com': 'full',
+  '*.jsdelivr.com': 'full',
+  '*.jsdelivr.net': 'full',
+  '*.unpkg.com': 'full',
+};
+
+/** Directory and file name of the shared config file under the XDG config
+ * home (`~/.config/nullpii/config.json`). */
+export const CONFIG_DIR_NAME = 'nullpii';
+export const CONFIG_FILE_NAME = 'config.json';
+
+/** Largest config file accepted. The policy is a few hundred bytes; a
+ * larger file is a mistake, not a policy. */
+export const MAX_CONFIG_FILE_BYTES = 64 * 1024;
+
+/** Categories left readable when no `disabledCategories` is configured.
+ * nullpii is built for coding agents: by default it masks what is
+ * dangerous to hand to a model (secrets, contact details and addresses,
+ * ids and accounts, people's names) and leaves readable what the agent
+ * needs to do its work and identifies no one on its own: companies, jobs,
+ * honorifics, demographic and sensitive attributes, and dates (the model
+ * does not tell a birth date from a deadline). Set `disabledCategories`
+ * to `[]` to mask every category. */
+export const DEFAULT_DISABLED_CATEGORIES: readonly PiiCategory[] = [
+  'private_organization',
+  'private_occupation',
+  'private_demographic',
+  'private_sensitive',
+  'private_title',
+  'private_date',
+];
+
+/** Tools whose arguments get real values back when no `restoreTools` is
+ * configured: the file tools of coding agents, which run on this machine.
+ * Tools that send data elsewhere (`WebFetch`, `WebSearch`, MCP tools)
+ * keep the placeholders, and so does every shell tool (`Bash`, `bash`,
+ * `shell`, …), whatever this list says (SECURITY.md). */
+export const DEFAULT_RESTORE_TOOLS: readonly string[] = [
+  // Claude Code.
+  'Read',
+  'Edit',
+  'MultiEdit',
+  'Write',
+  'NotebookEdit',
+  'Grep',
+  'Glob',
+  // The patch tool of OpenAI-style coding agents.
+  'apply_patch',
 ];
 
 /** Whether `DEFAULT_RECOGNIZERS` are auto-registered on every
@@ -822,9 +1013,26 @@ export const BOUNDARY_REFINE_TRIM_CHARS = ' \t\n\r,.;:!?"\'()[]{}<>';
 
 /** Default GLiNER decode threshold. Spans with sigmoid score below this
  * are dropped during the model decode pass (`decodeGlinerLogits`).
- * Tuned for the model ONNX — lower bloats output with low-confidence
- * noise, higher loses recall. */
-export const DEFAULT_DECODE_THRESHOLD = 0.5;
+ *
+ * 0.05, not the GLiNER-customary 0.5: for redaction a missed character
+ * leaks while an extra one only costs context. Selected on the tuning
+ * heldouts by label-agnostic char-level F2 (recall-weighted), under a
+ * cap on extra masking of developer content (code, markdown, JSON);
+ * see `packages/eval/METHOD.md`. Labels
+ * that need a higher cut are listed in `DEFAULT_CATEGORY_THRESHOLDS`. */
+export const DEFAULT_DECODE_THRESHOLD = 0.05;
+
+/** Post-filter thresholds applied per label when the caller sets no
+ * `categoryThresholds`. IP and MAC addresses keep 0.5: the recognizer
+ * pack owns those shapes, and low-score model guesses on them are
+ * version strings and counters, not addresses. Dates and emails were
+ * selected slightly above the decode threshold (iteration D3b). */
+export const DEFAULT_CATEGORY_THRESHOLDS: Readonly<Partial<Record<string, number>>> = {
+  private_ip: 0.5,
+  private_mac: 0.5,
+  private_date: 0.125,
+  private_email: 0.075,
+};
 
 /** Default secondary threshold applied AFTER ML + recognizer merge.
  * `0` means "do not drop anything beyond what decode + per-label
@@ -838,8 +1046,18 @@ export const DEFAULT_POST_FILTER_THRESHOLD = 0;
  * treated as duplicates; higher-scoring one wins. */
 export const DEFAULT_DEDUPE_IOU = 0.5;
 
-/** Hard byte cap for `normalizeForDetection` and `runRecognizers`.
- * Inputs above this fall back to passthrough (normalize) or refuse
- * to scan (recognizers) so adversarial 1 MB+ payloads with quadratic
- * regex behaviour are not a DoS vector. */
-export const MAX_INPUT_BYTES = 1_000_000;
+/** Most characters one detection pass reads, in UTF-16 code units. It
+ * bounds the work of every pass: the model windows, normalisation, and
+ * the recognizer pack, whose patterns are all linear-time (bounded
+ * quantifiers, `test/recognizers-linear.test.ts`). Normalised text can be
+ * longer than the input (transliteration), and the recognizers scan it
+ * whole. `sanitize()` reads a longer text in overlapping windows of at
+ * most this size (`segments.ts`) and masks it once. */
+export const MAX_INPUT_CHARS = 1_000_000;
+
+/** Overlap between two windows of a text longer than `MAX_INPUT_CHARS`:
+ * a value shorter than this that crosses a window's end lies whole in the
+ * next window. Longer than any PEM key block or address. A longer value
+ * with no whitespace (an encoded blob) is kept whole another way: the
+ * next window starts where its run starts (`segments.ts`). */
+export const SEGMENT_OVERLAP_CHARS = 32_768;

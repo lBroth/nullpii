@@ -5,12 +5,12 @@ import { SessionMismatchError, SessionNotFoundError, UnknownPlaceholderError } f
 import { logf } from './log.js';
 import { sessionPrefixOf } from './session-prefix.js';
 import {
+  type MaskResult,
   PLACEHOLDER_REGEX,
   PLACEHOLDER_TEMPLATE,
   type PiiSpan,
   type RestoreOptions,
   type RestoreResult,
-  type SanitizeResult,
 } from './types/index.js';
 
 const LOG_SCOPE = 'nullpii:vault';
@@ -20,7 +20,29 @@ interface Session {
   readonly entries: Map<string, string>;
   /** label → next index for that label. */
   readonly counters: Map<string, number>;
+  /** `label + NUL + exact value` → the placeholder minted for it, so a
+   * value that recurs in the session reaches the model as the same token
+   * (issue #50). Keyed on the exact value: folding case or whitespace
+   * would restore every occurrence with the first one's spelling. */
+  readonly byValue: Map<string, KnownValue>;
 }
+
+/** A value the session has masked, and the placeholder it got. */
+interface KnownValue {
+  readonly label: PiiSpan['label'];
+  readonly text: string;
+  readonly placeholder: string;
+}
+
+const VALUE_KEY_SEPARATOR = '\u0000';
+/** Shortest value the known-value pass looks for: a shorter one (`Li`,
+ * `12`) would mask unrelated text too often. */
+const MIN_KNOWN_VALUE_LENGTH = 3;
+/** Score of a span the known-value pass adds: an exact match. */
+const KNOWN_VALUE_SCORE = 1;
+/** A letter, digit or underscore: a match that touches one on its outer
+ * side is part of a longer word (`Ann` in `Annual`), not the value. */
+const WORD_CHAR = /[\p{L}\p{N}_]/u;
 
 /**
  * In-memory reversible vault for PII placeholders.
@@ -44,7 +66,7 @@ export class PiiVault {
   /** Create a fresh vault session. Returns a UUID v4. */
   createSession(): string {
     const id = randomUUID();
-    this.sessions.set(id, { entries: new Map(), counters: new Map() });
+    this.sessions.set(id, { entries: new Map(), counters: new Map(), byValue: new Map() });
     logf(LOG_SCOPE, 'session.created', { sessions: this.sessions.size });
     return id;
   }
@@ -55,27 +77,47 @@ export class PiiVault {
    * Spans are processed back-to-front so each replacement preserves the
    * char offsets of earlier spans. The session's vault is updated in place.
    *
+   * Every occurrence of a value an earlier call on the session masked is
+   * masked too, as a whole word: the detector can miss a value it found
+   * elsewhere, such as one restored into a tool call and echoed back in
+   * the tool's result. Values found in `text` itself are not searched for
+   * again, so a single call masks what the detector finds and no more.
+   *
    * @throws {SessionNotFoundError} if `sessionId` is unknown.
    */
-  sanitize(text: string, spans: readonly PiiSpan[], sessionId: string): SanitizeResult {
+  sanitize(text: string, spans: readonly PiiSpan[], sessionId: string): MaskResult {
     const session = this.requireSession(sessionId);
-    if (spans.length === 0) {
+    const known = knownValueSpans(text, [...session.byValue.values()]);
+    if (spans.length === 0 && known.length === 0) {
       return { sessionId, sanitized: text, spans: [] };
     }
     const sessionPrefix = sessionPrefixOf(sessionId);
-    // Allocate placeholders in document order so indices reflect reading order.
-    const ordered = [...spans].sort((a, b) => a.start - b.start);
-    const placeholders = ordered.map((span) => this.allocPlaceholder(session, span, sessionPrefix));
-    // Replace back-to-front so each replacement preserves earlier offsets.
-    let out = text;
-    for (let i = ordered.length - 1; i >= 0; i--) {
-      const span = ordered[i];
-      const placeholder = placeholders[i];
-      if (span === undefined || placeholder === undefined) continue;
-      out = `${out.slice(0, span.start)}${placeholder}${out.slice(span.end)}`;
+    // Placeholders are allocated in document order so indices reflect
+    // reading order. Overlapping spans are merged first: replacing two
+    // spans that share characters corrupts the round-trip.
+    const ordered = mergeOverlappingSpans(text, [...spans, ...known]);
+    if (known.length > 0) logf(LOG_SCOPE, 'sanitize.known', { spans: known.length });
+    if (ordered.length < spans.length + known.length) {
+      logf(LOG_SCOPE, 'sanitize.merged', {
+        spans: ordered.length,
+        dropped: spans.length + known.length - ordered.length,
+      });
     }
-    logf(LOG_SCOPE, 'sanitize', { spans: spans.length, session: sessionPrefix });
-    return { sessionId, sanitized: out, spans };
+    const placeholders = ordered.map((span) => this.allocPlaceholder(session, span, sessionPrefix));
+    // `ordered` is sorted and disjoint: copy the text between spans and the
+    // placeholders in one pass, and join once.
+    const pieces: string[] = [];
+    let at = 0;
+    ordered.forEach((span, i) => {
+      const placeholder = placeholders[i];
+      if (placeholder === undefined) throw new Error('vault: a span has no placeholder');
+      pieces.push(text.slice(at, span.start), placeholder);
+      at = span.end;
+    });
+    pieces.push(text.slice(at));
+    const out = pieces.join('');
+    logf(LOG_SCOPE, 'sanitize', { spans: ordered.length, session: sessionPrefix });
+    return { sessionId, sanitized: out, spans: ordered };
   }
 
   /**
@@ -182,10 +224,81 @@ export class PiiVault {
   }
 
   private allocPlaceholder(session: Session, span: PiiSpan, sessionPrefix: string): string {
+    const key = `${span.label}${VALUE_KEY_SEPARATOR}${span.text}`;
+    const existing = session.byValue.get(key);
+    if (existing !== undefined) return existing.placeholder;
     const idx = session.counters.get(span.label) ?? 0;
     session.counters.set(span.label, idx + 1);
     const placeholder = PLACEHOLDER_TEMPLATE(span.label, idx, sessionPrefix);
     session.entries.set(placeholder, span.text);
+    session.byValue.set(key, { label: span.label, text: span.text, placeholder });
     return placeholder;
   }
+}
+
+/**
+ * Spans over every whole-word occurrence in `text` of the `values` at
+ * least {@link MIN_KNOWN_VALUE_LENGTH} long. Overlaps with other spans
+ * are left to `mergeOverlappingSpans`.
+ */
+function knownValueSpans(
+  text: string,
+  values: ReadonlyArray<Pick<PiiSpan, 'label' | 'text'>>,
+): PiiSpan[] {
+  const out: PiiSpan[] = [];
+  const seen = new Set<string>();
+  for (const { label, text: value } of values) {
+    if (value.length < MIN_KNOWN_VALUE_LENGTH || seen.has(value)) continue;
+    seen.add(value);
+    for (let at = text.indexOf(value); at !== -1; at = text.indexOf(value, at + 1)) {
+      const end = at + value.length;
+      if (!isWholeWord(text, at, end)) continue;
+      out.push({ label, start: at, end, score: KNOWN_VALUE_SCORE, text: value });
+    }
+  }
+  return out;
+}
+
+/** Whether `text[start, end)` is not part of a longer word: an edge that
+ * is a word character must not touch another one outside the match. */
+function isWholeWord(text: string, start: number, end: number): boolean {
+  const joins = (inside: string | undefined, outside: string | undefined) =>
+    inside !== undefined &&
+    outside !== undefined &&
+    WORD_CHAR.test(inside) &&
+    WORD_CHAR.test(outside);
+  return !joins(text[start], text[start - 1]) && !joins(text[end - 1], text[end]);
+}
+
+/**
+ * Clamp spans to `text`, drop empty ones, and merge any that share a
+ * character into their union, sorted by start.
+ *
+ * Masking the union never exposes a character that any input span
+ * covered, so merging is the fail-safe resolution. The merged span keeps
+ * the label of its highest-scoring member and that member's score; its
+ * `text` is re-sliced from `text` because the vault stores it verbatim.
+ */
+function mergeOverlappingSpans(text: string, spans: readonly PiiSpan[]): PiiSpan[] {
+  const clamped = spans
+    .map((s) => ({ ...s, start: Math.max(0, s.start), end: Math.min(text.length, s.end) }))
+    .filter((s) => s.end > s.start)
+    .sort((a, b) => a.start - b.start || b.end - a.end);
+  const merged: PiiSpan[] = [];
+  for (const span of clamped) {
+    const last = merged[merged.length - 1];
+    if (last === undefined || span.start >= last.end) {
+      merged.push({ ...span, text: text.slice(span.start, span.end) });
+      continue;
+    }
+    const end = Math.max(last.end, span.end);
+    const winner = span.score > last.score ? span : last;
+    merged[merged.length - 1] = {
+      ...winner,
+      start: last.start,
+      end,
+      text: text.slice(last.start, end),
+    };
+  }
+  return merged;
 }

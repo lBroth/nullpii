@@ -1,0 +1,21 @@
+# Public figures that may appear in agent traffic (AMBIGUOUS public_figure)
+Linus Torvalds
+Guido van Rossum
+Ada Lovelace
+Alan Turing
+Grace Hopper
+Dennis Ritchie
+Ken Thompson
+Brian Kernighan
+Donald Knuth
+Tim Berners-Lee
+Bjarne Stroustrup
+James Gosling
+Margaret Hamilton
+Edsger Dijkstra
+Yukihiro Matsumoto
+Rasmus Lerdorf
+Brendan Eich
+Anders Hejlsberg
+Barbara Liskov
+Leslie Lamport

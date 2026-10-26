@@ -1,0 +1,52 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Secret scanning for this repository (gitleaks >= 8.28; run in CI by
+# .github/workflows/security.yml and before each commit by lefthook).
+#
+# nullpii detects PII and secrets, so its tests and its self-authored
+# benchmark carry fake values in real formats on purpose. They are
+# allowed below by exact value or by the path of a generated dataset,
+# never by rule: a real secret pasted anywhere else still fails the scan.
+# Adding an entry here needs a reviewer to confirm the value is fake.
+
+title = "nullpii"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Self-authored synthetic benchmark (every value is generated)"
+paths = [
+  '''(^|/)packages/eval/datasets/nullpii-bench\.jsonl$''',
+  # AB-1 component A: generator, value lists and gold; every key is generated
+  # from a gitleaks rule (datasets/ab1/README.md). The gold itself is gzipped.
+  '''(^|/)packages/eval/datasets/ab1/''',
+]
+
+[[allowlists]]
+description = "Fake credentials in recognizer tests"
+regexes = [
+  # AWS's own documentation example key id, and a one-letter variant.
+  '''AKIAIOSFODNN7EXAMPL[EB]''',
+  '''sk_live_aBcDeFgHiJkLmNoPqRsTuVwX''',
+  '''glpat-abcdefghij1234567890''',
+]
+
+[[allowlists]]
+description = "Fake-value generators for the eval traces: PEM headers whose body is random, and a curl line whose password is generated"
+regexes = [
+  # tracegen/values.py: `head, foot = "-----BEGIN … KEY-----", "-----END …"`
+  '''^-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----", "-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"''',
+  # traces_v2_gen.py: `d.t("$ curl -sv -u ci-bot:")`, then a generated password
+  '''^ci-bot:"\)''',
+]
+
+[[allowlists]]
+description = "SHA-256 of the published model files (public digests, not secrets)"
+regexes = [
+  '''58b6d795693fc3e79f465134a8e5acd4fa58799c6d614f1b795df24d4253313a''',
+  '''900b2b025915ca437515aa4154ee51467ab47805e67e6d883df37d69c1ae2065''',
+  '''c5b8041501fcdee792b9b112dd592861f04391a24633a73fd9f05aaaf6e8eff1''',
+  '''dec8f0f8a2d78af7d7c5553cf7144abc9bf06774170d9ebca6b831db6e542790''',
+  '''c12b7b3bab6cd638f70b203daf1438bf7fedbeab4728a1e155728af9a5a55687''',
+]

@@ -1,0 +1,345 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/*
+ * nullpii's visual identity. Every color lives on VitePress tokens: one
+ * teal hue, tuned separately for light and dark mode. The custom home
+ * sections (the flow diagram, the feature grid, the install card) read
+ * the same tokens, so nothing below needs to know which mode it is in.
+ */
+
+:root {
+  /* Brand: teal. -1 is the text color (links, the hero name), -2 the
+   * hover color, -3 the lighter accent. */
+  --vp-c-brand-1: #0f766e;
+  --vp-c-brand-2: #0d9488;
+  --vp-c-brand-3: #14b8a6;
+  --vp-c-brand-soft: rgba(13, 148, 136, 0.14);
+  /* DEPRECATED: the default theme no longer reads --vp-c-brand. */
+  --vp-c-brand: var(--vp-c-brand-1);
+
+  /* The solid brand button keeps white text in both modes: a step darker
+   * than the token colors above, which need to stay light enough to read. */
+  --vp-button-brand-bg: #0f766e;
+  --vp-button-brand-hover-bg: #115e59;
+  --vp-button-brand-active-bg: #134e4a;
+
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(120deg, #134e4a, #0d9488);
+}
+
+.dark {
+  --vp-c-brand-1: #2dd4bf;
+  --vp-c-brand-2: #14b8a6;
+  --vp-c-brand-3: #0d9488;
+  --vp-c-brand-soft: rgba(45, 212, 191, 0.16);
+  --vp-c-brand: var(--vp-c-brand-1);
+
+  --vp-home-hero-name-background: linear-gradient(120deg, #5eead4, #14b8a6);
+}
+
+/* ---------------------------------------------------------------------
+ * Home hero
+ * ------------------------------------------------------------------- */
+
+/* A quiet teal glow above the fold, in both modes. */
+.VPHero {
+  background: radial-gradient(560px 220px at 50% -40px, var(--vp-c-brand-soft), transparent 72%);
+}
+
+/* Without a hero image the default keeps everything flush left; centered
+ * text sits better above the centered flow diagram. */
+.VPHero:not(.has-image) .main {
+  margin: 0 auto;
+  text-align: center;
+}
+
+.VPHero:not(.has-image) .heading {
+  align-items: center;
+}
+
+.VPHero:not(.has-image) .tagline {
+  margin: 0 auto;
+}
+
+.VPHero .actions {
+  justify-content: center;
+}
+
+/* The home-hero-image slot supplies the lock. VitePress places it above
+ * the centered text on narrow screens and to the right on wide ones. */
+@media (max-width: 959px) {
+  /* VitePress pulls a hero image up under the nav bar and gives it a
+   * fixed square; the lock has its own size, so it gets neither. */
+  .VPHero.has-image .image {
+    margin: 0 0 8px;
+  }
+
+  .VPHero.has-image .image-container {
+    width: auto;
+    height: auto;
+  }
+
+  .VPHero.has-image .main {
+    margin-right: auto;
+    margin-left: auto;
+    text-align: center;
+  }
+
+  .VPHero.has-image .heading {
+    align-items: center;
+  }
+}
+
+@media (min-width: 960px) {
+  .VPHero.has-image .main {
+    margin: 0;
+    text-align: left;
+  }
+
+  .VPHero.has-image .image-container {
+    transform: none;
+  }
+
+  .VPHero.has-image .main .actions {
+    justify-content: flex-start;
+  }
+}
+
+/* ---------------------------------------------------------------------
+ * Home sections (the theme injects them around the default ones)
+ * ------------------------------------------------------------------- */
+
+.np-section {
+  padding: 28px 24px 56px;
+}
+
+@media (min-width: 640px) {
+  .np-section {
+    padding: 32px 48px 72px;
+  }
+}
+
+@media (min-width: 960px) {
+  .np-section {
+    padding: 40px 64px 88px;
+  }
+}
+
+.np-section-inner {
+  margin: 0 auto;
+  max-width: 1000px;
+}
+
+.np-section-head {
+  margin: 0 auto 28px;
+  text-align: center;
+}
+
+@media (min-width: 640px) {
+  .np-section-head {
+    margin-bottom: 40px;
+  }
+}
+
+.np-kicker {
+  margin: 0;
+  color: var(--vp-c-brand-1);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.np-section-title {
+  margin: 10px 0 0;
+  padding: 0;
+  border-top: none;
+  color: var(--vp-c-text-1);
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+@media (min-width: 640px) {
+  .np-section-title {
+    font-size: 32px;
+  }
+}
+
+.np-section-lead {
+  margin: 14px auto 0;
+  max-width: 660px;
+  color: var(--vp-c-text-2);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+/* ---------------------------------------------------------------------
+ * Feature grid (FeaturesGrid.vue)
+ * ------------------------------------------------------------------- */
+
+.np-features {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 640px) {
+  .np-features {
+    gap: 18px;
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 960px) {
+  .np-features {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.np-feature {
+  padding: 20px;
+  background-color: var(--vp-c-bg-alt);
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  transition: border-color 0.25s, transform 0.25s;
+}
+
+.np-feature:hover {
+  border-color: var(--vp-c-brand-2);
+  transform: translateY(-2px);
+}
+
+.np-feature-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin-bottom: 14px;
+  background-color: var(--vp-c-brand-soft);
+  border-radius: 10px;
+  color: var(--vp-c-brand-1);
+}
+
+.np-feature-title {
+  margin: 0 0 6px;
+  color: var(--vp-c-text-1);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.np-feature-details {
+  margin: 0;
+  color: var(--vp-c-text-2);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.np-feature-details a {
+  color: var(--vp-c-brand-1);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.np-feature-details a:hover,
+.np-feature-details a:focus {
+  color: var(--vp-c-brand-2);
+}
+
+/* ---------------------------------------------------------------------
+ * Install card (InstallSection.vue)
+ * ------------------------------------------------------------------- */
+
+.np-install {
+  margin: 0 auto;
+  max-width: 560px;
+  text-align: center;
+}
+
+.np-install-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 0 auto 20px;
+  padding: 16px 20px;
+  background-color: var(--vp-c-bg-alt);
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  font-family: var(--vp-font-family-mono);
+  overflow-x: auto;
+}
+
+.np-install-prompt {
+  color: var(--vp-c-brand-1);
+  font-weight: 600;
+}
+
+.np-install-cmd {
+  color: var(--vp-c-text-1);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+/* On a phone the command is one or two pixels wider than the card at
+ * 14px; a smaller step (and dropping the decorative $) makes it fit. */
+@media (max-width: 639px) {
+  .np-install-card {
+    padding: 14px 16px;
+  }
+
+  .np-install-prompt {
+    display: none;
+  }
+
+  .np-install-cmd {
+    font-size: 13px;
+  }
+}
+
+.np-install-note {
+  margin: 8px auto 0;
+  max-width: 520px;
+  color: var(--vp-c-text-2);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.np-install-note code {
+  font-size: 13px;
+}
+
+.np-install-note a {
+  color: var(--vp-c-brand-1);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.np-install-note a:hover,
+.np-install-note a:focus {
+  color: var(--vp-c-brand-2);
+}
+
+/* ---------------------------------------------------------------------
+ * The included READMEs
+ * ------------------------------------------------------------------- */
+
+/* The README's badges sit on one line, as on GitHub; the theme makes every image a block. */
+.vp-doc p > a > img {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* Get started: the prompt to paste wraps, so it reads without scrolling. */
+.vp-doc .np-prompt pre,
+.vp-doc .np-prompt code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.vp-doc .np-prompt code {
+  width: auto;
+}

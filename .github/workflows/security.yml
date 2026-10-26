@@ -1,0 +1,119 @@
+name: security
+
+# Supply-chain and leak gates for an open-source repo:
+#   - secrets:  gitleaks on the commits a change adds and on the tree
+#   - hygiene:  nothing private, generated, oversized or machine-specific
+#   - codeql:   static analysis of the TypeScript and the Python eval kit
+#   - deps:     dependency review (vulnerabilities, licences) on PRs
+# Every third-party action and image is pinned by digest; Dependabot
+# proposes the bumps (.github/dependabot.yml).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '23 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GITLEAKS_IMAGE: zricethezav/gitleaks:v8.28.0@sha256:cdbb7c955abce02001a9f6c9f602fb195b7fadc1e812065883f695d1eeaba854
+
+jobs:
+  secrets:
+    name: secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Scan the commits this change adds
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.sha }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            RANGE="$PR_BASE..$PR_HEAD"
+          elif [ "$PUSH_BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            RANGE="$PUSH_AFTER~1..$PUSH_AFTER"
+          else
+            RANGE="$PUSH_BEFORE..$PUSH_AFTER"
+          fi
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo:ro" "$GITLEAKS_IMAGE" git /repo \
+            --config /repo/.gitleaks.toml --log-opts="$RANGE" --redact --no-banner --exit-code 1
+      - name: Scan the working tree
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo:ro" "$GITLEAKS_IMAGE" dir /repo \
+            --config /repo/.gitleaks.toml --redact --no-banner --exit-code 1
+
+  hygiene:
+    name: repo hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: Check every tracked file
+        run: node scripts/check-repo-hygiene.mjs --all
+
+  codeql:
+    name: codeql (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript, python]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended
+      - uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          category: /language:${{ matrix.language }}
+
+  deps:
+    name: dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
+        with:
+          fail-on-severity: high
+          # Covers development tooling too, which may use these other
+          # permissive licences. What ships (the core's production tree,
+          # fastify and onnxruntime-node) is held to MIT, Apache-2.0, BSD,
+          # ISC and CC0 by `npm run license-check`.
+          allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, CC0-1.0, BlueOak-1.0.0, Unlicense, 0BSD
+          # The eval kit's Python requirements (packages/eval: benchmark runs
+          # and dataset generators, never shipped or bundled) pull in a few
+          # packages whose detected licence this list does not cover: numpy,
+          # torch and regex (combinations of permissive licences: Zlib,
+          # BSL-1.0, Apache-2.0 WITH LLVM-exception, CNRI-Python), pyahocorasick
+          # (BSD-3-Clause on PyPI; the scan also finds GPL text in its
+          # sources; used only by the AB-1 dataset generator), and
+          # pymorphy3-dicts-ru (CC-BY-SA-3.0 dictionary data, loaded only when
+          # Presidio runs as a compared tool).
+          allow-dependencies-licenses: pkg:pypi/numpy, pkg:pypi/torch, pkg:pypi/regex, pkg:pypi/pyahocorasick, pkg:pypi/pymorphy3-dicts-ru

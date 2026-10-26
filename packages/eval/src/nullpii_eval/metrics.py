@@ -74,7 +74,7 @@ def evaluate(
         for t in unmatched_truth:
             fn[t.label] += 1
     labels = sorted({*tp.keys(), *fp.keys(), *fn.keys()})
-    return {l: CategoryMetrics(l, tp[l], fp[l], fn[l]) for l in labels}
+    return {label: CategoryMetrics(label, tp[label], fp[label], fn[label]) for label in labels}
 
 
 def _find_match(

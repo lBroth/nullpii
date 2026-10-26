@@ -73,7 +73,12 @@ export interface LogFields {
   // Filesystem / artifact metadata (paths come from the caller — never
   // synthesised from input text).
   readonly path?: string;
+  /** A system error code (`EACCES`, `EBUSY`): never a message, which can
+   * quote a path or input. */
+  readonly errorCode?: string;
   readonly modelDir?: string;
+  /** ONNX Runtime execution providers, from the configured backend. */
+  readonly providers?: readonly string[];
   readonly url?: string;
   readonly repo?: string;
   readonly revision?: string;

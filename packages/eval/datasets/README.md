@@ -1,17 +1,29 @@
 # nullpii eval datasets
 
-Apache-2.0, no real PII (synthetic / externally-licensed test splits).
+The project's own rows are synthetic, Apache-2.0. The two TAB ECHR splits are published European Court of Human Rights judgments (from HUDOC, annotated by TAB, MIT): they name real people, as public court records do.
 
 ## Inventory
 
-Three files at HEAD: the project's canonical `nullpii-bench.jsonl` plus two
-externally-licensed upstream splits.
+Four files at HEAD: the project's canonical `nullpii-bench.jsonl` plus three
+externally licensed upstream files; and `ab1/`, component A of the AB-1
+agent-traffic benchmark.
 
-| File | Rows | Used in canonical bench | Origin |
-|---|---:|:---:|---|
-| `nullpii-bench.jsonl` | 2,361 | ✅ project-authored, see subsets below | self-authored, Apache-2.0 |
-| `presidio-synthetic.jsonl` | 5,000 | ✅ external (held-out OOD-5) | Microsoft Presidio seed, MIT |
-| `tab-echr-test.jsonl` | 127 | ✅ EU legal test split | TAB ECHR test (ACL 2022), MIT |
+| File | Rows | Use | Origin |
+|---|---:|---|---|
+| `nullpii-bench.jsonl` | 744 | regression test of the runtime (preprocessor, recognizers, base64 decoder); see subsets below | self-authored, Apache-2.0 |
+| `presidio-synthetic.jsonl` | 5,000 | earlier benchmark versions; partly in nullpii's training data, so never a claim | Microsoft Presidio seed, MIT |
+| `tab-echr-test.jsonl` | 127 | earlier benchmark versions | TAB ECHR test (ACL 2022), MIT |
+| `tab-echr-dev.jsonl` | 125 | legal documents of the change-check fingerprint corpus only | TAB ECHR dev (ACL 2022), MIT |
+| `ab1/` | 1,200 | AB-1 component A, agent traffic: generator, value lists, gold (gzipped; every key is fictional) and its freeze manifest; see [`ab1/README.md`](ab1/README.md) | self-authored, Apache-2.0; carrier text keeps its dataset's licence (CC BY 4.0, MIT, ODC-BY 1.0), postal codes from GeoNames (CC BY 4.0) |
+
+The document benchmark (`../METHOD.md`) uses none of these files: its datasets are fetched from their publishers and frozen by SHA-256. The agent-traffic benchmark (AB-1) scores the test split of `ab1/`; its other two components are rebuilt from their publishers by `../scripts/ab1/b1_build.py` and `b2_build.py`.
+
+Every file listed here is redistributed inside the `nullpii-eval` wheel via
+the per-file allowlist in [`../pyproject.toml`](../pyproject.toml). A file
+dropped into this directory does **not** ship until it is added there —
+which is the point: adding the line forces a licence check first. Only
+MIT / Apache-2.0 / BSD / ISC / CC0 upstreams are eligible, so `ab1/`, whose
+carriers and postal codes are CC BY 4.0 or ODC-BY, is in the repository only.
 
 Additional bench rows (`ai4privacy-*`, `isotonic-*`, `nemotron-pii-*`,
 `argilla-pii`) are fetched from HuggingFace at bench time by the per-tool
@@ -25,15 +37,15 @@ Loaders filter by subset to produce the bench rows.
 
 All subsets feed the `nullpii-bench` cell in the canonical bench
 (one F1 number summarises behaviour across every perturbation pattern).
-Total 2,361 rows.
+Total 744 rows. 1,617 rows that were derived from ai4privacy text (whose licence restricts commercial use) were removed on 2026-10-20.
 
 | Subset | Rows | Notes |
 |---|---:|---|
-| `clean` | 2,052 | dev paste, RFCs, long-form prompts, multilingual support tickets, code-PII, decoys |
-| `adversarial` | 219 | typo / unicode-homoglyph / zero-width / whitespace / base64-URL-HTML-entity / TextAttack perturbations |
+| `clean` | 551 | dev paste, RFCs, long-form prompts, multilingual support tickets, code-PII, decoys |
+| `adversarial` | 103 | typo / unicode-homoglyph / zero-width / whitespace / base64-URL-HTML-entity perturbations |
 | `v03_coverage` | 90 | v0.3 schema-coverage rows for `private_passport` / `private_driver_license` / `private_vehicle_id` / `private_geolocation` / `private_ip` / `private_mac` (15 each) |
 
-Sources (`source` field): `fair` (project-authored, no detector involvement) — 2,213 rows. `opf-generated` / `opf-enriched` — 148 rows re-annotated through OPF after an independent-gold audit (avoids the self-validation trap of detector-derived labels).
+Sources (`source` field): `fair` (project-authored, no detector involvement) — 596 rows. `opf-generated` / `opf-enriched` — 148 rows re-annotated through OPF after an independent-gold audit (avoids the self-validation trap of detector-derived labels).
 
 The generation scripts that produced the `clean` / `adversarial`
 subsets are not tracked in the repo — they live under
@@ -49,9 +61,9 @@ re-fetching the upstream pool from internal storage.
 
 ```jsonc
 {
-  "id": "bundled-it-0023",
+  "id": "…",
   "locale": "it",
-  "subset": "bundled",                            // bundled | adversarial | long-prompts | typo_pii | …
+  "subset": "clean",                              // clean | adversarial | v03_coverage
   "text": "Inoltrare a Maria Rossi (maria.rossi@example.it) entro venerdì.",
   "spans": [
     { "label": "private_person", "start": 11, "end": 22 },
@@ -64,27 +76,33 @@ re-fetching the upstream pool from internal storage.
 
 ⚠ `nullpii-bench` is in-distribution for the project pipeline. F1 on
 this dataset is a regression test for the runtime (preprocessor,
-recognizer pack, base64 decoder), not an OOD generalisation claim. The
-held-out OOD headline is the macro over 5 external datasets
-(`presidio-synthetic` + `isotonic-{en,de,fr,it}-heldout`) reported in
-the top-level README.
+recognizer pack, base64 decoder), not an OOD generalisation claim.
 
 ## `presidio-synthetic`
 
 Microsoft Presidio's templated test set (5,000 rows). MIT-licensed,
-fully synthetic. Used as a held-out OOD baseline.
+fully synthetic. Rows 0–3,999 were in nullpii's training data, so it is
+not a held-out set for nullpii.
 
 ## `tab-echr-test`
 
 EU jurisprudence test split, 127 docs, ~3,000 chars avg. Gold spans
 cover `private_person` / `private_address` / `private_date`.
 
+## `tab-echr-dev`
+
+TAB's dev split, text only, minus the 2 documents whose first 200
+characters match a test document. The A/B harness fingerprint corpus
+(`scripts/ab/harness.mjs`) reads its legal documents from here, so no
+report-set document gates a change (`../METHOD.md`, rule 3).
+Not shipped in the wheel.
+
 ## Loading
 
 ```python
 from datasets import Dataset
 ds = Dataset.from_json("packages/eval/datasets/nullpii-bench.jsonl")
-bundled_it = ds.filter(lambda r: r["subset"] == "bundled" and r["locale"] == "it")
+clean_it = ds.filter(lambda r: r["subset"] == "clean" and r["locale"] == "it")
 ```
 
 ## License + citation

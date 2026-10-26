@@ -1,0 +1,2501 @@
+#postal_code	place	admin1_name	admin1_code	admin2_name	admin2_code
+01008	Blandford	Massachusetts	MA	Hampden	013
+01095	Wilbraham	Massachusetts	MA	Hampden	013
+01144	Springfield	Massachusetts	MA	Hampden	013
+01220	Adams	Massachusetts	MA	Berkshire	003
+01245	Monterey	Massachusetts	MA	Berkshire	003
+01441	Westminster	Massachusetts	MA	Worcester	027
+01520	Holden	Massachusetts	MA	Worcester	027
+01541	Princeton	Massachusetts	MA	Worcester	027
+01585	West Brookfield	Massachusetts	MA	Worcester	027
+01701	Framingham	Massachusetts	MA	Middlesex	017
+01718	Acton	Massachusetts	MA	Middlesex	017
+01740	Bolton	Massachusetts	MA	Worcester	027
+01810	Andover	Massachusetts	MA	Essex	009
+01835	Haverhill	Massachusetts	MA	Essex	009
+01887	Wilmington	Massachusetts	MA	Middlesex	017
+01906	Saugus	Massachusetts	MA	Essex	009
+01960	Peabody	Massachusetts	MA	Essex	009
+02032	East Walpole	Massachusetts	MA	Norfolk	021
+02041	Green Harbor	Massachusetts	MA	Plymouth	023
+02111	Boston	Massachusetts	MA	Suffolk	025
+02116	Boston	Massachusetts	MA	Suffolk	025
+02203	Boston	Massachusetts	MA	Suffolk	025
+02283	Boston	Massachusetts	MA	Suffolk	025
+02445	Brookline	Massachusetts	MA	Norfolk	021
+02466	Auburndale	Massachusetts	MA	Middlesex	017
+02468	Waban	Massachusetts	MA	Middlesex	017
+02538	East Wareham	Massachusetts	MA	Plymouth	023
+02634	Centerville	Massachusetts	MA	Barnstable	001
+02714	Dartmouth	Massachusetts	MA	Bristol	005
+02719	Fairhaven	Massachusetts	MA	Bristol	005
+02725	Somerset	Massachusetts	MA	Bristol	005
+02763	Attleboro Falls	Massachusetts	MA	Bristol	005
+02767	Raynham	Massachusetts	MA	Bristol	005
+02840	Newport	Rhode Island	RI	Newport	005
+02891	Westerly	Rhode Island	RI	Washington	009
+03032	Auburn	New Hampshire	NH	Rockingham	015
+03047	Greenfield	New Hampshire	NH	Hillsborough	011
+03055	Milford	New Hampshire	NH	Hillsborough	011
+03060	Nashua	New Hampshire	NH	Hillsborough	011
+03084	Temple	New Hampshire	NH	Hillsborough	011
+03258	Chichester	New Hampshire	NH	Grafton	009
+03450	Harrisville	New Hampshire	NH	Cheshire	005
+03465	Troy	New Hampshire	NH	Cheshire	005
+03582	Groveton	New Hampshire	NH	Coos	007
+03603	Charlestown	New Hampshire	NH	Sullivan	019
+03782	Sunapee	New Hampshire	NH	Sullivan	019
+03801	Portsmouth	New Hampshire	NH	Rockingham	015
+03809	Alton	New Hampshire	NH	Belknap	001
+03835	Farmington	New Hampshire	NH	Strafford	017
+03839	Rochester	New Hampshire	NH	Strafford	017
+03874	Seabrook	New Hampshire	NH	Rockingham	015
+04039	Gray	Maine	ME	Cumberland	005
+04054	Moody	Maine	ME	York	031
+04106	South Portland	Maine	ME	Cumberland	005
+04217	Bethel	Maine	ME	Oxford	017
+04226	East Andover	Maine	ME	Oxford	017
+04258	Minot	Maine	ME	Androscoggin	001
+04294	Wilton	Maine	ME	Franklin	007
+04332	Augusta	Maine	ME	Kennebec	011
+04336	Augusta	Maine	ME	Kennebec	011
+04441	Greenville	Maine	ME	Piscataquis	021
+04449	Hudson	Maine	ME	Penobscot	019
+04454	Lambert Lake	Maine	ME	Washington	029
+04457	Lincoln	Maine	ME	Penobscot	019
+04574	Washington	Maine	ME	Knox	013
+04613	Birch Harbor	Maine	ME	Hancock	009
+04634	Franklin	Maine	ME	Hancock	009
+04644	Hulls Cove	Maine	ME	Hancock	009
+04743	Fort Kent	Maine	ME	Aroostook	003
+04761	New Limerick	Maine	ME	Aroostook	003
+04768	Portage	Maine	ME	Aroostook	003
+04776	Sherman	Maine	ME	Aroostook	003
+04785	Van Buren	Maine	ME	Aroostook	003
+04848	Islesboro	Maine	ME	Waldo	027
+04856	Rockport	Maine	ME	Knox	013
+04860	Tenants Harbor	Maine	ME	Knox	013
+04966	Phillips	Maine	ME	Franklin	007
+05061	Randolph Center	Vermont	VT	Orange	017
+05069	South Ryegate	Vermont	VT	Caledonia	005
+05079	Vershire	Vermont	VT	Orange	017
+05089	Windsor	Vermont	VT	Windsor	027
+05156	Springfield	Vermont	VT	Windsor	027
+05159	Westminster Station	Vermont	VT	Windham	025
+05357	West Dummerston	Vermont	VT	Windham	025
+05462	Huntington	Vermont	VT	Chittenden	007
+05665	North Hyde Park	Vermont	VT	Lamoille	015
+05751	Killington	Vermont	VT	Rutland	021
+05837	East Haven	Vermont	VT	Essex	009
+05873	West Danville	Vermont	VT	Caledonia	005
+05901	Averill	Vermont	VT	Essex	009
+06039	Lakeville	Connecticut	CT	Northwest Hills	160
+06042	Manchester	Connecticut	CT	Capitol Region	110
+06045	Manchester	Connecticut	CT	Capitol Region	110
+06062	Plainville	Connecticut	CT	Capitol Region	110
+06106	Hartford	Connecticut	CT	Capitol Region	110
+06110	West Hartford	Connecticut	CT	Capitol Region	110
+06117	West Hartford	Connecticut	CT	Capitol Region	110
+06123	Hartford	Connecticut	CT	Capitol Region	110
+06161	Hartford	Connecticut	CT	Capitol Region	110
+06233	Ballouville	Connecticut	CT	Northeastern Connecticut	150
+06245	Fabyan	Connecticut	CT	Northeastern Connecticut	150
+06281	Woodstock	Connecticut	CT	Northeastern Connecticut	150
+06350	Hanover	Connecticut	CT	Southeastern Connecticut	180
+06373	Oneco	Connecticut	CT	Northeastern Connecticut	150
+06389	Yantic	Connecticut	CT	Southeastern Connecticut	180
+06412	Chester	Connecticut	CT	Lower Connecticut River Valley	130
+06416	Cromwell	Connecticut	CT	Lower Connecticut River Valley	130
+06420	Salem	Connecticut	CT	Southeastern Connecticut	180
+06487	South Britain	Connecticut	CT	Naugatuck Valley	140
+06514	Hamden	Connecticut	CT	South Central Regional	170
+06610	Bridgeport	Connecticut	CT	Connecticut Metropolitan	120
+06615	Stratford	Connecticut	CT	Connecticut Metropolitan	120
+06702	Waterbury	Connecticut	CT	Naugatuck Valley	140
+06749	Waterbury	Connecticut	CT	Naugatuck Valley	140
+06793	Washington	Connecticut	CT	Northwest Hills	160
+06817	Danbury	Connecticut	CT	Western Connecticut	190
+06856	Norwalk	Connecticut	CT	Western Connecticut	190
+06920	Stamford	Connecticut	CT	Western Connecticut	190
+07011	Clifton	New Jersey	NJ	Passaic	031
+07014	Clifton	New Jersey	NJ	Passaic	031
+07063	Plainfield	New Jersey	NJ	Union	039
+07082	Towaco	New Jersey	NJ	Morris	027
+07101	Newark	New Jersey	NJ	Essex	013
+07401	Allendale	New Jersey	NJ	Bergen	003
+07444	Pompton Plains	New Jersey	NJ	Morris	027
+07446	Ramsey	New Jersey	NJ	Bergen	003
+07465	Wanaque	New Jersey	NJ	Passaic	031
+07474	Wayne	New Jersey	NJ	Passaic	031
+07506	Hawthorne	New Jersey	NJ	Passaic	031
+07513	Paterson	New Jersey	NJ	Passaic	031
+07641	Haworth	New Jersey	NJ	Bergen	003
+07666	Teaneck	New Jersey	NJ	Bergen	003
+07849	Lake Hopatcong	New Jersey	NJ	Morris	027
+07927	Cedar Knolls	New Jersey	NJ	Morris	027
+08005	Barnegat	New Jersey	NJ	Ocean	029
+08027	Gibbstown	New Jersey	NJ	Gloucester	015
+08045	Lawnside	New Jersey	NJ	Camden	007
+08048	Lumberton	New Jersey	NJ	Burlington	005
+08080	Sewell	New Jersey	NJ	Gloucester	015
+08104	Camden	New Jersey	NJ	Camden	007
+08315	Dividing Creek	New Jersey	NJ	Cumberland	011
+08347	Norma	New Jersey	NJ	Salem	033
+08504	Blawenburg	New Jersey	NJ	Somerset	035
+08721	Bayville	New Jersey	NJ	Ocean	029
+08758	Waretown	New Jersey	NJ	Ocean	029
+08822	Flemington	New Jersey	NJ	Hunterdon	019
+08840	Metuchen	New Jersey	NJ	Middlesex	023
+08868	Quakertown	New Jersey	NJ	Hunterdon	019
+08886	Stewartsville	New Jersey	NJ	Warren	041
+09026	APO AE				
+09036	APO AE				
+09047	APO AE				
+09067	APO AE				
+09073	APO AE				
+09086	APO AE				
+09102	APO AE				
+09111	APO AE				
+09130	APO AE				
+09184	APO AE				
+09205	APO AE				
+09242	APO AE				
+09263	APO AE				
+09358	APO AE				
+09471	APO AE				
+09497	APO AE				
+09628	APO AE				
+09646	APO AE				
+09705	APO AE				
+09745	APO AE				
+09811	APO AE				
+09819	APO AE				
+09820	APO AE				
+09888	APO AA				
+10008	New York	New York	NY	New York	061
+10069	New York	New York	NY	New York	061
+10087	New York	New York	NY	New York	061
+10106	New York	New York	NY	New York	061
+10112	New York	New York	NY	New York	061
+10115	New York	New York	NY	New York	061
+10116	New York	New York	NY	New York	061
+10125	New York	New York	NY	New York	061
+10154	New York	New York	NY	New York	061
+10272	New York	New York	NY	New York	061
+10285	New York	New York	NY	New York	061
+10286	New York	New York	NY	New York	061
+10501	Amawalk	New York	NY	Westchester	119
+10504	Armonk	New York	NY	Westchester	119
+10519	Croton Falls	New York	NY	Westchester	119
+10702	Yonkers	New York	NY	Westchester	119
+10805	New Rochelle	New York	NY	Westchester	119
+10932	Howells	New York	NY	Orange	071
+10953	Mountainville	New York	NY	Orange	071
+10975	Southfields	New York	NY	Orange	071
+10980	Stony Point	New York	NY	Rockland	087
+10983	Tappan	New York	NY	Rockland	087
+11120	Long Island City	New York	NY	Queens	081
+11236	Brooklyn	New York	NY	Kings	047
+11243	Brooklyn	New York	NY	Kings	047
+11354	Flushing	New York	NY	Queens	081
+11417	Ozone Park	New York	NY	Queens	081
+11439	Jamaica	New York	NY	Queens	081
+11550	Hempstead	New York	NY	Nassau	059
+11558	Island Park	New York	NY	Nassau	059
+11565	Malverne	New York	NY	Nassau	059
+11582	Valley Stream	New York	NY	Nassau	059
+11714	Bethpage	New York	NY	Nassau	059
+11719	Brookhaven	New York	NY	Suffolk	103
+11732	East Norwich	New York	NY	Nassau	059
+11749	Islandia	New York	NY	Suffolk	103
+11763	Medford	New York	NY	Suffolk	103
+11779	Ronkonkoma	New York	NY	Suffolk	103
+11790	Stony Brook	New York	NY	Suffolk	103
+11931	Aquebogue	New York	NY	Suffolk	103
+11956	New Suffolk	New York	NY	Suffolk	103
+11967	Shirley	New York	NY	Suffolk	103
+11980	Yaphank	New York	NY	Suffolk	103
+12028	Buskirk	New York	NY	Rensselaer	083
+12040	Cherry Plain	New York	NY	Rensselaer	083
+12047	Cohoes	New York	NY	Albany	001
+12070	Fort Johnson	New York	NY	Montgomery	057
+12083	Greenville	New York	NY	Greene	039
+12183	Troy	New York	NY	Albany	001
+12227	Albany	New York	NY	Albany	001
+12325	Schenectady	New York	NY	Schenectady	093
+12420	Cragsmoor	New York	NY	Ulster	111
+12441	Highmount	New York	NY	Ulster	111
+12463	Palenville	New York	NY	Greene	039
+12481	Shokan	New York	NY	Ulster	111
+12496	Windham	New York	NY	Greene	039
+12538	Hyde Park	New York	NY	Dutchess	027
+12548	Modena	New York	NY	Ulster	111
+12582	Stormville	New York	NY	Dutchess	027
+12602	Poughkeepsie	New York	NY	Dutchess	027
+12701	Monticello	New York	NY	Sullivan	105
+12746	Huguenot	New York	NY	Orange	071
+12760	Long Eddy	New York	NY	Sullivan	105
+12767	Obernburg	New York	NY	Sullivan	105
+12778	Smallwood	New York	NY	Sullivan	105
+12817	Chestertown	New York	NY	Warren	113
+12835	Hadley	New York	NY	Saratoga	091
+12914	Bombay	New York	NY	Franklin	033
+12933	Ellenburg	New York	NY	Clinton	019
+12944	Keeseville	New York	NY	Essex	031
+12956	Mineville	New York	NY	Essex	031
+12957	Moira	New York	NY	Franklin	033
+12974	Port Henry	New York	NY	Essex	031
+12979	Rouses Point	New York	NY	Clinton	019
+12983	Saranac Lake	New York	NY	Franklin	033
+13027	Baldwinsville	New York	NY	Onondaga	067
+13073	Groton	New York	NY	Tompkins	109
+13074	Hannibal	New York	NY	Oswego	075
+13078	Jamesville	New York	NY	Onondaga	067
+13108	Marcellus	New York	NY	Onondaga	067
+13146	Savannah	New York	NY	Wayne	117
+13251	Syracuse	New York	NY	Onondaga	067
+13645	Hailesboro	New York	NY	St. Lawrence	089
+13666	Newton Falls	New York	NY	St. Lawrence	089
+13683	Rooseveltown	New York	NY	St. Lawrence	089
+13684	Russell	New York	NY	St. Lawrence	089
+13839	Sidney Center	New York	NY	Delaware	025
+13846	Treadwell	New York	NY	Delaware	025
+13903	Binghamton	New York	NY	Broome	007
+14032	Clarence Center	New York	NY	Erie	029
+14040	Darien Center	New York	NY	Genesee	037
+14063	Fredonia	New York	NY	Chautauqua	013
+14145	Strykersville	New York	NY	Wyoming	121
+14171	West Valley	New York	NY	Cattaraugus	009
+14216	Buffalo	New York	NY	Erie	029
+14515	North Greece	New York	NY	Monroe	055
+14519	Ontario	New York	NY	Wayne	117
+14548	Shortsville	New York	NY	Ontario	069
+14551	Sodus	New York	NY	Wayne	117
+14556	Sonyea	New York	NY	Livingston	051
+14560	Springwater	New York	NY	Livingston	051
+14585	West Bloomfield	New York	NY	Ontario	069
+14604	Rochester	New York	NY	Monroe	055
+14609	Rochester	New York	NY	Monroe	055
+14624	Rochester	New York	NY	Monroe	055
+14711	Belfast	New York	NY	Allegany	003
+14731	Ellicottville	New York	NY	Cattaraugus	009
+14740	Gerry	New York	NY	Chautauqua	013
+14745	Hume	New York	NY	Allegany	003
+14754	Little Genesee	New York	NY	Allegany	003
+14770	Portville	New York	NY	Cattaraugus	009
+14803	Alfred Station	New York	NY	Allegany	003
+14840	Hammondsport	New York	NY	Steuben	101
+14870	Painted Post	New York	NY	Steuben	101
+14872	Pine Valley	New York	NY	Chemung	015
+14895	Wellsville	New York	NY	Allegany	003
+15003	Ambridge	Pennsylvania	PA	Beaver	007
+15019	Bulger	Pennsylvania	PA	Washington	125
+15021	Burgettstown	Pennsylvania	PA	Washington	125
+15042	Freedom	Pennsylvania	PA	Beaver	007
+15051	Indianola	Pennsylvania	PA	Allegheny	003
+15066	New Brighton	Pennsylvania	PA	Beaver	007
+15081	South Heights	Pennsylvania	PA	Beaver	007
+15087	Webster	Pennsylvania	PA	Westmoreland	129
+15139	Oakmont	Pennsylvania	PA	Allegheny	003
+15144	Springdale	Pennsylvania	PA	Allegheny	003
+15147	Verona	Pennsylvania	PA	Allegheny	003
+15208	Pittsburgh	Pennsylvania	PA	Allegheny	003
+15264	Pittsburgh	Pennsylvania	PA	Allegheny	003
+15313	Beallsville	Pennsylvania	PA	Washington	125
+15316	Brave	Pennsylvania	PA	Greene	059
+15333	Fredericktown	Pennsylvania	PA	Washington	125
+15339	Hendersonville	Pennsylvania	PA	Washington	125
+15345	Marianna	Pennsylvania	PA	Washington	125
+15350	Muse	Pennsylvania	PA	Washington	125
+15351	Nemacolin	Pennsylvania	PA	Greene	059
+15428	Dawson	Pennsylvania	PA	Fayette	051
+15440	Gibbon Glade	Pennsylvania	PA	Fayette	051
+15474	Point Marion	Pennsylvania	PA	Fayette	051
+15482	Star Junction	Pennsylvania	PA	Fayette	051
+15510	Somerset	Pennsylvania	PA	Somerset	111
+15532	Boynton	Pennsylvania	PA	Somerset	111
+15539	Fishertown	Pennsylvania	PA	Bedford	009
+15542	Garrett	Pennsylvania	PA	Somerset	111
+15551	Markleton	Pennsylvania	PA	Somerset	111
+15601	Greensburg	Pennsylvania	PA	Westmoreland	129
+15628	Donegal	Pennsylvania	PA	Westmoreland	129
+15647	Larimer	Pennsylvania	PA	Westmoreland	129
+15660	Lowber	Pennsylvania	PA	Westmoreland	129
+15661	Loyalhanna	Pennsylvania	PA	Westmoreland	129
+15677	Rector	Pennsylvania	PA	Westmoreland	129
+15724	Cherry Tree	Pennsylvania	PA	Indiana	063
+15902	Johnstown	Pennsylvania	PA	Cambria	021
+15924	Cairnbrook	Pennsylvania	PA	Somerset	111
+15926	Central City	Pennsylvania	PA	Somerset	111
+16034	Fenelton	Pennsylvania	PA	Butler	019
+16210	Adrian	Pennsylvania	PA	Armstrong	005
+16229	Freeport	Pennsylvania	PA	Armstrong	005
+16238	Manorville	Pennsylvania	PA	Armstrong	005
+16244	Nu Mine	Pennsylvania	PA	Armstrong	005
+16344	Rouseville	Pennsylvania	PA	Venango	121
+16364	Venus	Pennsylvania	PA	Venango	121
+16407	Corry	Pennsylvania	PA	Erie	049
+16442	Wattsburg	Pennsylvania	PA	Erie	049
+16501	Erie	Pennsylvania	PA	Erie	049
+16512	Erie	Pennsylvania	PA	Erie	049
+16611	Alexandria	Pennsylvania	PA	Huntingdon	061
+16647	Hesston	Pennsylvania	PA	Huntingdon	061
+16655	Imler	Pennsylvania	PA	Bedford	009
+16673	Roaring Spring	Pennsylvania	PA	Blair	013
+16686	Tyrone	Pennsylvania	PA	Blair	013
+16746	Roulette	Pennsylvania	PA	Potter	105
+16750	Turtlepoint	Pennsylvania	PA	McKean	083
+16839	Grassflat	Pennsylvania	PA	Clearfield	033
+16850	Lecontes Mills	Pennsylvania	PA	Clearfield	033
+16914	Columbia Cross Roads	Pennsylvania	PA	Bradford	015
+16917	Covington	Pennsylvania	PA	Tioga	117
+16950	Westfield	Pennsylvania	PA	Tioga	117
+17010	Campbelltown	Pennsylvania	PA	Lebanon	075
+17018	Dauphin	Pennsylvania	PA	Dauphin	043
+17048	Lykens	Pennsylvania	PA	Dauphin	043
+17062	Millerstown	Pennsylvania	PA	Perry	099
+17070	New Cumberland	Pennsylvania	PA	Cumberland	041
+17073	Newmanstown	Pennsylvania	PA	Lebanon	075
+17108	Harrisburg	Pennsylvania	PA	Dauphin	043
+17130	Harrisburg	Pennsylvania	PA	Dauphin	043
+17225	Greencastle	Pennsylvania	PA	Franklin	055
+17249	Rockhill Furnace	Pennsylvania	PA	Huntingdon	061
+17268	Waynesboro	Pennsylvania	PA	Franklin	055
+17313	Dallastown	Pennsylvania	PA	York	133
+17331	Hanover	Pennsylvania	PA	York	133
+17362	Spring Grove	Pennsylvania	PA	York	133
+17368	Wrightsville	Pennsylvania	PA	York	133
+17370	York Haven	Pennsylvania	PA	York	133
+17508	Brownstown	Pennsylvania	PA	Lancaster	071
+17512	Columbia	Pennsylvania	PA	Lancaster	071
+17579	Strasburg	Pennsylvania	PA	Lancaster	071
+17699	Lancaster	Pennsylvania	PA	Lancaster	071
+17721	Avis	Pennsylvania	PA	Clinton	035
+17726	Castanea	Pennsylvania	PA	Clinton	035
+17824	Elysburg	Pennsylvania	PA	Northumberland	097
+17843	Beaver Springs	Pennsylvania	PA	Snyder	109
+17855	New Berlin	Pennsylvania	PA	Union	119
+17862	Penns Creek	Pennsylvania	PA	Snyder	109
+17865	Potts Grove	Pennsylvania	PA	Northumberland	097
+17881	Trevorton	Pennsylvania	PA	Northumberland	097
+17979	Summit Station	Pennsylvania	PA	Schuylkill	107
+18011	Alburtis	Pennsylvania	PA	Lehigh	077
+18035	Cherryville	Pennsylvania	PA	Northampton	095
+18073	Pennsburg	Pennsylvania	PA	Montgomery	091
+18087	Trexlertown	Pennsylvania	PA	Lehigh	077
+18231	Kelayres	Pennsylvania	PA	Schuylkill	107
+18244	Parryville	Pennsylvania	PA	Carbon	025
+18250	Summit Hill	Pennsylvania	PA	Carbon	025
+18326	Cresco	Pennsylvania	PA	Monroe	089
+18342	Mountainhome	Pennsylvania	PA	Monroe	089
+18354	Sciota	Pennsylvania	PA	Monroe	089
+18419	Factoryville	Pennsylvania	PA	Wyoming	131
+18448	Olyphant	Pennsylvania	PA	Lackawanna	069
+18453	Pleasant Mount	Pennsylvania	PA	Wayne	127
+18456	Prompton	Pennsylvania	PA	Wayne	127
+18705	Wilkes Barre	Pennsylvania	PA	Luzerne	079
+18709	Luzerne	Pennsylvania	PA	Luzerne	079
+18801	Montrose	Pennsylvania	PA	Susquehanna	115
+18816	Dimock	Pennsylvania	PA	Susquehanna	115
+18827	Lanesboro	Pennsylvania	PA	Susquehanna	115
+18924	Franconia	Pennsylvania	PA	Montgomery	091
+18974	Warminster	Pennsylvania	PA	Bucks	017
+18981	Zionhill	Pennsylvania	PA	Bucks	017
+19019	Philadelphia	Pennsylvania	PA	Philadelphia	101
+19031	Flourtown	Pennsylvania	PA	Montgomery	091
+19072	Narberth	Pennsylvania	PA	Montgomery	091
+19075	Oreland	Pennsylvania	PA	Montgomery	091
+19080	Wayne	Pennsylvania	PA	Delaware	045
+19094	Woodlyn	Pennsylvania	PA	Delaware	045
+19098	Holmes	Pennsylvania	PA	Delaware	045
+19122	Philadelphia	Pennsylvania	PA	Philadelphia	101
+19124	Philadelphia	Pennsylvania	PA	Philadelphia	101
+19127	Philadelphia	Pennsylvania	PA	Philadelphia	101
+19131	Philadelphia	Pennsylvania	PA	Philadelphia	101
+19147	Philadelphia	Pennsylvania	PA	Philadelphia	101
+19162	Philadelphia	Pennsylvania	PA	Philadelphia	101
+19178	Philadelphia	Pennsylvania	PA	Philadelphia	101
+19185	Philadelphia	Pennsylvania	PA	Philadelphia	101
+19192	Philadelphia	Pennsylvania	PA	Philadelphia	101
+19341	Exton	Pennsylvania	PA	Chester	029
+19405	Bridgeport	Pennsylvania	PA	Montgomery	091
+19424	Blue Bell	Pennsylvania	PA	Montgomery	091
+19443	Kulpsville	Pennsylvania	PA	Montgomery	091
+19464	Pottstown	Pennsylvania	PA	Montgomery	091
+19475	Spring City	Pennsylvania	PA	Chester	029
+19486	West Point	Pennsylvania	PA	Montgomery	091
+19520	Elverson	Pennsylvania	PA	Chester	029
+19559	Strausstown	Pennsylvania	PA	Berks	011
+19611	Reading	Pennsylvania	PA	Berks	011
+19701	Bear	Delaware	DE	New Castle	003
+19703	Claymont	Delaware	DE	New Castle	003
+19730	Odessa	Delaware	DE	New Castle	003
+19892	Wilmington	Delaware	DE	New Castle	003
+19934	Camden Wyoming	Delaware	DE	Kent	001
+19953	Hartly	Delaware	DE	Kent	001
+20010	Washington	District of Columbia	DC	District of Columbia	001
+20012	Washington	District of Columbia	DC	District of Columbia	001
+20041	Washington	District of Columbia	DC	District of Columbia	001
+20053	Washington	District of Columbia	DC	District of Columbia	001
+20059	Washington	District of Columbia	DC	District of Columbia	001
+20130	Paris	Virginia	VA	Fauquier	061
+20141	Round Hill	Virginia	VA	Loudoun	107
+20146	Ashburn	Virginia	VA	Loudoun	107
+20169	Haymarket	Virginia	VA	Prince William	153
+20177	Leesburg	Virginia	VA	Loudoun	107
+20192	Herndon	Virginia	VA	Fairfax	059
+20201	Washington	District of Columbia	DC	District of Columbia	001
+20202	Washington	District of Columbia	DC	District of Columbia	001
+20219	Washington	District of Columbia	DC	District of Columbia	001
+20222	Washington	District of Columbia	DC	District of Columbia	001
+20241	Washington	District of Columbia	DC	District of Columbia	001
+20350	Washington	District of Columbia	DC	District of Columbia	001
+20421	Washington	District of Columbia	DC	District of Columbia	001
+20423	Washington	District of Columbia	DC	District of Columbia	001
+20434	Washington	District of Columbia	DC	District of Columbia	001
+20439	Washington	District of Columbia	DC	District of Columbia	001
+20504	Washington	District of Columbia	DC	District of Columbia	001
+20506	Washington	District of Columbia	DC	District of Columbia	001
+20509	Washington	District of Columbia	DC	District of Columbia	001
+20536	Washington	District of Columbia	DC	District of Columbia	001
+20537	Washington	District of Columbia	DC	District of Columbia	001
+20554	Washington	District of Columbia	DC	District of Columbia	001
+20599	Washington	District of Columbia	DC	District of Columbia	001
+20604	Waldorf	Maryland	MD	Charles	017
+20627	Compton	Maryland	MD	St. Mary's	037
+20687	Scotland	Maryland	MD	St. Mary's	037
+20711	Lothian	Maryland	MD	Anne Arundel	003
+20738	Riverdale	Maryland	MD	Prince George's	033
+20775	Upper Marlboro	Maryland	MD	Prince George's	033
+20787	Hyattsville	Maryland	MD	Prince George's	033
+20892	Bethesda	Maryland	MD	Montgomery	031
+20898	Gaithersburg	Maryland	MD	Montgomery	031
+20902	Silver Spring	Maryland	MD	Montgomery	031
+20910	Silver Spring	Maryland	MD	Montgomery	031
+21040	Edgewood	Maryland	MD	Harford	025
+21054	Gambrills	Maryland	MD	Anne Arundel	003
+21085	Joppa	Maryland	MD	Harford	025
+21219	Sparrows Point	Maryland	MD	Baltimore	005
+21224	Baltimore	Maryland	MD	Baltimore (city)	510
+21402	Annapolis	Maryland	MD	Anne Arundel	003
+21412	Annapolis	Maryland	MD	Anne Arundel	003
+21520	Accident	Maryland	MD	Garrett	023
+21522	Bittinger	Maryland	MD	Garrett	023
+21624	Claiborne	Maryland	MD	Talbot	041
+21635	Galena	Maryland	MD	Kent	029
+21655	Preston	Maryland	MD	Caroline	011
+21703	Frederick	Maryland	MD	Frederick	021
+21704	Frederick	Maryland	MD	Frederick	021
+21711	Big Pool	Maryland	MD	Washington	043
+21741	Hagerstown	Maryland	MD	Washington	043
+21778	Rocky Ridge	Maryland	MD	Frederick	021
+21791	Union Bridge	Maryland	MD	Carroll	013
+21793	Walkersville	Maryland	MD	Frederick	021
+21826	Fruitland	Maryland	MD	Wicomico	045
+21863	Snow Hill	Maryland	MD	Worcester	047
+21869	Vienna	Maryland	MD	Dorchester	019
+21871	Westover	Maryland	MD	Somerset	039
+21901	North East	Maryland	MD	Cecil	015
+21902	Perry Point	Maryland	MD	Cecil	015
+21904	Port Deposit	Maryland	MD	Cecil	015
+22082	Merrifield	Virginia	VA	Fairfax	059
+22158	Springfield	Virginia	VA	Fairfax	059
+22204	Arlington	Virginia	VA	Arlington	013
+22214	Arlington	Virginia	VA	Arlington	013
+22442	Coles Point	Virginia	VA	Westmoreland	193
+22446	Corbin	Virginia	VA	Caroline	033
+22469	Hague	Virginia	VA	Westmoreland	193
+22511	Lottsburg	Virginia	VA	Northumberland	133
+22514	Milford	Virginia	VA	Caroline	033
+22526	Ninde	Virginia	VA	King George	099
+22555	Stafford	Virginia	VA	Stafford	179
+22572	Warsaw	Virginia	VA	Richmond	159
+22576	Weems	Virginia	VA	Lancaster	103
+22580	Woodford	Virginia	VA	Caroline	033
+22611	Berryville	Virginia	VA	Clarke	043
+22663	White Post	Virginia	VA	Clarke	043
+22664	Woodstock	Virginia	VA	Shenandoah	171
+22709	Aroda	Virginia	VA	Madison	113
+22725	Leon	Virginia	VA	Madison	113
+22748	Wolftown	Virginia	VA	Madison	113
+22811	Bergton	Virginia	VA	Rockingham	165
+22842	Mount Jackson	Virginia	VA	Shenandoah	171
+22935	Dyke	Virginia	VA	Greene	079
+23014	Beaumont	Virginia	VA	Goochland	075
+23015	Beaverdam	Virginia	VA	Hanover	085
+23040	Cumberland	Virginia	VA	Cumberland	049
+23068	Hallieford	Virginia	VA	Mathews	115
+23069	Hanover	Virginia	VA	Hanover	085
+23092	Locust Hill	Virginia	VA	Middlesex	119
+23102	Maidens	Virginia	VA	Goochland	075
+23108	Mascot	Virginia	VA	King and Queen	097
+23128	North	Virginia	VA	Mathews	115
+23184	Wicomico	Virginia	VA	Gloucester	073
+23222	Richmond	Virginia	VA	City of Richmond	760
+23278	Richmond	Virginia	VA	City of Richmond	760
+23404	Locustville	Virginia	VA	Accomack	001
+23427	Saxis	Virginia	VA	Accomack	001
+23463	Virginia Beach	Virginia	VA	Virginia Beach (city)	810
+23467	Virginia Beach	Virginia	VA	Virginia Beach (city)	810
+23514	Norfolk	Virginia	VA	Norfolk (city)	710
+23605	Newport News	Virginia	VA	Newport News (city)	700
+23607	Newport News	Virginia	VA	Newport News (city)	700
+23694	Lackey	Virginia	VA	York	199
+23831	Chester	Virginia	VA	Chesterfield	041
+23837	Courtland	Virginia	VA	Southampton	175
+23876	Rawlings	Virginia	VA	Brunswick	025
+23890	Waverly	Virginia	VA	Sussex	183
+24007	Roanoke	Virginia	VA	Roanoke (city)	770
+24013	Roanoke	Virginia	VA	Roanoke (city)	770
+24032	Roanoke	Virginia	VA	Roanoke (city)	770
+24060	Blacksburg	Virginia	VA	Montgomery	121
+24086	Eggleston	Virginia	VA	Giles	071
+24124	Narrows	Virginia	VA	Giles	071
+24128	Newport	Virginia	VA	Giles	071
+24142	Radford	Virginia	VA	Radford (city)	750
+24185	Woolwine	Virginia	VA	Patrick	141
+24217	Bee	Virginia	VA	Dickenson	051
+24244	Duffield	Virginia	VA	Scott	169
+24271	Nickelsville	Virginia	VA	Scott	169
+24323	Crockett	Virginia	VA	Wythe	197
+24324	Draper	Virginia	VA	Pulaski	155
+24350	Ivanhoe	Virginia	VA	Wythe	197
+24421	Churchville	Virginia	VA	Augusta	015
+24422	Clifton Forge	Virginia	VA	Alleghany	005
+24468	Mustoe	Virginia	VA	Highland	091
+24483	Vesuvius	Virginia	VA	Rockbridge	163
+24529	Buffalo Junction	Virginia	VA	Mecklenburg	117
+24531	Chatham	Virginia	VA	Pittsylvania	143
+24534	Clover	Virginia	VA	Halifax	083
+24538	Concord	Virginia	VA	Campbell	031
+24613	Falls Mills	Virginia	VA	Tazewell	185
+24639	Raven	Virginia	VA	Buchanan	027
+24641	Richlands	Virginia	VA	Tazewell	185
+24657	Whitewood	Virginia	VA	Buchanan	027
+24855	Kyle	West Virginia	WV	McDowell	047
+24862	Mohawk	West Virginia	WV	McDowell	047
+24916	Asbury	West Virginia	WV	Greenbrier	025
+25007	Arnett	West Virginia	WV	Raleigh	081
+25019	Bickmore	West Virginia	WV	Clay	015
+25030	Bomont	West Virginia	WV	Clay	015
+25047	Clothier	West Virginia	WV	Logan	045
+25085	Gauley Bridge	West Virginia	WV	Fayette	019
+25086	Glasgow	West Virginia	WV	Kanawha	039
+25093	Gordon	West Virginia	WV	Boone	005
+25113	Ivydale	West Virginia	WV	Clay	015
+25142	Nellis	West Virginia	WV	Boone	005
+25152	Page	West Virginia	WV	Fayette	019
+25260	Mason	West Virginia	WV	Mason	053
+25265	New Haven	West Virginia	WV	Mason	053
+25331	Charleston	West Virginia	WV	Kanawha	039
+25402	Martinsburg	West Virginia	WV	Berkeley	003
+25404	Martinsburg	West Virginia	WV	Berkeley	003
+25422	Great Cacapon	West Virginia	WV	Morgan	065
+25443	Shepherdstown	West Virginia	WV	Jefferson	037
+25505	Big Creek	West Virginia	WV	Logan	045
+25517	Genoa	West Virginia	WV	Wayne	099
+25562	Shoals	West Virginia	WV	Wayne	099
+25611	Bruno	West Virginia	WV	Logan	045
+25649	Verdunville	West Virginia	WV	Logan	045
+25691	Rawl	West Virginia	WV	Mingo	059
+25712	Huntington	West Virginia	WV	Cabell	011
+25726	Huntington	West Virginia	WV	Cabell	011
+25771	Huntington	West Virginia	WV	Cabell	011
+25776	Huntington	West Virginia	WV	Cabell	011
+25820	Camp Creek	West Virginia	WV	Mercer	055
+25851	Harper	West Virginia	WV	Raleigh	081
+25857	Josephine	West Virginia	WV	Raleigh	081
+25909	Prosperity	West Virginia	WV	Raleigh	081
+25984	Rupert	West Virginia	WV	Greenbrier	025
+26147	Grantsville	West Virginia	WV	Calhoun	013
+26160	Palestine	West Virginia	WV	Wirt	105
+26184	Waverly	West Virginia	WV	Wood	107
+26205	Craigsville	West Virginia	WV	Nicholas	067
+26343	Crawford	West Virginia	WV	Lewis	041
+26404	Meadowbrook	West Virginia	WV	Harrison	033
+26537	Kingwood	West Virginia	WV	Preston	077
+26546	Pursglove	West Virginia	WV	Monongalia	061
+26570	Fairview	West Virginia	WV	Marion	049
+26571	Farmington	West Virginia	WV	Marion	049
+26679	Mount Nebo	West Virginia	WV	Nicholas	067
+26690	Swiss	West Virginia	WV	Nicholas	067
+26838	Milam	West Virginia	WV	Hardy	031
+27006	Advance	North Carolina	NC	Davie	059
+27012	Clemmons	North Carolina	NC	Forsyth	067
+27019	Germanton	North Carolina	NC	Stokes	169
+27045	Rural Hall	North Carolina	NC	Forsyth	067
+27047	Siloam	North Carolina	NC	Surry	171
+27103	Winston-Salem	North Carolina	NC	Forsyth	067
+27105	Winston-Salem	North Carolina	NC	Forsyth	067
+27215	Burlington	North Carolina	NC	Alamance	001
+27261	High Point	North Carolina	NC	Guilford	081
+27264	High Point	North Carolina	NC	Guilford	081
+27282	Jamestown	North Carolina	NC	Guilford	081
+27350	Sophia	North Carolina	NC	Randolph	151
+27357	Stokesdale	North Carolina	NC	Guilford	081
+27410	Greensboro	North Carolina	NC	Guilford	081
+27417	Greensboro	North Carolina	NC	Guilford	081
+27531	Goldsboro	North Carolina	NC	Wayne	191
+27540	Holly Springs	North Carolina	NC	Wake	183
+27549	Louisburg	North Carolina	NC	Franklin	069
+27573	Roxboro	North Carolina	NC	Person	145
+27629	Raleigh	North Carolina	NC	Wake	183
+27635	Raleigh	North Carolina	NC	Wake	183
+27712	Durham	North Carolina	NC	Durham	063
+27827	Falkland	North Carolina	NC	Pitt	147
+27834	Greenville	North Carolina	NC	Pitt	147
+27842	Henrico	North Carolina	NC	Northampton	131
+27863	Pikeville	North Carolina	NC	Wayne	191
+27919	Belvidere	North Carolina	NC	Perquimans	143
+27928	Creswell	North Carolina	NC	Washington	187
+27965	Poplar Branch	North Carolina	NC	Currituck	053
+27976	South Mills	North Carolina	NC	Camden	029
+28001	Albemarle	North Carolina	NC	Stanly	167
+28020	Casar	North Carolina	NC	Cleveland	045
+28077	High Shoals	North Carolina	NC	Gaston	071
+28086	Kings Mountain	North Carolina	NC	Cleveland	045
+28105	Matthews	North Carolina	NC	Mecklenburg	119
+28112	Monroe	North Carolina	NC	Union	179
+28119	Morven	North Carolina	NC	Anson	007
+28164	Stanley	North Carolina	NC	Gaston	071
+28167	Union Mills	North Carolina	NC	Rutherford	161
+28351	Laurel Hill	North Carolina	NC	Scotland	165
+28385	Salemburg	North Carolina	NC	Sampson	163
+28406	Wilmington	North Carolina	NC	New Hanover	129
+28447	Ivanhoe	North Carolina	NC	Sampson	163
+28469	Ocean Isle Beach	North Carolina	NC	Brunswick	019
+28617	Crumpler	North Carolina	NC	Ashe	009
+28624	Ferguson	North Carolina	NC	Wilkes	193
+28717	Cashiers	North Carolina	NC	Jackson	099
+28743	Hot Springs	North Carolina	NC	Madison	115
+28744	Franklin	North Carolina	NC	Macon	113
+28747	Lake Toxaway	North Carolina	NC	Transylvania	175
+28751	Maggie Valley	North Carolina	NC	Haywood	087
+28768	Pisgah Forest	North Carolina	NC	Transylvania	175
+28772	Rosman	North Carolina	NC	Transylvania	175
+29020	Camden	South Carolina	SC	Kershaw	055
+29031	Carlisle	South Carolina	SC	Union	087
+29078	Lugoff	South Carolina	SC	Kershaw	055
+29104	Mayesville	South Carolina	SC	Sumter	085
+29123	Pelion	South Carolina	SC	Lexington	063
+29137	Salley	South Carolina	SC	Aiken	003
+29170	West Columbia	South Carolina	SC	Lexington	063
+29223	Columbia	South Carolina	SC	Richland	079
+29351	Joanna	South Carolina	SC	Laurens	059
+29370	Mountville	South Carolina	SC	Laurens	059
+29420	North Charleston	South Carolina	SC	Dorchester	035
+29424	Charleston	South Carolina	SC	Charleston	019
+29437	Dorchester	South Carolina	SC	Dorchester	035
+29447	Grover	South Carolina	SC	Dorchester	035
+29485	Summerville	South Carolina	SC	Dorchester	035
+29528	Conway	South Carolina	SC	Horry	051
+29563	Lake View	South Carolina	SC	Dillon	033
+29613	Greenville	South Carolina	SC	Greenville	045
+29654	Honea Path	South Carolina	SC	Anderson	007
+29675	Richland	South Carolina	SC	Oconee	073
+29684	Starr	South Carolina	SC	Anderson	007
+29693	Westminster	South Carolina	SC	Oconee	073
+29704	Catawba	South Carolina	SC	York	091
+29712	Edgemoor	South Carolina	SC	Chester	023
+29829	Graniteville	South Carolina	SC	Aiken	003
+29927	Hardeeville	South Carolina	SC	Jasper	053
+29939	Scotia	South Carolina	SC	Hampton	049
+30088	Stone Mountain	Georgia	GA	DeKalb	089
+30116	Carrollton	Georgia	GA	Carroll	045
+30147	Lindale	Georgia	GA	Floyd	115
+30179	Temple	Georgia	GA	Carroll	045
+30260	Morrow	Georgia	GA	Clayton	063
+30314	Atlanta	Georgia	GA	Fulton	121
+30319	Atlanta	Georgia	GA	DeKalb	089
+30333	Atlanta	Georgia	GA	DeKalb	089
+30336	Atlanta	Georgia	GA	Fulton	121
+30338	Atlanta	Georgia	GA	Fulton	121
+30355	Atlanta	Georgia	GA	Fulton	121
+30357	Atlanta	Georgia	GA	Fulton	121
+30364	Atlanta	Georgia	GA	Fulton	121
+30371	Atlanta	Georgia	GA	Fulton	121
+30434	Louisville	Georgia	GA	Jefferson	163
+30445	Mount Vernon	Georgia	GA	Montgomery	209
+30467	Sylvania	Georgia	GA	Screven	251
+30502	Chestnut Mountain	Georgia	GA	Hall	139
+30517	Braselton	Georgia	GA	Jackson	157
+30538	Eastanollee	Georgia	GA	Stephens	257
+30540	Ellijay	Georgia	GA	Gilmer	123
+30557	Martin	Georgia	GA	Stephens	257
+30565	Nicholson	Georgia	GA	Jackson	157
+30601	Athens	Georgia	GA	Clarke	059
+30669	Union Point	Georgia	GA	Greene	133
+30756	Varnell	Georgia	GA	Whitfield	313
+30809	Evans	Georgia	GA	Columbia	073
+31005	Bonaire	Georgia	GA	Houston	153
+31062	Milledgeville	Georgia	GA	Baldwin	009
+31146	Atlanta	Georgia	GA	DeKalb	089
+31192	Atlanta	Georgia	GA	Fulton	121
+31201	Macon	Georgia	GA	Bibb	021
+31310	Hinesville	Georgia	GA	Liberty	179
+31315	Fort Stewart	Georgia	GA	Liberty	179
+31419	Savannah	Georgia	GA	Chatham	051
+31515	Baxley	Georgia	GA	Appling	001
+31521	Brunswick	Georgia	GA	Glynn	127
+31532	Denton	Georgia	GA	Jeff Davis	161
+31548	Kingsland	Georgia	GA	Camden	039
+31626	Boston	Georgia	GA	Thomas	275
+31638	Morven	Georgia	GA	Brooks	027
+31698	Valdosta	Georgia	GA	Lowndes	185
+31716	Baconton	Georgia	GA	Mitchell	205
+31730	Camilla	Georgia	GA	Mitchell	205
+31768	Moultrie	Georgia	GA	Colquitt	071
+31774	Ocilla	Georgia	GA	Irwin	155
+31780	Plains	Georgia	GA	Sumter	261
+31783	Rebecca	Georgia	GA	Turner	287
+31794	Tifton	Georgia	GA	Tift	277
+31799	Thomasville	Georgia	GA	Thomas	275
+31904	Columbus	Georgia	GA	Muscogee	215
+32004	Ponte Vedra Beach	Florida	FL	Saint Johns	109
+32007	Bostwick	Florida	FL	Putnam	107
+32030	Doctors Inlet	Florida	FL	Clay	019
+32033	Elkton	Florida	FL	Saint Johns	109
+32084	Saint Augustine	Florida	FL	Saint Johns	109
+32113	Citra	Florida	FL	Marion	083
+32116	Daytona Beach	Florida	FL	Volusia	127
+32137	Palm Coast	Florida	FL	Flagler	035
+32176	Ormond Beach	Florida	FL	Volusia	127
+32223	Jacksonville	Florida	FL	Duval	031
+32244	Jacksonville	Florida	FL	Duval	031
+32254	Jacksonville	Florida	FL	Duval	031
+32357	Shady Grove	Florida	FL	Taylor	123
+32403	Panama City	Florida	FL	Bay	005
+32404	Panama City	Florida	FL	Bay	005
+32405	Panama City	Florida	FL	Bay	005
+32424	Blountstown	Florida	FL	Calhoun	013
+32428	Chipley	Florida	FL	Washington	133
+32431	Cottondale	Florida	FL	Jackson	063
+32444	Lynn Haven	Florida	FL	Bay	005
+32455	Ponce De Leon	Florida	FL	Holmes	059
+32524	Pensacola	Florida	FL	Escambia	033
+32608	Gainesville	Florida	FL	Alachua	001
+32669	Newberry	Florida	FL	Alachua	001
+32723	Deland	Florida	FL	Volusia	127
+32783	Titusville	Florida	FL	Brevard	009
+32805	Orlando	Florida	FL	Orange	095
+32818	Orlando	Florida	FL	Orange	095
+32830	Orlando	Florida	FL	Orange	095
+32855	Orlando	Florida	FL	Orange	095
+32859	Orlando	Florida	FL	Orange	095
+32878	Orlando	Florida	FL	Orange	095
+32905	Palm Bay	Florida	FL	Brevard	009
+33019	Hollywood	Florida	FL	Broward	011
+33033	Homestead	Florida	FL	Miami-Dade	086
+33035	Homestead	Florida	FL	Miami-Dade	086
+33054	Opa Locka	Florida	FL	Miami-Dade	086
+33064	Pompano Beach	Florida	FL	Broward	011
+33069	Pompano Beach	Florida	FL	Broward	011
+33116	Miami	Florida	FL	Miami-Dade	086
+33137	Miami	Florida	FL	Miami-Dade	086
+33143	Miami	Florida	FL	Miami-Dade	086
+33144	Miami	Florida	FL	Miami-Dade	086
+33146	Miami	Florida	FL	Miami-Dade	086
+33150	Miami	Florida	FL	Miami-Dade	086
+33183	Miami	Florida	FL	Miami-Dade	086
+33238	Miami	Florida	FL	Miami-Dade	086
+33242	Miami	Florida	FL	Miami-Dade	086
+33261	Miami	Florida	FL	Miami-Dade	086
+33312	Fort Lauderdale	Florida	FL	Broward	011
+33334	Fort Lauderdale	Florida	FL	Broward	011
+33440	Clewiston	Florida	FL	Hendry	051
+33460	Lake Worth	Florida	FL	Palm Beach	099
+33478	Jupiter	Florida	FL	Palm Beach	099
+33521	Coleman	Florida	FL	Sumter	119
+33549	Lutz	Florida	FL	Hillsborough	057
+33595	Valrico	Florida	FL	Hillsborough	057
+33618	Tampa	Florida	FL	Hillsborough	057
+33647	Tampa	Florida	FL	Hillsborough	057
+33685	Tampa	Florida	FL	Hillsborough	057
+33738	Saint Petersburg	Florida	FL	Pinellas	103
+33742	Saint Petersburg	Florida	FL	Pinellas	103
+33744	Bay Pines	Florida	FL	Pinellas	103
+33825	Avon Park	Florida	FL	Highlands	055
+33872	Sebring	Florida	FL	Highlands	055
+33880	Winter Haven	Florida	FL	Polk	105
+33881	Winter Haven	Florida	FL	Polk	105
+33885	Winter Haven	Florida	FL	Polk	105
+33906	Fort Myers	Florida	FL	Lee	071
+33935	Labelle	Florida	FL	Hendry	051
+33946	Placida	Florida	FL	Charlotte	015
+33954	Port Charlotte	Florida	FL	Charlotte	015
+33980	Punta Gorda	Florida	FL	Charlotte	015
+34004	APO AA				
+34008	APO AA				
+34010	APO AA				
+34032	APO AA				
+34041	APO AA				
+34050	FPO AA				
+34101	Naples	Florida	FL	Collier	021
+34120	Naples	Florida	FL	Collier	021
+34215	Cortez	Florida	FL	Manatee	081
+34217	Bradenton Beach	Florida	FL	Manatee	081
+34218	Holmes Beach	Florida	FL	Manatee	081
+34228	Longboat Key	Florida	FL	Manatee	081
+34265	Arcadia	Florida	FL	DeSoto	027
+34282	Bradenton	Florida	FL	Manatee	081
+34434	Dunnellon	Florida	FL	Citrus	017
+34445	Holder	Florida	FL	Citrus	017
+34482	Ocala	Florida	FL	Marion	083
+34683	Palm Harbor	Florida	FL	Pinellas	103
+34749	Leesburg	Florida	FL	Lake	069
+34760	Oakland	Florida	FL	Orange	095
+34772	Saint Cloud	Florida	FL	Osceola	097
+34952	Port Saint Lucie	Florida	FL	St. Lucie	111
+35007	Alabaster	Alabama	AL	Shelby	117
+35011	Alexander City	Alabama	AL	Tallapoosa	123
+35023	Bessemer	Alabama	AL	Jefferson	073
+35042	Centreville	Alabama	AL	Bibb	007
+35043	Chelsea	Alabama	AL	Shelby	117
+35045	Clanton	Alabama	AL	Chilton	021
+35051	Columbiana	Alabama	AL	Shelby	117
+35068	Fultondale	Alabama	AL	Jefferson	073
+35089	Kellyton	Alabama	AL	Coosa	037
+35114	Maylene	Alabama	AL	Shelby	117
+35259	Birmingham	Alabama	AL	Jefferson	073
+35283	Birmingham	Alabama	AL	Jefferson	073
+35462	Eutaw	Alabama	AL	Greene	063
+35503	Jasper	Alabama	AL	Walker	127
+35553	Double Springs	Alabama	AL	Winston	133
+35555	Fayette	Alabama	AL	Fayette	057
+35645	Killen	Alabama	AL	Lauderdale	077
+35744	Dutton	Alabama	AL	Jackson	071
+35754	Laceys Spring	Alabama	AL	Morgan	103
+35769	Scottsboro	Alabama	AL	Jackson	071
+35774	Trenton	Alabama	AL	Jackson	071
+35775	Valhermoso Springs	Alabama	AL	Morgan	103
+35806	Huntsville	Alabama	AL	Madison	089
+35824	Huntsville	Alabama	AL	Madison	089
+35971	Fyffe	Alabama	AL	DeKalb	049
+35983	Leesburg	Alabama	AL	Cherokee	019
+36046	Lapine	Alabama	AL	Montgomery	101
+36052	Mathews	Alabama	AL	Montgomery	101
+36078	Tallassee	Alabama	AL	Elmore	051
+36109	Montgomery	Alabama	AL	Montgomery	101
+36132	Montgomery	Alabama	AL	Montgomery	101
+36272	Piedmont	Alabama	AL	Calhoun	015
+36274	Roanoke	Alabama	AL	Randolph	111
+36303	Dothan	Alabama	AL	Houston	069
+36312	Ashford	Alabama	AL	Houston	069
+36313	Bellwood	Alabama	AL	Geneva	061
+36321	Cowarts	Alabama	AL	Houston	069
+36480	Uriah	Alabama	AL	Monroe	099
+36481	Vredenburgh	Alabama	AL	Monroe	099
+36539	Fruitdale	Alabama	AL	Washington	129
+36555	Magnolia Springs	Alabama	AL	Baldwin	003
+36561	Orange Beach	Alabama	AL	Baldwin	003
+36569	Saint Stephens	Alabama	AL	Washington	129
+36605	Mobile	Alabama	AL	Mobile	097
+36618	Mobile	Alabama	AL	Mobile	097
+36640	Mobile	Alabama	AL	Mobile	097
+36688	Mobile	Alabama	AL	Mobile	097
+36695	Mobile	Alabama	AL	Mobile	097
+36722	Arlington	Alabama	AL	Wilcox	131
+36723	Boykin	Alabama	AL	Wilcox	131
+36745	Jefferson	Alabama	AL	Marengo	091
+36859	Holy Trinity	Alabama	AL	Russell	113
+36901	Bellamy	Alabama	AL	Sumter	119
+36912	Lisman	Alabama	AL	Choctaw	023
+36915	Needham	Alabama	AL	Choctaw	023
+37073	Greenbrier	Tennessee	TN	Robertson	147
+37091	Lewisburg	Tennessee	TN	Marshall	117
+37162	Shelbyville	Tennessee	TN	Bedford	003
+37213	Nashville	Tennessee	TN	Davidson	037
+37218	Nashville	Tennessee	TN	Davidson	037
+37221	Nashville	Tennessee	TN	Davidson	037
+37302	Apison	Tennessee	TN	Hamilton	065
+37310	Charleston	Tennessee	TN	Bradley	011
+37314	Cokercreek	Tennessee	TN	Monroe	123
+37317	Copperhill	Tennessee	TN	Polk	139
+37366	Pelham	Tennessee	TN	Grundy	061
+37376	Sherwood	Tennessee	TN	Franklin	051
+37407	Chattanooga	Tennessee	TN	Hamilton	065
+37501	Memphis	Tennessee	TN	Shelby	157
+37665	Kingsport	Tennessee	TN	Sullivan	163
+37692	Unicoi	Tennessee	TN	Unicoi	171
+37694	Watauga	Tennessee	TN	Carter	019
+37707	Arthur	Tennessee	TN	Claiborne	025
+37716	Clinton	Tennessee	TN	Anderson	001
+37730	Eagan	Tennessee	TN	Claiborne	025
+37743	Greeneville	Tennessee	TN	Greene	059
+37803	Maryville	Tennessee	TN	Blount	009
+37828	Norris	Tennessee	TN	Anderson	001
+37830	Oak Ridge	Tennessee	TN	Anderson	001
+37870	Speedwell	Tennessee	TN	Claiborne	025
+37879	Tazewell	Tennessee	TN	Claiborne	025
+37996	Knoxville	Tennessee	TN	Knox	093
+38012	Brownsville	Tennessee	TN	Haywood	075
+38017	Collierville	Tennessee	TN	Shelby	157
+38018	Cordova	Tennessee	TN	Shelby	157
+38021	Crockett Mills	Tennessee	TN	Crockett	033
+38068	Somerville	Tennessee	TN	Fayette	047
+38069	Stanton	Tennessee	TN	Haywood	075
+38080	Ridgely	Tennessee	TN	Lake	095
+38111	Memphis	Tennessee	TN	Shelby	157
+38113	Memphis	Tennessee	TN	Shelby	157
+38133	Memphis	Tennessee	TN	Shelby	157
+38135	Memphis	Tennessee	TN	Shelby	157
+38136	Memphis	Tennessee	TN	Shelby	157
+38223	Como	Tennessee	TN	Henry	079
+38225	Dresden	Tennessee	TN	Weakley	183
+38261	Union City	Tennessee	TN	Obion	131
+38328	Darden	Tennessee	TN	Henderson	077
+38340	Henderson	Tennessee	TN	Chester	023
+38389	Yorkville	Tennessee	TN	Gibson	053
+38402	Columbia	Tennessee	TN	Maury	119
+38452	Cypress Inn	Tennessee	TN	Wayne	181
+38460	Goodspring	Tennessee	TN	Giles	055
+38475	Olivehill	Tennessee	TN	Hardin	071
+38503	Cookeville	Tennessee	TN	Putnam	141
+38628	Falcon	Mississippi	MS	Quitman	119
+38634	Holly Springs	Mississippi	MS	Marshall	093
+38733	Cleveland	Mississippi	MS	Bolivar	011
+38745	Grace	Mississippi	MS	Issaquena	055
+38772	Scott	Mississippi	MS	Bolivar	011
+38774	Shelby	Mississippi	MS	Bolivar	011
+38781	Winstonville	Mississippi	MS	Bolivar	011
+38803	Tupelo	Mississippi	MS	Lee	081
+38864	Randolph	Mississippi	MS	Pontotoc	115
+38951	Pittsboro	Mississippi	MS	Calhoun	013
+38954	Sidon	Mississippi	MS	Carroll	015
+39062	D Lo	Mississippi	MS	Simpson	127
+39063	Durant	Mississippi	MS	Holmes	051
+39081	Harriston	Mississippi	MS	Jefferson	063
+39090	Kosciusko	Mississippi	MS	Attala	007
+39098	Ludlow	Mississippi	MS	Scott	123
+39107	Mc Adams	Mississippi	MS	Attala	007
+39109	Madden	Mississippi	MS	Leake	079
+39140	Newhebron	Mississippi	MS	Lawrence	077
+39182	Vicksburg	Mississippi	MS	Warren	149
+39183	Vicksburg	Mississippi	MS	Warren	149
+39209	Jackson	Mississippi	MS	Hinds	049
+39305	Meridian	Mississippi	MS	Lauderdale	075
+39328	De Kalb	Mississippi	MS	Kemper	069
+39348	Paulding	Mississippi	MS	Jasper	061
+39355	Quitman	Mississippi	MS	Clarke	023
+39403	Hattiesburg	Mississippi	MS	Forrest	035
+39429	Columbia	Mississippi	MS	Marion	091
+39436	Eastabuchie	Mississippi	MS	Jones	067
+39652	Magnolia	Mississippi	MS	Pike	113
+39701	Columbus	Mississippi	MS	Lowndes	087
+39704	Columbus	Mississippi	MS	Lowndes	087
+39828	Cairo	Georgia	GA	Terrell	273
+39845	Donalsonville	Georgia	GA	Baker	007
+39877	Parrott	Georgia	GA	Webster	307
+39886	Shellman	Georgia	GA	Calhoun	037
+40011	Campbellsburg	Kentucky	KY	Henry	103
+40014	Crestwood	Kentucky	KY	Oldham	185
+40047	Mount Washington	Kentucky	KY	Bullitt	029
+40048	Nazareth	Kentucky	KY	Nelson	179
+40051	New Haven	Kentucky	KY	Nelson	179
+40178	Westview	Kentucky	KY	Breckinridge	027
+40220	Louisville	Kentucky	KY	Jefferson	111
+40224	Louisville	Kentucky	KY	Jefferson	111
+40242	Louisville	Kentucky	KY	Jefferson	111
+40255	Louisville	Kentucky	KY	Jefferson	111
+40256	Louisville	Kentucky	KY	Jefferson	111
+40334	Hope	Kentucky	KY	Montgomery	173
+40486	Tyner	Kentucky	KY	Jackson	109
+40488	Waneta	Kentucky	KY	Jackson	109
+40583	Lexington	Kentucky	KY	Fayette	067
+40724	Bush	Kentucky	KY	Laurel	125
+40743	London	Kentucky	KY	Laurel	125
+40755	Pittsburg	Kentucky	KY	Laurel	125
+40759	Rockholds	Kentucky	KY	Whitley	235
+40806	Baxter	Kentucky	KY	Harlan	095
+40870	Totz	Kentucky	KY	Harlan	095
+40930	Dewitt	Kentucky	KY	Knox	121
+40962	Manchester	Kentucky	KY	Clay	051
+41006	Butler	Kentucky	KY	Pendleton	191
+41018	Erlanger	Kentucky	KY	Kenton	117
+41049	Hillsboro	Kentucky	KY	Fleming	069
+41085	Silver Grove	Kentucky	KY	Campbell	037
+41105	Ashland	Kentucky	KY	Boyd	019
+41160	Mazie	Kentucky	KY	Lawrence	127
+41216	East Point	Kentucky	KY	Johnson	115
+41352	Mize	Kentucky	KY	Morgan	175
+41390	Whick	Kentucky	KY	Breathitt	025
+41425	Ezel	Kentucky	KY	Morgan	175
+41555	Pinsonfork	Kentucky	KY	Pike	195
+41630	Garrett	Kentucky	KY	Floyd	071
+41650	Melvin	Kentucky	KY	Floyd	071
+41702	Hazard	Kentucky	KY	Perry	193
+41763	Slemp	Kentucky	KY	Perry	193
+41819	Gordon	Kentucky	KY	Letcher	133
+41821	Hallie	Kentucky	KY	Letcher	133
+41822	Hindman	Kentucky	KY	Knott	119
+42036	Dexter	Kentucky	KY	Calloway	035
+42142	Glasgow	Kentucky	KY	Barren	009
+42151	Hestand	Kentucky	KY	Monroe	171
+42215	Cerulean	Kentucky	KY	Trigg	221
+42240	Hopkinsville	Kentucky	KY	Christian	047
+42266	Pembroke	Kentucky	KY	Christian	047
+42288	Woodbury	Kentucky	KY	Butler	031
+42370	Rosine	Kentucky	KY	Ohio	183
+42419	Henderson	Kentucky	KY	Henderson	101
+42539	Liberty	Kentucky	KY	Casey	045
+42720	Cane Valley	Kentucky	KY	Adair	001
+42759	Marrowbone	Kentucky	KY	Cumberland	057
+43006	Brinkhaven	Ohio	OH	Knox	083
+43045	Milford Center	Ohio	OH	Union	159
+43077	Unionville Center	Ohio	OH	Union	159
+43123	Grove City	Ohio	OH	Franklin	049
+43138	Logan	Ohio	OH	Hocking	073
+43155	Sugar Grove	Ohio	OH	Fairfield	045
+43211	Columbus	Ohio	OH	Franklin	049
+43235	Columbus	Ohio	OH	Franklin	049
+43324	Huntsville	Ohio	OH	Logan	091
+43402	Bowling Green	Ohio	OH	Wood	173
+43413	Cygnet	Ohio	OH	Wood	173
+43420	Fremont	Ohio	OH	Sandusky	143
+43451	Portage	Ohio	OH	Wood	173
+43529	Hoytville	Ohio	OH	Wood	173
+43566	Waterville	Ohio	OH	Lucas	095
+43569	Weston	Ohio	OH	Wood	173
+43614	Toledo	Ohio	OH	Lucas	095
+43682	Toledo	Ohio	OH	Lucas	095
+43767	Norwich	Ohio	OH	Muskingum	119
+43824	Fresno	Ohio	OH	Coshocton	031
+43832	Newcomerstown	Ohio	OH	Tuscarawas	157
+43844	Warsaw	Ohio	OH	Coshocton	031
+43926	Empire	Ohio	OH	Jefferson	081
+43970	Wolf Run	Ohio	OH	Jefferson	081
+43973	Freeport	Ohio	OH	Harrison	067
+44052	Lorain	Ohio	OH	Lorain	093
+44055	Lorain	Ohio	OH	Lorain	093
+44073	Novelty	Ohio	OH	Geauga	055
+44105	Cleveland	Ohio	OH	Cuyahoga	035
+44108	Cleveland	Ohio	OH	Cuyahoga	035
+44181	Cleveland	Ohio	OH	Cuyahoga	035
+44191	Cleveland	Ohio	OH	Cuyahoga	035
+44212	Brunswick	Ohio	OH	Medina	103
+44233	Hinckley	Ohio	OH	Medina	103
+44302	Akron	Ohio	OH	Summit	153
+44314	Akron	Ohio	OH	Summit	153
+44333	Akron	Ohio	OH	Summit	153
+44418	Fowler	Ohio	OH	Trumbull	155
+44427	Kensington	Ohio	OH	Columbiana	029
+44436	Lowellville	Ohio	OH	Mahoning	099
+44470	Southington	Ohio	OH	Trumbull	155
+44503	Youngstown	Ohio	OH	Mahoning	099
+44609	Beloit	Ohio	OH	Mahoning	099
+44613	Brewster	Ohio	OH	Stark	151
+44646	Massillon	Ohio	OH	Stark	151
+44651	Mechanicstown	Ohio	OH	Carroll	019
+44661	Nashville	Ohio	OH	Holmes	075
+44682	Tuscarawas	Ohio	OH	Tuscarawas	157
+44699	Tippecanoe	Ohio	OH	Harrison	067
+44718	Canton	Ohio	OH	Stark	151
+44730	East Canton	Ohio	OH	Stark	151
+44849	Nevada	Ohio	OH	Wyandot	175
+44853	New Riegel	Ohio	OH	Seneca	147
+44864	Perrysville	Ohio	OH	Ashland	005
+44889	Wakeman	Ohio	OH	Huron	077
+44890	Willard	Ohio	OH	Huron	077
+45030	Harrison	Ohio	OH	Hamilton	061
+45050	Monroe	Ohio	OH	Butler	017
+45148	Midland	Ohio	OH	Clinton	027
+45150	Milford	Ohio	OH	Clermont	025
+45160	Owensville	Ohio	OH	Clermont	025
+45214	Cincinnati	Ohio	OH	Hamilton	061
+45220	Cincinnati	Ohio	OH	Hamilton	061
+45263	Cincinnati	Ohio	OH	Hamilton	061
+45341	Medway	Ohio	OH	Clark	023
+45342	Miamisburg	Ohio	OH	Montgomery	113
+45363	Russia	Ohio	OH	Shelby	149
+45416	Dayton	Ohio	OH	Montgomery	113
+45422	Dayton	Ohio	OH	Montgomery	113
+45437	Dayton	Ohio	OH	Montgomery	113
+45690	Waverly	Ohio	OH	Pike	131
+45696	Willow Wood	Ohio	OH	Lawrence	087
+45698	Zaleski	Ohio	OH	Vinton	163
+45746	Macksburg	Ohio	OH	Washington	167
+45779	Syracuse	Ohio	OH	Meigs	105
+45807	Lima	Ohio	OH	Allen	003
+45809	Gomer	Ohio	OH	Allen	003
+45814	Arlington	Ohio	OH	Hancock	063
+45846	Fort Recovery	Ohio	OH	Mercer	107
+45875	Ottawa	Ohio	OH	Putnam	137
+45890	Vanlue	Ohio	OH	Hancock	063
+45891	Van Wert	Ohio	OH	Van Wert	161
+46011	Anderson	Indiana	IN	Madison	095
+46014	Anderson	Indiana	IN	Madison	095
+46069	Sheridan	Indiana	IN	Hamilton	057
+46107	Beech Grove	Indiana	IN	Marion	097
+46122	Danville	Indiana	IN	Hendricks	063
+46128	Fillmore	Indiana	IN	Putnam	133
+46165	North Salem	Indiana	IN	Hendricks	063
+46202	Indianapolis	Indiana	IN	Marion	097
+46209	Indianapolis	Indiana	IN	Marion	097
+46225	Indianapolis	Indiana	IN	Marion	097
+46242	Indianapolis	Indiana	IN	Marion	097
+46251	Indianapolis	Indiana	IN	Marion	097
+46256	Indianapolis	Indiana	IN	Marion	097
+46285	Indianapolis	Indiana	IN	Marion	097
+46320	Hammond	Indiana	IN	Lake	089
+46345	Kingsbury	Indiana	IN	LaPorte	091
+46375	Schererville	Indiana	IN	Lake	089
+46377	Shelby	Indiana	IN	Lake	089
+46403	Gary	Indiana	IN	Lake	089
+46501	Argos	Indiana	IN	Marshall	099
+46502	Atwood	Indiana	IN	Kosciusko	085
+46527	Goshen	Indiana	IN	Elkhart	039
+46536	Lakeville	Indiana	IN	St. Joseph	141
+46572	Tyner	Indiana	IN	Marshall	099
+46582	Warsaw	Indiana	IN	Kosciusko	085
+46601	South Bend	Indiana	IN	St. Joseph	141
+46624	South Bend	Indiana	IN	St. Joseph	141
+46626	South Bend	Indiana	IN	St. Joseph	141
+46637	South Bend	Indiana	IN	St. Joseph	141
+46680	South Bend	Indiana	IN	St. Joseph	141
+46737	Fremont	Indiana	IN	Steuben	151
+46760	Kimmell	Indiana	IN	Noble	113
+46782	Preble	Indiana	IN	Adams	001
+46793	Waterloo	Indiana	IN	DeKalb	033
+46808	Fort Wayne	Indiana	IN	Allen	003
+46921	Deedsville	Indiana	IN	Miami	103
+46928	Fairmount	Indiana	IN	Grant	053
+46936	Greentown	Indiana	IN	Howard	067
+46943	Laketon	Indiana	IN	Wabash	169
+46975	Rochester	Indiana	IN	Fulton	049
+46991	Van Buren	Indiana	IN	Grant	053
+47021	Friendship	Indiana	IN	Ripley	137
+47023	Holton	Indiana	IN	Ripley	137
+47031	Milan	Indiana	IN	Ripley	137
+47041	Sunman	Indiana	IN	Ripley	137
+47130	Jeffersonville	Indiana	IN	Clark	019
+47166	Ramsey	Indiana	IN	Harrison	061
+47167	Salem	Indiana	IN	Washington	175
+47232	Elizabethtown	Indiana	IN	Bartholomew	005
+47249	Kurtz	Indiana	IN	Jackson	071
+47260	Medora	Indiana	IN	Jackson	071
+47263	New Point	Indiana	IN	Decatur	031
+47369	Pennville	Indiana	IN	Jay	075
+47387	Straughn	Indiana	IN	Henry	065
+47390	Union City	Indiana	IN	Randolph	135
+47424	Bloomfield	Indiana	IN	Greene	055
+47471	Worthington	Indiana	IN	Greene	055
+47519	Cannelburg	Indiana	IN	Daviess	027
+47551	Leopold	Indiana	IN	Perry	123
+47561	Oaktown	Indiana	IN	Knox	083
+47568	Plainville	Indiana	IN	Daviess	027
+47601	Boonville	Indiana	IN	Warrick	173
+47865	Paxton	Indiana	IN	Sullivan	153
+47916	Alamo	Indiana	IN	Montgomery	107
+47978	Rensselaer	Indiana	IN	Jasper	073
+48041	Memphis	Michigan	MI	St. Clair	147
+48043	Mount Clemens	Michigan	MI	Macomb	099
+48051	New Baltimore	Michigan	MI	Macomb	099
+48059	Fort Gratiot	Michigan	MI	St. Clair	147
+48067	Royal Oak	Michigan	MI	Oakland	125
+48108	Ann Arbor	Michigan	MI	Washtenaw	161
+48112	Belleville	Michigan	MI	Wayne	163
+48117	Carleton	Michigan	MI	Monroe	115
+48174	Romulus	Michigan	MI	Wayne	163
+48201	Detroit	Michigan	MI	Wayne	163
+48208	Detroit	Michigan	MI	Wayne	163
+48216	Detroit	Michigan	MI	Wayne	163
+48221	Detroit	Michigan	MI	Wayne	163
+48236	Grosse Pointe	Michigan	MI	Wayne	163
+48269	Detroit	Michigan	MI	Wayne	163
+48315	Utica	Michigan	MI	Macomb	099
+48320	Keego Harbor	Michigan	MI	Oakland	125
+48332	Farmington	Michigan	MI	Oakland	125
+48380	Milford	Michigan	MI	Oakland	125
+48411	Atlas	Michigan	MI	Genesee	049
+48418	Byron	Michigan	MI	Shiawassee	155
+48435	Fostoria	Michigan	MI	Tuscola	157
+48436	Gaines	Michigan	MI	Genesee	049
+48450	Lexington	Michigan	MI	Sanilac	151
+48480	Grand Blanc	Michigan	MI	Genesee	049
+48502	Flint	Michigan	MI	Genesee	049
+48507	Flint	Michigan	MI	Genesee	049
+48529	Burton	Michigan	MI	Genesee	049
+48554	Flint	Michigan	MI	Genesee	049
+48612	Beaverton	Michigan	MI	Gladwin	051
+48616	Chesaning	Michigan	MI	Saginaw	145
+48622	Farwell	Michigan	MI	Clare	035
+48629	Houghton Lake	Michigan	MI	Roscommon	143
+48633	Lake George	Michigan	MI	Clare	035
+48641	Midland	Michigan	MI	Midland	111
+48655	Saint Charles	Michigan	MI	Saginaw	145
+48674	Midland	Michigan	MI	Midland	111
+48701	Akron	Michigan	MI	Tuscola	157
+48727	Clifford	Michigan	MI	Lapeer	087
+48735	Gagetown	Michigan	MI	Tuscola	157
+48748	National City	Michigan	MI	Iosco	069
+48827	Eaton Rapids	Michigan	MI	Eaton	045
+48831	Elsie	Michigan	MI	Clinton	037
+48860	Muir	Michigan	MI	Ionia	067
+48862	North Star	Michigan	MI	Gratiot	057
+48865	Orleans	Michigan	MI	Ionia	067
+48866	Ovid	Michigan	MI	Clinton	037
+48871	Perrinton	Michigan	MI	Gratiot	057
+48888	Stanton	Michigan	MI	Montcalm	117
+48895	Williamston	Michigan	MI	Ingham	065
+48930	Lansing	Michigan	MI	Ingham	065
+49012	Augusta	Michigan	MI	Kalamazoo	077
+49015	Battle Creek	Michigan	MI	Calhoun	025
+49051	East Leroy	Michigan	MI	Calhoun	025
+49052	Fulton	Michigan	MI	Kalamazoo	077
+49074	Nazareth	Michigan	MI	Kalamazoo	077
+49076	Olivet	Michigan	MI	Eaton	045
+49115	Harbert	Michigan	MI	Berrien	021
+49127	Stevensville	Michigan	MI	Berrien	021
+49128	Three Oaks	Michigan	MI	Berrien	021
+49224	Albion	Michigan	MI	Calhoun	025
+49229	Britton	Michigan	MI	Lenawee	091
+49237	Concord	Michigan	MI	Jackson	075
+49269	Parma	Michigan	MI	Jackson	075
+49274	Reading	Michigan	MI	Hillsdale	059
+49327	Grant	Michigan	MI	Newaygo	123
+49401	Allendale	Michigan	MI	Ottawa	139
+49412	Fremont	Michigan	MI	Newaygo	123
+49425	Holton	Michigan	MI	Muskegon	121
+49444	Muskegon	Michigan	MI	Muskegon	121
+49449	Pentwater	Michigan	MI	Oceana	127
+49637	Grawn	Michigan	MI	Grand Traverse	055
+49673	Old Mission	Michigan	MI	Grand Traverse	055
+49683	Thompsonville	Michigan	MI	Benzie	019
+49688	Tustin	Michigan	MI	Osceola	133
+49718	Carp Lake	Michigan	MI	Emmet	047
+49736	Goetzville	Michigan	MI	Chippewa	033
+49738	Grayling	Michigan	MI	Crawford	039
+49764	Oden	Michigan	MI	Emmet	047
+49797	Waters	Michigan	MI	Otsego	137
+49818	Cornell	Michigan	MI	Delta	041
+49852	Loretto	Michigan	MI	Dickinson	043
+49872	Perkins	Michigan	MI	Delta	041
+49873	Perronville	Michigan	MI	Menominee	109
+49878	Rapid River	Michigan	MI	Delta	041
+49925	Ewen	Michigan	MI	Ontonagon	131
+49927	Gaastra	Michigan	MI	Iron	071
+50036	Boone	Iowa	IA	Boone	015
+50039	Bouton	Iowa	IA	Dallas	049
+50060	Corydon	Iowa	IA	Wayne	185
+50069	De Soto	Iowa	IA	Dallas	049
+50134	Kelley	Iowa	IA	Story	169
+50154	Mc Callsburg	Iowa	IA	Story	169
+50214	Otley	Iowa	IA	Marion	125
+50248	Story City	Iowa	IA	Story	169
+50259	Gifford	Iowa	IA	Hardin	083
+50273	Winterset	Iowa	IA	Madison	121
+50305	Des Moines	Iowa	IA	Polk	153
+50320	Des Moines	Iowa	IA	Polk	153
+50323	Urbandale	Iowa	IA	Polk	153
+50325	Clive	Iowa	IA	Polk	153
+50423	Britt	Iowa	IA	Hancock	081
+50441	Hampton	Iowa	IA	Franklin	069
+50456	Manly	Iowa	IA	Worth	195
+50457	Meservey	Iowa	IA	Cerro Gordo	033
+50480	Titonka	Iowa	IA	Kossuth	109
+50515	Ayrshire	Iowa	IA	Palo Alto	147
+50516	Badger	Iowa	IA	Webster	187
+50532	Duncombe	Iowa	IA	Webster	187
+50551	Jolley	Iowa	IA	Calhoun	025
+50576	Rembrandt	Iowa	IA	Buena Vista	021
+50581	Rolfe	Iowa	IA	Pocahontas	151
+50614	Cedar Falls	Iowa	IA	Black Hawk	013
+50638	Grundy Center	Iowa	IA	Grundy	075
+50680	Wellsburg	Iowa	IA	Grundy	075
+50831	Arispe	Iowa	IA	Union	175
+50854	Mount Ayr	Iowa	IA	Ringgold	159
+50863	Tingley	Iowa	IA	Ringgold	159
+51004	Anthon	Iowa	IA	Woodbury	193
+51061	Washta	Iowa	IA	Cherokee	035
+51235	Doon	Iowa	IA	Lyon	119
+51360	Spirit Lake	Iowa	IA	Dickinson	059
+51365	Wallingford	Iowa	IA	Emmet	063
+51446	Irwin	Iowa	IA	Shelby	165
+51453	Lohrville	Iowa	IA	Calhoun	025
+51466	Wall Lake	Iowa	IA	Sac	161
+51558	Moorhead	Iowa	IA	Monona	133
+51559	Neola	Iowa	IA	Pottawattamie	155
+51630	Blanchard	Iowa	IA	Page	145
+52001	Dubuque	Iowa	IA	Dubuque	061
+52060	Maquoketa	Iowa	IA	Jackson	097
+52072	Saint Olaf	Iowa	IA	Clayton	043
+52136	Cresco	Iowa	IA	Howard	089
+52156	Luana	Iowa	IA	Clayton	043
+52168	Spillville	Iowa	IA	Winneshiek	191
+52170	Waterville	Iowa	IA	Allamakee	005
+52212	Center Junction	Iowa	IA	Jones	105
+52216	Clarence	Iowa	IA	Cedar	031
+52218	Coggon	Iowa	IA	Linn	113
+52232	Hartwick	Iowa	IA	Poweshiek	157
+52339	Tama	Iowa	IA	Tama	171
+52356	Wellman	Iowa	IA	Washington	183
+52402	Cedar Rapids	Iowa	IA	Linn	113
+52405	Cedar Rapids	Iowa	IA	Linn	113
+52553	Eddyville	Iowa	IA	Wapello	179
+52554	Eldon	Iowa	IA	Wapello	179
+52580	Packwood	Iowa	IA	Jefferson	101
+52649	Salem	Iowa	IA	Henry	087
+52656	West Point	Iowa	IA	Lee	111
+52730	Camanche	Iowa	IA	Clinton	045
+52733	Clinton	Iowa	IA	Clinton	045
+53073	Plymouth	Wisconsin	WI	Sheboygan	117
+53090	West Bend	Wisconsin	WI	Washington	131
+53105	Burlington	Wisconsin	WI	Racine	101
+53120	East Troy	Wisconsin	WI	Walworth	127
+53127	Genesee Depot	Wisconsin	WI	Waukesha	133
+53140	Kenosha	Wisconsin	WI	Kenosha	059
+53142	Kenosha	Wisconsin	WI	Kenosha	059
+53170	Silver Lake	Wisconsin	WI	Kenosha	059
+53171	Somers	Wisconsin	WI	Kenosha	059
+53172	South Milwaukee	Wisconsin	WI	Milwaukee	079
+53203	Milwaukee	Wisconsin	WI	Milwaukee	079
+53207	Milwaukee	Wisconsin	WI	Milwaukee	079
+53223	Milwaukee	Wisconsin	WI	Milwaukee	079
+53227	Milwaukee	Wisconsin	WI	Milwaukee	079
+53274	Milwaukee	Wisconsin	WI	Milwaukee	079
+53402	Racine	Wisconsin	WI	Racine	101
+53504	Argyle	Wisconsin	WI	Lafayette	065
+53512	Beloit	Wisconsin	WI	Rock	105
+53516	Blanchardville	Wisconsin	WI	Lafayette	065
+53548	Janesville	Wisconsin	WI	Rock	105
+53711	Madison	Wisconsin	WI	Dane	025
+53802	Beetown	Wisconsin	WI	Grant	043
+53910	Adams	Wisconsin	WI	Adams	001
+53922	Burnett	Wisconsin	WI	Dodge	027
+53956	Randolph	Wisconsin	WI	Dodge	027
+54009	Dresser	Wisconsin	WI	Polk	095
+54114	Crivitz	Wisconsin	WI	Marinette	075
+54119	Dunbar	Wisconsin	WI	Marinette	075
+54126	Greenleaf	Wisconsin	WI	Brown	009
+54131	Freedom	Wisconsin	WI	Outagamie	087
+54135	Keshena	Wisconsin	WI	Menominee	078
+54155	Oneida	Wisconsin	WI	Outagamie	087
+54157	Peshtigo	Wisconsin	WI	Marinette	075
+54406	Amherst	Wisconsin	WI	Portage	097
+54414	Birnamwood	Wisconsin	WI	Shawano	115
+54420	Chili	Wisconsin	WI	Clark	019
+54427	Eland	Wisconsin	WI	Marathon	073
+54442	Irma	Wisconsin	WI	Lincoln	069
+54443	Junction City	Wisconsin	WI	Portage	097
+54458	Nelsonville	Wisconsin	WI	Portage	097
+54484	Stratford	Wisconsin	WI	Marathon	073
+54546	Mellen	Wisconsin	WI	Ashland	003
+54554	Phelps	Wisconsin	WI	Vilas	125
+54612	Arcadia	Wisconsin	WI	Trempealeau	121
+54614	Bangor	Wisconsin	WI	La Crosse	063
+54621	Chaseburg	Wisconsin	WI	Vernon	123
+54639	La Farge	Wisconsin	WI	Vernon	123
+54654	Seneca	Wisconsin	WI	Crawford	023
+54731	Conrath	Wisconsin	WI	Rusk	107
+54750	Maiden Rock	Wisconsin	WI	Pierce	093
+54756	Nelson	Wisconsin	WI	Buffalo	011
+54760	Pigeon Falls	Wisconsin	WI	Trempealeau	121
+54765	Sand Creek	Wisconsin	WI	Dunn	033
+54814	Bayfield	Wisconsin	WI	Bayfield	007
+54856	Mason	Wisconsin	WI	Bayfield	007
+54858	Milltown	Wisconsin	WI	Polk	095
+54891	Washburn	Wisconsin	WI	Bayfield	007
+54902	Oshkosh	Wisconsin	WI	Winnebago	139
+54949	Manawa	Wisconsin	WI	Waupaca	135
+54976	Saxeville	Wisconsin	WI	Waushara	137
+54980	Waukau	Wisconsin	WI	Winnebago	139
+55024	Farmington	Minnesota	MN	Dakota	037
+55029	Grandy	Minnesota	MN	Isanti	059
+55045	Lindstrom	Minnesota	MN	Chisago	025
+55060	Owatonna	Minnesota	MN	Steele	147
+55070	Saint Francis	Minnesota	MN	Anoka	003
+55079	Stacy	Minnesota	MN	Chisago	025
+55087	Warsaw	Minnesota	MN	Rice	131
+55088	Webster	Minnesota	MN	Rice	131
+55090	Willernie	Minnesota	MN	Washington	163
+55107	Saint Paul	Minnesota	MN	Ramsey	123
+55170	Saint Paul	Minnesota	MN	Ramsey	123
+55348	Maple Plain	Minnesota	MN	Hennepin	053
+55358	Maple Lake	Minnesota	MN	Wright	171
+55366	New Auburn	Minnesota	MN	Sibley	143
+55373	Rockford	Minnesota	MN	Wright	171
+55410	Minneapolis	Minnesota	MN	Hennepin	053
+55414	Minneapolis	Minnesota	MN	Hennepin	053
+55420	Minneapolis	Minnesota	MN	Hennepin	053
+55426	Minneapolis	Minnesota	MN	Hennepin	053
+55438	Minneapolis	Minnesota	MN	Hennepin	053
+55458	Minneapolis	Minnesota	MN	Hennepin	053
+55459	Minneapolis	Minnesota	MN	Hennepin	053
+55460	Minneapolis	Minnesota	MN	Hennepin	053
+55473	Minneapolis	Minnesota	MN	Carver	019
+55488	Minneapolis	Minnesota	MN	Hennepin	053
+55710	Britt	Minnesota	MN	St. Louis	137
+55726	Cromwell	Minnesota	MN	Carlton	017
+55734	Eveleth	Minnesota	MN	St. Louis	137
+55777	Virginia	Minnesota	MN	St. Louis	137
+55787	Tamarack	Minnesota	MN	Aitkin	001
+55792	Virginia	Minnesota	MN	St. Louis	137
+55798	Wright	Minnesota	MN	Carlton	017
+55905	Rochester	Minnesota	MN	Olmsted	109
+55909	Adams	Minnesota	MN	Mower	099
+55910	Altura	Minnesota	MN	Winona	169
+55971	Rushford	Minnesota	MN	Fillmore	045
+56010	Amboy	Minnesota	MN	Blue Earth	013
+56019	Comfrey	Minnesota	MN	Brown	015
+56036	Glenville	Minnesota	MN	Freeborn	047
+56075	Northrop	Minnesota	MN	Martin	091
+56083	Sanborn	Minnesota	MN	Redwood	127
+56134	Hardwick	Minnesota	MN	Rock	133
+56138	Hills	Minnesota	MN	Rock	133
+56153	Leota	Minnesota	MN	Nobles	105
+56176	Trimont	Minnesota	MN	Martin	091
+56181	Welcome	Minnesota	MN	Martin	091
+56187	Worthington	Minnesota	MN	Nobles	105
+56219	Browns Valley	Minnesota	MN	Traverse	155
+56243	Grove City	Minnesota	MN	Meeker	093
+56273	New London	Minnesota	MN	Kandiyohi	067
+56283	Redwood Falls	Minnesota	MN	Redwood	127
+56303	Saint Cloud	Minnesota	MN	Stearns	145
+56307	Albany	Minnesota	MN	Stearns	145
+56461	Laporte	Minnesota	MN	Hubbard	057
+56464	Menahga	Minnesota	MN	Wadena	159
+56520	Breckenridge	Minnesota	MN	Wilkin	167
+56578	Rochert	Minnesota	MN	Becker	005
+56583	Tintah	Minnesota	MN	Traverse	155
+56637	Talmoon	Minnesota	MN	Itasca	061
+56715	Brooks	Minnesota	MN	Red Lake	125
+56733	Kennedy	Minnesota	MN	Kittson	069
+56751	Roseau	Minnesota	MN	Roseau	135
+57030	Garretson	South Dakota	SD	Minnehaha	099
+57031	Gayville	South Dakota	SD	Yankton	135
+57065	Trent	South Dakota	SD	Moody	101
+57075	Wentworth	South Dakota	SD	Lake	079
+57239	Grenville	South Dakota	SD	Day	037
+57248	Lake Norden	South Dakota	SD	Hamlin	057
+57249	Lake Preston	South Dakota	SD	Kingsbury	077
+57252	Milbank	South Dakota	SD	Grant	051
+57263	South Shore	South Dakota	SD	Codington	029
+57276	White	South Dakota	SD	Brookings	011
+57326	Chamberlain	South Dakota	SD	Brule	015
+57367	Pickstown	South Dakota	SD	Charles Mix	023
+57379	Virgil	South Dakota	SD	Beadle	005
+57384	Wolsey	South Dakota	SD	Beadle	005
+57440	Frankfort	South Dakota	SD	Spink	115
+57442	Gettysburg	South Dakota	SD	Potter	107
+57457	Long Lake	South Dakota	SD	McPherson	089
+57469	Redfield	South Dakota	SD	Spink	115
+57520	Agar	South Dakota	SD	Sully	119
+57559	Murdo	South Dakota	SD	Jones	075
+57571	Saint Charles	South Dakota	SD	Gregory	053
+57644	Meadow	South Dakota	SD	Perkins	105
+57659	Walker	South Dakota	SD	Corson	031
+57706	Ellsworth Afb	South Dakota	SD	Meade	093
+57747	Hot Springs	South Dakota	SD	Fall River	047
+57761	New Underwood	South Dakota	SD	Pennington	103
+57762	Nisland	South Dakota	SD	Butte	019
+58016	Clifford	North Dakota	ND	Traill	097
+58064	Page	North Dakota	ND	Cass	017
+58077	Walcott	North Dakota	ND	Richland	077
+58103	Fargo	North Dakota	ND	Cass	017
+58223	Cummings	North Dakota	ND	Traill	097
+58244	Inkster	North Dakota	ND	Grand Forks	035
+58254	Mcville	North Dakota	ND	Nelson	063
+58261	Minto	North Dakota	ND	Walsh	099
+58265	Neche	North Dakota	ND	Pembina	067
+58273	Pisek	North Dakota	ND	Walsh	099
+58353	Mylo	North Dakota	ND	Rolette	079
+58382	Webster	North Dakota	ND	Ramsey	071
+58433	Edgeley	North Dakota	ND	LaMoure	045
+58480	Sanborn	North Dakota	ND	Barnes	003
+58484	Sutton	North Dakota	ND	Griggs	039
+58504	Bismarck	North Dakota	ND	Burleigh	015
+58521	Baldwin	North Dakota	ND	Burleigh	015
+58523	Beulah	North Dakota	ND	Mercer	057
+58532	Driscoll	North Dakota	ND	Burleigh	015
+58541	Golden Valley	North Dakota	ND	Mercer	057
+58549	Kintyre	North Dakota	ND	Emmons	029
+58561	Napoleon	North Dakota	ND	Logan	047
+58562	New Leipzig	North Dakota	ND	Grant	037
+58640	Killdeer	North Dakota	ND	Dunn	025
+58649	Reeder	North Dakota	ND	Adams	001
+58653	Scranton	North Dakota	ND	Bowman	011
+58654	Sentinel Butte	North Dakota	ND	Golden Valley	033
+58794	White Earth	North Dakota	ND	Mountrail	061
+59027	Emigrant	Montana	MT	Park	067
+59054	Melstone	Montana	MT	Musselshell	065
+59062	Otter	Montana	MT	Powder River	075
+59071	Roscoe	Montana	MT	Carbon	009
+59104	Billings	Montana	MT	Yellowstone	111
+59338	Kinsey	Montana	MT	Custer	017
+59414	Black Eagle	Montana	MT	Cascade	013
+59526	Harlem	Montana	MT	Blaine	005
+59535	Lloyd	Montana	MT	Blaine	005
+59537	Loring	Montana	MT	Phillips	071
+59623	Helena	Montana	MT	Lewis and Clark	049
+59625	Helena	Montana	MT	Lewis and Clark	049
+59631	Basin	Montana	MT	Jefferson	043
+59636	Fort Harrison	Montana	MT	Lewis and Clark	049
+59748	Ramsay	Montana	MT	Silver Bow	093
+59831	Dixon	Montana	MT	Sanders	089
+59851	Milltown	Montana	MT	Missoula	063
+59903	Kalispell	Montana	MT	Flathead	029
+59922	Lakeside	Montana	MT	Flathead	029
+59926	Martin City	Montana	MT	Flathead	029
+59930	Rexford	Montana	MT	Lincoln	053
+60029	Golf	Illinois	IL	Cook	031
+60030	Grayslake	Illinois	IL	Lake	097
+60041	Ingleside	Illinois	IL	Lake	097
+60072	Ringwood	Illinois	IL	McHenry	111
+60113	Creston	Illinois	IL	Ogle	141
+60124	Elgin	Illinois	IL	Kane	089
+60139	Glendale Heights	Illinois	IL	DuPage	043
+60148	Lombard	Illinois	IL	DuPage	043
+60164	Melrose Park	Illinois	IL	Cook	031
+60204	Evanston	Illinois	IL	Cook	031
+60208	Evanston	Illinois	IL	Cook	031
+60430	Homewood	Illinois	IL	Cook	031
+60448	Mokena	Illinois	IL	Will	197
+60451	New Lenox	Illinois	IL	Will	197
+60452	Oak Forest	Illinois	IL	Cook	031
+60465	Palos Hills	Illinois	IL	Cook	031
+60468	Peotone	Illinois	IL	Will	197
+60523	Oak Brook	Illinois	IL	DuPage	043
+60526	La Grange Park	Illinois	IL	Cook	031
+60615	Chicago	Illinois	IL	Cook	031
+60619	Chicago	Illinois	IL	Cook	031
+60657	Chicago	Illinois	IL	Cook	031
+60827	Riverdale	Illinois	IL	Cook	031
+60915	Bradley	Illinois	IL	Kankakee	091
+60919	Cabery	Illinois	IL	Ford	053
+61050	Mc Connell	Illinois	IL	Stephenson	177
+61073	Roscoe	Illinois	IL	Winnebago	201
+61103	Rockford	Illinois	IL	Winnebago	201
+61110	Rockford	Illinois	IL	Winnebago	201
+61130	Loves Park	Illinois	IL	Winnebago	201
+61237	Buffalo Prairie	Illinois	IL	Rock Island	161
+61315	Bureau	Illinois	IL	Bureau	011
+61431	Ellisville	Illinois	IL	Fulton	057
+61434	Galva	Illinois	IL	Henry	073
+61453	Little York	Illinois	IL	Warren	187
+61462	Monmouth	Illinois	IL	Warren	187
+61483	Toulon	Illinois	IL	Stark	175
+61519	Bryant	Illinois	IL	Fulton	057
+61525	Dunlap	Illinois	IL	Peoria	143
+61542	Lewistown	Illinois	IL	Fulton	057
+61558	Pekin	Illinois	IL	Tazewell	179
+61653	Peoria	Illinois	IL	Peoria	143
+61729	Congerville	Illinois	IL	Woodford	203
+61760	Minonk	Illinois	IL	Woodford	203
+61840	Dewey	Illinois	IL	Champaign	019
+61862	Penfield	Illinois	IL	Champaign	019
+61874	Savoy	Illinois	IL	Champaign	019
+61930	Hindsboro	Illinois	IL	Douglas	041
+61936	La Place	Illinois	IL	Piatt	147
+61940	Metcalf	Illinois	IL	Edgar	045
+62006	Batchtown	Illinois	IL	Calhoun	013
+62017	Coffeen	Illinois	IL	Montgomery	135
+62028	Elsah	Illinois	IL	Jersey	083
+62035	Godfrey	Illinois	IL	Madison	119
+62037	Grafton	Illinois	IL	Jersey	083
+62063	Medora	Illinois	IL	Jersey	083
+62069	Mount Olive	Illinois	IL	Macoupin	117
+62088	Staunton	Illinois	IL	Macoupin	117
+62092	White Hall	Illinois	IL	Greene	061
+62202	East Saint Louis	Illinois	IL	St. Clair	163
+62216	Aviston	Illinois	IL	Clinton	027
+62311	Augusta	Illinois	IL	Hancock	067
+62334	Elvaston	Illinois	IL	Hancock	067
+62338	Fowler	Illinois	IL	Adams	001
+62363	Pittsfield	Illinois	IL	Pike	149
+62434	Ingraham	Illinois	IL	Clay	025
+62463	Stewardson	Illinois	IL	Shelby	173
+62466	Sumner	Illinois	IL	Lawrence	101
+62501	Argenta	Illinois	IL	Macon	115
+62515	Buffalo	Illinois	IL	Sangamon	167
+62519	Cornland	Illinois	IL	Logan	107
+62525	Decatur	Illinois	IL	Macon	115
+62615	Auburn	Illinois	IL	Sangamon	167
+62639	Frederick	Illinois	IL	Schuyler	169
+62663	Manchester	Illinois	IL	Scott	171
+62757	Springfield	Illinois	IL	Sangamon	167
+62765	Springfield	Illinois	IL	Sangamon	167
+62809	Barnhill	Illinois	IL	Wayne	191
+62819	Buckner	Illinois	IL	Franklin	055
+62841	Freeman Spur	Illinois	IL	Williamson	199
+62862	Mill Shoals	Illinois	IL	White	193
+62887	Springerton	Illinois	IL	White	193
+62899	Xenia	Illinois	IL	Clay	025
+62906	Anna	Illinois	IL	Union	181
+62932	Elkville	Illinois	IL	Jackson	077
+62949	Hurst	Illinois	IL	Williamson	199
+62950	Jacob	Illinois	IL	Jackson	077
+62954	Junction	Illinois	IL	Gallatin	059
+62973	Perks	Illinois	IL	Pulaski	153
+62983	Royalton	Illinois	IL	Franklin	055
+62990	Thebes	Illinois	IL	Alexander	003
+63006	Chesterfield	Missouri	MO	St. Louis	189
+63040	Grover	Missouri	MO	St. Louis	189
+63121	Saint Louis	Missouri	MO	St. Louis	189
+63134	Saint Louis	Missouri	MO	St. Louis	189
+63140	Saint Louis	Missouri	MO	St. Louis	189
+63145	Saint Louis	Missouri	MO	St. Louis	189
+63164	Saint Louis	Missouri	MO	St. Louis (city)	510
+63171	Saint Louis	Missouri	MO	St. Louis (city)	510
+63182	Saint Louis	Missouri	MO	St. Louis (city)	510
+63437	Clarence	Missouri	MO	Shelby	205
+63441	Frankford	Missouri	MO	Pike	163
+63446	Knox City	Missouri	MO	Knox	103
+63501	Kirksville	Missouri	MO	Adair	001
+63535	Coatsville	Missouri	MO	Schuyler	197
+63536	Downing	Missouri	MO	Schuyler	197
+63539	Ethel	Missouri	MO	Macon	121
+63627	Bloomsdale	Missouri	MO	Ste. Genevieve	186
+63637	Doe Run	Missouri	MO	St. Francois	187
+63744	Delta	Missouri	MO	Cape Girardeau	031
+63747	Friedheim	Missouri	MO	Cape Girardeau	031
+63822	Bernie	Missouri	MO	Stoddard	207
+63830	Caruthersville	Missouri	MO	Pemiscot	155
+63901	Poplar Bluff	Missouri	MO	Butler	023
+63932	Broseley	Missouri	MO	Butler	023
+63937	Ellsinore	Missouri	MO	Carter	035
+64014	Blue Springs	Missouri	MO	Jackson	095
+64052	Independence	Missouri	MO	Jackson	095
+64058	Independence	Missouri	MO	Jackson	095
+64062	Lawson	Missouri	MO	Ray	177
+64068	Liberty	Missouri	MO	Clay	047
+64080	Pleasant Hill	Missouri	MO	Cass	037
+64108	Kansas City	Missouri	MO	Jackson	095
+64114	Kansas City	Missouri	MO	Jackson	095
+64116	Kansas City	Missouri	MO	Clay	047
+64151	Kansas City	Missouri	MO	Platte	165
+64179	Kansas City	Missouri	MO	Jackson	095
+64195	Kansas City	Missouri	MO	Platte	165
+64196	Kansas City	Missouri	MO	Jackson	095
+64199	Kansas City	Missouri	MO	Jackson	095
+64439	Dearborn	Missouri	MO	Platte	165
+64467	Martinsville	Missouri	MO	Harrison	081
+64491	Tarkio	Missouri	MO	Atchison	005
+64622	Bogard	Missouri	MO	Carroll	033
+64628	Brookfield	Missouri	MO	Linn	115
+64649	Kidder	Missouri	MO	Caldwell	025
+64652	Laredo	Missouri	MO	Grundy	079
+64728	Bronaugh	Missouri	MO	Vernon	217
+64780	Rockville	Missouri	MO	Bates	013
+64865	Seneca	Missouri	MO	Newton	145
+64999	Kansas City	Missouri	MO	Jackson	095
+65011	Barnett	Missouri	MO	Morgan	141
+65035	Freeburg	Missouri	MO	Osage	151
+65049	Lake Ozark	Missouri	MO	Camden	029
+65216	Columbia	Missouri	MO	Boone	019
+65232	Benton City	Missouri	MO	Audrain	007
+65237	Bunceton	Missouri	MO	Cooper	053
+65333	Houstonia	Missouri	MO	Pettis	159
+65484	Huggins	Missouri	MO	Texas	215
+65582	Vienna	Missouri	MO	Maries	125
+65646	Everton	Missouri	MO	Dade	057
+65652	Fordland	Missouri	MO	Webster	225
+65658	Golden	Missouri	MO	Barry	009
+65661	Greenfield	Missouri	MO	Dade	057
+65681	Lampe	Missouri	MO	Stone	209
+65692	Koshkonong	Missouri	MO	Oregon	149
+65722	Phillipsburg	Missouri	MO	Laclede	105
+65752	South Greenfield	Missouri	MO	Dade	057
+65801	Springfield	Missouri	MO	Greene	077
+65817	Springfield	Missouri	MO	Greene	077
+66002	Atchison	Kansas	KS	Atchison	005
+66008	Bendena	Kansas	KS	Doniphan	043
+66031	New Century	Kansas	KS	Johnson	091
+66046	Lawrence	Kansas	KS	Douglas	045
+66093	Westphalia	Kansas	KS	Anderson	003
+66201	Mission	Kansas	KS	Johnson	091
+66215	Lenexa	Kansas	KS	Johnson	091
+66431	Harveyville	Kansas	KS	Wabaunsee	197
+66449	Leonardville	Kansas	KS	Riley	161
+66524	Overbrook	Kansas	KS	Osage	139
+66539	Silver Lake	Kansas	KS	Shawnee	177
+66609	Topeka	Kansas	KS	Shawnee	177
+66611	Topeka	Kansas	KS	Shawnee	177
+66624	Topeka	Kansas	KS	Shawnee	177
+66717	Buffalo	Kansas	KS	Wilson	205
+66724	Cherokee	Kansas	KS	Crawford	037
+66736	Fredonia	Kansas	KS	Wilson	205
+66743	Girard	Kansas	KS	Crawford	037
+66749	Iola	Kansas	KS	Allen	001
+66761	Piqua	Kansas	KS	Woodson	207
+66856	Lebo	Kansas	KS	Coffey	031
+66942	Formoso	Kansas	KS	Jewell	089
+66967	Smith Center	Kansas	KS	Smith	183
+67029	Coldwater	Kansas	KS	Comanche	033
+67047	Fall River	Kansas	KS	Greenwood	073
+67210	Wichita	Kansas	KS	Sedgwick	173
+67227	Wichita	Kansas	KS	Sedgwick	173
+67334	Chautauqua	Kansas	KS	Chautauqua	019
+67452	Hunter	Kansas	KS	Mitchell	123
+67468	Morganville	Kansas	KS	Clay	027
+67504	Hutchinson	Kansas	KS	Reno	155
+67622	Almena	Kansas	KS	Norton	137
+67629	Clayton	Kansas	KS	Norton	137
+67739	Herndon	Kansas	KS	Rawlins	153
+67863	Marienthal	Kansas	KS	Wichita	203
+68036	Linwood	Nebraska	NE	Butler	023
+68039	Macy	Nebraska	NE	Thurston	173
+68103	Omaha	Nebraska	NE	Douglas	055
+68112	Omaha	Nebraska	NE	Douglas	055
+68122	Omaha	Nebraska	NE	Douglas	055
+68124	Omaha	Nebraska	NE	Douglas	055
+68142	Omaha	Nebraska	NE	Douglas	055
+68155	Omaha	Nebraska	NE	Douglas	055
+68183	Omaha	Nebraska	NE	Douglas	055
+68346	Dunbar	Nebraska	NE	Otoe	131
+68466	Wymore	Nebraska	NE	Gage	067
+68504	Lincoln	Nebraska	NE	Lancaster	109
+68505	Lincoln	Nebraska	NE	Lancaster	109
+68508	Lincoln	Nebraska	NE	Lancaster	109
+68509	Lincoln	Nebraska	NE	Lancaster	109
+68723	Carroll	Nebraska	NE	Wayne	179
+68724	Center	Nebraska	NE	Knox	107
+68734	Emmet	Nebraska	NE	Holt	089
+68747	Mclean	Nebraska	NE	Pierce	139
+68756	Neligh	Nebraska	NE	Antelope	003
+68773	Royal	Nebraska	NE	Antelope	003
+68780	Stuart	Nebraska	NE	Holt	089
+68812	Amherst	Nebraska	NE	Buffalo	019
+68846	Hordville	Nebraska	NE	Hamilton	081
+68858	Miller	Nebraska	NE	Buffalo	019
+68861	Odessa	Nebraska	NE	Buffalo	019
+68873	Saint Paul	Nebraska	NE	Howard	093
+68875	Scotia	Nebraska	NE	Greeley	077
+68920	Alma	Nebraska	NE	Harlan	083
+68934	Deweese	Nebraska	NE	Clay	035
+68950	Holstein	Nebraska	NE	Adams	001
+69045	Wauneta	Nebraska	NE	Chase	029
+69101	North Platte	Nebraska	NE	Lincoln	111
+69210	Ainsworth	Nebraska	NE	Brown	017
+69211	Cody	Nebraska	NE	Cherry	031
+69336	Bridgeport	Nebraska	NE	Morrill	123
+69347	Hay Springs	Nebraska	NE	Sheridan	161
+69348	Hemingford	Nebraska	NE	Box Butte	013
+69363	Scottsbluff	Nebraska	NE	Scotts Bluff	157
+69365	Whiteclay	Nebraska	NE	Sheridan	161
+70047	Destrehan	Louisiana	LA	St. Charles	089
+70076	Mount Airy	Louisiana	LA	St. John the Baptist	095
+70114	New Orleans	Louisiana	LA	Orleans	071
+70148	New Orleans	Louisiana	LA	Orleans	071
+70189	New Orleans	Louisiana	LA	Orleans	071
+70342	Berwick	Louisiana	LA	St. Mary	101
+70381	Morgan City	Louisiana	LA	St. Mary	101
+70434	Covington	Louisiana	LA	St. Tammany	103
+70467	Varnado	Louisiana	LA	Washington	117
+70503	Lafayette	Louisiana	LA	Lafayette	055
+70511	Abbeville	Louisiana	LA	Vermilion	113
+70521	Cecilia	Louisiana	LA	St. Martin	099
+70533	Erath	Louisiana	LA	Vermilion	113
+70559	Morse	Louisiana	LA	Acadia	001
+70563	New Iberia	Louisiana	LA	Iberia	045
+70660	Singer	Louisiana	LA	Beauregard	011
+70661	Starks	Louisiana	LA	Calcasieu	019
+70711	Albany	Louisiana	LA	Livingston	063
+70732	Fordoche	Louisiana	LA	Pointe Coupee	077
+70761	Norwood	Louisiana	LA	East Feliciana	037
+70809	Baton Rouge	Louisiana	LA	East Baton Rouge Parish	033
+71006	Benton	Louisiana	LA	Bossier	015
+71070	Saline	Louisiana	LA	Bienville	013
+71082	Vivian	Louisiana	LA	Caddo Parish	017
+71120	Shreveport	Louisiana	LA	Caddo Parish	017
+71130	Shreveport	Louisiana	LA	Caddo Parish	017
+71138	Shreveport	Louisiana	LA	Caddo Parish	017
+71150	Shreveport	Louisiana	LA	Caddo Parish	017
+71153	Shreveport	Louisiana	LA	Caddo Parish	017
+71207	Monroe	Louisiana	LA	Ouachita Parish	073
+71219	Baskin	Louisiana	LA	Franklin	041
+71220	Bastrop	Louisiana	LA	Morehouse	067
+71276	Sondheimer	Louisiana	LA	East Carroll	035
+71284	Tallulah	Louisiana	LA	Madison	065
+71340	Harrisonburg	Louisiana	LA	Catahoula	025
+71369	Simmesport	Louisiana	LA	Avoyelles	009
+71480	Urania	Louisiana	LA	La Salle	059
+71654	Mc Gehee	Arkansas	AR	Desha	041
+71667	Star City	Arkansas	AR	Lincoln	079
+71743	Gurdon	Arkansas	AR	Clark	019
+71801	Hope	Arkansas	AR	Hempstead	057
+71942	Friendship	Arkansas	AR	Hot Spring	059
+71969	Sims	Arkansas	AR	Montgomery	097
+72023	Cabot	Arkansas	AR	Lonoke	085
+72063	Hattieville	Arkansas	AR	Conway	029
+72087	Lonsdale	Arkansas	AR	Garland	051
+72101	Mc Crory	Arkansas	AR	Woodruff	147
+72102	Mc Rae	Arkansas	AR	White	145
+72116	North Little Rock	Arkansas	AR	Pulaski	119
+72149	Searcy	Arkansas	AR	White	145
+72165	Thida	Arkansas	AR	Independence	063
+72190	North Little Rock	Arkansas	AR	Pulaski	119
+72223	Little Rock	Arkansas	AR	Pulaski	119
+72320	Brickeys	Arkansas	AR	Lee	077
+72324	Cherry Valley	Arkansas	AR	Cross	037
+72364	Marion	Arkansas	AR	Crittenden	035
+72392	Wheatley	Arkansas	AR	St. Francis	123
+72429	Fisher	Arkansas	AR	Poinsett	111
+72442	Manila	Arkansas	AR	Mississippi	093
+72447	Monette	Arkansas	AR	Craighead	031
+72461	Rector	Arkansas	AR	Clay	021
+72475	Waldenburg	Arkansas	AR	Poinsett	111
+72525	Cherokee Village	Arkansas	AR	Sharp	135
+72533	Fifty Six	Arkansas	AR	Stone	137
+72543	Heber Springs	Arkansas	AR	Cleburne	023
+72715	Bella Vista	Arkansas	AR	Benton	007
+72729	Evansville	Arkansas	AR	Washington	143
+72756	Rogers	Arkansas	AR	Benton	007
+72854	Ozone	Arkansas	AR	Johnson	071
+72955	Uniontown	Arkansas	AR	Crawford	033
+73049	Jones	Oklahoma	OK	Oklahoma	109
+73057	Maysville	Oklahoma	OK	Garvin	049
+73073	Orlando	Oklahoma	OK	Logan	083
+73152	Oklahoma City	Oklahoma	OK	Oklahoma	109
+73160	Oklahoma City	Oklahoma	OK	Cleveland	027
+73301	Austin	Texas	TX	Travis	453
+73487	Tatums	Oklahoma	OK	Carter	019
+73521	Altus	Oklahoma	OK	Jackson	065
+73528	Chattanooga	Oklahoma	OK	Comanche	031
+73543	Geronimo	Oklahoma	OK	Comanche	031
+73632	Cordell	Oklahoma	OK	Washita	149
+73737	Fairview	Oklahoma	OK	Major	093
+73742	Hennessey	Oklahoma	OK	Kingfisher	073
+73757	Lucien	Oklahoma	OK	Noble	103
+73801	Woodward	Oklahoma	OK	Woodward	153
+73834	Buffalo	Oklahoma	OK	Harper	059
+73843	Gage	Oklahoma	OK	Ellis	045
+73857	Sharon	Oklahoma	OK	Woodward	153
+73931	Balko	Oklahoma	OK	Beaver	007
+74006	Bartlesville	Oklahoma	OK	Washington	147
+74023	Cushing	Oklahoma	OK	Payne	119
+74031	Foyil	Oklahoma	OK	Rogers	131
+74073	Sperry	Oklahoma	OK	Tulsa	143
+74106	Tulsa	Oklahoma	OK	Tulsa	143
+74114	Tulsa	Oklahoma	OK	Tulsa	143
+74115	Tulsa	Oklahoma	OK	Tulsa	143
+74145	Tulsa	Oklahoma	OK	Tulsa	143
+74169	Tulsa	Oklahoma	OK	Tulsa	143
+74301	Vinita	Oklahoma	OK	Craig	035
+74337	Chouteau	Oklahoma	OK	Mayes	097
+74361	Pryor	Oklahoma	OK	Mayes	097
+74363	Quapaw	Oklahoma	OK	Ottawa	115
+74401	Muskogee	Oklahoma	OK	Muskogee	101
+74423	Braggs	Oklahoma	OK	Muskogee	101
+74425	Canadian	Oklahoma	OK	Pittsburg	121
+74440	Hoyt	Oklahoma	OK	Haskell	061
+74454	Porter	Oklahoma	OK	Wagoner	145
+74468	Wainwright	Oklahoma	OK	Muskogee	101
+74502	Mcalester	Oklahoma	OK	Pittsburg	121
+74531	Calvin	Oklahoma	OK	Hughes	063
+74569	Stringtown	Oklahoma	OK	Atoka	005
+74630	Billings	Oklahoma	OK	Noble	103
+74646	Nardin	Oklahoma	OK	Kay	071
+74736	Garvin	Oklahoma	OK	McCurtain	089
+74752	Pickens	Oklahoma	OK	McCurtain	089
+74821	Ada	Oklahoma	OK	Pontotoc	123
+74824	Agra	Oklahoma	OK	Lincoln	081
+74845	Hanna	Oklahoma	OK	McIntosh	091
+74857	Newalla	Oklahoma	OK	Oklahoma	109
+74865	Roff	Oklahoma	OK	Pontotoc	123
+74866	Saint Louis	Oklahoma	OK	Pottawatomie	125
+74869	Sparks	Oklahoma	OK	Lincoln	081
+74884	Wewoka	Oklahoma	OK	Seminole	133
+74930	Bokoshe	Oklahoma	OK	Le Flore	079
+75024	Plano	Texas	TX	Collin	085
+75027	Flower Mound	Texas	TX	Denton	121
+75080	Richardson	Texas	TX	Dallas	113
+75120	Ennis	Texas	TX	Ellis	139
+75180	Balch Springs	Texas	TX	Dallas	113
+75185	Mesquite	Texas	TX	Dallas	113
+75205	Dallas	Texas	TX	Dallas	113
+75209	Dallas	Texas	TX	Dallas	113
+75221	Dallas	Texas	TX	Dallas	113
+75230	Dallas	Texas	TX	Dallas	113
+75265	Dallas	Texas	TX	Dallas	113
+75339	Dallas	Texas	TX	Dallas	113
+75390	Dallas	Texas	TX	Dallas	113
+75391	Dallas	Texas	TX	Dallas	113
+75395	Dallas	Texas	TX	Dallas	113
+75402	Greenville	Texas	TX	Hunt	231
+75413	Bailey	Texas	TX	Fannin	147
+75439	Ector	Texas	TX	Fannin	147
+75452	Leonard	Texas	TX	Fannin	147
+75480	Scroggins	Texas	TX	Franklin	159
+75563	Linden	Texas	TX	Cass	067
+75602	Longview	Texas	TX	Gregg	183
+75645	Gilmer	Texas	TX	Upshur	459
+75691	Tatum	Texas	TX	Rusk	401
+75706	Tyler	Texas	TX	Smith	423
+75782	Poynor	Texas	TX	Henderson	213
+75838	Donie	Texas	TX	Freestone	161
+75865	Woodlake	Texas	TX	Trinity	455
+75939	Corrigan	Texas	TX	Polk	373
+75958	Martinsville	Texas	TX	Nacogdoches	347
+75969	Pollok	Texas	TX	Angelina	005
+75979	Woodville	Texas	TX	Tyler	457
+76009	Alvarado	Texas	TX	Johnson	251
+76049	Granbury	Texas	TX	Hood	221
+76053	Hurst	Texas	TX	Tarrant	439
+76071	Newark	Texas	TX	Wise	497
+76086	Weatherford	Texas	TX	Parker	367
+76226	Argyle	Texas	TX	Denton	121
+76266	Sanger	Texas	TX	Denton	121
+76357	Byers	Texas	TX	Clay	077
+76366	Holliday	Texas	TX	Archer	009
+76388	Weinert	Texas	TX	Haskell	207
+76435	Carbon	Texas	TX	Eastland	133
+76483	Throckmorton	Texas	TX	Throckmorton	447
+76534	Holland	Texas	TX	Bell	027
+76537	Jarrell	Texas	TX	Williamson	491
+76565	Pottsville	Texas	TX	Hamilton	193
+76566	Purmela	Texas	TX	Coryell	099
+76598	Gatesville	Texas	TX	Coryell	099
+76599	Gatesville	Texas	TX	Coryell	099
+76626	Blooming Grove	Texas	TX	Navarro	349
+76634	Clifton	Texas	TX	Bosque	035
+76648	Hubbard	Texas	TX	Hill	217
+76704	Waco	Texas	TX	McLennan	309
+76845	Gouldbusk	Texas	TX	Coleman	083
+76859	Menard	Texas	TX	Menard	327
+77007	Houston	Texas	TX	Harris	201
+77011	Houston	Texas	TX	Harris	201
+77013	Houston	Texas	TX	Harris	201
+77020	Houston	Texas	TX	Harris	201
+77022	Houston	Texas	TX	Harris	201
+77044	Houston	Texas	TX	Harris	201
+77045	Houston	Texas	TX	Harris	201
+77048	Houston	Texas	TX	Harris	201
+77055	Houston	Texas	TX	Harris	201
+77057	Houston	Texas	TX	Harris	201
+77061	Houston	Texas	TX	Harris	201
+77063	Houston	Texas	TX	Harris	201
+77083	Houston	Texas	TX	Harris	201
+77091	Houston	Texas	TX	Harris	201
+77201	Houston	Texas	TX	Harris	201
+77204	Houston	Texas	TX	Harris	201
+77208	Houston	Texas	TX	Harris	201
+77212	Houston	Texas	TX	Harris	201
+77221	Houston	Texas	TX	Harris	201
+77245	Houston	Texas	TX	Harris	201
+77261	Houston	Texas	TX	Harris	201
+77282	Houston	Texas	TX	Harris	201
+77292	Houston	Texas	TX	Harris	201
+77346	Humble	Texas	TX	Harris	201
+77368	Romayor	Texas	TX	Liberty	291
+77371	Shepherd	Texas	TX	San Jacinto	407
+77407	Richmond	Texas	TX	Fort Bend	157
+77411	Alief	Texas	TX	Harris	201
+77413	Barker	Texas	TX	Harris	201
+77420	Boling	Texas	TX	Wharton	481
+77436	Egypt	Texas	TX	Wharton	481
+77488	Wharton	Texas	TX	Wharton	481
+77530	Channelview	Texas	TX	Harris	201
+77553	Galveston	Texas	TX	Galveston	167
+77554	Galveston	Texas	TX	Galveston	167
+77568	La Marque	Texas	TX	Galveston	167
+77572	La Porte	Texas	TX	Harris	201
+77574	League City	Texas	TX	Galveston	167
+77587	South Houston	Texas	TX	Harris	201
+77591	Texas City	Texas	TX	Galveston	167
+77623	High Island	Texas	TX	Galveston	167
+77844	College Station	Texas	TX	Brazos	041
+77871	Normangee	Texas	TX	Leon	289
+77878	Snook	Texas	TX	Burleson	051
+77882	Wheelock	Texas	TX	Robertson	395
+77986	Sublime	Texas	TX	Lavaca	285
+78006	Boerne	Texas	TX	Kendall	259
+78044	Laredo	Texas	TX	Webb	479
+78046	Laredo	Texas	TX	Webb	479
+78133	Canyon Lake	Texas	TX	Comal	091
+78141	Nordheim	Texas	TX	DeWitt	123
+78203	San Antonio	Texas	TX	Bexar	029
+78227	San Antonio	Texas	TX	Bexar	029
+78231	San Antonio	Texas	TX	Bexar	029
+78248	San Antonio	Texas	TX	Bexar	029
+78261	San Antonio	Texas	TX	Bexar	029
+78344	Bruni	Texas	TX	Webb	479
+78347	Chapman Ranch	Texas	TX	Nueces	355
+78358	Fulton	Texas	TX	Aransas	007
+78360	Guerra	Texas	TX	Jim Hogg	247
+78371	Oilton	Texas	TX	Webb	479
+78380	Robstown	Texas	TX	Nueces	355
+78390	Taft	Texas	TX	San Patricio	409
+78413	Corpus Christi	Texas	TX	Nueces	355
+78419	Corpus Christi	Texas	TX	Nueces	355
+78467	Corpus Christi	Texas	TX	Nueces	355
+78468	Corpus Christi	Texas	TX	Nueces	355
+78523	Brownsville	Texas	TX	Cameron	061
+78543	Elsa	Texas	TX	Hidalgo	215
+78548	Grulla	Texas	TX	Starr	427
+78565	Los Ebanos	Texas	TX	Hidalgo	215
+78569	Lyford	Texas	TX	Willacy	489
+78576	Penitas	Texas	TX	Hidalgo	215
+78614	Cost	Texas	TX	Gonzales	177
+78639	Kingsland	Texas	TX	Llano	299
+78659	Paige	Texas	TX	Bastrop	021
+78661	Prairie Lea	Texas	TX	Caldwell	055
+78662	Red Rock	Texas	TX	Bastrop	021
+78664	Round Rock	Texas	TX	Williamson	491
+78670	Staples	Texas	TX	Guadalupe	187
+78674	Weir	Texas	TX	Williamson	491
+78703	Austin	Texas	TX	Travis	453
+78727	Austin	Texas	TX	Travis	453
+78730	Austin	Texas	TX	Travis	453
+78737	Austin	Texas	TX	Travis	453
+78749	Austin	Texas	TX	Travis	453
+78751	Austin	Texas	TX	Travis	453
+78768	Austin	Texas	TX	Travis	453
+78799	Austin	Texas	TX	Travis	453
+78879	Rio Frio	Texas	TX	Real	385
+79014	Canadian	Texas	TX	Hemphill	211
+79058	Masterson	Texas	TX	Moore	341
+79078	Sanford	Texas	TX	Hutchinson	233
+79086	Sunray	Texas	TX	Moore	341
+79189	Amarillo	Texas	TX	Potter	375
+79226	Clarendon	Texas	TX	Donley	129
+79240	Lelia Lake	Texas	TX	Donley	129
+79241	Lockney	Texas	TX	Floyd	153
+79261	Turkey	Texas	TX	Hall	191
+79359	Seagraves	Texas	TX	Gaines	165
+79363	Shallowater	Texas	TX	Lubbock	303
+79409	Lubbock	Texas	TX	Lubbock	303
+79414	Lubbock	Texas	TX	Lubbock	303
+79464	Lubbock	Texas	TX	Lubbock	303
+79501	Anson	Texas	TX	Jones	253
+79526	Hermleigh	Texas	TX	Scurry	415
+79703	Midland	Texas	TX	Midland	329
+79756	Monahans	Texas	TX	Ward	475
+79763	Odessa	Texas	TX	Ector	135
+79768	Odessa	Texas	TX	Ector	135
+79846	Redford	Texas	TX	Presidio	377
+79901	El Paso	Texas	TX	El Paso	141
+79904	El Paso	Texas	TX	El Paso	141
+79910	El Paso	Texas	TX	El Paso	141
+79935	El Paso	Texas	TX	El Paso	141
+79949	El Paso	Texas	TX	El Paso	141
+79952	El Paso	Texas	TX	El Paso	141
+80005	Arvada	Colorado	CO	Jefferson	059
+80016	Aurora	Colorado	CO	Arapahoe	005
+80030	Westminster	Colorado	CO	Adams	001
+80104	Castle Rock	Colorado	CO	Douglas	035
+80118	Larkspur	Colorado	CO	Douglas	035
+80121	Littleton	Colorado	CO	Arapahoe	005
+80129	Littleton	Colorado	CO	Douglas	035
+80257	Denver	Colorado	CO	Denver	031
+80259	Denver	Colorado	CO	Denver	031
+80402	Golden	Colorado	CO	Jefferson	059
+80432	Como	Colorado	CO	Park	093
+80475	Shawnee	Colorado	CO	Park	093
+80530	Frederick	Colorado	CO	Weld	123
+80538	Loveland	Colorado	CO	Larimer	069
+80542	Mead	Colorado	CO	Weld	123
+80544	Niwot	Colorado	CO	Boulder	013
+80632	Greeley	Colorado	CO	Weld	123
+80649	Orchard	Colorado	CO	Morgan	087
+80808	Calhan	Colorado	CO	El Paso	041
+80816	Florissant	Colorado	CO	Teller	119
+80827	Lake George	Colorado	CO	Park	093
+80841	Usaf Academy	Colorado	CO	El Paso	041
+80927	Colorado Springs	Colorado	CO	El Paso	041
+80995	Colorado Springs	Colorado	CO	El Paso	041
+81001	Pueblo	Colorado	CO	Pueblo	101
+81054	Las Animas	Colorado	CO	Bent	011
+81055	La Veta	Colorado	CO	Huerfano	055
+81087	Vilas	Colorado	CO	Baca	009
+81089	Walsenburg	Colorado	CO	Huerfano	055
+81131	Crestone	Colorado	CO	Saguache	109
+81140	La Jara	Colorado	CO	Conejos	021
+81227	Monarch	Colorado	CO	Chaffee	015
+81240	Penrose	Colorado	CO	Fremont	043
+81248	Sargents	Colorado	CO	Saguache	109
+81251	Twin Lakes	Colorado	CO	Lake	065
+81419	Hotchkiss	Colorado	CO	Delta	029
+81426	Ophir	Colorado	CO	San Miguel	113
+81427	Ouray	Colorado	CO	Ouray	091
+81430	Placerville	Colorado	CO	San Miguel	113
+81505	Grand Junction	Colorado	CO	Mesa	077
+81639	Hayden	Colorado	CO	Routt	107
+82054	Carpenter	Wyoming	WY	Laramie	021
+82072	Laramie	Wyoming	WY	Albany	001
+82310	Jeffrey City	Wyoming	WY	Fremont	013
+82322	Bairoil	Wyoming	WY	Sweetwater	037
+82524	Saint Stephens	Wyoming	WY	Fremont	013
+82601	Casper	Wyoming	WY	Natrona	025
+82710	Aladdin	Wyoming	WY	Crook	011
+82721	Moorcroft	Wyoming	WY	Crook	011
+82801	Sheridan	Wyoming	WY	Sheridan	033
+82831	Arvada	Wyoming	WY	Sheridan	033
+82931	Evanston	Wyoming	WY	Uinta	041
+83201	Pocatello	Idaho	ID	Bannock	005
+83214	Arimo	Idaho	ID	Bannock	005
+83215	Atomic City	Idaho	ID	Bingham	011
+83233	Dingle	Idaho	ID	Bear Lake	007
+83335	Hazelton	Idaho	ID	Jerome	053
+83406	Idaho Falls	Idaho	ID	Bonneville	019
+83540	Lapwai	Idaho	ID	Nez Perce	069
+83554	White Bird	Idaho	ID	Idaho	049
+83604	Bruneau	Idaho	ID	Owyhee	073
+83632	Indian Valley	Idaho	ID	Adams	003
+83676	Wilder	Idaho	ID	Canyon	027
+83702	Boise	Idaho	ID	Ada	001
+83720	Boise	Idaho	ID	Ada	001
+83731	Boise	Idaho	ID	Ada	001
+83857	Princeton	Idaho	ID	Latah	057
+83860	Sagle	Idaho	ID	Bonner	017
+84017	Coalville	Utah	UT	Summit	043
+84027	Fruitland	Utah	UT	Duchesne	013
+84041	Layton	Utah	UT	Davis	011
+84055	Oakley	Utah	UT	Summit	043
+84068	Park City	Utah	UT	Summit	043
+84095	South Jordan	Utah	UT	Salt Lake	035
+84096	Herriman	Utah	UT	Salt Lake	035
+84131	Salt Lake City	Utah	UT	Salt Lake	035
+84308	Cornish	Utah	UT	Cache	005
+84319	Hyrum	Utah	UT	Cache	005
+84335	Smithfield	Utah	UT	Cache	005
+84412	Ogden	Utah	UT	Weber	057
+84535	Monticello	Utah	UT	San Juan	037
+84663	Springville	Utah	UT	Utah	049
+84667	Wales	Utah	UT	Sanpete	039
+84713	Beaver	Utah	UT	Beaver	001
+84721	Cedar City	Utah	UT	Iron	021
+84733	Gunlock	Utah	UT	Washington	053
+84741	Kanab	Utah	UT	Kane	025
+84780	Washington	Utah	UT	Washington	053
+84790	Saint George	Utah	UT	Washington	053
+85001	Phoenix	Arizona	AZ	Maricopa	013
+85035	Phoenix	Arizona	AZ	Maricopa	013
+85098	Phoenix	Arizona	AZ	Maricopa	013
+85130	Casa Grande	Arizona	AZ	Pinal	021
+85141	Picacho	Arizona	AZ	Pinal	021
+85236	Higley	Arizona	AZ	Maricopa	013
+85250	Scottsdale	Arizona	AZ	Maricopa	013
+85264	Fort Mcdowell	Arizona	AZ	Maricopa	013
+85271	Scottsdale	Arizona	AZ	Maricopa	013
+85274	Mesa	Arizona	AZ	Maricopa	013
+85310	Glendale	Arizona	AZ	Maricopa	013
+85342	Morristown	Arizona	AZ	Maricopa	013
+85346	Quartzsite	Arizona	AZ	La Paz	012
+85354	Tonopah	Arizona	AZ	Maricopa	013
+85355	Waddell	Arizona	AZ	Maricopa	013
+85360	Wikieup	Arizona	AZ	Mohave	015
+85378	Surprise	Arizona	AZ	Maricopa	013
+85539	Miami	Arizona	AZ	Gila	007
+85547	Payson	Arizona	AZ	Gila	007
+85551	Solomon	Arizona	AZ	Graham	009
+85605	Bowie	Arizona	AZ	Cochise	003
+85632	San Simon	Arizona	AZ	Cochise	003
+85637	Sonoita	Arizona	AZ	Santa Cruz	023
+85652	Cortaro	Arizona	AZ	Pima	019
+85671	Sierra Vista	Arizona	AZ	Cochise	003
+85733	Tucson	Arizona	AZ	Pima	019
+85738	Catalina	Arizona	AZ	Pima	019
+85749	Tucson	Arizona	AZ	Pima	019
+85757	Tucson	Arizona	AZ	Pima	019
+85901	Show Low	Arizona	AZ	Navajo	017
+85924	Concho	Arizona	AZ	Apache	001
+85930	Mcnary	Arizona	AZ	Apache	001
+86002	Flagstaff	Arizona	AZ	Coconino	005
+86025	Holbrook	Arizona	AZ	Navajo	017
+86044	Tonalea	Arizona	AZ	Coconino	005
+86313	Prescott	Arizona	AZ	Yavapai	025
+86436	Topock	Arizona	AZ	Mohave	015
+86437	Valentine	Arizona	AZ	Mohave	015
+86438	Yucca	Arizona	AZ	Mohave	015
+86535	Dennehotso	Arizona	AZ	Apache	001
+87001	Algodones	New Mexico	NM	Sandoval	043
+87032	Mcintosh	New Mexico	NM	Torrance	057
+87045	Prewitt	New Mexico	NM	McKinley	031
+87046	Regina	New Mexico	NM	Sandoval	043
+87048	Corrales	New Mexico	NM	Sandoval	043
+87051	San Rafael	New Mexico	NM	Cibola	006
+87115	Albuquerque	New Mexico	NM	Bernalillo	001
+87124	Rio Rancho	New Mexico	NM	Sandoval	043
+87320	Mexican Springs	New Mexico	NM	McKinley	031
+87416	Fruitland	New Mexico	NM	San Juan	045
+87461	Sanostee	New Mexico	NM	San Juan	045
+87506	Santa Fe	New Mexico	NM	Santa Fe	049
+87516	Canones	New Mexico	NM	Rio Arriba	039
+87522	Chimayo	New Mexico	NM	Rio Arriba	039
+87540	Lamy	New Mexico	NM	Santa Fe	049
+87583	Villanueva	New Mexico	NM	San Miguel	047
+87654	Spaceport City	New Mexico	NM	Sierra	051
+87736	Rainsville	New Mexico	NM	Mora	033
+88049	Mimbres	New Mexico	NM	Grant	017
+88058	San Miguel	New Mexico	NM	Doña Ana	013
+88061	Silver City	New Mexico	NM	Grant	017
+88103	Cannon Afb	New Mexico	NM	Curry	009
+88118	Floyd	New Mexico	NM	Roosevelt	041
+88201	Roswell	New Mexico	NM	Chaves	005
+88232	Hagerman	New Mexico	NM	Chaves	005
+88241	Hobbs	New Mexico	NM	Lea	025
+88250	Hope	New Mexico	NM	Eddy	015
+88348	San Patricio	New Mexico	NM	Lincoln	027
+88351	Tinnie	New Mexico	NM	Lincoln	027
+88510	El Paso	Texas	TX	El Paso	141
+88515	El Paso	Texas	TX	El Paso	141
+88517	El Paso	Texas	TX	El Paso	141
+88583	El Paso	Texas	TX	El Paso	141
+89012	Henderson	Nevada	NV	Clark	003
+89034	Mesquite	Nevada	NV	Clark	003
+89053	Henderson	Nevada	NV	Clark	003
+89054	Sloan	Nevada	NV	Clark	003
+89081	North Las Vegas	Nevada	NV	Clark	003
+89142	Las Vegas	Nevada	NV	Clark	003
+89144	Las Vegas	Nevada	NV	Clark	003
+89179	Las Vegas	Nevada	NV	Clark	003
+89431	Sparks	Nevada	NV	Washoe	031
+89436	Sparks	Nevada	NV	Washoe	031
+89439	Verdi	Nevada	NV	Washoe	031
+89448	Zephyr Cove	Nevada	NV	Douglas	005
+89704	Washoe Valley	Nevada	NV	Washoe	031
+89803	Elko	Nevada	NV	Elko	007
+90002	Los Angeles	California	CA	Los Angeles	037
+90009	Los Angeles	California	CA	Los Angeles	037
+90029	Los Angeles	California	CA	Los Angeles	037
+90059	Los Angeles	California	CA	Los Angeles	037
+90068	Los Angeles	California	CA	Los Angeles	037
+90073	Los Angeles	California	CA	Los Angeles	037
+90265	Malibu	California	CA	Los Angeles	037
+90266	Manhattan Beach	California	CA	Los Angeles	037
+90275	Rancho Palos Verdes	California	CA	Los Angeles	037
+90402	Santa Monica	California	CA	Los Angeles	037
+90509	Torrance	California	CA	Los Angeles	037
+90510	Torrance	California	CA	Los Angeles	037
+90606	Whittier	California	CA	Los Angeles	037
+90631	La Habra	California	CA	Orange	059
+90661	Pico Rivera	California	CA	Los Angeles	037
+91012	La Canada Flintridge	California	CA	Los Angeles	037
+91024	Sierra Madre	California	CA	Los Angeles	037
+91025	Sierra Madre	California	CA	Los Angeles	037
+91031	South Pasadena	California	CA	Los Angeles	037
+91102	Pasadena	California	CA	Los Angeles	037
+91104	Pasadena	California	CA	Los Angeles	037
+91124	Pasadena	California	CA	Los Angeles	037
+91188	Pasadena	California	CA	Los Angeles	037
+91199	Pasadena	California	CA	Los Angeles	037
+91350	Santa Clarita	California	CA	Los Angeles	037
+91357	Tarzana	California	CA	Los Angeles	037
+91364	Woodland Hills	California	CA	Los Angeles	037
+91396	Winnetka	California	CA	Los Angeles	037
+91409	Van Nuys	California	CA	Los Angeles	037
+91499	Van Nuys	California	CA	Los Angeles	037
+91501	Burbank	California	CA	Los Angeles	037
+91510	Burbank	California	CA	Los Angeles	037
+91771	Rosemead	California	CA	Los Angeles	037
+91802	Alhambra	California	CA	Los Angeles	037
+92022	El Cajon	California	CA	San Diego	073
+92039	La Jolla	California	CA	San Diego	073
+92065	Ramona	California	CA	San Diego	073
+92074	Poway	California	CA	San Diego	073
+92091	Rancho Santa Fe	California	CA	San Diego	073
+92132	San Diego	California	CA	San Diego	073
+92142	San Diego	California	CA	San Diego	073
+92143	San Ysidro	California	CA	San Diego	073
+92145	San Diego	California	CA	San Diego	073
+92147	San Diego	California	CA	San Diego	073
+92149	San Diego	California	CA	San Diego	073
+92153	San Diego	California	CA	San Diego	073
+92160	San Diego	California	CA	San Diego	073
+92201	Indio	California	CA	Riverside	065
+92268	Pioneertown	California	CA	San Bernardino	071
+92304	Amboy	California	CA	San Bernardino	071
+92311	Barstow	California	CA	San Bernardino	071
+92329	Phelan	California	CA	San Bernardino	071
+92376	Rialto	California	CA	San Bernardino	071
+92382	Running Springs	California	CA	San Bernardino	071
+92398	Yermo	California	CA	San Bernardino	071
+92502	Riverside	California	CA	Riverside	065
+92506	Riverside	California	CA	Riverside	065
+92507	Riverside	California	CA	Riverside	065
+92548	Homeland	California	CA	Riverside	065
+92570	Perris	California	CA	Riverside	065
+92627	Costa Mesa	California	CA	Orange	059
+92656	Aliso Viejo	California	CA	Orange	059
+92662	Newport Beach	California	CA	Orange	059
+92705	Santa Ana	California	CA	Orange	059
+92805	Anaheim	California	CA	Orange	059
+92886	Yorba Linda	California	CA	Orange	059
+93040	Piru	California	CA	Ventura	111
+93041	Port Hueneme	California	CA	Ventura	111
+93043	Port Hueneme Cbc Base	California	CA	Ventura	111
+93105	Santa Barbara	California	CA	Santa Barbara	083
+93110	Santa Barbara	California	CA	Santa Barbara	083
+93216	Delano	California	CA	Kern	029
+93230	Hanford	California	CA	Kings	031
+93247	Lindsay	California	CA	Tulare	107
+93255	Onyx	California	CA	Kern	029
+93268	Taft	California	CA	Kern	029
+93270	Terra Bella	California	CA	Tulare	107
+93280	Wasco	California	CA	Kern	029
+93311	Bakersfield	California	CA	Kern	029
+93390	Bakersfield	California	CA	Kern	029
+93423	Atascadero	California	CA	San Luis Obispo	079
+93446	Paso Robles	California	CA	San Luis Obispo	079
+93454	Santa Maria	California	CA	Santa Barbara	083
+93461	Shandon	California	CA	San Luis Obispo	079
+93464	Solvang	California	CA	Santa Barbara	083
+93555	Ridgecrest	California	CA	Kern	029
+93606	Biola	California	CA	Fresno	019
+93626	Friant	California	CA	Fresno	019
+93631	Kingsburg	California	CA	Fresno	019
+93660	San Joaquin	California	CA	Fresno	019
+93666	Sultana	California	CA	Tulare	107
+93703	Fresno	California	CA	Fresno	019
+93727	Fresno	California	CA	Fresno	019
+93777	Fresno	California	CA	Fresno	019
+93915	Salinas	California	CA	Monterey	053
+93926	Gonzales	California	CA	Monterey	053
+94112	San Francisco	California	CA	City and County of San Francisco	075
+94120	San Francisco	California	CA	City and County of San Francisco	075
+94142	San Francisco	California	CA	City and County of San Francisco	075
+94177	San Francisco	California	CA	City and County of San Francisco	075
+94256	Sacramento	California	CA	Sacramento	067
+94285	Sacramento	California	CA	Sacramento	067
+94287	Sacramento	California	CA	Sacramento	067
+94293	Sacramento	California	CA	Sacramento	067
+94304	Palo Alto	California	CA	Santa Clara	085
+94306	Palo Alto	California	CA	Santa Clara	085
+94519	Concord	California	CA	Contra Costa	013
+94527	Concord	California	CA	Contra Costa	013
+94546	Castro Valley	California	CA	Alameda	001
+94613	Oakland	California	CA	Alameda	001
+94621	Oakland	California	CA	Alameda	001
+94712	Berkeley	California	CA	Alameda	001
+94940	Marshall	California	CA	Marin	041
+95014	Cupertino	California	CA	Santa Clara	085
+95050	Santa Clara	California	CA	Santa Clara	085
+95051	Santa Clara	California	CA	Santa Clara	085
+95071	Saratoga	California	CA	Santa Clara	085
+95139	San Jose	California	CA	Santa Clara	085
+95148	San Jose	California	CA	Santa Clara	085
+95150	San Jose	California	CA	Santa Clara	085
+95156	San Jose	California	CA	Santa Clara	085
+95158	San Jose	California	CA	Santa Clara	085
+95206	Stockton	California	CA	San Joaquin	077
+95222	Angels Camp	California	CA	Calaveras	009
+95309	Chinese Camp	California	CA	Tuolumne	109
+95320	Escalon	California	CA	San Joaquin	077
+95360	Newman	California	CA	Stanislaus	099
+95376	Tracy	California	CA	San Joaquin	077
+95381	Turlock	California	CA	Stanislaus	099
+95445	Gualala	California	CA	Mendocino	045
+95452	Kenwood	California	CA	Sonoma	097
+95556	Orleans	California	CA	Humboldt	023
+95565	Scotia	California	CA	Humboldt	023
+95636	Grizzly Flats	California	CA	El Dorado	017
+95644	Kit Carson	California	CA	Amador	005
+95654	Martell	California	CA	Amador	005
+95660	North Highlands	California	CA	Sacramento	067
+95662	Orangevale	California	CA	Sacramento	067
+95668	Pleasant Grove	California	CA	Sutter	101
+95690	Walnut Grove	California	CA	Sacramento	067
+95691	West Sacramento	California	CA	Yolo	113
+95696	Vacaville	California	CA	Solano	095
+95717	Gold Run	California	CA	Placer	061
+95757	Elk Grove	California	CA	Sacramento	067
+95899	Sacramento	California	CA	Sacramento	067
+95912	Arbuckle	California	CA	Colusa	011
+95966	Oroville	California	CA	Butte	007
+95986	Washington	California	CA	Nevada	057
+96010	Big Bar	California	CA	Trinity	105
+96071	Old Station	California	CA	Shasta	089
+96089	Shasta Lake	California	CA	Shasta	089
+96115	Lake City	California	CA	Modoc	049
+96127	Susanville	California	CA	Lassen	035
+96133	Topaz	California	CA	Mono	051
+96157	South Lake Tahoe	California	CA	El Dorado	017
+96325	APO AA				
+96343	APO AA				
+96350	FPO AA				
+96377	FPO AA				
+96546	APO AA				
+96551	APO AA				
+96701	Aiea	Hawaii	HI	Honolulu	003
+96704	Captain Cook	Hawaii	HI	Hawaii	001
+96729	Hoolehua	Hawaii	HI	Maui	009
+96743	Kamuela	Hawaii	HI	Hawaii	001
+96744	Kaneohe	Hawaii	HI	Honolulu	003
+96756	Koloa	Hawaii	HI	Kauai	007
+96773	Ninole	Hawaii	HI	Hawaii	001
+97001	Antelope	Oregon	OR	Wasco	065
+97003	Beaverton	Oregon	OR	Washington	067
+97004	Beavercreek	Oregon	OR	Clackamas	005
+97010	Bridal Veil	Oregon	OR	Multnomah	051
+97037	Maupin	Oregon	OR	Wasco	065
+97044	Odell	Oregon	OR	Hood River	027
+97102	Arch Cape	Oregon	OR	Clatsop	007
+97124	Hillsboro	Oregon	OR	Washington	067
+97138	Seaside	Oregon	OR	Clatsop	007
+97140	Sherwood	Oregon	OR	Washington	067
+97146	Warrenton	Oregon	OR	Clatsop	007
+97206	Portland	Oregon	OR	Multnomah	051
+97236	Portland	Oregon	OR	Multnomah	051
+97239	Portland	Oregon	OR	Multnomah	051
+97306	Salem	Oregon	OR	Marion	047
+97396	Willamina	Oregon	OR	Yamhill	071
+97461	Noti	Oregon	OR	Lane	039
+97499	Yoncalla	Oregon	OR	Douglas	019
+97633	Merrill	Oregon	OR	Klamath	035
+97634	Midland	Oregon	OR	Klamath	035
+97824	Cove	Oregon	OR	Union	061
+97828	Enterprise	Oregon	OR	Wallowa	063
+97874	Spray	Oregon	OR	Wheeler	069
+97906	Harper	Oregon	OR	Malheur	045
+97913	Nyssa	Oregon	OR	Malheur	045
+98028	Kenmore	Washington	WA	King	033
+98035	Kent	Washington	WA	King	033
+98051	Ravensdale	Washington	WA	King	033
+98062	Seahurst	Washington	WA	King	033
+98109	Seattle	Washington	WA	King	033
+98124	Seattle	Washington	WA	King	033
+98133	Seattle	Washington	WA	King	033
+98136	Seattle	Washington	WA	King	033
+98148	Seattle	Washington	WA	King	033
+98190	Seattle	Washington	WA	King	033
+98191	Seattle	Washington	WA	King	033
+98203	Everett	Washington	WA	Snohomish	061
+98264	Lynden	Washington	WA	Whatcom	073
+98312	Bremerton	Washington	WA	Kitsap	035
+98367	Port Orchard	Washington	WA	Kitsap	035
+98376	Quilcene	Washington	WA	Jefferson	031
+98385	South Prairie	Washington	WA	Pierce	053
+98388	Steilacoom	Washington	WA	Pierce	053
+98392	Suquamish	Washington	WA	Kitsap	035
+98415	Tacoma	Washington	WA	Pierce	053
+98507	Olympia	Washington	WA	Thurston	067
+98552	Humptulips	Washington	WA	Grays Harbor	027
+98561	Menlo	Washington	WA	Pacific	049
+98563	Montesano	Washington	WA	Grays Harbor	027
+98572	Pe Ell	Washington	WA	Lewis	041
+98605	Bingen	Washington	WA	Klickitat	039
+98607	Camas	Washington	WA	Clark	011
+98613	Centerville	Washington	WA	Klickitat	039
+98632	Longview	Washington	WA	Cowlitz	015
+98650	Trout Lake	Washington	WA	Klickitat	039
+98813	Bridgeport	Washington	WA	Douglas	017
+98840	Okanogan	Washington	WA	Okanogan	047
+98841	Omak	Washington	WA	Okanogan	047
+98844	Oroville	Washington	WA	Okanogan	047
+98930	Grandview	Washington	WA	Yakima	077
+99143	Lacrosse	Washington	WA	Whitman	075
+99147	Lincoln	Washington	WA	Lincoln	043
+99167	Rice	Washington	WA	Stevens	065
+99333	Hooper	Washington	WA	Whitman	075
+99362	Walla Walla	Washington	WA	Walla Walla	071
+99401	Anatone	Washington	WA	Asotin	003
+99515	Anchorage	Alaska	AK	Anchorage Municipality	020
+99569	Clarks Point	Alaska	AK	Dillingham (CA)	070
+99576	Dillingham	Alaska	AK	Dillingham (CA)	070
+99580	Ekwok	Alaska	AK	Dillingham (CA)	070
+99605	Hope	Alaska	AK	Kenai Peninsula	122
+99611	Kenai	Alaska	AK	Kenai Peninsula	122
+99614	Kipnuk	Alaska	AK	Bethel Census Area	050
+99620	Kotlik	Alaska	AK	Kusilvak	158
+99627	Mc Grath	Alaska	AK	Yukon-Koyukuk (CA)	290
+99633	Naknek	Alaska	AK	Bristol Bay	060
+99636	New Stuyahok	Alaska	AK	Dillingham (CA)	070
+99643	Old Harbor	Alaska	AK	Kodiak Island	150
+99644	Ouzinkie	Alaska	AK	Kodiak Island	150
+99675	Takotna	Alaska	AK	Yukon-Koyukuk (CA)	290
+99729	Cantwell	Alaska	AK	Denali	068
+99761	Noatak	Alaska	AK	Northwest Arctic	188
+99772	Shishmaref	Alaska	AK	Nome (CA)	180
+99801	Juneau	Alaska	AK	Juneau City and Borough	110
+99821	Auke Bay	Alaska	AK	Juneau City and Borough	110
+99840	Skagway	Alaska	AK	Skagway	230

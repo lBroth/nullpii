@@ -4,8 +4,6 @@ Each loader returns `(samples, citation)` where samples is a list of
 `(text, [Span, ...])` and citation is a stable string for the report.
 
 Datasets:
-- `conll2003`     — open. PER / LOC / ORG / MISC. Limited PII coverage,
-                    used as a NER sanity check.
 - `wikiann`       — open, multi-lingual. PER / LOC / ORG.
 - `ai4privacy/pii-masking-300k` — gated; needs `HF_TOKEN`.
 - `ai4privacy/pii-masking-400k` — newer ai4privacy release.
@@ -16,13 +14,14 @@ Datasets:
 """
 from __future__ import annotations
 
+import re
+
 from dataclasses import dataclass
 from typing import Literal
 
 from .datasets import Sample, Span
 
 DatasetName = Literal[
-    "conll2003",
     "wikiann",
     "ai4privacy/pii-masking-300k",
     "ai4privacy/pii-masking-400k",
@@ -45,7 +44,7 @@ class PublicDataset:
     samples: tuple[Sample, ...]
 
 
-# Map upstream NER labels → our 8 categories. Coarse: CoNLL `PER` is a
+# Map upstream NER labels → nullpii's categories. Coarse: CoNLL `PER` is a
 # person, `LOC` is treated as private_address (loose mapping for sanity).
 _NER_LABEL_MAP = {
     "PER": "private_person",
@@ -61,8 +60,6 @@ _NER_LABEL_MAP = {
 def load(
     name: DatasetName, *, max_samples: int | None = None, locale: str = "en",
 ) -> PublicDataset:
-    if name == "conll2003":
-        return _load_conll(max_samples)
     if name == "wikiann":
         return _load_wikiann(max_samples, lang=locale)
     if name == "ai4privacy/pii-masking-300k":
@@ -90,24 +87,6 @@ def load(
     raise ValueError(f"unknown public dataset: {name}")
 
 
-def _load_conll(max_samples: int | None) -> PublicDataset:
-    from datasets import load_dataset
-
-    ds = load_dataset("conll2003", split="test", trust_remote_code=True)
-    samples: list[Sample] = []
-    for row in ds:
-        if max_samples is not None and len(samples) >= max_samples:
-            break
-        sample = _row_to_sample(row, label_field="ner_tags", tokens_field="tokens", schema="bio_conll")
-        if sample is not None:
-            samples.append(sample)
-    return PublicDataset(
-        name="conll2003",
-        citation="Tjong Kim Sang & De Meulder, 2003. CoNLL-2003 NER (test split).",
-        samples=tuple(samples),
-    )
-
-
 def _load_wikiann(max_samples: int | None, *, lang: str = "en") -> PublicDataset:
     from datasets import load_dataset
 
@@ -124,6 +103,17 @@ def _load_wikiann(max_samples: int | None, *, lang: str = "en") -> PublicDataset
         citation="Pan et al., 2017. WikiAnn / PAN-X NER (test split).",
         samples=tuple(samples),
     )
+
+
+# ai4privacy-300k records each row's language by its English name.
+_AI4PRIVACY_LANGUAGES = {"English": "en", "German": "de", "French": "fr", "Italian": "it", "Spanish": "es", "Dutch": "nl"}
+
+
+def _iso_language(name: str) -> str:
+    """ai4privacy language name → ISO 639-1 code; an unknown name raises."""
+    if name not in _AI4PRIVACY_LANGUAGES:
+        raise ValueError(f"[ai4privacy] unknown language {name!r}")
+    return _AI4PRIVACY_LANGUAGES[name]
 
 
 def _load_ai4privacy(
@@ -152,7 +142,7 @@ def _load_ai4privacy(
             if label is None:
                 continue
             spans.append(Span(label, int(s["start"]), int(s["end"])))
-        samples.append(Sample(text=text, spans=tuple(spans)))
+        samples.append(Sample(text=text, spans=tuple(spans), language=_iso_language(str(row["language"]))))
     citation = "ai4privacy. PII Masking 300k."
     if offset > 0:
         citation += f" Held-out slice [{offset}:{offset + (max_samples or 0)}]."
@@ -242,11 +232,75 @@ _AI4PRIVACY_LABELS = {
     "APIKEY": "secret",
     "PASSWORD": "secret",
     "PIN": "secret",
+    # ─── pii-masking-300k vocabulary ──────────────────────────────
+    # Everything above was written against the 400k release. The 300k
+    # release spells the SAME taxonomy differently, so these 15 keys are
+    # aliases of keys already in this dict — not new categories. Without
+    # them 56.4% of 300k gold was deleted before scoring. Counts are
+    # spans recovered on `train[100000:105000]` (the -heldout row).
+    "GIVENNAME1": "private_person",         # 1,358 — alias of GIVENNAME
+    "GIVENNAME2": "private_person",         #   379
+    "LASTNAME1": "private_person",          # 1,489 — alias of LASTNAME
+    "LASTNAME2": "private_person",          #   363
+    "LASTNAME3": "private_person",          #   122
+    "TEL": "private_phone",                 # 1,447 — alias of TELEPHONENUM
+    "BOD": "private_date",                  # 1,501 — birth date, alias of DOB
+    "BUILDING": "private_address",          # 1,196 — alias of BUILDINGNUM
+    "SECADDRESS": "private_address",        #   475 — alias of SECONDARYADDRESS
+    "SOCIALNUMBER": "account_number",       # 1,687 — alias of SOCIALNUM
+    "IDCARD": "account_number",             # 1,592 — alias of IDCARDNUM
+    "PASSPORT": "private_passport",         # 1,506 — alias of PASSPORTNUM
+    "DRIVERLICENSE": "private_driver_license",  # 1,578 — alias of DRIVERLICENSENUM
+    "PASS": "secret",                       # 1,136 — password, alias of PASSWORD
+    "GEOCOORD": "private_geolocation",      #   140 — alias of GPSCOORDINATES
 }
 
 
+# Upstream labels with no home in nullpii's 14-label schema. Listing a
+# label here is a DECISION ("this is not PII we detect"); leaving it out
+# of both this set and `_AI4PRIVACY_LABELS` is a BUG. Keeping the two
+# apart is the whole point — `.get()` used to return None for both cases,
+# so an unrecognised upstream label was indistinguishable from a
+# deliberate exclusion and silently deleted the gold span.
+_AI4PRIVACY_IGNORED = frozenset({
+    "SEX",         # gender — no demographic class in the schema
+    "CARDISSUER",  # card brand ("Diners Club International") — an org
+    # Honorific / rank held as a STANDALONE span ("Mr", "Papst",
+    # "Bürgermeisterin" — 224 distinct values, many occupational). Every
+    # other gold set in this bench folds the honorific INSIDE the person
+    # span (tab-echr: 842 of 1,063 person spans start "Mr/Mrs/Dr/…"), so
+    # mapping this would invent a span shape no other row uses. Adopting
+    # it is worth +0.0026 macro on ai4privacy-300k-heldout — declined on
+    # principle, not on score.
+    "TITLE",
+})
+
+
 def _map_ai4privacy_label(label: str) -> str | None:
-    return _AI4PRIVACY_LABELS.get(label.upper())
+    """ai4privacy raw label → nullpii category, or None if deliberately ignored.
+
+    Raises on an unknown label rather than dropping it. The 300k and 400k
+    releases ship DIFFERENT vocabularies for the same taxonomy (300k
+    `GIVENNAME1`/`LASTNAME1`/`TEL`/`BOD`/`PASS` vs 400k
+    `GIVENNAME`/`SURNAME`/`TELEPHONENUM`/`DOB`/`PASSWORD`), and this map
+    was authored against 400k only: 56.4% of 300k gold was being deleted
+    by variants absent from the dict — 15 of them, every one an alias of
+    a key already present. Silent drops also LAUNDER PRECISION, because
+    `macro_f1` skips zero-support classes: predictions on a class whose
+    gold was deleted cost nothing at all.
+    """
+    key = label.upper()
+    mapped = _AI4PRIVACY_LABELS.get(key)
+    if mapped is not None:
+        return mapped
+    if key in _AI4PRIVACY_IGNORED:
+        return None
+    raise ValueError(
+        f"[ai4privacy] unknown gold label {label!r}. Add it to "
+        f"_AI4PRIVACY_LABELS (it is PII we detect) or to "
+        f"_AI4PRIVACY_IGNORED (it is not) — never leave it to fall "
+        f"through, that silently deletes gold and inflates precision.",
+    )
 
 
 def _load_presidio_synthetic(max_samples: int | None) -> PublicDataset:
@@ -348,7 +402,6 @@ _ISOTONIC_LABEL_MAP = {
     "LASTNAME": "private_person",
     "FULLNAME": "private_person",
     "PREFIX": "private_person",
-    "JOBTITLE": None,
     "EMAIL": "private_email",
     "PHONE_NUMBER": "private_phone",
     "PHONENUMBER": "private_phone",
@@ -363,12 +416,10 @@ _ISOTONIC_LABEL_MAP = {
     "DATE": "private_date",
     "TIME": "private_date",
     "URL": "private_url",
-    "USERNAME": None,
     "ACCOUNT_NUMBER": "account_number",
     "ACCOUNTNUMBER": "account_number",
     "IBAN": "account_number",
     "CREDITCARDNUMBER": "account_number",
-    "CREDITCARDISSUER": None,
     "CREDITCARDCVV": "account_number",
     "SSN": "account_number",
     "PASSWORD": "secret",
@@ -390,7 +441,72 @@ _ISOTONIC_LABEL_MAP = {
     "MACADDRESS": "private_mac",
     "NEARBYGPSCOORDINATE": "private_geolocation",
     "GPSCOORDINATES": "private_geolocation",
+    # ─── Parity with `_AI4PRIVACY_LABELS` ─────────────────────────
+    # Isotonic is an open mirror of ai4privacy (see `_load_isotonic`
+    # docstring), so the two maps describe ONE taxonomy. These keys were
+    # mapped on the three ai4privacy rows and silently dropped on the
+    # eight isotonic rows — the same gold label counted on some rows of
+    # the published matrix and invisible on others. Counts are spans
+    # recovered across the four `-heldout` slices.
+    "MIDDLENAME": "private_person",       #   599
+    "USERNAME": "private_person",         #   601 — GDPR Art.4 online identifier;
+                                          #   ai4privacy and argilla both map it
+                                          #   to private_person. Was an explicit
+                                          #   `None` here: same dataset family,
+                                          #   opposite decisions.
+    "COUNTY": "private_address",          #   571
+    "SECONDARYADDRESS": "private_address",  # 513
+    "MASKEDNUMBER": "account_number",     #   505 — 16-digit PANs
+    "BIC": "account_number",              #   163
+    "LITECOINADDRESS": "account_number",  #   155 — sibling of the already-mapped
+                                          #   BITCOINADDRESS / ETHEREUMADDRESS.
+                                          #   Score-NEGATIVE for nullpii
+                                          #   (−0.0013 macro): kept because the
+                                          #   rule is schema membership, not score.
+    "PHONEIMEI": "account_number",        #   474 — device id; `account_number` is
+                                          #   this schema's bucket for structured
+                                          #   registry numbers, cf.
+                                          #   `core:device-serial-context`.
+    "IP": "private_ip",                   #   468
+    "MAC": "private_mac",                 #   236
 }
+
+# No home in nullpii's 14-label schema. Same contract as
+# `_AI4PRIVACY_IGNORED`: listed here = decided, absent from both = bug.
+# NB: this set was chosen by schema membership, then checked SYMMETRICALLY
+# — every entry was also scored to make sure the list is not just the
+# mappings that happen to flatter nullpii. Three of them would LOWER our
+# macro if mapped (AGE −0.0054, USERAGENT −0.0177, ACCOUNTNAME −0.0046)
+# and are excluded anyway, on the same rule that keeps LITECOINADDRESS in.
+_ISOTONIC_IGNORED = frozenset({
+    "JOBTITLE", "JOBAREA", "JOBTYPE", "COMPANYNAME",   # employment / org
+    "SEX", "GENDER", "AGE", "EYECOLOR", "HEIGHT",      # demographic attributes
+    "AMOUNT", "CURRENCY", "CURRENCYCODE",              # money identifies nobody
+    "CURRENCYNAME", "CURRENCYSYMBOL",
+    "CREDITCARDISSUER",                                # card brand — an org
+    "ACCOUNTNAME",                                     # label of an account, not its number
+    "USERAGENT",                                       # client string, not a secret
+    "ORDINALDIRECTION",                                # "Southwest" — not an address
+})
+
+
+def _map_isotonic_label(raw_label: str) -> str | None:
+    """Isotonic raw label (`CITY_1`) → nullpii category, or None if ignored.
+
+    Raises on an unknown label instead of dropping it, for the reason
+    given on `_map_ai4privacy_label`.
+    """
+    key = _strip_index(raw_label).upper()
+    mapped = _ISOTONIC_LABEL_MAP.get(key)
+    if mapped is not None:
+        return mapped
+    if key in _ISOTONIC_IGNORED:
+        return None
+    raise ValueError(
+        f"[isotonic] unknown gold label {raw_label!r}. Add it to "
+        f"_ISOTONIC_LABEL_MAP or to _ISOTONIC_IGNORED — a fall-through "
+        f"silently deletes gold and inflates precision.",
+    )
 
 
 def _strip_index(label: str) -> str:
@@ -416,7 +532,6 @@ def _load_isotonic(
     cap, so pass `row_offset=200000` for a clean held-out split.
     """
     import ast
-    import sys
 
     from datasets import load_dataset
 
@@ -466,11 +581,11 @@ def _load_isotonic(
             start, end, raw_label = int(entry[0]), int(entry[1]), str(entry[2])
             if raw_label == "O":
                 continue  # explicit "no label" sentinel from upstream
-            mapped = _ISOTONIC_LABEL_MAP.get(_strip_index(raw_label).upper())
+            mapped = _map_isotonic_label(raw_label)
             if mapped is None:
-                continue  # label intentionally outside our 12-class taxonomy
+                continue  # label deliberately outside our 14-label schema
             spans.append(Span(mapped, start, end))
-        samples.append(Sample(text=text, spans=tuple(spans)))
+        samples.append(Sample(text=text, spans=tuple(spans), language=lang.lower()))
     citation = "Isotonic. PII Masking 200k (open mirror of ai4privacy)."
     if row_offset > 0:
         citation += f" Held-out slice (row_offset={row_offset})."
@@ -967,18 +1082,17 @@ def _load_thestack_planted(max_samples: int | None) -> PublicDataset:
 # prompt distribution + ground truth — closest thing to "what users
 # actually paste into LLMs" with annotated PII.
 
-import re as _re_lmsys
 
-_DEV_HEURISTICS: tuple[_re_lmsys.Pattern, ...] = (
-    _re_lmsys.compile(r"```[\w+-]*\n"),                 # fenced code block
-    _re_lmsys.compile(r"^\s*(?:File|at)\s+[\w./]+:\d+", _re_lmsys.MULTILINE),  # stack trace
-    _re_lmsys.compile(r"^\s*[A-Z_]{3,}=[\w\-./:]+", _re_lmsys.MULTILINE),       # env var
-    _re_lmsys.compile(r"\b(?:npm install|pip install|cargo build|go run|docker run)\b"),
-    _re_lmsys.compile(r"\b(?:Traceback|Error|Exception|panic|undefined reference)\b"),
-    _re_lmsys.compile(r"^\s*(?:#|//|--|<!--)\s+\w+", _re_lmsys.MULTILINE),  # code comment
-    _re_lmsys.compile(r"\b(?:SELECT|INSERT|UPDATE|DELETE|CREATE TABLE)\b"),  # SQL
-    _re_lmsys.compile(r"\b(?:GET|POST|PUT|DELETE)\s+/[\w/-]+\s+HTTP/"),      # HTTP
-    _re_lmsys.compile(r"\b(?:function|def|class|impl|interface|struct)\s+\w+"),  # code def
+_DEV_HEURISTICS: tuple[re.Pattern, ...] = (
+    re.compile(r"```[\w+-]*\n"),                 # fenced code block
+    re.compile(r"^\s*(?:File|at)\s+[\w./]+:\d+", re.MULTILINE),  # stack trace
+    re.compile(r"^\s*[A-Z_]{3,}=[\w\-./:]+", re.MULTILINE),       # env var
+    re.compile(r"\b(?:npm install|pip install|cargo build|go run|docker run)\b"),
+    re.compile(r"\b(?:Traceback|Error|Exception|panic|undefined reference)\b"),
+    re.compile(r"^\s*(?:#|//|--|<!--)\s+\w+", re.MULTILINE),  # code comment
+    re.compile(r"\b(?:SELECT|INSERT|UPDATE|DELETE|CREATE TABLE)\b"),  # SQL
+    re.compile(r"\b(?:GET|POST|PUT|DELETE)\s+/[\w/-]+\s+HTTP/"),      # HTTP
+    re.compile(r"\b(?:function|def|class|impl|interface|struct)\s+\w+"),  # code def
 )
 
 
@@ -1093,45 +1207,12 @@ def _load_oasst_dev_planted(max_samples: int | None) -> PublicDataset:
 
 
 # ─── Argilla PII (29 categories) → nullpii 12-class mapping ───────
-_ARGILLA_LABEL_MAP: dict[str, str | None] = {
-    "FIRSTNAME": "private_person",
-    "LASTNAME": "private_person",
-    "MIDDLENAME": "private_person",
-    "PREFIX": "private_person",
-    "EMAIL": "private_email",
-    "PHONEIMEI": "account_number",
-    # v0.4 schema split — dedicated labels for the new classes. Argilla
-    # native vocabulary surfaces these on the EN multi-domain split;
-    # missing maps drop competitor + nullpii gold consistently.
-    "VEHICLEVIN": "private_vehicle_id",
-    "LICENSEPLATE": "private_vehicle_id",
-    "PASSPORTNUM": "private_passport",
-    "DRIVERLICENSENUM": "private_driver_license",
-    "GPSCOORDINATES": "private_geolocation",
-    "AGE": "private_date",
-    "DOB": "private_date",
-    "DATE": "private_date",
-    "TIME": "private_date",
-    "BUILDINGNUMBER": "private_address",
-    "STREET": "private_address",
-    "COUNTY": "private_address",
-    "NEARBYGPSCOORDINATE": "private_geolocation",
-    "MASKEDNUMBER": "account_number",
-    "ACCOUNTNUMBER": "account_number",
-    "CREDITCARDNUMBER": "account_number",
-    "IPV4": "private_ip",
-    "IPV6": "private_ip",
-    "PASSWORD": "secret",
-    "PIN": "secret",
-    # Skip — not in nullpii 12-class
-    "GENDER": None,
-    "HEIGHT": None,
-    "EYECOLOR": None,
-    "JOBAREA": None,
-    "JOBTITLE": None,
-    "USERAGENT": None,
-    "CREDITCARDISSUER": None,
-}
+# `argilla/textcat-tokencat-pii-per-domain` is Isotonic-en text with
+# Isotonic's label vocabulary (1,997 of its 2,000 rows are verbatim Isotonic
+# rows), so it is scored with Isotonic's map and Isotonic's ignore list, and
+# an unknown label raises (PROTOCOL rule 4). A separate map used to drop 17
+# in-schema labels (phone, URL, IBAN, SSN, city, ZIP, IP, MAC, …), 43.5% of
+# the in-schema gold, and to map AGE to a date where Isotonic ignores it.
 
 
 def _load_argilla_pii(max_samples: int | None) -> PublicDataset:
@@ -1140,9 +1221,9 @@ def _load_argilla_pii(max_samples: int | None) -> PublicDataset:
     stores PII span annotations under the `pii` field as a list of
     `{start, end, label}` dicts.
 
-    Maps 29 Argilla labels → nullpii 12-class via `_ARGILLA_LABEL_MAP`.
-    Records whose ALL spans map to `None` (e.g. only contains GENDER /
-    HEIGHT) still count as samples with empty gold.
+    Labels go through `_map_isotonic_label`: the dataset is Isotonic-en
+    text with Isotonic's vocabulary. Records whose spans are all ignored
+    labels (e.g. only GENDER / HEIGHT) still count, with empty gold.
     """
     from datasets import load_dataset
 
@@ -1164,16 +1245,10 @@ def _load_argilla_pii(max_samples: int | None) -> PublicDataset:
         for s in items:
             if not isinstance(s, dict):
                 continue
-            label_raw = str(s.get("label", "")).upper()
-            mapped = _ARGILLA_LABEL_MAP.get(label_raw)
+            mapped = _map_isotonic_label(str(s.get("label", "")))
             if mapped is None:
                 continue
-            try:
-                start = int(s["start"])
-                end = int(s["end"])
-            except (KeyError, TypeError, ValueError):
-                continue
-            spans.append(Span(mapped, start, end))
+            spans.append(Span(mapped, int(s["start"]), int(s["end"])))
         samples.append(Sample(text=text, spans=tuple(spans)))
         if len(samples) >= n_cap:
             break
@@ -1232,3 +1307,239 @@ def _load_nemotron_pii_test(max_samples: int | None) -> PublicDataset:
         citation="nvidia/Nemotron-PII test split (CC-BY-4.0).",
         samples=tuple(samples),
     )
+
+
+# ─── rizzo-pii (Italian-first, 22-tag taxonomy) ──────────────────────
+# Gold-side twin of `_RIZZO_LABEL_MAP` in `adapters.py` — deliberately
+# duplicated rather than imported, to keep the loader independent of the
+# tool adapters. Keep the two in sync: a competitor's prediction and the
+# gold it is scored against must be projected identically, or the
+# comparison measures the projection.
+_RIZZO_GOLD_MAP: dict[str, str | None] = {
+    "FULLNAME": "private_person",
+    "EMAIL": "private_email",
+    "TELEPHONENUM": "private_phone",
+    "STREET": "private_address",
+    "BUILDINGNUM": "private_address",
+    "CITY": "private_address",
+    "ZIPCODE": "private_address",
+    "PROVINCE": "private_address",
+    "DATE": "private_date",
+    "TIME": "private_date",
+    "IBAN": "account_number",
+    "CREDITCARDNUMBER": "account_number",
+    "CF": "account_number",
+    "PIVA": "account_number",
+    "ID_DOC": "account_number",
+    "TARGA": "private_vehicle_id",
+    # ─── Raw tags the vendor collapses at load time ────────────────
+    # The published corpus ships 34 distinct labels; their TAG_MAP folds
+    # 12 of them (98,774 entities, 10.0% of this split) into the
+    # documented 22. Replicated verbatim from their technical report
+    # §5 so this scores against the gold THEY score against:
+    #   "legal roles collapse into FULLNAME … given names + surnames →
+    #    FULLNAME; PEC → EMAIL; ID card / passport / licence / social
+    #    number → ID_DOC; account number → IBAN."
+    "GIUDICE": "private_person",      # judge
+    "AVVOCATO": "private_person",     # lawyer
+    "ATTORE": "private_person",       # plaintiff
+    "CONVENUTO": "private_person",    # defendant
+    "TESTIMONE": "private_person",    # witness
+    "GIVENNAME": "private_person",
+    "SURNAME": "private_person",
+    "PEC": "private_email",           # certified e-mail
+    "CONTO": "account_number",        # bank account → IBAN in their map
+    # Their map sends both of these to ID_DOC. nullpii has a dedicated
+    # `private_driver_license`, so following their collapse costs us the
+    # finer label — kept anyway: it is their corpus and their published
+    # methodology, and the alternative hands rizzo a structural zero on
+    # a class it deliberately does not separate.
+    "IDCARDNUM": "account_number",
+    "DRIVERLICENSENUM": "account_number",
+}
+
+# No home in nullpii's 14-label schema. NB the asymmetry this creates and
+# disclose it: a tool whose label map drops these keeps its predictions
+# on them for free, while nullpii — whose schema *is* the gold schema —
+# is charged a false positive for predicting anything there. On this
+# corpus that is 21.8% of gold entities, dominated by AMOUNT and DOCID.
+_RIZZO_GOLD_IGNORED = frozenset({
+    "ORG", "AMOUNT", "GENDER", "AGE", "DOCID", "CATASTO",
+    "RG",  # ruolo generale — docket number, same class as DOCID
+})
+
+
+def _map_rizzo_gold_label(label: str) -> str | None:
+    key = label.upper()
+    mapped = _RIZZO_GOLD_MAP.get(key)
+    if mapped is not None:
+        return mapped
+    if key in _RIZZO_GOLD_IGNORED:
+        return None
+    raise ValueError(
+        f"[rizzo-clean] unknown gold label {label!r}. Add it to "
+        f"_RIZZO_GOLD_MAP or to _RIZZO_GOLD_IGNORED — never let it fall "
+        f"through.",
+    )
+
+
+def _load_rizzo_clean_val(max_samples: int | None) -> PublicDataset:
+    """`rizzoaiacademy/anonimizzazione-testi-italiano-clean`, validation.
+
+    The vendor's other artifact — the 7,000-row `rizzo-pii-it-dataset`
+    validation split their 0.9888 headline is measured on — ships only
+    `tokens` + `bio_labels`, no `source_text` and no character offsets,
+    so scoring it span-level would measure our detokenizer rather than
+    either model. This split carries native `source_text` and real
+    character offsets (verified exact on every entity of a 400-row
+    probe), and is MIT rather than the other's `mixed-see-card`.
+
+    Italian, synthetic, template-generated. NOT a blind test for
+    rizzo-pii: `template_id` values recur across this corpus's own train
+    and validation splits, and it is the same author's generator family
+    as their training data. Read their column here as an upper bound.
+    """
+    from datasets import load_dataset
+
+    n = 5000 if max_samples is None else max_samples
+    ds = load_dataset(
+        "rizzoaiacademy/anonimizzazione-testi-italiano-clean",
+        split=f"validation[:{n}]",
+    )
+    samples: list[Sample] = []
+    for row in ds:
+        text = str(row.get("source_text") or "")
+        if not text:
+            raise ValueError("[rizzo-clean] row has empty source_text")
+        spans: list[Span] = []
+        for e in row.get("entities") or []:
+            label = _map_rizzo_gold_label(str(e.get("label", "")))
+            if label is None:
+                continue
+            spans.append(Span(label, int(e["start"]), int(e["end"])))
+        samples.append(Sample(text=text, spans=tuple(spans)))
+    return PublicDataset(
+        name="rizzo-clean-val",
+        citation=(
+            "Rizzo AI Academy. anonimizzazione-testi-italiano-clean, "
+            "validation split (MIT, synthetic Italian legal prose)."
+        ),
+        samples=tuple(samples),
+    )
+
+
+# ─── PIIMB `sentences` tasks for the gated report set R2 ─────────────
+# PROTOCOL rule change 9. PIIMB's gold uses each source corpus's own
+# vocabulary; it is projected onto nullpii's schema by the symmetry rule
+# of PR #47 (PROTOCOL rule 4): a gold label maps to X exactly when the
+# tool maps of `adapters.py` send the same category to X, and a category
+# every tool map drops (`None`) leaves the gold, so masking it is charged
+# to precision, never to recall. gretel and mapa-eur-lex use Nemotron-PII
+# style names (`_NEMOTRON_TOKEN_LABEL_MAP`); privy uses Presidio entity
+# names (`adapters_presidio._PRESIDIO_LABEL_MAP`). An unlisted label raises.
+_PIIMB_GOLD_MAPS: dict[str, dict[str, str | None]] = {
+    "gretel": {
+        "account_number": "account_number",
+        "address": "private_address",
+        "api_key": "secret",
+        "bank_routing_number": "account_number",
+        "biometric_identifier": "secret",
+        "certificate_license_number": "account_number",
+        "city": "private_address",
+        "company_name": None,
+        "coordinate": "private_geolocation",
+        "country": "private_address",
+        "credit_card_number": "account_number",
+        "customer_id": "account_number",
+        "cvv": "account_number",
+        "date": "private_date",
+        "date_of_birth": "private_date",
+        "date_time": "private_date",
+        "device_identifier": "account_number",
+        "email": "private_email",
+        "employee_id": "account_number",
+        "first_name": "private_person",
+        "health_plan_beneficiary_number": "account_number",
+        "ipv4": "private_ip",
+        "ipv6": "private_ip",
+        "last_name": "private_person",
+        "license_plate": "private_vehicle_id",
+        "medical_record_number": "account_number",
+        "name": "private_person",
+        "national_id": "account_number",
+        "password": "secret",
+        "phone_number": "private_phone",
+        "pin": "secret",
+        "postcode": "private_address",
+        "ssn": "account_number",
+        "state": "private_address",
+        "street_address": "private_address",
+        "swift_bic": "account_number",
+        "tax_id": "account_number",
+        "time": "private_date",
+        "unique_identifier": None,       # as Nemotron `unique_id`
+        "url": "private_url",
+        "user_name": "private_person",
+        "vehicle_identifier": "private_vehicle_id",
+    },
+    "mapa-eur-lex": {
+        "age": None,
+        "date": "private_date",
+        "education_level": None,
+        "employer": None,                # an organisation, as `company_name`
+        "first_name": "private_person",
+        "honorific": "private_person",   # as the Isotonic / ai4privacy PREFIX
+        "last_name": "private_person",
+        "nationality": None,             # demographic, as Presidio NRP
+        "occupation": None,
+        "race_ethnicity": None,
+        "url": "private_url",
+    },
+    "privy": {
+        "AGE": None,
+        "COORDINATE": "private_geolocation",
+        "CREDIT_CARD": "account_number",
+        "DATE_TIME": "private_date",
+        "EMAIL_ADDRESS": "private_email",
+        # Routing numbers and BICs, but also currency codes: PIIMB counts
+        # the whole tag as PII and it cannot be split, so it stays gold.
+        "FINANCIAL": "account_number",
+        "IBAN_CODE": "account_number",
+        "IMEI": "account_number",        # as Isotonic PHONEIMEI
+        "IP_ADDRESS": "private_ip",
+        "LOCATION": "private_address",
+        "MAC_ADDRESS": "private_mac",
+        "NRP": None,                     # nationality, religion, politics
+        "ORGANIZATION": None,
+        "PASSWORD": "secret",
+        "PERSON": "private_person",
+        "PHONE_NUMBER": "private_phone",
+        "TITLE": "private_person",       # Mr., Dr.: the PREFIX convention
+        "URL": "private_url",
+        "US_BANK_NUMBER": "account_number",
+        "US_DRIVER_LICENSE": "private_driver_license",
+        "US_ITIN": "account_number",
+        "US_LICENSE_PLATE": "private_vehicle_id",
+        "US_PASSPORT": "private_passport",
+        "US_SSN": "account_number",
+    },
+}
+
+
+def load_piimb_task(rows: list[dict], task: str) -> list[Sample]:
+    """One PIIMB `sentences` task, in file order, with gold projected by
+    `_PIIMB_GOLD_MAPS[task]`. `rows` are the parsed file's rows."""
+    label_map = _PIIMB_GOLD_MAPS[task]
+    samples: list[Sample] = []
+    for row in rows:
+        if row["task_name"] != task:
+            continue
+        spans = []
+        for e in row["entities"]:
+            if e["label"] not in label_map:
+                raise ValueError(f"piimb {task}: gold label {e['label']!r} is not in _PIIMB_GOLD_MAPS")
+            mapped = label_map[e["label"]]
+            if mapped is not None:
+                spans.append(Span(mapped, int(e["start"]), int(e["end"])))
+        samples.append(Sample(text=row["text"], spans=tuple(spans), language=row["language"]))
+    return samples

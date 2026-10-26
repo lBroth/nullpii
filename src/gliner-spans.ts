@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+// Span-candidate layout ported from the GLiNER library (Apache-2.0); see NOTICE.
 
 import { DEFAULT_MAX_SPAN_WIDTH } from './gliner-tokenizer.js';
 

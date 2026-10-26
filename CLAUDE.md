@@ -5,28 +5,38 @@ library (`nullpii`) wraps a GLiNER ONNX detection model
 (`urchade/gliner_multi_pii-v1` base) + a recognizer pack + an
 adversarial-input preprocessor + a reversible in-memory vault. The
 companion `@lbroth/nullpii-gateway` package is an HTTP proxy that drops in
-front of the Anthropic Messages API. Backends: CPU, MPS, CUDA.
+front of the Anthropic Messages API and OpenAI-compatible Chat
+Completions APIs. Backends: CPU, MPS, CUDA.
 
 ## Commands
 
-- `npm run build` — TS compile (root + gateway)
-- `npm test` / `npm test -- <pattern>` — vitest (covers `test/` and `packages/gateway/test/`)
+- `npm run build` — TS compile of the core into `dist/` (the gateway compiles in its own `prepublishOnly` and in its Dockerfile)
+- `npm test` / `npm test -- <pattern>` — vitest (covers `test/` and `packages/gateway/test/`; the real-ONNX suite in `test/e2e/` runs only with `npm run test:e2e`)
 - `npm run lint` — biome
-- `npm run typecheck` — tsc --noEmit
+- `npm run typecheck` — tsc --noEmit (core, gateway, and their tests)
 - `npm run gateway:dev` — gateway in tsx watch mode
+- `npm run docs:build` — the VitePress site under `docs/`
+- The mod's tests: `claude plugin test packages/claude-code-mod`
 
 ## Architecture
 
 Monorepo. `nullpii` (root) is the core library — sources `src/`, tests
 `test/`. `@lbroth/nullpii-gateway` lives under `packages/gateway/` (Fastify;
-exports `buildServer`, `startServer`, `RestoreStream`). `onnxruntime-node`
-is the only optional peer at runtime for the core. Two recognizer-pack
-subpackages that used to live under `packages/recognizers-*/` were
-folded into core defaults in v0.3.
+exports `buildServer`, `startServer`, `loadConfig`, `printBanner`; its
+Docker image is built from `packages/gateway/Dockerfile`).
+`packages/claude-code-mod/` is the Claude Code mod, which talks to the
+gateway's sidecar API. `onnxruntime-node` is the only optional peer at
+runtime for the core. Two recognizer-pack subpackages that used to live
+under `packages/recognizers-*/` were folded into core defaults in v0.3.
+`docs/` is the documentation site: its pages include the READMEs,
+METHOD, SECURITY and the CHANGELOG rather than copy them.
 
-`packages/eval/` is a Python research kit — only `scripts/`, `src/`,
-`datasets/`, `published-bench/`, top-level READMEs are tracked;
-`results/`, `private/`, `tests/`, `v10-weights/` are gitignored.
+`packages/eval/` is a Python research kit — tracked: `scripts/`, `src/`,
+`datasets/`, `published-bench/`, `METHOD.md`, `README.md`,
+`pyproject.toml` and the `requirements-*.txt` files; `results/`,
+`private/`, `tests/`, `v10-weights/` are gitignored. The public method is
+`METHOD.md`; the maintainers' working protocol and log stay in
+`private/ab/` and are not published.
 
 - **Detection**: ML model first, recognizer pack post-pass for known formats. No regex-only detection.
 - **Execution**: fully local, no cloud calls.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { describe, expect, it } from 'vitest';
 import { decodeGlinerLogits } from '../src/gliner-decoder.js';
 import type { Word } from '../src/gliner-tokenizer.js';
@@ -11,6 +13,9 @@ const WORDS: Word[] = [
   { text: 'at', charStart: 14, charEnd: 16 },
   { text: 'a@b.com', charStart: 17, charEnd: 24 },
 ];
+
+/** The same score cut for every label. */
+const cut = (t: number) => (): number => t;
 
 const MAX_WIDTH = 3;
 const NUM_CLASSES = 3;
@@ -34,14 +39,30 @@ function buildLogits(
 describe('decodeGlinerLogits', () => {
   it('returns no spans when all logits are below threshold', () => {
     const logits = new Float32Array(TEXT_LEN * MAX_WIDTH * NUM_CLASSES).fill(-10);
-    const spans = decodeGlinerLogits(logits, TEXT_LEN, MAX_WIDTH, NUM_CLASSES, WORDS, LABELS, 0.5);
+    const spans = decodeGlinerLogits(
+      logits,
+      TEXT_LEN,
+      MAX_WIDTH,
+      NUM_CLASSES,
+      WORDS,
+      LABELS,
+      cut(0.5),
+    );
     expect(spans).toEqual([]);
   });
 
   it('decodes a single-word span with correct char offsets', () => {
     // High logit at start=1 (John), width=0 → span "John" at [3:7], class 0 (private_person).
     const logits = buildLogits([{ start: 1, width: 0, cls: 0, logit: 10 }]);
-    const spans = decodeGlinerLogits(logits, TEXT_LEN, MAX_WIDTH, NUM_CLASSES, WORDS, LABELS, 0.5);
+    const spans = decodeGlinerLogits(
+      logits,
+      TEXT_LEN,
+      MAX_WIDTH,
+      NUM_CLASSES,
+      WORDS,
+      LABELS,
+      cut(0.5),
+    );
     expect(spans).toHaveLength(1);
     expect(spans[0]).toMatchObject({
       label: 'private_person',
@@ -54,7 +75,15 @@ describe('decodeGlinerLogits', () => {
   it('decodes a multi-word span: width=1 covers two words', () => {
     // High logit at start=1 (John), width=1 → span "John Smith" at [3:13].
     const logits = buildLogits([{ start: 1, width: 1, cls: 0, logit: 10 }]);
-    const spans = decodeGlinerLogits(logits, TEXT_LEN, MAX_WIDTH, NUM_CLASSES, WORDS, LABELS, 0.5);
+    const spans = decodeGlinerLogits(
+      logits,
+      TEXT_LEN,
+      MAX_WIDTH,
+      NUM_CLASSES,
+      WORDS,
+      LABELS,
+      cut(0.5),
+    );
     expect(spans).toHaveLength(1);
     expect(spans[0]).toMatchObject({
       label: 'private_person',
@@ -70,9 +99,59 @@ describe('decodeGlinerLogits', () => {
       { start: 1, width: 1, cls: 0, logit: 5 }, // sigmoid ≈ 0.993
       { start: 2, width: 0, cls: 0, logit: 2 }, // sigmoid ≈ 0.881
     ]);
-    const spans = decodeGlinerLogits(logits, TEXT_LEN, MAX_WIDTH, NUM_CLASSES, WORDS, LABELS, 0.5);
+    const spans = decodeGlinerLogits(
+      logits,
+      TEXT_LEN,
+      MAX_WIDTH,
+      NUM_CLASSES,
+      WORDS,
+      LABELS,
+      cut(0.5),
+    );
     expect(spans).toHaveLength(1);
     expect(spans[0]).toMatchObject({ start: 3, end: 13 });
+  });
+
+  it('NMS grows the kept span to cover a suppressed candidate', () => {
+    // "John" (0.99) and "John Smith" (0.88) overlap at IoU 0.4: the higher
+    // score wins, but "Smith" must not be left unmasked.
+    const logits = buildLogits([
+      { start: 1, width: 0, cls: 0, logit: 5 },
+      { start: 1, width: 1, cls: 0, logit: 2 },
+    ]);
+    const spans = decodeGlinerLogits(
+      logits,
+      TEXT_LEN,
+      MAX_WIDTH,
+      NUM_CLASSES,
+      WORDS,
+      LABELS,
+      cut(0.5),
+    );
+    expect(spans).toHaveLength(1);
+    expect(spans[0]).toMatchObject({ label: 'private_person', start: 3, end: 13 });
+    expect(spans[0]?.score).toBeGreaterThan(0.99);
+  });
+
+  it('a candidate under its label cut suppresses nothing', () => {
+    // A phone guess on "John Smith" (0.88) outranks the person span (0.73)
+    // but sits under the phone cut (0.9): the person span must survive.
+    const logits = buildLogits([
+      { start: 1, width: 1, cls: 2, logit: 2 },
+      { start: 1, width: 1, cls: 0, logit: 1 },
+    ]);
+    const minScore = (label: string) => (label === 'private_phone' ? 0.9 : 0.5);
+    const spans = decodeGlinerLogits(
+      logits,
+      TEXT_LEN,
+      MAX_WIDTH,
+      NUM_CLASSES,
+      WORDS,
+      LABELS,
+      minScore,
+    );
+    expect(spans).toHaveLength(1);
+    expect(spans[0]).toMatchObject({ label: 'private_person', start: 3, end: 13 });
   });
 
   it('keeps non-overlapping spans of different classes', () => {
@@ -81,7 +160,15 @@ describe('decodeGlinerLogits', () => {
       { start: 1, width: 0, cls: 0, logit: 5 }, // John
       { start: 4, width: 0, cls: 1, logit: 5 }, // a@b.com
     ]);
-    const spans = decodeGlinerLogits(logits, TEXT_LEN, MAX_WIDTH, NUM_CLASSES, WORDS, LABELS, 0.5);
+    const spans = decodeGlinerLogits(
+      logits,
+      TEXT_LEN,
+      MAX_WIDTH,
+      NUM_CLASSES,
+      WORDS,
+      LABELS,
+      cut(0.5),
+    );
     expect(spans).toHaveLength(2);
     expect(spans.map((s) => s.label).sort()).toEqual(['private_email', 'private_person']);
   });
@@ -92,31 +179,39 @@ describe('decodeGlinerLogits', () => {
     // survives.
     const logits = buildLogits([{ start: 1, width: 0, cls: 0, logit: 0 }]);
     expect(
-      decodeGlinerLogits(logits, TEXT_LEN, MAX_WIDTH, NUM_CLASSES, WORDS, LABELS, 0.5),
+      decodeGlinerLogits(logits, TEXT_LEN, MAX_WIDTH, NUM_CLASSES, WORDS, LABELS, cut(0.5)),
     ).toHaveLength(1);
     // logit = 1 → sigmoid ≈ 0.731 ≥ 0.7 threshold.
     const logits2 = buildLogits([{ start: 1, width: 0, cls: 0, logit: 1 }]);
     expect(
-      decodeGlinerLogits(logits2, TEXT_LEN, MAX_WIDTH, NUM_CLASSES, WORDS, LABELS, 0.7),
+      decodeGlinerLogits(logits2, TEXT_LEN, MAX_WIDTH, NUM_CLASSES, WORDS, LABELS, cut(0.7)),
     ).toHaveLength(1);
     // Score strictly below the threshold is dropped.
     const logits3 = buildLogits([{ start: 1, width: 0, cls: 0, logit: -1 }]);
     expect(
-      decodeGlinerLogits(logits3, TEXT_LEN, MAX_WIDTH, NUM_CLASSES, WORDS, LABELS, 0.5),
+      decodeGlinerLogits(logits3, TEXT_LEN, MAX_WIDTH, NUM_CLASSES, WORDS, LABELS, cut(0.5)),
     ).toEqual([]);
   });
 
   it('skips spans whose end_word runs past textLength', () => {
     // start=4 (last word), width=2 → end = 6 ≥ textLength (5) → skip.
     const logits = buildLogits([{ start: 4, width: 2, cls: 0, logit: 10 }]);
-    const spans = decodeGlinerLogits(logits, TEXT_LEN, MAX_WIDTH, NUM_CLASSES, WORDS, LABELS, 0.5);
+    const spans = decodeGlinerLogits(
+      logits,
+      TEXT_LEN,
+      MAX_WIDTH,
+      NUM_CLASSES,
+      WORDS,
+      LABELS,
+      cut(0.5),
+    );
     expect(spans).toEqual([]);
   });
 
   it('throws when labels.length != numClasses', () => {
     const logits = new Float32Array(TEXT_LEN * MAX_WIDTH * NUM_CLASSES);
     expect(() =>
-      decodeGlinerLogits(logits, TEXT_LEN, MAX_WIDTH, NUM_CLASSES, WORDS, ['only-one'], 0.5),
+      decodeGlinerLogits(logits, TEXT_LEN, MAX_WIDTH, NUM_CLASSES, WORDS, ['only-one'], cut(0.5)),
     ).toThrow(/labels\.length=1 != numClasses=3/);
   });
 
@@ -126,7 +221,15 @@ describe('decodeGlinerLogits', () => {
       { start: 0, width: 0, cls: 0, logit: 5 },
       { start: 2, width: 0, cls: 0, logit: 5 },
     ]);
-    const spans = decodeGlinerLogits(logits, TEXT_LEN, MAX_WIDTH, NUM_CLASSES, WORDS, LABELS, 0.5);
+    const spans = decodeGlinerLogits(
+      logits,
+      TEXT_LEN,
+      MAX_WIDTH,
+      NUM_CLASSES,
+      WORDS,
+      LABELS,
+      cut(0.5),
+    );
     expect(spans.map((s) => s.start)).toEqual([0, 8, 17]);
   });
 });

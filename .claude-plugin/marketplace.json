@@ -1,0 +1,15 @@
+{
+  "name": "nullpii",
+  "owner": {
+    "name": "lBroth",
+    "url": "https://github.com/lBroth"
+  },
+  "description": "nullpii for Claude Code: masks personal data and secrets in prompts and tool results before Claude reads them, using a local nullpii sidecar",
+  "plugins": [
+    {
+      "name": "nullpii",
+      "source": "./packages/claude-code-mod",
+      "description": "Masks personal data and secrets in prompts and tool results before Claude reads them, using a local nullpii sidecar, and shows what it masked above the prompt"
+    }
+  ]
+}

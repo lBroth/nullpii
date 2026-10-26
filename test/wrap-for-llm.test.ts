@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { describe, expect, it } from 'vitest';
 import type { SanitizeResult } from '../src/types/index.js';
 import { LLM_PRESERVATION_HINT, wrapForLLM } from '../src/wrap-for-llm.js';
@@ -6,6 +8,7 @@ const fakeResult: SanitizeResult = {
   sessionId: 'sess-abc',
   sanitized: 'Email {{PII_PRIVATE_PERSON_0}} at {{PII_PRIVATE_EMAIL_0}}',
   spans: [],
+  modelUnscannedWords: 0,
 };
 
 describe('wrapForLLM', () => {

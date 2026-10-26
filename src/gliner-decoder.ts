@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+// Span decoding ported from the GLiNER library (Apache-2.0); see NOTICE.
 
 import type { Word } from './gliner-tokenizer.js';
 import { iou } from './iou.js';
@@ -24,12 +25,16 @@ const sigmoid = (x: number): number => {
   return e / (1 + e);
 };
 
-/** GLiNER span logits → char-offset spans (sigmoid + threshold + greedy NMS).
+/** GLiNER span logits → char-offset spans (sigmoid + per-label score cut +
+ * greedy NMS).
  *
  * Logits flat layout: `[textLength, maxWidth, numClasses]` row-major,
  * index `i * maxWidth * numClasses + j * numClasses + k`. `labels.length`
- * MUST equal `numClasses`. Returns spans sorted by (start, -end), highest
- * score wins on overlap (NMS at `IoU >= NMS_IOU_THRESHOLD`).
+ * MUST equal `numClasses`. A candidate is kept iff its score reaches
+ * `minScore(label)`; the cut runs before NMS, so a span the caller's
+ * thresholds would drop never suppresses another. On overlap
+ * (`IoU >= NMS_IOU_THRESHOLD`) the highest score wins and grows to cover
+ * the suppressed candidate too. Returns spans sorted by (start, end).
  */
 export function decodeGlinerLogits(
   logits: Float32Array,
@@ -38,7 +43,7 @@ export function decodeGlinerLogits(
   numClasses: number,
   words: readonly Word[],
   labels: readonly string[],
-  threshold = 0.5,
+  minScore: (label: string) => number,
 ): DecodedSpan[] {
   if (labels.length !== numClasses) {
     throw new Error(
@@ -55,18 +60,17 @@ export function decodeGlinerLogits(
 
       const base = (startWord * maxWidth + widthOffset) * numClasses;
       for (let classIdx = 0; classIdx < numClasses; classIdx++) {
+        const lab = labels[classIdx];
+        if (lab === undefined) continue;
         const logit = logits[base + classIdx] ?? Number.NEGATIVE_INFINITY;
         const score = sigmoid(logit);
-        // Match upstream GLiNER: keep iff `score >= threshold`. A span
-        // scoring exactly AT the threshold survives — matters when
-        // callers tune `threshold` to a precise value at the high-
-        // precision end of the curve.
-        if (score < threshold) continue;
+        // Match upstream GLiNER: keep iff `score >= cut`. A span scoring
+        // exactly AT the cut survives — matters when callers tune a
+        // threshold to a precise value at the high-precision end.
+        if (score < minScore(lab)) continue;
         const startWordObj = words[startWord];
         const endWordObj = words[endWord];
         if (startWordObj === undefined || endWordObj === undefined) continue;
-        const lab = labels[classIdx];
-        if (lab === undefined) continue;
         candidates.push({
           label: lab,
           start: startWordObj.charStart,
@@ -87,9 +91,12 @@ export function decodeGlinerLogits(
  * collapsing if char ranges abutted at exactly one boundary. */
 const NMS_IOU_THRESHOLD = 0.4;
 
-/** Greedy non-max suppression with IoU threshold. Sort by score desc,
- * keep span unless it overlaps a higher-score retained span at
- * `IoU >= NMS_IOU_THRESHOLD`. Output sorted by (start, end) for
+/** Greedy non-max suppression with IoU threshold. Sort by score desc;
+ * a candidate that overlaps a higher-score retained span at
+ * `IoU >= NMS_IOU_THRESHOLD` is merged into it: the retained span keeps
+ * its label and score and grows to the union of the two ranges, so no
+ * character a surviving candidate covered is left unmasked (the same
+ * rule as `dedupeOverlappingSpans`). Output sorted by (start, end) for
  * deterministic ordering. */
 function greedyNms(spans: readonly DecodedSpan[]): DecodedSpan[] {
   if (spans.length <= 1) return [...spans];
@@ -100,14 +107,19 @@ function greedyNms(spans: readonly DecodedSpan[]): DecodedSpan[] {
   );
   const kept: DecodedSpan[] = [];
   for (const cand of sortedByScore) {
-    let suppressed = false;
-    for (const k of kept) {
-      if (iou(cand, k) >= NMS_IOU_THRESHOLD) {
-        suppressed = true;
-        break;
-      }
+    const i = kept.findIndex((k) => iou(cand, k) >= NMS_IOU_THRESHOLD);
+    const keeper = kept[i];
+    if (keeper === undefined) {
+      kept.push(cand);
+      continue;
     }
-    if (!suppressed) kept.push(cand);
+    if (cand.start < keeper.start || cand.end > keeper.end) {
+      kept[i] = {
+        ...keeper,
+        start: Math.min(keeper.start, cand.start),
+        end: Math.max(keeper.end, cand.end),
+      };
+    }
   }
   return kept.sort((a, b) => a.start - b.start || a.end - b.end);
 }

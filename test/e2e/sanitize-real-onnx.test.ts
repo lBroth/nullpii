@@ -90,6 +90,32 @@ describe.skipIf(SKIP)('F-18 · real ONNX sanitize end-to-end', () => {
     expect(secrets[0]?.text).toBe('AKIAIOSFODNN7EXAMPLE');
   }, 30_000);
 
+  it('leaves a UUID in a path readable, and masks one after a credential key', async () => {
+    const uuid = '42721e36-cd98-43e0-945c-b0e97f58532e';
+    const path = await np.sanitize(`ls /private/tmp/claude-501/${uuid}/scratchpad`);
+    expect(path.spans.filter((s) => s.text.includes(uuid))).toEqual([]);
+    const key = await np.sanitize(`HEROKU_API_KEY=${uuid}`);
+    expect(key.spans.find((s) => s.text.includes(uuid))?.label).toBe('secret');
+  }, 30_000);
+
+  it('labels a public IPv4 address private_ip, and leaves local ones readable', async () => {
+    const server = await np.sanitize('server 93.184.216.34');
+    expect(server.spans.map((s) => [s.label, s.text])).toEqual([['private_ip', '93.184.216.34']]);
+    const local = await np.sanitize('docs IP 203.0.113.7; curl http://127.0.0.1:8787/health');
+    expect(local.spans).toEqual([]);
+  }, 30_000);
+
+  it('leaves "Claude" readable, and masks a full name that starts with it', async () => {
+    const product = await np.sanitize(
+      'Initialize a new CLAUDE.md file; see ~/.claude/settings.json',
+    );
+    expect(product.spans).toEqual([]);
+    const person = await np.sanitize('Ask Claude Dupont from accounting about the invoice.');
+    expect(person.spans.map((s) => [s.label, s.text])).toEqual([
+      ['private_person', 'Claude Dupont'],
+    ]);
+  }, 30_000);
+
   it('decodes base64-wrapped email at source coordinates', async () => {
     // base64 of `user.123@gmail.com` → 24 chars, classification = private_email.
     const blob = Buffer.from('user.123@gmail.com', 'utf8').toString('base64');
@@ -120,5 +146,21 @@ describe.skipIf(SKIP)('F-18 · real ONNX sanitize end-to-end', () => {
     expect(emails.length).toBeGreaterThanOrEqual(1);
     // Span maps back to the original (homoglyph) substring via normToOrig.
     expect(emails[0]?.text).toContain('@');
+  }, 30_000);
+
+  it('handles empty and whitespace-only input (empty tool output)', async () => {
+    for (const text of ['', '   ', '\n\n']) {
+      const out = await np.sanitize(text);
+      expect(out.spans).toEqual([]);
+      expect(out.sanitized).toBe(text);
+    }
+  }, 30_000);
+
+  it('handles a word longer than the subword budget next to real PII', async () => {
+    // Minified bundles carry single identifiers of hundreds of characters.
+    const blob = `x${'aB3_'.repeat(250)}`;
+    const text = `${blob} owner: john.smith@acme.io`;
+    const out = await np.sanitize(text);
+    expect(out.spans.some((s) => s.label === 'private_email')).toBe(true);
   }, 30_000);
 });

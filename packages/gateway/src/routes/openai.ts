@@ -1,0 +1,293 @@
+// SPDX-License-Identifier: Apache-2.0
+
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { NullPii } from 'nullpii';
+import { restoreChatResponse, sanitizeChatRequest } from '../openai-sanitizer.js';
+import { relayChatSseStream } from '../openai-sse-relay.js';
+import type { ChatCompletionRequest, ChatCompletionResponse } from '../openai-types.js';
+import { type SanitizedRequest, isRecord, parseJson } from '../sanitizer.js';
+import {
+  logInboundResponse,
+  logInboundSseChunk,
+  logOutboundHeaders,
+  logOutboundRequest,
+} from '../traffic-log.js';
+import {
+  type Fetch,
+  OPENAI_HEADER_POLICY,
+  type UpstreamCall,
+  buildUpstreamHeaders,
+  extractQuery,
+  forwardToUpstream,
+} from '../upstream.js';
+import {
+  UPSTREAM_ERROR_TYPE,
+  UPSTREAM_FAILURE_STATUS,
+  errorMessage,
+  isSuccess,
+  logRoundTrip,
+  openSseReply,
+  upstreamErrorLogFields,
+  watchClientClose,
+  writeFrame,
+} from './common.js';
+
+/**
+ * `POST /v1/chat/completions`: the OpenAI Chat Completions wire format, so
+ * OpenAI SDKs and OpenAI-compatible clients can point their base URL at
+ * the gateway. Same lifecycle as the Anthropic route: sanitize the request
+ * into a fresh vault session, forward it, restore the placeholders in the
+ * JSON response or the SSE stream, destroy the session.
+ */
+export interface OpenAiRouteOptions {
+  readonly np: NullPii;
+  /** OpenAI-compatible base URL, without `/v1`. */
+  readonly upstreamBaseUrl: string;
+  readonly fetchImpl: Fetch;
+  /** When true, dump the request as forwarded and the raw upstream
+   * response to stdout (`traffic-log.ts`). Not free of personal data:
+   * they hold whatever nullpii did not mask. */
+  readonly logTraffic: boolean;
+  /** Tools whose arguments get real values back; default
+   * `DEFAULT_RESTORE_TOOLS`. Any other tool keeps its placeholders. */
+  readonly restoreTools?: ReadonlySet<string>;
+  /** Append `LLM_PRESERVATION_HINT` when something was masked. Default true. */
+  readonly appendHint?: boolean;
+}
+
+const CHAT_COMPLETIONS_PATH = '/v1/chat/completions';
+const INVALID_REQUEST_TYPE = 'invalid_request_error';
+const BAD_REQUEST_STATUS = 400;
+const TRAFFIC_TARGET = 'openai';
+const JSON_CONTENT_TYPE = 'application/json';
+
+/** Upstream headers forwarded with a non-2xx response, so the client's
+ * retry logic sees them: the OpenAI SDKs honour `retry-after`,
+ * `retry-after-ms` and `x-should-retry`. */
+const UPSTREAM_ERROR_HEADERS: ReadonlySet<string> = new Set([
+  'content-type',
+  'x-request-id',
+  'retry-after',
+  'retry-after-ms',
+  'x-should-retry',
+]);
+/** `x-ratelimit-{limit,remaining,reset}-{requests,tokens}`. */
+const UPSTREAM_ERROR_HEADER_PREFIXES = ['x-ratelimit-'];
+
+/** Everything one proxied call needs once its request is sanitized. */
+interface ChatCall {
+  readonly req: FastifyRequest;
+  readonly reply: FastifyReply;
+  readonly opts: OpenAiRouteOptions;
+  readonly sanitized: SanitizedRequest<ChatCompletionRequest>;
+  /** Path plus the client's query string. */
+  readonly path: string;
+  readonly headers: Record<string, string>;
+  readonly reqId: string | undefined;
+}
+
+/**
+ * Register `POST /v1/chat/completions` on `app`.
+ *
+ * @param app - the Fastify instance (see `buildServer`).
+ * @param opts - engine, upstream base URL, `fetch`, traffic dump switch.
+ */
+export async function registerOpenAiRoute(
+  app: FastifyInstance,
+  opts: OpenAiRouteOptions,
+): Promise<void> {
+  app.post(CHAT_COMPLETIONS_PATH, async (req, reply) => {
+    const body = req.body;
+    if (!isChatRequest(body)) {
+      return reply
+        .code(BAD_REQUEST_STATUS)
+        .send(errorBody(INVALID_REQUEST_TYPE, '`messages` must be an array.'));
+    }
+    const { np } = opts;
+    const sessionId = np.createSession();
+    try {
+      const sanitized = await sanitizeChatRequest(np, body, sessionId, opts.appendHint);
+      const call = prepareCall(req, reply, opts, sanitized);
+      return body.stream === true ? await handleStreaming(call) : await handleNonStreaming(call);
+    } finally {
+      // One vault session per request, dropped on every path: restored,
+      // upstream error, fetch failure, failed sanitize, client gone.
+      np.destroySession(sessionId);
+    }
+  });
+}
+
+function prepareCall(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  opts: OpenAiRouteOptions,
+  sanitized: SanitizedRequest<ChatCompletionRequest>,
+): ChatCall {
+  const reqId = typeof req.id === 'string' ? req.id : undefined;
+  const headers = buildUpstreamHeaders(
+    req.headers as Record<string, string | string[] | undefined>,
+    OPENAI_HEADER_POLICY,
+  );
+  if (opts.logTraffic) {
+    logOutboundRequest(sanitized.body, reqId, TRAFFIC_TARGET);
+    logOutboundHeaders(headers, reqId, TRAFFIC_TARGET);
+  }
+  const path = `${CHAT_COMPLETIONS_PATH}${extractQuery(req.url)}`;
+  return { req, reply, opts, sanitized, path, headers, reqId };
+}
+
+async function handleNonStreaming(call: ChatCall): Promise<unknown> {
+  const { reply, opts, sanitized } = call;
+  let upstream: UpstreamCall;
+  try {
+    upstream = await forwardToUpstream(
+      opts.fetchImpl,
+      opts.upstreamBaseUrl,
+      call.path,
+      sanitized.body,
+      call.headers,
+    );
+  } catch (err) {
+    return sendUpstreamFailure(reply, errorMessage(err));
+  }
+  if (!isSuccess(upstream.status)) {
+    return passThroughError(call, upstream.status, upstream.headers, upstream.text);
+  }
+  if (opts.logTraffic) logInboundResponse(upstream.text, call.reqId, TRAFFIC_TARGET);
+  const parsed = parseJson(upstream.text);
+  if (parsed === undefined || !isRecord(parsed.value)) {
+    return sendUpstreamFailure(reply, 'Upstream returned 2xx with a non-JSON body.');
+  }
+  const response = parsed.value as ChatCompletionResponse;
+  const restored = restoreChatResponse(opts.np, response, sanitized.sessionId, opts.restoreTools);
+  logRoundTrip({
+    req: call.req,
+    reqId: call.reqId,
+    sanitized,
+    mode: 'JSON',
+    event: 'openai.chat.restored',
+    counts: restored,
+  });
+  return restored.body;
+}
+
+/**
+ * Streaming path: pipe the upstream SSE stream through
+ * `relayChatSseStream`, which holds placeholders split across chunks and
+ * re-emits restored deltas. The reply is hijacked so the route owns the
+ * socket for the whole stream.
+ */
+async function handleStreaming(call: ChatCall): Promise<unknown> {
+  // A client that goes away cancels the upstream call, which stops the
+  // upstream generating (and billing) tokens nobody reads.
+  const client = watchClientClose(call.reply);
+  try {
+    return await streamFromUpstream(call, client.abort);
+  } finally {
+    client.release();
+  }
+}
+
+async function streamFromUpstream(call: ChatCall, abort: AbortController): Promise<unknown> {
+  const { reply, opts, sanitized } = call;
+  let upstream: Response;
+  try {
+    upstream = await opts.fetchImpl(`${opts.upstreamBaseUrl}${call.path}`, {
+      method: 'POST',
+      headers: call.headers,
+      body: JSON.stringify(sanitized.body),
+      signal: abort.signal,
+    });
+  } catch (err) {
+    return sendUpstreamFailure(reply, errorMessage(err));
+  }
+  // Errors come back as a JSON body, not as an SSE stream.
+  if (!isSuccess(upstream.status)) {
+    return passThroughError(call, upstream.status, upstream.headers, await upstream.text());
+  }
+  if (upstream.body === null) {
+    return sendUpstreamFailure(reply, 'Upstream returned 2xx without a body.');
+  }
+
+  openSseReply(reply, upstream.headers.get('content-type'));
+  await relayToClient(call, upstream.body as unknown as AsyncIterable<Uint8Array>, abort);
+  return reply;
+}
+
+async function relayToClient(
+  call: ChatCall,
+  upstream: AsyncIterable<Uint8Array>,
+  abort: AbortController,
+): Promise<void> {
+  const { req, reply, opts, sanitized } = call;
+  try {
+    const counters = await relayChatSseStream({
+      np: opts.np,
+      sessionId: sanitized.sessionId,
+      upstream,
+      write: (frame) => writeFrame(reply.raw, frame),
+      ...(opts.restoreTools !== undefined && { restoreTools: opts.restoreTools }),
+      ...(opts.logTraffic
+        ? { onUpstreamChunk: (c: string) => logInboundSseChunk(c, call.reqId) }
+        : {}),
+    });
+    logRoundTrip({
+      req,
+      reqId: call.reqId,
+      sanitized,
+      mode: 'SSE',
+      event: 'openai.chat.streamed',
+      counts: counters,
+    });
+  } catch (err) {
+    // The client went away or the upstream broke off. Stop the upstream
+    // call either way; only the error message is logged, never content.
+    const clientGone = abort.signal.aborted;
+    abort.abort();
+    req.log.error({ errMsg: errorMessage(err), clientGone }, 'openai.chat.stream_error');
+  } finally {
+    reply.raw.end();
+  }
+}
+
+/**
+ * Non-2xx upstream: status and body are passed through verbatim, as the
+ * Anthropic route does, so the client SDK's own error handling and retry
+ * logic apply.
+ */
+function passThroughError(call: ChatCall, status: number, headers: Headers, text: string): string {
+  const { req, reply } = call;
+  reply.code(status);
+  headers.forEach((value, name) => {
+    const forwarded =
+      UPSTREAM_ERROR_HEADERS.has(name) ||
+      UPSTREAM_ERROR_HEADER_PREFIXES.some((prefix) => name.startsWith(prefix));
+    if (forwarded) reply.header(name, value);
+  });
+  if (headers.get('content-type') === null) reply.header('content-type', JSON_CONTENT_TYPE);
+  // The body is not logged (see `upstreamErrorLogFields`): its length,
+  // `type` and `code` are enough to tell a rate limit from a bad request.
+  req.log.warn(
+    {
+      upstreamStatus: status,
+      retryAfter: headers.get('retry-after') ?? undefined,
+      ...upstreamErrorLogFields(text),
+    },
+    'openai.upstream_error',
+  );
+  return text;
+}
+
+function isChatRequest(body: unknown): body is ChatCompletionRequest {
+  return isRecord(body) && Array.isArray(body.messages);
+}
+
+/** The gateway's own 502, in OpenAI's error envelope. */
+function sendUpstreamFailure(reply: FastifyReply, message: string): FastifyReply {
+  return reply.code(UPSTREAM_FAILURE_STATUS).send(errorBody(UPSTREAM_ERROR_TYPE, message));
+}
+
+/** OpenAI-style error envelope. */
+function errorBody(type: string, message: string): { error: { type: string; message: string } } {
+  return { error: { type, message } };
+}

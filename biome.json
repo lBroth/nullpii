@@ -12,7 +12,9 @@
       "**/*.md",
       "tmp",
       "models",
-      "packages/eval"
+      "packages/eval",
+      "packages/claude-code-mod/.claude-plugin/types",
+      "packages/claude-code-mod/tsconfig.json"
     ]
   },
   "organizeImports": { "enabled": true },

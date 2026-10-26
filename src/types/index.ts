@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 export {
+  GLINER_EXTENDED_CATEGORIES,
   GLINER_MODEL_CATEGORIES,
   GLINER_ZERO_SHOT_EXTRA,
   PII_LABELS,
@@ -8,8 +9,6 @@ export {
   type PiiLabel,
 } from './labels.js';
 export {
-  CHUNK_OVERLAP_TOKENS,
-  MAX_INPUT_TOKENS,
   MAX_SEQUENCE_LENGTH,
   MODEL_DOWNLOAD_TIMEOUT_MS,
   PLACEHOLDER_REGEX,
@@ -22,8 +21,16 @@ export type {
   RestoreOptions,
   RestoreResult,
   SanitizeOptions,
+  MaskResult,
   SanitizeResult,
 } from './results.js';
-export type { BackendName, ModelVariant, NullPiiConfig } from './config.js';
+export type {
+  BackendName,
+  EnginePolicy,
+  ModelVariant,
+  NullPiiConfig,
+  UrlAllowlistConfig,
+  UrlRelease,
+} from './config.js';
 export type { InferenceInputs, InferenceOutputs } from './backend.js';
 export type { Recognizer } from './recognizer.js';

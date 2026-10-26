@@ -4,20 +4,26 @@
  * index 0 as a structural placeholder — never emitted by the pipeline.
  * Source of truth for label provenance: {@link GLINER_MODEL_CATEGORIES}
  * (trained) + {@link GLINER_ZERO_SHOT_EXTRA} (prompted, zero-shot) +
- * recognizer-only (`private_ip`, `private_mac`). */
+ * {@link GLINER_EXTENDED_CATEGORIES} (quasi-identifiers and special
+ * categories) + recognizer-only (`private_ip`, `private_mac`). */
 export const PII_LABELS = [
   'O',
   'account_number',
   'private_address',
   'private_date',
+  'private_demographic',
   'private_driver_license',
   'private_email',
   'private_geolocation',
   'private_ip',
   'private_mac',
+  'private_occupation',
+  'private_organization',
   'private_passport',
   'private_person',
   'private_phone',
+  'private_sensitive',
+  'private_title',
   'private_url',
   'private_vehicle_id',
   'secret',
@@ -51,4 +57,25 @@ export const GLINER_ZERO_SHOT_EXTRA = [
   'private_driver_license',
   'private_vehicle_id',
   'private_geolocation',
+] as const satisfies readonly PiiCategory[];
+
+/** Quasi-identifiers and GDPR special-category data. Alone they rarely
+ * name a person; combined with each other or with context they often do,
+ * and Art. 9 data (religion, political opinion, sexual orientation,
+ * health) is sensitive in itself. Off by default (`DEFAULT_DISABLED_CATEGORIES`):
+ * a disabled category is not prompted. When on, they are prompted after
+ * the labels above, so the established prompt prefix is unchanged. Turn
+ * them on through `NullPiiConfig.disabledCategories`.
+ *
+ * - `private_organization`: a company, employer or other organisation
+ * - `private_occupation`: a job title, employment status or education level
+ * - `private_demographic`: gender, sex, age, nationality, ethnicity, language
+ * - `private_sensitive`: religion, political opinion, sexual orientation, health
+ * - `private_title`: an honorific (`Mr.`, `Dr.`, `Avv.`) */
+export const GLINER_EXTENDED_CATEGORIES = [
+  'private_organization',
+  'private_occupation',
+  'private_demographic',
+  'private_sensitive',
+  'private_title',
 ] as const satisfies readonly PiiCategory[];

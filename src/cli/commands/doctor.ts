@@ -4,12 +4,13 @@ import { existsSync } from 'node:fs';
 import { freemem, totalmem } from 'node:os';
 import chalk from 'chalk';
 import type { Command } from 'commander';
+import { NULLPII_MODEL_DIR, readEnvVar } from '../../config.js';
 import { ModelManager, defaultCacheDir } from '../../model-manager.js';
 
 export function registerDoctor(program: Command): void {
   program
     .command('doctor')
-    .description('probe environment + model cache; exit 0 if healthy')
+    .description('probe environment + model cache; exit 1 if a check fails (warnings do not)')
     .action(runDoctor);
 }
 
@@ -58,9 +59,14 @@ async function checkCacheDir(): Promise<boolean> {
 }
 
 async function checkModelArtifacts(): Promise<boolean> {
-  const dir = new ModelManager().modelDir;
-  if (!existsSync(dir))
-    return warn('model artifacts', 'not yet downloaded — run `nullpii prefetch`');
+  // A staged directory replaces the download, as it does for the engine.
+  const staged = readEnvVar(NULLPII_MODEL_DIR);
+  const dir = staged ?? new ModelManager().modelDir;
+  if (!existsSync(dir)) {
+    return staged === undefined
+      ? warn('model artifacts', 'not yet downloaded — run `nullpii prefetch`')
+      : fail('model artifacts', `${NULLPII_MODEL_DIR}=${dir} does not exist`);
+  }
   const tok = `${dir}/tokenizer.json`;
   return existsSync(tok)
     ? ok('model artifacts', `${dir}`)
@@ -79,10 +85,15 @@ async function checkOrt(): Promise<boolean> {
   try {
     await import('onnxruntime-node');
     return ok('onnxruntime-node', 'installed');
-  } catch {
-    return fail(
-      'onnxruntime-node',
-      'not installed — run `npm install onnxruntime-node` to enable inference',
-    );
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ERR_MODULE_NOT_FOUND' || code === 'MODULE_NOT_FOUND') {
+      return fail(
+        'onnxruntime-node',
+        'not installed — run `npm install onnxruntime-node` to enable inference',
+      );
+    }
+    // Installed but unloadable (wrong platform, ABI or missing library).
+    return fail('onnxruntime-node', `installed but failed to load: ${(err as Error).message}`);
   }
 }

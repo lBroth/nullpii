@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { NullPii } from '../src/index.js';
 
 // Two ways to point at an unpacked model directory on disk instead of
@@ -15,7 +17,7 @@ const np = new NullPii({
   backend: 'cpu',
 });
 
-const text = 'Drop a note to alice@acme.com or call 555-867-5309 about order 4111111111111111.';
+const text = 'Drop a note to alice@example.com or call 555-867-5309 about order 4111111111111111.';
 const out = await np.sanitize(text);
 
 console.log('sanitized  :', out.sanitized);

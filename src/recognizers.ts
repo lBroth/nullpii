@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { MAX_INPUT_BYTES } from './defaults.js';
 import type { PiiSpan, Recognizer } from './types/index.js';
 
 /** Score assigned to a recognizer match whose `validate()` returned true.
@@ -17,16 +16,17 @@ import type { PiiSpan, Recognizer } from './types/index.js';
  * 0.9999). Stays strictly below `BASE64_SCORE` (0.99999) so a base64-
  * wrapped recognizer hit can still override a validator-passing
  * surface match if needed. */
-export const VALIDATED_RECOGNIZER_SCORE = 0.99998;
+const VALIDATED_RECOGNIZER_SCORE = 0.99998;
 
 /**
  * Run every recognizer against `text`, return non-overlapping spans.
  * Used as a regex post-pass after the ML detector. ML spans take priority
  * on overlap; recognizer spans only fill gaps.
  *
- * Refuses inputs above `MAX_INPUT_BYTES` (1 MB): unbounded `{N,}`
- * quantifiers in upstream secret patterns are quadratic on adversarial
- * padding, well above any realistic LLM prompt.
+ * Scans `text` whole, at any length: every default pattern is
+ * linear-time (bounded quantifiers; `test/recognizers-linear.test.ts`),
+ * and `sanitize()` passes at most `MAX_INPUT_CHARS` at a time. A custom
+ * recognizer must be linear-time too.
  *
  * Two scan paths:
  *
@@ -50,9 +50,6 @@ export function runRecognizers(
   recognizers: readonly Recognizer[],
   existing: readonly PiiSpan[],
 ): PiiSpan[] {
-  if (text.length > MAX_INPUT_BYTES) {
-    return [];
-  }
   const out: PiiSpan[] = [];
   const { fast, slow } = partitionRecognizers(recognizers);
   if (fast.size > 0) {
@@ -92,6 +89,8 @@ const IPV4_LINK_LOCAL = /^169\.254\./;
 const IPV4_MULTICAST = /^(?:22[4-9]|23\d)\./;
 /** RFC5737 documentation IPv4: 192.0.2/24, 198.51.100/24, 203.0.113/24. */
 const IPV4_RFC5737_DOCS = /^(?:192\.0\.2\.|198\.51\.100\.|203\.0\.113\.)/;
+/** The unspecified IPv4 address, which servers bind to (`0.0.0.0:3000`). */
+const IPV4_UNSPECIFIED = /^0\.0\.0\.0$/;
 /** RFC3849 documentation IPv6 prefix `2001:db8::/32`. */
 const IPV6_DOCS = /^2001:0?db8:/i;
 /** IPv6 loopback `::1` (also full form `0000:...:0001`). */
@@ -99,7 +98,6 @@ const IPV6_LOOPBACK = /^(?:::1|0{1,4}(?::0{1,4}){0,6}:0{0,3}1)$/i;
 /** IPv6 link-local `fe80::/10`. */
 const IPV6_LINK_LOCAL = /^fe[89ab][0-9a-f]?:/i;
 const RFC6761_RESERVED = /(?:^|[@.])(?:example\.(?:com|net|org)|test|invalid|localhost|local)$/i;
-const NULL_UUID = /^0{8}-0{4}-0{4}-0{4}-0{12}$/;
 const ZERO_MAC = /^(?:[0:]{17}|(?:00[:-]){5}00)$/;
 
 function isNeverPii(value: string, label: string): boolean {
@@ -110,7 +108,8 @@ function isNeverPii(value: string, label: string): boolean {
       IPV4_LOOPBACK.test(value) ||
       IPV4_LINK_LOCAL.test(value) ||
       IPV4_MULTICAST.test(value) ||
-      IPV4_RFC5737_DOCS.test(value)
+      IPV4_RFC5737_DOCS.test(value) ||
+      IPV4_UNSPECIFIED.test(value)
     ) {
       return true;
     }
@@ -119,7 +118,6 @@ function isNeverPii(value: string, label: string): boolean {
     }
   }
   if (label === 'private_mac' && ZERO_MAC.test(value)) return true;
-  if (label === 'account_number' && NULL_UUID.test(value)) return true;
   if ((label === 'private_url' || label === 'private_email') && RFC6761_RESERVED.test(value)) {
     return true;
   }
@@ -136,10 +134,13 @@ function matchOne(text: string, recognizer: Recognizer, existing: readonly PiiSp
     // High-confidence recognizers (≥ 0.9 — secret patterns, IBAN with
     // mod-97 validator, Luhn-validated CCs) always emit; cross-label
     // overlaps with ML output are reconciled later by IoU dedupe in
-    // `nullpii.ts`. Lower-confidence recognizers still defer to ML on
-    // overlap to avoid noisy double-counting on prose.
+    // `nullpii.ts`. Lower-confidence recognizers defer to ML only when an
+    // ML span already covers the whole match: deferring on a partial
+    // overlap left the uncovered rest of the match in the clear (a short
+    // low-score model span on the first 4 chars of an IPv6 address
+    // silenced `core:ipv6-full` and exposed the other 35).
     const overrides = recognizer.confidence >= 0.9;
-    if ((overrides || !overlaps(start, end, existing)) && passesValidate(m[0], recognizer)) {
+    if ((overrides || !isCoveredBy(start, end, existing)) && passesValidate(m[0], recognizer)) {
       // Validator-passing matches use VALIDATED_RECOGNIZER_SCORE so
       // cross-label dedupe picks the structurally-correct label over ML
       // mislabels.
@@ -185,9 +186,10 @@ function ensureGlobal(re: RegExp): RegExp {
   return cached;
 }
 
-function overlaps(start: number, end: number, spans: readonly PiiSpan[]): boolean {
+/** True when one of `spans` covers all of [start, end). */
+function isCoveredBy(start: number, end: number, spans: readonly PiiSpan[]): boolean {
   for (const s of spans) {
-    if (start < s.end && end > s.start) return true;
+    if (s.start <= start && s.end >= end) return true;
   }
   return false;
 }
@@ -274,7 +276,7 @@ function matchAnchored(
             const start = m.index;
             const end = start + m[0].length;
             const overrides = r.confidence >= 0.9;
-            if ((overrides || !overlaps(start, end, existing)) && passesValidate(m[0], r)) {
+            if ((overrides || !isCoveredBy(start, end, existing)) && passesValidate(m[0], r)) {
               const score = r.validate !== undefined ? VALIDATED_RECOGNIZER_SCORE : r.confidence;
               out.push({ label: r.label, start, end, score, text: m[0] });
             }

@@ -61,6 +61,16 @@ export interface RequestSummary {
   /** Drift indicators — values > 0 are noisy and warrant a yellow flag. */
   readonly unknownPlaceholders: number;
   readonly foreignPlaceholders: number;
+  /** Images and binary documents forwarded without a scan (nullpii
+   * cannot read them). Flagged so the user knows what was not checked. */
+  readonly unscanned?: number;
+  /** Words the model could not read; only the recognizers scanned them. */
+  readonly modelUnscannedWords?: number;
+  /** Placeholders kept masked in a shell tool's call: no shell command
+   * gets a value (`shell-tools.ts`). */
+  readonly unsafeShell?: number;
+  /** Placeholders kept in the input of a tool outside `restoreTools`. */
+  readonly heldForTool?: number;
   /** Optional Fastify reqId to correlate against the JSON log line. */
   readonly reqId?: string;
 }
@@ -110,5 +120,25 @@ export function printRequestSummary(s: RequestSummary): void {
     drift > 0
       ? `  ${c?.yellow ?? ''}⚠ ${drift} unrestored (unknown=${s.unknownPlaceholders} foreign=${s.foreignPlaceholders})${reset}`
       : '';
-  process.stdout.write(`${tag}${id}  ${arrow} ${capLabel}  ${back} ${restLabel}${driftStr}\n`);
+  const unscanned = s.unscanned ?? 0;
+  const unscannedStr =
+    unscanned > 0 ? `  ${c?.yellow ?? ''}⚠ ${unscanned} not scanned (image/binary)${reset}` : '';
+  const unread = s.modelUnscannedWords ?? 0;
+  const unreadStr =
+    unread > 0
+      ? `  ${c?.yellow ?? ''}⚠ ${unread} words too long for the model (recognizers only)${reset}`
+      : '';
+  const unsafeShell = s.unsafeShell ?? 0;
+  const unsafeShellStr =
+    unsafeShell > 0
+      ? `  ${c?.yellow ?? ''}⚠ ${unsafeShell} kept masked in shell commands${reset}`
+      : '';
+  const heldForTool = s.heldForTool ?? 0;
+  const heldForToolStr =
+    heldForTool > 0
+      ? `  ${c?.yellow ?? ''}⚠ ${heldForTool} kept masked in tools outside restoreTools${reset}`
+      : '';
+  process.stdout.write(
+    `${tag}${id}  ${arrow} ${capLabel}  ${back} ${restLabel}${driftStr}${unscannedStr}${unreadStr}${unsafeShellStr}${heldForToolStr}\n`,
+  );
 }

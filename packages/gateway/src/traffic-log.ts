@@ -1,11 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * Wire-format traffic dump. Writes sanitized request bodies + raw
- * upstream responses to stdout, BEFORE the gateway restores
- * placeholders. By construction these bodies carry placeholder tokens
- * only — never real PII — so this respects the "never log PII"
- * project rule.
+ * Wire-format traffic dump, for debugging: writes the request body as
+ * forwarded, its upstream-bound headers (auth masked) and the raw
+ * upstream response to stdout, BEFORE the gateway restores placeholders.
+ *
+ * This is the one place the gateway knowingly writes content that can
+ * hold personal data. What nullpii masked stays a placeholder, but
+ * everything else is printed as it was sent or written: values the
+ * detector missed, fields the gateway does not scan (images, documents,
+ * `mcp_servers` and its credentials) and the model's output. SECURITY.md
+ * states this exception to the "logs carry counts only" rule.
  *
  * Enabled via `NULLPII_LOG_TRAFFIC=wire`. No-op otherwise.
  */
@@ -27,6 +32,9 @@ function header(arrow: string, color: string, label: string, reqId: string | und
  * + first tool_use block + first content chunk. */
 const MAX_DUMP_BYTES = 64 * 1024;
 
+/** Upstream named in the dump labels when a route does not pass one. */
+const DEFAULT_TARGET = 'anthropic';
+
 function truncate(s: string): string {
   if (s.length <= MAX_DUMP_BYTES) return s;
   return `${s.slice(0, MAX_DUMP_BYTES)}\n…[truncated ${s.length - MAX_DUMP_BYTES}b]`;
@@ -40,10 +48,11 @@ function pretty(body: unknown): string {
   }
 }
 
-/** Dump the outbound (sanitized) request body — what Anthropic will
- * actually see. Body fields contain placeholders, never real PII. */
-export function logOutboundRequest(body: unknown, reqId?: string): void {
-  process.stdout.write(`\n${header('→', ANSI.cyan, 'REQ  (sanitized → anthropic)', reqId)}\n`);
+/** Dump the outbound (sanitized) request body — what the upstream
+ * (`target`) will actually see: placeholders where nullpii masked a
+ * value, everything else as forwarded. */
+export function logOutboundRequest(body: unknown, reqId?: string, target = DEFAULT_TARGET): void {
+  process.stdout.write(`\n${header('→', ANSI.cyan, `REQ  (sanitized → ${target})`, reqId)}\n`);
   process.stdout.write(`${pretty(body)}\n`);
 }
 
@@ -51,7 +60,11 @@ export function logOutboundRequest(body: unknown, reqId?: string): void {
  * tokens (`x-api-key`, `authorization`) are masked — we log the
  * presence + last 6 chars only so it's easy to confirm "yes a token
  * was forwarded" without leaking the credential. */
-export function logOutboundHeaders(headers: Record<string, string>, reqId?: string): void {
+export function logOutboundHeaders(
+  headers: Record<string, string>,
+  reqId?: string,
+  target = DEFAULT_TARGET,
+): void {
   const c = useColor();
   const dim = c ? ANSI.dim : '';
   const reset = c ? ANSI.reset : '';
@@ -61,22 +74,22 @@ export function logOutboundHeaders(headers: Record<string, string>, reqId?: stri
     masked[k] = SENSITIVE.has(k.toLowerCase()) ? `<masked, …${v.slice(-6)}, len=${v.length}>` : v;
   }
   process.stdout.write(
-    `${dim}HDR  (gateway → anthropic)${reset} ${header('→', ANSI.cyan, '', reqId)}\n`,
+    `${dim}HDR  (gateway → ${target})${reset} ${header('→', ANSI.cyan, '', reqId)}\n`,
   );
   process.stdout.write(`${pretty(masked)}\n`);
 }
 
-/** Dump the inbound non-stream response body BEFORE restore. The body
- * carries placeholders the upstream echoed back — restore happens
- * after this dump. */
-export function logInboundResponse(text: string, reqId?: string): void {
-  process.stdout.write(`\n${header('←', ANSI.magenta, 'RES  (anthropic → restore)', reqId)}\n`);
+/** Dump the inbound non-stream response body BEFORE restore: the
+ * placeholders the upstream echoed stay masked, the rest is what it
+ * wrote. */
+export function logInboundResponse(text: string, reqId?: string, target = DEFAULT_TARGET): void {
+  process.stdout.write(`\n${header('←', ANSI.magenta, `RES  (${target} → restore)`, reqId)}\n`);
   process.stdout.write(`${truncate(text)}\n`);
 }
 
 /** Dump a raw SSE chunk as it arrives from upstream, pre-restore.
  * Called for every chunk so the user can watch the stream flow byte
- * by byte (still placeholder-bearing). */
+ * by byte (placeholders still masked). */
 export function logInboundSseChunk(chunk: string, reqId?: string): void {
   const c = useColor();
   const dim = c ? ANSI.dim : '';

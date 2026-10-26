@@ -832,9 +832,9 @@ function bypassing(): boolean {
 /** The band's line: while the person sends unprotected through a start-up,
  * it says so and keeps the phase; otherwise the usual line. */
 function bandText(): string {
-  if (startPass && starting() && problem !== undefined) {
+  if (starting() && problem !== undefined) {
     const detail = problem.slice(STARTING_PREFIX.length).replace(/^ \((.*)\)$/, '$1');
-    return `nullpii · not protected yet · ${detail}`;
+    return startPass ? `not protected yet · ${detail}` : `starting · ${detail}`;
   }
   return formatBand(counts, problem, paused);
 }

@@ -5,7 +5,7 @@ A [Claude Code mod](https://code.claude.com/docs/en/plugins/mods/overview) that 
 A line under the prompt always shows the state in a few words (`on · 8 masked`, `paused`, `starting`, `blocking`; Claude Code writes `nullpii:` in front). A band above the prompt shows what was masked in the session, by type:
 
 ```text
-nullpii · 12 masked (person 5 · email 3 · secret 2 · phone 2) · 4 restored to local tools
+12 masked (person 5 · email 3 · secret 2 · phone 2) · 4 restored to local tools
 ```
 
 Status: preview. Tested with Claude Code 2.1.305, the version CI tests with.

@@ -515,9 +515,7 @@ test('the band above the prompt shows what was masked, by type', async ($, on) =
   await start($);
   await $.prompt.submit({ text: 'John, john@acme.io', wait: false, origin: COMPOSER });
   const ui = await $.ui.mount(BAND);
-  expect(
-    await ui.find({ type: 'Text', text: /^nullpii · 2 masked \(EMAIL 1 · PERSON 1\)/ }),
-  ).toBeDefined();
+  expect(await ui.find({ type: 'Text', text: /^2 masked \(EMAIL 1 · PERSON 1\)/ })).toBeDefined();
   expect(await ui.find({ type: 'Text', text: 'drawn by another mod' })).toBeDefined();
   await ui.unmount();
 });
@@ -530,8 +528,8 @@ test('a band drawn before the session opens is redrawn once it opens', async ($,
   on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
   const ui = await $.ui.mount(BAND);
   await start($);
-  expect(await ui.find({ type: 'Text', text: /^nullpii · blocking/ })).toBeUndefined();
-  expect(await ui.find({ type: 'Text', text: 'nullpii · on · nothing masked yet' })).toBeDefined();
+  expect(await ui.find({ type: 'Text', text: /^blocking/ })).toBeUndefined();
+  expect(await ui.find({ type: 'Text', text: 'nothing masked yet' })).toBeDefined();
   await ui.unmount();
 });
 
@@ -544,7 +542,7 @@ test(
     on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
     await start($);
     const ui = await $.ui.mount(BAND);
-    const line = await ui.find({ type: 'Text', text: /^nullpii · blocking:/ });
+    const line = await ui.find({ type: 'Text', text: /^blocking:/ });
     expect(line).toBeDefined();
     expect(line?.props.color).toBe('red');
     await ui.unmount();
@@ -1032,9 +1030,7 @@ test('a failure after the tool ran withholds the result with fixed text', async 
   expect(out.deny).toMatch(/^nullpii could not mask this tool's result, so it was withheld/);
   expect(JSON.stringify(out)).not.toContain('John');
   const ui = await $.ui.mount(BAND);
-  expect(
-    await ui.find({ type: 'Text', text: /^nullpii · blocking: the sidecar answered/ }),
-  ).toBeDefined();
+  expect(await ui.find({ type: 'Text', text: /^blocking: the sidecar answered/ })).toBeDefined();
   expect(await ui.find({ type: 'Text', text: /John/ })).toBeUndefined();
   await ui.unmount();
   expect(sidecar.logs.join('\n')).not.toContain('John');
@@ -1603,7 +1599,7 @@ test('"do not ask again until ready" sends every prompt of this start-up, and th
   expect(sent).toEqual(['Mail John', 'Mail Mary']);
   const band = await ui.find({
     type: 'Text',
-    text: 'nullpii · not protected yet · installing its packages',
+    text: 'not protected yet · installing its packages',
   });
   expect(band).toBeDefined();
   expect(band?.props.color).toBe('yellow');
@@ -1721,7 +1717,7 @@ test('the band walks the start-up phases, with the model download moving', async
   expect(
     await ui.find({
       type: 'Text',
-      text: 'nullpii · blocking: starting nullpii-gateway for this session (installing its packages)',
+      text: 'starting · installing its packages',
     }),
   ).toBeDefined();
   // The padlock is drawn from the start: open while the sidecar comes up.
@@ -1739,7 +1735,7 @@ test('the band walks the start-up phases, with the model download moving', async
   expect(
     await ui.find({
       type: 'Text',
-      text: 'nullpii · blocking: starting nullpii-gateway for this session (downloading the model · 640 / 1,160 MB, model.onnx)',
+      text: 'starting · downloading the model · 640 / 1,160 MB, model.onnx',
     }),
   ).toBeDefined();
   sidecar.state.startup = {
@@ -1752,7 +1748,7 @@ test('the band walks the start-up phases, with the model download moving', async
   expect(
     await ui.find({
       type: 'Text',
-      text: 'nullpii · blocking: starting nullpii-gateway for this session (downloading the model · 1,100 / 1,160 MB, model.onnx)',
+      text: 'starting · downloading the model · 1,100 / 1,160 MB, model.onnx',
     }),
   ).toBeDefined();
 
@@ -1762,7 +1758,7 @@ test('the band walks the start-up phases, with the model download moving', async
   expect(
     await ui.find({
       type: 'Text',
-      text: 'nullpii · blocking: starting nullpii-gateway for this session (loading the model)',
+      text: 'starting · loading the model',
     }),
   ).toBeDefined();
   // No one answers the start-up dialog, so the prompt waits for the model;
@@ -1778,7 +1774,7 @@ test('the band walks the start-up phases, with the model download moving', async
   sidecar.state.startup = { phase: 'ready' };
   await clock.advance(2_000);
   expect(sidecar.toasts).toContain('nullpii is on');
-  expect(await ui.find({ type: 'Text', text: 'nullpii · on · nothing masked yet' })).toBeDefined();
+  expect(await ui.find({ type: 'Text', text: 'nothing masked yet' })).toBeDefined();
   const sent = await $.prompt.submit({
     text: 'Mail John at john@acme.io',
     wait: false,
@@ -1922,7 +1918,7 @@ test('the band toggle pauses masking once the user confirms it, and everything t
   // and the toggle reads off.
   const line = await ui.find({
     type: 'Text',
-    text: 'nullpii · paused: everything you send reaches Claude unmasked',
+    text: 'paused: everything you send reaches Claude unmasked',
   });
   expect(line).toBeDefined();
   expect(line?.props.color).toBe('red');
@@ -1945,7 +1941,7 @@ test('the band toggle pauses masking once the user confirms it, and everything t
   // The toggle turns masking back on at once, with no dialog about it.
   await ui.press({ key: 'nullpii-toggle' });
   expect(asked).toHaveLength(1);
-  expect(await ui.find({ type: 'Text', text: 'nullpii · on · nothing masked yet' })).toBeDefined();
+  expect(await ui.find({ type: 'Text', text: 'nothing masked yet' })).toBeDefined();
   const back = await $.prompt.submit({
     text: 'Mail John at john@acme.io',
     wait: false,
@@ -2009,7 +2005,7 @@ test('a pause the user does not confirm keeps masking on', async ($, on) => {
   await ui.press({ key: 'nullpii-toggle' });
   expect(questions).toHaveLength(1);
   // Masking never paused: the band and the toggle read as on.
-  expect(await ui.find({ type: 'Text', text: 'nullpii · on · nothing masked yet' })).toBeDefined();
+  expect(await ui.find({ type: 'Text', text: 'nothing masked yet' })).toBeDefined();
   expect((await ui.find({ type: 'Button', key: 'nullpii-toggle' }))?.props.label).toBe('on');
   const prompt = await $.prompt.submit({
     text: 'Mail John at john@acme.io',
@@ -2030,7 +2026,7 @@ test('a pause no one can answer keeps masking on', async ($, on) => {
   await start($);
   const ui = await $.ui.mount(BAND);
   await ui.press({ key: 'nullpii-toggle' });
-  expect(await ui.find({ type: 'Text', text: 'nullpii · on · nothing masked yet' })).toBeDefined();
+  expect(await ui.find({ type: 'Text', text: 'nothing masked yet' })).toBeDefined();
   expect((await ui.find({ type: 'Button', key: 'nullpii-toggle' }))?.props.label).toBe('on');
   const prompt = await $.prompt.submit({
     text: 'Mail John at john@acme.io',
@@ -2098,7 +2094,7 @@ test('a pause ends with its session: the next one starts masked, and the policy 
   expect(
     await ui.find({
       type: 'Text',
-      text: 'nullpii · paused: everything you send reaches Claude unmasked',
+      text: 'paused: everything you send reaches Claude unmasked',
     }),
   ).toBeDefined();
 
@@ -2109,7 +2105,7 @@ test('a pause ends with its session: the next one starts masked, and the policy 
   // session left under that key, as when a new Claude Code session opens.
   sidecar.sessions.delete('session-1');
   await start($);
-  const line = await ui.find({ type: 'Text', text: 'nullpii · on · nothing masked yet' });
+  const line = await ui.find({ type: 'Text', text: 'nothing masked yet' });
   expect(line).toBeDefined();
   expect(line?.props.color).toBe('green');
   const prompt = await $.prompt.submit({

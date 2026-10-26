@@ -5,7 +5,7 @@
 // and the policy are shown. No mods API calls live here, so
 // `claude plugin validate` reads every `$` call from register.ts.
 
-import { PII_USAGE, shortName } from './categories.ts';
+import { shortName } from './categories.ts';
 
 /**
  * Arguments that may get their real values back, per built-in tool that
@@ -361,48 +361,66 @@ function restoringTools(restoreTools: readonly string[] | undefined): string {
   return `These tools put the real values back before they run: ${restoreTools.join(', ')}. So a file they write holds the real values.`;
 }
 
-/** The policy lines of the `/pii` reply. */
-export function formatPolicy(policy: Policy | undefined): string[] {
-  if (policy === undefined) return ['Policy: unknown (the sidecar has not answered)'];
-  const disabled = policy.disabledCategories ?? policy.config.disabledCategories;
-  const off = Array.isArray(disabled) && disabled.length > 0 ? disabled.join(', ') : 'none';
+/** The categories of `policy`, grouped by mode, on one line. An older
+ * sidecar reports no per-category mode: then the readable ones alone. */
+function formatCategories(policy: Policy): string {
   const modes = policy.categories;
-  const categories =
-    modes === undefined
-      ? [`Categories left readable: ${off}`]
-      : [
-          `Masked: ${categoriesIn(modes, 'mask')}`,
-          `Masked after asking you (in your prompts): ${categoriesIn(modes, 'ask')}`,
-          `Left readable: ${categoriesIn(modes, 'off')}`,
-        ];
+  if (modes === undefined) {
+    const disabled = policy.disabledCategories ?? policy.config.disabledCategories;
+    const off = Array.isArray(disabled) && disabled.length > 0 ? disabled.join(', ') : 'none';
+    return `Left readable: ${off}`;
+  }
+  return [
+    `Masked: ${categoriesIn(modes, 'mask')}`,
+    `Ask first in your prompts: ${categoriesIn(modes, 'ask')}`,
+    `Left readable: ${categoriesIn(modes, 'off')}`,
+  ].join(' · ');
+}
+
+/** The policy file and what it sets, on one line. */
+function formatSettings(policy: Policy): string {
   return [
     `Policy file: ${policy.file} (${policy.loaded ? 'loaded' : 'not present: built-in defaults'})`,
-    ...categories,
     `Confidence cuts: ${formatCuts(policy.config)}`,
     `URLs left readable: ${formatUrlAllowlist(policy.config.urlAllowlist)}`,
     `Tools that get real values back: ${policy.restoreTools.join(', ')}`,
-    `Change it with ${PII_USAGE.slice('Usage: '.length)}`,
-  ];
+  ].join(' · ');
 }
 
-/** The `/pii` command's reply. */
+/** How both the status and a policy change end: where the commands are. */
+const PII_MENU_POINTER = 'Type /pii for the menu, or /pii help for every command';
+
+/** The policy lines of the reply to a change: the categories by mode, the
+ * settings, and the pointer to the menu. */
+export function formatPolicy(policy: Policy | undefined): string[] {
+  if (policy === undefined) return ['Policy: unknown (the sidecar has not answered)'];
+  return [formatCategories(policy), formatSettings(policy), PII_MENU_POINTER];
+}
+
+/** The `/pii` status: the state, the session's counts on one line, the
+ * categories by mode, the policy, and where the commands are. Short on
+ * purpose: `/pii help` lists them. */
 export function formatReport(
   counts: Counts,
   problem: string | undefined,
   policy: Policy | undefined,
   paused: boolean,
 ): string {
-  const lines = [
+  const labels = formatLabels(counts.byLabel, Number.POSITIVE_INFINITY);
+  return [
     problem !== undefined
       ? `Status: blocking (${problem})`
       : paused
         ? 'Status: paused (everything you send reaches Claude unmasked)'
         : 'Status: on',
-    `Masked before Claude read them: ${counts.masked}`,
-    `Real values put back into local tool calls: ${counts.restored}`,
-    `Placeholders kept in calls to other tools: ${counts.held}`,
-  ];
-  const labels = formatLabels(counts.byLabel, Number.POSITIVE_INFINITY);
-  if (labels !== '') lines.push(`By type: ${labels}`);
-  return [...lines, ...formatPolicy(policy)].join('\n');
+    [
+      `Masked before Claude read them: ${counts.masked}${labels === '' ? '' : ` (${labels})`}`,
+      `Real values put back into local tool calls: ${counts.restored}`,
+      `Placeholders kept in calls to other tools: ${counts.held}`,
+    ].join(' · '),
+    ...(policy === undefined
+      ? ['Policy: unknown (the sidecar has not answered)']
+      : [formatCategories(policy), formatSettings(policy)]),
+    PII_MENU_POINTER,
+  ].join('\n');
 }

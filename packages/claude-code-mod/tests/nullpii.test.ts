@@ -4,6 +4,12 @@
 // answered from the `http.fetch` stub. No model, tool or network runs.
 
 import { expect, mock, test } from 'claude-code/testing';
+import {
+  CATEGORY_SHORT_NAMES,
+  PII_COMMANDS,
+  applyPiiCommand,
+  piiCommandDescription,
+} from '../hooks/categories.ts';
 import { expectedProof, hmacSha256Hex, sidecarOrigin } from '../hooks/policy.ts';
 
 const TOKEN = 't'.repeat(64);
@@ -278,11 +284,16 @@ function stubSession(
   env: Record<string, string> = { NULLPII_SIDECAR_TOKEN: TOKEN },
   cwd = '/work',
 ) {
+  /** The commands the mod registered, as the host would list them. */
+  const registered: { name: string; description: string; argumentHint?: string }[] = [];
   mock.env(on, env);
   mock.store(on, sidecar.stored);
   on('session.start', () => ({ cwd }));
   on('session.cwd', () => ({ value: cwd }));
-  on('command.register', () => ({ value: undefined }));
+  on('command.register', ($, e) => {
+    registered.push(e);
+    return { value: undefined };
+  });
   on('session.id', () => ({ value: 'session-1' }));
   on('ui.toast', ($, e) => {
     sidecar.toasts.push(e.text);
@@ -293,6 +304,7 @@ function stubSession(
     return { value: undefined };
   });
   on('http.fetch', sidecar.handler);
+  return { registered };
 }
 
 async function start($) {
@@ -759,7 +771,7 @@ test('/pii shows the policy the sidecar runs with', async ($, on) => {
   const answer = await $.command.run({ command: 'pii', args: '' });
   expect(answer.text).toContain(`Policy file: ${POLICY_FILE} (loaded)`);
   expect(answer.text).toContain('Tools that get real values back: Read, Edit');
-  expect(answer.text).toContain('Change it with /pii');
+  expect(answer.text).toContain('Type /pii for the menu, or /pii help for every command');
 });
 
 test('a call that may change the policy file is put to the user', async ($, on) => {
@@ -1137,6 +1149,289 @@ test('/pii answers an unknown argument with its usage and changes nothing', asyn
   expect(sidecar.policyBodies).toEqual([]);
 });
 
+/** The `/pii` menu's own group entries, as its dialog draws them. */
+const MENU_PRESETS_ENTRY = 'Preset: agent, secrets or all…';
+const MENU_CATEGORY_ENTRY = 'A category: mask, ask or off…';
+const MENU_MORE_ENTRY = 'More: pause, reset, help…';
+/** The entry that opens the next page of the category list. */
+const MENU_NEXT_CATEGORIES = 'More categories…';
+const MENU_QUESTION = 'nullpii: what do you want to do?';
+
+/** One question a dialog put, with the options it offered. */
+interface Asked {
+  question: string;
+  options: string[];
+}
+
+/** Answer the mod's dialogs in turn with `labels`, recording each question
+ * and its options: the text of the entry to pick, or free text the dialog's
+ * own "Other" returns. A question the list has run out on is dismissed, as
+ * a `claude -p` run leaves it. */
+function answerMenu(on, labels: readonly string[], asked: Asked[]) {
+  let at = 0;
+  on('tool.call', { tool: 'AskUserQuestion' }, ($, e) => {
+    const q = e.questions[0];
+    const question = q?.question ?? '';
+    asked.push({ question, options: (q?.options ?? []).map((o) => o.label) });
+    const label = labels[at++];
+    if (label === undefined) return { deny: 'dismissed' };
+    return { result: { questions: e.questions, answers: { [question]: label } } };
+  });
+}
+
+test('/pii with no arguments opens the menu, and every entry names what it does', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  // The menu's own answers: the top page, then each group below it.
+  answerMenu(
+    on,
+    [
+      MENU_PRESETS_ENTRY,
+      piiCommandDescription('preset agent'),
+      MENU_MORE_ENTRY,
+      piiCommandDescription('help'),
+      piiCommandDescription('status'),
+    ],
+    asked,
+  );
+  await start($);
+
+  const preset = await $.command.run({ command: 'pii', args: '' });
+  const help = await $.command.run({ command: 'pii', args: '' });
+  const status = await $.command.run({ command: 'pii', args: '' });
+
+  expect(asked[0]?.question).toBe(MENU_QUESTION);
+  // The list of options the issue asks for: the state, then the groups.
+  expect(asked[0]?.options).toEqual([
+    piiCommandDescription('status'),
+    MENU_PRESETS_ENTRY,
+    MENU_CATEGORY_ENTRY,
+    MENU_MORE_ENTRY,
+  ]);
+  // One place for the text: an entry carries the description of the command
+  // it runs, the same line `/pii help` prints.
+  expect(asked[1]?.options).toEqual([
+    piiCommandDescription('preset agent'),
+    piiCommandDescription('preset secrets'),
+    piiCommandDescription('preset all'),
+  ]);
+  expect(asked[3]?.options).toEqual([
+    piiCommandDescription('pause'),
+    piiCommandDescription('resume'),
+    piiCommandDescription('reset'),
+    piiCommandDescription('help'),
+  ]);
+  // Every entry runs what it names: the preset changes the policy, and the
+  // other two print what the typed command prints.
+  expect(preset.text).toContain('Policy changed.');
+  expect(help.text).toBe((await $.command.run({ command: 'pii', args: 'help' })).text);
+  expect(status.text).toBe((await $.command.run({ command: 'pii', args: 'status' })).text);
+});
+
+test('a preset picked in the menu sends what the typed command sends', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  // Typed first, the menu after: both must reach the sidecar the same way.
+  answerMenu(
+    on,
+    [
+      MENU_PRESETS_ENTRY,
+      piiCommandDescription('preset secrets'),
+      MENU_MORE_ENTRY,
+      piiCommandDescription('reset'),
+    ],
+    asked,
+  );
+  await start($);
+
+  await $.command.run({ command: 'pii', args: 'preset secrets' });
+  const typedSecrets = sidecar.policyBodies[0] as Record<string, unknown>;
+  await $.command.run({ command: 'pii', args: 'reset' });
+  const typedReset = sidecar.policyBodies[1] as Record<string, unknown>;
+
+  const secrets = await $.command.run({ command: 'pii', args: '' });
+  const reset = await $.command.run({ command: 'pii', args: '' });
+
+  expect(secrets.text).toContain('Policy changed.');
+  expect(reset.text).toContain('Policy changed.');
+  // The secrets preset masks secrets and leaves the rest readable.
+  expect(typedSecrets).toMatchObject({ categories: { secret: 'mask', private_person: 'off' } });
+  expect(sidecar.policyBodies[2]).toEqual(typedSecrets);
+  // Reset is the agent preset, over the policy as it stands.
+  expect(typedReset).toEqual({});
+  expect(sidecar.policyBodies[3]).toEqual(typedReset);
+});
+
+test('a category picked in the menu applies to the policy as the typed command does', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(
+    on,
+    [
+      MENU_CATEGORY_ENTRY,
+      piiCommandDescription('off <category…>'),
+      MENU_NEXT_CATEGORIES,
+      MENU_NEXT_CATEGORIES,
+      'passport',
+    ],
+    asked,
+  );
+  await start($);
+
+  await $.command.run({ command: 'pii', args: 'off email' });
+  const typed = sidecar.policyBodies[0] as Record<string, unknown>;
+
+  const answer = await $.command.run({ command: 'pii', args: '' });
+
+  expect(answer.text).toContain('Policy changed.');
+  // Three pages went by, each offering four entries: three categories and
+  // the way on to the next page.
+  const pages = asked.slice(2);
+  expect(pages).toHaveLength(3);
+  expect(pages.map((p) => p.question)).toEqual([
+    'nullpii: which categories should be left readable?',
+    'nullpii: which categories should be left readable?',
+    'nullpii: which categories should be left readable?',
+  ]);
+  expect(pages[0]?.options).toEqual([
+    CATEGORY_SHORT_NAMES[0],
+    CATEGORY_SHORT_NAMES[1],
+    CATEGORY_SHORT_NAMES[2],
+    MENU_NEXT_CATEGORIES,
+  ]);
+  expect(pages[2]?.options).toEqual([
+    CATEGORY_SHORT_NAMES[6],
+    CATEGORY_SHORT_NAMES[7],
+    CATEGORY_SHORT_NAMES[8],
+    MENU_NEXT_CATEGORIES,
+  ]);
+  expect(sidecar.policyBodies[1]).toEqual(
+    applyPiiCommand(typed, { kind: 'set', mode: 'off', categories: ['private_passport'] }),
+  );
+});
+
+test('a pause picked in the menu is refused unless the run is the person’s own, as when typed', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  // The dialog would say yes to a pause: it is never put.
+  answerMenu(
+    on,
+    [
+      MENU_MORE_ENTRY,
+      piiCommandDescription('pause'),
+      MENU_MORE_ENTRY,
+      piiCommandDescription('resume'),
+    ],
+    asked,
+  );
+  await start($);
+
+  const pause = await $.command.run({ command: 'pii', args: '' });
+  const resume = await $.command.run({ command: 'pii', args: '' });
+
+  // The test kit's `$.command.run` carries no origin: the engine stamps one
+  // only for the person's own typed command, and the menu runs as it does.
+  expect(pause.text).toContain('pauses masking only when you ask for it yourself');
+  expect(resume.text).toContain('pauses masking only when you ask for it yourself');
+  expect(asked).toHaveLength(4);
+  expect(sidecar.policyBodies).toEqual([]);
+});
+
+test('a change that masks less is put to the person through the menu too, values and all', async ($, on) => {
+  const sidecar = fakeSidecar({ categories: { private_email: 'mask' } });
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(
+    on,
+    [MENU_PRESETS_ENTRY, piiCommandDescription('preset all'), 'Put back the previous policy'],
+    asked,
+  );
+  await start($);
+  // Another session turns names and messages off while this one is open.
+  sidecar.replacePolicy({ categories: { private_email: 'off' } });
+
+  const answer = await $.command.run({ command: 'pii', args: '' });
+
+  // The menu's change meets the same review a typed one does: its values
+  // are spelled out, and putting the old policy back comes first.
+  expect(asked).toHaveLength(3);
+  expect(asked[2]?.question).toContain('email mask → off');
+  expect(asked[2]?.question).toContain('This change masks less: email left readable');
+  expect(asked[2]?.options[0]).toBe('Put back the previous policy');
+  expect(answer.text).toContain('Policy changed.');
+  expect(sidecar.policyBodies).toHaveLength(2);
+  expect(sidecar.policyBodies[1]).toMatchObject({ categories: { secret: 'mask' } });
+});
+
+test('/pii help lists every command, each with the line its menu entry shows', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  await start($);
+
+  const help = await $.command.run({ command: 'pii', args: 'help' });
+
+  const lines = help.text.split('\n');
+  expect(lines[0]).toBe('The /pii commands:');
+  expect(lines.at(-1)).toBe(`Categories: ${CATEGORY_SHORT_NAMES.join(', ')}`);
+  expect(lines).toHaveLength(PII_COMMANDS.length + 2);
+  for (const command of PII_COMMANDS) {
+    const row = lines.find((line) => line.endsWith(command.description));
+    expect(row?.trimStart().startsWith(`/pii ${command.args}`.trimEnd())).toBe(true);
+  }
+  // One line each, and one place to keep them: no command twice.
+  expect(new Set(PII_COMMANDS.map((c) => c.args)).size).toBe(PII_COMMANDS.length);
+  expect(sidecar.policyBodies).toEqual([]);
+});
+
+test('where a `claude -p` run cannot answer the dialog, /pii prints the status and the help', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  // A session with no one at the prompt: the dialog is refused.
+  on('tool.call', { tool: 'AskUserQuestion' }, () => ({ deny: 'no one to answer' }));
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  await start($);
+  await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+
+  const answer = await $.command.run({ command: 'pii', args: '' });
+
+  expect(answer.text).toBe(
+    `${(await $.command.run({ command: 'pii', args: 'status' })).text}\n${(await $.command.run({ command: 'pii', args: 'help' })).text}`,
+  );
+  expect(answer.text).toContain('Masked before Claude read them: 1');
+  expect(answer.text).toContain('The /pii commands:');
+  expect(sidecar.policyBodies).toEqual([]);
+});
+
+test('with nothing at all to answer its dialog, /pii prints the status and the help', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  await start($);
+
+  const answer = await $.command.run({ command: 'pii', args: '' });
+
+  expect(answer.text).toContain('Status: on');
+  expect(answer.text).toContain('Type /pii for the menu, or /pii help for every command');
+  expect(answer.text).toContain('/pii help              Help: every command and what it does');
+});
+
+test('/pii is listed with the hint of its arguments, and a one-line description', async ($, on) => {
+  const sidecar = fakeSidecar();
+  const { registered } = stubSession(on, sidecar);
+  await start($);
+
+  expect(registered).toHaveLength(1);
+  expect(registered[0]?.name).toBe('pii');
+  expect(registered[0]?.argumentHint).toBe('[status|preset|mask|ask|off|reset|pause|resume|help]');
+  const description = registered[0]?.description ?? '';
+  expect(description).toContain('/pii');
+  expect(description).not.toContain('\n');
+  expect(description.length).toBeLessThanOrEqual(80);
+});
+
 /** Answer the mod's mask dialog with `label`, recording each question. */
 function answerDialog(on, label: string, questions: string[]) {
   on('tool.call', { tool: 'AskUserQuestion' }, ($, e) => {
@@ -1470,7 +1765,11 @@ test('the band walks the start-up phases, with the model download moving', async
       text: 'nullpii · blocking: starting nullpii-gateway for this session (loading the model)',
     }),
   ).toBeDefined();
-  const held = await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  // No one answers the start-up dialog, so the prompt waits for the model;
+  // past the hold it goes back to the person, as it did before.
+  const pending = $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  await clock.advance(6 * 60_000);
+  const held = await pending;
   expect(held.drop).toContain('starting nullpii-gateway for this session (loading the model)');
   expect(held.drop).toContain('Send it again once nullpii is on.');
 
@@ -1580,12 +1879,14 @@ test('the band toggle pauses masking once the user confirms it, and everything t
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);
   const asked: { question: string; options: string[] }[] = [];
+  /** Answer the pause dialog yes, and leave every other dialog unanswered:
+   * the `/pii` menu is then dismissed, which prints the status. */
   on('tool.call', { tool: 'AskUserQuestion' }, ($, e) => {
     const q = e.questions[0];
-    asked.push({ question: q?.question ?? '', options: (q?.options ?? []).map((o) => o.label) });
-    return {
-      result: { questions: e.questions, answers: { [q?.question ?? '']: 'Pause masking' } },
-    };
+    const question = q?.question ?? '';
+    if (!question.startsWith('Everything you send until nullpii')) return { deny: 'dismissed' };
+    asked.push({ question, options: (q?.options ?? []).map((o) => o.label) });
+    return { result: { questions: e.questions, answers: { [question]: 'Pause masking' } } };
   });
   const sent: string[] = [];
   on('prompt.submit', ($, e) => {
@@ -1882,14 +2183,16 @@ test('a change that masks less is spelled out with its values, and putting it ba
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);
   const asked: { question: string; options: string[] }[] = [];
+  /** Answer the policy-change dialog, and leave every other dialog
+   * unanswered: the `/pii` menu is then dismissed, which prints the status. */
   on('tool.call', { tool: 'AskUserQuestion' }, ($, e) => {
     const q = e.questions[0];
-    asked.push({ question: q?.question ?? '', options: (q?.options ?? []).map((o) => o.label) });
+    const question = q?.question ?? '';
+    if (!question.startsWith('The nullpii masking policy was changed'))
+      return { deny: 'dismissed' };
+    asked.push({ question, options: (q?.options ?? []).map((o) => o.label) });
     return {
-      result: {
-        questions: e.questions,
-        answers: { [q?.question ?? '']: 'Put back the previous policy' },
-      },
+      result: { questions: e.questions, answers: { [question]: 'Put back the previous policy' } },
     };
   });
   on('prompt.submit', ($, e) => ({ text: e.text }));

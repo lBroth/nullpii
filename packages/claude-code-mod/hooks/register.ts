@@ -14,9 +14,14 @@
 // the session's secret, which never leaves this process's memory.
 
 import {
+  CATEGORY_SHORT_NAMES,
+  type Mode,
+  type PiiCommand,
   applyPiiCommand,
   describePolicyChange,
+  formatPiiHelp,
   parsePiiCommand,
+  piiCommandDescription,
   placeholdersToAsk,
   policyLoosening,
   shortName,
@@ -215,6 +220,10 @@ const POLICY_DENIED =
   'nullpii refused this call: with the real values put back it would change the nullpii masking policy file, which the user was not asked about. Ask the user to make that change themselves.';
 const POLICY_ASK =
   'This call may change the nullpii masking policy (what gets masked, and which tools get real values back). Allow it only if you asked for that change.';
+/** The refusal for the mod's own dialog when putting the question failed:
+ * the asking code reports it (and never fails open over it), and nothing
+ * else is blocked, since no value was masked or restored for the dialog. */
+const DIALOG_FAILED = 'nullpii could not put its question to you.';
 
 interface Sanitized {
   value: unknown;
@@ -773,11 +782,20 @@ async function confirmed($, text: string): Promise<string> {
 }
 
 /** Put `question` to the user in the mod's own dialog, which the mod's
- * tool.call hook then leaves alone (`isOwnQuestion`). */
-async function askUser($, question: string, options: readonly string[]): Promise<string> {
+ * tool.call hook then leaves alone (`isOwnQuestion`). A multi-select
+ * answer comes back with its labels joined with commas. */
+async function askUser(
+  $,
+  question: string,
+  options: readonly string[],
+  multiSelect = false,
+): Promise<string> {
   ownQuestions.add(question);
+  const dialog = multiSelect
+    ? { header: DIALOG_HEADER, options, multiSelect: true }
+    : { header: DIALOG_HEADER, options };
   try {
-    return await $.ui.ask(question, { header: DIALOG_HEADER, options });
+    return await $.ui.ask(question, dialog);
   } finally {
     ownQuestions.delete(question);
   }
@@ -938,12 +956,248 @@ async function restoredForDisplay($, text: string): Promise<string> {
   return r.value;
 }
 
+/** A `/pii` run: every command but the menu itself. */
+type RunnablePiiCommand = Exclude<PiiCommand, { kind: 'menu' }>;
+
+/** One entry of the menu: the text it shows, and the command it runs. */
+interface MenuEntry {
+  readonly label: string;
+  readonly command: PiiCommand;
+}
+
+/** The entry that runs `/pii <args>`: its text is the command's own
+ * description (`PII_COMMANDS`), and the command is the one a typed
+ * `/pii <args>` parses to, so both run the same code. */
+function menuEntry(args: string): MenuEntry {
+  return { label: piiCommandDescription(args), command: parsePiiCommand(args) };
+}
+
+/** The menu `/pii` opens with no arguments. The engine's dialog takes at
+ * most four options, so the commands are grouped: the state and the
+ * presets, a category, and the rest. Every entry runs what its typed
+ * command runs, guards included. */
+const MENU_QUESTION = 'nullpii: what do you want to do?';
+const MENU_PRESETS = 'Preset: agent, secrets or all…';
+const MENU_CATEGORIES = 'A category: mask, ask or off…';
+const MENU_MORE = 'More: pause, reset, help…';
+const MENU_PRESET_QUESTION = 'nullpii: which preset?';
+const MENU_MODE_QUESTION = 'nullpii: what should happen to a category?';
+const MENU_CATEGORY_QUESTION: Readonly<Record<Mode, string>> = {
+  mask: 'nullpii: which categories should be masked?',
+  ask: 'nullpii: which categories should nullpii ask you about in your prompts?',
+  off: 'nullpii: which categories should be left readable?',
+};
+const MENU_MORE_QUESTION = 'nullpii: what else?';
+/** The entry that opens the next page of the category list. */
+const MENU_CATEGORY_MORE = 'More categories…';
+/** The categories one dialog lists: it takes four options, and the fourth
+ * opens the next page, so a page holds `MENU_CATEGORY_PAGE` of them. */
+const MENU_CATEGORY_PAGE = 3;
+const MENU_DIALOG_OPTIONS = 4;
+
+/** The menu's first page: the state, and the three groups below it. */
+const MENU_TOP: readonly string[] = [
+  piiCommandDescription('status'),
+  MENU_PRESETS,
+  MENU_CATEGORIES,
+  MENU_MORE,
+];
+/** The presets, each entry running its own `/pii preset …`. */
+const MENU_PRESET_ENTRIES: readonly MenuEntry[] = [
+  menuEntry('preset agent'),
+  menuEntry('preset secrets'),
+  menuEntry('preset all'),
+];
+/** The rest: the session's masking, the default, and the commands. */
+const MENU_MORE_ENTRIES: readonly MenuEntry[] = [
+  menuEntry('pause'),
+  menuEntry('resume'),
+  menuEntry('reset'),
+  menuEntry('help'),
+];
+/** The three ways a category can be set. */
+const MENU_MODES: readonly { readonly mode: Mode; readonly label: string }[] = [
+  { mode: 'mask', label: piiCommandDescription('mask <category…>') },
+  { mode: 'ask', label: piiCommandDescription('ask <category…>') },
+  { mode: 'off', label: piiCommandDescription('off <category…>') },
+];
+
+/** One question of the menu: the label the person chose, or undefined when
+ * they dismissed the dialog, or no one could answer it (`claude -p`). A
+ * menu answer that names nothing runs nothing. */
+function askMenu(
+  $,
+  question: string,
+  options: readonly string[],
+  multiSelect = false,
+): Promise<string | undefined> {
+  return askUser($, question, options, multiSelect).catch((err) => {
+    logDebug($, `nullpii: no answer to the menu (${errorName(err)})`);
+    return undefined;
+  });
+}
+
+/** One line in the debug log, which never changes what the mod does: the
+ * host refuses `$.ui.log` in some contexts (a nested run), and a lost
+ * debug line must not turn into a failed command. */
+function logDebug($, text: string): void {
+  try {
+    $.ui.log(text, { to: 'debug' });
+  } catch {
+    // Nowhere to write the line: it is dropped, and nothing else changes.
+  }
+}
+
+/** The command a menu answer names: the entry that carries its text, else
+ * (the dialog's own "Other") what the person typed after `/pii`, which
+ * the parser reads as the command it is. An empty "Other", or one that
+ * names only blanks, names no command at all. */
+function menuCommand(
+  entries: readonly MenuEntry[],
+  answer: string,
+): RunnablePiiCommand | undefined {
+  const command = entries.find((c) => c.label === answer)?.command ?? parsePiiCommand(answer);
+  return command.kind === 'menu' ? undefined : command;
+}
+
+/** The category list, page by page: the last page holds what is left, from
+ * `MENU_CATEGORY_PAGE` to `MENU_DIALOG_OPTIONS` of them. */
+function categoryPages(): readonly (readonly string[])[] {
+  const pages: string[][] = [];
+  for (let at = 0; at < CATEGORY_SHORT_NAMES.length; at += MENU_CATEGORY_PAGE) {
+    const left = CATEGORY_SHORT_NAMES.slice(at);
+    pages.push(left.length > MENU_DIALOG_OPTIONS ? left.slice(0, MENU_CATEGORY_PAGE) : [...left]);
+  }
+  return pages;
+}
+
+/** The categories the person picks, page by page, or undefined when they
+ * dismissed a page. A page's answer is the labels they chose, joined with
+ * commas (`$.ui.ask`), `MENU_CATEGORY_MORE` among them where they asked
+ * for the next page. */
+async function chooseCategories($, mode: Mode): Promise<readonly string[] | undefined> {
+  const pages = categoryPages();
+  const chosen: string[] = [];
+  for (const [index, page] of pages.entries()) {
+    const more = index < pages.length - 1 ? [MENU_CATEGORY_MORE] : [];
+    const answer = await askMenu($, MENU_CATEGORY_QUESTION[mode], [...page, ...more], true);
+    if (answer === undefined) return undefined;
+    const labels = answer.split(',').map((label) => label.trim());
+    chosen.push(...labels.filter((label) => label !== '' && label !== MENU_CATEGORY_MORE));
+    if (!labels.includes(MENU_CATEGORY_MORE)) break;
+  }
+  return chosen;
+}
+
+/** The command the person picked through the category list: the mode they
+ * chose, over the categories of every page they went through. Read by the
+ * same parser as a typed `/pii mask|ask|off <category…>`, so an unknown
+ * name is answered with the usage as it is there. */
+async function chooseCategory($): Promise<RunnablePiiCommand | undefined> {
+  const answer = await askMenu(
+    $,
+    MENU_MODE_QUESTION,
+    MENU_MODES.map((m) => m.label),
+  );
+  const mode = MENU_MODES.find((m) => m.label === answer)?.mode;
+  if (mode === undefined) return answer === undefined ? undefined : menuCommand([], answer);
+  const categories = await chooseCategories($, mode);
+  if (categories === undefined) return undefined;
+  return menuCommand([], [mode, ...categories].join(' '));
+}
+
+/** The command one page of the menu names, or undefined when the dialog
+ * was dismissed. */
+async function chooseEntry(
+  $,
+  question: string,
+  entries: readonly MenuEntry[],
+): Promise<RunnablePiiCommand | undefined> {
+  const answer = await askMenu(
+    $,
+    question,
+    entries.map((c) => c.label),
+  );
+  return answer === undefined ? undefined : menuCommand(entries, answer);
+}
+
+/** The menu `/pii` opens with no arguments: the command the person picked,
+ * or undefined when they dismissed the dialog, or no one could answer it
+ * (`claude -p`). */
+async function chooseFromMenu($): Promise<RunnablePiiCommand | undefined> {
+  const answer = await askMenu($, MENU_QUESTION, MENU_TOP);
+  if (answer === undefined) return undefined;
+  if (answer === MENU_PRESETS) return chooseEntry($, MENU_PRESET_QUESTION, MENU_PRESET_ENTRIES);
+  if (answer === MENU_CATEGORIES) return chooseCategory($);
+  if (answer === MENU_MORE) return chooseEntry($, MENU_MORE_QUESTION, MENU_MORE_ENTRIES);
+  return menuCommand([menuEntry('status')], answer);
+}
+
+/** The policy as the sidecar has it now, a change made elsewhere settled
+ * first; without an answer, the last one this session saw. */
+async function refreshedPolicy($): Promise<void> {
+  if (policy === undefined) return;
+  await reviewPolicy($).catch((err) =>
+    $.ui.log(`nullpii: policy not read again: ${shownReason(failureOf(err))}`, { to: 'debug' }),
+  );
+}
+
+/** What `/pii` prints where the menu cannot be answered: the status, and
+ * every command, as `/pii` printed the status alone before the menu. */
+async function statusAndHelp($): Promise<string> {
+  await refreshedPolicy($);
+  return [formatReport(counts, problem, policy, paused), formatPiiHelp()].join('\n');
+}
+
+/**
+ * Run the `/pii` command `command`, typed or picked in the menu: one code
+ * path, so every guard holds either way — a change that masks less is put
+ * to the person, and a pause asks first and only comes from the person's
+ * own run (`PERSON_ORIGINS`). `origin` is the kind the run came from.
+ */
+async function runPiiCommand(
+  $,
+  command: RunnablePiiCommand,
+  origin: string,
+): Promise<{ text: string }> {
+  if (command.kind === 'help') return { text: formatPiiHelp() };
+  if (command.kind === 'error') return { text: command.message };
+  if (command.kind === 'status') {
+    await refreshedPolicy($);
+    return { text: formatReport(counts, problem, policy, paused) };
+  }
+  if (command.kind === 'pause' || command.kind === 'resume') {
+    // Only the person's own run pauses or resumes masking: one the model,
+    // a hook or another plugin issued in their name is refused, and the
+    // band's toggle is the other way to pause.
+    if (!PERSON_ORIGINS.has(origin)) return { text: PAUSE_REFUSED };
+    if (command.kind === 'resume') {
+      resumeMasking($);
+      return { text: 'Masking is on.' };
+    }
+    return {
+      text: (await pauseMasking($))
+        ? 'Masking is paused: everything you send reaches Claude unmasked until you turn it on again (/pii resume, or the band toggle).'
+        : 'Masking stays on.',
+    };
+  }
+  if (policy === undefined) {
+    return { text: 'nullpii: the sidecar has not answered, so the policy cannot change now.' };
+  }
+  try {
+    const changed = await changePolicy($, (config) => applyPiiCommand(config, command));
+    return { text: ['Policy changed.', ...formatPolicy(changed)].join('\n') };
+  } catch (err) {
+    return { text: `nullpii could not change the policy: ${shownReason(failureOf(err))}` };
+  }
+}
+
 export function register(on, options) {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'pii',
-      description:
-        'Show what nullpii masked and its policy; change it: /pii preset agent|secrets|all, /pii mask|ask|off <category…>, /pii reset, /pii pause|resume',
+      description: 'Show what nullpii masked and its policy, or change it: /pii opens a menu',
+      argumentHint: '[status|preset|mask|ask|off|reset|pause|resume|help]',
     });
     // The address comes from the plugin option alone: options are read from
     // user and managed settings only, while a project's settings can set
@@ -1127,6 +1381,9 @@ export function register(on, options) {
       ...(out.context !== undefined && { context: out.context }),
     };
   }).catch(async ($, e, next) => {
+    // The mod's own dialog: nothing was masked or restored for it, so it
+    // blocks nothing; the ask itself reports the failure to the mod.
+    if (isOwnQuestion(e)) return { deny: DIALOG_FAILED };
     // Claude reads fixed text: a failure after the restore can come from
     // the tool or a hook beneath, and its text can quote the real values.
     blocked($, 'tool.call', next.error);
@@ -1144,44 +1401,16 @@ export function register(on, options) {
   }).catch(async ($, e, next) => (next.called ? { decision: 'ask', reason: POLICY_ASK } : next(e)));
 
   on('command.run', { command: 'pii' }, async ($, e) => {
+    const origin = e.origin?.kind ?? '';
     const command = parsePiiCommand(e.args ?? '');
-    if (command.kind === 'error') return { text: command.message };
-    if (command.kind === 'status') {
-      // The policy as the sidecar has it now, a change made elsewhere
-      // settled first; without an answer, the last one this session saw.
-      if (policy !== undefined) {
-        await reviewPolicy($).catch((err) =>
-          $.ui.log(`nullpii: policy not read again: ${shownReason(failureOf(err))}`, {
-            to: 'debug',
-          }),
-        );
-      }
-      return { text: formatReport(counts, problem, policy, paused) };
-    }
-    if (command.kind === 'pause' || command.kind === 'resume') {
-      // Only the person's own typed command pauses or resumes masking: one
-      // the model or a hook issued in their name is refused, and the band's
-      // toggle is the other way to pause.
-      if (!PERSON_ORIGINS.has(e.origin?.kind ?? '')) return { text: PAUSE_REFUSED };
-      if (command.kind === 'resume') {
-        resumeMasking($);
-        return { text: 'Masking is on.' };
-      }
-      return {
-        text: (await pauseMasking($))
-          ? 'Masking is paused: everything you send reaches Claude unmasked until you turn it on again (/pii resume, or the band toggle).'
-          : 'Masking stays on.',
-      };
-    }
-    if (policy === undefined) {
-      return { text: 'nullpii: the sidecar has not answered, so the policy cannot change now.' };
-    }
-    try {
-      const changed = await changePolicy($, (config) => applyPiiCommand(config, command));
-      return { text: ['Policy changed.', ...formatPolicy(changed)].join('\n') };
-    } catch (err) {
-      return { text: `nullpii could not change the policy: ${shownReason(failureOf(err))}` };
-    }
+    if (command.kind !== 'menu') return runPiiCommand($, command, origin);
+    // `/pii` with no arguments: the menu, whose every choice runs the same
+    // code as the typed command. Where no dialog can be answered (a
+    // dismissal, or a `claude -p` run with no one to ask), the status and
+    // the help are printed, which is what `/pii` printed before the menu.
+    const chosen = await chooseFromMenu($);
+    if (chosen === undefined) return { text: await statusAndHelp($) };
+    return runPiiCommand($, chosen, origin);
   });
 
   // The transcript shows real values; what Claude reads keeps the

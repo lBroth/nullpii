@@ -68,6 +68,8 @@ export default defineConfig({
   description:
     'Mask personal data and secrets before they reach an LLM, and put them back on the way out. Local detection, reversible in-memory vault.',
   base: '/nullpii/',
+  // docs/README.md maps this folder for readers on GitHub; it is no page.
+  srcExclude: ['README.md'],
   cleanUrls: true,
   lastUpdated: true,
   head: [

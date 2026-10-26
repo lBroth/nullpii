@@ -4,7 +4,18 @@
 
 # nullpii
 
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/lBroth/nullpii/blob/main/LICENSE) [![npm](https://img.shields.io/npm/v/nullpii)](https://www.npmjs.com/package/nullpii) [![CI](https://github.com/lBroth/nullpii/actions/workflows/ci.yml/badge.svg)](https://github.com/lBroth/nullpii/actions/workflows/ci.yml)
+<p align="center">
+  <a href="https://lbroth.github.io/nullpii/"><img src="https://img.shields.io/badge/docs-lbroth.github.io%2Fnullpii-0d9488?style=for-the-badge" alt="Documentation: lbroth.github.io/nullpii" /></a>
+  <a href="https://lbroth.github.io/nullpii/start"><img src="https://img.shields.io/badge/get_started-Claude_Code_mod-0d9488?style=for-the-badge" alt="Get started with the Claude Code mod" /></a>
+</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/nullpii"><img src="https://img.shields.io/npm/v/nullpii" alt="npm version" /></a>
+  <a href="https://github.com/lBroth/nullpii/actions/workflows/ci.yml"><img src="https://github.com/lBroth/nullpii/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://huggingface.co/lBroth/nullpii"><img src="https://img.shields.io/badge/model-Hugging_Face-blue" alt="Model on Hugging Face" /></a>
+  <a href="https://www.npmjs.com/package/nullpii"><img src="https://img.shields.io/node/v/nullpii" alt="Node version" /></a>
+  <a href="https://github.com/lBroth/nullpii/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License: Apache-2.0" /></a>
+</p>
 
 nullpii hides personal data and secrets before your text goes to an LLM, and puts the real values back in the reply. It runs on your machine. A fine-tuned GLiNER model and a set of pattern recognizers find the values, and an in-memory vault swaps each one for a placeholder and back.
 
@@ -15,8 +26,6 @@ nullpii hides personal data and secrets before your text goes to an LLM, and put
 - **Measured, losses included.** On coding-agent traffic it lets 9.5% of the values that must be hidden through, and keeps 85.4% of the values that must stay readable. Only rizzo-pii lets fewer through (8.1%), but it keeps only 44.5% readable. On five held-out document sets it is second of 15 tools, and fifth on English text alone. [Benchmark](#benchmark).
 
 Status: before 1.0, so the API can still change between minor versions. nullpii replaces values with placeholders it can reverse, and it misses some values. This is pseudonymisation, not anonymisation, and not a compliance certification.
-
-Documentation: [lbroth.github.io/nullpii](https://lbroth.github.io/nullpii/).
 
 ## Quick start: Claude Code
 

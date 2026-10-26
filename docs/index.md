@@ -23,5 +23,5 @@ features:
   - title: Built for coding agents
     details: Masks prompts and tool output, keeps code and documentation links readable, and never puts a real value into a shell command. Through the Claude Code mod, or a gateway for the Anthropic and OpenAI APIs.
   - title: Measured, losses included
-    details: On coding-agent traffic it lets 9.5% of what must be hidden through and keeps 81.9% of what must stay readable; only rizzo-pii lets fewer through, keeping 44.5%. On held-out document sets it is second of 15.
+    details: On coding-agent traffic it lets 9.5% of what must be hidden through and keeps 85.4% of what must stay readable; only rizzo-pii lets fewer through, keeping 44.5%. On held-out document sets it is second of 15.
 ---

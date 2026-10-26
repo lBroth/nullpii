@@ -1,255 +1,255 @@
 {
- "covered": 2094,
+ "covered": 1979,
  "secrets": 5776,
  "tools": {
   "deberta": {
-   "leak_covered": 0.46609360076408785,
-   "leak_uncovered": 0.5975013579576317
+   "leak_covered": 0.4557857503789793,
+   "leak_uncovered": 0.5988938635765078
   },
   "deberta+agent": {
-   "leak_covered": 0.4665711556829035,
-   "leak_uncovered": 0.5977729494839761
+   "leak_covered": 0.4562910560889338,
+   "leak_uncovered": 0.599157229391625
   },
   "deberta@default": {
-   "leak_covered": 0.4350525310410697,
-   "leak_uncovered": 0.5507876154263986
+   "leak_covered": 0.42546740778170794,
+   "leak_uncovered": 0.5522781143007638
   },
   "deberta@default+agent": {
-   "leak_covered": 0.43600764087870103,
-   "leak_uncovered": 0.551059206952743
+   "leak_covered": 0.426478019201617,
+   "leak_uncovered": 0.552541480115881
   },
   "ettin-68m": {
-   "leak_covered": 0.1991404011461318,
-   "leak_uncovered": 0.40385659967409016
+   "leak_covered": 0.1955533097524002,
+   "leak_uncovered": 0.39952594153278903
   },
   "ettin-68m+agent": {
-   "leak_covered": 0.1991404011461318,
-   "leak_uncovered": 0.40412819120043453
+   "leak_covered": 0.1955533097524002,
+   "leak_uncovered": 0.39978930734790624
   },
   "ettin-68m@default": {
-   "leak_covered": 0.5386819484240688,
-   "leak_uncovered": 0.7093970668115155
+   "leak_covered": 0.5361293582617483,
+   "leak_uncovered": 0.7055570186989729
   },
   "ettin-68m@default+agent": {
-   "leak_covered": 0.5386819484240688,
-   "leak_uncovered": 0.7093970668115155
+   "leak_covered": 0.5361293582617483,
+   "leak_uncovered": 0.7055570186989729
   },
   "gliner-onnx-pii-fp32": {
-   "leak_covered": 0.27507163323782235,
-   "leak_uncovered": 0.32998370450841935
+   "leak_covered": 0.28600303183425974,
+   "leak_uncovered": 0.3226231235185673
   },
   "gliner-onnx-pii-fp32+agent": {
-   "leak_covered": 0.27554918815663804,
-   "leak_uncovered": 0.3316132536664856
+   "leak_covered": 0.28650833754421423,
+   "leak_uncovered": 0.32420331840927047
   },
   "gliner-onnx-pii-fp32@default": {
-   "leak_covered": 0.7808022922636103,
-   "leak_uncovered": 0.6265616512764802
+   "leak_covered": 0.8064679130874179,
+   "leak_uncovered": 0.617856202264946
   },
   "gliner-onnx-pii-fp32@default+agent": {
-   "leak_covered": 0.7812798471824259,
-   "leak_uncovered": 0.627104834329169
+   "leak_covered": 0.8069732187973724,
+   "leak_uncovered": 0.6183829338951804
   },
   "gliner-pii-large-v1": {
-   "leak_covered": 0.1714422158548233,
-   "leak_uncovered": 0.2362846279196089
+   "leak_covered": 0.17635169277412835,
+   "leak_uncovered": 0.23176191730313406
   },
   "gliner-pii-large-v1+agent": {
-   "leak_covered": 0.1714422158548233,
-   "leak_uncovered": 0.2362846279196089
+   "leak_covered": 0.17635169277412835,
+   "leak_uncovered": 0.23176191730313406
   },
   "gliner-pii-large-v1@default": {
-   "leak_covered": 0.389207258834766,
-   "leak_uncovered": 0.45138511678435633
+   "leak_covered": 0.3996968165740273,
+   "leak_uncovered": 0.4440347642875955
   },
   "gliner-pii-large-v1@default+agent": {
-   "leak_covered": 0.389207258834766,
-   "leak_uncovered": 0.4516567083107007
+   "leak_covered": 0.3996968165740273,
+   "leak_uncovered": 0.4442981301027127
   },
   "gliner-stream-pii": {
-   "leak_covered": 0.21585482330468003,
-   "leak_uncovered": 0.2585551330798479
+   "leak_covered": 0.22182920667003536,
+   "leak_uncovered": 0.25414801158809586
   },
   "gliner-stream-pii+agent": {
-   "leak_covered": 0.21585482330468003,
-   "leak_uncovered": 0.2599130907115698
+   "leak_covered": 0.22182920667003536,
+   "leak_uncovered": 0.25546484066368186
   },
   "gliner-stream-pii@default": {
-   "leak_covered": 0.7249283667621776,
-   "leak_uncovered": 0.6048343291689299
+   "leak_covered": 0.7468418393127843,
+   "leak_uncovered": 0.5970503028706874
   },
   "gliner-stream-pii@default+agent": {
-   "leak_covered": 0.7249283667621776,
-   "leak_uncovered": 0.6051059206952744
+   "leak_covered": 0.7468418393127843,
+   "leak_uncovered": 0.5973136686858046
   },
   "nemotron-pii-nemo": {
-   "leak_covered": 0.44221585482330467,
-   "leak_uncovered": 0.22514937533948942
+   "leak_covered": 0.45831227892875187,
+   "leak_uncovered": 0.2233342112193837
   },
   "nemotron-pii-nemo+agent": {
-   "leak_covered": 0.44221585482330467,
-   "leak_uncovered": 0.2254209668658338
+   "leak_covered": 0.45831227892875187,
+   "leak_uncovered": 0.22359757703450092
   },
   "nemotron-pii-nemo@default": {
-   "leak_covered": 0.5955109837631327,
-   "leak_uncovered": 0.32726778924497557
+   "leak_covered": 0.61899949469429,
+   "leak_uncovered": 0.3231498551488017
   },
   "nemotron-pii-nemo@default+agent": {
-   "leak_covered": 0.5955109837631327,
-   "leak_uncovered": 0.32753938077131994
+   "leak_covered": 0.61899949469429,
+   "leak_uncovered": 0.3234132209639189
   },
   "nemotron-pii-raw": {
-   "leak_covered": 0.5238777459407832,
-   "leak_uncovered": 0.20912547528517111
+   "leak_covered": 0.5517938352703385,
+   "leak_uncovered": 0.20410850671582828
   },
   "nemotron-pii-raw+agent": {
-   "leak_covered": 0.5238777459407832,
-   "leak_uncovered": 0.2093970668115155
+   "leak_covered": 0.5517938352703385,
+   "leak_uncovered": 0.2043718725309455
   },
   "nemotron-pii-raw@default": {
-   "leak_covered": 0.5840496657115568,
-   "leak_uncovered": 0.3066268332428028
+   "leak_covered": 0.6124305204648812,
+   "leak_uncovered": 0.30023702923360546
   },
   "nemotron-pii-raw@default+agent": {
-   "leak_covered": 0.5840496657115568,
-   "leak_uncovered": 0.3068984247691472
+   "leak_covered": 0.6124305204648812,
+   "leak_uncovered": 0.30050039504872267
   },
   "nullpii-H3b-cuda-agent": {
-   "leak_covered": 0.0028653295128939827,
-   "leak_uncovered": 0.17354698533405757
+   "leak_covered": 0.006568974229408792,
+   "leak_uncovered": 0.17197787727153016
   },
   "nullpii-H3b-cuda-agent+agent": {
-   "leak_covered": 0.0028653295128939827,
-   "leak_uncovered": 0.17354698533405757
+   "leak_covered": 0.006568974229408792,
+   "leak_uncovered": 0.17197787727153016
   },
   "openai-privacy-filter": {
-   "leak_covered": 0.04202483285577841,
-   "leak_uncovered": 0.10456273764258556
+   "leak_covered": 0.04345629105608893,
+   "leak_uncovered": 0.10192257045035555
   },
   "openai-privacy-filter+agent": {
-   "leak_covered": 0.04202483285577841,
-   "leak_uncovered": 0.10456273764258556
+   "leak_covered": 0.04345629105608893,
+   "leak_uncovered": 0.10192257045035555
   },
   "openai-privacy-filter@default": {
-   "leak_covered": 0.08404966571155682,
-   "leak_uncovered": 0.1634980988593156
+   "leak_covered": 0.08489135927235977,
+   "leak_uncovered": 0.16065314722149066
   },
   "openai-privacy-filter@default+agent": {
-   "leak_covered": 0.08404966571155682,
-   "leak_uncovered": 0.1634980988593156
+   "leak_covered": 0.08489135927235977,
+   "leak_uncovered": 0.16065314722149066
   },
   "openmed-large": {
-   "leak_covered": 0.4918815663801337,
-   "leak_uncovered": 0.3381314502987507
+   "leak_covered": 0.5083375442142496,
+   "leak_uncovered": 0.334211219383724
   },
   "openmed-large+agent": {
-   "leak_covered": 0.49379178605539636,
-   "leak_uncovered": 0.3389462248777838
+   "leak_covered": 0.5103587670540677,
+   "leak_uncovered": 0.3350013168290756
   },
   "openmed-large@default": {
-   "leak_covered": 0.7349570200573066,
-   "leak_uncovered": 0.8028245518739815
+   "leak_covered": 0.7337038908539667,
+   "leak_uncovered": 0.8014221754016329
   },
   "openmed-large@default+agent": {
-   "leak_covered": 0.7354345749761223,
-   "leak_uncovered": 0.8033677349266702
+   "leak_covered": 0.7342091965639211,
+   "leak_uncovered": 0.8019489070318673
   },
   "openmed-pf-multi-v2": {
-   "leak_covered": 0.3825214899713467,
-   "leak_uncovered": 0.3405757740358501
+   "leak_covered": 0.40020212228398183,
+   "leak_uncovered": 0.3326310244930208
   },
   "openmed-pf-multi-v2+agent": {
-   "leak_covered": 0.3825214899713467,
-   "leak_uncovered": 0.34084736556219447
+   "leak_covered": 0.40020212228398183,
+   "leak_uncovered": 0.332894390308138
   },
   "openmed-pf-multi-v2@default": {
-   "leak_covered": 0.43600764087870103,
-   "leak_uncovered": 0.38267246061922866
+   "leak_covered": 0.4562910560889338,
+   "leak_uncovered": 0.37371609165130365
   },
   "openmed-pf-multi-v2@default+agent": {
-   "leak_covered": 0.43600764087870103,
-   "leak_uncovered": 0.38294405214557303
+   "leak_covered": 0.4562910560889338,
+   "leak_uncovered": 0.37397945746642086
   },
   "openmed-small": {
-   "leak_covered": 0.4350525310410697,
-   "leak_uncovered": 0.2523085279739272
+   "leak_covered": 0.45224861040929765,
+   "leak_uncovered": 0.2488806952857519
   },
   "openmed-small+agent": {
-   "leak_covered": 0.4355300859598854,
-   "leak_uncovered": 0.2525801195002716
+   "leak_covered": 0.45275391611925214,
+   "leak_uncovered": 0.24914406110086912
   },
   "openmed-small@default": {
-   "leak_covered": 0.6284622731614136,
-   "leak_uncovered": 0.5431830526887561
+   "leak_covered": 0.6331480545730167,
+   "leak_uncovered": 0.543323676586779
   },
   "openmed-small@default+agent": {
-   "leak_covered": 0.6289398280802292,
-   "leak_uncovered": 0.5434546442151005
+   "leak_covered": 0.6336533602829711,
+   "leak_uncovered": 0.5435870424018963
   },
   "pii-identifier": {
-   "leak_covered": 0.28605539637058264,
-   "leak_uncovered": 0.42422596414991853
+   "leak_covered": 0.27993936331480546,
+   "leak_uncovered": 0.42322886489333683
   },
   "pii-identifier+agent": {
-   "leak_covered": 0.28605539637058264,
-   "leak_uncovered": 0.4244975556762629
+   "leak_covered": 0.27993936331480546,
+   "leak_uncovered": 0.42349223070845404
   },
   "pii-identifier@default": {
-   "leak_covered": 0.725883476599809,
-   "leak_uncovered": 0.7903313416621401
+   "leak_covered": 0.7251136937847398,
+   "leak_uncovered": 0.7887806162760074
   },
   "pii-identifier@default+agent": {
-   "leak_covered": 0.725883476599809,
-   "leak_uncovered": 0.7906029331884845
+   "leak_covered": 0.7251136937847398,
+   "leak_uncovered": 0.7890439820911246
   },
   "piiranha": {
-   "leak_covered": 0.9613180515759312,
-   "leak_uncovered": 0.9016838674633352
+   "leak_covered": 0.9631126831733199,
+   "leak_uncovered": 0.9025546484066368
   },
   "piiranha+agent": {
-   "leak_covered": 0.9613180515759312,
-   "leak_uncovered": 0.9016838674633352
+   "leak_covered": 0.9631126831733199,
+   "leak_uncovered": 0.9025546484066368
   },
   "piiranha@default": {
-   "leak_covered": 0.9966571155682904,
-   "leak_uncovered": 0.9872351982618143
+   "leak_covered": 0.9964628600303184,
+   "leak_uncovered": 0.9876218066894917
   },
   "piiranha@default+agent": {
-   "leak_covered": 0.9966571155682904,
-   "leak_uncovered": 0.9872351982618143
+   "leak_covered": 0.9964628600303184,
+   "leak_uncovered": 0.9876218066894917
   },
   "presidio": {
-   "leak_covered": 0.48233046800382046,
-   "leak_uncovered": 0.9560021727322108
+   "leak_covered": 0.4537645275391612,
+   "leak_uncovered": 0.9565446405056623
   },
   "presidio+agent": {
-   "leak_covered": 0.4890162368672397,
-   "leak_uncovered": 0.9619771863117871
+   "leak_covered": 0.4593228903486609,
+   "leak_uncovered": 0.9631287858835923
   },
   "presidio@default": {
-   "leak_covered": 0.4656160458452722,
-   "leak_uncovered": 0.9462248777838131
+   "leak_covered": 0.43708943911066195,
+   "leak_uncovered": 0.9465367395312089
   },
   "presidio@default+agent": {
-   "leak_covered": 0.4723018147086915,
-   "leak_uncovered": 0.9519282998370451
+   "leak_covered": 0.4426478019201617,
+   "leak_uncovered": 0.9528575190940216
   },
   "rizzo-pii": {
-   "leak_covered": 0.11509073543457497,
-   "leak_uncovered": 0.24090168386746333
+   "leak_covered": 0.12076806467913087,
+   "leak_uncovered": 0.23413220963918882
   },
   "rizzo-pii+agent": {
-   "leak_covered": 0.11509073543457497,
-   "leak_uncovered": 0.2411732753938077
+   "leak_covered": 0.12076806467913087,
+   "leak_uncovered": 0.23439557545430603
   },
   "rizzo-pii@default": {
-   "leak_covered": 0.46609360076408785,
-   "leak_uncovered": 0.9117327539380772
+   "leak_covered": 0.44163719050025263,
+   "leak_uncovered": 0.9109823544903871
   },
   "rizzo-pii@default+agent": {
-   "leak_covered": 0.46609360076408785,
-   "leak_uncovered": 0.9120043454644216
+   "leak_covered": 0.44163719050025263,
+   "leak_uncovered": 0.9112457203055043
   }
  },
- "uncovered": 3682
+ "uncovered": 3797
 }

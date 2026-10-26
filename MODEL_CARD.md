@@ -67,13 +67,13 @@ These numbers are for nullpii as a whole: this model plus the recognizers and fi
 
 ![Agent traffic: leak rate and keep rate per tool](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/ab1-agent-traffic.svg)
 
-- **Coding-agent traffic (AB-1, 966 documents):** nullpii lets 9.5% of the values that must be hidden through, and keeps 81.9% of the values that must stay readable. Only rizzo-pii lets fewer through (8.1%), but it keeps only 44.5% readable.
-- **Weak spots:** person names (24% let through; 11 of the 15 other tools let fewer through) and URLs (31%). On secrets alone, nullpii does not lead: openai's privacy-filter lets fewer GitHub-issue secrets through (8.2% against 11.2%).
+- **Coding-agent traffic (AB-1, 966 documents):** nullpii lets 9.5% of the values that must be hidden through, and keeps 85.4% of the values that must stay readable. Only rizzo-pii lets fewer through (8.1%), but it keeps only 44.5% readable.
+- **Weak spots:** person names (24% let through; 11 of the 15 other tools let fewer through) and URLs (31%). On secrets alone, nullpii does not lead: openai's privacy-filter lets fewer GitHub-issue secrets through (8.2% against 11.5%), and on CredData nullpii lets 24.5% through, most of it UUIDs that CredData counts as credentials and nullpii keeps readable as ids (13.0% without them).
 
 ![Documents: macro char-F2 per tool](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/r3-documents.svg)
 
-- **Documents (five held-out sets):** nullpii is second of 15 tools (macro char-F2 0.756; rizzo-pii 0.770). On English documents alone it is fifth (0.713). Much of its lead comes from one set, Greek and German clinical notes.
-- **It masks a lot.** Its recall is the highest of any tool at its best-scoring setting (0.960). Its precision is below most tools'.
+- **Documents (five held-out sets):** nullpii is second of 15 tools (macro char-F2 0.758; rizzo-pii 0.770). On English documents alone it is fifth (0.714). Much of its lead comes from one set, Greek and German clinical notes.
+- **It masks a lot.** Its recall is the highest of any tool at its best-scoring setting (0.958). Its precision is below most tools'.
 
 ## Training data
 

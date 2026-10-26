@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="880" height="578" viewBox="0 0 880 578" role="img" aria-labelledby="t d">
 <title id="t">Agent traffic: leak rate and keep rate per tool</title>
-<desc id="d">rizzo-pii: leak 8.1%, keep 44.5%; nullpii 0.5: leak 9.5%, keep 81.9%; openai privacy-filter: leak 14.5%, keep 77.9%; OpenMed PII Large: leak 15.7%, keep 82.2%; gliner-pii-large: leak 15.9%, keep 85.5%; nemotron-pii, NVIDIA's server: leak 16.0%, keep 75.8%; OpenMed PII Small: leak 16.1%, keep 83.0%; gliner-stream-pii: leak 16.4%, keep 67.5%; nemotron-pii, library: leak 17.6%, keep 68.4%; ettin-68m: leak 17.7%, keep 65.3%; pii-identifier: leak 18.8%, keep 77.7%; gliner_multi_pii (ONNX): leak 19.2%, keep 56.9%; OpenMed privacy-filter-multilingual-v2: leak 20.1%, keep 81.6%; piiranha: leak 23.8%, keep 68.8%; Presidio: leak 40.6%, keep 82.3%; deberta PII: leak 55.1%, keep 64.2%</desc>
+<desc id="d">rizzo-pii: leak 8.1%, keep 44.5%; nullpii 0.5: leak 9.5%, keep 85.4%; openai privacy-filter: leak 14.5%, keep 77.9%; OpenMed PII Large: leak 15.7%, keep 82.2%; gliner-pii-large: leak 15.9%, keep 85.5%; nemotron-pii, NVIDIA's server: leak 16.0%, keep 75.8%; OpenMed PII Small: leak 16.1%, keep 83.0%; gliner-stream-pii: leak 16.4%, keep 67.5%; nemotron-pii, library: leak 17.6%, keep 68.4%; ettin-68m: leak 17.7%, keep 65.3%; pii-identifier: leak 18.8%, keep 77.7%; gliner_multi_pii (ONNX): leak 19.2%, keep 56.9%; OpenMed privacy-filter-multilingual-v2: leak 20.1%, keep 81.6%; piiranha: leak 23.8%, keep 68.8%; Presidio: leak 40.6%, keep 82.3%; deberta PII: leak 55.1%, keep 64.2%</desc>
 <style>svg { --bg: #ffffff; --zone: #f6f8fa; --fg: #1f2328; --muted: #59636e; --grid: #d1d9e0; --other: #818b98; --a: #2a78d6; --b: #eb6834; --band: #2a78d614; }
 @media (prefers-color-scheme: dark) { svg { --bg: #0d1117; --zone: #151b23; --fg: #f0f6fc; --muted: #9198a1; --grid: #3d444d; --other: #6e7681; --a: #3987e5; --b: #d95926; --band: #3987e524; } }
 .bg { fill: var(--bg); } .zone { fill: var(--zone); stroke: var(--grid); }
@@ -52,8 +52,8 @@ text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", 
 <text x="282.0" y="147.5" class="label np" text-anchor="end">nullpii 0.5</text>
 <path class="bar-np" d="M298.0,136.0H314.8A4,4 0 0 1 318.8,140.0V146.0A4,4 0 0 1 314.8,150.0H298.0Z"/>
 <text x="324.8" y="147.0" class="val np">9.5%</text>
-<path class="bar-np" d="M604.0,136.0H780.2A4,4 0 0 1 784.2,140.0V146.0A4,4 0 0 1 780.2,150.0H604.0Z"/>
-<text x="790.2" y="147.0" class="val np">81.9%</text>
+<path class="bar-np" d="M604.0,136.0H788.0A4,4 0 0 1 792.0,140.0V146.0A4,4 0 0 1 788.0,150.0H604.0Z"/>
+<text x="798.0" y="147.0" class="val np">85.4%</text>
 <text x="282.0" y="173.5" class="label" text-anchor="end">openai privacy-filter</text>
 <path class="bar-other" d="M298.0,162.0H325.8A4,4 0 0 1 329.8,166.0V172.0A4,4 0 0 1 325.8,176.0H298.0Z"/>
 <text x="335.8" y="173.0" class="val">14.5%</text>

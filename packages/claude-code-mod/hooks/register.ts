@@ -418,6 +418,9 @@ async function openSessionOnce($): Promise<void> {
   sessionSecret = secret;
   await reviewPolicy($);
   problem = undefined;
+  // A band drawn before the session opened (a hot reload draws it at once,
+  // from the module's starting state) would keep showing that state.
+  $.ui.invalidate('ui.render');
 }
 
 /** Mask every string in `value`. A session the sidecar dropped (restart or

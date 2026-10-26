@@ -497,6 +497,19 @@ test('the band above the prompt shows what was masked, by type', async ($, on) =
   await ui.unmount();
 });
 
+test('a band drawn before the session opens is redrawn once it opens', async ($, on) => {
+  // As after a hot reload: the band is drawn at once, with the module's
+  // starting state, and session.start opens the session afterwards.
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
+  const ui = await $.ui.mount(BAND);
+  await start($);
+  expect(await ui.find({ type: 'Text', text: /^nullpii · blocking/ })).toBeUndefined();
+  expect(await ui.find({ type: 'Text', text: 'nullpii · on · nothing masked yet' })).toBeDefined();
+  await ui.unmount();
+});
+
 test(
   'the band turns into a warning when the mod is blocking',
   { options: { autostart: false } },

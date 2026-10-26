@@ -21,7 +21,7 @@ import {
   policyLoosening,
   shortName,
 } from './categories.ts';
-import { PADLOCK_COLUMNS, PADLOCK_ROWS, padlockCells } from './padlock.ts';
+import { PADLOCK_COLUMNS, PADLOCK_ROWS, type PadlockTone, padlockCells } from './padlock.ts';
 import {
   PLACEHOLDER,
   type Policy,
@@ -285,6 +285,13 @@ let opening: Promise<void> | undefined;
 // a paused session whose sidecar is not up still sends nothing (fail
 // closed, through `problem`).
 let paused = false;
+// What to do with a prompt sent while the sidecar this session started is
+// still coming up (the `while_starting` option): ask the person, always
+// wait, or always send it unprotected.
+let whileStarting: 'ask' | 'block' | 'pass' = 'ask';
+// The person said to send unprotected until this start-up is ready: the
+// answer holds for this start only.
+let startPass = false;
 // The review of a policy changed elsewhere, which every call the sidecar
 // refused for it awaits.
 let reviewing: Promise<void> | undefined;
@@ -658,6 +665,7 @@ async function waitForSidecar($): Promise<void> {
       download = undefined;
       await openSession($);
       problem = undefined;
+      startPass = false;
       $.ui.invalidate('ui.render');
       $.ui.toast('nullpii is on');
       return;
@@ -775,6 +783,84 @@ async function askUser($, question: string, options: readonly string[]): Promise
   }
 }
 
+/** Whether the sidecar this session started is still coming up. */
+function starting(): boolean {
+  return started === 'running' && problem?.startsWith(STARTING_PREFIX) === true;
+}
+
+/** Whether what is sent goes to Claude as it is: masking paused with the
+ * sidecar up, or the person chose to send unprotected while it starts. */
+function bypassing(): boolean {
+  return (paused && problem === undefined) || (startPass && starting());
+}
+
+/** The band's line: while the person sends unprotected through a start-up,
+ * it says so and keeps the phase; otherwise the usual line. */
+function bandText(): string {
+  if (startPass && starting() && problem !== undefined) {
+    const detail = problem.slice(STARTING_PREFIX.length).replace(/^ \((.*)\)$/, '$1');
+    return `nullpii · not protected yet · ${detail}`;
+  }
+  return formatBand(counts, problem, paused);
+}
+
+/** The band's colour: red for a pause or a fault, amber while nullpii
+ * starts (progress, not a fault), green when it is on. */
+function bandColor(): 'red' | 'yellow' | 'green' {
+  if (paused) return 'red';
+  if (starting()) return 'yellow';
+  return problem !== undefined ? 'red' : 'green';
+}
+
+/** The padlock for the current state, as its `open` and tone: closed teal
+ * when on, open amber while starting, open red while paused, closed grey
+ * when broken. */
+function padlockLook(): [boolean, PadlockTone] {
+  if (paused) return [true, 'red'];
+  if (starting()) return [true, 'amber'];
+  return problem !== undefined ? [false, 'grey'] : [false, 'teal'];
+}
+
+/** The answers of the dialog put to the person who sends a prompt while
+ * nullpii is still starting. */
+const WAIT_FOR_NULLPII = 'Wait for nullpii';
+const SEND_UNPROTECTED = 'Send it now, unprotected';
+const SEND_UNPROTECTED_UNTIL_READY = 'Send now, and do not ask again until nullpii is ready';
+const STARTING_QUESTION =
+  'nullpii is still starting, so this prompt would not be protected: what you send reaches Claude as you typed it. Wait for nullpii, or send it now?';
+
+/** Whether a prompt the person typed goes out unprotected while nullpii
+ * starts: their answer to the dialog, or the `while_starting` option. A
+ * dialog dismissed, or one no one can answer (`claude -p`), waits. */
+async function sendUnprotectedWhileStarting($): Promise<boolean> {
+  if (!starting()) return false;
+  if (startPass) return true;
+  if (whileStarting === 'block') return false;
+  if (whileStarting === 'pass') {
+    startPass = true;
+    $.ui.invalidate('ui.render');
+    return true;
+  }
+  let answer: string;
+  try {
+    answer = await askUser($, STARTING_QUESTION, [
+      WAIT_FOR_NULLPII,
+      SEND_UNPROTECTED,
+      SEND_UNPROTECTED_UNTIL_READY,
+    ]);
+  } catch (err) {
+    $.ui.log(`nullpii: no answer to the start-up dialog (${errorName(err)}); waits`, {
+      to: 'debug',
+    });
+    return false;
+  }
+  if (answer === SEND_UNPROTECTED_UNTIL_READY) {
+    startPass = true;
+    $.ui.invalidate('ui.render');
+  }
+  return answer === SEND_UNPROTECTED || answer === SEND_UNPROTECTED_UNTIL_READY;
+}
+
 /** The origins a pause may come from: the person's own typed command, at
  * the prompt (the engine's stamp for their gesture) or through their Remote
  * Control client. Everything else — the model or a hook issuing the command
@@ -859,6 +945,9 @@ export function register(on, options) {
     sessionSecret = undefined;
     // A session starts masked: a pause was the session before it's alone.
     paused = false;
+    startPass = false;
+    const asked = optionString(options, 'while_starting');
+    whileStarting = asked === 'block' || asked === 'pass' ? asked : 'ask';
     // The band was drawn under the old state: draw it under this one.
     $.ui.invalidate('ui.render');
     try {
@@ -902,7 +991,10 @@ export function register(on, options) {
     // Masking paused for this session, with the sidecar up: the prompt goes
     // to Claude as the person typed it. A paused session whose sidecar is
     // not up still sends nothing (fail closed, below).
-    if (paused && problem === undefined) return next(e);
+    if (bypassing()) return next(e);
+    // Still starting: a prompt the person typed asks them (or follows the
+    // option); one the engine made waits like any other.
+    if (e.isMeta !== true && (await sendUnprotectedWhileStarting($))) return next(e);
     const out = (await masked($, { text: e.text, context: e.context ?? [] })) as {
       text: string;
       context: string[];
@@ -934,7 +1026,7 @@ export function register(on, options) {
   // Text Claude Code adds for Claude on its own: @-mentioned files, edited
   // files, memory and other reminders. Unmaskable means not sent.
   on('prompt.attachment', async ($, e, next) => {
-    if (paused && problem === undefined) return next(e);
+    if (bypassing()) return next(e);
     return next({ ...e, text: String(await masked($, e.text)) });
   }).catch(async ($, e, next) => {
     blocked($, 'prompt.attachment', next.error);
@@ -998,7 +1090,7 @@ export function register(on, options) {
     // of the tool goes to Claude as it is. The placeholders already in the
     // conversation were still put back before it ran, and the call is still
     // refused above when it could change the policy file.
-    if (paused && problem === undefined) {
+    if (bypassing()) {
       if (out.deny !== undefined) return { deny: String(out.deny) };
       if (out.isError === true) return { deny: String(out.text ?? '') };
       return { result: out.result, ...(out.context !== undefined && { context: out.context }) };
@@ -1098,8 +1190,8 @@ export function register(on, options) {
     const Raster = 'Raster' in elements ? elements.Raster : undefined;
     const theirs = await next(e);
     const line = Text({
-      color: paused || problem !== undefined ? 'red' : 'green',
-      children: [formatBand(counts, problem, paused)],
+      color: bandColor(),
+      children: [bandText()],
     });
     const toggle = Button({
       key: TOGGLE_KEY,
@@ -1116,7 +1208,7 @@ export function register(on, options) {
                 key: LOCK_KEY,
                 columns: PADLOCK_COLUMNS,
                 rows: PADLOCK_ROWS,
-                cells: padlockCells(problem !== undefined || paused, paused),
+                cells: padlockCells(...padlockLook()),
               }),
             ]
           : []),

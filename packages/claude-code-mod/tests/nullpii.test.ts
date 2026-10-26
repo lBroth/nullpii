@@ -1244,6 +1244,119 @@ test('while the sidecar the mod started comes up, a prompt is handed back saying
   expect(prompt.drop).not.toContain('did not answer');
 });
 
+/** A sidecar the mod started that is still coming up: a stand-in child that
+ * runs on, and a fake that does not answer. */
+function stillStarting($, on) {
+  const sidecar = fakeSidecar({ down: true });
+  stubSession(on, sidecar, { NULLPII_SIDECAR_TOKEN: TOKEN });
+  mock.clock(on);
+  // biome-ignore lint/correctness/useYield: a stand-in child that writes nothing.
+  on('process.spawn', async function* () {
+    // Still running: the test never lets its sidecar answer.
+    await new Promise<never>(() => undefined);
+  });
+  const sent: string[] = [];
+  on('prompt.submit', ($, e) => {
+    sent.push(e.text);
+    return { text: e.text };
+  });
+  return { sidecar, sent };
+}
+
+test('a prompt sent while nullpii starts asks first: waiting sends nothing', async ($, on) => {
+  const { sent } = stillStarting($, on);
+  const questions: string[] = [];
+  answerDialog(on, 'Wait for nullpii', questions);
+  await start($);
+  const prompt = await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  expect(questions).toHaveLength(1);
+  expect(questions[0]).toContain('would not be protected');
+  expect(prompt.drop).toContain('Send it again once nullpii is on.');
+  expect(sent).toEqual([]);
+});
+
+test('sending now while nullpii starts goes out as typed, once; the band and padlock say not protected yet', async ($, on) => {
+  const { sent } = stillStarting($, on);
+  const questions: string[] = [];
+  answerDialog(on, 'Send it now, unprotected', questions);
+  on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
+  await start($);
+  const ui = await $.ui.mount(BAND);
+  const first = await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  expect(first.drop).toBeUndefined();
+  expect(sent).toEqual(['Mail John']);
+  // Only that prompt: the next one asks again.
+  await $.prompt.submit({ text: 'Mail Mary', wait: false, origin: COMPOSER });
+  expect(questions).toHaveLength(2);
+  await ui.unmount();
+});
+
+test('"do not ask again until ready" sends every prompt of this start-up, and the band says so', async ($, on) => {
+  const { sent } = stillStarting($, on);
+  const questions: string[] = [];
+  answerDialog(on, 'Send now, and do not ask again until nullpii is ready', questions);
+  on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
+  await start($);
+  const ui = await $.ui.mount(BAND);
+  await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  await $.prompt.submit({ text: 'Mail Mary', wait: false, origin: COMPOSER });
+  expect(questions).toHaveLength(1);
+  expect(sent).toEqual(['Mail John', 'Mail Mary']);
+  const band = await ui.find({
+    type: 'Text',
+    text: 'nullpii · not protected yet · installing its packages',
+  });
+  expect(band).toBeDefined();
+  expect(band?.props.color).toBe('yellow');
+  await ui.unmount();
+});
+
+test(
+  'while_starting = block never asks and never sends',
+  { options: { while_starting: 'block' } },
+  async ($, on) => {
+    const { sent } = stillStarting($, on);
+    const asked: string[] = [];
+    answerDialog(on, 'Send it now, unprotected', asked);
+    await start($);
+    const dropped = await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+    expect(dropped.drop).toContain('Send it again once nullpii is on.');
+    expect(asked).toEqual([]);
+    expect(sent).toEqual([]);
+  },
+);
+
+test(
+  'while_starting = pass sends without asking, and the band says not protected yet',
+  { options: { while_starting: 'pass' } },
+  async ($, on) => {
+    const { sent } = stillStarting($, on);
+    const asked: string[] = [];
+    answerDialog(on, 'Wait for nullpii', asked);
+    await start($);
+    const out = await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+    expect(out.drop).toBeUndefined();
+    expect(asked).toEqual([]);
+    expect(sent).toEqual(['Mail John']);
+  },
+);
+
+test("a prompt the engine made, not the person, is never sent unprotected on the person's answer", async ($, on) => {
+  const { sent } = stillStarting($, on);
+  const questions: string[] = [];
+  answerDialog(on, 'Send it now, unprotected', questions);
+  await start($);
+  const out = await $.prompt.submit({
+    text: 'Mail John',
+    wait: false,
+    origin: COMPOSER,
+    isMeta: true,
+  });
+  expect(out.drop).toBeDefined();
+  expect(questions).toEqual([]);
+  expect(sent).toEqual([]);
+});
+
 test('a sidecar the mod started that exits before it answers is reported at once', async ($, on) => {
   const sidecar = fakeSidecar({ down: true });
   stubSession(on, sidecar);

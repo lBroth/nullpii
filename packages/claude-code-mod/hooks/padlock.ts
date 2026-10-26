@@ -2,8 +2,9 @@
 
 /**
  * The padlock the band shows beside its line: the logo's padlock, small —
- * 3 x 2 cells of half-block pixels — closed and teal while nullpii is on,
- * open and red while masking is paused. Pure functions, no I/O.
+ * 3 x 2 cells of half-block pixels. Closed and teal while nullpii is on,
+ * open and amber while it starts, open and red while masking is paused,
+ * closed and grey when it is broken. Pure functions, no I/O.
  */
 
 /** The padlock's size in cells: one cell is two pixels, one above the other. */
@@ -19,12 +20,17 @@ const BOTH = 0x2580;
 const LOWER = 0x2584;
 const BLANK = 0x20;
 
-/** The body's colour by column, left to right: the logo's cyan through
- * deep teal, and its red variant for the paused padlock. */
-const TEAL_BODY = [0x0000fdfd, 0x0000c5d3, 0x00007594] as const;
-const RED_BODY = [0x00fd6b6b, 0x00fd4d4d, 0x00d32f2f] as const;
-const TEAL_SHACKLE = 0x0000cbd7;
-const RED_SHACKLE = 0x00fd8c8c;
+/** The padlock's looks: teal when nullpii is on, amber while it starts and
+ * does not protect yet, red while masking is paused, grey when it is
+ * broken (the sidecar cannot be reached). The body's colour goes by column,
+ * left to right, as the logo's does. */
+export type PadlockTone = 'teal' | 'amber' | 'red' | 'grey';
+const TONES: Record<PadlockTone, { body: readonly number[]; shackle: number }> = {
+  teal: { body: [0x0000fdfd, 0x0000c5d3, 0x00007594], shackle: 0x0000cbd7 },
+  amber: { body: [0x00fde68a, 0x00fbbf24, 0x00d97706], shackle: 0x00fcd34d },
+  red: { body: [0x00fd6b6b, 0x00fd4d4d, 0x00d32f2f], shackle: 0x00fd8c8c },
+  grey: { body: [0x009ca3af, 0x006b7280, 0x004b5563], shackle: 0x006b7280 },
+};
 
 /** The padlock's pixels, top pixel row first: the shackle's arc over a
  * full body. Closed, the arc is a U over the body; open, it is swung up
@@ -38,8 +44,9 @@ function padlockPixels(open: boolean, shackle: number, body: readonly number[]) 
 /** The padlock as `Raster` cells: standard padded base64 of the cells'
  * triplets (`columns * rows` of code point, foreground, background, each
  * a little-endian u32). */
-export function padlockCells(open: boolean, red: boolean): string {
-  const pixels = padlockPixels(open, red ? RED_SHACKLE : TEAL_SHACKLE, red ? RED_BODY : TEAL_BODY);
+export function padlockCells(open: boolean, tone: PadlockTone): string {
+  const { body, shackle } = TONES[tone];
+  const pixels = padlockPixels(open, shackle, body);
   const words = new Uint32Array(PADLOCK_COLUMNS * PADLOCK_ROWS * 3);
   let at = 0;
   for (let y = 0; y < PADLOCK_ROWS; y++) {

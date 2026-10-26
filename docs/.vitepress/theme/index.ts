@@ -13,11 +13,13 @@ import FeaturesGrid from './components/FeaturesGrid.vue';
 import HomeBackdrop from './components/HomeBackdrop.vue';
 import HowItWorks from './components/HowItWorks.vue';
 import InstallSection from './components/InstallSection.vue';
+import LockHero from './components/LockHero.vue';
 import './custom.css';
 
 const Layout: FunctionalComponent = () =>
   h(DefaultTheme.Layout, null, {
     'home-hero-before': () => h(HomeBackdrop),
+    'home-hero-image': () => h(LockHero),
     'home-hero-after': () => h(HowItWorks),
     'home-features-before': () => h(FeaturesGrid),
     'home-features-after': () => h(InstallSection),

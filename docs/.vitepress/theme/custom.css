@@ -65,6 +65,46 @@
   justify-content: center;
 }
 
+/* The home-hero-image slot supplies the lock. VitePress places it above
+ * the centered text on narrow screens and to the right on wide ones. */
+@media (max-width: 959px) {
+  /* VitePress pulls a hero image up under the nav bar and gives it a
+   * fixed square; the lock has its own size, so it gets neither. */
+  .VPHero.has-image .image {
+    margin: 0 0 8px;
+  }
+
+  .VPHero.has-image .image-container {
+    width: auto;
+    height: auto;
+  }
+
+  .VPHero.has-image .main {
+    margin-right: auto;
+    margin-left: auto;
+    text-align: center;
+  }
+
+  .VPHero.has-image .heading {
+    align-items: center;
+  }
+}
+
+@media (min-width: 960px) {
+  .VPHero.has-image .main {
+    margin: 0;
+    text-align: left;
+  }
+
+  .VPHero.has-image .image-container {
+    transform: none;
+  }
+
+  .VPHero.has-image .main .actions {
+    justify-content: flex-start;
+  }
+}
+
 /* ---------------------------------------------------------------------
  * Home sections (the theme injects them around the default ones)
  * ------------------------------------------------------------------- */

@@ -138,8 +138,9 @@
  * Layer 2: the redacted lines
  * ------------------------------------------------------------------- */
 
+/* Below the hero's lock, which owns the upper right. */
 .np-bg-doc {
-  top: 10%;
+  top: 64%;
   right: 3%;
   width: clamp(200px, 24vw, 330px);
   opacity: 0.3;
@@ -181,9 +182,10 @@
   width: 44px;
 }
 
+/* Clear of the hero text's column, under the lock. */
 .np-bg-glyph-c {
-  left: 10%;
-  top: 57%;
+  right: 26%;
+  top: 80%;
   width: 60px;
 }
 

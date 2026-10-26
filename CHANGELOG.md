@@ -3,6 +3,14 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] — 2026-10-26
+
+### Added
+
+- Mod: the band shows each phase of the sidecar's first start (packages installing, the model downloading with its progress, the model loading), from the gateway's `startup` field in `GET /v1/sidecar/status`.
+- Mod: a prompt sent while the sidecar the mod started is still coming up asks first (option **While nullpii starts**, `while_starting`: `ask` by default, `block` or `pass`): wait for nullpii (the prompt is held and sent masked when it is ready), send it now unprotected, or send now and stop asking until it is ready. Sending unprotected shows `not protected yet` in the band, in amber, with the start-up phase; the padlock is amber and open while nullpii starts, grey with a red cross when it is broken. When no sidecar answers, the message says to start it with npx or Docker (and to start Docker first), or to turn on the mod's "Start the sidecar" option. What was sent before nullpii was ready stays in the conversation as it was.
+- Mod: a pixel padlock in the band, and a toggle to pause masking for the session: `/pii pause` and `/pii resume`, or the band's `on`/`off` button. Pausing asks first, lasts for the session only, never touches the policy file, and only the person's own typed command or press can do it. While paused the padlock is open and red.
+
 ## [0.5.0] — 2026-10-26
 
 nullpii 0.5.0: a retrained model, a gateway and a Claude Code mod built for coding agents, one policy file for every surface, and a benchmark rebuilt on held-out data. 0.4.0 was prepared but never published; its changes are included here. Changes marked **Breaking** need code or configuration changes, or change output, relative to the published 0.3.0.

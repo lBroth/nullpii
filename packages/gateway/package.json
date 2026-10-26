@@ -1,6 +1,6 @@
 {
   "name": "@lbroth/nullpii-gateway",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Self-hosted HTTP gateway for the Anthropic Messages and OpenAI Chat Completions APIs: masks PII and secrets before the request leaves your machine and restores them in the response. Base-URL drop-in.",
   "license": "Apache-2.0",
   "keywords": [
@@ -52,7 +52,7 @@
     "fastify": "^5.12.5"
   },
   "peerDependencies": {
-    "nullpii": ">=0.5.0-0 <0.6.0",
+    "nullpii": ">=0.5.1-0 <0.6.0",
     "onnxruntime-node": "^1.30.0"
   },
   "engines": {

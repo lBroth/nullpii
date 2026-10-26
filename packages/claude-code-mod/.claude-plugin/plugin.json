@@ -1,6 +1,6 @@
 {
   "name": "nullpii",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Masks personal data and secrets in prompts and tool results before Claude reads them, using a local nullpii sidecar, and shows what it masked above the prompt",
   "author": {
     "name": "nullpii contributors"
@@ -25,6 +25,12 @@
       "title": "Start the sidecar",
       "description": "When no nullpii-gateway answers at the sidecar URL, start one for the session (npx with this release's packages; its first start downloads the model). It uses the sidecar token above and stops with the session.",
       "default": true
+    },
+    "while_starting": {
+      "type": "string",
+      "title": "While nullpii starts",
+      "description": "What happens to a prompt you send while the sidecar this session started is still coming up (its first start downloads the model): ask (the default: wait for nullpii, or send it now unprotected), block (always wait), or pass (always send it unprotected, with the band saying so).",
+      "default": "ask"
     }
   }
 }

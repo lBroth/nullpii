@@ -101,6 +101,9 @@ export interface EnsureOptions {
   readonly model?: ModelRef;
   /** Reports per-file download progress (0..1 over the variant manifest). */
   readonly onProgress?: (progress: number) => void;
+  /** Reports the bytes of the file being downloaded so far (`onBytes` of
+   * `ensureFile`), with the file's name. */
+  readonly onBytes?: (file: string, received: number, total: number | undefined) => void;
 }
 
 /**
@@ -158,11 +161,11 @@ export class ModelManager {
 
     let done = 0;
     for (const f of SHARED_FILES) {
-      await this.fetch(model, f, target, timeoutMs);
+      await this.fetch(model, f, target, timeoutMs, options.onBytes);
       done += 1;
       options.onProgress?.(done / total);
     }
-    const onnxFile = await this.pickOnnx(model, candidates, target, timeoutMs);
+    const onnxFile = await this.pickOnnx(model, candidates, target, timeoutMs, options.onBytes);
     options.onProgress?.(1);
     return { modelDir: target, onnxFile };
   }
@@ -179,6 +182,7 @@ export class ModelManager {
     candidates: readonly string[],
     target: string,
     timeoutMs: number,
+    onBytes: EnsureOptions['onBytes'],
   ): Promise<string> {
     const usable = pinnedCandidates(model, candidates);
     for (const f of usable) {
@@ -188,7 +192,7 @@ export class ModelManager {
     let lastErr: unknown;
     for (const f of usable) {
       try {
-        await this.fetch(model, f, target, timeoutMs);
+        await this.fetch(model, f, target, timeoutMs, onBytes);
         return f;
       } catch (err) {
         lastErr = err;
@@ -203,12 +207,16 @@ export class ModelManager {
     file: string,
     target: string,
     timeoutMs: number,
+    onBytes: EnsureOptions['onBytes'] = undefined,
   ): Promise<void> {
     this.assertSafeRelative(file, target);
     const sha = expectedSha(model, file);
     await ensureFile(model.repo, model.revision, file, target, {
       timeoutMs,
       ...(sha !== undefined && { expectedSha: sha }),
+      ...(onBytes !== undefined && {
+        onBytes: (received, total) => onBytes(file, received, total),
+      }),
     });
   }
 

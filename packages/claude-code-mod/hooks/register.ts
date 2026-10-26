@@ -21,6 +21,7 @@ import {
   policyLoosening,
   shortName,
 } from './categories.ts';
+import { PADLOCK_COLUMNS, PADLOCK_ROWS, type PadlockTone, padlockCells } from './padlock.ts';
 import {
   PLACEHOLDER,
   type Policy,
@@ -68,6 +69,20 @@ const ASK_READABLE = 'Send readable';
 const ASK_ALWAYS_READABLE = 'Always readable';
 /** How much of a value the dialog shows. */
 const ASK_PREVIEW_CHARS = 60;
+/** The answers of the dialog that asks before masking is paused: keeping
+ * it comes first, so a quick confirm keeps masking on. */
+const KEEP_MASKING = 'Keep masking';
+const PAUSE_MASKING = 'Pause masking';
+/** The question that asks before masking is paused. */
+const PAUSE_QUESTION =
+  'Everything you send until nullpii is turned on again reaches Claude unmasked. Pause masking for this session?';
+/** What any pause request that is not the person's own is told: only
+ * their own typed command or the band's toggle can pause masking. */
+const PAUSE_REFUSED = 'nullpii pauses masking only when you ask for it yourself at the prompt.';
+/** The band's pause toggle, beside the padlock. */
+const TOGGLE_KEY = 'nullpii-toggle';
+/** The padlock's key, in the band. */
+const LOCK_KEY = 'nullpii-lock';
 const CHALLENGE_PATH = '/v1/sidecar/challenge';
 const JSON_TYPE = { 'content-type': 'application/json' };
 const SESSION_NOT_FOUND = 404;
@@ -80,18 +95,39 @@ const NO_TOKEN =
 const NOT_LOOPBACK =
   'sidecar_url is not a local sidecar address (http:// on 127.0.0.1 or [::1], the address the gateway listens on, with an optional port and nothing after it): fix it with /plugin configure';
 const UNREACHABLE =
-  'nullpii-gateway did not answer at the sidecar address: start it with NULLPII_SIDECAR_TOKEN set';
+  'nullpii-gateway did not answer at the sidecar address: start it with NULLPII_SIDECAR_TOKEN set (with npx, or the Docker image: start Docker first), or turn on the "Start the sidecar" option';
 const NOT_JSON = 'the sidecar answered with something that is not JSON';
-const STARTING = 'starting nullpii-gateway for this session (its first start downloads the model)';
+/** One phase of the start of a sidecar this session started: its packages
+ * installing, the model downloading, the model loading. While the mod is
+ * in one, nothing is sent (fail closed) and the band shows it. */
+type StartupPhase = 'installing' | 'downloading' | 'loading';
+/** How the band names each phase of the start. */
+const PHASE_WORDS: Readonly<Record<StartupPhase, string>> = {
+  installing: 'installing its packages',
+  downloading: 'downloading the model',
+  loading: 'loading the model',
+};
+/** The prefix of the band's phase line, and the whole line's shape. */
+const STARTING_PREFIX = 'starting nullpii-gateway for this session';
+const PHASE_LINE = /^starting nullpii-gateway for this session \(.*\)$/;
+/** A file name the sidecar reports for the model download, shown in the
+ * band only when it is a plain short one; anything else is left out. */
+const SAFE_FILE_NAME = /^[\w.-]{1,64}$/;
 const NOT_STARTED = 'the nullpii-gateway this session started did not answer in time';
-const STARTED_EXITED =
-  'the nullpii-gateway this session started exited before it answered: run its npx command (README, Set up) in a terminal to see why';
+/** The give-up lines for a sidecar this session started, which name the
+ * phase it was in: dynamic texts the mod itself writes. */
+const EXITED_LINE =
+  /^the nullpii-gateway this session started exited while [a-z ]+: run its npx command \(README, Set up\) in a terminal to see why$/;
+const WARMUP_FAILED_LINE =
+  /^the nullpii-gateway this session started failed while [a-z ]+: run its npx command \(README, Set up\) in a terminal to see why$/;
+const NOT_READY_LINE =
+  /^the nullpii-gateway this session started did not get the model ready in time \(still [a-z ]+\)$/;
 const NO_POLICY =
   'the sidecar reported no policy version: run nullpii-gateway 0.5.0 or later there';
 /** The release of the packages the mod starts the sidecar from, and the
  * ONNX runtime that release is built and tested with, at exact versions
  * (their own dependencies are resolved by npx at the time). */
-const GATEWAY_RELEASE = '0.5.0';
+const GATEWAY_RELEASE = '0.5.1';
 const ONNXRUNTIME_RELEASE = '1.30.0';
 /** The command that starts the sidecar: the release's CLI, gateway and
  * ONNX runtime, with npx (no shell). */
@@ -130,13 +166,36 @@ const OWN_REASONS: ReadonlySet<string> = new Set([
   UNREACHABLE,
   NOT_JSON,
   NOT_SIDECAR,
-  STARTING,
   NOT_STARTED,
-  STARTED_EXITED,
   NO_POLICY,
 ]);
 /** SidecarError's text, the one with a variable part. */
 const SIDECAR_STATUS = /^nullpii sidecar answered \d{3}$/;
+/** The other variable texts this mod writes: a start-up phase line, or a
+ * give-up line that names the phase. */
+function ownLine(text: string): boolean {
+  return (
+    PHASE_LINE.test(text) ||
+    EXITED_LINE.test(text) ||
+    WARMUP_FAILED_LINE.test(text) ||
+    NOT_READY_LINE.test(text)
+  );
+}
+/** The band's line while a sidecar this session started comes up: which
+ * phase it is in, with the bytes of the model download when it reports
+ * them. Every word is the mod's own. */
+function phaseLine(): string {
+  if (phase === 'downloading' && download !== undefined) {
+    const whole = download.total !== undefined ? ` / ${mb(download.total)}` : '';
+    const file = SAFE_FILE_NAME.test(download.file) ? `, ${download.file}` : '';
+    return `${STARTING_PREFIX} (${PHASE_WORDS.downloading} · ${mb(download.received)}${whole} MB${file})`;
+  }
+  return `${STARTING_PREFIX} (${PHASE_WORDS[phase ?? 'installing']})`;
+}
+/** `bytes` as whole megabytes, for the band (`640 / 1,160`). */
+function mb(bytes: number): string {
+  return Math.round(bytes / 1e6).toLocaleString('en-US');
+}
 const TIMEOUT_KIND = 'timeout';
 /** The refusal for a shell call that holds placeholders: no shell command
  * gets a real value (SECURITY.md). Names the placeholders, never values. */
@@ -209,8 +268,30 @@ let problem: string | undefined = NO_TOKEN;
 // The sidecar this session started, until it answers: `running`, or
 // `exited` once its process ended first.
 let started: 'running' | 'exited' | undefined;
+// The start-up phase of a sidecar this session started: undefined once
+// its model is ready, or when the mod started none. While it is set
+// nothing is sent (fail closed), and the band shows the phase.
+let phase: StartupPhase | undefined;
+// The file downloading and its bytes so far, while `phase` is
+// `downloading`, as the sidecar's status reports them.
+let download:
+  | { readonly file: string; readonly received: number; readonly total?: number }
+  | undefined;
 // The session (re)opening in flight, which every hook that needs one awaits.
 let opening: Promise<void> | undefined;
+// Whether the user paused masking for this session: everything they send
+// then reaches Claude unmasked, until they turn it on again or the session
+// ends. This session's state alone, in memory: never the policy file, and
+// a paused session whose sidecar is not up still sends nothing (fail
+// closed, through `problem`).
+let paused = false;
+// What to do with a prompt sent while the sidecar this session started is
+// still coming up (the `while_starting` option): ask the person, always
+// wait, or always send it unprotected.
+let whileStarting: 'ask' | 'block' | 'pass' = 'ask';
+// The person said to send unprotected until this start-up is ready: the
+// answer holds for this start only.
+let startPass = false;
 // The review of a policy changed elsewhere, which every call the sidecar
 // refused for it awaits.
 let reviewing: Promise<void> | undefined;
@@ -424,8 +505,11 @@ async function openSessionOnce($): Promise<void> {
 }
 
 /** Mask every string in `value`. A session the sidecar dropped (restart or
- * idle TTL) is opened again: nothing restores into it, but masking works. */
+ * idle TTL) is opened again: nothing restores into it, but masking works.
+ * While a sidecar this session started comes up, nothing is sent at all:
+ * the call fails closed with the band's phase line. */
 async function sanitize($, value: unknown): Promise<Sanitized> {
+  if (phase !== undefined) throw new Error(phaseLine());
   try {
     return (await sidecar($, 'POST', '/sanitize', { value })) as Sanitized;
   } catch (err) {
@@ -452,16 +536,19 @@ function failureOf(err: unknown): Failure {
 function shownReason(failure: Failure): string {
   const { message } = failure;
   if (message === undefined) return failure.kind === TIMEOUT_KIND ? TIMED_OUT : HIDDEN_REASON;
-  return OWN_REASONS.has(message) || SIDECAR_STATUS.test(message) ? message : HIDDEN_REASON;
+  return OWN_REASONS.has(message) || SIDECAR_STATUS.test(message) || ownLine(message)
+    ? message
+    : HIDDEN_REASON;
 }
 
 /** Turn the band red with why `event` failed, and log the same to the
  * debug log, with only the length of a text that is not shown. */
 function blocked($, event: string, failure: Failure): string {
-  // While the sidecar this session started comes up, say so, not that no
-  // sidecar runs (which would send the user off to start a second one).
+  // While the sidecar this session started comes up, say which phase it is
+  // in, not that no sidecar runs (which would send the user off to start a
+  // second one).
   const reason =
-    started === 'running' && failure.message === UNREACHABLE ? STARTING : shownReason(failure);
+    started === 'running' && failure.message === UNREACHABLE ? phaseLine() : shownReason(failure);
   problem = reason;
   const withheld =
     reason === HIDDEN_REASON && failure.message !== undefined
@@ -502,35 +589,112 @@ function startSidecar($, origin: string, secretToken: string): void {
   })();
 }
 
-/** Open the session once the sidecar the mod started answers, or give up
- * after `STARTUP_WAIT_MS`; the band shows which. */
+/** One step of the sidecar's own start-up, as its status reports it (the
+ * `startup` field, nullpii-gateway 0.5.1): a model file downloading, the
+ * model loading, or the model ready. */
+interface StartupReport {
+  readonly phase?: unknown;
+  readonly file?: unknown;
+  readonly received?: unknown;
+  readonly total?: unknown;
+  readonly while?: unknown;
+}
+
+/** The give-up lines, which name the phase the start was in when it ended
+ * (or, for a failed warmup, the phase the sidecar says failed). */
+function exitedLine(): string {
+  return `the nullpii-gateway this session started exited while ${PHASE_WORDS[phase ?? 'installing']}: run its npx command (README, Set up) in a terminal to see why`;
+}
+function warmupFailedLine(while_: 'downloading' | 'loading'): string {
+  return `the nullpii-gateway this session started failed while ${PHASE_WORDS[while_]}: run its npx command (README, Set up) in a terminal to see why`;
+}
+function notReadyLine(): string {
+  return `the nullpii-gateway this session started did not get the model ready in time (still ${PHASE_WORDS[phase ?? 'installing']})`;
+}
+
+/** A sidecar this session started did not come up: the band says why
+ * (`message`), and later prompts take the normal path again — masking
+ * works once some gateway answers, and until one does, fail closed. */
+function gaveUp($, message: string): void {
+  started = undefined;
+  phase = undefined;
+  download = undefined;
+  problem = message;
+  $.ui.log(`nullpii: the sidecar this session started did not come up: ${message}`, {
+    to: 'debug',
+  });
+  $.ui.invalidate('ui.render');
+}
+
+/** Wait for the sidecar this session started to be ready: its status says
+ * which phase it is in (the model download's bytes among them), the band
+ * shows each one, and the session opens once the model is ready. A
+ * gateway with no `startup` field (0.5) counts as ready. Gives up after
+ * `STARTUP_WAIT_MS`, or at once when the process exits or the warmup
+ * fails, saying which phase it was in. */
 async function waitForSidecar($): Promise<void> {
   const deadline = (await $.clock.now()) + STARTUP_WAIT_MS;
   while ((await $.clock.now()) < deadline) {
     await $.clock.sleep(STARTUP_POLL_MS);
+    let status: unknown;
     try {
-      await openSession($);
+      status = await request($, 'GET', STATUS_PATH);
+    } catch (err) {
+      if (!(err instanceof Error) || err.message !== UNREACHABLE) {
+        // The status request itself failed: show why, and take the normal
+        // path again.
+        const reason = blocked($, 'sidecar start', failureOf(err));
+        gaveUp($, reason);
+        return;
+      }
+      // Nothing answers yet: npx is still installing the packages. The
+      // process being gone already (no package found, port taken) ends
+      // the wait at once, as before.
+      if (started === 'exited') {
+        gaveUp($, exitedLine());
+        return;
+      }
+      continue;
+    }
+    const startup = (status as { startup?: StartupReport }).startup;
+    // No field: an old gateway, already ready once it answers; `ready`:
+    // the model is loaded. Either way the session opens as before.
+    if (startup === undefined || startup.phase === 'ready') {
       started = undefined;
+      phase = undefined;
+      download = undefined;
+      await openSession($);
+      problem = undefined;
+      startPass = false;
       $.ui.invalidate('ui.render');
       $.ui.toast('nullpii is on');
       return;
-    } catch (err) {
-      if (!(err instanceof Error) || err.message !== UNREACHABLE) {
-        started = undefined;
-        blocked($, 'sidecar start', failureOf(err));
-        return;
-      }
     }
-    // Nothing answers and the process is gone (npx found no package, or
-    // the port was taken): no point in waiting out the deadline.
-    if (started === 'exited') {
-      started = undefined;
-      blocked($, 'sidecar start', { kind: THROW_KIND, message: STARTED_EXITED });
+    if (startup.phase === 'failed') {
+      gaveUp($, warmupFailedLine(startup.while === 'loading' ? 'loading' : 'downloading'));
       return;
     }
+    if (startup.phase === 'downloading') {
+      phase = 'downloading';
+      download = {
+        file: typeof startup.file === 'string' ? startup.file : '',
+        received: typeof startup.received === 'number' ? startup.received : 0,
+        ...(typeof startup.total === 'number' && { total: startup.total }),
+      };
+    } else if (startup.phase === 'loading') {
+      phase = 'loading';
+      download = undefined;
+    } else {
+      // A phase a newer gateway reports and this mod does not know: keep
+      // the last one shown; the deadline still ends the wait.
+      continue;
+    }
+    problem = phaseLine();
+    $.ui.invalidate('ui.render');
   }
-  started = undefined;
-  blocked($, 'sidecar start', { kind: THROW_KIND, message: NOT_STARTED });
+  // Nothing ever answered (`installing`, the phase the start began in), or
+  // the model was not ready in time.
+  gaveUp($, phase === 'installing' || phase === undefined ? NOT_STARTED : notReadyLine());
 }
 
 /** Send the policy file contents `config` to the sidecar, which writes
@@ -619,6 +783,132 @@ async function askUser($, question: string, options: readonly string[]): Promise
   }
 }
 
+/** Whether the sidecar this session started is still coming up. */
+function starting(): boolean {
+  return started === 'running' && problem?.startsWith(STARTING_PREFIX) === true;
+}
+
+/** Whether what is sent goes to Claude as it is: masking paused with the
+ * sidecar up, or the person chose to send unprotected while it starts. */
+function bypassing(): boolean {
+  return (paused && problem === undefined) || (startPass && starting());
+}
+
+/** The band's line: while the person sends unprotected through a start-up,
+ * it says so and keeps the phase; otherwise the usual line. */
+function bandText(): string {
+  if (startPass && starting() && problem !== undefined) {
+    const detail = problem.slice(STARTING_PREFIX.length).replace(/^ \((.*)\)$/, '$1');
+    return `nullpii · not protected yet · ${detail}`;
+  }
+  return formatBand(counts, problem, paused);
+}
+
+/** The band's colour: red for a pause or a fault, amber while nullpii
+ * starts (progress, not a fault), green when it is on. */
+function bandColor(): 'red' | 'yellow' | 'green' {
+  if (paused) return 'red';
+  if (starting()) return 'yellow';
+  return problem !== undefined ? 'red' : 'green';
+}
+
+/** The padlock for the current state, as its `open` and tone: closed teal
+ * when on, open amber while starting, open red while paused, closed grey
+ * when broken. */
+function padlockLook(): [boolean, PadlockTone] {
+  if (paused) return [true, 'red'];
+  if (starting()) return [true, 'amber'];
+  return problem !== undefined ? [false, 'grey'] : [false, 'teal'];
+}
+
+/** The answers of the dialog put to the person who sends a prompt while
+ * nullpii is still starting. */
+const WAIT_FOR_NULLPII = 'Wait for nullpii (the prompt is sent masked when it is ready)';
+const SEND_UNPROTECTED = 'Send it now, unprotected';
+const SEND_UNPROTECTED_UNTIL_READY = 'Send now, and do not ask again until nullpii is ready';
+const STARTING_QUESTION =
+  'nullpii is still starting, so this prompt would not be protected: what you send reaches Claude as you typed it. Wait for nullpii, or send it now?';
+
+/** How long a prompt is held for a sidecar still coming up, and how often
+ * the hold looks: past it the prompt goes back to the person, as before. */
+const HOLD_MAX_MS = 5 * 60 * 1000;
+const HOLD_POLL_MS = 1_000;
+
+/** Hold the prompt while the sidecar this session started comes up. True
+ * once it is ready, so the prompt goes on to be masked and sent; false when
+ * the start gave up or took longer than `HOLD_MAX_MS`. */
+async function holdUntilReady($): Promise<boolean> {
+  const deadline = (await $.clock.now()) + HOLD_MAX_MS;
+  while (starting() && (await $.clock.now()) < deadline) await $.clock.sleep(HOLD_POLL_MS);
+  return !starting() && problem === undefined;
+}
+
+/** Whether a prompt the person typed goes out unprotected while nullpii
+ * starts: their answer to the dialog, or the `while_starting` option. A
+ * dialog dismissed, or one no one can answer (`claude -p`), waits. */
+async function sendUnprotectedWhileStarting($): Promise<boolean> {
+  if (!starting()) return false;
+  if (startPass) return true;
+  if (whileStarting === 'block') return false;
+  if (whileStarting === 'pass') {
+    startPass = true;
+    $.ui.invalidate('ui.render');
+    return true;
+  }
+  let answer: string;
+  try {
+    answer = await askUser($, STARTING_QUESTION, [
+      WAIT_FOR_NULLPII,
+      SEND_UNPROTECTED,
+      SEND_UNPROTECTED_UNTIL_READY,
+    ]);
+  } catch (err) {
+    $.ui.log(`nullpii: no answer to the start-up dialog (${errorName(err)}); waits`, {
+      to: 'debug',
+    });
+    return false;
+  }
+  if (answer === SEND_UNPROTECTED_UNTIL_READY) {
+    startPass = true;
+    $.ui.invalidate('ui.render');
+  }
+  return answer === SEND_UNPROTECTED || answer === SEND_UNPROTECTED_UNTIL_READY;
+}
+
+/** The origins a pause may come from: the person's own typed command, at
+ * the prompt (the engine's stamp for their gesture) or through their Remote
+ * Control client. Everything else — the model or a hook issuing the command
+ * in their name, an SDK run, an MCP relay, one the engine could not attest —
+ * is not the person's, and a pause from it is refused. */
+const PERSON_ORIGINS: ReadonlySet<string> = new Set(['composer', 'bridge']);
+
+/** Turn masking off for this session, once the person has said so in the
+ * mod's own dialog: a dialog dismissed, or one no one can answer (`claude
+ * -p`), keeps masking on. A paused session whose sidecar is not up still
+ * sends nothing (fail closed, through `problem`). */
+async function pauseMasking($): Promise<boolean> {
+  let answer: string;
+  try {
+    // Keeping it comes first, so a quick confirm keeps masking on.
+    answer = await askUser($, PAUSE_QUESTION, [KEEP_MASKING, PAUSE_MASKING]);
+  } catch (err) {
+    $.ui.log(`nullpii: no answer to the pause dialog (${errorName(err)}); kept masked`, {
+      to: 'debug',
+    });
+    return false;
+  }
+  if (answer !== PAUSE_MASKING) return false;
+  paused = true;
+  $.ui.invalidate('ui.render');
+  return true;
+}
+
+/** Turn masking back on for this session. */
+function resumeMasking($): void {
+  paused = false;
+  $.ui.invalidate('ui.render');
+}
+
 /** Whether `call` is a question the mod is putting right now (its text and
  * header), and no other dialog. */
 function isOwnQuestion(call: Readonly<Record<string, unknown>>): boolean {
@@ -653,7 +943,7 @@ export function register(on, options) {
     await $.command.register({
       name: 'pii',
       description:
-        'Show what nullpii masked and its policy; change it: /pii preset agent|secrets|all, /pii mask|ask|off <category…>, /pii reset',
+        'Show what nullpii masked and its policy; change it: /pii preset agent|secrets|all, /pii mask|ask|off <category…>, /pii reset, /pii pause|resume',
     });
     // The address comes from the plugin option alone: options are read from
     // user and managed settings only, while a project's settings can set
@@ -667,6 +957,13 @@ export function register(on, options) {
     sessionBase = await $.session.id();
     sessionKey = sessionBase;
     sessionSecret = undefined;
+    // A session starts masked: a pause was the session before it's alone.
+    paused = false;
+    startPass = false;
+    const asked = optionString(options, 'while_starting');
+    whileStarting = asked === 'block' || asked === 'pass' ? asked : 'ask';
+    // The band was drawn under the old state: draw it under this one.
+    $.ui.invalidate('ui.render');
     try {
       await openSession($);
     } catch (err) {
@@ -676,7 +973,12 @@ export function register(on, options) {
       if (unreachable && optionFlag(options, 'autostart', true) && sidecarUrl && token) {
         started = 'running';
         startSidecar($, sidecarUrl, token);
-        problem = STARTING;
+        // The band shows each phase of the start as it goes through it:
+        // the packages installing, the model downloading (its bytes, once
+        // the sidecar answers its status), the model loading.
+        phase = 'installing';
+        download = undefined;
+        problem = phaseLine();
         $.ui.invalidate('ui.render');
         void waitForSidecar($).catch((err) => blocked($, 'sidecar start', failureOf(err)));
         return next(e);
@@ -700,6 +1002,15 @@ export function register(on, options) {
   });
 
   on('prompt.submit', async ($, e, next) => {
+    // Masking paused for this session, with the sidecar up: the prompt goes
+    // to Claude as the person typed it. A paused session whose sidecar is
+    // not up still sends nothing (fail closed, below).
+    if (bypassing()) return next(e);
+    // Still starting: a prompt the person typed asks them (or follows the
+    // option); one the engine made waits like any other.
+    if (e.isMeta !== true && (await sendUnprotectedWhileStarting($))) return next(e);
+    // Not sent unprotected: it waits for the sidecar, then goes masked.
+    if (e.isMeta !== true && starting()) await holdUntilReady($);
     const out = (await masked($, { text: e.text, context: e.context ?? [] })) as {
       text: string;
       context: string[];
@@ -710,10 +1021,9 @@ export function register(on, options) {
   }).catch(async ($, e, next) => {
     if (next.called) return next(e);
     const reason = blocked($, 'prompt.submit', next.error);
-    const fix =
-      reason === STARTING
-        ? 'Send it again once nullpii is on.'
-        : 'Start nullpii-gateway with its sidecar token set, or disable the nullpii mod.';
+    const fix = reason.startsWith(STARTING_PREFIX)
+      ? 'Send it again once nullpii is on.'
+      : 'Start nullpii-gateway with its sidecar token set (npx, or Docker: ghcr.io/lbroth/nullpii-gateway:0.5, and start Docker itself first), turn on the mod option "Start the sidecar", or disable the nullpii mod.';
     return { drop: `nullpii could not mask this prompt, so it was not sent (${reason}). ${fix}` };
   });
 
@@ -732,6 +1042,7 @@ export function register(on, options) {
   // Text Claude Code adds for Claude on its own: @-mentioned files, edited
   // files, memory and other reminders. Unmaskable means not sent.
   on('prompt.attachment', async ($, e, next) => {
+    if (bypassing()) return next(e);
     return next({ ...e, text: String(await masked($, e.text)) });
   }).catch(async ($, e, next) => {
     blocked($, 'prompt.attachment', next.error);
@@ -742,6 +1053,7 @@ export function register(on, options) {
   // rewritten CLAUDE.md block no longer matches its instruction files, so
   // that list is left out, as the event requires.
   on('prompt.context', async ($, e, next) => {
+    if (paused && problem === undefined) return next(e);
     const texts = (await masked(
       $,
       e.blocks.map((b) => b.text),
@@ -754,6 +1066,9 @@ export function register(on, options) {
 
   on('tool.call', async ($, e, next) => {
     if (isOwnQuestion(e)) return next(e);
+    // A sidecar this session started is still coming up: nothing restores
+    // and nothing is sent, so the call is refused up front.
+    if (phase !== undefined) return { deny: CALL_NOT_RUN };
     // Known to be blocking: reach the sidecar again before the tool runs,
     // so the call is refused up front instead of run with its result
     // withheld, and a sidecar that is back clears the block.
@@ -787,6 +1102,15 @@ export function register(on, options) {
       }
     }
     const out = await next(call);
+    // Masking paused for this session, with the sidecar up: what came out
+    // of the tool goes to Claude as it is. The placeholders already in the
+    // conversation were still put back before it ran, and the call is still
+    // refused above when it could change the policy file.
+    if (bypassing()) {
+      if (out.deny !== undefined) return { deny: String(out.deny) };
+      if (out.isError === true) return { deny: String(out.text ?? '') };
+      return { result: out.result, ...(out.context !== undefined && { context: out.context }) };
+    }
     // A refusal can quote the arguments, which may now hold real values.
     if (out.deny !== undefined) return { deny: String(await masked($, out.deny)) };
     if (out.isError === true) return { deny: String(await masked($, out.text ?? '')) };
@@ -832,7 +1156,22 @@ export function register(on, options) {
           }),
         );
       }
-      return { text: formatReport(counts, problem, policy) };
+      return { text: formatReport(counts, problem, policy, paused) };
+    }
+    if (command.kind === 'pause' || command.kind === 'resume') {
+      // Only the person's own typed command pauses or resumes masking: one
+      // the model or a hook issued in their name is refused, and the band's
+      // toggle is the other way to pause.
+      if (!PERSON_ORIGINS.has(e.origin?.kind ?? '')) return { text: PAUSE_REFUSED };
+      if (command.kind === 'resume') {
+        resumeMasking($);
+        return { text: 'Masking is on.' };
+      }
+      return {
+        text: (await pauseMasking($))
+          ? 'Masking is paused: everything you send reaches Claude unmasked until you turn it on again (/pii resume, or the band toggle).'
+          : 'Masking stays on.',
+      };
     }
     if (policy === undefined) {
       return { text: 'nullpii: the sidecar has not answered, so the policy cannot change now.' };
@@ -854,13 +1193,45 @@ export function register(on, options) {
     return next({ ...e, props: { ...e.props, text } });
   });
 
+  // The band: the padlock and the pause toggle beside its line. The padlock
+  // is closed and teal while masking is on, open while the sidecar comes up
+  // or masking is paused, and red only while masking is paused. The toggle
+  // pauses masking behind the mod's dialog, or turns it back on at once;
+  // it has no hotkey, so a bare digit in an empty prompt never pauses.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const { Box, Text } = $.ui.resolve(e);
+    const elements = $.ui.resolve(e);
+    const { Box, Text, Button } = elements;
+    // `Raster` is terminal-only: a session on another surface gets the
+    // toggle and the line alone.
+    const Raster = 'Raster' in elements ? elements.Raster : undefined;
     const theirs = await next(e);
     const line = Text({
-      color: problem === undefined ? 'green' : 'red',
-      children: [formatBand(counts, problem)],
+      color: bandColor(),
+      children: [bandText()],
     });
-    return Box({ flexDirection: 'column', children: theirs ? [theirs, line] : [line] });
+    const toggle = Button({
+      key: TOGGLE_KEY,
+      label: paused ? 'off' : 'on',
+      onPress: () => (paused ? resumeMasking($) : void pauseMasking($)),
+    });
+    const row = Box({
+      flexDirection: 'row',
+      gap: 1,
+      children: [
+        ...(Raster !== undefined
+          ? [
+              Raster({
+                key: LOCK_KEY,
+                columns: PADLOCK_COLUMNS,
+                rows: PADLOCK_ROWS,
+                cells: padlockCells(...padlockLook()),
+              }),
+            ]
+          : []),
+        toggle,
+        line,
+      ],
+    });
+    return Box({ flexDirection: 'column', children: theirs ? [theirs, row] : [row] });
   });
 }

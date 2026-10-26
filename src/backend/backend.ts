@@ -78,6 +78,13 @@ export class OrtBackend {
     return this.sessionLoad;
   }
 
+  /** Load the ONNX session now, as the first `infer()` would: a caller
+   * that warms the model up before any request (a server) reports the
+   * loading step while it runs. */
+  async load(): Promise<void> {
+    await this.ensureSession();
+  }
+
   /** ORT fails the whole session when an execution provider's library
    * cannot be loaded (a missing CUDA or cuDNN library), so listing `cpu`
    * after it is no fallback. A failed accelerator load is retried on the

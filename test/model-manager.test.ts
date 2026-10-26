@@ -24,10 +24,14 @@ vi.mock('../src/hf-hub.js', async () => {
       _rev: string,
       file: string,
       destDir: string,
-      options: { expectedSha?: string },
+      options: {
+        expectedSha?: string;
+        onBytes?: (received: number, total: number | undefined) => void;
+      },
     ): Promise<string> => {
       hub.calls += 1;
       hub.expected[file] = options.expectedSha;
+      options.onBytes?.(640, 1160);
       if (hub.fail) throw new ModelNotFoundError(file);
       return join(destDir, file);
     },
@@ -148,6 +152,26 @@ describe('ModelManager', () => {
       );
     },
   );
+
+  it('passes each download its onBytes, with the file name', async () => {
+    const m = new ModelManager(tempCache());
+    hub.fail = false;
+    const seen: Array<[string, number, number | undefined]> = [];
+    const r = await m.ensure({
+      model: PINNED,
+      variant: 'fp32',
+      timeoutMs: 1,
+      onBytes: (file, received, total) => seen.push([file, received, total]),
+    });
+    expect(r.onnxFile).toBe('model.onnx');
+    expect(seen.map(([file]) => file)).toEqual([
+      'tokenizer.json',
+      'gliner_config.json',
+      'tokenizer_config.json',
+      'model.onnx',
+    ]);
+    expect(seen.every(([, received, total]) => received === 640 && total === 1160)).toBe(true);
+  });
 
   it('verifies nothing for a model that pins no hashes', async () => {
     const m = new ModelManager(tempCache());

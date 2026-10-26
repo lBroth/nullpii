@@ -38,20 +38,29 @@ export async function isCachedFile(
   return verified !== null && (expectedSha === undefined || verified === expectedSha);
 }
 
+/** Reports the bytes of a file received so far while it downloads, and its
+ * full size when the hub names it (`content-length`). */
+export type OnBytes = (received: number, total: number | undefined) => void;
+
 /**
  * Download `file` from `repo@revision` into `<destDir>/<file>` if not already
  * present and verified. Idempotent. A cached copy is used only when it
  * matches its sidecar and, when `expectedSha` is given, that SHA-256; a
  * cached copy with another hash is downloaded again. Retries transient
  * network errors with exponential backoff before surfacing
- * `ModelNotFoundError`.
+ * `ModelNotFoundError`. While a download runs, `onBytes` reports its
+ * progress; a cached copy reports nothing.
  */
 export async function ensureFile(
   repo: string,
   revision: string,
   file: string,
   destDir: string,
-  options: { readonly expectedSha?: string; readonly timeoutMs: number },
+  options: {
+    readonly expectedSha?: string;
+    readonly timeoutMs: number;
+    readonly onBytes?: OnBytes;
+  },
 ): Promise<string> {
   const dest = join(destDir, file);
   await mkdir(dirname(dest), { recursive: true });
@@ -62,7 +71,13 @@ export async function ensureFile(
   }
 
   const url = fileUrl(repo, revision, file);
-  const sha = await retryDownload(url, dest, options.timeoutMs, options.expectedSha);
+  const sha = await retryDownload(
+    url,
+    dest,
+    options.timeoutMs,
+    options.expectedSha,
+    options.onBytes,
+  );
   await writeSidecar(dest, sha);
   return dest;
 }
@@ -72,12 +87,13 @@ async function retryDownload(
   dest: string,
   timeoutMs: number,
   expectedSha: string | undefined,
+  onBytes: OnBytes | undefined,
 ): Promise<string> {
   let lastErr: unknown;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
       logf(LOG_SCOPE, 'download.start', { url, attempt, maxAttempts: MAX_ATTEMPTS });
-      return await downloadWithTimeout(url, dest, timeoutMs, expectedSha);
+      return await downloadWithTimeout(url, dest, timeoutMs, expectedSha, onBytes);
     } catch (err) {
       lastErr = err;
       if (!isRetryable(err) || attempt === MAX_ATTEMPTS) break;
@@ -133,6 +149,13 @@ class ShaMismatchError extends ModelNotFoundError {
   }
 }
 
+/** `content-length` as a plain byte count, else `undefined`: the header can
+ * be absent (chunked transfers) or hold anything at all. */
+function contentLength(res: Response): number | undefined {
+  const header = res.headers.get('content-length');
+  return header !== null && /^[0-9]+$/.test(header) ? Number(header) : undefined;
+}
+
 /** Download `url` to a temporary file, hashing it on the way, and move it
  * to `dest` only once its hash is known to be `expectedSha` (when given),
  * so a verified copy already at `dest` is never replaced by a bad one. */
@@ -141,6 +164,7 @@ async function downloadWithTimeout(
   dest: string,
   timeoutMs: number,
   expectedSha: string | undefined,
+  onBytes: OnBytes | undefined,
 ): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -152,12 +176,16 @@ async function downloadWithTimeout(
     if (!res.ok || res.body === null) {
       throw new ModelNotFoundError(`${url} (HTTP ${res.status})`);
     }
+    const total = contentLength(res);
+    let received = 0;
     const hash = createHash('sha256');
     await pipeline(
       Readable.fromWeb(res.body as Parameters<typeof Readable.fromWeb>[0]),
       async function* (source) {
         for await (const chunk of source) {
           hash.update(chunk as Buffer);
+          received += (chunk as Buffer).length;
+          onBytes?.(received, total);
           yield chunk;
         }
       },

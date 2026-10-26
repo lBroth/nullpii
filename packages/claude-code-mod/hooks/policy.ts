@@ -295,9 +295,11 @@ function formatLabels(byLabel: Readonly<Record<string, number>>, limit: number):
     .join(' · ');
 }
 
-/** The one line shown above the prompt. */
-export function formatBand(counts: Counts, problem: string | undefined): string {
+/** The one line shown above the prompt. Blocking comes first: a paused
+ * nullpii whose sidecar is not up sends nothing anyway (fail closed). */
+export function formatBand(counts: Counts, problem: string | undefined, paused: boolean): string {
   if (problem !== undefined) return `nullpii · blocking: ${problem}`;
+  if (paused) return 'nullpii · paused: everything you send reaches Claude unmasked';
   if (counts.masked === 0) return 'nullpii · on · nothing masked yet';
   const labels = formatLabels(counts.byLabel, 4);
   return `nullpii · ${counts.masked} masked (${labels}) · ${counts.restored} restored to local tools`;
@@ -388,9 +390,14 @@ export function formatReport(
   counts: Counts,
   problem: string | undefined,
   policy: Policy | undefined,
+  paused: boolean,
 ): string {
   const lines = [
-    problem === undefined ? 'Status: on' : `Status: blocking (${problem})`,
+    problem !== undefined
+      ? `Status: blocking (${problem})`
+      : paused
+        ? 'Status: paused (everything you send reaches Claude unmasked)'
+        : 'Status: on',
     `Masked before Claude read them: ${counts.masked}`,
     `Real values put back into local tool calls: ${counts.restored}`,
     `Placeholders kept in calls to other tools: ${counts.held}`,

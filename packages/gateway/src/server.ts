@@ -8,6 +8,7 @@ import { registerAnthropicRoute } from './routes/anthropic.js';
 import { registerHealthRoute } from './routes/health.js';
 import { registerOpenAiRoute } from './routes/openai.js';
 import { registerSidecarRoutes } from './routes/sidecar.js';
+import { StartupTracker } from './startup.js';
 import type { Fetch } from './upstream.js';
 
 export interface BuildServerOptions {
@@ -15,6 +16,10 @@ export interface BuildServerOptions {
   /** Pre-constructed `NullPii` engine. Injected so tests can pass a
    * mock that returns deterministic spans without loading ONNX. */
   readonly np: NullPii;
+  /** Tracker for the engine's first start-up, which the status route
+   * reports (`startup` field). Passed by `startServer`, whose warmup
+   * feeds it; a server with a pre-built engine needs none. */
+  readonly startup?: StartupTracker;
   /** Pluggable `fetch`. Defaults to the global. Tests inject a mock. */
   readonly fetchImpl?: Fetch;
   /** Clock for sidecar session expiry. Defaults to `Date.now`. Tests
@@ -74,6 +79,7 @@ export async function buildServer(opts: BuildServerOptions): Promise<FastifyInst
       maxSessions: config.sidecarMaxSessions,
       policy,
       ...(opts.now !== undefined && { now: opts.now }),
+      ...(opts.startup !== undefined && { startup: opts.startup }),
     });
   }
 
@@ -81,15 +87,28 @@ export async function buildServer(opts: BuildServerOptions): Promise<FastifyInst
 }
 
 /** Create the engine from `config` (its policy, backend and model
- * directory), build the app and listen on `config.host:config.port`. Used
- * by the `nullpii-gateway` binary. */
+ * directory), build the app and listen on `config.host:config.port`, then
+ * warm the model up in the background (its first start downloads it, about
+ * 1.2 GB) while the status route reports the progress. Used by the
+ * `nullpii-gateway` binary. */
 export async function startServer(config: GatewayConfig): Promise<FastifyInstance> {
   const np = new NullPii({
     ...toEngineConfig(config.policy),
     backend: config.backend,
     ...(config.modelDir !== undefined && { modelDir: config.modelDir }),
   });
-  const app = await buildServer({ config, np });
+  const startup = new StartupTracker();
+  const app = await buildServer({ config, np, startup });
   await app.listen({ host: config.host, port: config.port });
+  // The warmup runs after the listen, so the sidecar answers its status
+  // (with the progress) while it runs; a request that needs the model
+  // before it is ready waits for the same init, as the first call always
+  // did.
+  void np
+    .warmup((progress) => startup.report(progress))
+    .catch((err: unknown) => {
+      startup.failed();
+      app.log.error({ err: err instanceof Error ? err.message : String(err) }, 'gateway.warmup');
+    });
   return app;
 }

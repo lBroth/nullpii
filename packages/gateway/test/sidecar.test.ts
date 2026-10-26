@@ -32,6 +32,7 @@ import {
   SanitizeCache,
 } from '../src/sanitize-cache.js';
 import { buildServer } from '../src/server.js';
+import { StartupTracker } from '../src/startup.js';
 import { BASE_TEST_CONFIG } from './fixtures.js';
 
 const TOKEN = 'a'.repeat(64);
@@ -110,10 +111,19 @@ interface Engine {
   modelCalls?: () => number;
 }
 
-async function setup(config: Partial<GatewayConfig> = {}, engine: Engine = buildMockNullPii()) {
+async function setup(
+  config: Partial<GatewayConfig> = {},
+  engine: Engine = buildMockNullPii(),
+  startup?: StartupTracker,
+) {
   const { np, vault, modelCalls } = engine;
   const clock = { t: 1_000_000 };
-  const app = await buildServer({ config: { ...BASE_CONFIG, ...config }, np, now: () => clock.t });
+  const app = await buildServer({
+    config: { ...BASE_CONFIG, ...config },
+    np,
+    now: () => clock.t,
+    ...(startup !== undefined && { startup }),
+  });
   apps.push(app);
   return { app, vault, clock, modelCalls: modelCalls ?? (() => 0) };
 }
@@ -304,6 +314,41 @@ describe('sidecar · status', () => {
     const res = await app.inject({ method: 'GET', url: '/v1/sidecar/status', headers: AUTH });
     const policy = (res.json() as { policy: { disabledCategories: string[] } }).policy;
     expect([...policy.disabledCategories].sort()).toEqual([...DEFAULT_DISABLED_CATEGORIES].sort());
+  });
+
+  it('reports the engine start-up progress while a warmup runs', async () => {
+    const startup = new StartupTracker();
+    startup.report({
+      phase: 'downloading',
+      file: 'model.onnx',
+      received: 640_000_000,
+      total: 1_160_000_000,
+    });
+    const { app } = await setup({}, undefined, startup);
+    const startupNow = async () =>
+      (
+        (await app.inject({ method: 'GET', url: '/v1/sidecar/status', headers: AUTH })).json() as {
+          startup: unknown;
+        }
+      ).startup;
+    const seen: unknown[] = [await startupNow()];
+    startup.report({ phase: 'downloading', file: 'model.onnx', received: 1_160_000_000 });
+    seen.push(await startupNow());
+    startup.report({ phase: 'loading' });
+    seen.push(await startupNow());
+    startup.report({ phase: 'ready' });
+    seen.push(await startupNow());
+    expect(seen).toEqual([
+      {
+        phase: 'downloading',
+        file: 'model.onnx',
+        received: 640_000_000,
+        total: 1_160_000_000,
+      },
+      { phase: 'downloading', file: 'model.onnx', received: 1_160_000_000 },
+      { phase: 'loading' },
+      { phase: 'ready' },
+    ]);
   });
 });
 

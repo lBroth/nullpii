@@ -105,6 +105,17 @@ describe.skipIf(SKIP)('F-18 · real ONNX sanitize end-to-end', () => {
     expect(local.spans).toEqual([]);
   }, 30_000);
 
+  it('leaves "Claude" readable, and masks a full name that starts with it', async () => {
+    const product = await np.sanitize(
+      'Initialize a new CLAUDE.md file; see ~/.claude/settings.json',
+    );
+    expect(product.spans).toEqual([]);
+    const person = await np.sanitize('Ask Claude Dupont from accounting about the invoice.');
+    expect(person.spans.map((s) => [s.label, s.text])).toEqual([
+      ['private_person', 'Claude Dupont'],
+    ]);
+  }, 30_000);
+
   it('decodes base64-wrapped email at source coordinates', async () => {
     // base64 of `user.123@gmail.com` → 24 chars, classification = private_email.
     const blob = Buffer.from('user.123@gmail.com', 'utf8').toString('base64');

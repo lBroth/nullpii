@@ -36,6 +36,7 @@ import { ModelManager } from './model-manager.js';
 import { onnxCandidates } from './model-variant.js';
 import { normalizeForDetection, remapSpan } from './normalize.js';
 import { escapePlaceholders, unescapePlaceholders } from './placeholder-escape.js';
+import { dropAssistantNameSpans } from './product-names.js';
 import { dropSpansInsidePublicDigests } from './public-digests.js';
 import { runRecognizers } from './recognizers.js';
 import { segmentWindows } from './segments.js';
@@ -317,10 +318,11 @@ export class NullPii {
     // An IPv4 address belongs to the `core:ipv4` recognizer, whatever label
     // the model gave it (`ip-filter.ts`). A UUID labelled `account_number`
     // is an id software minted, unless a credential key comes right before
-    // it (`uuid-filter.ts`). Both are resolved here too, so no recognizer
+    // it (`uuid-filter.ts`). "Claude" alone is the assistant, not a person
+    // (`product-names.ts`). All are resolved here too, so no recognizer
     // defers to a span that is then dropped.
-    const shaped = resolveUuidAccountNumbers(
-      dropModelIpv4Spans(geoResolved, normalized),
+    const shaped = dropAssistantNameSpans(
+      resolveUuidAccountNumbers(dropModelIpv4Spans(geoResolved, normalized), normalized),
       normalized,
     );
     // Score cut BEFORE any dedupe or recognizer deferral: a span the

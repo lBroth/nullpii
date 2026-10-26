@@ -2,8 +2,9 @@
 """AB-1 scorer (AB-1 SPEC.md, "Metrics"). Label-agnostic: an item is
 judged on the characters a tool masks, whatever label it gives them.
 
-A MUST_MASK item is masked when every character carrying its value is
-(whitespace and `\\n`-style layout escapes excepted, owner 24 Oct).
+A MUST_MASK item is masked when every letter and digit of its value is:
+whitespace, punctuation and `\\n`-style layout escapes carry none of the
+value (owner, 24 and 26 Oct).
 
 Reads the gold JSONL (component A's test split, or B1/B2) and every
 `<tool>-<dataset>.jsonl` checkpoint (`score_capture.mjs` / `r2_run.py` rows
@@ -34,7 +35,7 @@ PER_K = 1000
 MASK = "{{{{MASK_{n}}}}}"
 HUNK = re.compile(r"^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@")
 # Line breaks written as escapes inside JSON or .env strings (a private key's
-# `\n`): like whitespace, they carry none of the value (owner, 24 Oct).
+# `\n`): their letter carries none of the value (owner, 24 Oct).
 LAYOUT_ESCAPE = re.compile(r"\\[nrt]")
 
 
@@ -68,10 +69,11 @@ def masked_set(spans: list[tuple[int, int, str]], length: int) -> np.ndarray:
 
 
 def value_chars(text: str) -> np.ndarray:
-    """Characters that carry a MUST_MASK value: all but whitespace and
+    """Characters that carry a MUST_MASK value: letters and digits, outside
     layout escapes. A value is masked when all of these are (a tool that
-    masks a key line by line, leaving the line breaks, has masked it)."""
-    sig = np.fromiter((not c.isspace() for c in text), dtype=bool, count=len(text))
+    masks a key line by line, leaving the line breaks, or an address as
+    street and city, leaving the comma, has masked it)."""
+    sig = np.fromiter((c.isalnum() for c in text), dtype=bool, count=len(text))
     for m in LAYOUT_ESCAPE.finditer(text):
         sig[m.start():m.end()] = False
     return sig

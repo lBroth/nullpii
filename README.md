@@ -8,7 +8,7 @@ Mask personal data and secrets before they reach an LLM, and put them back on th
 
 - **Measured on held-out data.** On five datasets chosen before any tool was run on them (four public sets and a synthetic coding-agent trace set built for this benchmark), with under 1% measured overlap with nullpii's training data and the public training sets the compared tools declare (a few declared sets were not compared; METHOD.md), nullpii ranks second on macro char-F2 among 15 open-source detectors, behind rizzo-pii (0.770): 0.756 with its five extended categories off, as the datasets do not label them, and 0.747 with every category masked (the default before 0.5), counted on the same labels. It lets less personal data through than any other tool's best-scoring configuration (recall 0.960). Much of its lead over the other 13 comes from one dataset, clinical notes in Greek and German: without it nullpii is third, and three more tools are within the interval. On English text alone it is fifth. Scored by us with the PIIMB leaderboard's method (not a submitted entry), with every category masked, its average F2 of 0.851 is above the 35 listed tools; without the one task from its training family it is 0.831, not clearly ahead. It gets there by masking generously: on precision-weighted scores most tools rank above it. [Results](#benchmark).
 - **Works with any model.** Mask before your LLM call and restore after it. Or run the gateway in front of the Anthropic or OpenAI API, or the Claude Code mod. Claude Code is the coding agent nullpii is built and tested with, through the mod (recommended) or the gateway. The gateway proxies the Anthropic Messages API and OpenAI Chat Completions only, so the Codex CLI, which speaks only the Responses API, cannot use it.
-- **Built for coding agents.** It masks tool output (files, logs, command results), not just prompts; it keeps public links to code hosts and documentation readable; and it never puts a hidden value back into a shell command (see SECURITY.md).
+- **Built for coding agents.** It masks tool output (files, logs, command results), not just prompts; it keeps public links to code hosts and documentation readable; and it never puts a hidden value back into a shell command (see SECURITY.md). On agent traffic it lets 9.5% of the values that must be hidden through and keeps 81.9% of what must stay readable; only rizzo-pii lets fewer through (8.1%), keeping 44.5%. On sets of secrets alone it does not lead: on secrets in GitHub issues openai's privacy-filter lets fewer through, and on CredData neither is ahead. [Results](#agent-traffic-ab-1).
 
 Status: pre-1.0. The API can still change between minor versions. nullpii pseudonymizes with a measured leak rate; it is not anonymization and not a compliance certification.
 
@@ -164,16 +164,36 @@ Obfuscated input is decoded before detection: Unicode look-alikes and fullwidth 
 
 ### Agent traffic (AB-1)
 
-AB-1 measures the job nullpii's default is built for: hiding what a coding agent must not hand to the model (secrets, contact details and addresses, identifiers and account numbers, names) while leaving readable what the agent needs to work with (dates, versions, paths, hostnames of public services, placeholders, code identifiers). It scores two things per category, with no combined score: the leak rate on the items that must be masked, and the keep rate on the items that must stay readable. No tool has run on it yet, so the table is a placeholder; the method, the limits and the source of every number are under [Agent-traffic benchmark (AB-1)](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md#agent-traffic-benchmark-ab-1) in METHOD.md.
+AB-1 measures the job nullpii's default is built for: hiding what a coding agent must not hand to the model (secrets, contact details and addresses, identifiers and account numbers, names) while leaving readable what the agent needs to work with (dates, versions, paths, hostnames of public services, placeholders, code identifiers). It scores two things per category, with no combined score: the leak rate on the items that must be masked, and the keep rate on the items that must stay readable. Every tool ran on the frozen test sets on 25 October 2026 (the whole run was redone once, for every tool, after an adapter fix); the method, the limits and the source of every number are under [Agent-traffic benchmark (AB-1)](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md#agent-traffic-benchmark-ab-1) in METHOD.md.
+
+On agent traffic (component A, below) nullpii lets 9.5% of the values that must be hidden through and keeps 81.9% of what must stay readable. Only rizzo-pii lets fewer through (8.1%, an interval that touches 0), and it masks more than half of what the agent needs to read (keep rate 44.5%). Every other tool lets 5 to 46 points more through, with intervals that exclude 0; gliner-pii-large keeps more readable (85.5%) and lets 15.9% through. nullpii's weakest categories are person names (24% let through) and URLs (31%). On the two sets of secrets alone nullpii does not lead: on CredData (B1) openai's privacy-filter (13.2%), nemotron-pii run as a library (14.5%) and nullpii (14.6%) are within each other's intervals, and on secrets in GitHub issues (B2) openai's privacy-filter lets fewer through (8.2% against 11.2%) and keeps more readable (74.6% against 69.2%).
+
+One scoring rule was changed after the scores were first read, against nullpii's interest: punctuation left between masked pieces of a value (the comma between a street and a city) no longer counts as a leak. With the first rule nullpii led on component A (11.0% against rizzo-pii's 15.0%), because it masks an address as one piece and most tools mask it as several. Both scorings are published.
 
 <!-- ab1-a:begin -->
-| Tool | Leak rate | Keep rate | Docs with a leak | CI of nullpii − tool (leak) |
-|---|---:|---:|---:|---|
-| nullpii (agent default) | TBD | TBD | TBD | TBD |
-| … | TBD | TBD | TBD | TBD |
+966 documents, 3,386 items that must be masked and 5,676 that must stay readable.
+
+| Tool | Leak rate | Keep rate | Docs with a leak | nullpii − tool, leak | nullpii − tool, keep |
+|---|---:|---:|---:|---|---|
+| rizzo-pii (tuned, +agent) | 8.1% | 44.5% | 25.1% | [−0.0, +2.6] | [+35.0, +40.0] |
+| **nullpii 0.5 (agent default)** | 9.5% | 81.9% | 27.0% | — | — |
+| openai privacy-filter (tuned, +agent) | 14.5% | 77.9% | 33.6% | [−6.9, −3.2] | [+1.9, +6.3] |
+| OpenMed PII Large (tuned, +agent) | 15.7% | 82.2% | 39.7% | [−8.2, −4.4] | [−1.8, +1.3] |
+| gliner-pii-large (tuned, +agent) | 15.9% | 85.5% | 37.8% | [−8.5, −4.4] | [−5.7, −1.5] |
+| nemotron-pii, NVIDIA's server (tuned, +agent) | 16.0% | 75.8% | 42.8% | [−8.2, −4.9] | [+4.4, +7.9] |
+| OpenMed PII Small (tuned, +agent) | 16.1% | 83.0% | 40.4% | [−8.3, −4.9] | [−2.7, +0.7] |
+| gliner-stream-pii (tuned, +agent) | 16.4% | 67.5% | 43.3% | [−9.0, −4.9] | [+12.3, +16.7] |
+| nemotron-pii, library (tuned, +agent) | 17.6% | 68.4% | 47.9% | [−9.9, −6.3] | [+11.4, +15.7] |
+| ettin-68m (tuned, +agent) | 17.7% | 65.3% | 43.6% | [−10.1, −6.3] | [+14.6, +19.0] |
+| pii-identifier (tuned, +agent) | 18.8% | 77.7% | 52.5% | [−11.0, −7.7] | [+2.4, +6.1] |
+| gliner_multi_pii (ONNX) (tuned, +agent) | 19.2% | 56.9% | 44.2% | [−11.6, −7.9] | [+22.4, +27.9] |
+| OpenMed privacy-filter-multilingual-v2 (tuned, +agent) | 20.1% | 81.6% | 48.3% | [−12.0, −9.1] | [−1.6, +2.2] |
+| piiranha (tuned, +agent) | 23.8% | 68.8% | 56.5% | [−16.5, −12.3] | [+10.8, +15.4] |
+| Presidio (tuned, +agent) | 40.6% | 82.3% | 77.9% | [−33.2, −29.0] | [−2.3, +1.7] |
+| deberta PII (tuned, +agent) | 55.1% | 64.2% | 81.2% | [−48.7, −42.4] | [+14.0, +21.2] |
 <!-- ab1-a:end -->
 
-B1 (CredData) and B2 (issue secrets) are in [`METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md).
+Each tool's row is its tuned operating point with the agent-policy filter; every other row, B1 (CredData), B2 (issue secrets), the leak rate per category and the secrets split by recognizer coverage are in [`METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md#results), and the raw aggregates in [`published-bench/ab1/`](https://github.com/lBroth/nullpii/blob/main/packages/eval/published-bench/ab1).
 
 ### Documents (R3)
 

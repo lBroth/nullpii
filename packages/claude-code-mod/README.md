@@ -29,7 +29,7 @@ The vault that maps placeholders to values lives only in the sidecar's memory, n
 
 ## Choose what gets masked
 
-By default the mod masks what is risky to give to a model: people's names, contact details and addresses, ids and accounts, secrets. Dates, companies, jobs, honorifics, and demographic and sensitive attributes stay readable: they name no one on their own, and Claude often needs them.
+By default the mod masks what is risky to give to a model: people's names, contact details and addresses, ids and accounts, secrets. Dates, companies, jobs, honorifics, and demographic and sensitive attributes stay readable: they rarely identify someone on their own, and Claude often needs them. Health, religion or sexual orientation written in your prompt therefore reaches the model; `/pii mask sensitive` changes that.
 
 Change it at the prompt with `/pii`. A change applies at once and is saved in the policy file:
 

@@ -37,6 +37,8 @@ These datasets are used to evaluate, never to train:
 | TAB dev and test splits | Evaluation only |
 | Every benchmark set nullpii reports on, including PIIMB | Evaluation only |
 
+Held-out slices of `Isotonic/pii-masking-200k` and `ai4privacy/pii-masking-300k` are also nullpii's tuning set: nullpii's thresholds and code changes were chosen on them (see `packages/eval/METHOD.md`, Data). No weights were trained on them.
+
 ## Your obligations as a redistributor
 
 If you redistribute the weights:

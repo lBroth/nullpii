@@ -6,11 +6,11 @@ Report it privately: open a [Security Advisory](https://github.com/lBroth/nullpi
 
 ## What nullpii protects
 
-- Detection runs locally: nullpii sends your text nowhere. Its only network call is the model download from Hugging Face on first use, and it checks every downloaded file against a SHA-256 written into the library. To avoid even that download, set `NULLPII_MODEL_DIR` to a copy you downloaded before.
+- Detection runs locally: nullpii sends your text nowhere. Its only network call is the model download from Hugging Face on first use, and it checks every downloaded file against a SHA-256 written into the library. To avoid even that download, set `NULLPII_MODEL_DIR` to a copy you downloaded before. nullpii does not check the files in that directory: compare them with the hashes in the model card.
 - The vault is in memory only. `destroySession()` clears it.
 - Logs have counts, labels and short ids, never a value nullpii masked or restored. This covers the library's `debug` output, and the gateway's request log and console summary. An upstream error is logged by its status, length and error type, not its body.
 - **One exception: the gateway's `NULLPII_LOG_TRAFFIC=wire`.** It is a debug dump to stdout of each request as forwarded, and of each upstream response before restore. Placeholders stay masked in it, but everything else is printed as it was sent or written: values the detector missed, fields the gateway forwards without a scan (images, documents, `mcp_servers` with its credentials), and the model's output. Auth headers appear as their last six characters and length. Keep such a dump local and short-lived.
-- Placeholders carry a 16-hex prefix (64 bits) of the session id that made them. `restore()` reports placeholders from another session in `RestoreResult.foreignPlaceholders`; with `{ strict: true }` it throws `SessionMismatchError` instead.
+- Placeholders carry a 16-hex prefix of the session id that made them (60 random bits: the id is a UUID v4, whose version digit is fixed). `restore()` reports placeholders from another session in `RestoreResult.foreignPlaceholders`; with `{ strict: true }` it throws `SessionMismatchError` instead.
 
 ## What it does NOT protect
 
@@ -65,7 +65,7 @@ Treat a masked prompt as lower risk, not as free of personal data.
 
 ## Supply chain and leak gates
 
-`.github/workflows/security.yml` runs on every PR and every push to `main`:
+`.github/workflows/security.yml` runs on every pull request to `main` and every push to `main`:
 
 | Gate | What it blocks |
 |---|---|
@@ -74,6 +74,6 @@ Treat a masked prompt as lower risk, not as free of personal data.
 | CodeQL (`security-extended`) | Static-analysis findings in the TypeScript and the Python eval kit |
 | Dependency review | New dependencies with a high-severity advisory or a licence outside the allowlist |
 
-The same secret and hygiene checks run locally through `lefthook`. Every workflow pins its actions and container images by digest, and Dependabot keeps the pins current. CI tokens are read-only by default.
+The same secret and hygiene checks run locally through `lefthook` (the secret scan only where gitleaks is installed; without it, lefthook says so and CI still blocks). Every workflow pins its actions and container images by digest, and Dependabot keeps the pins current. CI tokens are read-only by default.
 
 Test fixtures follow the reserved-value policy in [CONTRIBUTING.md](https://github.com/lBroth/nullpii/blob/main/CONTRIBUTING.md#test-data).

@@ -199,7 +199,7 @@ What gets masked comes from the shared policy file. Everything else is set with 
 | `categories` | The mode of each category named: `mask`, `ask` (masked; the Claude Code mod asks about a value in your own prompt, see its README) or `off` (readable). It overrides `disabledCategories` for the categories it names. |
 | `categoryThresholds`, `threshold` | Confidence cuts in `[0, 1]`, per category or for all. Lower masks more. |
 | `urlAllowlist` | `"none"` masks every URL. `{ hosts, replaceDefaults }` sets, per host (`docs.python.org`, or `*.github.com` for a domain and its subdomains), how much of a clean URL stays readable: `full`, `host` or `mask`. |
-| `restoreTools` | Tools whose arguments get real values back. It replaces the default list (`DEFAULT_RESTORE_TOOLS`: the tools that run on this machine). Any other tool keeps the placeholders. |
+| `restoreTools` | Tools whose arguments get real values back. It replaces the default list (`DEFAULT_RESTORE_TOOLS`: the file tools that run on this machine). Any other tool keeps the placeholders. |
 
 An unknown key, category, host or release stops the gateway at startup, with the reason. So does an environment variable outside its documented values: an integer that is not a whole number in its range (`30m`, `1e6` and `0` are refused, not read as something else), a `NULLPII_DISABLE_HINT` other than `0` or `1`, or an upstream that is not a base URL as described below. The error names the variable. It never repeats the sidecar token. It repeats an upstream URL only once it is known to carry no credentials or query string.
 

@@ -54,7 +54,12 @@ export default defineConfig({
   base: '/nullpii/',
   cleanUrls: true,
   lastUpdated: true,
-  head: [['link', { rel: 'icon', type: 'image/png', href: '/nullpii/logo.png' }]],
+  head: [
+    ['link', { rel: 'icon', type: 'image/png', href: '/nullpii/logo.png' }],
+    // The browser chrome follows the site's two background colors.
+    ['meta', { name: 'theme-color', media: '(prefers-color-scheme: light)', content: '#ffffff' }],
+    ['meta', { name: 'theme-color', media: '(prefers-color-scheme: dark)', content: '#1b1b1f' }],
+  ],
   transformPageData(pageData, { siteConfig }) {
     if (pageData.filePath === '') return; // a virtual page, such as the 404
     const source = sourceOf(siteConfig.srcDir, pageData.filePath);
@@ -65,24 +70,21 @@ export default defineConfig({
   },
   themeConfig: {
     logo: '/logo.png',
+    // One menu: every page is in the top bar (the phone menu on small
+    // screens), so the docs pages carry no second, sidebar menu.
     nav: [
-      { text: 'Guide', link: '/guide/' },
-      { text: 'Benchmark', link: '/method' },
-      { text: 'Changelog', link: '/changelog' },
-    ],
-    sidebar: [
       {
-        text: 'Use it',
+        text: 'Guide',
         items: [
           { text: 'Overview and library', link: '/guide/' },
           { text: 'Gateway', link: '/guide/gateway' },
           { text: 'Claude Code mod', link: '/guide/claude-code' },
         ],
       },
+      { text: 'Benchmark', link: '/method' },
       {
-        text: 'Trust it',
+        text: 'About',
         items: [
-          { text: 'How it is measured', link: '/method' },
           { text: 'Security', link: '/security' },
           { text: 'Weights provenance', link: '/WEIGHTS_PROVENANCE' },
           { text: 'Changelog', link: '/changelog' },

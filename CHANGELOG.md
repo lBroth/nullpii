@@ -64,6 +64,7 @@ On coding-agent traffic (AB-1, pre-registered before any tool ran on it), the 0.
 - Gateway: a client disconnecting mid-stream did not cancel the upstream call; streams ignored backpressure; a failed request leaked its vault session; streamed tool input could come back as invalid JSON.
 - Model download: a file is checked against its pinned hash before it replaces the cached copy. With pins, an ONNX variant the pins leave out is skipped for one they cover (`auto` on CUDA falls back to a pinned fp32), and a pin that is not 64 lower-case hex digits is refused.
 - Mod: hooks that found the sidecar session gone at the same time (a sidecar restart, its idle TTL) each reopened it, and one could move the session to a new key while the others still used the old one: calls were refused with a 403 and a session stayed open until its TTL. The session now reopens once for all of them, and its key and secret change together.
+- Gateway: a JSON key named `__proto__` in a request or response set the copy's prototype and was dropped from the JSON passed on; every key now stays a key.
 
 ### Security
 

@@ -2,7 +2,7 @@
 
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ModelNotFoundError } from '../src/errors.js';
 import { InvalidConfigError, InvalidPathError } from '../src/errors.js';
@@ -77,7 +77,7 @@ describe('ModelManager', () => {
       expect(() => m.modelDirFor(model), JSON.stringify(model)).toThrow(InvalidPathError);
     }
     expect(m.modelDirFor({ repo: 'org/name', revision: 'refs/pr/1' })).toBe(
-      '/tmp/nullpii-cache-test/org/name/refs/pr/1',
+      resolve('/tmp/nullpii-cache-test', 'org', 'name', 'refs', 'pr', '1'),
     );
   });
 

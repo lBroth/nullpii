@@ -207,7 +207,7 @@ describe('nullpii prefetch and models', () => {
     mkdirSync(join(cacheDir, 'org'), { recursive: true });
     writeFileSync(join(cacheDir, 'org', 'tokenizer.json'), '{}');
     await cli('models', 'list');
-    expect(out).toContain('org/tokenizer.json');
+    expect(out).toContain(join('org', 'tokenizer.json'));
   });
 });
 

@@ -18,6 +18,7 @@ import {
   describePolicyChange,
   parsePiiCommand,
   placeholdersToAsk,
+  policyLoosening,
   shortName,
 } from './categories.ts';
 import {
@@ -343,13 +344,16 @@ async function settlePolicy($, now: Policy | undefined): Promise<void> {
     return;
   }
   const since = policy === undefined ? 'since your last session' : "outside this session's /pii";
-  const question = `The nullpii masking policy was changed ${since}: ${describePolicyChange(before, now)}. Keep the change?`;
+  const less = policyLoosening(before, now);
+  const warning = less.length > 0 ? ` This change masks less: ${less.join('; ')}.` : '';
+  const question = `The nullpii masking policy was changed ${since}: ${describePolicyChange(before, now)}.${warning} Keep the change?`;
   let answer = REVERT_POLICY;
   ownQuestion = question;
   try {
     answer = await $.ui.ask(question, {
       header: DIALOG_HEADER,
-      options: [KEEP_POLICY, REVERT_POLICY],
+      // Putting the policy back comes first, so a quick confirm keeps it.
+      options: [REVERT_POLICY, KEEP_POLICY],
     });
   } catch (err) {
     $.ui.log(`nullpii: no answer about a policy change (${errorName(err)}); putting it back`, {

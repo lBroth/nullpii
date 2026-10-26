@@ -311,6 +311,31 @@ function categoriesIn(modes: Readonly<Record<string, string>>, mode: string): st
   return names.length > 0 ? names.join(', ') : 'none';
 }
 
+/** `threshold` and `categoryThresholds` as set, or `defaults`. */
+function formatCuts(config: Readonly<Record<string, unknown>>): string {
+  const parts: string[] = [];
+  if (typeof config.threshold === 'number') parts.push(`all ${config.threshold}`);
+  const per = config.categoryThresholds;
+  if (typeof per === 'object' && per !== null) {
+    for (const [category, cut] of Object.entries(per))
+      parts.push(`${shortName(category)} ${String(cut)}`);
+  }
+  return parts.length > 0 ? `${parts.join(', ')} (others at their defaults)` : 'defaults';
+}
+
+/** The policy's `urlAllowlist`, in short. */
+function formatUrlAllowlist(allowlist: unknown): string {
+  if (allowlist === 'none') return 'none (every URL masked)';
+  if (typeof allowlist !== 'object' || allowlist === null) return 'the built-in hosts';
+  const { hosts, replaceDefaults } = allowlist as { hosts?: unknown; replaceDefaults?: unknown };
+  const named =
+    typeof hosts === 'object' && hosts !== null
+      ? Object.entries(hosts).map(([h, release]) => `${h} ${String(release)}`)
+      : [];
+  if (replaceDefaults === true) return named.length > 0 ? `only ${named.join(', ')}` : 'none';
+  return named.length > 0 ? `the built-in hosts, plus ${named.join(', ')}` : 'the built-in hosts';
+}
+
 /** The policy lines of the `/pii` reply. */
 export function formatPolicy(policy: Policy | undefined): string[] {
   if (policy === undefined) return ['Policy: unknown (the sidecar has not answered)'];
@@ -328,6 +353,8 @@ export function formatPolicy(policy: Policy | undefined): string[] {
   return [
     `Policy file: ${policy.file} (${policy.loaded ? 'loaded' : 'not present: built-in defaults'})`,
     ...categories,
+    `Confidence cuts: ${formatCuts(policy.config)}`,
+    `URLs left readable: ${formatUrlAllowlist(policy.config.urlAllowlist)}`,
     `Tools that get real values back: ${policy.restoreTools.join(', ')}`,
     `Change it with ${PII_USAGE.slice('Usage: '.length)}`,
   ];

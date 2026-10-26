@@ -1261,6 +1261,40 @@ test('a policy changed between sessions is put to the user when the next one ope
   expect(sidecar.policyBodies).toEqual([accepted.config]);
 });
 
+test('a change that masks less is spelled out with its values, and putting it back is the first option', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: { question: string; options: string[] }[] = [];
+  on('tool.call', { tool: 'AskUserQuestion' }, ($, e) => {
+    const q = e.questions[0];
+    asked.push({ question: q?.question ?? '', options: (q?.options ?? []).map((o) => o.label) });
+    return {
+      result: {
+        questions: e.questions,
+        answers: { [q?.question ?? '']: 'Put back the previous policy' },
+      },
+    };
+  });
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  await start($);
+  await $.prompt.submit({ text: 'one', wait: false, origin: COMPOSER });
+  // A command holding only the token raises every cut to 1 and opens a host.
+  sidecar.replacePolicy({
+    threshold: 1,
+    urlAllowlist: { hosts: { 'paste.example.com': 'full' } },
+  });
+
+  await $.prompt.submit({ text: 'two', wait: false, origin: COMPOSER });
+
+  expect(asked).toHaveLength(1);
+  expect(asked[0]?.question).toContain('threshold default → 1');
+  expect(asked[0]?.question).toContain('URLs on paste.example.com default → full');
+  expect(asked[0]?.question).toContain('This change masks less');
+  expect(asked[0]?.options[0]).toBe('Put back the previous policy');
+  const report = await $.command.run({ command: 'pii', args: '' });
+  expect(report.text).toContain('Confidence cuts: defaults');
+});
+
 test('after a sidecar restart with another policy, the change is put to the user once', async ($, on) => {
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);
@@ -1280,6 +1314,7 @@ test('after a sidecar restart with another policy, the change is put to the user
   await $.prompt.submit({ text: 'two', wait: false, origin: COMPOSER });
 
   expect(questions).toHaveLength(1);
-  expect(questions[0]).toContain('threshold changed');
+  expect(questions[0]).toContain('threshold default → 0.9');
+  expect(questions[0]).toContain('This change masks less');
   expect(sent).toEqual(['one', 'two']);
 });

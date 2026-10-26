@@ -11,32 +11,41 @@ is drawn by hand.
 - `how-it-works.svg`: the data path; no numbers.
 
 Each file carries its light and dark colours and follows the reader's
-`prefers-color-scheme`.
+`prefers-color-scheme`. nullpii's rows carry its logo mark
+(`assets/readme/logo-mark.png`, the logo cropped to its glyph and scaled to
+64 px), embedded once per file, since a README image cannot load others.
 
   python packages/eval/scripts/readme_figures.py [--out assets/readme]
 """
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
+LOGO_MARK = ROOT / "assets" / "readme" / "logo-mark.png"
+LOGO_SIZE = 18
+# The mark sits at the start of nullpii's highlighted row, a fixed column:
+# labels are right-aligned and their width depends on the reader's font.
+LOGO_X = 18
 sys.path.insert(0, str(Path(__file__).resolve().parent / "ab1"))
 
 import render_ab1  # noqa: E402
 
 FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif'
 MONO = 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace'
-# Light, then dark: GitHub's canvas and ink, the reference palette's first
-# two categorical slots (validated against both canvases), a grey for the
-# other tools.
+# Light, then dark: GitHub's canvas and ink, nullpii's brand teal (the site's
+# and the logo's; `--vp-c-brand-2` on light, `--vp-c-brand-1` on dark) for
+# nullpii's bars and the R3 dots, and a grey for the other tools. R3's two
+# series share the teal: filled for all five sets, a ring for English only.
 LIGHT = {"bg": "#ffffff", "zone": "#f6f8fa", "fg": "#1f2328", "muted": "#59636e", "grid": "#d1d9e0",
-         "other": "#818b98", "a": "#2a78d6", "b": "#eb6834", "band": "#2a78d614"}
+         "other": "#818b98", "a": "#0d9488", "band": "#0d948814"}
 DARK = {"bg": "#0d1117", "zone": "#151b23", "fg": "#f0f6fc", "muted": "#9198a1", "grid": "#3d444d",
-        "other": "#6e7681", "a": "#3987e5", "b": "#d95926", "band": "#3987e524"}
+        "other": "#6e7681", "a": "#2dd4bf", "band": "#2dd4bf1f"}
 CSS = """
 .bg {{ fill: var(--bg); }} .zone {{ fill: var(--zone); stroke: var(--grid); }}
 text {{ font-family: {font}; fill: var(--fg); }}
@@ -46,7 +55,7 @@ text {{ font-family: {font}; fill: var(--fg); }}
 .axis {{ font-size: 11px; fill: var(--muted); font-variant-numeric: tabular-nums; }}
 .note {{ font-size: 11.5px; fill: var(--muted); }} .grid {{ stroke: var(--grid); stroke-width: 1; }}
 .bar-other {{ fill: var(--other); }} .bar-np {{ fill: var(--a); }} .band {{ fill: var(--band); }}
-.dot-a {{ fill: var(--a); stroke: var(--bg); stroke-width: 2; }} .dot-b {{ fill: var(--b); stroke: var(--bg); stroke-width: 2; }}
+.dot-a {{ fill: var(--a); stroke: var(--bg); stroke-width: 2; }} .dot-b {{ fill: var(--bg); stroke: var(--a); stroke-width: 2; }}
 .link {{ stroke: var(--grid); stroke-width: 2; }}
 .box {{ fill: var(--bg); stroke: var(--grid); stroke-width: 1.5; }} .step {{ font-size: 14px; font-weight: 600; }}
 .small {{ font-size: 12px; fill: var(--muted); }} .mono {{ font-family: {mono}; font-size: 11.5px; }}
@@ -69,6 +78,18 @@ def svg(width: int, height: int, title: str, desc: str, body: list[str]) -> str:
         f"<style>{style}</style>",
         f'<rect class="bg" width="{width}" height="{height}" rx="8"/>',
         *body, "</svg>", ""])
+
+
+def logo_defs() -> str:
+    """The logo mark, defined once per file for `logo_mark`."""
+    data = base64.b64encode(LOGO_MARK.read_bytes()).decode("ascii")
+    return (f'<defs><image id="np-logo" width="{LOGO_SIZE}" height="{LOGO_SIZE}" '
+            f'href="data:image/png;base64,{data}"/></defs>')
+
+
+def logo_mark(row_y: float, row_h: float) -> str:
+    """The logo mark at the start of nullpii's row."""
+    return f'<use href="#np-logo" x="{LOGO_X}" y="{row_y + (row_h - LOGO_SIZE) / 2:.1f}"/>'
 
 
 def esc(s: str) -> str:
@@ -113,7 +134,7 @@ def ab1_chart(report: dict) -> str:
     height = top + len(keys) * row + 58
     panels = [("Leak rate", "lower is better", "leak_rate", 298), ("Keep rate", "higher is better", "keep_rate", 604)]
     docs = report[render_ab1.BASELINE]["docs"]
-    body = [text(16, 30, "Agent traffic (AB-1, component A)", "title"),
+    body = [logo_defs(), text(16, 30, "Agent traffic (AB-1, component A)", "title"),
             text(16, 50, f"{docs:,} documents. Each tool at its tuned operating point, with the agent-policy filter.", "sub")]
     bottom = top + len(keys) * row
     for name, hint, _, x0 in panels:
@@ -130,6 +151,8 @@ def ab1_chart(report: dict) -> str:
             body.append(f'<rect class="band" x="8" y="{y}" width="{width - 16}" height="{row}" rx="4"/>')
         name = "nullpii 0.5" if mine else render_ab1.NAMES[tool]
         body.append(text(label_x, y + row / 2 + 4.5, esc(name), "label np" if mine else "label", "end"))
+        if mine:
+            body.append(logo_mark(y, row))
         for _, _, key, x0 in panels:
             w = report[k][key] * panel_w
             body.append(bar(x0, y + 6, w, row - 12, "bar-np" if mine else "bar-other"))
@@ -164,7 +187,7 @@ def r3_chart(rows: list[tuple[str, float, float]]) -> str:
             raise SystemExit(f"{v} outside the axis")
         return x0 + (v - lo) / (hi - lo) * plot_w
 
-    body = [text(16, 30, "Documents (R3): macro char-F2", "title"),
+    body = [logo_defs(), text(16, 30, "Documents (R3): macro char-F2", "title"),
             text(16, 50, "Five held-out document sets, frozen before any tool ran. Higher is better; "
                  "each tool at its better operating point.", "sub"),
             f'<circle class="dot-a" cx="{x0 + 6}" cy="76" r="6"/>', text(x0 + 18, 80, "All five sets", "label"),
@@ -188,6 +211,8 @@ def r3_chart(rows: list[tuple[str, float, float]]) -> str:
                  f'<circle class="dot-a" cx="{x(all5):.1f}" cy="{cy}" r="5.5"/>',
                  text(790, cy + 4, f"{all5:.3f}", f"val {cls}".strip(), "end"),
                  text(858, cy + 4, f"{english:.3f}", f"val {cls}".strip(), "end")]
+        if mine:
+            body.append(logo_mark(y, row))
     body.append(text(16, height - 14, "The datasets, intervals and the table per dataset: METHOD.md. "
                      "Masking everything scores 0.260.", "note"))
     desc = "; ".join(f"{n}: {a:.3f} on all five sets, {e:.3f} on English only" for n, a, e in rows)
@@ -205,7 +230,7 @@ def latency_chart(rows: list[tuple[str, int]]) -> str:
     bottom = top + len(rows) * row
     if max(v for _, v in rows) > hi:
         raise SystemExit("latency above the axis")
-    body = [text(16, 30, "Latency on GPU, 30,000 characters", "title"),
+    body = [logo_defs(), text(16, 30, "Latency on GPU, 30,000 characters", "title"),
             text(16, 50, "Median milliseconds per call, lower is better. RTX 4070 Ti, every tool on the same "
                  "coding-agent texts, after a warm-up.", "sub")]
     for v in range(0, hi + 1, 500):
@@ -221,6 +246,8 @@ def latency_chart(rows: list[tuple[str, int]]) -> str:
         body += [text(label_x, y + row / 2 + 4.5, esc(name), "label np" if mine else "label", "end"),
                  bar(x0, y + 6, w, row - 12, "bar-np" if mine else "bar-other"),
                  text(x0 + w + 6, y + row / 2 + 4, f"{ms:,}", "val np" if mine else "val")]
+        if mine:
+            body.append(logo_mark(y, row))
     body.append(text(16, height - 14, "CPU, 2,000 and 100,000 characters: the tables below.", "note"))
     desc = "; ".join(f"{n}: {v:,} ms" for n, v in rows)
     return svg(width, height, "GPU latency at 30,000 characters per tool", desc, body)

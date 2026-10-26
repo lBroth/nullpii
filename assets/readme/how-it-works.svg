@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="880" height="340" viewBox="0 0 880 340" role="img" aria-labelledby="t d">
 <title id="t">How nullpii works</title>
 <desc id="d">Text from your app or Claude Code is decoded, scanned by the model and the recognizers, and each value the policy masks becomes a placeholder kept in an in-memory vault. The LLM provider sees only placeholders. On the way back the reply gets the real values; file tools get real values; shell commands keep the placeholders.</desc>
-<style>svg { --bg: #ffffff; --zone: #f6f8fa; --fg: #1f2328; --muted: #59636e; --grid: #d1d9e0; --other: #818b98; --a: #2a78d6; --b: #eb6834; --band: #2a78d614; }
-@media (prefers-color-scheme: dark) { svg { --bg: #0d1117; --zone: #151b23; --fg: #f0f6fc; --muted: #9198a1; --grid: #3d444d; --other: #6e7681; --a: #3987e5; --b: #d95926; --band: #3987e524; } }
+<style>svg { --bg: #ffffff; --zone: #f6f8fa; --fg: #1f2328; --muted: #59636e; --grid: #d1d9e0; --other: #818b98; --a: #0d9488; --band: #0d948814; }
+@media (prefers-color-scheme: dark) { svg { --bg: #0d1117; --zone: #151b23; --fg: #f0f6fc; --muted: #9198a1; --grid: #3d444d; --other: #6e7681; --a: #2dd4bf; --band: #2dd4bf1f; } }
 .bg { fill: var(--bg); } .zone { fill: var(--zone); stroke: var(--grid); }
 text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif; fill: var(--fg); }
 .title { font-size: 17px; font-weight: 600; } .sub { font-size: 13px; fill: var(--muted); }
@@ -11,7 +11,7 @@ text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", 
 .axis { font-size: 11px; fill: var(--muted); font-variant-numeric: tabular-nums; }
 .note { font-size: 11.5px; fill: var(--muted); } .grid { stroke: var(--grid); stroke-width: 1; }
 .bar-other { fill: var(--other); } .bar-np { fill: var(--a); } .band { fill: var(--band); }
-.dot-a { fill: var(--a); stroke: var(--bg); stroke-width: 2; } .dot-b { fill: var(--b); stroke: var(--bg); stroke-width: 2; }
+.dot-a { fill: var(--a); stroke: var(--bg); stroke-width: 2; } .dot-b { fill: var(--bg); stroke: var(--a); stroke-width: 2; }
 .link { stroke: var(--grid); stroke-width: 2; }
 .box { fill: var(--bg); stroke: var(--grid); stroke-width: 1.5; } .step { font-size: 14px; font-weight: 600; }
 .small { font-size: 12px; fill: var(--muted); } .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; font-size: 11.5px; }

@@ -3,6 +3,12 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Mod: the padlock beside the band is one row tall instead of two, and its red (paused) and amber (starting) are brighter, so the open shackle reads on a dark terminal. The line pinned under the prompt no longer repeats `[nullpii]`: Claude Code already writes `nullpii:` in front of it.
+
 ## [0.5.2] — 2026-10-26
 
 ### Added

@@ -804,11 +804,12 @@ async function askUser(
 /** The line pinned under the prompt, always there: the state in a few
  * words, as the band above the prompt has it in full. */
 function statusLine(): string {
-  if (paused) return '[nullpii] paused · what you send is not masked';
-  if (startPass && starting()) return '[nullpii] not protected yet · starting';
-  if (starting()) return '[nullpii] starting';
-  if (problem !== undefined) return '[nullpii] blocking';
-  return counts.masked === 0 ? '[nullpii] on' : `[nullpii] on · ${counts.masked} masked`;
+  // Claude Code puts "nullpii:" in front of the line itself.
+  if (paused) return 'paused · what you send is not masked';
+  if (startPass && starting()) return 'not protected yet · starting';
+  if (starting()) return 'starting';
+  if (problem !== undefined) return 'blocking';
+  return counts.masked === 0 ? 'on' : `on · ${counts.masked} masked`;
 }
 
 /** Draw the band again and pin the status line, after any change of state. */

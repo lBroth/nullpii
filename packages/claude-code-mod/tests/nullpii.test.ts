@@ -2075,12 +2075,12 @@ test('a status line under the prompt follows the state: on, masked count, paused
   on('prompt.submit', ($, e) => ({ text: e.text }));
   on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
   await start($);
-  expect(lines.at(-1)).toBe('[nullpii] on');
+  expect(lines.at(-1)).toBe('on');
   await $.prompt.submit({ text: 'Mail John at john@acme.io', wait: false, origin: COMPOSER });
-  expect(lines.at(-1)).toMatch(/^\[nullpii\] on · \d+ masked$/);
+  expect(lines.at(-1)).toMatch(/^on · \d+ masked$/);
   const ui = await $.ui.mount(BAND);
   await ui.press({ key: 'nullpii-toggle' });
-  expect(lines.at(-1)).toBe('[nullpii] paused · what you send is not masked');
+  expect(lines.at(-1)).toBe('paused · what you send is not masked');
   await ui.unmount();
 });
 

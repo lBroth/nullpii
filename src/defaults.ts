@@ -56,7 +56,7 @@ export const CACHE_MODELS_SUBDIR = 'models';
 export const DEFAULT_MODEL_REPO = 'lBroth/nullpii';
 /** The Hugging Face commit nullpii loads. A release refuses to publish
  * until this names a commit, never a branch (`release.yml`). */
-export const DEFAULT_MODEL_REVISION = 'main';
+export const DEFAULT_MODEL_REVISION = '5dd3c7991483c3b1bccb68beba53890d24cbd2d3';
 /** The SHA-256 of every file nullpii fetches from `DEFAULT_MODEL_REVISION`:
  * a download or a cached copy with another hash is refused, so whoever
  * controls the repository cannot change what runs. These are the files

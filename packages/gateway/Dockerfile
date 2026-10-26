@@ -81,14 +81,16 @@ RUN cd packages/gateway && npx tsc -p tsconfig.json
 # root manifest lists as dev and peer dependencies: they are moved to
 # `dependencies` (lockfile versions) before pruning, so the prune keeps
 # them and every transitive dependency at its locked version. The macOS
-# and Windows builds of onnxruntime-node (160 MB) are dropped: the image
-# is Linux.
+# and Windows builds of onnxruntime-node (160 MB) are dropped, and the
+# macOS, Windows and Android builds of tokenizers (about 40 MB): the
+# image is Linux.
 RUN npm pkg set \
       "dependencies.fastify=$(node -p "require('./package-lock.json').packages['node_modules/fastify'].version")" \
       "dependencies.onnxruntime-node=$(node -p "require('./package-lock.json').packages['node_modules/onnxruntime-node'].version")" \
  && npm pkg delete devDependencies.fastify devDependencies.onnxruntime-node \
  && npm prune --omit=dev --ignore-scripts --no-audit --no-fund \
- && rm -rf node_modules/onnxruntime-node/bin/napi-v*/darwin node_modules/onnxruntime-node/bin/napi-v*/win32
+ && rm -rf node_modules/onnxruntime-node/bin/napi-v*/darwin node_modules/onnxruntime-node/bin/napi-v*/win32 \
+ && rm -f node_modules/tokenizers/tokenizers.darwin-*.node node_modules/tokenizers/tokenizers.win32-*.node node_modules/tokenizers/tokenizers.android-*.node
 
 # ---------- runtime ----------
 FROM node:22-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS runtime

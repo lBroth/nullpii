@@ -2,7 +2,7 @@
 // Word splitting ported from the GLiNER library (Apache-2.0); see NOTICE.
 
 import { join } from 'node:path';
-import { Tokenizer } from '@anush008/tokenizers';
+import { Tokenizer } from 'tokenizers';
 import { TOKENIZER_FILE } from './defaults.js';
 import { ModelNotFoundError } from './errors.js';
 import { logf } from './log.js';
@@ -67,8 +67,9 @@ export interface GlinerEncodeResult {
 /**
  * GLiNER multi-PII tokenizer wrapper.
  *
- * Wraps the upstream HF SentencePiece tokenizer (loaded via
- * `@anush008/tokenizers` from `tokenizer.json` shipped with the model).
+ * Wraps the upstream HF SentencePiece tokenizer (loaded via Hugging
+ * Face's `tokenizers` Node binding from `tokenizer.json` shipped with
+ * the model).
  * Adds the GLiNER-specific prompt-formatting and `words_mask` computation
  * on top.
  *
@@ -121,9 +122,9 @@ export class GlinerTokenizer {
    * the prompt prefix and the model's output `num_classes` dimension —
    * caller must pass the same array to the span decoder.
    *
-   * Implementation: the underlying `@anush008/tokenizers` napi binding
-   * doesn't honor `isPretokenized: true` for arrays (rejects with
-   * `StringExpected`). Workaround: encode each prompt token + each
+   * Implementation: the napi binding nullpii used before `tokenizers`
+   * (`@anush008/tokenizers`) did not honor `isPretokenized: true` for
+   * arrays (rejected with `StringExpected`). So: encode each prompt token + each
    * text word separately with `addSpecialTokens: false`, concatenate
    * the ids, and track our own word index. CLS/SEP wrappers are added
    * manually using ids resolved via `tok.tokenToId()`.

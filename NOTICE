@@ -13,7 +13,7 @@ This product depends on the following third-party components.
 Run `npm run license-check` for the full machine-readable list.
 
 Runtime (npm):
-  - @anush008/tokenizers       MIT       (NAPI bindings to HF tokenizers)
+  - tokenizers                  Apache-2.0 (Hugging Face tokenizers, Node bindings)
   - any-ascii                   ISC       (Unicode → ASCII transliteration)
   - debug                       MIT
   - onnxruntime-node            MIT       (peer dependency, required for inference)

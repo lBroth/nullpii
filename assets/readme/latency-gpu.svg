@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="502" viewBox="0 0 880 502" role="img" aria-labelledby="t d">
+<title id="t">GPU latency at 30,000 characters per tool</title>
+<desc id="d">ettin-68m: 157 ms; openai privacy-filter: 205 ms; OpenMed privacy-filter-multilingual-v2: 311 ms; piiranha: 342 ms; pii-identifier: 407 ms; gliner-stream-pii: 412 ms; nullpii (core labels): 463 ms; nullpii (every category masked): 489 ms; rizzo-pii: 494 ms; deberta PII: 631 ms; OpenMed PII Small: 794 ms; OpenMed PII Large: 1,209 ms; nemotron-pii (nvidia/gliner-PII, library): 1,478 ms; gliner-pii-large-v1: 1,892 ms; nemotron-pii (NVIDIA server pipeline): 2,835 ms</desc>
+<style>svg { --bg: #ffffff; --zone: #f6f8fa; --fg: #1f2328; --muted: #59636e; --grid: #d1d9e0; --other: #818b98; --a: #2a78d6; --b: #eb6834; --band: #2a78d614; }
+@media (prefers-color-scheme: dark) { svg { --bg: #0d1117; --zone: #151b23; --fg: #f0f6fc; --muted: #9198a1; --grid: #3d444d; --other: #6e7681; --a: #3987e5; --b: #d95926; --band: #3987e524; } }
+.bg { fill: var(--bg); } .zone { fill: var(--zone); stroke: var(--grid); }
+text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif; fill: var(--fg); }
+.title { font-size: 17px; font-weight: 600; } .sub { font-size: 13px; fill: var(--muted); }
+.ptitle { font-size: 14px; font-weight: 600; } .hint { font-size: 12px; font-weight: 400; fill: var(--muted); }
+.label { font-size: 13px; } .np { font-weight: 600; } .val { font-size: 12px; font-variant-numeric: tabular-nums; }
+.axis { font-size: 11px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+.note { font-size: 11.5px; fill: var(--muted); } .grid { stroke: var(--grid); stroke-width: 1; }
+.bar-other { fill: var(--other); } .bar-np { fill: var(--a); } .band { fill: var(--band); }
+.dot-a { fill: var(--a); stroke: var(--bg); stroke-width: 2; } .dot-b { fill: var(--b); stroke: var(--bg); stroke-width: 2; }
+.link { stroke: var(--grid); stroke-width: 2; }
+.box { fill: var(--bg); stroke: var(--grid); stroke-width: 1.5; } .step { font-size: 14px; font-weight: 600; }
+.small { font-size: 12px; fill: var(--muted); } .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; font-size: 11.5px; }
+.zlabel { font-size: 12px; font-weight: 600; fill: var(--muted); letter-spacing: .04em; }
+.arrow { stroke: var(--muted); stroke-width: 1.6; fill: none; } .head { fill: var(--muted); }
+</style>
+<rect class="bg" width="880" height="502" rx="8"/>
+<text x="16.0" y="30.0" class="title">Latency on GPU, 30,000 characters</text>
+<text x="16.0" y="50.0" class="sub">Median milliseconds per call, lower is better. RTX 4070 Ti, every tool on the same coding-agent texts, after a warm-up.</text>
+<line class="grid" x1="334.0" x2="334.0" y1="80" y2="444"/>
+<text x="334.0" y="460.0" class="axis" text-anchor="middle">0</text>
+<line class="grid" x1="407.3" x2="407.3" y1="80" y2="444"/>
+<text x="407.3" y="460.0" class="axis" text-anchor="middle">500</text>
+<line class="grid" x1="480.7" x2="480.7" y1="80" y2="444"/>
+<text x="480.7" y="460.0" class="axis" text-anchor="middle">1,000</text>
+<line class="grid" x1="554.0" x2="554.0" y1="80" y2="444"/>
+<text x="554.0" y="460.0" class="axis" text-anchor="middle">1,500</text>
+<line class="grid" x1="627.3" x2="627.3" y1="80" y2="444"/>
+<text x="627.3" y="460.0" class="axis" text-anchor="middle">2,000</text>
+<line class="grid" x1="700.7" x2="700.7" y1="80" y2="444"/>
+<text x="700.7" y="460.0" class="axis" text-anchor="middle">2,500</text>
+<line class="grid" x1="774.0" x2="774.0" y1="80" y2="444"/>
+<text x="774.0" y="460.0" class="axis" text-anchor="middle">3,000</text>
+<text x="318.0" y="100.5" class="label" text-anchor="end">ettin-68m</text>
+<path class="bar-other" d="M334.0,90.0H353.0A4,4 0 0 1 357.0,94.0V98.0A4,4 0 0 1 353.0,102.0H334.0Z"/>
+<text x="363.0" y="100.0" class="val">157</text>
+<text x="318.0" y="124.5" class="label" text-anchor="end">openai privacy-filter</text>
+<path class="bar-other" d="M334.0,114.0H360.1A4,4 0 0 1 364.1,118.0V122.0A4,4 0 0 1 360.1,126.0H334.0Z"/>
+<text x="370.1" y="124.0" class="val">205</text>
+<text x="318.0" y="148.5" class="label" text-anchor="end">OpenMed privacy-filter-multilingual-v2</text>
+<path class="bar-other" d="M334.0,138.0H375.6A4,4 0 0 1 379.6,142.0V146.0A4,4 0 0 1 375.6,150.0H334.0Z"/>
+<text x="385.6" y="148.0" class="val">311</text>
+<text x="318.0" y="172.5" class="label" text-anchor="end">piiranha</text>
+<path class="bar-other" d="M334.0,162.0H380.2A4,4 0 0 1 384.2,166.0V170.0A4,4 0 0 1 380.2,174.0H334.0Z"/>
+<text x="390.2" y="172.0" class="val">342</text>
+<text x="318.0" y="196.5" class="label" text-anchor="end">pii-identifier</text>
+<path class="bar-other" d="M334.0,186.0H389.7A4,4 0 0 1 393.7,190.0V194.0A4,4 0 0 1 389.7,198.0H334.0Z"/>
+<text x="399.7" y="196.0" class="val">407</text>
+<text x="318.0" y="220.5" class="label" text-anchor="end">gliner-stream-pii</text>
+<path class="bar-other" d="M334.0,210.0H390.4A4,4 0 0 1 394.4,214.0V218.0A4,4 0 0 1 390.4,222.0H334.0Z"/>
+<text x="400.4" y="220.0" class="val">412</text>
+<rect class="band" x="8" y="228" width="864" height="24" rx="4"/>
+<text x="318.0" y="244.5" class="label np" text-anchor="end">nullpii (core labels)</text>
+<path class="bar-np" d="M334.0,234.0H397.9A4,4 0 0 1 401.9,238.0V242.0A4,4 0 0 1 397.9,246.0H334.0Z"/>
+<text x="407.9" y="244.0" class="val np">463</text>
+<rect class="band" x="8" y="252" width="864" height="24" rx="4"/>
+<text x="318.0" y="268.5" class="label np" text-anchor="end">nullpii (every category masked)</text>
+<path class="bar-np" d="M334.0,258.0H401.7A4,4 0 0 1 405.7,262.0V266.0A4,4 0 0 1 401.7,270.0H334.0Z"/>
+<text x="411.7" y="268.0" class="val np">489</text>
+<text x="318.0" y="292.5" class="label" text-anchor="end">rizzo-pii</text>
+<path class="bar-other" d="M334.0,282.0H402.5A4,4 0 0 1 406.5,286.0V290.0A4,4 0 0 1 402.5,294.0H334.0Z"/>
+<text x="412.5" y="292.0" class="val">494</text>
+<text x="318.0" y="316.5" class="label" text-anchor="end">deberta PII</text>
+<path class="bar-other" d="M334.0,306.0H422.5A4,4 0 0 1 426.5,310.0V314.0A4,4 0 0 1 422.5,318.0H334.0Z"/>
+<text x="432.5" y="316.0" class="val">631</text>
+<text x="318.0" y="340.5" class="label" text-anchor="end">OpenMed PII Small</text>
+<path class="bar-other" d="M334.0,330.0H446.5A4,4 0 0 1 450.5,334.0V338.0A4,4 0 0 1 446.5,342.0H334.0Z"/>
+<text x="456.5" y="340.0" class="val">794</text>
+<text x="318.0" y="364.5" class="label" text-anchor="end">OpenMed PII Large</text>
+<path class="bar-other" d="M334.0,354.0H507.3A4,4 0 0 1 511.3,358.0V362.0A4,4 0 0 1 507.3,366.0H334.0Z"/>
+<text x="517.3" y="364.0" class="val">1,209</text>
+<text x="318.0" y="388.5" class="label" text-anchor="end">nemotron-pii (nvidia/gliner-PII, library)</text>
+<path class="bar-other" d="M334.0,378.0H546.8A4,4 0 0 1 550.8,382.0V386.0A4,4 0 0 1 546.8,390.0H334.0Z"/>
+<text x="556.8" y="388.0" class="val">1,478</text>
+<text x="318.0" y="412.5" class="label" text-anchor="end">gliner-pii-large-v1</text>
+<path class="bar-other" d="M334.0,402.0H607.5A4,4 0 0 1 611.5,406.0V410.0A4,4 0 0 1 607.5,414.0H334.0Z"/>
+<text x="617.5" y="412.0" class="val">1,892</text>
+<text x="318.0" y="436.5" class="label" text-anchor="end">nemotron-pii (NVIDIA server pipeline)</text>
+<path class="bar-other" d="M334.0,426.0H745.8A4,4 0 0 1 749.8,430.0V434.0A4,4 0 0 1 745.8,438.0H334.0Z"/>
+<text x="755.8" y="436.0" class="val">2,835</text>
+<text x="16.0" y="488.0" class="note">CPU, 2,000 and 100,000 characters: the tables below.</text>
+</svg>

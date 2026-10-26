@@ -19,9 +19,9 @@ hero:
       link: https://github.com/lBroth/nullpii
 features:
   - title: Local detection
-    details: A fine-tuned GLiNER model plus validated recognizers run on your CPU or GPU. Your text is sent nowhere; the vault lives in memory only.
+    details: A fine-tuned GLiNER model plus validated recognizers, on your CPU or GPU. Your text goes nowhere; the vault lives in memory only.
   - title: Built for coding agents
-    details: A gateway for the Anthropic and OpenAI APIs and a Claude Code mod mask prompts and tool output, and put real values back only into tools that run on your machine. Claude Code is the agent it is built and tested with, through either; the gateway does not serve the Responses API, so the Codex CLI cannot use it.
-  - title: Measured on held-out data
-    details: Scored on four public datasets and a synthetic trace set, chosen before any tool ran on them, against 14 open-source detectors run through their authors' pipelines (departures listed), with where it is not ahead.
+    details: Masks prompts and tool output, keeps code and documentation links readable, and never puts a real value into a shell command. Through the Claude Code mod, or a gateway for the Anthropic and OpenAI APIs.
+  - title: Measured, losses included
+    details: On coding-agent traffic it lets 9.5% of what must be hidden through and keeps 81.9% of what must stay readable; only rizzo-pii lets fewer through, keeping 44.5%. On held-out document sets it is second of 15.
 ---

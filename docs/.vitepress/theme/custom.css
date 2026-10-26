@@ -1,0 +1,7 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* The README's badges sit on one line, as on GitHub; the theme makes every image a block. */
+.vp-doc p > a > img {
+  display: inline-block;
+  vertical-align: middle;
+}

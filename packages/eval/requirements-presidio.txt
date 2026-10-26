@@ -13,7 +13,7 @@
 
 presidio-analyzer==2.2.364
 spacy==3.8.16
-numpy==2.4.4
+numpy==2.4.6
 datasets==4.8.5
 # Transitive, pinned because they change what Presidio detects: phone
 # metadata, the regex engine of its pattern recognizers, e-mail domain checks.

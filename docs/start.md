@@ -67,6 +67,31 @@ Write a short welcome note to John Smith, john@acme.io.
 The band counts what was masked, by type, and Claude works with placeholders such as `{{PII_PRIVATE_EMAIL_0_…}}`. Your screen still shows the real values. Type `/pii` to see the counts and what each category does.
 :::
 
+## Update to a new release
+
+The marketplace is pinned to the release you installed, so `marketplace update` alone stays on it, and adding the new tag fails with:
+
+```text
+Cannot add marketplace "nullpii": its source doesn't match its extraKnownMarketplaces entry in user or managed settings
+```
+
+To move to a new release, change the pin first. In `~/.claude/settings.json`, set `ref` of the `nullpii` entry to the new tag:
+
+```json
+"extraKnownMarketplaces": {
+  "nullpii": { "source": { "source": "github", "repo": "lBroth/nullpii", "ref": "v<new version>" } }
+}
+```
+
+Then:
+
+```bash
+claude plugin marketplace update nullpii
+claude plugin update nullpii@nullpii
+```
+
+Restart Claude Code. Your sidecar token and options stay as they are. The release notes are in the [changelog](./changelog).
+
 ## Next
 
 - [Choose what gets masked](./guide/claude-code#choose-what-gets-masked): `/pii preset secrets`, `/pii mask url`, `/pii ask url` and the policy file.

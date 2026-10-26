@@ -510,7 +510,7 @@ async function openSessionOnce($): Promise<void> {
   problem = undefined;
   // A band drawn before the session opened (a hot reload draws it at once,
   // from the module's starting state) would keep showing that state.
-  $.ui.invalidate('ui.render');
+  redraw($);
 }
 
 /** Mask every string in `value`. A session the sidecar dropped (restart or
@@ -531,7 +531,7 @@ async function sanitize($, value: unknown): Promise<Sanitized> {
 async function masked($, value: unknown): Promise<unknown> {
   const r = await sanitize($, value);
   addMasked(counts, r.captured, r.capturedByLabel);
-  $.ui.invalidate('ui.render');
+  redraw($);
   return r.value;
 }
 
@@ -564,7 +564,7 @@ function blocked($, event: string, failure: Failure): string {
       ? ` (${failure.message.length} characters withheld)`
       : '';
   $.ui.log(`nullpii: ${event} failed (${failure.kind}): ${reason}${withheld}`, { to: 'debug' });
-  $.ui.invalidate('ui.render');
+  redraw($);
   return reason;
 }
 
@@ -632,7 +632,7 @@ function gaveUp($, message: string): void {
   $.ui.log(`nullpii: the sidecar this session started did not come up: ${message}`, {
     to: 'debug',
   });
-  $.ui.invalidate('ui.render');
+  redraw($);
 }
 
 /** Wait for the sidecar this session started to be ready: its status says
@@ -675,7 +675,7 @@ async function waitForSidecar($): Promise<void> {
       await openSession($);
       problem = undefined;
       startPass = false;
-      $.ui.invalidate('ui.render');
+      redraw($);
       $.ui.toast('nullpii is on');
       return;
     }
@@ -699,7 +699,7 @@ async function waitForSidecar($): Promise<void> {
       continue;
     }
     problem = phaseLine();
-    $.ui.invalidate('ui.render');
+    redraw($);
   }
   // Nothing ever answered (`installing`, the phase the start began in), or
   // the model was not ready in time.
@@ -801,6 +801,22 @@ async function askUser(
   }
 }
 
+/** The line pinned under the prompt, always there: the state in a few
+ * words, as the band above the prompt has it in full. */
+function statusLine(): string {
+  if (paused) return '[nullpii] paused · what you send is not masked';
+  if (startPass && starting()) return '[nullpii] not protected yet · starting';
+  if (starting()) return '[nullpii] starting';
+  if (problem !== undefined) return '[nullpii] blocking';
+  return counts.masked === 0 ? '[nullpii] on' : `[nullpii] on · ${counts.masked} masked`;
+}
+
+/** Draw the band again and pin the status line, after any change of state. */
+function redraw($): void {
+  $.ui.invalidate('ui.render');
+  $.ui.status(statusLine());
+}
+
 /** Whether the sidecar this session started is still coming up. */
 function starting(): boolean {
   return started === 'running' && problem?.startsWith(STARTING_PREFIX) === true;
@@ -870,7 +886,7 @@ async function sendUnprotectedWhileStarting($): Promise<boolean> {
   if (whileStarting === 'block') return false;
   if (whileStarting === 'pass') {
     startPass = true;
-    $.ui.invalidate('ui.render');
+    redraw($);
     return true;
   }
   let answer: string;
@@ -888,7 +904,7 @@ async function sendUnprotectedWhileStarting($): Promise<boolean> {
   }
   if (answer === SEND_UNPROTECTED_UNTIL_READY) {
     startPass = true;
-    $.ui.invalidate('ui.render');
+    redraw($);
   }
   return answer === SEND_UNPROTECTED || answer === SEND_UNPROTECTED_UNTIL_READY;
 }
@@ -917,14 +933,14 @@ async function pauseMasking($): Promise<boolean> {
   }
   if (answer !== PAUSE_MASKING) return false;
   paused = true;
-  $.ui.invalidate('ui.render');
+  redraw($);
   return true;
 }
 
 /** Turn masking back on for this session. */
 function resumeMasking($): void {
   paused = false;
-  $.ui.invalidate('ui.render');
+  redraw($);
 }
 
 /** Whether `call` is a question the mod is putting right now (its text and
@@ -1217,7 +1233,7 @@ export function register(on, options) {
     const asked = optionString(options, 'while_starting');
     whileStarting = asked === 'block' || asked === 'pass' ? asked : 'ask';
     // The band was drawn under the old state: draw it under this one.
-    $.ui.invalidate('ui.render');
+    redraw($);
     try {
       await openSession($);
     } catch (err) {
@@ -1233,7 +1249,7 @@ export function register(on, options) {
         phase = 'installing';
         download = undefined;
         problem = phaseLine();
-        $.ui.invalidate('ui.render');
+        redraw($);
         void waitForSidecar($).catch((err) => blocked($, 'sidecar start', failureOf(err)));
         return next(e);
       }

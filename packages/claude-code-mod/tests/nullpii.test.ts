@@ -2056,6 +2056,28 @@ test('a pause the person did not type themselves is refused, and masking stays o
   expect(prompt.text).not.toContain('john@acme.io');
 });
 
+test('a status line under the prompt follows the state: on, masked count, paused', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const lines: (string | undefined)[] = [];
+  on('ui.status', ($, e) => {
+    lines.push(e.text);
+    return { value: undefined };
+  });
+  const questions: string[] = [];
+  answerDialog(on, 'Pause masking', questions);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
+  await start($);
+  expect(lines.at(-1)).toBe('[nullpii] on');
+  await $.prompt.submit({ text: 'Mail John at john@acme.io', wait: false, origin: COMPOSER });
+  expect(lines.at(-1)).toMatch(/^\[nullpii\] on · \d+ masked$/);
+  const ui = await $.ui.mount(BAND);
+  await ui.press({ key: 'nullpii-toggle' });
+  expect(lines.at(-1)).toBe('[nullpii] paused · what you send is not masked');
+  await ui.unmount();
+});
+
 test('a pause ends with its session: the next one starts masked, and the policy file is never touched', async ($, on) => {
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);

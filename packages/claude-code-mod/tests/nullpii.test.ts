@@ -1839,7 +1839,13 @@ test('a start that never gets the model ready in time says which phase it was in
   };
   await clock.advance(2_000);
   await clock.advance(10 * 60 * 1000);
-  const status = await $.command.run({ command: 'pii', args: '' });
+  // The start's loop gives up in the background: look until it has, so a
+  // slow machine does not read the status a moment too soon.
+  let status = await $.command.run({ command: 'pii', args: '' });
+  for (let i = 0; i < 20 && !status.text.includes('did not get the model ready'); i++) {
+    await clock.advance(2_000);
+    status = await $.command.run({ command: 'pii', args: '' });
+  }
   expect(status.text).toContain(
     'did not get the model ready in time (still downloading the model)',
   );

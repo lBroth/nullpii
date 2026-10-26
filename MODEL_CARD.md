@@ -25,7 +25,7 @@ tags:
 
 # nullpii detection model
 
-This is the detection model of [nullpii](https://github.com/lBroth/nullpii). nullpii hides personal data and secrets in text before the text goes to an LLM, and puts the real values back in the reply. Everything runs on your machine.
+This is the detection model of [nullpii](https://lbroth.github.io/nullpii/). nullpii hides personal data and secrets in text before the text goes to an LLM, and puts the real values back in the reply. Everything runs on your machine.
 
 The model finds spans of personal data (names, emails, addresses, account numbers, secrets and more). nullpii adds pattern recognizers with checksums, filters, and a vault that swaps each value for a placeholder.
 
@@ -51,7 +51,7 @@ const back = np.restore(safe.sanitized, safe.sessionId);
 // back.restored: the original text
 ```
 
-nullpii also ships a gateway for the Anthropic and OpenAI chat APIs and a Claude Code mod. See the [nullpii README](https://github.com/lBroth/nullpii#readme).
+nullpii also ships a gateway for the Anthropic and OpenAI chat APIs and a Claude Code mod. See the [nullpii documentation](https://lbroth.github.io/nullpii/); the source is on [GitHub](https://github.com/lBroth/nullpii).
 
 nullpii runs these files with its own tokenizer and decoder. Loading them with the Python `gliner` package has not been tested.
 
@@ -63,7 +63,7 @@ By default nullpii masks what is risky to give to a coding agent's model: names,
 
 ## Results
 
-These numbers are for nullpii as a whole: this model plus the recognizers and filters. They are not for the model alone. Every test was fixed before the run, except one AB-1 scoring rule changed after the scores were first read; that change helped the other tools more, and both scorings are published. The results include the cases nullpii loses. The method is in [METHOD.md](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md).
+These numbers are for nullpii as a whole: this model plus the recognizers and filters. They are not for the model alone. Every test was fixed before the run, except one AB-1 scoring rule changed after the scores were first read; that change helped the other tools more, and both scorings are published. The results include the cases nullpii loses. The method is in [METHOD.md](https://lbroth.github.io/nullpii/method).
 
 ![Agent traffic: leak rate and keep rate per tool](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/ab1-agent-traffic.svg)
 
@@ -77,7 +77,7 @@ These numbers are for nullpii as a whole: this model plus the recognizers and fi
 
 ## Training data
 
-All training data allows commercial use. Full details: [WEIGHTS_PROVENANCE.md](https://github.com/lBroth/nullpii/blob/main/docs/WEIGHTS_PROVENANCE.md).
+All training data allows commercial use. Full details: [WEIGHTS_PROVENANCE.md](https://lbroth.github.io/nullpii/WEIGHTS_PROVENANCE).
 
 | Source | Licence |
 |---|---|

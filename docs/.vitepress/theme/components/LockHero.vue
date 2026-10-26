@@ -193,11 +193,13 @@ onBeforeUnmount(() => {
   --lock-shadow: rgba(0, 117, 148, 0.2);
   position: relative;
   width: 100%;
+  /* Room above the closed lock for the raised shackle: the lock sits
+   * --lock-drop below the stage's centre. */
+  --lock-drop: 10px;
   max-width: 240px;
-  height: 190px;
+  height: 220px;
   margin: 0 auto;
   overflow: hidden;
-  overflow: clip;
   pointer-events: none;
   user-select: none;
 }
@@ -236,7 +238,7 @@ onBeforeUnmount(() => {
   left: 50%;
   width: 256px;
   height: 256px;
-  margin: -128px 0 0 -128px;
+  margin: calc(var(--lock-drop) - 128px) 0 0 -128px;
   animation: np-lock-float 7s ease-in-out 2.5s infinite;
 }
 
@@ -391,11 +393,19 @@ onBeforeUnmount(() => {
   mask-composite: exclude;
 }
 
+@supports (overflow: clip) {
+  .np-lock-hero {
+    overflow: visible;
+    overflow-x: clip;
+  }
+}
+
 @media (min-width: 640px) {
   .np-lock-hero {
     --lock-scale: 1.3;
+    --lock-drop: 12px;
     max-width: 260px;
-    height: 230px;
+    height: 265px;
   }
 
   .np-lock-shadow {
@@ -406,8 +416,9 @@ onBeforeUnmount(() => {
 @media (min-width: 960px) {
   .np-lock-hero {
     --lock-scale: 1.65;
+    --lock-drop: 15px;
     max-width: 300px;
-    height: 300px;
+    height: 330px;
   }
 
   .np-lock-shadow {

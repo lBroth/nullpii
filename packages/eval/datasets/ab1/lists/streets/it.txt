@@ -1,0 +1,1203 @@
+Borgo Albizi
+Borgo Allegri
+Borgo Angelico
+Borgo La Noce
+Borgo Ognissanti
+Borgo Pinti
+Borgo Pio
+Borgo San Frediano
+Borgo San Jacopo
+Borgo Sant'Angelo
+Borgo Santa Croce
+Borgo Santi Apostoli
+Borgo Stella
+Borgo Stretto
+Borgo Vittorio
+Borgo dei Greci
+Corso Adda
+Corso Alberto Pio
+Corso Amedeo di Savoia
+Corso Armando Diaz
+Corso Belgio
+Corso Biagio Rossetti
+Corso Bruno Buozzi
+Corso Buenos Aires
+Corso Carducci
+Corso Carlo Armellini
+Corso Castelvecchio
+Corso Cavour
+Corso Como
+Corso Concordia
+Corso Costantino Nigra
+Corso Cristoforo Colombo
+Corso Dogali
+Corso Duca degli Abruzzi
+Corso Esperanto
+Corso Ettore Archinti
+Corso Europa
+Corso Federico II
+Corso Firenze
+Corso Frascatoli
+Corso Galileo Ferraris
+Corso Garibaldi
+Corso Genova
+Corso Giacomo Matteotti
+Corso Giulio Cesare
+Corso Giuseppe Garibaldi
+Corso Giuseppe Mazzini
+Corso Grosseto
+Corso Imperatrice
+Corso Indipendenza
+Corso Italia
+Corso Lodi
+Corso Magenta
+Corso Mameli
+Corso Martiri della Libertà
+Corso Moncalieri
+Corso Monforte
+Corso Monte Grappa
+Corso Nasini
+Corso Orbassano
+Corso Paganini
+Corso Palladio
+Corso Plebisciti
+Corso Porta Borsari
+Corso Porta Mare
+Corso Porta Nuova
+Corso Porta Po
+Corso Porta Reno
+Corso Racconigi
+Corso Roma
+Corso San Giovanni a Teduccio
+Corso San Gottardo
+Corso Santa Anastasia
+Corso Secondigliano
+Corso Sempione
+Corso Solferino
+Corso Toscana
+Corso Trieste
+Corso Umberto I
+Corso Unione Sovietica
+Corso Vannucci
+Corso Venezia
+Corso Vercelli
+Corso Vittorio Emanuele
+Corso Vittorio Emanuele II
+Corso Vittorio Veneto
+Corso XXII Marzo
+Corso d'Italia
+Corso dei Mille
+Corso dei Tintori
+Corso del Popolo
+Corso del Rinascimento
+Corso della Libertà
+Corso di Porta Nuova
+Corso di Porta Romana
+Corso di Porta Ticinese
+Corso di Porta Vigentina
+Corso di Porta Vittoria
+Corso due mari
+Largo Pagano
+Lungomare Vittorio Emanuele III
+Lungomare Vittorio Veneto
+Lungomare di Carloforte
+Piazza Guglielmo Miani
+Piazza San Francesco
+Piazza del Duomo
+Strada Cavour
+Strada Corsini
+Strada Garibaldi
+Strada Ginori
+Strada Ricasoli
+Strada Vecchia Cremonese
+Strada Vinzaglio
+Strada del Giuoco del Cacio
+Strada vicinale di Valverde
+Via Acquarone
+Via Adalberto Catena
+Via Adda
+Via Adele Martignoni
+Via Adele Zoagli
+Via Adige
+Via Adriano
+Via Agostino Bassi
+Via Agostino Bertani
+Via Agostino Depretis
+Via Alberto Caroncini
+Via Aldo Tarabella
+Via Aldobrandeschi
+Via Alessandrina
+Via Alessandro Algardi
+Via Alessandro Bisnati
+Via Alessandro Pestalozza
+Via Alessandro Repetti
+Via Alessandro Visconti D'Aragona
+Via Alessandro Volta
+Via Alessandro Zanoli
+Via Alex Visconti
+Via Alfredo Oriani
+Via Alfredo Soffredini
+Via Ambrogio Campiglio
+Via Ambrogio De Marchi Gherini
+Via Amedeo Pigozzi
+Via Amiata
+Via Anagnina
+Via Andrea Costa
+Via Andrea Maria Ampère
+Via Andrea Palladio
+Via Andrea Zappellini
+Via Andrea da Grosseto
+Via Andreas Hofer
+Via Angelo Carlo Fumagalli
+Via Angelo De Gasperis
+Via Angelo Fava
+Via Angelo Finelli
+Via Angelo Inganni
+Via Aniello Falcone
+Via Annibale Moncini
+Via Antonino di Sangiuliano
+Via Antonio Brasavola
+Via Antonio Canova
+Via Antonio Fratti
+Via Antonio Gramsci
+Via Antonio Grumello
+Via Antonio Jorini
+Via Antonio Lazzati
+Via Antonio Leonelli
+Via Antonio Lissoni
+Via Antonio Magliabechi
+Via Antonio Mambretti
+Via Antonio Martinazzoli
+Via Antonio Paglialunga
+Via Antonio Pianella
+Via Antonio Picozzi
+Via Antonio Vivaldi
+Via Appia Antica
+Via Appia Nuova
+Via Aquileia
+Via Arenaccia
+Via Argentieri
+Via Armando Tornatore
+Via Atenea
+Via Attavanti
+Via Augusto Osimo
+Via Augusto Vanzetti
+Via Aurelia Antica
+Via Aurelio Saffi
+Via Averardo Buschi
+Via Bagutta
+Via Balbi
+Via Baldo degli Ubaldi
+Via Belvedere
+Via Benedetto Brin
+Via Benedetto Cairoli
+Via Benedetto Marcello
+Via Bengasi
+Via Benuccio da Orvieto
+Via Bernardino Ghiringhelli
+Via Bernardino Rota
+Via Bernardino degli Albizzeschi
+Via Bernardo Quaranta
+Via Bernardo Ricci
+Via Bernardo Ugo Secondo
+Via Beroldo
+Via Bettino Da Trezzo
+Via Bettola
+Via Bianca di Savoia
+Via Biberatica
+Via Bigli
+Via Bisceglie
+Via Boccacanale di Santo Stefano
+Via Bocconi
+Via Bonanno Pisano
+Via Borgo Adda
+Via Borgo di Sotto
+Via Borgoleoni
+Via Borgonuovo
+Via Borra
+Via Bovicelli
+Via Bovisasca
+Via Brembo
+Via Brera
+Via Brigata Sassari
+Via Broletto
+Via Bruno Buozzi
+Via Budrio
+Via Bufalini
+Via Caffaro
+Via Caio Plinio Secondo
+Via Cairoli
+Via California
+Via Camerelle
+Via Camillo Benso Conte di Cavour
+Via Camillo Benso conte di Cavour
+Via Camillo Golgi
+Via Camillo Hajech
+Via Camillo Vacani
+Via Camillo e Otto Cima
+Via Campana
+Via Canneto il Lungo
+Via Capo d'Africa
+Via Cappuccio
+Via Carducci
+Via Carlo Boncompagni
+Via Carlo Cazzaniga
+Via Carlo Cicogna Mozzoni
+Via Carlo Crivelli
+Via Carlo De Angeli
+Via Carlo Farini
+Via Carlo Foldi
+Via Carlo Goldoni
+Via Carlo Landriani
+Via Carlo Mayr
+Via Carlo Moreschi
+Via Carlo Pallavicino
+Via Carlo Parea
+Via Carlo Perini
+Via Carlo Torre
+Via Carlo Troya
+Via Carlo Valvassori Peroni
+Via Carlo Vittadini
+Via Casanova
+Via Casilina
+Via Cassa di Risparmio
+Via Castelfidardo
+Via Castiglionese
+Via Cavour
+Via Celeste Clericetti
+Via Celso Camaiori
+Via Cenisio
+Via Cernaia
+Via Cesare Augusto Colombo
+Via Cesare Battisti
+Via Cesare Brivio
+Via Cesare Dal Fabbro
+Via Cesare Rosaroll
+Via Cesare Sersale
+Via Cesare Vignati
+Via Cesario Console
+Via Chiaia
+Via Cisterna del Follo
+Via Claudia
+Via Clavarezza
+Via Clerici
+Via Collatina
+Via Commerciale
+Via Concezione a Montecalvario
+Via Consolare
+Via Consoli del Mare
+Via Conte Fazio
+Via Contrari
+Via Corsica
+Via Cortevecchia
+Via Costantino e Maria Brighenti
+Via Crema
+Via Crescenzago
+Via Cristoforo Colombo
+Via Curtatone
+Via Curtatone e Montanara
+Via Cusani
+Via Damiano Chiesa
+Via Daniele Crespi
+Via Daniele Manin
+Via Dante
+Via Dante Di Nanni
+Via Davide Guarenti
+Via De Chirico
+Via Defendente da Lodi
+Via Dei Calchi Taeggi
+Via Delio Tessa
+Via Diocleziano
+Via Dionigi Biancardi
+Via Domenichino
+Via Domenico Capitelli
+Via Domenico Cimarosa
+Via Domenico Vernagalli
+Via Don Francesco Beniamino Della Torre
+Via Don Gaetano Paltrinieri
+Via Don Giovanni Minzoni
+Via Donato Bosso
+Via Dottor Solarino
+Via Dr. Josef Streiter
+Via Duomo
+Via Edmondo De Amicis
+Via Edoardo Bassini
+Via Edoardo Bonardi
+Via Edoardo Giraud
+Via Edoardo Nicolardi
+Via Egiziaca a Pizzofalcone
+Via Emanuele Jona
+Via Emilio Bignami
+Via Enrico Besana
+Via Enrico D'Aste
+Via Enrico Serretta
+Via Enrico Somarè
+Via Enrico Terzaghi
+Via Ermanno Barigozzi
+Via Ermenegildo Cantoni
+Via Ernesto Messa
+Via Etnea
+Via Etruria
+Via Eugenio Brizi
+Via Eugenio Camerini
+Via Eugenio Vaina
+Via F.lli Bettinelli
+Via Fabio Filzi
+Via Fabio Massimo
+Via Faenza
+Via Fago
+Via Fanfulla
+Via Farini
+Via Fatebenefratelli
+Via Federico Ozanam
+Via Felice Cavallotti
+Via Felice Poggi
+Via Feltre
+Via Ferdinando Giorgi
+Via Ferrante Aporti
+Via Fiesolana
+Via Filippino Lippi
+Via Filippo Buonarroti
+Via Filippo Corridoni
+Via Filippo Lavagna
+Via Filippo Meda
+Via Filippo Tajani
+Via Filippo Turati
+Via Fissiraga
+Via Fiume
+Via Folco Portinari
+Via Foria
+Via Fortebraccio
+Via Fortezza
+Via Francesco Albertini Levante
+Via Francesco Albertini Ponente
+Via Francesco Barberini
+Via Francesco Caracciolo
+Via Francesco Crispi
+Via Francesco De Lemene
+Via Francesco Gatti
+Via Francesco Gonin
+Via Francesco Ingegnoli
+Via Francesco Martinengo
+Via Francesco Pecorari
+Via Francesco Petrarca
+Via Francesco Peverelli
+Via Francesco Primaticcio
+Via Francesco Rezzonico
+Via Francesco Rubino
+Via Francesco Sforza
+Via Francesco Zuccarelli
+Via Franchino Gaffurio
+Via Fratelli Castiglioni
+Via Fratelli Porcellaga
+Via Fratelli Salvioni
+Via Fratelli d'Italia
+Via Frattina
+Via Freiköfel
+Via Frescobaldi
+Via Fulceri Paolucci de' Calboli
+Via Gaetano Boggiali
+Via Gaetano Donizetti
+Via Gaetano Lodi
+Via Gaetano Serrani
+Via Galileo Galilei
+Via Gallura
+Via Garibaldi
+Via Gaspare Bugatti
+Via Gaspare Vismara
+Via General Cantore
+Via Gerolamo Chizzolini
+Via Gerolamo Forni
+Via Gerolamo Turroni
+Via Ghibellina
+Via Giacinto Mompiani
+Via Giacomo Filippo Besta
+Via Giacomo Griziotti
+Via Giacomo Matteotti
+Via Giacomo Medici
+Via Gian Carlo Castelbarco
+Via Gian Giacomo Gilino
+Via Gian Maria Oddo
+Via Gian Pietro Puricelli
+Via Giangrisostomo Trombelli
+Via Giannino Sessa
+Via Gino Capponi
+Via Gioacchino Rossini
+Via Giorgio Castelli
+Via Giorgio Jan
+Via Giosuè Borsi
+Via Giosuè Carducci
+Via Giovan Battista de Rossi
+Via Giovanni Balilla Magistri
+Via Giovanni Battaggio
+Via Giovanni Battista Cassinis
+Via Giovanni Battista Palletta
+Via Giovanni Battista Pergolesi
+Via Giovanni Battista Pirelli
+Via Giovanni Battista Rasario
+Via Giovanni Bellezza
+Via Giovanni Bensi
+Via Giovanni Briosi
+Via Giovanni Di Breganze
+Via Giovanni Fattori
+Via Giovanni Lanza
+Via Giovanni Lorenzini
+Via Giovanni Manna
+Via Giovanni Maria Bicetti de' Buttinoni
+Via Giovanni Montemartini
+Via Giovanni Pacini
+Via Giovanni Pascoli
+Via Giovanni Rotondi
+Via Giovanni Schiavoni
+Via Giovanni da Verrazzano
+Via Girolamo Sbaraglia Levante
+Via Girolamo Sbaraglia Ponente
+Via Giulia
+Via Giulianova
+Via Giulio Ferreri
+Via Giulio Romano
+Via Giuoco del Pallone
+Via Giuseppe Antonio Sassi
+Via Giuseppe Biancardi
+Via Giuseppe Bottelli
+Via Giuseppe Carozzi
+Via Giuseppe Garibaldi
+Via Giuseppe Giusti
+Via Giuseppe Luosi
+Via Giuseppe Marcora
+Via Giuseppe Mazzini
+Via Giuseppe Natoli
+Via Giuseppe Parini
+Via Giuseppe Pelitti
+Via Giuseppe Pianigiani
+Via Giuseppe Piolti De' Bianchi
+Via Giuseppe Ponzio
+Via Giuseppe Pozzone
+Via Giuseppe Puricelli Guerra
+Via Giuseppe Ripamonti
+Via Giuseppe Verdi
+Via Giuseppina Strepponi
+Via Goethe
+Via Goffredo Mameli
+Via Gonzaga
+Via Grande
+Via Gregoriana
+Via Gualtiero Castellini
+Via Guelfa
+Via Guglielmo Giatti
+Via Guglielmo Guintellino
+Via Guglielmo Marconi
+Via Guglielmo Oberdan
+Via Guglielmo Roentgen
+Via Guglielmo degli Adelardi
+Via Guicciardini
+Via Guido Guarini Matteucci
+Via Guisa
+Via Gustavo Modena
+Via IV marzo
+Via Iacopo Antonio Perti
+Via Incoronata
+Via Innocenzo Isimbardi
+Via Ippodromo
+Via Isonzo
+Via Kinzika dei Sismondi
+Via Kyoto
+Via Lago Tana
+Via Landolfo
+Via Larga
+Via Latina
+Via Laura
+Via Laura Ciceri Visconti
+Via Laurentina
+Via Laurin
+Via Lazzaretto
+Via Lecco
+Via Legnano
+Via Leonardo Cambini
+Via Leonardo Ximenes
+Via Leoni
+Via Leopoldo Grilli
+Via Leopoldo Marchetti
+Via Lia Benesperi
+Via Ligar
+Via Liri
+Via Livornese
+Via Lodino
+Via Lodovico Mattioli
+Via Lodovico Valtorta
+Via Lodovico Vistarini
+Via Lorenteggio
+Via Luca Giordano
+Via Ludovico Lazzaro Zamenhof
+Via Luigi Anelli
+Via Luigi Buffoli
+Via Luigi Cadorna
+Via Luigi Cingia
+Via Luigi Cirenei
+Via Luigi Maria Brunelli
+Via Luigi Muzzi
+Via Luigi Pasteur
+Via Luigi Prinetti
+Via Luigi Ratti
+Via Luigi Settembrini
+Via Luigia Greppi
+Via Lusitania
+Via Mac Mahon
+Via Madama Cristina
+Via Maddalena
+Via Maddaloni
+Via Maffeo Bagarotti
+Via Magenta
+Via Maggio
+Via Magnolfi
+Via Manfredo Fanti
+Via Mannelli
+Via Manzoni
+Via Maqueda
+Via Marcello Fossataro
+Via Marco Burigozzo
+Via Marco Greppi
+Via Marco d'Agrate
+Via Margutta
+Via Mariano Stabile
+Via Marinello Nelli
+Via Mario Fani
+Via Mario Morgantini
+Via Mario Nicoletta
+Via Mario Pagano
+Via Marsala
+Via Marta Navarra Bernstein
+Via Martiri della Libertà
+Via Masaccio
+Via Massimo d'Azeglio
+Via Matteo Palmieri
+Via Mauro Macchi
+Via Mauro Rota
+Via Mazzetta
+Via Mazzini
+Via Mazzini di Ferrara
+Via Mecenate
+Via Medina
+Via Melchiorre Gioia
+Via Mercanti
+Via Merulana
+Via Miano
+Via Michelangelo Buonarroti
+Via Milano
+Via Molino delle Armi
+Via Monalda
+Via Moneta
+Via Montaldo
+Via Montanara
+Via Monte di Dio
+Via Monte di Pietà
+Via Montebello
+Via Montesano
+Via Morigi
+Via Napoli a Piscinola
+Via Nardones
+Via Nazario Sauro
+Via Niccolò Paganini
+Via Nicodemo Tranchedini
+Via Nicola Antonio Porpora
+Via Nicolò Barabino
+Via Nino Dall'Oro
+Via Nizza
+Via Nomentana
+Via Norma Parenti
+Via Nuova Marina
+Via Oglio
+Via Orcagna
+Via Oreste Cipriani
+Via Oriana Fallaci
+Via Orobia
+Via Padova
+Via Padre Francesco Denza
+Via Palazzuolo
+Via Palestro
+Via Pallone
+Via Palmanova
+Via Panisperna
+Via Panzani
+Via Paolina
+Via Paolo Bassi
+Via Paolo Gerolamo Biumi
+Via Paolo Gorini
+Via Paolo Marchiondi
+Via Paolo Sarpi
+Via Paolo Segneri
+Via Paolo e Luigia Arpesani
+Via Papa Giovanni XXIII
+Via Pardo
+Via Partenope
+Via Pasquale Fornari
+Via Pasquale Pardi
+Via Pasquale Scura
+Via Pasubio
+Via Petronio Vecchi
+Via Pia
+Via Piave
+Via Piero Pajardi
+Via Pietragrossa
+Via Pietrasantina
+Via Pietro Borsieri
+Via Pietro Castellino
+Via Pietro Cironi
+Via Pietro Cristofoli
+Via Pietro Gaggia
+Via Pietro Giordani
+Via Pietro Mascagni
+Via Pietro Micca
+Via Pietro Paleocapa
+Via Pietro Redaelli
+Via Pietro Teulié
+Via Pietro Toselli
+Via Pignolo
+Via Pinamonte Da Vimercate
+Via Pio Salvati
+Via Pistoiese
+Via Plebiscito
+Via Plinio
+Via Po
+Via Pompeo Cambiasi
+Via Pomposa
+Via Ponale
+Via Ponte a Piglieri
+Via Ponte alle Forche
+Via Porta Rossa
+Via Porta San Pietro
+Via Porta Vecchia
+Via Prenestina
+Via Pretura
+Via Principe di Napoli
+Via Priolo Sopraelevata
+Via Privata Ercole Marelli
+Via Quadronno
+Via Quattro Martiri
+Via Quattro Novembre
+Via Quintino Sella
+Via Quinto Romano
+Via Raffaello Giolli
+Via Ragno
+Via Rasella
+Via Rastrelli
+Via Ravenna
+Via Recta
+Via Renzo Bertoni
+Via Ricasoli
+Via Riccardo Ceroni
+Via Riccardo Pitteri
+Via Ricci
+Via Ripagrande
+Via Risorgimento
+Via Riva di Reno
+Via Rizzoli
+Via Roberto Sarfatti
+Via Rocchetta
+Via Rodolfo Belenzani
+Via Rodolfo Farneti
+Via Rodolfo Margaria
+Via Roma
+Via Romana
+Via Rombon
+Via Romea
+Via Romei
+Via Romeo Frassinetti
+Via Romualdo Bonfadini
+Via Rosa Massara De Capitani
+Via Rovello
+Via Rovereto
+Via Ruggero Bonghi
+Via Ruggero Boscovich
+Via Ruggero Leoncavallo
+Via Sabatino Giulianelli
+Via Sacra
+Via Salasco
+Via Salentina
+Via Salesina
+Via Salvator Rosa
+Via Salvatore Trinchese
+Via San Bernardo
+Via San Biagio dei Librai
+Via San Dionigi
+Via San Francesco
+Via San Giacomo
+Via San Giacomo dei Capri
+Via San Giovanni a Carbonara
+Via San Giovanni in Corte
+Via San Girolamo
+Via San Giuseppe
+Via San Giuseppe alla Rena
+Via San Gregorio Armeno
+Via San Lorenzo
+Via San Luca
+Via San Martino
+Via San Matteo
+Via San Michele
+Via San Niccolò
+Via San Nicola
+Via San Nicolao
+Via San Romano
+Via San Sebastiano
+Via San Zeno
+Via Sanità
+Via Sant'Agata
+Via Sant'Agostino
+Via Sant'Alfonso Maria de' Liguori
+Via Sant'Antonino
+Via Sant'Antonio
+Via Sant'Egidio
+Via Sant'Euplio
+Via Santa Caterina
+Via Santa Croce
+Via Santa Maria
+Via Santa Maria Goretti
+Via Santa Maria del Sole
+Via Santa Monaca
+Via Santa Sofia
+Via Santa Teresa degli Scalzi
+Via Santi Giovanni e Paolo
+Via Santo Spirito
+Via Sant’Andrea
+Via Sant’Arialdo
+Via Sant’Eufemia
+Via Saraceno
+Via Saragozza
+Via Saturnia
+Via Savonarola
+Via Scandiana
+Via Scansanese
+Via Scipione Pistrucci
+Via Secondo Cremonesi
+Via Senato
+Via Senese
+Via Serafino Dell'Uomo
+Via Sergio Ramelli
+Via Sestri
+Via Sigismondo Trechi
+Via Silvio Pellico
+Via Siro Capsoni
+Via Sismondi
+Via Sistina
+Via Solferino
+Via Sottoriva
+Via Spadaro Grassi
+Via Sparano da Bari
+Via Spartaco Lavagnini
+Via Stalingrado
+Via Stefano Siccoli
+Via Stracciatella
+Via Taddea
+Via Tagliamento
+Via Tenente Chiriani
+Via Termopili
+Via Terraglio
+Via Tevere
+Via Tilli
+Via Tito Livio
+Via Tiziano
+Via Toledo
+Via Tommaso Bai
+Via Tommaso Da Cazzaniga
+Via Tommaso Salvini
+Via Torino
+Via Torta
+Via Traiana Nova
+Via Trento
+Via Trieste
+Via Trinità degli Spagnoli
+Via Trionfale
+Via Tripoli
+Via Tufoli
+Via Ubaldino Peruzzi
+Via Ugo Foscolo
+Via Ulderico Ollearo
+Via Ulisse Dini
+Via Umberto Giordano
+Via Uruguay
+Via Vaiano Valle
+Via Val di Montone
+Via Valverde
+Via Varese
+Via Veientana
+Via Velosca
+Via Venezia
+Via Venti Settembre
+Via Ventiquattro Maggio
+Via Verdi
+Via Vergini
+Via Vernasca
+Via Verona
+Via Vesio
+Via Vigevano
+Via Vignatagliata
+Via Vignola
+Via Vincenzo Caldesi
+Via Vincenzo Foppa
+Via Vincenzo Toffetti
+Via Vintler
+Via Vitruvio
+Via Vittor Pisani
+Via Vittoria
+Via Vittorio Alfieri
+Via Vittorio Emanuele
+Via Vittorio Emanuele II
+Via Vittorio Emanuele III
+Via Vittorio Veneto
+Via Voltapaletto
+Via Volturno
+Via Vulci
+Via XX Settembre
+Via XX settembre
+Via Zama
+Via Zemola
+Via antica
+Via de' Barberi
+Via de' Benci
+Via de' Cerretani
+Via de' Giraldi
+Via de' Gondi
+Via de' Macci
+Via de' Neri
+Via de' Pandolfini
+Via de' Pepi
+Via de' Rondinelli
+Via de' Rustici
+Via de' Tosinghi
+Via de' Vecchietti
+Via degli Anselmi
+Via degli Artisti
+Via degli Augustali
+Via degli Avelli
+Via degli Speziali
+Via degli archi
+Via dei Banchi Vecchi
+Via dei Bottai
+Via dei Calzaiuoli
+Via dei Castellani
+Via dei Cessati Spiriti
+Via dei Cinquecento
+Via dei Conti
+Via dei Coronari
+Via dei Crociferi
+Via dei Della Robbia
+Via dei Fibbiai
+Via dei Filippini
+Via dei Fornari
+Via dei Fossi
+Via dei Giardini
+Via dei Gigli d'Oro
+Via dei Grappoli
+Via dei Lavatoi
+Via dei Leoni
+Via dei Malavolti
+Via dei Mille
+Via dei Panigarola
+Via dei Pellegrini
+Via dei Pilastri
+Via dei Pispini
+Via dei Portali
+Via dei Portici
+Via dei Ramaglianti
+Via dei Renai
+Via dei Sepolcri
+Via dei Serragli
+Via dei Servi
+Via dei Teatri
+Via dei Termini
+Via del Babuino
+Via del Canneto
+Via del Capitano
+Via del Carbone
+Via del Cavallerizzo
+Via del Corno
+Via del Corso
+Via del Crocifisso
+Via del Cuore
+Via del Distretto
+Via del Formale
+Via del Foro
+Via del Fuoco
+Via del Governo Vecchio
+Via del Grande Archivio
+Via del Marmigliaio
+Via del Mulino a Vento
+Via del Nazareno
+Via del Pellegrino
+Via del Plebiscito
+Via del Poggiolo
+Via del Poliziano
+Via del Ponte alle Mosse
+Via del Pozzetto
+Via del Proconsolo
+Via del Recinto
+Via del Refugio
+Via del Sambuco
+Via del San Gabriele
+Via del Sole
+Via del Suffragio
+Via del Tempio d'Iside
+Via del Tiro a Segno
+Via del Tritone
+Via del Turco
+Via del Vesuvio
+Via del parlatorio
+Via dell'Agnolo
+Via dell'Alloro
+Via dell'Amore
+Via dell'Anguillara
+Via dell'Anima
+Via dell'Arringo
+Via dell'Epomeo
+Via dell'Oliviera
+Via dell'Opio nel Corso
+Via dell'Ospedale
+Via dell'Unione
+Via della Bindellina
+Via della Cattedrale
+Via della Chiesa
+Via della Chiesa Rossa
+Via della Commenda
+Via della Conciliazione
+Via della Condotta
+Via della Costa
+Via della Costituzione
+Via della Fontana
+Via della Fortezza
+Via della Galluzza
+Via della Ghiara
+Via della Guastalla
+Via della Libertà
+Via della Lungara
+Via della Madonna
+Via della Maschera d'Oro
+Via della Mosca
+Via della Moscova
+Via della Pace
+Via della Paglia
+Via della Palestra
+Via della Pergola
+Via della Rena
+Via della Rocca
+Via della Roggia
+Via della Rosa
+Via della Salute
+Via della Scala
+Via della Sila
+Via della Spada
+Via della Terra
+Via della Valle
+Via della Vigna Nuova
+Via della cavallerizza
+Via della santissima Annunziata
+Via delle Batterie
+Via delle Belle Donne
+Via delle Botteghe Oscure
+Via delle Burella
+Via delle Campane
+Via delle Cantine
+Via delle Carceri
+Via delle Casine
+Via delle Cerchia
+Via delle Conce
+Via delle Fonti
+Via delle Medaglie d'Oro
+Via delle Orfane
+Via delle Pinzochere
+Via delle Quattro Fontane
+Via delle Scienze
+Via delle Scuole
+Via delle Seggiole
+Via delle Stelle
+Via delle Terme
+Via delle Vigne
+Via delle Volte
+Via dello Statuto
+Via di Camaldoli
+Via di Capaccio
+Via di Castricio
+Via di Collazzi
+Via di Eumachia
+Via di Fieravecchia
+Via di Follonica
+Via di Francia
+Via di Gracciano nel Corso
+Via di Grottarossa
+Via di Mercurio
+Via di Mezzo
+Via di Nocera
+Via di Pantaneto
+Via di Porta Regale
+Via di Pratale
+Via di Propaganda
+Via di Prè
+Via di Ripetta
+Via di Sallustio
+Via di San Bernardo
+Via di San Donato
+Via di San Francesco di Sales
+Via di San Giovanni in Laterano
+Via di Sant'Anna
+Via di Stalloreggi
+Via di Voltaia nel Corso
+Via don Giuseppe Gervasini
+Via fratelli Gabba
+Via monsignor Antonio Tioli
+Via pisana
+Viale Abruzzi
+Viale Alessandro Guidoni
+Viale Alessandro Manetti
+Viale Alfa Romeo
+Viale Andrea Doria
+Viale Angelo Filippetti
+Viale Antonio Gramsci
+Viale Argonne
+Viale Armando Diaz
+Viale Aventino
+Viale Beatrice d’Este
+Viale Belfiore
+Viale Bligny
+Viale Brenta
+Viale Brianza
+Viale Brigate Partigiane
+Viale Calabria
+Viale Campania
+Viale Carlo Espinasse
+Viale Cassala
+Viale Cavour
+Viale Certosa
+Viale Cesare Vignati
+Viale Cimabue
+Viale Col di Lana
+Viale Coni Zugna
+Viale Corsica
+Viale Curtatone
+Viale Dante
+Viale Edmondo De Amicis
+Viale Edoardo Jenner
+Viale Emilia
+Viale Enrico De Nicola
+Viale Enrico Elia
+Viale Enrico Fermi
+Viale Enrico Forlanini
+Viale Enrico Martini
+Viale Ercole Marelli
+Viale Ergisto Bezzi
+Viale Europa
+Viale Famagosta
+Viale Federigo Tozzi
+Viale Ferdinando Di Savoia
+Viale Francesco Crispi
+Viale Francesco Ferrucci
+Viale Francesco Redi
+Viale Francesco Restelli
+Viale Fratelli Rosselli
+Viale Fulvio Testi
+Viale Galilei
+Viale Giacomo Matteotti
+Viale Giotto
+Viale Giovanni Agnelli
+Viale Giovanni Amendola
+Viale Giovanni da Cermenate
+Viale Giulio Cesare
+Viale Giuseppe Giusti
+Viale Glorioso
+Viale Goffredo Mameli
+Viale Gran Sasso
+Viale IV Novembre
+Viale Isonzo
+Viale Leonardo Ximenes
+Viale Lombardia
+Viale Lorenzo Porciatti
+Viale Lucania
+Viale Luigi Bodio
+Viale Luigi Buffoli
+Viale Luigi Einaudi
+Viale Luigi Majno
+Viale Lunigiana
+Viale Marche
+Viale Michelangelo
+Viale Milano
+Viale Molise
+Viale Monte Ceneri
+Viale Monte Grappa
+Viale Monte Santo
+Viale Montenero
+Viale Monza
+Viale Mugello
+Viale Ombrone
+Viale Ortles
+Viale Palmiro Togliatti
+Viale Pasubio
+Viale Pavia
+Viale Piacenza
+Viale Piave
+Viale Piceno
+Viale Pietro Mascagni
+Viale Ramiro Di San Giorgio Barbaro
+Viale Regina Giovanna
+Viale Regina Margherita
+Viale Renato Serra
+Viale Romagna
+Viale Romolo
+Viale Sabotino
+Viale Sarca
+Viale Sidney Sonnino
+Viale Somalia
+Viale Sondrio
+Viale Stelvio
+Viale Telamonio
+Viale Tibaldi
+Viale Tiziano
+Viale Toscana
+Viale Trento e Trieste
+Viale Tunisia
+Viale Uranio
+Viale Ventuno Aprile
+Viale Verdi
+Viale Vincenzo Lancetti
+Viale Vittorio Fossombroni
+Viale Vittorio Veneto
+Viale XX Settembre
+Viale Zara
+Viale dei Colli
+Viale del Campo Boario
+Viale della Gloria
+Viale della Liberazione
+Viale della Libertà
+Viale della Regione Siciliana
+Viale della Repubblica
+Viale delle Brigate Partigiane
+Viale delle Cascine
+Viale delle Rimembranze
+Viale delle Terme
+Vicolo Gumer
+Vicolo Pozzo
+Vicolo dei Dodici Dei
+Vicolo dei Fuggiaschi
+Vicolo dei Lavandai
+Vicolo dei Montani
+Vicolo dei Vettii
+Vicolo del Chiozzino
+Vicolo del Citarista
+Vicolo del Duomo
+Vicolo del Fauno
+Vicolo del Gallo
+Vicolo del Granchio
+Vicolo del Lupanare
+Vicolo del Menandro
+Vicolo del Monte
+Vicolo del Tinti
+Vicolo del Vigna
+Vicolo del macello
+Vicolo dell'Atleta
+Vicolo dell'Efebo
+Vicolo della Fullonica
+Vicolo della Maschera
+Vicolo della Nave Europa
+Vicolo delle Erbe
+Vicolo di Giulia Felice
+Vicolo di Modesto
+Vicolo di San Bernado
+Vicolo e piazza degli Adimari
+Vicolo senza nome nella Regio VIII

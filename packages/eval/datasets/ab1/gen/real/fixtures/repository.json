@@ -1,0 +1,11 @@
+{
+  "id": 101,
+  "full_name": "acme-ejemplo/proyecto-pruebas",
+  "html_url": "https://github.com/acme-ejemplo/proyecto-pruebas",
+  "stargazers_count": 42,
+  "license": {
+    "key": "mit",
+    "name": "MIT License",
+    "spdx_id": "MIT"
+  }
+}

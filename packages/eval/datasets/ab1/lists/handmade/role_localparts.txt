@@ -1,0 +1,19 @@
+# Role mailbox local parts (AMBIGUOUS role_address when on a real domain)
+support
+noreply
+no-reply
+security
+info
+admin
+billing
+help
+contact
+privacy
+abuse
+postmaster
+hello
+team
+sales
+dev
+ops
+notifications

@@ -1,0 +1,13 @@
+# Reviewed decisions for carrier regex hits (gen/review_dump.py -> cache/review/carrier_hits.tsv).
+# value<TAB>CLASS:kind   (forces this annotation wherever the value occurs in a carrier excerpt)
+# value<TAB>skip         (the rule fired on something that is not a real PII-like value; leave unannotated)
+safety-db	skip
+http://andrewdeorio.com	AMBIGUOUS:maintainer_handle
+@Composable	skip
+Nico Matkey	AMBIGUOUS:carrier_pii
+B6st-skripte-im-blockly-sind-ausgeblendet/26	skip
+1.7.6.0	skip
+1.7.6.0	skip
+ExampleMesFrObservationBodyWeight001	skip
+Timeseries_Lindenberg_SA2_850Wp_crystSi_14_35deg_0deg_2017	skip
+Lastprofile/Lastprofil_3196_Haushalt_05	skip

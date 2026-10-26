@@ -1,0 +1,142 @@
+# Real company, product and project names (MUST_KEEP org). Facts, not copyrightable.
+GitHub
+GitLab
+Bitbucket
+Stripe
+PayPal
+Twilio
+SendGrid
+Mailgun
+Slack
+Discord
+Atlassian
+Jira
+Confluence
+Datadog
+Sentry
+PagerDuty
+Grafana
+Prometheus
+Kubernetes
+Docker
+Terraform
+Ansible
+PostgreSQL
+MySQL
+MariaDB
+MongoDB
+Redis
+Elasticsearch
+Kafka
+RabbitMQ
+Nginx
+Apache Tomcat
+Django
+Flask
+FastAPI
+Spring Boot
+Next.js
+React
+Vue.js
+Angular
+Node.js
+Express
+TypeScript
+Rust
+Kotlin
+PyTorch
+TensorFlow
+pandas
+NumPy
+OpenAI
+Anthropic
+Hugging Face
+Amazon Web Services
+AWS
+Microsoft Azure
+Google Cloud
+Cloudflare
+Vercel
+Netlify
+Heroku
+DigitalOcean
+Shopify
+Salesforce
+HubSpot
+Zendesk
+Intercom
+Notion
+Linear
+Figma
+Okta
+Auth0
+Firebase
+Supabase
+Snowflake
+Databricks
+Airflow
+Jenkins
+CircleCI
+Travis CI
+Visual Studio Code
+IntelliJ IDEA
+Xcode
+Android Studio
+Ubuntu
+Debian
+Alpine Linux
+Red Hat
+Homebrew
+npm
+PyPI
+Maven Central
+crates.io
+Let's Encrypt
+Mozilla
+Apple
+Microsoft
+Google
+Amazon
+Meta
+IBM
+Oracle
+SAP
+Siemens
+Deutsche Telekom
+Vodafone
+Telefónica
+Orange
+Enel
+Intesa Sanpaolo
+UniCredit
+Poste Italiane
+Deutsche Bank
+Commerzbank
+BNP Paribas
+Société Générale
+Crédit Agricole
+Banco Santander
+BBVA
+CaixaBank
+Barclays
+HSBC
+Lloyds Bank
+Revolut
+N26
+Klarna
+Adyen
+Booking.com
+Zalando
+Spotify
+DHL
+FedEx
+UPS
+Amazon S3
+Cloud Run
+Lambda
+BigQuery
+Vault
+Consul
+Keycloak
+Mailchimp
+Matomo

@@ -1,0 +1,11 @@
+# Four-letter bank identifiers used in GB IBANs (public SWIFT/BIC prefixes)
+NWBK
+BARC
+LOYD
+HBUK
+MIDL
+NAIA
+RBOS
+SRLG
+CPBK
+MONZ

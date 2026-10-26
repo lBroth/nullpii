@@ -1,0 +1,12 @@
+# Real domains used with role mailboxes
+github.com
+stripe.com
+python.org
+npmjs.com
+gitlab.com
+atlassian.com
+sentry.io
+heroku.com
+docker.com
+mozilla.org
+apache.org

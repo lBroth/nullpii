@@ -18,6 +18,9 @@ useDefault = true
 description = "Self-authored synthetic benchmark (every value is generated)"
 paths = [
   '''(^|/)packages/eval/datasets/nullpii-bench\.jsonl$''',
+  # AB-1 component A: generator, value lists and gold; every key is generated
+  # from a gitleaks rule (datasets/ab1/README.md). The gold itself is gzipped.
+  '''(^|/)packages/eval/datasets/ab1/''',
 ]
 
 [[allowlists]]

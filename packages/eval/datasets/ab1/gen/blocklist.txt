@@ -1,0 +1,5 @@
+# Generated values found verbatim (whole token) in the carrier datasets by checks/validate.py;
+# the value generators re-draw instead of emitting them.
+sleigh
+doc3
+langle

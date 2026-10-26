@@ -5,7 +5,8 @@ The project's own rows are synthetic, Apache-2.0. The two TAB ECHR splits are pu
 ## Inventory
 
 Four files at HEAD: the project's canonical `nullpii-bench.jsonl` plus three
-externally licensed upstream files.
+externally licensed upstream files; and `ab1/`, component A of the AB-1
+agent-traffic benchmark.
 
 | File | Rows | Use | Origin |
 |---|---:|---|---|
@@ -13,14 +14,16 @@ externally licensed upstream files.
 | `presidio-synthetic.jsonl` | 5,000 | earlier benchmark versions; partly in nullpii's training data, so never a claim | Microsoft Presidio seed, MIT |
 | `tab-echr-test.jsonl` | 127 | earlier benchmark versions | TAB ECHR test (ACL 2022), MIT |
 | `tab-echr-dev.jsonl` | 125 | legal documents of the change-check fingerprint corpus only | TAB ECHR dev (ACL 2022), MIT |
+| `ab1/` | 1,200 | AB-1 component A, agent traffic: generator, value lists, gold (gzipped; every key is fictional) and its freeze manifest; see [`ab1/README.md`](ab1/README.md) | self-authored, Apache-2.0; carrier text keeps its dataset's licence (CC BY 4.0, MIT, ODC-BY 1.0), postal codes from GeoNames (CC BY 4.0) |
 
-The published benchmark (`../METHOD.md`) uses none of these files: its datasets are fetched from their publishers and frozen by SHA-256.
+The document benchmark (`../METHOD.md`) uses none of these files: its datasets are fetched from their publishers and frozen by SHA-256. The agent-traffic benchmark (AB-1) scores the test split of `ab1/`; its other two components are rebuilt from their publishers by `../scripts/ab1/b1_build.py` and `b2_build.py`.
 
 Every file listed here is redistributed inside the `nullpii-eval` wheel via
 the per-file allowlist in [`../pyproject.toml`](../pyproject.toml). A file
 dropped into this directory does **not** ship until it is added there —
 which is the point: adding the line forces a licence check first. Only
-MIT / Apache-2.0 / BSD / ISC / CC0 upstreams are eligible.
+MIT / Apache-2.0 / BSD / ISC / CC0 upstreams are eligible, so `ab1/`, whose
+carriers and postal codes are CC BY 4.0 or ODC-BY, is in the repository only.
 
 Additional bench rows (`ai4privacy-*`, `isotonic-*`, `nemotron-pii-*`,
 `argilla-pii`) are fetched from HuggingFace at bench time by the per-tool

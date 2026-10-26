@@ -18,6 +18,17 @@ Status: before 1.0, so the API can still change between minor versions. nullpii 
 
 Documentation: [lbroth.github.io/nullpii](https://lbroth.github.io/nullpii/).
 
+## Quick start: Claude Code
+
+At the prompt of a Claude Code session (2.1.287 or later, with Node 22 or later):
+
+```text
+/plugin marketplace add lBroth/nullpii@v0.5.0
+/plugin install nullpii@nullpii
+```
+
+When Claude Code asks for the plugin's options, paste a new token from `openssl rand -hex 32` into **Sidecar token**, then restart Claude Code. The mod starts a local nullpii sidecar, which downloads the model (1.2 GB) on its first start. [Get started](https://lbroth.github.io/nullpii/start) has a prompt that lets Claude Code do this for you, and how to check that it works. The full reference is under [Claude Code mod](#claude-code-mod).
+
 ## Install
 
 ```bash

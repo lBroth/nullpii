@@ -292,3 +292,14 @@
   display: inline-block;
   vertical-align: middle;
 }
+
+/* Get started: the prompt to paste wraps, so it reads without scrolling. */
+.vp-doc .np-prompt pre,
+.vp-doc .np-prompt code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.vp-doc .np-prompt code {
+  width: auto;
+}

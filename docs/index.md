@@ -8,7 +8,7 @@ hero:
   actions:
     - theme: brand
       text: Get started
-      link: /guide/
+      link: /start
     - theme: alt
       text: GitHub
       link: https://github.com/lBroth/nullpii

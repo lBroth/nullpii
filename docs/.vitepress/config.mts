@@ -103,6 +103,7 @@ export default defineConfig({
       {
         text: 'Guide',
         items: [
+          { text: 'Get started', link: '/start' },
           { text: 'Overview and library', link: '/guide/' },
           { text: 'Gateway', link: '/guide/gateway' },
           { text: 'Claude Code mod', link: '/guide/claude-code' },

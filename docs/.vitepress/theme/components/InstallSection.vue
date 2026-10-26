@@ -5,7 +5,7 @@
 import { withBase } from 'vitepress';
 
 /** Links into the guide's two deployment pages. */
-const CLAUDE_CODE_LINK = withBase('/guide/claude-code');
+const CLAUDE_CODE_LINK = withBase('/start');
 const GATEWAY_LINK = withBase('/guide/gateway');
 </script>
 

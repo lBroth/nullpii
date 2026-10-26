@@ -104,14 +104,18 @@ export class PiiVault {
       });
     }
     const placeholders = ordered.map((span) => this.allocPlaceholder(session, span, sessionPrefix));
-    // Replace back-to-front so each replacement preserves earlier offsets.
-    let out = text;
-    for (let i = ordered.length - 1; i >= 0; i--) {
-      const span = ordered[i];
+    // `ordered` is sorted and disjoint: copy the text between spans and the
+    // placeholders in one pass, and join once.
+    const pieces: string[] = [];
+    let at = 0;
+    ordered.forEach((span, i) => {
       const placeholder = placeholders[i];
-      if (span === undefined || placeholder === undefined) continue;
-      out = `${out.slice(0, span.start)}${placeholder}${out.slice(span.end)}`;
-    }
+      if (placeholder === undefined) throw new Error('vault: a span has no placeholder');
+      pieces.push(text.slice(at, span.start), placeholder);
+      at = span.end;
+    });
+    pieces.push(text.slice(at));
+    const out = pieces.join('');
     logf(LOG_SCOPE, 'sanitize', { spans: ordered.length, session: sessionPrefix });
     return { sessionId, sanitized: out, spans: ordered };
   }

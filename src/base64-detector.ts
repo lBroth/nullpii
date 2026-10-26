@@ -68,11 +68,10 @@ function classify(decoded: string): DecodedHit | null {
   return null;
 }
 
-/** Per-blob byte cap. Defence in depth — `MAX_INPUT_CHARS` already caps
- * the whole `text` input, but a deployment that bumps that limit upstream
- * should still skip pathological single-blob payloads inside the
- * detector so a 10 MB base64 run never lands in `Buffer.from` + the
- * classifier regex chain. */
+/** Per-blob byte cap. Defence in depth: `sanitize()` hands this detector
+ * at most `MAX_INPUT_CHARS` at a time, but a caller of
+ * `detectBase64Pii` should still not land a 10 MB base64 run in
+ * `Buffer.from` + the classifier regex chain. */
 const MAX_BASE64_BLOB_BYTES = 1_000_000;
 
 /** Find PII inside base64-wrapped runs. Spans are in `text` coordinates.

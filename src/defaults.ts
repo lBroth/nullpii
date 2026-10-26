@@ -1055,5 +1055,7 @@ export const MAX_INPUT_CHARS = 1_000_000;
 
 /** Overlap between two windows of a text longer than `MAX_INPUT_CHARS`:
  * a value shorter than this that crosses a window's end lies whole in the
- * next window. Longer than any PEM key block or address. */
+ * next window. Longer than any PEM key block or address. A longer value
+ * with no whitespace (an encoded blob) is kept whole another way: the
+ * next window starts where its run starts (`segments.ts`). */
 export const SEGMENT_OVERLAP_CHARS = 32_768;

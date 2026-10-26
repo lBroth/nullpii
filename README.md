@@ -347,7 +347,7 @@ On Apple Silicon, use `cpu`. With CoreML the model was slower than on the CPU at
 - **It does not catch everything.** Detection is statistical, and the benchmark shows how much leaks. Do not make it your only privacy control.
 - **It is not a HIPAA or GDPR tool.** It finds values that are written out, not facts inferred from context.
 - **Images and other binary attachments** pass through the gateway without a scan. The gateway counts them.
-- **Long inputs are slow, not refused.** nullpii reads a text over 1,000,000 characters in overlapping windows of up to that size, and masks it once. Expect about 25 seconds per 100,000 characters on CPU, and under 2 seconds on GPU.
+- **Long inputs are slow, not refused.** nullpii reads a text over 1,000,000 characters in overlapping windows of up to that size, and masks it once. Expect about 25 seconds per 100,000 characters on CPU, and under 2 seconds on GPU. In the Claude Code mod, if masking takes longer than Claude Code waits, the mod withholds the text and says the sidecar took too long.
 
 ## Privacy and security
 

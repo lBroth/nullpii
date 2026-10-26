@@ -72,6 +72,36 @@ describe('segmentWindows', () => {
     );
   });
 
+  it('starts the next window where a run cut by a hard end starts', () => {
+    // 140 characters of words, then a 90-character run over the first
+    // window's last quarter (150 to 200), so the first window ends inside it.
+    const text = `${'a '.repeat(70)}${'x'.repeat(90)} ${'b '.repeat(100)}`;
+    const [first, second] = segmentWindows(text, 200, OVERLAP);
+    expect(first).toEqual({ start: 0, end: 200 });
+    expect(second?.start).toBe(140);
+    expect(second?.end).toBeGreaterThanOrEqual(230);
+  });
+
+  it('puts a run with no whitespace of up to half a window whole inside one window', () => {
+    const max = 200;
+    const overlap = 20;
+    fc.assert(
+      fc.property(
+        fc.string({ unit: fc.constantFrom('a', ' ', '\n'), maxLength: 1_500 }),
+        fc.nat(),
+        fc.integer({ min: 1, max: max / 2 }),
+        (around, at, length) => {
+          const cut = at % (around.length + 1);
+          const text = `${around.slice(0, cut)} ${'x'.repeat(length)} ${around.slice(cut)}`;
+          const windows = segmentWindows(text, max, overlap);
+          expectCovering(text, windows, max, overlap);
+          const start = cut + 1;
+          expect(windows.some((w) => w.start <= start && start + length <= w.end)).toBe(true);
+        },
+      ),
+    );
+  });
+
   it('puts every value shorter than the overlap whole inside one window', () => {
     fc.assert(
       fc.property(

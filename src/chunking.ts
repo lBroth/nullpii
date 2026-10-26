@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { type Word, splitWords } from './gliner-tokenizer.js';
-import { iou } from './iou.js';
+import { type Interval, iou } from './iou.js';
 import type { ScoredSpan } from './types/scored-span.js';
 
 /** Word-aware sliding-window chunker. Splits on GLiNER word boundaries
@@ -153,13 +153,17 @@ export function dedupeOverlappingSpans<T extends ScoredSpan>(
       b.score - a.score || a.start - b.start || a.end - b.end || a.label.localeCompare(b.label),
   );
   const kept: T[] = [];
+  const near = new SpanBuckets();
+  const matches = (s: T) => (k: T) =>
+    (acrossLabels || k.label === s.label) && iou(s, k) >= iouThreshold;
   for (const s of sorted) {
-    const i = kept.findIndex(
-      (k) => (acrossLabels || k.label === s.label) && iou(s, k) >= iouThreshold,
-    );
+    // A positive threshold needs an overlap, so only kept spans near `s`
+    // can match; the first match in `kept` order wins, as a scan would.
+    const i = iouThreshold > 0 ? near.firstIndex(s, kept, matches(s)) : kept.findIndex(matches(s));
     const keeper = kept[i];
     if (keeper === undefined) {
       kept.push(s);
+      near.add(kept.length - 1, s);
       continue;
     }
     if (s.start < keeper.start || s.end > keeper.end) {
@@ -168,29 +172,74 @@ export function dedupeOverlappingSpans<T extends ScoredSpan>(
         start: Math.min(keeper.start, s.start),
         end: Math.max(keeper.end, s.end),
       };
+      near.add(i, kept[i] as T);
     }
   }
   return kept.sort((a, b) => a.start - b.start);
 }
 
-function removeContainedSpans<T extends ScoredSpan>(spans: T[]): T[] {
-  const out: T[] = [];
-  for (let i = 0; i < spans.length; i++) {
-    const a = spans[i];
-    if (!a) continue;
-    let contained = false;
-    for (let j = 0; j < spans.length; j++) {
-      if (i === j) continue;
-      const b = spans[j];
-      if (!b) continue;
-      // a is strictly contained in b (proper subset). Equal-bounds spans
-      // fall through to the IoU pass so highest score wins on ties.
-      if (b.start <= a.start && b.end >= a.end && b.end - b.start > a.end - a.start) {
-        contained = true;
-        break;
+/** Width, in characters, of one bucket of `SpanBuckets`. */
+const BUCKET_CHARS = 1024;
+
+/** Indices of spans by the fixed-width buckets their characters fall in,
+ * so finding the spans that overlap one span does not scan them all. A
+ * span that grows is added again; its old buckets stay inside its range. */
+class SpanBuckets {
+  private readonly buckets = new Map<number, number[]>();
+
+  add(index: number, span: Interval): void {
+    for (let b = bucketOf(span.start); b <= bucketOf(span.end); b++) {
+      const list = this.buckets.get(b);
+      if (list === undefined) this.buckets.set(b, [index]);
+      else list.push(index);
+    }
+  }
+
+  /** The lowest index in `spans` that shares a bucket with `span` and
+   * passes `test`, else -1. */
+  firstIndex<T>(span: Interval, spans: readonly T[], test: (k: T) => boolean): number {
+    let best = -1;
+    for (let b = bucketOf(span.start); b <= bucketOf(span.end); b++) {
+      for (const i of this.buckets.get(b) ?? []) {
+        if ((best === -1 || i < best) && test(spans[i] as T)) best = i;
       }
     }
-    if (!contained) out.push(a);
+    return best;
   }
-  return out;
+}
+
+function bucketOf(offset: number): number {
+  return Math.floor(offset / BUCKET_CHARS);
+}
+
+function removeContainedSpans<T extends ScoredSpan>(spans: T[]): T[] {
+  // A span is dropped when another one is strictly larger and covers it:
+  // one that starts earlier and ends no earlier, or starts at the same
+  // offset and ends later. Equal bounds fall through to the IoU pass, so
+  // the highest score wins on ties. One sweep in (start, -end) order.
+  const order = spans.map((_, i) => i);
+  order.sort((x, y) => startOf(spans, x) - startOf(spans, y) || endOf(spans, y) - endOf(spans, x));
+  const contained = new Uint8Array(spans.length);
+  let maxEndBefore = Number.NEGATIVE_INFINITY;
+  let groupStart = Number.NaN;
+  let groupEnd = Number.NEGATIVE_INFINITY;
+  for (const i of order) {
+    const a = spans[i];
+    if (!a) continue;
+    if (a.start !== groupStart) {
+      maxEndBefore = Math.max(maxEndBefore, groupEnd);
+      groupStart = a.start;
+      groupEnd = a.end;
+    }
+    if (maxEndBefore >= a.end || groupEnd > a.end) contained[i] = 1;
+  }
+  return spans.filter((a, i) => a !== undefined && contained[i] === 0);
+}
+
+function startOf(spans: readonly ScoredSpan[], i: number): number {
+  return spans[i]?.start ?? 0;
+}
+
+function endOf(spans: readonly ScoredSpan[], i: number): number {
+  return spans[i]?.end ?? 0;
 }

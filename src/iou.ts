@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-interface Interval {
+export interface Interval {
   readonly start: number;
   readonly end: number;
 }

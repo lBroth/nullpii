@@ -119,6 +119,21 @@ describe('texts longer than MAX_INPUT_CHARS', () => {
     for (const row of body) expect(r.sanitized).not.toContain(row);
   });
 
+  it('masks whole an encoded value longer than the overlap that the cap cuts', async () => {
+    // A base64 blob of about 400k characters, with no whitespace, across the
+    // cap: it can only be decoded whole, from its first character.
+    const content = `${'lorem ipsum dolor '.repeat(16_700)}contact ${EMAIL}`;
+    const blob = Buffer.from(content).toString('base64');
+    const at = 700_001;
+    const words = 'abc '.repeat(at / 4 + 1).slice(0, at - 1);
+    const text = `${words} ${blob} ${'xyz '.repeat(150_000)}`;
+    expect(at).toBeLessThan(MAX_INPUT_CHARS - MAX_INPUT_CHARS / 4);
+    expect(at + blob.length).toBeGreaterThan(MAX_INPUT_CHARS);
+    const r = await np.sanitize(text);
+    expect(r.sanitized).not.toContain(blob.slice(-400));
+    expect(r.spans.some((s) => s.start <= at && s.end >= at + blob.length)).toBe(true);
+  });
+
   it('gives a value seen in two windows one placeholder', async () => {
     const text =
       SOLID.repeat(1_000) +

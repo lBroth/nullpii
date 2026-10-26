@@ -102,9 +102,10 @@ const SCHEME_PATTERN = /https?:\/\//gi;
 export function dropCleanPublicUrlSpans(spans: readonly PiiSpan[], policy: UrlPolicy): PiiSpan[] {
   const dropped: PiiSpan[] = [];
   const kept: PiiSpan[] = [];
+  const touchesPii = otherPiiIndex(spans);
   for (const s of spans) {
     const parts = splitAtSchemes(s);
-    const cuts = parts.map((p) => publicPrefixLength(p, spans, policy));
+    const cuts = parts.map((p) => publicPrefixLength(p, touchesPii, policy));
     if (cuts.every((n) => n === 0)) {
       kept.push(s);
       continue;
@@ -165,7 +166,11 @@ const NESTED_URL_START = /[a-z][a-z0-9+.-]*:\/\/|.www\./i;
  * span: text that the model or the greedy recognizer swept into a URL
  * span is never released on the strength of the URL's host.
  */
-function publicPrefixLength(part: PiiSpan, spans: readonly PiiSpan[], policy: UrlPolicy): number {
+function publicPrefixLength(
+  part: PiiSpan,
+  touchesPii: (start: number, end: number) => boolean,
+  policy: UrlPolicy,
+): number {
   if (part.label !== 'private_url') return 0;
   const token = URL_TOKEN.exec(part.text)?.[0];
   if (token === undefined || NESTED_URL_START.test(token.replace(URL_PREFIX, ''))) return 0;
@@ -182,10 +187,27 @@ function publicPrefixLength(part: PiiSpan, spans: readonly PiiSpan[], policy: Ur
   // Any other PII span touching the part keeps all of it masked, URL
   // included: a reference URL that embeds anything identifying is never
   // released, not even its public prefix.
-  const holdsPii = spans.some(
-    (t) => t !== part && t.label !== 'private_url' && t.start < part.end && t.end > part.start,
-  );
-  return holdsPii ? 0 : n;
+  return touchesPii(part.start, part.end) ? 0 : n;
+}
+
+/** Whether a span that is not a URL shares a character with
+ * `[start, end)`, in O(log n): such spans sorted by start, with the
+ * running maximum of their ends. */
+export function otherPiiIndex(spans: readonly PiiSpan[]): (start: number, end: number) => boolean {
+  const others = spans.filter((t) => t.label !== 'private_url').sort((a, b) => a.start - b.start);
+  const maxEnd: number[] = [];
+  for (const t of others) maxEnd.push(Math.max(t.end, maxEnd.at(-1) ?? Number.NEGATIVE_INFINITY));
+  return (start, end) => {
+    // How many of them start before `end`.
+    let lo = 0;
+    let hi = others.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if ((others[mid]?.start ?? 0) < end) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo > 0 && (maxEnd[lo - 1] ?? Number.NEGATIVE_INFINITY) > start;
+  };
 }
 
 /** `true` when the URL carries a user name or password (`user:pass@host`). */

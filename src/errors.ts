@@ -35,10 +35,10 @@ export class ModelNotInitializedError extends NullPiiError {
   }
 }
 
-/** Thrown when input exceeds a configured size cap. Two raise sites today:
- *  - tokenizer subword cap (`MAX_SEQUENCE_LENGTH`, unit = "tokens")
- *  - upfront cap on `sanitize()` input (`MAX_INPUT_CHARS`, unit = "characters",
- *    counted in UTF-16 code units as `string.length` counts them)
+/** Thrown when input exceeds a configured size cap. One raise site today:
+ * a model window over the tokenizer's subword cap (`MAX_SEQUENCE_LENGTH`,
+ * unit = "tokens") with `strictLength: true`. `sanitize()` no longer
+ * refuses a long text: it reads one over `MAX_INPUT_CHARS` in windows.
  *
  * `unit` defaults to "tokens" for backwards-compatible message shape. */
 export class TextTooLongError extends NullPiiError {

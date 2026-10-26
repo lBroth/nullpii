@@ -141,6 +141,7 @@ Before every request, the mod checks that the process at that address holds the 
 - **Tool rows and tool results on screen show placeholders.** Prompts and replies are drawn with real values. If the sidecar is unreachable, they show placeholders too.
 - **An organization's managed settings come first.** Where Claude Code is managed, the organization's hooks run before this mod's, and can stop it from loading or override what it decides. A mod that never loads cannot block anything: prompts then go out unmasked. If `/pii` does not answer, the mod is not running.
 - **Images and other binary attachments are not scanned.**
+- **Very long text can time out.** Masking a text over 1,000,000 characters takes minutes on CPU (about 25 seconds per 100,000 characters). If it takes longer than Claude Code waits, the mod withholds the text, so nothing is sent unmasked, and says the sidecar took too long.
 - **Detection is statistical.** nullpii's leak rate is measured and published, and it is not zero. This is pseudonymisation with a measured leak rate, not anonymisation.
 - **A placeholder from an expired sidecar session** (idle longer than `NULLPII_VAULT_TTL_MS`, or a sidecar restart) no longer restores. It stays a placeholder.
 

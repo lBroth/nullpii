@@ -2080,6 +2080,81 @@ test('a status line under the prompt follows the state: on, masked count, paused
   await ui.unmount();
 });
 
+test('a pause confirmed after its session ended pauses nothing in the next one', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  on('tool.call', { tool: 'AskUserQuestion' }, async ($, e) => {
+    const question = e.questions[0]?.question ?? '';
+    await gate;
+    return { result: { questions: e.questions, answers: { [question]: 'Pause masking' } } };
+  });
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
+  await start($);
+  const ui = await $.ui.mount(BAND);
+  // The dialog stays open while the session ends and another begins.
+  await ui.press({ key: 'nullpii-toggle' });
+  sidecar.sessions.delete('session-1');
+  await start($);
+  release();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const prompt = await $.prompt.submit({
+    text: 'Mail John at john@acme.io',
+    wait: false,
+    origin: COMPOSER,
+  });
+  expect(prompt.text).not.toContain('john@acme.io');
+  await ui.unmount();
+});
+
+test('a start-up answer given after its start ended arms nothing in the next one', async ($, on) => {
+  const { sent, clock } = stillStarting($, on);
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  on('tool.call', { tool: 'AskUserQuestion' }, async ($, e) => {
+    const question = e.questions[0]?.question ?? '';
+    await gate;
+    return {
+      result: {
+        questions: e.questions,
+        answers: { [question]: 'Send now, and do not ask again until nullpii is ready' },
+      },
+    };
+  });
+  await start($);
+  const pending = $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  // That start ends and another begins before the answer comes.
+  await start($);
+  release();
+  await clock.advance(6 * 60_000);
+  const out = await pending;
+  expect(out.drop).toBeDefined();
+  expect(sent).toEqual([]);
+});
+
+test('a start-up report that is not an object is not read as ready, and polling goes on', async ($, on) => {
+  const { sidecar, opts, clock } = stillStarting($, on);
+  await start($);
+  opts.down = false;
+  sidecar.state.startup = null as never;
+  await clock.advance(4_000);
+  sidecar.state.startup = { phase: 'ready' };
+  await clock.advance(4_000);
+  const out = await $.prompt.submit({
+    text: 'Mail John at john@acme.io',
+    wait: false,
+    origin: COMPOSER,
+  });
+  expect(out.drop).toBeUndefined();
+  expect(out.text).not.toContain('john@acme.io');
+});
+
 test('a pause ends with its session: the next one starts masked, and the policy file is never touched', async ($, on) => {
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);

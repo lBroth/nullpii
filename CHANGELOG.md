@@ -5,6 +5,11 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Mod: a pause confirmed, or a start-up answer given, after its session had ended could pause masking or arm unprotected sending in the next session; an answer now counts only in the session it was asked in.
+- Mod: a start-up report that was not an object (a malformed answer from the sidecar) ended the wait for the sidecar and left the mod stuck starting; it is now ignored and polling goes on.
+
 ### Changed
 
 - Mod: the padlock beside the band is one row tall instead of two, and its red (paused) and amber (starting) are brighter, so the open shackle reads on a dark terminal. The name is no longer repeated: the band above the prompt starts with the state (`nothing masked yet`, `12 masked (…)`, `starting · downloading the model`, `paused: …`, `blocking: …`) beside the `on`/`off` button, and the line under the prompt says `on · 8 masked` after the `nullpii:` Claude Code writes in front of it.

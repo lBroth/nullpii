@@ -11,6 +11,8 @@ const SIDECAR_FIX =
 const RELEASE_FIX = 'restart the sidecar from the release the mod pins';
 const MODEL_FIX =
   'use the default pinned model, without a model-directory override, and restart the sidecar';
+const OLDER_FIX =
+  'an older sidecar is still running: stop it (or the old Docker image) and let the mod start the pinned release';
 const BACKEND_FIX = 'restart the sidecar with CPU, CUDA or MPS configured';
 const POLICY_FIX = 'fix or remove the policy file with the nullpii CLI, then restart the sidecar';
 const TOKEN_FIX =
@@ -71,10 +73,26 @@ function unavailable(name: string, reason: string): string {
   return `FAIL ${name}: sidecar unavailable (${reason}). Fix: ${SIDECAR_FIX}.`;
 }
 
+/** A sidecar from before the doctor reports none of the new fields at once. */
+function olderSidecar(status: DoctorSidecarStatus): boolean {
+  return (
+    status.gatewayVersion === undefined &&
+    status.nullpiiVersion === undefined &&
+    status.backend === undefined &&
+    status.modelRevision === undefined &&
+    status.modelFilesPinned === undefined
+  );
+}
+
+function olderLine(name: string): string {
+  return `FAIL ${name}: this sidecar does not report it. Fix: ${OLDER_FIX}.`;
+}
+
 function releaseLine(input: DoctorInput): string {
   const { status } = input;
   if (status === undefined)
     return unavailable('Gateway and nullpii versions', input.sidecarReason ?? 'not checked');
+  if (olderSidecar(status)) return olderLine('Gateway and nullpii versions');
   const { gatewayVersion, nullpiiVersion, expectedRelease } = { ...status, ...input };
   if (gatewayVersion === undefined || nullpiiVersion === undefined) {
     return `FAIL Gateway and nullpii versions: not reported safely. Fix: ${RELEASE_FIX}.`;
@@ -88,6 +106,7 @@ function releaseLine(input: DoctorInput): string {
 function modelLine(input: DoctorInput): string {
   const { status } = input;
   if (status === undefined) return unavailable('Model', input.sidecarReason ?? 'not checked');
+  if (olderSidecar(status)) return olderLine('Model');
   if (status.modelRevision === undefined || status.modelFilesPinned !== true) {
     return `FAIL Model: the default revision and SHA-256 file pins were not reported. Fix: ${MODEL_FIX}.`;
   }
@@ -97,6 +116,7 @@ function modelLine(input: DoctorInput): string {
 function backendLine(input: DoctorInput): string {
   const { status } = input;
   if (status === undefined) return unavailable('Backend', input.sidecarReason ?? 'not checked');
+  if (olderSidecar(status)) return olderLine('Backend');
   if (status.backend === 'auto') {
     return 'INFO Backend: auto (the actual provider is reported after the model loads)';
   }

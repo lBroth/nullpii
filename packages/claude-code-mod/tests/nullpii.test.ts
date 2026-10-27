@@ -1536,6 +1536,27 @@ test('/pii doctor fails unsafe version, model, backend and policy metadata with 
   expect(answer.text).not.toContain(POLICY_FILE);
 });
 
+test('/pii doctor tells an older sidecar apart from a broken one', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  await start($);
+  sidecar.state.status = {
+    gatewayVersion: undefined,
+    nullpiiVersion: undefined,
+    backend: undefined,
+    model: undefined,
+  };
+
+  const answer = await $.command.run(typed('pii', 'doctor'));
+  const lines = answer.text.split('\n');
+
+  for (const line of [lines[1], lines[2], lines[3]]) {
+    expect(line).toContain('this sidecar does not report it');
+    expect(line).toContain('an older sidecar is still running');
+  }
+  expect(lines[5]).toBe('PASS Policy file: loaded and parsed');
+});
+
 test('/pii doctor still runs local checks with the sidecar down', async ($, on) => {
   const sidecar = fakeSidecar({ down: true });
   stubSession(on, sidecar);

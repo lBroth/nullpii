@@ -216,8 +216,8 @@ function fakeSidecar(
       return respond(200, {
         status: 'ok',
         sessions: 1,
-        gatewayVersion: '0.5.2',
-        nullpiiVersion: '0.5.2',
+        gatewayVersion: '0.5.3',
+        nullpiiVersion: '0.5.3',
         backend: 'cpu',
         model: { revision: MODEL_REVISION, filesPinned: true },
         policy: policyView(),
@@ -1499,7 +1499,7 @@ test('/pii doctor passes every check without showing a token, path or personal v
 
   expect(lines).toHaveLength(8);
   expect(lines[0]).toContain('PASS Sidecar and token proof');
-  expect(lines[1]).toContain('PASS Gateway and nullpii versions: 0.5.2 (pinned)');
+  expect(lines[1]).toContain('PASS Gateway and nullpii versions: 0.5.3 (pinned)');
   expect(lines[2]).toBe(`PASS Model: revision ${MODEL_REVISION}; default files have SHA-256 pins`);
   expect(lines[3]).toBe('PASS Backend: cpu');
   expect(lines[4]).toBe('PASS Token: set (value not shown)');
@@ -1525,7 +1525,7 @@ test('/pii doctor fails unsafe version, model, backend and policy metadata with 
   const answer = await $.command.run(typed('pii', 'doctor'));
 
   expect(answer.text).toContain(
-    'FAIL Gateway and nullpii versions: gateway 0.0.0, nullpii 9.9.9; pinned 0.5.2. Fix:',
+    'FAIL Gateway and nullpii versions: gateway 0.0.0, nullpii 9.9.9; pinned 0.5.3. Fix:',
   );
   expect(answer.text).toContain('FAIL Model:');
   expect(answer.text).toContain('FAIL Backend:');
@@ -1798,9 +1798,9 @@ test('with no sidecar answering, the mod starts nullpii-gateway for the session'
   expect(spawned[0]?.cwd).toBe('/');
   expect(spawned[0]?.argv).toEqual(
     expect.arrayContaining([
-      'nullpii@0.5.2',
+      'nullpii@0.5.3',
       'onnxruntime-node@1.30.0',
-      '@lbroth/nullpii-gateway@0.5.2',
+      '@lbroth/nullpii-gateway@0.5.3',
     ]),
   );
   expect(spawned[0]?.env).toMatchObject({

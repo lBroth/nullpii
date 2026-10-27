@@ -2087,10 +2087,10 @@ test('the band walks the start-up phases, with the model download moving', async
   // user is told; a prompt that was held back goes through once it is sent.
   sidecar.state.startup = { phase: 'ready' };
   await clock.advance(2_000);
-  expect(sidecar.toasts).toContain('nullpii is on');
+  expect(sidecar.toasts).not.toContain('nullpii is on');
   expect(await ui.find({ type: 'Text', text: 'nothing masked yet' })).toBeUndefined();
   expect(await ui.find({ type: 'Raster', key: 'nullpii-lock' })).toBeUndefined();
-  expect(lines.at(-1)).toBe('🔒 on');
+  expect(lines.at(-1)).toBe('🔒 0');
   const sent = await $.prompt.submit({
     text: 'Mail John at john@acme.io',
     wait: false,
@@ -2183,7 +2183,7 @@ test('a gateway with no start-up field to report counts as ready, and the sessio
   await clock.advance(2_000);
   opts.down = false;
   await clock.advance(2_000);
-  expect(sidecar.toasts).toContain('nullpii is on');
+  expect(sidecar.toasts).not.toContain('nullpii is on');
   const prompt = await $.prompt.submit({
     text: 'Mail John at john@acme.io',
     wait: false,
@@ -2257,7 +2257,7 @@ test('the person pauses with /pii pause, and the band that appears turns masking
   await ui.press({ key: 'nullpii-toggle' });
   expect(asked).toHaveLength(1);
   expect(await ui.find({ type: 'Button', key: 'nullpii-toggle' })).toBeUndefined();
-  expect(lines.at(-1)).toBe('🔒 on');
+  expect(lines.at(-1)).toBe('🔒 0');
   const back = await $.prompt.submit({
     text: 'Mail John at john@acme.io',
     wait: false,
@@ -2326,7 +2326,7 @@ test('a pause the user does not confirm keeps masking on', async ($, on) => {
   // Masking never paused: nothing to say above the prompt, and the line
   // under it reads on.
   expect(await ui.find({ type: 'Button', key: 'nullpii-toggle' })).toBeUndefined();
-  expect(lines.at(-1)).toBe('🔒 on');
+  expect(lines.at(-1)).toBe('🔒 0');
   const prompt = await $.prompt.submit({
     text: 'Mail John at john@acme.io',
     wait: false,
@@ -2390,9 +2390,9 @@ test('a status line under the prompt follows the state: on, masked count, paused
   on('prompt.submit', ($, e) => ({ text: e.text }));
   on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
   await start($);
-  expect(lines.at(-1)).toBe('🔒 on');
+  expect(lines.at(-1)).toBe('🔒 0');
   await $.prompt.submit({ text: 'Mail John at john@acme.io', wait: false, origin: COMPOSER });
-  expect(lines.at(-1)).toMatch(/^🔒 on · \d+ masked$/);
+  expect(lines.at(-1)).toMatch(/^🔒 [1-9]\d*$/);
   await $.command.run(typed('pii', 'pause'));
   expect(lines.at(-1)).toBe('🔓 paused');
 });

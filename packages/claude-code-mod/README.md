@@ -2,7 +2,7 @@
 
 A [Claude Code mod](https://code.claude.com/docs/en/plugins/mods/overview) that masks personal data and secrets before Claude reads them. Every prompt and every tool result goes through a local nullpii sidecar first. Names, emails, phone numbers, keys and similar values reach the model as placeholders, such as `{{PII_PRIVATE_EMAIL_0_…}}`.
 
-One small place, and only the room the state needs. A line under the prompt always shows the state in a few characters, with a padlock glyph so it reads without colour (`🔒 on · 8 masked`, `🔓 paused`, `⏳ starting · downloading the model 54%`, `⚠ not protected yet`, `⚠ blocking`; Claude Code writes `nullpii:` in front, so the name is never repeated there). While nullpii is on and nothing needs saying, that line is the only thing the mod draws. A band above the prompt appears only when you have something to know or do:
+One small place, and only the room the state needs. A line under the prompt always shows the state in a few characters, with a padlock glyph so it reads without colour (`🔒 8`, a padlock and how many values it has masked so far, rising as it works; `🔓 paused`, `⏳ starting · downloading the model 54%`, `⚠ not protected yet`, `⚠ blocking`; Claude Code writes `nullpii:` in front, so the name is never repeated there). While nullpii is on and nothing needs saying, that line is the only thing the mod draws. A band above the prompt appears only when you have something to know or do:
 
 ```text
 12 masked (person 5 · email 3 · secret 2 · phone 2) · 4 restored to local tools

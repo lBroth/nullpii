@@ -701,7 +701,6 @@ async function waitForSidecar($): Promise<void> {
       problem = undefined;
       startPass = false;
       redraw($);
-      $.ui.toast('nullpii is on');
       return;
     }
     if (startup.phase === 'failed') {
@@ -832,7 +831,7 @@ async function askUser(
  * sign and `nullpii:` in front of the line, so the name is never repeated
  * here. The band above the prompt, drawn only when the person has
  * something to know or do, has the same state in full. */
-const STATUS_ON = '🔒 on';
+const STATUS_ON = '🔒';
 const STATUS_PAUSED = '🔓 paused';
 const STATUS_STARTING = '⏳ starting';
 const STATUS_NOT_PROTECTED = '⚠ not protected yet';
@@ -851,7 +850,7 @@ function statusLine(): string {
     return `${state}${STATUS_PARTS}${phaseText()}`;
   }
   if (paused) return STATUS_PAUSED;
-  return counts.masked === 0 ? STATUS_ON : `${STATUS_ON}${STATUS_PARTS}${counts.masked} masked`;
+  return `${STATUS_ON} ${counts.masked}`;
 }
 
 /** The start-up phase of a sidecar this session started, in a few words,

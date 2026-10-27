@@ -2,11 +2,13 @@
 
 A [Claude Code mod](https://code.claude.com/docs/en/plugins/mods/overview) that masks personal data and secrets before Claude reads them. Every prompt and every tool result goes through a local nullpii sidecar first. Names, emails, phone numbers, keys and similar values reach the model as placeholders, such as `{{PII_PRIVATE_EMAIL_0_…}}`.
 
-A line under the prompt always shows the state in a few words (`on · 8 masked`, `paused`, `starting`, `blocking`; Claude Code writes `nullpii:` in front). A band above the prompt shows what was masked in the session, by type:
+One small place, and only the room the state needs. A line under the prompt always shows the state in a few characters, with a padlock glyph so it reads without colour (`🔒 on · 8 masked`, `🔓 paused`, `⏳ starting · downloading the model 54%`, `⚠ not protected yet`, `⚠ blocking`; Claude Code writes `nullpii:` in front, so the name is never repeated there). While nullpii is on and nothing needs saying, that line is the only thing the mod draws. A band above the prompt appears only when you have something to know or do:
 
 ```text
 12 masked (person 5 · email 3 · secret 2 · phone 2) · 4 restored to local tools
 ```
+
+The band is drawn while nullpii starts, while a prompt of that start goes out unprotected, while masking is paused, while a policy change is waiting for your word, and while the mod blocks (there it says why, in red). Its button turns masking off and on at once. It has no hotkey of its own, so a bare key in an empty prompt never pauses masking. While the band is not drawn, `/pii pause` and the `/pii` menu pause and resume: the pause still asks you first, and still only comes from your own run.
 
 Status: preview. Tested with Claude Code 2.1.305, the version CI tests with.
 
@@ -47,7 +49,7 @@ Change it at the prompt with `/pii`. A change applies at once and is saved in th
 | `/pii ask url` | Masks those categories, but first asks you about each value of them in your own prompt: mask it, send it readable, or send it readable and stop asking for that category |
 | `/pii reset` | Back to the default preset |
 | `/pii pause` | Pauses masking for this session, after asking you first |
-| `/pii resume` | Turns masking back on |
+| `/pii resume` | Turns masking back on (the band's on/off button does the same, while the band is drawn) |
 | `/pii help` | Lists every command and what it does |
 
 Categories: `person`, `email`, `phone`, `address`, `url`, `ip`, `mac`, `location`, `passport`, `license`, `vehicle`, `account`, `secret`, `date`, `organization`, `occupation`, `demographic`, `sensitive`, `title`. When the mod asks about an `ask` value, it shows the value on this machine only. If you dismiss the question, or no one can answer it (`claude -p`), the value stays masked. The mod never asks about text Claude reads from tools: that text follows the policy.
@@ -75,7 +77,7 @@ The policy lives in `~/.config/nullpii/config.json`, or in the file that `NULLPI
 
 ## While nullpii starts
 
-The first start of a sidecar the mod starts takes a while: it installs packages and downloads the model (1.2 GB). The band says which phase it is in, with the download's progress, and its padlock is amber and open. A prompt you send meanwhile asks you first:
+The first start of a sidecar the mod starts takes a while: it installs packages and downloads the model (1.2 GB). The band and the line under the prompt say which phase it is in, with the download's progress, and the band's padlock is amber and open. A prompt you send meanwhile asks you first:
 
 - **Wait for nullpii**: the prompt is held, and sent masked as soon as the band says nullpii is on. If it is not on within 5 minutes, or the start fails, the prompt goes back into the prompt box with the reason;
 - **Send it now, unprotected**: this prompt reaches Claude as you typed it;
@@ -90,7 +92,7 @@ The mod blocks when the sidecar cannot be reached (or the one it started is stil
 - a prompt is not sent. It goes back into the prompt box with the reason;
 - a tool call is refused, or its result is withheld;
 - an attachment such as an @-mentioned file is left out, and the first message's context (`CLAUDE.md`, your email) is sent empty;
-- the band turns red and says why.
+- the band turns red and says why, and the line under the prompt reads `⚠ blocking`.
 
 Claude is told only that the call was refused or its result withheld. You see the reason, above the prompt and in `/pii`, but only when the mod wrote it. An error text from a tool, another hook or an unreadable sidecar answer can quote a real value, so the mod never shows, logs or sends that text to Claude.
 

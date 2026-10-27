@@ -13,6 +13,7 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - Mod: the padlock beside the band is one row tall instead of two, and its red (paused) and amber (starting) are brighter, so the open shackle reads on a dark terminal. The name is no longer repeated: the band above the prompt starts with the state (`nothing masked yet`, `12 masked (…)`, `starting · downloading the model`, `paused: …`, `blocking: …`) beside the `on`/`off` button, and the line under the prompt says `on · 8 masked` after the `nullpii:` Claude Code writes in front of it.
+- Mod: the masking state is drawn in one place, and only the room it needs. While nullpii is on and nothing needs saying, the mod draws nothing above the prompt, and the line under it carries the state alone, in a few characters with a padlock glyph so it reads without colour: `🔒 on`, `🔒 on · 8 masked`, `⏳ starting · downloading the model 54%`, `⚠ not protected yet · installing its packages`, `🔓 paused`, `⚠ blocking`. The band above the prompt is drawn only when there is something to know or do (nullpii starting, a prompt of that start going out unprotected, masking paused, a policy change waiting for the person's word, the mod blocking), and its `on`/`off` button stays in reach while it is. While the band is not drawn, `/pii pause` and the `/pii` menu pause and resume, with every guard unchanged: the pause asks first, only the person's own run can pause, it lasts for the session, and a first start's progress is shown as whole percent of the model download.
 
 ## [0.5.2] — 2026-10-26
 

@@ -115,6 +115,8 @@ const PHASE_WORDS: Readonly<Record<StartupPhase, string>> = {
 /** The prefix of the band's phase line, and the whole line's shape. */
 const STARTING_PREFIX = 'starting nullpii-gateway for this session';
 const PHASE_LINE = /^starting nullpii-gateway for this session \(.*\)$/;
+/** Parts of a hundred: how the model download's progress is worked out. */
+const PERCENT = 100;
 /** A file name the sidecar reports for the model download, shown in the
  * band only when it is a plain short one; anything else is left out. */
 const SAFE_FILE_NAME = /^[\w.-]{1,64}$/;
@@ -418,14 +420,19 @@ async function sidecar($, method: string, path: string, body?: unknown): Promise
 }
 
 /** Read the policy the sidecar runs with and settle it with the user,
- * once for every call the sidecar refused meanwhile. */
+ * once for every call the sidecar refused meanwhile. The band is drawn
+ * while the change is waiting for the person (`bandShown`), and put away
+ * once it is settled. */
 function reviewPolicy($): Promise<void> {
-  reviewing ??= (async () => {
+  if (reviewing !== undefined) return reviewing;
+  reviewing = (async () => {
     const status = (await request($, 'GET', STATUS_PATH)) as { policy?: Policy };
     await settlePolicy($, status.policy);
   })().finally(() => {
     reviewing = undefined;
+    redraw($);
   });
+  redraw($);
   return reviewing;
 }
 
@@ -810,14 +817,50 @@ async function askUser(
 }
 
 /** The line pinned under the prompt, always there: the state in a few
- * words, as the band above the prompt has it in full. */
+ * characters, with a padlock glyph so it reads without colour (a status
+ * line is text alone, and has none). Claude Code writes its own warning
+ * sign and `nullpii:` in front of the line, so the name is never repeated
+ * here. The band above the prompt, drawn only when the person has
+ * something to know or do, has the same state in full. */
+const STATUS_ON = '🔒 on';
+const STATUS_PAUSED = '🔓 paused';
+const STATUS_STARTING = '⏳ starting';
+const STATUS_NOT_PROTECTED = '⚠ not protected yet';
+const STATUS_BLOCKING = '⚠ blocking';
+/** What separates the state from what it has to say. */
+const STATUS_PARTS = ' · ';
+
+/** The state in a few characters. Nothing goes out at all while the mod
+ * blocks, so a fault comes before the state that says what would go out:
+ * a paused nullpii whose sidecar is down sends nothing, as the band's own
+ * line says. */
 function statusLine(): string {
-  // Claude Code puts "nullpii:" in front of the line itself.
-  if (paused) return 'paused · what you send is not masked';
-  if (startPass && starting()) return 'not protected yet · starting';
-  if (starting()) return 'starting';
-  if (problem !== undefined) return 'blocking';
-  return counts.masked === 0 ? 'on' : `on · ${counts.masked} masked`;
+  if (problem !== undefined && !starting()) return STATUS_BLOCKING;
+  if (starting()) {
+    const state = startPass ? STATUS_NOT_PROTECTED : STATUS_STARTING;
+    return `${state}${STATUS_PARTS}${phaseText()}`;
+  }
+  if (paused) return STATUS_PAUSED;
+  return counts.masked === 0 ? STATUS_ON : `${STATUS_ON}${STATUS_PARTS}${counts.masked} masked`;
+}
+
+/** The start-up phase of a sidecar this session started, in a few words,
+ * with the model download's progress when the sidecar reports a size to go
+ * by: `downloading the model 54%`. */
+function phaseText(): string {
+  if (phase !== 'downloading' || download === undefined) {
+    return PHASE_WORDS[phase ?? 'installing'];
+  }
+  const percent = downloadPercent();
+  return percent === '' ? PHASE_WORDS.downloading : `${PHASE_WORDS.downloading} ${percent}`;
+}
+
+/** How far the model download has come, in whole percent (0 to 100), or
+ * an empty text when the sidecar reports no size to go by. */
+function downloadPercent(): string {
+  if (download?.total === undefined || download.total <= 0) return '';
+  const part = Math.round((download.received / download.total) * PERCENT);
+  return `${Math.max(0, Math.min(PERCENT, part))}%`;
 }
 
 /** Draw the band again and pin the status line, after any change of state. */
@@ -829,6 +872,16 @@ function redraw($): void {
 /** Whether the sidecar this session started is still coming up. */
 function starting(): boolean {
   return started === 'running' && problem?.startsWith(STARTING_PREFIX) === true;
+}
+
+/** Whether the band above the prompt has anything to say: it is drawn only
+ * when the person has something to know or do (nullpii starting, a prompt
+ * sent unprotected while it starts, masking paused, a policy change being
+ * settled, or the mod blocking). While nullpii is on and nothing needs
+ * saying, the mod draws nothing there and the line under the prompt
+ * carries the state alone. */
+function bandShown(): boolean {
+  return paused || problem !== undefined || reviewing !== undefined;
 }
 
 /** Whether what is sent goes to Claude as it is: masking paused with the
@@ -1455,12 +1508,17 @@ export function register(on, options) {
     return next({ ...e, props: { ...e.props, text } });
   });
 
-  // The band: the padlock and the pause toggle beside its line. The padlock
+  // The band: the padlock and the pause toggle beside its line, drawn only
+  // while the person has something to know or do (`bandShown`). While
+  // nullpii is on and nothing needs saying, the mod draws nothing there:
+  // the line under the prompt has the state, and the person pauses with
+  // `/pii pause` or the `/pii` menu, which are always there. The padlock
   // is closed and teal while masking is on, open while the sidecar comes up
   // or masking is paused, and red only while masking is paused. The toggle
   // pauses masking behind the mod's dialog, or turns it back on at once;
   // it has no hotkey, so a bare digit in an empty prompt never pauses.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (!bandShown()) return next(e);
     const elements = $.ui.resolve(e);
     const { Box, Text, Button } = elements;
     // `Raster` is terminal-only: a session on another surface gets the

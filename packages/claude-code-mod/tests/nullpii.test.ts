@@ -10,6 +10,7 @@ import {
   applyPiiCommand,
   piiCommandDescription,
 } from '../hooks/categories.ts';
+import { PADLOCK_COLUMNS, padlockCells } from '../hooks/padlock.ts';
 import { expectedProof, hmacSha256Hex, sidecarOrigin } from '../hooks/policy.ts';
 
 const TOKEN = 't'.repeat(64);
@@ -592,7 +593,7 @@ test(
     on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
     await start($);
     const ui = await $.ui.mount(BAND);
-    const line = await ui.find({ type: 'Text', text: /^blocking:/ });
+    const line = await ui.find({ type: 'Text', text: /^blocking · the sidecar does not answer/ });
     expect(line).toBeDefined();
     expect(line?.props.color).toBe('red');
     await ui.unmount();
@@ -1080,7 +1081,9 @@ test('a failure after the tool ran withholds the result with fixed text', async 
   expect(out.deny).toMatch(/^nullpii could not mask this tool's result, so it was withheld/);
   expect(JSON.stringify(out)).not.toContain('John');
   const ui = await $.ui.mount(BAND);
-  expect(await ui.find({ type: 'Text', text: /^blocking: the sidecar answered/ })).toBeDefined();
+  expect(
+    await ui.find({ type: 'Text', text: /^blocking · the sidecar sent a bad answer/ }),
+  ).toBeDefined();
   expect(await ui.find({ type: 'Text', text: /John/ })).toBeUndefined();
   await ui.unmount();
   expect(sidecar.logs.join('\n')).not.toContain('John');
@@ -1164,6 +1167,28 @@ test('a process that cannot prove the token gets neither the token nor the promp
   expect(status.text).toContain('did not prove it holds the sidecar token');
 });
 
+test('a sidecar address held by another program is named under the prompt, and in the band with the fix', async ($, on) => {
+  const sidecar = fakeSidecar({ impostor: true });
+  stubSession(on, sidecar);
+  const lines: (string | undefined)[] = [];
+  on('ui.status', ($, e) => {
+    lines.push(e.text);
+    return { value: undefined };
+  });
+  on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
+  await start($);
+  await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  expect(lines.at(-1)).toBe('⚠ blocking · another program holds the sidecar address');
+  const ui = await $.ui.mount(BAND);
+  expect(
+    await ui.find({
+      type: 'Text',
+      text: 'blocking · another program holds the sidecar address · run /pii doctor',
+    }),
+  ).toBeDefined();
+  await ui.unmount();
+});
+
 test('/pii changes the policy through the sidecar: a preset, a mode, a reset', async ($, on) => {
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);
@@ -1184,6 +1209,17 @@ test('/pii changes the policy through the sidecar: a preset, a mode, a reset', a
   expect(sidecar.policyBodies[2]).toEqual({});
 });
 
+test('/pii off is gone: allow leaves a category readable, and a verb that is not one answers with the usage', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  await start($);
+  for (const args of ['off email', 'off', 'constructor email', '__proto__ email']) {
+    const answer = await $.command.run({ command: 'pii', args });
+    expect(answer.text).toContain('Usage: /pii');
+  }
+  expect(sidecar.policyBodies).toEqual([]);
+});
+
 test('/pii answers an unknown argument with its usage and changes nothing', async ($, on) => {
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);
@@ -1197,7 +1233,7 @@ test('/pii answers an unknown argument with its usage and changes nothing', asyn
 
 /** The `/pii` menu's own group entries, as its dialog draws them. */
 const MENU_PRESETS_ENTRY = 'Preset: agent, secrets or all…';
-const MENU_CATEGORY_ENTRY = 'A category: mask, ask or off…';
+const MENU_CATEGORY_ENTRY = 'A category: mask, ask or allow…';
 const MENU_MORE_ENTRY = 'More: pause, reset, help…';
 const MENU_MORE_NEXT = 'More commands…';
 /** The entry that opens the next page of the category list. */
@@ -1326,7 +1362,7 @@ test('a category picked in the menu applies to the policy as the typed command d
     on,
     [
       MENU_CATEGORY_ENTRY,
-      piiCommandDescription('off <category…>'),
+      piiCommandDescription('allow <category…>'),
       MENU_NEXT_CATEGORIES,
       MENU_NEXT_CATEGORIES,
       'passport',
@@ -1335,7 +1371,7 @@ test('a category picked in the menu applies to the policy as the typed command d
   );
   await start($);
 
-  await $.command.run({ command: 'pii', args: 'off email' });
+  await $.command.run({ command: 'pii', args: 'allow email' });
   const typed = sidecar.policyBodies[0] as Record<string, unknown>;
 
   const answer = await $.command.run({ command: 'pii', args: '' });
@@ -1470,7 +1506,7 @@ test('with nothing at all to answer its dialog, /pii prints the status and the h
 
   expect(answer.text).toContain('Status: on');
   expect(answer.text).toContain('Type /pii for the menu, or /pii help for every command');
-  expect(answer.text).toContain('/pii help              Help: every command and what it does');
+  expect(answer.text).toContain('/pii help               Help: every command and what it does');
 });
 
 test('/pii is listed with the hint of its arguments, and a one-line description', async ($, on) => {
@@ -1481,7 +1517,7 @@ test('/pii is listed with the hint of its arguments, and a one-line description'
   expect(registered).toHaveLength(1);
   expect(registered[0]?.name).toBe('pii');
   expect(registered[0]?.argumentHint).toBe(
-    '[status|doctor|try|preset|mask|ask|off|reset|pause|resume|help]',
+    '[status|doctor|try|preset|mask|ask|allow|reset|pause|resume|help]',
   );
   const description = registered[0]?.description ?? '';
   expect(description).toContain('/pii');
@@ -1536,6 +1572,21 @@ test('/pii doctor fails unsafe version, model, backend and policy metadata with 
   expect(answer.text).not.toContain(POLICY_FILE);
 });
 
+test('/pii doctor names another program holding the sidecar address, and the fix', async ($, on) => {
+  const sidecar = fakeSidecar({ impostor: true });
+  stubSession(on, sidecar);
+  await start($);
+
+  const answer = await $.command.run(typed('pii', 'doctor'));
+  const lines = answer.text.split('\n');
+
+  expect(lines[0]).toContain('did not prove it holds the sidecar token');
+  expect(lines[0]).toContain('pick a free port in the "Sidecar URL" option');
+  expect(lines[0]).not.toContain('npx or Docker');
+  // The reason is repeated only by the last-failure line.
+  expect(lines.slice(0, 7).filter((line) => line.includes('did not prove'))).toHaveLength(1);
+});
+
 test('/pii doctor tells an older sidecar apart from a broken one', async ($, on) => {
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);
@@ -1566,7 +1617,11 @@ test('/pii doctor still runs local checks with the sidecar down', async ($, on) 
   const lines = answer.text.split('\n');
 
   expect(lines).toHaveLength(8);
-  expect(lines.filter((line) => line.includes('sidecar unavailable'))).toHaveLength(5);
+  // The reason once, on the first line; the four that need the sidecar say
+  // only that they were not checked, and point at the first.
+  expect(lines.filter((line) => line.includes('did not answer'))).toHaveLength(5);
+  expect(lines.filter((line) => line.includes('not checked'))).toHaveLength(4);
+  expect(lines.filter((line) => line.includes('nullpii-gateway did not answer'))).toHaveLength(1);
   expect(lines[0]).toContain('nullpii-gateway did not answer');
   expect(lines[0]).toContain('npx or Docker (start Docker first), or enable "Start the sidecar"');
   expect(lines[4]).toBe('PASS Token: set (value not shown)');
@@ -2044,12 +2099,12 @@ test('the band walks the start-up phases, with the model download moving', async
   expect(
     await ui.find({
       type: 'Text',
-      text: 'starting · downloading the model · 640 / 1,160 MB, model.onnx',
+      text: 'starting · downloading the model ▰▰▰▰▰▰▰▱▱▱▱▱ 55% · 640 / 1,160 MB',
     }),
   ).toBeDefined();
   // The line under the prompt has the same phase in a few characters,
   // with the progress the sidecar reports.
-  expect(lines.at(-1)).toBe('⏳ starting · downloading the model 55%');
+  expect(lines.at(-1)).toBe('⏳ starting · downloading the model ▰▰▰▱▱▱ 55%');
   sidecar.state.startup = {
     phase: 'downloading',
     file: 'model.onnx',
@@ -2060,10 +2115,10 @@ test('the band walks the start-up phases, with the model download moving', async
   expect(
     await ui.find({
       type: 'Text',
-      text: 'starting · downloading the model · 1,100 / 1,160 MB, model.onnx',
+      text: 'starting · downloading the model ▰▰▰▰▰▰▰▰▰▰▰▱ 95% · 1,100 / 1,160 MB',
     }),
   ).toBeDefined();
-  expect(lines.at(-1)).toBe('⏳ starting · downloading the model 95%');
+  expect(lines.at(-1)).toBe('⏳ starting · downloading the model ▰▰▰▰▰▰ 95%');
 
   // The session's model loads: still nothing sent, still the phase shown.
   sidecar.state.startup = { phase: 'loading' };
@@ -2229,13 +2284,13 @@ test('the person pauses with /pii pause, and the band that appears turns masking
   // bare digit in an empty prompt never pauses masking.
   const line = await ui.find({
     type: 'Text',
-    text: 'paused: everything you send reaches Claude unmasked',
+    text: 'paused · everything you send reaches Claude unmasked',
   });
   expect(line).toBeDefined();
   expect(line?.props.color).toBe('red');
   expect(await ui.find({ type: 'Raster', key: 'nullpii-lock' })).toBeDefined();
   const toggle = await ui.find({ type: 'Button', key: 'nullpii-toggle' });
-  expect(toggle?.props.label).toBe('off');
+  expect(toggle?.props.label).toBe('resume');
   expect(toggle?.props.hotkey).toBeUndefined();
   expect(lines.at(-1)).toBe('🔓 paused');
 
@@ -2414,12 +2469,12 @@ test('the status line says the mod is blocking, and says so before it says pause
   // out, and the line says so.
   sidecar.state.garbage = GARBAGE;
   await $.prompt.submit({ text: 'Mail John at john@acme.io', wait: false, origin: COMPOSER });
-  expect(lines.at(-1)).toBe('⚠ blocking');
+  expect(lines.at(-1)).toBe('⚠ blocking · the sidecar sent a bad answer');
   // Pausing now changes nothing about what goes out — a pause sends unmasked,
   // a broken sidecar sends nothing at all — so the line still reads blocking.
   await $.command.run(typed('pii', 'pause'));
   expect(questions).toHaveLength(1);
-  expect(lines.at(-1)).toBe('⚠ blocking');
+  expect(lines.at(-1)).toBe('⚠ blocking · the sidecar sent a bad answer');
 });
 
 test('a pause confirmed after its session ended pauses nothing in the next one', async ($, on) => {
@@ -2511,7 +2566,7 @@ test('a pause ends with its session: the next one starts masked, and the policy 
   expect(
     await ui.find({
       type: 'Text',
-      text: 'paused: everything you send reaches Claude unmasked',
+      text: 'paused · everything you send reaches Claude unmasked',
     }),
   ).toBeDefined();
 
@@ -2568,7 +2623,7 @@ async function flushUntil(done: () => boolean): Promise<void> {
   }
 }
 
-test('while a policy change is being settled, the band is up, so the toggle stays in reach', async ($, on) => {
+test('while a policy change is being settled, the band is up with no button: only a pause has one', async ($, on) => {
   const sidecar = fakeSidecar({ categories: { private_person: 'mask' } });
   stubSession(on, sidecar);
   /** Answer the review dialog the moment the test says so: until then the
@@ -2593,7 +2648,7 @@ test('while a policy change is being settled, the band is up, so the toggle stay
   sidecar.replacePolicy({ categories: { private_person: 'off' } });
   const pending = $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
   await flushUntil(() => settle !== undefined);
-  expect(await ui.find({ type: 'Button', key: 'nullpii-toggle' })).toBeDefined();
+  expect(await ui.find({ type: 'Button', key: 'nullpii-toggle' })).toBeUndefined();
 
   // Settled on the person's word, and nothing left to review: the band has
   // nothing to say any more, and the state is the line under the prompt.
@@ -2630,7 +2685,7 @@ test('/pii applies its change to the policy as it is now, not to the copy read a
   // Another session masks dates meanwhile.
   sidecar.replacePolicy({ categories: { private_date: 'mask' } });
 
-  const answer = await $.command.run({ command: 'pii', args: 'off title' });
+  const answer = await $.command.run({ command: 'pii', args: 'allow title' });
 
   expect(answer.text).toContain('Policy changed.');
   expect(sidecar.policyBodies).toEqual([
@@ -2720,4 +2775,26 @@ test('after a sidecar restart with another policy, the change is put to the user
   expect(questions[0]).toContain('threshold default → 0.9');
   expect(questions[0]).toContain('This change masks less');
   expect(sent).toEqual(['one', 'two']);
+});
+
+/** The padlock's cells as the raster takes them: triplets of code point,
+ * foreground and background, row by row. */
+function cellsOf(open: boolean): number[][] {
+  const bytes = Uint8Array.fromBase64(padlockCells(open, 'teal'));
+  const words = new Uint32Array(bytes.buffer);
+  const cells: number[][] = [];
+  for (let at = 0; at < words.length; at += 3) cells.push([...words.slice(at, at + 3)]);
+  return cells;
+}
+
+test('the open padlock is the closed one with the shackle cut a pixel short on one side', () => {
+  const closed = cellsOf(false);
+  const open = cellsOf(true);
+  expect(open).toHaveLength(closed.length);
+  const differing = closed.flatMap((cell, at) =>
+    cell.some((word, i) => word !== open[at]?.[i]) ? [at] : [],
+  );
+  // One cell only, in the upper row, under the arch's right end.
+  expect(differing).toEqual([2]);
+  expect(PADLOCK_COLUMNS).toBe(3);
 });

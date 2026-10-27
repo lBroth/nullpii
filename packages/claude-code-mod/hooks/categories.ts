@@ -12,7 +12,15 @@ import type { Policy } from './policy.ts';
 /** What happens to one category (the policy file's `categories`). */
 export type Mode = 'mask' | 'ask' | 'off';
 
-const MODES: ReadonlySet<string> = new Set(['mask', 'ask', 'off']);
+/** The word each category command takes, and the mode of the policy file it
+ * sets: `allow` leaves a category readable, which the file calls `off`. */
+const VERB_MODES: Readonly<Record<string, Mode>> = { mask: 'mask', ask: 'ask', allow: 'off' };
+/** The command word of each mode, for a command the menu builds. */
+export const MODE_VERBS: Readonly<Record<Mode, string>> = {
+  mask: 'mask',
+  ask: 'ask',
+  off: 'allow',
+};
 
 /** Every category, by the short name `/pii` takes. */
 const CATEGORY_NAMES: Readonly<Record<string, string>> = {
@@ -92,7 +100,7 @@ export const PII_COMMANDS: readonly PiiCommandLine[] = [
     args: 'ask <category…>',
     description: 'Ask first about a category: ask about each value in your prompt',
   },
-  { args: 'off <category…>', description: 'Leave a category readable: the ones you choose' },
+  { args: 'allow <category…>', description: 'Leave a category readable: the ones you choose' },
   { args: 'reset', description: 'Reset to the default (the agent preset)' },
   { args: 'pause', description: 'Pause masking for this session' },
   { args: 'resume', description: 'Turn masking back on' },
@@ -121,7 +129,7 @@ export function formatPiiHelp(): string {
 }
 
 /** The usage line `/pii` answers an unreadable argument with. */
-export const PII_USAGE = `Usage: /pii · /pii status|doctor · /pii try <text> · /pii preset agent|secrets|all · /pii mask|ask|off <category…> · /pii reset · /pii pause|resume · /pii help. Categories: ${CATEGORY_SHORT_NAMES.join(', ')}`;
+export const PII_USAGE = `Usage: /pii · /pii status|doctor · /pii try <text> · /pii preset agent|secrets|all · /pii mask|ask|allow <category…> · /pii reset · /pii pause|resume · /pii help. Categories: ${CATEGORY_SHORT_NAMES.join(', ')}`;
 
 export type PiiCommand =
   | { readonly kind: 'menu' }
@@ -164,7 +172,8 @@ export function parsePiiCommand(args: string): PiiCommand {
     if (preset === undefined || rest.length !== 1) return { kind: 'error', message: PII_USAGE };
     return { kind: 'preset', preset };
   }
-  if (!MODES.has(verb) || rest.length === 0) return { kind: 'error', message: PII_USAGE };
+  const mode = Object.hasOwn(VERB_MODES, verb) ? VERB_MODES[verb] : undefined;
+  if (mode === undefined || rest.length === 0) return { kind: 'error', message: PII_USAGE };
   const categories: string[] = [];
   for (const word of rest) {
     const category = CATEGORY_NAMES[word] ?? (ALL_CATEGORIES.includes(word) ? word : undefined);
@@ -173,7 +182,7 @@ export function parsePiiCommand(args: string): PiiCommand {
     }
     categories.push(category);
   }
-  return { kind: 'set', mode: verb as Mode, categories };
+  return { kind: 'set', mode, categories };
 }
 
 /** The policy file `config` with `command` applied. A preset replaces the

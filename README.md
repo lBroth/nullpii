@@ -149,7 +149,7 @@ The mod talks to the gateway's local sidecar. If no sidecar answers, it starts o
 `/pii` changes the policy at once and saves the change in the policy file:
 
 - `/pii preset agent` (the default), `/pii preset secrets` (secrets only) or `/pii preset all` (every category). `/pii reset` goes back to `agent`.
-- `/pii mask <category…>`, `/pii off <category…>` (readable) and `/pii ask <category…>` set one mode for each category you name.
+- `/pii mask <category…>`, `/pii allow <category…>` (readable) and `/pii ask <category…>` set one mode for each category you name.
 
 For a category in `ask` mode, the mod asks you about each of its values in your own prompt before the prompt is sent. You can mask it, send it readable, or send it readable and stop asking for that category. If you close the question, or no one can answer it (`claude -p`), the value stays masked. The mod only asks about your own prompt: values in a tool's result follow the policy without a question. Categories: `person`, `email`, `phone`, `address`, `url`, `ip`, `mac`, `location`, `passport`, `license`, `vehicle`, `account`, `secret`, `date`, `organization`, `occupation`, `demographic`, `sensitive`, `title`.
 

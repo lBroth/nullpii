@@ -47,7 +47,7 @@ Change it at the prompt with `/pii`. A change applies at once and is saved in th
 | `/pii preset secrets` | Masks secrets only (API keys, tokens, passwords, private keys) |
 | `/pii preset all` | Masks every category |
 | `/pii mask url email` | Masks those categories |
-| `/pii off date` | Leaves those categories readable |
+| `/pii allow date` | Leaves those categories readable |
 | `/pii ask url` | Masks those categories, but first asks you about each value of them in your own prompt: mask it, send it readable, or send it readable and stop asking for that category |
 | `/pii reset` | Back to the default preset |
 | `/pii pause` | Pauses masking for this session, after asking you first |
@@ -58,7 +58,7 @@ Change it at the prompt with `/pii`. A change applies at once and is saved in th
 
 Categories: `person`, `email`, `phone`, `address`, `url`, `ip`, `mac`, `location`, `passport`, `license`, `vehicle`, `account`, `secret`, `date`, `organization`, `occupation`, `demographic`, `sensitive`, `title`. When the mod asks about an `ask` value, it shows the value on this machine only. If you dismiss the question, or no one can answer it (`claude -p`), the value stays masked. The mod never asks about text Claude reads from tools: that text follows the policy.
 
-`/pii` with no arguments shows the menu instead of the status: the state, the presets, `mask`/`ask`/`off` for a category (one page of categories at a time, `More categories…` for the next), and pause, reset and help. Every entry carries the line `/pii help` prints for it, and every entry runs the command it names, guards included: only your own `/pii pause` can pause masking, and a change that masks less is still put to you with its values. Where the menu cannot be answered (a `claude -p` run, a dismissed dialog), `/pii` prints the status and the help instead, as it printed the status before the menu.
+`/pii` with no arguments shows the menu instead of the status: the state, the presets, `mask`/`ask`/`allow` for a category (one page of categories at a time, `More categories…` for the next), and pause, reset and help. Every entry carries the line `/pii help` prints for it, and every entry runs the command it names, guards included: only your own `/pii pause` can pause masking, and a change that masks less is still put to you with its values. Where the menu cannot be answered (a `claude -p` run, a dismissed dialog), `/pii` prints the status and the help instead, as it printed the status before the menu.
 
 The policy lives in `~/.config/nullpii/config.json`, or in the file that `NULLPII_CONFIG` names. The `nullpii` CLI and the gateway use the same file. Every key is optional:
 

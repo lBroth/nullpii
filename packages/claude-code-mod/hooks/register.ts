@@ -301,6 +301,10 @@ let whileStarting: 'ask' | 'block' | 'pass' = 'ask';
 // The person said to send unprotected until this start-up is ready: the
 // answer holds for this start only.
 let startPass = false;
+// Counts the sessions this module has opened: a dialog the person answers
+// after its session ended belongs to that session, and must not pause or
+// arm anything in the next one.
+let sessionGeneration = 0;
 // The review of a policy changed elsewhere, which every call the sidecar
 // refused for it awaits.
 let reviewing: Promise<void> | undefined;
@@ -665,7 +669,11 @@ async function waitForSidecar($): Promise<void> {
       }
       continue;
     }
-    const startup = (status as { startup?: StartupReport }).startup;
+    const startup = (status as { startup?: StartupReport | null }).startup;
+    // A `startup` that is not an object (null, a number) is no report the
+    // mod understands: keep polling rather than throw out of the loop or
+    // call the sidecar ready.
+    if (startup !== undefined && (typeof startup !== 'object' || startup === null)) continue;
     // No field: an old gateway, already ready once it answers; `ready`:
     // the model is loaded. Either way the session opens as before.
     if (startup === undefined || startup.phase === 'ready') {
@@ -890,6 +898,7 @@ async function sendUnprotectedWhileStarting($): Promise<boolean> {
     redraw($);
     return true;
   }
+  const generation = sessionGeneration;
   let answer: string;
   try {
     answer = await askUser($, STARTING_QUESTION, [
@@ -903,6 +912,9 @@ async function sendUnprotectedWhileStarting($): Promise<boolean> {
     });
     return false;
   }
+  // The answer is for the start it was asked in: after the session ended
+  // (or nullpii came up) it arms nothing and sends nothing unprotected.
+  if (generation !== sessionGeneration || !starting()) return false;
   if (answer === SEND_UNPROTECTED_UNTIL_READY) {
     startPass = true;
     redraw($);
@@ -922,6 +934,7 @@ const PERSON_ORIGINS: ReadonlySet<string> = new Set(['composer', 'bridge']);
  * -p`), keeps masking on. A paused session whose sidecar is not up still
  * sends nothing (fail closed, through `problem`). */
 async function pauseMasking($): Promise<boolean> {
+  const generation = sessionGeneration;
   let answer: string;
   try {
     // Keeping it comes first, so a quick confirm keeps masking on.
@@ -932,7 +945,7 @@ async function pauseMasking($): Promise<boolean> {
     });
     return false;
   }
-  if (answer !== PAUSE_MASKING) return false;
+  if (answer !== PAUSE_MASKING || generation !== sessionGeneration) return false;
   paused = true;
   redraw($);
   return true;
@@ -1231,6 +1244,7 @@ export function register(on, options) {
     // A session starts masked: a pause was the session before it's alone.
     paused = false;
     startPass = false;
+    sessionGeneration += 1;
     const asked = optionString(options, 'while_starting');
     whileStarting = asked === 'block' || asked === 'pass' ? asked : 'ask';
     // The band was drawn under the old state: draw it under this one.
@@ -1278,7 +1292,9 @@ export function register(on, options) {
     // not up still sends nothing (fail closed, below).
     if (bypassing()) return next(e);
     // Still starting: a prompt the person typed asks them (or follows the
-    // option); one the engine made waits like any other.
+    // option); one the engine made waits, unless the person chose to send
+    // unprotected until ready, which covers everything for that start
+    // (`bypassing`, above).
     if (e.isMeta !== true && (await sendUnprotectedWhileStarting($))) return next(e);
     // Not sent unprotected: it waits for the sidecar, then goes masked.
     if (e.isMeta !== true && starting()) await holdUntilReady($);

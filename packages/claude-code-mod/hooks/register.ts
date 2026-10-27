@@ -27,6 +27,7 @@ import {
   shortName,
 } from './categories.ts';
 import { type ModState, formatDoctor, readDoctorStatus } from './doctor.ts';
+import { PADLOCK_COLUMNS, PADLOCK_ROWS, type PadlockTone, padlockCells } from './padlock.ts';
 import {
   PLACEHOLDER,
   type Policy,
@@ -34,6 +35,7 @@ import {
   challengeNonce,
   emptyCounts,
   expectedProof,
+  formatBand,
   formatPolicy,
   formatReport,
   hasPlaceholder,
@@ -82,8 +84,12 @@ const PAUSE_MASKING = 'Pause masking';
 const PAUSE_QUESTION =
   'Everything you send until nullpii is turned on again reaches Claude unmasked. Pause masking for this session?';
 /** What any pause request that is not the person's own is told: only
- * their own typed command or the `/pii` menu can pause masking. */
+ * their own typed command or the band's toggle can pause masking. */
 const PAUSE_REFUSED = 'nullpii pauses masking only when you ask for it yourself at the prompt.';
+/** The band's pause toggle, beside the padlock. */
+const TOGGLE_KEY = 'nullpii-toggle';
+/** The padlock's key, in the band. */
+const LOCK_KEY = 'nullpii-lock';
 const CHALLENGE_PATH = '/v1/sidecar/challenge';
 const JSON_TYPE = { 'content-type': 'application/json' };
 const SESSION_NOT_FOUND = 404;
@@ -422,7 +428,9 @@ async function sidecar($, method: string, path: string, body?: unknown): Promise
 }
 
 /** Read the policy the sidecar runs with and settle it with the user,
- * once for every call the sidecar refused meanwhile. */
+ * once for every call the sidecar refused meanwhile. The band is drawn
+ * while the change is waiting for the person (`bandShown`), and put away
+ * once it is settled. */
 function reviewPolicy($): Promise<void> {
   if (reviewing !== undefined) return reviewing;
   reviewing = (async () => {
@@ -827,7 +835,7 @@ const STATUS_ON = '🔒';
 const STATUS_PAUSED = '🔓 paused';
 const STATUS_STARTING = '⏳ starting';
 const STATUS_NOT_PROTECTED = '⚠ not protected yet';
-const STATUS_BLOCKING = '⚠ blocking · run /pii doctor';
+const STATUS_BLOCKING = '⚠ blocking';
 /** What separates the state from what it has to say. */
 const STATUS_PARTS = ' · ';
 
@@ -864,8 +872,9 @@ function downloadPercent(): string {
   return `${Math.max(0, Math.min(PERCENT, part))}%`;
 }
 
-/** Pin the status line, after any change of state. */
+/** Draw the band again and pin the status line, after any change of state. */
 function redraw($): void {
+  $.ui.invalidate('ui.render');
   $.ui.status(statusLine());
 }
 
@@ -874,10 +883,47 @@ function starting(): boolean {
   return started === 'running' && problem?.startsWith(STARTING_PREFIX) === true;
 }
 
+/** Whether the band above the prompt has anything to say: it is drawn only
+ * when the person has something to know or do (nullpii starting, a prompt
+ * sent unprotected while it starts, masking paused, a policy change being
+ * settled, or the mod blocking). While nullpii is on and nothing needs
+ * saying, the mod draws nothing there and the line under the prompt
+ * carries the state alone. */
+function bandShown(): boolean {
+  return paused || problem !== undefined || reviewing !== undefined;
+}
+
 /** Whether what is sent goes to Claude as it is: masking paused with the
  * sidecar up, or the person chose to send unprotected while it starts. */
 function bypassing(): boolean {
   return (paused && problem === undefined) || (startPass && starting());
+}
+
+/** The band's line: while the person sends unprotected through a start-up,
+ * it says so and keeps the phase; otherwise the usual line. */
+function bandText(): string {
+  if (starting() && problem !== undefined) {
+    const detail = problem.slice(STARTING_PREFIX.length).replace(/^ \((.*)\)$/, '$1');
+    return startPass ? `not protected yet · ${detail}` : `starting · ${detail}`;
+  }
+  return formatBand(counts, problem, paused);
+}
+
+/** The band's colour: red for a pause or a fault, amber while nullpii
+ * starts (progress, not a fault), green when it is on. */
+function bandColor(): 'red' | 'yellow' | 'green' {
+  if (paused) return 'red';
+  if (starting()) return 'yellow';
+  return problem !== undefined ? 'red' : 'green';
+}
+
+/** The padlock for the current state, as its `open` and tone: closed teal
+ * when on, open amber while starting, open red while paused, closed grey
+ * when broken. */
+function padlockLook(): [boolean, PadlockTone] {
+  if (paused) return [true, 'red'];
+  if (starting()) return [true, 'amber'];
+  return problem !== undefined ? [false, 'grey'] : [false, 'teal'];
 }
 
 /** The answers of the dialog put to the person who sends a prompt while
@@ -1580,5 +1626,52 @@ export function register(on, options) {
     if (!PLACEHOLDER.test(e.props.text)) return next(e);
     const text = await restoredForDisplay($, e.props.text);
     return next({ ...e, props: { ...e.props, text } });
+  });
+
+  // The band: the padlock and the pause toggle beside its line, drawn only
+  // while the person has something to know or do (`bandShown`). While
+  // nullpii is on and nothing needs saying, the mod draws nothing there:
+  // the line under the prompt has the state, and the person pauses with
+  // `/pii pause` or the `/pii` menu, which are always there. The padlock
+  // is closed and teal while masking is on, open while the sidecar comes up
+  // or masking is paused, and red only while masking is paused. The toggle
+  // pauses masking behind the mod's dialog, or turns it back on at once;
+  // it has no hotkey, so a bare digit in an empty prompt never pauses.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (!bandShown()) return next(e);
+    const elements = $.ui.resolve(e);
+    const { Box, Text, Button } = elements;
+    // `Raster` is terminal-only: a session on another surface gets the
+    // toggle and the line alone.
+    const Raster = 'Raster' in elements ? elements.Raster : undefined;
+    const theirs = await next(e);
+    const line = Text({
+      color: bandColor(),
+      children: [bandText()],
+    });
+    const toggle = Button({
+      key: TOGGLE_KEY,
+      label: paused ? 'off' : 'on',
+      onPress: () => (paused ? resumeMasking($) : void pauseMasking($)),
+    });
+    const row = Box({
+      flexDirection: 'row',
+      gap: 1,
+      children: [
+        ...(Raster !== undefined
+          ? [
+              Raster({
+                key: LOCK_KEY,
+                columns: PADLOCK_COLUMNS,
+                rows: PADLOCK_ROWS,
+                cells: padlockCells(...padlockLook()),
+              }),
+            ]
+          : []),
+        toggle,
+        line,
+      ],
+    });
+    return Box({ flexDirection: 'column', children: theirs ? [theirs, row] : [row] });
   });
 }

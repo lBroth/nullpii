@@ -5,10 +5,6 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Changed
-
-- Mod: the band above the prompt is gone, for every state. The mod draws one line under the prompt (a padlock and a counter, `🔒 8`; `🔓 paused`; `⏳ starting · downloading the model 54%`; `⚠ not protected yet`; `⚠ blocking · run /pii doctor`) and nothing else. The pause toggle button and the padlock picture went with it; `/pii pause`, `/pii resume` and the `/pii` menu do the same, with every guard unchanged. The reason for a block comes with the dropped prompt, in `/pii` and in `/pii doctor`.
-
 ## [0.5.3] — 2026-10-27
 
 A quieter mod (the state is one padlock and a counter under the prompt), `/pii doctor` and `/pii try`, and two fixes found by an independent review.

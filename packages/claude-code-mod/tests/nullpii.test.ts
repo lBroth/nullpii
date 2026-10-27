@@ -2172,11 +2172,11 @@ test('a pause confirmed after its session ended pauses nothing in the next one',
     return { result: { questions: e.questions, answers: { [question]: 'Pause masking' } } };
   });
   on('prompt.submit', ($, e) => ({ text: e.text }));
-  on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
+  on('ui.status', () => ({ value: undefined }));
   await start($);
-  const ui = await $.ui.mount(BAND);
-  // The dialog stays open while the session ends and another begins.
-  await ui.press({ key: 'nullpii-toggle' });
+  // The person types /pii pause; its dialog stays open while the session
+  // ends and another begins.
+  const pausing = $.command.run(typed('pii', 'pause'));
   sidecar.sessions.delete('session-1');
   await start($);
   release();
@@ -2187,7 +2187,7 @@ test('a pause confirmed after its session ended pauses nothing in the next one',
     origin: COMPOSER,
   });
   expect(prompt.text).not.toContain('john@acme.io');
-  await ui.unmount();
+  expect((await pausing).text).toContain('Masking stays on');
 });
 
 test('a start-up answer given after its start ended arms nothing in the next one', async ($, on) => {

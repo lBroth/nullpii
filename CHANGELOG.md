@@ -5,6 +5,10 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.4] — 2026-10-27
+
+The mod's look and commands: a band with a progress bar and the cause of a block, a padlock that reads as open, `/pii allow` instead of `/pii off`, and a clearer `/pii doctor`.
+
 ### Changed
 
 - Mod: the band above the prompt and the line under it are easier to read. The band shows a progress bar while the model downloads (`starting · downloading the model ▰▰▰▰▰▰▰▱▱▱▱▱ 55% · 640 / 1,160 MB`) and, when something blocks the mod, what it is in a few words with the next step (`blocking · no sidecar token · run /pii doctor`); it is drawn only while starting, paused, blocked or settling a policy change, and put away when all is well. The line under the prompt follows: `⏳ starting · downloading the model ▰▰▰▱▱▱ 55%`, `⚠ blocking · another program holds the sidecar address`.

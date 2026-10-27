@@ -99,7 +99,7 @@ function buildMockNullPii(): {
     createSession: () => vault.createSession(),
     destroySession: (sessionId: string) => vault.destroySession(sessionId),
     diagnostics: () => ({
-      version: '0.5.3',
+      version: '0.5.4',
       backend,
       modelRevision: TEST_MODEL_REVISION,
       modelFilesPinned: true,
@@ -1253,7 +1253,7 @@ describe('sidecar · policy', () => {
       createSession: () => vault.createSession(),
       destroySession: (sessionId: string) => vault.destroySession(sessionId),
       diagnostics: () => ({
-        version: '0.5.3',
+        version: '0.5.4',
         backend: 'cpu',
         modelRevision: TEST_MODEL_REVISION,
         modelFilesPinned: true,

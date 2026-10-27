@@ -110,30 +110,30 @@ Mods load in Claude Code 2.1.287 or later.
    openssl rand -hex 32
    ```
 
-   When no sidecar answers, the mod starts one for the session with this token (option **Start the sidecar**, on by default). It runs the 0.5.2 gateway, `nullpii` and the ONNX runtime at exact versions, with `npx`, from the file system root, so a repository's `.npmrc` does not choose the registry they come from. Its first start downloads the model, and it stops with the session. To keep one sidecar running across sessions instead, start it yourself in its own terminal. The sidecar API changed in 0.5 (session secrets, `restore` by tool name, policy versions), and this mod speaks only that version, so the command pins the gateway, the `nullpii` it runs, and the runtime:
+   When no sidecar answers, the mod starts one for the session with this token (option **Start the sidecar**, on by default). It runs the 0.5.3 gateway, `nullpii` and the ONNX runtime at exact versions, with `npx`, from the file system root, so a repository's `.npmrc` does not choose the registry they come from. Its first start downloads the model, and it stops with the session. To keep one sidecar running across sessions instead, start it yourself in its own terminal. The sidecar API changed in 0.5 (session secrets, `restore` by tool name, policy versions), and this mod speaks only that version, so the command pins the gateway, the `nullpii` it runs, and the runtime:
 
    ```bash
    export NULLPII_SIDECAR_TOKEN=<the token>
-   npx -p nullpii@0.5.2 -p onnxruntime-node@1.30.0 -p @lbroth/nullpii-gateway@0.5.2 nullpii-gateway
+   npx -p nullpii@0.5.3 -p onnxruntime-node@1.30.0 -p @lbroth/nullpii-gateway@0.5.3 nullpii-gateway
    ```
 
 2. Install the mod. At the prompt of a Claude Code session in a terminal:
 
    ```text
-   /plugin marketplace add lBroth/nullpii@v0.5.2
+   /plugin marketplace add lBroth/nullpii@v0.5.3
    /plugin install nullpii@nullpii
    ```
 
-   `@v0.5.2` pins the marketplace, and so the mod, to the release tag. This mod sees every prompt and tool result, so install a release, not whatever `main` holds. Read the plugin's details and pick a scope (**Install for you** puts it in every project on this machine). Claude Code then asks for the plugin's options. Paste the token from step 1 into **Sidecar token**. Keep the default **Sidecar URL** unless the gateway listens on another port. The dialog hides the token and keeps it in your system's secure storage, and Claude Code does not pass it to the commands Claude runs.
+   `@v0.5.3` pins the marketplace, and so the mod, to the release tag. This mod sees every prompt and tool result, so install a release, not whatever `main` holds. Read the plugin's details and pick a scope (**Install for you** puts it in every project on this machine). Claude Code then asks for the plugin's options. Paste the token from step 1 into **Sidecar token**. Keep the default **Sidecar URL** unless the gateway listens on another port. The dialog hides the token and keeps it in your system's secure storage, and Claude Code does not pass it to the commands Claude runs.
 
    From a shell, which does not ask for the options:
 
    ```bash
-   claude plugin marketplace add lBroth/nullpii@v0.5.2
+   claude plugin marketplace add lBroth/nullpii@v0.5.3
    claude plugin install nullpii@nullpii
    ```
 
-   In the desktop app, where `/plugin` does not run: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `lBroth/nullpii@v0.5.2`, then **Add plugin**.
+   In the desktop app, where `/plugin` does not run: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `lBroth/nullpii@v0.5.3`, then **Add plugin**.
 
 3. Set or change the options at any time with `/plugin configure nullpii@nullpii` at the prompt. From the shell that holds the token, without the dialog:
 
@@ -171,6 +171,7 @@ Before every request, the mod checks that the process at that address holds the 
 - **Very long text can time out.** Masking a text over 1,000,000 characters takes minutes on CPU (about 25 seconds per 100,000 characters). If it takes longer than Claude Code waits, the mod withholds the text, so nothing is sent unmasked, and says the sidecar took too long.
 - **Detection is statistical.** nullpii's leak rate is measured and published, and it is not zero. This is pseudonymisation with a measured leak rate, not anonymisation.
 - **A placeholder from an expired sidecar session** (idle longer than `NULLPII_VAULT_TTL_MS`, or a sidecar restart) no longer restores. It stays a placeholder.
+- **A resumed session does not restore its old placeholders.** The vault ends with the session and is never saved to disk, so after `--resume` or `-c` the placeholders already in the history stay placeholders; a file Claude writes with one holds the placeholder. Files written before are fine, and new data is masked as usual.
 
 ## Develop
 

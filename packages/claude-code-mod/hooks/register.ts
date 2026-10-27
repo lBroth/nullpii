@@ -141,7 +141,7 @@ const NO_POLICY =
 /** The release of the packages the mod starts the sidecar from, and the
  * ONNX runtime that release is built and tested with, at exact versions
  * (their own dependencies are resolved by npx at the time). */
-const GATEWAY_RELEASE = '0.5.3';
+const GATEWAY_RELEASE = '0.5.4';
 const ONNXRUNTIME_RELEASE = '1.30.0';
 /** The command that starts the sidecar: the release's CLI, gateway and
  * ONNX runtime, with npx (no shell). */

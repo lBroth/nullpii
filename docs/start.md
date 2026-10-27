@@ -15,11 +15,11 @@ Paste this prompt into a Claude Code session:
 <div class="np-prompt">
 
 ```text
-Install the nullpii mod for Claude Code, release v0.5.3. Run these commands in a shell, one at a time, in this order, exactly as written:
+Install the nullpii mod for Claude Code, release v0.5.4. Run these commands in a shell, one at a time, in this order, exactly as written:
 
 1. node --version
    (If it is older than v22, stop and tell me.)
-2. claude plugin marketplace add lBroth/nullpii@v0.5.3
+2. claude plugin marketplace add lBroth/nullpii@v0.5.4
 3. claude plugin install nullpii@nullpii --scope user
 4. printf '{"sidecar_token":"%s"}' "$(openssl rand -hex 32)" | claude plugin configure nullpii@nullpii --values-stdin
 
@@ -41,17 +41,17 @@ Unless your permission settings already allow them, Claude Code asks you before 
 2. At the prompt of a Claude Code session in a terminal:
 
    ```text
-   /plugin marketplace add lBroth/nullpii@v0.5.3
+   /plugin marketplace add lBroth/nullpii@v0.5.4
    /plugin install nullpii@nullpii
    ```
 
    Pick a scope: **Install for you** puts the mod in every project on this machine. When Claude Code asks for the plugin's options, paste the token into **Sidecar token** and keep the default **Sidecar URL**.
 
-   In the desktop app, where `/plugin` does not run: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `lBroth/nullpii@v0.5.3`, then **Add plugin**.
+   In the desktop app, where `/plugin` does not run: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `lBroth/nullpii@v0.5.4`, then **Add plugin**.
 
 3. Restart Claude Code.
 
-`@v0.5.3` pins the mod to the release. The mod sees every prompt and tool result, so install a release, not whatever `main` holds.
+`@v0.5.4` pins the mod to the release. The mod sees every prompt and tool result, so install a release, not whatever `main` holds.
 
 ## Check that it works
 

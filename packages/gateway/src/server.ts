@@ -8,6 +8,7 @@ import { registerAnthropicRoute } from './routes/anthropic.js';
 import { registerHealthRoute } from './routes/health.js';
 import { registerOpenAiRoute } from './routes/openai.js';
 import { registerSidecarRoutes } from './routes/sidecar.js';
+import { sidecarRuntimeInfo } from './runtime-info.js';
 import { StartupTracker } from './startup.js';
 import type { Fetch } from './upstream.js';
 
@@ -78,6 +79,7 @@ export async function buildServer(opts: BuildServerOptions): Promise<FastifyInst
       ttlMs: config.vaultTtlMs,
       maxSessions: config.sidecarMaxSessions,
       policy,
+      runtime: () => sidecarRuntimeInfo(np),
       ...(opts.now !== undefined && { now: opts.now }),
       ...(opts.startup !== undefined && { startup: opts.startup }),
     });

@@ -60,6 +60,12 @@ export interface BackendOptions {
 export class OrtBackend {
   private sessionLoad: Promise<InferenceSession> | null = null;
   private TensorCtor: typeof TensorType | null = null;
+  private loadedBackend: 'cpu' | 'cuda' | 'mps' | undefined;
+
+  /** The provider whose ONNX session loaded, including a CPU fallback. */
+  get backendName(): 'cpu' | 'cuda' | 'mps' | undefined {
+    return this.loadedBackend;
+  }
 
   constructor(
     private readonly modelDir: string,
@@ -96,7 +102,9 @@ export class OrtBackend {
     this.TensorCtor = ort.Tensor;
     const providers = this.options.executionProviders ?? [CPU_PROVIDER];
     try {
-      return await this.createSession(ort, onnxPath, providers);
+      const session = await this.createSession(ort, onnxPath, providers);
+      this.loadedBackend = backendOfProviders(providers);
+      return session;
     } catch (err) {
       const accelerators = providers.filter((p) => providerName(p) !== CPU_PROVIDER);
       if (accelerators.length === 0) throw err;
@@ -105,7 +113,9 @@ export class OrtBackend {
         `nullpii: the ${accelerators.map(providerName).join('/')} execution provider failed to load, so the model runs on the CPU: ${errorMessage(err)}`,
         { code: BACKEND_FALLBACK_WARNING },
       );
-      return this.createSession(ort, cpuPath, [CPU_PROVIDER]);
+      const session = await this.createSession(ort, cpuPath, [CPU_PROVIDER]);
+      this.loadedBackend = 'cpu';
+      return session;
     }
   }
 
@@ -185,6 +195,7 @@ export class OrtBackend {
     if (load === null) return;
     this.sessionLoad = null;
     this.TensorCtor = null;
+    this.loadedBackend = undefined;
     // A load that failed has no session to release; its error already
     // reached the `infer()` call that started it.
     const session = await load.catch(() => null);
@@ -196,6 +207,13 @@ export class OrtBackend {
 
 function providerName(provider: ExecutionProvider): string {
   return typeof provider === 'string' ? provider : provider.name;
+}
+
+function backendOfProviders(providers: readonly ExecutionProvider[]): 'cpu' | 'cuda' | 'mps' {
+  const names = providers.map(providerName);
+  if (names.includes('cuda')) return 'cuda';
+  if (names.includes('coreml')) return 'mps';
+  return 'cpu';
 }
 
 function errorMessage(err: unknown): string {

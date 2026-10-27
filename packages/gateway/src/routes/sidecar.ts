@@ -4,6 +4,7 @@ import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { InvalidConfigError, type NullPii, TextTooLongError } from 'nullpii';
 import type { LivePolicy } from '../live-policy.js';
+import type { SidecarRuntimeInfo } from '../runtime-info.js';
 import { SanitizeCache } from '../sanitize-cache.js';
 import { restoreValue, sanitizeValue } from '../sanitizer.js';
 import { countPlaceholders, isShellTool } from '../shell-tools.js';
@@ -21,6 +22,8 @@ export interface SidecarRouteOptions {
    * a `restore` with `tool` may put real values into), which
    * `PUT /v1/sidecar/policy` replaces. */
   readonly policy: LivePolicy;
+  /** Package versions, actual backend and model pin status. */
+  readonly runtime: () => SidecarRuntimeInfo;
   /** The engine's first start-up, which the status route reports as a
    * `startup` field. Absent when the server was built with a pre-built
    * engine. */
@@ -303,6 +306,7 @@ export async function registerSidecarRoutes(
     scope.get('/v1/sidecar/status', async () => ({
       status: 'ok',
       sessions: sessions.size,
+      ...opts.runtime(),
       policy: policyView(),
       ...(opts.startup !== undefined && { startup: opts.startup.current }),
     }));

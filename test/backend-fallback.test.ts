@@ -63,6 +63,7 @@ describe('OrtBackend accelerator fallback', () => {
       { path: join(dir, 'model.onnx'), providers: ['cpu'] },
     ]);
     expect(warn).toHaveBeenCalledOnce();
+    expect(backend.backendName).toBe('cpu');
     const [message, options] = warn.mock.calls[0] ?? [];
     expect(String(message)).toContain(CUDA_LOAD_ERROR);
     expect(options).toEqual({ code: BACKEND_FALLBACK_WARNING });

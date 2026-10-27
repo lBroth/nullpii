@@ -13,6 +13,7 @@ import {
   DEFAULT_DECODE_THRESHOLD,
   DEFAULT_DEDUPE_IOU,
   DEFAULT_DISABLED_CATEGORIES,
+  DEFAULT_MODEL_REVISION,
   DEFAULT_POST_FILTER_THRESHOLD,
   DEFAULT_RECOGNIZERS,
   DEFAULT_RECOGNIZERS_ENABLED,
@@ -35,12 +36,14 @@ import { dropDatesInsideMachineTimestamps } from './machine-timestamps.js';
 import { ModelManager } from './model-manager.js';
 import { onnxCandidates } from './model-variant.js';
 import { normalizeForDetection, remapSpan } from './normalize.js';
+import { nullpiiVersion } from './package-version.js';
 import { escapePlaceholders, unescapePlaceholders } from './placeholder-escape.js';
 import { dropAssistantNameSpans } from './product-names.js';
 import { dropSpansInsidePublicDigests } from './public-digests.js';
 import { runRecognizers } from './recognizers.js';
 import { segmentWindows } from './segments.js';
 import {
+  type BackendName,
   type EnginePolicy,
   GLINER_EXTENDED_CATEGORIES,
   GLINER_MODEL_CATEGORIES,
@@ -129,6 +132,18 @@ export type InitProgress =
   | { readonly phase: 'loading' }
   | { readonly phase: 'ready' };
 
+/** Non-sensitive runtime facts for a local diagnostics endpoint. */
+export interface NullPiiDiagnostics {
+  /** The installed nullpii library release. */
+  readonly version: string;
+  /** The loaded provider, or the configured choice before the model loads. */
+  readonly backend: BackendName;
+  /** The default pinned revision; a custom model directory has none. */
+  readonly modelRevision: string | undefined;
+  /** Whether ModelManager verifies every default model file against its pin. */
+  readonly modelFilesPinned: boolean;
+}
+
 /**
  * Public entry point. Construct with optional `NullPiiConfig`; call
  * `sanitize` (auto-`init`s) and later `restore` with the returned
@@ -164,6 +179,18 @@ export class NullPii {
     if (DEFAULT_RECOGNIZERS_ENABLED) {
       this.recognizers.push(...DEFAULT_RECOGNIZERS);
     }
+  }
+
+  /** Report the actual loaded backend and default-model pin status, without paths or values. */
+  diagnostics(): NullPiiDiagnostics {
+    const customModel =
+      this.config.modelDir !== undefined || readEnvVar(NULLPII_MODEL_DIR) !== undefined;
+    return {
+      version: nullpiiVersion(),
+      backend: this.backend?.backendName ?? this.config.backend ?? DEFAULT_BACKEND,
+      modelRevision: customModel ? undefined : DEFAULT_MODEL_REVISION,
+      modelFilesPinned: !customModel,
+    };
   }
 
   /**

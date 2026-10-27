@@ -1208,6 +1208,17 @@ test('/pii changes the policy through the sidecar: a preset, a mode, a reset', a
   expect(sidecar.policyBodies[2]).toEqual({});
 });
 
+test('/pii off is gone: allow leaves a category readable, and a verb that is not one answers with the usage', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  await start($);
+  for (const args of ['off email', 'off', 'constructor email', '__proto__ email']) {
+    const answer = await $.command.run({ command: 'pii', args });
+    expect(answer.text).toContain('Usage: /pii');
+  }
+  expect(sidecar.policyBodies).toEqual([]);
+});
+
 test('/pii answers an unknown argument with its usage and changes nothing', async ($, on) => {
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);
@@ -1221,7 +1232,7 @@ test('/pii answers an unknown argument with its usage and changes nothing', asyn
 
 /** The `/pii` menu's own group entries, as its dialog draws them. */
 const MENU_PRESETS_ENTRY = 'Preset: agent, secrets or all…';
-const MENU_CATEGORY_ENTRY = 'A category: mask, ask or off…';
+const MENU_CATEGORY_ENTRY = 'A category: mask, ask or allow…';
 const MENU_MORE_ENTRY = 'More: pause, reset, help…';
 const MENU_MORE_NEXT = 'More commands…';
 /** The entry that opens the next page of the category list. */
@@ -1350,7 +1361,7 @@ test('a category picked in the menu applies to the policy as the typed command d
     on,
     [
       MENU_CATEGORY_ENTRY,
-      piiCommandDescription('off <category…>'),
+      piiCommandDescription('allow <category…>'),
       MENU_NEXT_CATEGORIES,
       MENU_NEXT_CATEGORIES,
       'passport',
@@ -1359,7 +1370,7 @@ test('a category picked in the menu applies to the policy as the typed command d
   );
   await start($);
 
-  await $.command.run({ command: 'pii', args: 'off email' });
+  await $.command.run({ command: 'pii', args: 'allow email' });
   const typed = sidecar.policyBodies[0] as Record<string, unknown>;
 
   const answer = await $.command.run({ command: 'pii', args: '' });
@@ -1494,7 +1505,7 @@ test('with nothing at all to answer its dialog, /pii prints the status and the h
 
   expect(answer.text).toContain('Status: on');
   expect(answer.text).toContain('Type /pii for the menu, or /pii help for every command');
-  expect(answer.text).toContain('/pii help              Help: every command and what it does');
+  expect(answer.text).toContain('/pii help               Help: every command and what it does');
 });
 
 test('/pii is listed with the hint of its arguments, and a one-line description', async ($, on) => {
@@ -1505,7 +1516,7 @@ test('/pii is listed with the hint of its arguments, and a one-line description'
   expect(registered).toHaveLength(1);
   expect(registered[0]?.name).toBe('pii');
   expect(registered[0]?.argumentHint).toBe(
-    '[status|doctor|try|preset|mask|ask|off|reset|pause|resume|help]',
+    '[status|doctor|try|preset|mask|ask|allow|reset|pause|resume|help]',
   );
   const description = registered[0]?.description ?? '';
   expect(description).toContain('/pii');
@@ -2278,7 +2289,7 @@ test('the person pauses with /pii pause, and the band that appears turns masking
   expect(line?.props.color).toBe('red');
   expect(await ui.find({ type: 'Raster', key: 'nullpii-lock' })).toBeDefined();
   const toggle = await ui.find({ type: 'Button', key: 'nullpii-toggle' });
-  expect(toggle?.props.label).toBe('off');
+  expect(toggle?.props.label).toBe('resume');
   expect(toggle?.props.hotkey).toBeUndefined();
   expect(lines.at(-1)).toBe('🔓 paused');
 
@@ -2611,7 +2622,7 @@ async function flushUntil(done: () => boolean): Promise<void> {
   }
 }
 
-test('while a policy change is being settled, the band is up, so the toggle stays in reach', async ($, on) => {
+test('while a policy change is being settled, the band is up with no button: only a pause has one', async ($, on) => {
   const sidecar = fakeSidecar({ categories: { private_person: 'mask' } });
   stubSession(on, sidecar);
   /** Answer the review dialog the moment the test says so: until then the
@@ -2636,7 +2647,7 @@ test('while a policy change is being settled, the band is up, so the toggle stay
   sidecar.replacePolicy({ categories: { private_person: 'off' } });
   const pending = $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
   await flushUntil(() => settle !== undefined);
-  expect(await ui.find({ type: 'Button', key: 'nullpii-toggle' })).toBeDefined();
+  expect(await ui.find({ type: 'Button', key: 'nullpii-toggle' })).toBeUndefined();
 
   // Settled on the person's word, and nothing left to review: the band has
   // nothing to say any more, and the state is the line under the prompt.
@@ -2673,7 +2684,7 @@ test('/pii applies its change to the policy as it is now, not to the copy read a
   // Another session masks dates meanwhile.
   sidecar.replacePolicy({ categories: { private_date: 'mask' } });
 
-  const answer = await $.command.run({ command: 'pii', args: 'off title' });
+  const answer = await $.command.run({ command: 'pii', args: 'allow title' });
 
   expect(answer.text).toContain('Policy changed.');
   expect(sidecar.policyBodies).toEqual([

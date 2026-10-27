@@ -15,6 +15,7 @@
 
 import {
   CATEGORY_SHORT_NAMES,
+  MODE_VERBS,
   type Mode,
   type PiiCommand,
   applyPiiCommand,
@@ -87,7 +88,7 @@ const PAUSE_QUESTION =
 /** What any pause request that is not the person's own is told: only
  * their own typed command or the band's toggle can pause masking. */
 const PAUSE_REFUSED = 'nullpii pauses masking only when you ask for it yourself at the prompt.';
-/** The band's pause toggle, beside the padlock. */
+/** The band's resume button, beside the padlock. */
 const TOGGLE_KEY = 'nullpii-toggle';
 /** The padlock's key, in the band. */
 const LOCK_KEY = 'nullpii-lock';
@@ -829,12 +830,6 @@ async function askUser(
   }
 }
 
-/** The line pinned under the prompt, always there: the state in a few
- * characters, with a padlock glyph so it reads without colour (a status
- * line is text alone, and has none). Claude Code writes its own warning
- * sign and `nullpii:` in front of the line, so the name is never repeated
- * here. The band above the prompt, drawn only when the person has
- * something to know or do, has the same state in full. */
 /** What blocks the mod, in a few words: the texts the mod writes for a block
  * and the words that stand for them under the prompt and in the band. */
 const CAUSES: readonly CauseWords[] = [
@@ -854,6 +849,12 @@ const CAUSES: readonly CauseWords[] = [
   },
 ];
 const CAUSE_FALLBACK = 'something is wrong';
+/** The line pinned under the prompt, always there: the state in a few
+ * characters, with a padlock glyph so it reads without colour (a status
+ * line is text alone, and has none). Claude Code writes its own warning
+ * sign and `nullpii:` in front of the line, so the name is never repeated
+ * here. The band above the prompt, drawn only when the person has
+ * something to know or do, has the same state in full. */
 const STATUS_ON = '🔒';
 const STATUS_PAUSED = '🔓 paused';
 const STATUS_STARTING = '⏳ starting';
@@ -1112,7 +1113,7 @@ function menuEntry(args: string, described = args): MenuEntry {
  * command runs, guards included. */
 const MENU_QUESTION = 'nullpii: what do you want to do?';
 const MENU_PRESETS = 'Preset: agent, secrets or all…';
-const MENU_CATEGORIES = 'A category: mask, ask or off…';
+const MENU_CATEGORIES = 'A category: mask, ask or allow…';
 const MENU_MORE = 'More: pause, reset, help…';
 const MENU_PRESET_QUESTION = 'nullpii: which preset?';
 const MENU_MODE_QUESTION = 'nullpii: what should happen to a category?';
@@ -1158,7 +1159,7 @@ const MENU_REST_ENTRIES: readonly MenuEntry[] = [
 const MENU_MODES: readonly { readonly mode: Mode; readonly label: string }[] = [
   { mode: 'mask', label: piiCommandDescription('mask <category…>') },
   { mode: 'ask', label: piiCommandDescription('ask <category…>') },
-  { mode: 'off', label: piiCommandDescription('off <category…>') },
+  { mode: 'off', label: piiCommandDescription('allow <category…>') },
 ];
 
 /** One question of the menu: the label the person chose, or undefined when
@@ -1230,7 +1231,7 @@ async function chooseCategories($, mode: Mode): Promise<readonly string[] | unde
 
 /** The command the person picked through the category list: the mode they
  * chose, over the categories of every page they went through. Read by the
- * same parser as a typed `/pii mask|ask|off <category…>`, so an unknown
+ * same parser as a typed `/pii mask|ask|allow <category…>`, so an unknown
  * name is answered with the usage as it is there. */
 async function chooseCategory($): Promise<RunnablePiiCommand | undefined> {
   const answer = await askMenu(
@@ -1242,7 +1243,7 @@ async function chooseCategory($): Promise<RunnablePiiCommand | undefined> {
   if (mode === undefined) return answer === undefined ? undefined : menuCommand([], answer);
   const categories = await chooseCategories($, mode);
   if (categories === undefined) return undefined;
-  return menuCommand([], [mode, ...categories].join(' '));
+  return menuCommand([], [MODE_VERBS[mode], ...categories].join(' '));
 }
 
 /** The command one page of the menu names, or undefined when the dialog
@@ -1426,11 +1427,14 @@ async function runPiiCommand(
 }
 
 export function register(on, options) {
+  // The address is known from the options before any hook runs, so a first
+  // frame never reports a sidecar address that is not local.
+  sidecarUrl = sidecarOrigin(optionString(options, 'sidecar_url') ?? DEFAULT_SIDECAR_URL);
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'pii',
       description: 'Show what nullpii masked and its policy, or change it: /pii opens a menu',
-      argumentHint: '[status|doctor|try|preset|mask|ask|off|reset|pause|resume|help]',
+      argumentHint: '[status|doctor|try|preset|mask|ask|allow|reset|pause|resume|help]',
     });
     // The address comes from the plugin option alone: options are read from
     // user and managed settings only, while a project's settings can set
@@ -1691,11 +1695,11 @@ export function register(on, options) {
       color: bandColor(),
       children: [bandText()],
     });
-    const toggle = Button({
-      key: TOGGLE_KEY,
-      label: paused ? 'off' : 'on',
-      onPress: () => (paused ? resumeMasking($) : void pauseMasking($)),
-    });
+    // Only a pause has a button: starting and blocking have nothing to
+    // switch, and pausing takes `/pii pause`, which asks first.
+    const resume = paused
+      ? [Button({ key: TOGGLE_KEY, label: 'resume', onPress: () => resumeMasking($) })]
+      : [];
     const row = Box({
       flexDirection: 'row',
       gap: 1,
@@ -1710,7 +1714,7 @@ export function register(on, options) {
               }),
             ]
           : []),
-        toggle,
+        ...resume,
         line,
       ],
     });

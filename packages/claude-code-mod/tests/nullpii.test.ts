@@ -560,41 +560,28 @@ test('while nullpii is on and nothing needs saying, the mod draws nothing above 
   const ui = await $.ui.mount(BAND);
   // No row of the mod's: no padlock, no toggle, no line of its own. The
   // state is in the line under the prompt, counts and all.
-  expect(await ui.find({ type: 'Raster', key: 'nullpii-lock' })).toBeUndefined();
-  expect(await ui.find({ type: 'Button', key: 'nullpii-toggle' })).toBeUndefined();
-  expect(await ui.find({ type: 'Text', text: /masked/ })).toBeUndefined();
   // What another mod drew there stands.
   expect(await ui.find({ type: 'Text', text: 'drawn by another mod' })).toBeDefined();
   await ui.unmount();
 });
 
-test('a band drawn before the session opens goes away once it opens', async ($, on) => {
-  // As after a hot reload: the band is drawn at once, with the module's
-  // starting state (no token, so the mod is blocking), and session.start
-  // opens the session afterwards.
-  const sidecar = fakeSidecar();
-  stubSession(on, sidecar);
-  on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
-  const ui = await $.ui.mount(BAND);
-  expect(await ui.find({ type: 'Text', text: /^blocking/ })).toBeDefined();
-  await start($);
-  expect(await ui.find({ type: 'Text', text: /^blocking/ })).toBeUndefined();
-  expect(await ui.find({ type: 'Button', key: 'nullpii-toggle' })).toBeUndefined();
-  await ui.unmount();
-});
-
 test(
-  'the band turns into a warning when the mod is blocking',
+  'while the mod is blocking it still draws nothing above the prompt; the line under it says so',
   { options: { autostart: false } },
   async ($, on) => {
     const sidecar = fakeSidecar({ down: true });
     stubSession(on, sidecar);
+    const lines: (string | undefined)[] = [];
+    on('ui.status', ($, e) => {
+      lines.push(e.text);
+      return { value: undefined };
+    });
     on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
     await start($);
     const ui = await $.ui.mount(BAND);
-    const line = await ui.find({ type: 'Text', text: /^blocking:/ });
-    expect(line).toBeDefined();
-    expect(line?.props.color).toBe('red');
+    expect(await ui.find({ type: 'Text', text: /blocking/ })).toBeUndefined();
+    expect(await ui.find({ type: 'Raster', key: 'nullpii-lock' })).toBeUndefined();
+    expect(lines.at(-1)).toBe('⚠ blocking · run /pii doctor');
     await ui.unmount();
   },
 );
@@ -1079,10 +1066,6 @@ test('a failure after the tool ran withholds the result with fixed text', async 
   const out = await $.tool.call({ tool: 'Bash', command: 'cat owners.txt' });
   expect(out.deny).toMatch(/^nullpii could not mask this tool's result, so it was withheld/);
   expect(JSON.stringify(out)).not.toContain('John');
-  const ui = await $.ui.mount(BAND);
-  expect(await ui.find({ type: 'Text', text: /^blocking: the sidecar answered/ })).toBeDefined();
-  expect(await ui.find({ type: 'Text', text: /John/ })).toBeUndefined();
-  await ui.unmount();
   expect(sidecar.logs.join('\n')).not.toContain('John');
 });
 
@@ -1865,23 +1848,21 @@ test('a prompt sent while nullpii starts asks first: waiting holds it, and it go
   expect(sent).toEqual([]);
 });
 
-test('sending now while nullpii starts goes out as typed, once; the band and padlock say not protected yet', async ($, on) => {
+test('sending now while nullpii starts goes out as typed, once', async ($, on) => {
   const { sent } = stillStarting($, on);
   const questions: string[] = [];
   answerDialog(on, 'Send it now, unprotected', questions);
   on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
   await start($);
-  const ui = await $.ui.mount(BAND);
   const first = await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
   expect(first.drop).toBeUndefined();
   expect(sent).toEqual(['Mail John']);
   // Only that prompt: the next one asks again.
   await $.prompt.submit({ text: 'Mail Mary', wait: false, origin: COMPOSER });
   expect(questions).toHaveLength(2);
-  await ui.unmount();
 });
 
-test('"do not ask again until ready" sends every prompt of this start-up, and the band says so', async ($, on) => {
+test('"do not ask again until ready" sends every prompt of this start-up, and the line under the prompt says so', async ($, on) => {
   const { sent } = stillStarting($, on);
   const questions: string[] = [];
   const lines: (string | undefined)[] = [];
@@ -1892,21 +1873,13 @@ test('"do not ask again until ready" sends every prompt of this start-up, and th
   answerDialog(on, 'Send now, and do not ask again until nullpii is ready', questions);
   on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
   await start($);
-  const ui = await $.ui.mount(BAND);
   await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
   await $.prompt.submit({ text: 'Mail Mary', wait: false, origin: COMPOSER });
   expect(questions).toHaveLength(1);
   expect(sent).toEqual(['Mail John', 'Mail Mary']);
-  const band = await ui.find({
-    type: 'Text',
-    text: 'not protected yet · installing its packages',
-  });
-  expect(band).toBeDefined();
-  expect(band?.props.color).toBe('yellow');
   // The line under the prompt says the same, in a few characters: nothing
   // is masked, and the phase says why.
   expect(lines.at(-1)).toBe('⚠ not protected yet · installing its packages');
-  await ui.unmount();
 });
 
 test('a held prompt is sent masked once nullpii is ready', async ($, on) => {
@@ -2006,7 +1979,7 @@ function beforeStart($, on, opts: { down: boolean }) {
   return { sidecar, clock };
 }
 
-test('the band walks the start-up phases, with the model download moving', async ($, on) => {
+test('the line under the prompt walks the start-up phases, with the model download moving', async ($, on) => {
   const opts = { down: true };
   const { sidecar, clock } = beforeStart($, on, opts);
   // biome-ignore lint/correctness/useYield: a stand-in child that runs on.
@@ -2021,15 +1994,7 @@ test('the band walks the start-up phases, with the model download moving', async
   });
   on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
   await start($);
-  const ui = await $.ui.mount(BAND);
-  expect(
-    await ui.find({
-      type: 'Text',
-      text: 'starting · installing its packages',
-    }),
-  ).toBeDefined();
   // The padlock is drawn from the start: open while the sidecar comes up.
-  expect(await ui.find({ type: 'Raster', key: 'nullpii-lock' })).toBeDefined();
   expect(lines.at(-1)).toBe('⏳ starting · installing its packages');
 
   // The sidecar comes up and reports the model downloading: the bytes move.
@@ -2041,12 +2006,6 @@ test('the band walks the start-up phases, with the model download moving', async
     total: 1_160_000_000,
   };
   await clock.advance(2_000);
-  expect(
-    await ui.find({
-      type: 'Text',
-      text: 'starting · downloading the model · 640 / 1,160 MB, model.onnx',
-    }),
-  ).toBeDefined();
   // The line under the prompt has the same phase in a few characters,
   // with the progress the sidecar reports.
   expect(lines.at(-1)).toBe('⏳ starting · downloading the model 55%');
@@ -2057,23 +2016,11 @@ test('the band walks the start-up phases, with the model download moving', async
     total: 1_160_000_000,
   };
   await clock.advance(2_000);
-  expect(
-    await ui.find({
-      type: 'Text',
-      text: 'starting · downloading the model · 1,100 / 1,160 MB, model.onnx',
-    }),
-  ).toBeDefined();
   expect(lines.at(-1)).toBe('⏳ starting · downloading the model 95%');
 
   // The session's model loads: still nothing sent, still the phase shown.
   sidecar.state.startup = { phase: 'loading' };
   await clock.advance(2_000);
-  expect(
-    await ui.find({
-      type: 'Text',
-      text: 'starting · loading the model',
-    }),
-  ).toBeDefined();
   expect(lines.at(-1)).toBe('⏳ starting · loading the model');
   // No one answers the start-up dialog, so the prompt waits for the model;
   // past the hold it goes back to the person, as it did before.
@@ -2088,8 +2035,6 @@ test('the band walks the start-up phases, with the model download moving', async
   sidecar.state.startup = { phase: 'ready' };
   await clock.advance(2_000);
   expect(sidecar.toasts).not.toContain('nullpii is on');
-  expect(await ui.find({ type: 'Text', text: 'nothing masked yet' })).toBeUndefined();
-  expect(await ui.find({ type: 'Raster', key: 'nullpii-lock' })).toBeUndefined();
   expect(lines.at(-1)).toBe('🔒 0');
   const sent = await $.prompt.submit({
     text: 'Mail John at john@acme.io',
@@ -2098,7 +2043,6 @@ test('the band walks the start-up phases, with the model download moving', async
   });
   expect(sent.drop).toBeUndefined();
   expect(sent.text).not.toContain('john@acme.io');
-  await ui.unmount();
 });
 
 test('a warmup that fails says which phase it failed in, and prompts go the normal way', async ($, on) => {
@@ -2193,7 +2137,7 @@ test('a gateway with no start-up field to report counts as ready, and the sessio
   expect(prompt.text).not.toContain('john@acme.io');
 });
 
-test('the person pauses with /pii pause, and the band that appears turns masking back on', async ($, on) => {
+test('the person pauses with /pii pause, and /pii resume turns masking back on', async ($, on) => {
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);
   const asked: Asked[] = [];
@@ -2211,9 +2155,7 @@ test('the person pauses with /pii pause, and the band that appears turns masking
   on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: 'owner: John', stderr: '' } }));
   on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
   await start($);
-  const ui = await $.ui.mount(BAND);
   // Nothing to say while nullpii is on: no band, and so no toggle either.
-  expect(await ui.find({ type: 'Button', key: 'nullpii-toggle' })).toBeUndefined();
 
   // The person's own `/pii pause` asks first, and pauses.
   expect((await $.command.run(typed('pii', 'pause'))).text).toContain('Masking is paused');
@@ -2224,19 +2166,7 @@ test('the person pauses with /pii pause, and the band that appears turns masking
   // Keeping it on comes first, so a quick confirm keeps masking on.
   expect(asked[0]?.options[0]).toBe('Keep masking');
 
-  // Paused: the band is red and says so, the padlock is open and red, and
-  // the toggle beside them reads off. It has no hotkey of its own, so a
-  // bare digit in an empty prompt never pauses masking.
-  const line = await ui.find({
-    type: 'Text',
-    text: 'paused: everything you send reaches Claude unmasked',
-  });
-  expect(line).toBeDefined();
-  expect(line?.props.color).toBe('red');
-  expect(await ui.find({ type: 'Raster', key: 'nullpii-lock' })).toBeDefined();
-  const toggle = await ui.find({ type: 'Button', key: 'nullpii-toggle' });
-  expect(toggle?.props.label).toBe('off');
-  expect(toggle?.props.hotkey).toBeUndefined();
+  // Paused: the line under the prompt says so, and nothing is drawn above it.
   expect(lines.at(-1)).toBe('🔓 paused');
 
   // Everything goes out as it came: the prompt as typed, the tool result as
@@ -2252,11 +2182,10 @@ test('the person pauses with /pii pause, and the band that appears turns masking
   const status = await $.command.run({ command: 'pii', args: '' });
   expect(status.text).toContain('Status: paused');
 
-  // The toggle turns masking back on at once, with no dialog about it: the
-  // band is put away again and what is sent is masked.
-  await ui.press({ key: 'nullpii-toggle' });
+  // `/pii resume` turns masking back on at once, with no dialog about it:
+  // what is sent is masked.
+  await $.command.run(typed('pii', 'resume'));
   expect(asked).toHaveLength(1);
-  expect(await ui.find({ type: 'Button', key: 'nullpii-toggle' })).toBeUndefined();
   expect(lines.at(-1)).toBe('🔒 0');
   const back = await $.prompt.submit({
     text: 'Mail John at john@acme.io',
@@ -2264,7 +2193,6 @@ test('the person pauses with /pii pause, and the band that appears turns masking
     origin: COMPOSER,
   });
   expect(back.text).not.toContain('john@acme.io');
-  await ui.unmount();
 });
 
 test('while paused, placeholders already in the conversation still get their values back in local tools', async ($, on) => {
@@ -2320,12 +2248,10 @@ test('a pause the user does not confirm keeps masking on', async ($, on) => {
   on('prompt.submit', ($, e) => ({ text: e.text }));
   on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
   await start($);
-  const ui = await $.ui.mount(BAND);
   expect((await $.command.run(typed('pii', 'pause'))).text).toContain('Masking stays on.');
   expect(questions).toHaveLength(1);
   // Masking never paused: nothing to say above the prompt, and the line
   // under it reads on.
-  expect(await ui.find({ type: 'Button', key: 'nullpii-toggle' })).toBeUndefined();
   expect(lines.at(-1)).toBe('🔒 0');
   const prompt = await $.prompt.submit({
     text: 'Mail John at john@acme.io',
@@ -2333,7 +2259,6 @@ test('a pause the user does not confirm keeps masking on', async ($, on) => {
     origin: COMPOSER,
   });
   expect(prompt.text).not.toContain('john@acme.io');
-  await ui.unmount();
 });
 
 test('a pause no one can answer keeps masking on', async ($, on) => {
@@ -2344,16 +2269,13 @@ test('a pause no one can answer keeps masking on', async ($, on) => {
   on('tool.call', { tool: 'AskUserQuestion' }, () => ({ deny: 'dismissed' }));
   on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
   await start($);
-  const ui = await $.ui.mount(BAND);
   expect((await $.command.run(typed('pii', 'pause'))).text).toContain('Masking stays on.');
-  expect(await ui.find({ type: 'Button', key: 'nullpii-toggle' })).toBeUndefined();
   const prompt = await $.prompt.submit({
     text: 'Mail John at john@acme.io',
     wait: false,
     origin: COMPOSER,
   });
   expect(prompt.text).not.toContain('john@acme.io');
-  await ui.unmount();
 });
 
 test('a pause the person did not type themselves is refused, and masking stays on', async ($, on) => {
@@ -2414,12 +2336,12 @@ test('the status line says the mod is blocking, and says so before it says pause
   // out, and the line says so.
   sidecar.state.garbage = GARBAGE;
   await $.prompt.submit({ text: 'Mail John at john@acme.io', wait: false, origin: COMPOSER });
-  expect(lines.at(-1)).toBe('⚠ blocking');
+  expect(lines.at(-1)).toBe('⚠ blocking · run /pii doctor');
   // Pausing now changes nothing about what goes out — a pause sends unmasked,
   // a broken sidecar sends nothing at all — so the line still reads blocking.
   await $.command.run(typed('pii', 'pause'));
   expect(questions).toHaveLength(1);
-  expect(lines.at(-1)).toBe('⚠ blocking');
+  expect(lines.at(-1)).toBe('⚠ blocking · run /pii doctor');
 });
 
 test('a pause confirmed after its session ended pauses nothing in the next one', async ($, on) => {
@@ -2505,15 +2427,8 @@ test('a pause ends with its session: the next one starts masked, and the policy 
   on('prompt.submit', ($, e) => ({ text: e.text }));
   on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
   await start($);
-  const ui = await $.ui.mount(BAND);
   await $.command.run(typed('pii', 'pause'));
   expect(questions).toHaveLength(1);
-  expect(
-    await ui.find({
-      type: 'Text',
-      text: 'paused: everything you send reaches Claude unmasked',
-    }),
-  ).toBeDefined();
 
   // The pause was this session's alone, in memory: the policy file was never
   // written for it.
@@ -2523,14 +2438,12 @@ test('a pause ends with its session: the next one starts masked, and the policy 
   sidecar.sessions.delete('session-1');
   await start($);
   // Masking again, so the band has nothing left to say.
-  expect(await ui.find({ type: 'Button', key: 'nullpii-toggle' })).toBeUndefined();
   const prompt = await $.prompt.submit({
     text: 'Mail John at john@acme.io',
     wait: false,
     origin: COMPOSER,
   });
   expect(prompt.text).not.toContain('john@acme.io');
-  await ui.unmount();
 });
 
 test('a policy changed outside the session is put to the user before anything runs under it: kept on their word', async ($, on) => {
@@ -2568,7 +2481,7 @@ async function flushUntil(done: () => boolean): Promise<void> {
   }
 }
 
-test('while a policy change is being settled, the band is up, so the toggle stays in reach', async ($, on) => {
+test('while a policy change is being settled, nothing is drawn above the prompt', async ($, on) => {
   const sidecar = fakeSidecar({ categories: { private_person: 'mask' } });
   stubSession(on, sidecar);
   /** Answer the review dialog the moment the test says so: until then the
@@ -2586,21 +2499,16 @@ test('while a policy change is being settled, the band is up, so the toggle stay
   on('prompt.submit', ($, e) => ({ text: e.text }));
   on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
   await start($);
-  const ui = await $.ui.mount(BAND);
-  expect(await ui.find({ type: 'Button', key: 'nullpii-toggle' })).toBeUndefined();
 
   // A command holding only the token turns names off.
   sidecar.replacePolicy({ categories: { private_person: 'off' } });
   const pending = $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
   await flushUntil(() => settle !== undefined);
-  expect(await ui.find({ type: 'Button', key: 'nullpii-toggle' })).toBeDefined();
 
   // Settled on the person's word, and nothing left to review: the band has
   // nothing to say any more, and the state is the line under the prompt.
   settle?.();
   await pending;
-  expect(await ui.find({ type: 'Button', key: 'nullpii-toggle' })).toBeUndefined();
-  await ui.unmount();
 });
 
 test('a policy changed outside the session is put back unless the user keeps it, before a tool gets values', async ($, on) => {

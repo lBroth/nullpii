@@ -142,7 +142,7 @@ Details, the full list of scanned fields, and the sidecar API: [`packages/gatewa
 - It masks prompts, tool results, @-mentioned files and `CLAUDE.md` before Claude reads them.
 - It shows your prompts and Claude's replies on screen with the real values.
 - It puts real values back only into the tools the policy lists.
-- A band above the prompt shows what was masked, by type. `/pii` shows the counts and the policy in effect.
+- A line under the prompt shows a padlock and how many values were masked. `/pii` shows the counts by type and the policy in effect.
 
 The mod talks to the gateway's local sidecar. If no sidecar answers, it starts one for the session. If it cannot reach the sidecar, it sends nothing unmasked.
 

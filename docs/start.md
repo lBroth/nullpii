@@ -55,7 +55,7 @@ Unless your permission settings already allow them, Claude Code asks you before 
 
 ## Check that it works
 
-After the restart, the mod starts the sidecar. A band above the prompt says what nullpii is doing. While the sidecar is starting (the first time, while the model downloads), a prompt you send goes back into the prompt box: send it again once the band says nullpii is on.
+After the restart, the mod starts the sidecar. The line under the prompt says what nullpii is doing. While the sidecar is starting (the first time, while the model downloads), a prompt you send goes back into the prompt box: send it again once the line under the prompt shows the padlock.
 
 Then send a prompt with a name and an email in it, for example:
 
@@ -64,7 +64,7 @@ Write a short welcome note to John Smith, john@acme.io.
 ```
 
 ::: v-pre
-The band counts what was masked, by type, and Claude works with placeholders such as `{{PII_PRIVATE_EMAIL_0_…}}`. Your screen still shows the real values. Type `/pii` to see the counts and what each category does.
+The line under the prompt counts what was masked, and Claude works with placeholders such as `{{PII_PRIVATE_EMAIL_0_…}}`. Your screen still shows the real values. Type `/pii` to see the counts and what each category does.
 :::
 
 ## Update to a new release

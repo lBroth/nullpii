@@ -2,13 +2,9 @@
 
 A [Claude Code mod](https://code.claude.com/docs/en/plugins/mods/overview) that masks personal data and secrets before Claude reads them. Every prompt and every tool result goes through a local nullpii sidecar first. Names, emails, phone numbers, keys and similar values reach the model as placeholders, such as `{{PII_PRIVATE_EMAIL_0_…}}`.
 
-One small place, and only the room the state needs. A line under the prompt always shows the state in a few characters, with a padlock glyph so it reads without colour (`🔒 8`, a padlock and how many values it has masked so far, rising as it works; `🔓 paused`, `⏳ starting · downloading the model 54%`, `⚠ not protected yet`, `⚠ blocking`; Claude Code writes `nullpii:` in front, so the name is never repeated there). While nullpii is on and nothing needs saying, that line is the only thing the mod draws. A band above the prompt appears only when you have something to know or do:
+One small place. The mod draws one line under the prompt and nothing else: no band above the prompt, no extra text in the conversation. The line is a padlock and a counter of the values masked so far, which rises as the mod works (`🔒 8`). The other states read `🔓 paused`, `⏳ starting · downloading the model 54%`, `⚠ not protected yet`, and `⚠ blocking · run /pii doctor`. Claude Code writes `nullpii:` in front of it, so the name is never repeated.
 
-```text
-12 masked (person 5 · email 3 · secret 2 · phone 2) · 4 restored to local tools
-```
-
-The band is drawn while nullpii starts, while a prompt of that start goes out unprotected, while masking is paused, while a policy change is waiting for your word, and while the mod blocks (there it says why, in red). Its button turns masking off and on at once. It has no hotkey of its own, so a bare key in an empty prompt never pauses masking. While the band is not drawn, `/pii pause` and the `/pii` menu pause and resume: the pause still asks you first, and still only comes from your own run.
+`/pii` shows the counts by type and the policy in effect, `/pii doctor` says what is wrong and how to fix it, and `/pii pause` and `/pii resume` pause and resume masking: the pause asks you first, and only comes from your own run.
 
 Status: preview. Tested with Claude Code 2.1.305, the version CI tests with.
 
@@ -51,7 +47,7 @@ Change it at the prompt with `/pii`. A change applies at once and is saved in th
 | `/pii ask url` | Masks those categories, but first asks you about each value of them in your own prompt: mask it, send it readable, or send it readable and stop asking for that category |
 | `/pii reset` | Back to the default preset |
 | `/pii pause` | Pauses masking for this session, after asking you first |
-| `/pii resume` | Turns masking back on (the band's on/off button does the same, while the band is drawn) |
+| `/pii resume` | Turns masking back on |
 | `/pii help` | Lists every command and what it does |
 
 `/pii try` sends the sample only to the verified local sidecar, never to the conversation's sidecar session. Before Claude Code stores the command, the mod rewrites its arguments to the sanitized sample; on any failure it stores a fixed redaction instead. The menu's `try` entry only explains this typed form and never collects a sample in a dialog. If the policy masks nothing in a sample, its sanitized form is the same text.
@@ -81,11 +77,11 @@ The policy lives in `~/.config/nullpii/config.json`, or in the file that `NULLPI
 
 ## While nullpii starts
 
-The first start of a sidecar the mod starts takes a while: it installs packages and downloads the model (1.2 GB). The band and the line under the prompt say which phase it is in, with the download's progress, and the band's padlock is amber and open. A prompt you send meanwhile asks you first:
+The first start of a sidecar the mod starts takes a while: it installs packages and downloads the model (1.2 GB). The line under the prompt says which phase it is in, with the download's progress. A prompt you send meanwhile asks you first:
 
-- **Wait for nullpii**: the prompt is held, and sent masked as soon as the band says nullpii is on. If it is not on within 5 minutes, or the start fails, the prompt goes back into the prompt box with the reason;
+- **Wait for nullpii**: the prompt is held, and sent masked as soon as the line under the prompt shows the padlock. If it is not on within 5 minutes, or the start fails, the prompt goes back into the prompt box with the reason;
 - **Send it now, unprotected**: this prompt reaches Claude as you typed it;
-- **Send now, and do not ask again until nullpii is ready**: every prompt of this start-up does, with the band saying `not protected yet`.
+- **Send now, and do not ask again until nullpii is ready**: every prompt of this start-up does, with the line under the prompt reading `not protected yet`.
 
 The option **While nullpii starts** (`while_starting`) sets this: `ask` (the default), `block` (always wait, as above) or `pass` (always send unprotected). Text the engine adds, such as file contents Claude reads, goes out unprotected too while you chose to send unprotected. What was sent before nullpii was ready stays in the conversation as it was, so do not send personal data that way. Dismissing the dialog, or a run no one can answer (`claude -p`), waits.
 
@@ -96,7 +92,7 @@ The mod blocks when the sidecar cannot be reached (or the one it started is stil
 - a prompt is not sent. It goes back into the prompt box with the reason;
 - a tool call is refused, or its result is withheld;
 - an attachment such as an @-mentioned file is left out, and the first message's context (`CLAUDE.md`, your email) is sent empty;
-- the band turns red and says why, and the line under the prompt reads `⚠ blocking`.
+- the line under the prompt reads `⚠ blocking · run /pii doctor`, and the reason comes with the dropped prompt and in `/pii` and `/pii doctor`.
 
 Claude is told only that the call was refused or its result withheld. You see the reason, above the prompt and in `/pii`, but only when the mod wrote it. An error text from a tool, another hook or an unreadable sidecar answer can quote a real value, so the mod never shows, logs or sends that text to Claude.
 

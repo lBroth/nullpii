@@ -10,6 +10,7 @@ import {
   applyPiiCommand,
   piiCommandDescription,
 } from '../hooks/categories.ts';
+import { PADLOCK_COLUMNS, padlockCells } from '../hooks/padlock.ts';
 import { expectedProof, hmacSha256Hex, sidecarOrigin } from '../hooks/policy.ts';
 
 const TOKEN = 't'.repeat(64);
@@ -2774,4 +2775,26 @@ test('after a sidecar restart with another policy, the change is put to the user
   expect(questions[0]).toContain('threshold default → 0.9');
   expect(questions[0]).toContain('This change masks less');
   expect(sent).toEqual(['one', 'two']);
+});
+
+/** The padlock's cells as the raster takes them: triplets of code point,
+ * foreground and background, row by row. */
+function cellsOf(open: boolean): number[][] {
+  const bytes = Uint8Array.fromBase64(padlockCells(open, 'teal'));
+  const words = new Uint32Array(bytes.buffer);
+  const cells: number[][] = [];
+  for (let at = 0; at < words.length; at += 3) cells.push([...words.slice(at, at + 3)]);
+  return cells;
+}
+
+test('the open padlock is the closed one with the shackle cut a pixel short on one side', () => {
+  const closed = cellsOf(false);
+  const open = cellsOf(true);
+  expect(open).toHaveLength(closed.length);
+  const differing = closed.flatMap((cell, at) =>
+    cell.some((word, i) => word !== open[at]?.[i]) ? [at] : [],
+  );
+  // One cell only, in the upper row, under the arch's right end.
+  expect(differing).toEqual([2]);
+  expect(PADLOCK_COLUMNS).toBe(3);
 });

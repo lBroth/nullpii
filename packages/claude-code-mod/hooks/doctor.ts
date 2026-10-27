@@ -8,6 +8,9 @@ const SAFE_REVISION = /^[0-9a-f]{40}$/;
 const BACKENDS: ReadonlySet<string> = new Set(['cpu', 'cuda', 'mps']);
 const SIDECAR_FIX =
   'start it with npx or Docker (start Docker first), or enable "Start the sidecar"';
+const PORT_FIX =
+  'another program may hold the sidecar address: pick a free port in the "Sidecar URL" option (/plugin configure), or stop that program';
+const NOT_CHECKED_FIX = 'fix the sidecar first (the first line)';
 const RELEASE_FIX = 'restart the sidecar from the release the mod pins';
 const MODEL_FIX =
   'use the default pinned model, without a model-directory override, and restart the sidecar';
@@ -69,8 +72,17 @@ export function readDoctorStatus(value: unknown): DoctorSidecarStatus | undefine
   };
 }
 
+/** The first line, which carries the reason once and its fix; a reason that
+ * says another program answered at the address gets the fix for that. */
 function unavailable(name: string, reason: string): string {
-  return `FAIL ${name}: sidecar unavailable (${reason}). Fix: ${SIDECAR_FIX}.`;
+  const fix = reason.includes('did not prove it holds') ? PORT_FIX : SIDECAR_FIX;
+  return `FAIL ${name}: sidecar unavailable (${reason}). Fix: ${fix}.`;
+}
+
+/** Every other line that needs the sidecar: short, since the first line
+ * has the reason. */
+function notChecked(name: string): string {
+  return `FAIL ${name}: not checked, the sidecar did not answer. Fix: ${NOT_CHECKED_FIX}.`;
 }
 
 /** A sidecar from before the doctor reports none of the new fields at once. */
@@ -90,8 +102,7 @@ function olderLine(name: string): string {
 
 function releaseLine(input: DoctorInput): string {
   const { status } = input;
-  if (status === undefined)
-    return unavailable('Gateway and nullpii versions', input.sidecarReason ?? 'not checked');
+  if (status === undefined) return notChecked('Gateway and nullpii versions');
   if (olderSidecar(status)) return olderLine('Gateway and nullpii versions');
   const { gatewayVersion, nullpiiVersion, expectedRelease } = { ...status, ...input };
   if (gatewayVersion === undefined || nullpiiVersion === undefined) {
@@ -105,7 +116,7 @@ function releaseLine(input: DoctorInput): string {
 
 function modelLine(input: DoctorInput): string {
   const { status } = input;
-  if (status === undefined) return unavailable('Model', input.sidecarReason ?? 'not checked');
+  if (status === undefined) return notChecked('Model');
   if (olderSidecar(status)) return olderLine('Model');
   if (status.modelRevision === undefined || status.modelFilesPinned !== true) {
     return `FAIL Model: the default revision and SHA-256 file pins were not reported. Fix: ${MODEL_FIX}.`;
@@ -115,7 +126,7 @@ function modelLine(input: DoctorInput): string {
 
 function backendLine(input: DoctorInput): string {
   const { status } = input;
-  if (status === undefined) return unavailable('Backend', input.sidecarReason ?? 'not checked');
+  if (status === undefined) return notChecked('Backend');
   if (olderSidecar(status)) return olderLine('Backend');
   if (status.backend === 'auto') {
     return 'INFO Backend: auto (the actual provider is reported after the model loads)';
@@ -128,7 +139,7 @@ function backendLine(input: DoctorInput): string {
 
 function policyLine(input: DoctorInput): string {
   const { status } = input;
-  if (status === undefined) return unavailable('Policy file', input.sidecarReason ?? 'not checked');
+  if (status === undefined) return notChecked('Policy file');
   if (status.policyLoaded === undefined) {
     return `FAIL Policy file: load state not reported. Fix: ${POLICY_FIX}.`;
   }

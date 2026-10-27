@@ -592,7 +592,7 @@ test(
     on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
     await start($);
     const ui = await $.ui.mount(BAND);
-    const line = await ui.find({ type: 'Text', text: /^blocking:/ });
+    const line = await ui.find({ type: 'Text', text: /^blocking · the sidecar does not answer/ });
     expect(line).toBeDefined();
     expect(line?.props.color).toBe('red');
     await ui.unmount();
@@ -1080,7 +1080,9 @@ test('a failure after the tool ran withholds the result with fixed text', async 
   expect(out.deny).toMatch(/^nullpii could not mask this tool's result, so it was withheld/);
   expect(JSON.stringify(out)).not.toContain('John');
   const ui = await $.ui.mount(BAND);
-  expect(await ui.find({ type: 'Text', text: /^blocking: the sidecar answered/ })).toBeDefined();
+  expect(
+    await ui.find({ type: 'Text', text: /^blocking · the sidecar sent a bad answer/ }),
+  ).toBeDefined();
   expect(await ui.find({ type: 'Text', text: /John/ })).toBeUndefined();
   await ui.unmount();
   expect(sidecar.logs.join('\n')).not.toContain('John');
@@ -1162,6 +1164,28 @@ test('a process that cannot prove the token gets neither the token nor the promp
   expect(sidecar.tokensSent.every((sent) => !sent)).toBe(true);
   const status = await $.command.run({ command: 'pii', args: '' });
   expect(status.text).toContain('did not prove it holds the sidecar token');
+});
+
+test('a sidecar address held by another program is named under the prompt, and in the band with the fix', async ($, on) => {
+  const sidecar = fakeSidecar({ impostor: true });
+  stubSession(on, sidecar);
+  const lines: (string | undefined)[] = [];
+  on('ui.status', ($, e) => {
+    lines.push(e.text);
+    return { value: undefined };
+  });
+  on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
+  await start($);
+  await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  expect(lines.at(-1)).toBe('⚠ blocking · another program holds the sidecar address');
+  const ui = await $.ui.mount(BAND);
+  expect(
+    await ui.find({
+      type: 'Text',
+      text: 'blocking · another program holds the sidecar address · run /pii doctor',
+    }),
+  ).toBeDefined();
+  await ui.unmount();
 });
 
 test('/pii changes the policy through the sidecar: a preset, a mode, a reset', async ($, on) => {
@@ -1536,6 +1560,21 @@ test('/pii doctor fails unsafe version, model, backend and policy metadata with 
   expect(answer.text).not.toContain(POLICY_FILE);
 });
 
+test('/pii doctor names another program holding the sidecar address, and the fix', async ($, on) => {
+  const sidecar = fakeSidecar({ impostor: true });
+  stubSession(on, sidecar);
+  await start($);
+
+  const answer = await $.command.run(typed('pii', 'doctor'));
+  const lines = answer.text.split('\n');
+
+  expect(lines[0]).toContain('did not prove it holds the sidecar token');
+  expect(lines[0]).toContain('pick a free port in the "Sidecar URL" option');
+  expect(lines[0]).not.toContain('npx or Docker');
+  // The reason is repeated only by the last-failure line.
+  expect(lines.slice(0, 7).filter((line) => line.includes('did not prove'))).toHaveLength(1);
+});
+
 test('/pii doctor tells an older sidecar apart from a broken one', async ($, on) => {
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);
@@ -1566,7 +1605,11 @@ test('/pii doctor still runs local checks with the sidecar down', async ($, on) 
   const lines = answer.text.split('\n');
 
   expect(lines).toHaveLength(8);
-  expect(lines.filter((line) => line.includes('sidecar unavailable'))).toHaveLength(5);
+  // The reason once, on the first line; the four that need the sidecar say
+  // only that they were not checked, and point at the first.
+  expect(lines.filter((line) => line.includes('did not answer'))).toHaveLength(5);
+  expect(lines.filter((line) => line.includes('not checked'))).toHaveLength(4);
+  expect(lines.filter((line) => line.includes('nullpii-gateway did not answer'))).toHaveLength(1);
   expect(lines[0]).toContain('nullpii-gateway did not answer');
   expect(lines[0]).toContain('npx or Docker (start Docker first), or enable "Start the sidecar"');
   expect(lines[4]).toBe('PASS Token: set (value not shown)');
@@ -2044,12 +2087,12 @@ test('the band walks the start-up phases, with the model download moving', async
   expect(
     await ui.find({
       type: 'Text',
-      text: 'starting · downloading the model · 640 / 1,160 MB, model.onnx',
+      text: 'starting · downloading the model ▰▰▰▰▰▰▰▱▱▱▱▱ 55% · 640 / 1,160 MB',
     }),
   ).toBeDefined();
   // The line under the prompt has the same phase in a few characters,
   // with the progress the sidecar reports.
-  expect(lines.at(-1)).toBe('⏳ starting · downloading the model 55%');
+  expect(lines.at(-1)).toBe('⏳ starting · downloading the model ▰▰▰▱▱▱ 55%');
   sidecar.state.startup = {
     phase: 'downloading',
     file: 'model.onnx',
@@ -2060,10 +2103,10 @@ test('the band walks the start-up phases, with the model download moving', async
   expect(
     await ui.find({
       type: 'Text',
-      text: 'starting · downloading the model · 1,100 / 1,160 MB, model.onnx',
+      text: 'starting · downloading the model ▰▰▰▰▰▰▰▰▰▰▰▱ 95% · 1,100 / 1,160 MB',
     }),
   ).toBeDefined();
-  expect(lines.at(-1)).toBe('⏳ starting · downloading the model 95%');
+  expect(lines.at(-1)).toBe('⏳ starting · downloading the model ▰▰▰▰▰▰ 95%');
 
   // The session's model loads: still nothing sent, still the phase shown.
   sidecar.state.startup = { phase: 'loading' };
@@ -2229,7 +2272,7 @@ test('the person pauses with /pii pause, and the band that appears turns masking
   // bare digit in an empty prompt never pauses masking.
   const line = await ui.find({
     type: 'Text',
-    text: 'paused: everything you send reaches Claude unmasked',
+    text: 'paused · everything you send reaches Claude unmasked',
   });
   expect(line).toBeDefined();
   expect(line?.props.color).toBe('red');
@@ -2414,12 +2457,12 @@ test('the status line says the mod is blocking, and says so before it says pause
   // out, and the line says so.
   sidecar.state.garbage = GARBAGE;
   await $.prompt.submit({ text: 'Mail John at john@acme.io', wait: false, origin: COMPOSER });
-  expect(lines.at(-1)).toBe('⚠ blocking');
+  expect(lines.at(-1)).toBe('⚠ blocking · the sidecar sent a bad answer');
   // Pausing now changes nothing about what goes out — a pause sends unmasked,
   // a broken sidecar sends nothing at all — so the line still reads blocking.
   await $.command.run(typed('pii', 'pause'));
   expect(questions).toHaveLength(1);
-  expect(lines.at(-1)).toBe('⚠ blocking');
+  expect(lines.at(-1)).toBe('⚠ blocking · the sidecar sent a bad answer');
 });
 
 test('a pause confirmed after its session ended pauses nothing in the next one', async ($, on) => {
@@ -2511,7 +2554,7 @@ test('a pause ends with its session: the next one starts masked, and the policy 
   expect(
     await ui.find({
       type: 'Text',
-      text: 'paused: everything you send reaches Claude unmasked',
+      text: 'paused · everything you send reaches Claude unmasked',
     }),
   ).toBeDefined();
 

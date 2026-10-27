@@ -5,6 +5,11 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Mod: the band above the prompt and the line under it are easier to read. The band shows a progress bar while the model downloads (`starting · downloading the model ▰▰▰▰▰▰▰▱▱▱▱▱ 55% · 640 / 1,160 MB`) and, when something blocks the mod, what it is in a few words with the next step (`blocking · no sidecar token · run /pii doctor`); it is drawn only while starting, paused, blocked or settling a policy change, and put away when all is well. The line under the prompt follows: `⏳ starting · downloading the model ▰▰▰▱▱▱ 55%`, `⚠ blocking · another program holds the sidecar address`.
+- Mod: `/pii doctor` says why the sidecar is unavailable once, on its first line; the lines that need the sidecar say only that they were not checked. When another program answers at the sidecar address, the fix is to pick a free port in the Sidecar URL option, not to start npx or Docker.
+
 ## [0.5.3] — 2026-10-27
 
 A quieter mod (the state is one padlock and a counter under the prompt), `/pii doctor` and `/pii try`, and two fixes found by an independent review.

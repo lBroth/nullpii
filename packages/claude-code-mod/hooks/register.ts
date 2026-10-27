@@ -27,6 +27,7 @@ import {
   shortName,
 } from './categories.ts';
 import { type ModState, formatDoctor, readDoctorStatus } from './doctor.ts';
+import { type CauseWords, causeIn, progressBar } from './look.ts';
 import { PADLOCK_COLUMNS, PADLOCK_ROWS, type PadlockTone, padlockCells } from './padlock.ts';
 import {
   PLACEHOLDER,
@@ -119,6 +120,9 @@ const STARTING_PREFIX = 'starting nullpii-gateway for this session';
 const PHASE_LINE = /^starting nullpii-gateway for this session \(.*\)$/;
 /** Parts of a hundred: how the model download's progress is worked out. */
 const PERCENT = 100;
+/** Cells of the progress bar in the line under the prompt, and in the band. */
+const STATUS_BAR_CELLS = 6;
+const BAND_BAR_CELLS = 12;
 /** A file name the sidecar reports for the model download, shown in the
  * band only when it is a plain short one; anything else is left out. */
 const SAFE_FILE_NAME = /^[\w.-]{1,64}$/;
@@ -162,7 +166,7 @@ const STARTUP_POLL_MS = 2_000;
 /** The port nullpii-gateway listens on when the address names none. */
 const DEFAULT_SIDECAR_PORT = '8787';
 const NOT_SIDECAR =
-  'the process at the sidecar address did not prove it holds the sidecar token, so nothing was sent to it: run nullpii-gateway 0.5 or later there, with the same NULLPII_SIDECAR_TOKEN';
+  'the process at the sidecar address did not prove it holds the sidecar token, so nothing was sent to it: run nullpii-gateway 0.5 or later there, with the same NULLPII_SIDECAR_TOKEN, or pick a free port in the Sidecar URL option (/plugin configure) if another program uses this address';
 const TIMED_OUT = 'the sidecar took too long to answer';
 /** Shown in place of an error text this mod did not write (a tool's, a
  * hook's, the host's): such a text can quote a value restored into a tool
@@ -831,6 +835,25 @@ async function askUser(
  * sign and `nullpii:` in front of the line, so the name is never repeated
  * here. The band above the prompt, drawn only when the person has
  * something to know or do, has the same state in full. */
+/** What blocks the mod, in a few words: the texts the mod writes for a block
+ * and the words that stand for them under the prompt and in the band. */
+const CAUSES: readonly CauseWords[] = [
+  { matches: (r) => r === NO_TOKEN, words: 'no sidecar token' },
+  { matches: (r) => r === NOT_LOOPBACK, words: 'the sidecar URL is not local' },
+  { matches: (r) => r === UNREACHABLE, words: 'the sidecar does not answer' },
+  { matches: (r) => r === NOT_SIDECAR, words: 'another program holds the sidecar address' },
+  { matches: (r) => r === TIMED_OUT, words: 'the sidecar is too slow' },
+  { matches: (r) => r === NOT_JSON, words: 'the sidecar sent a bad answer' },
+  {
+    matches: (r) =>
+      r === NOT_STARTED ||
+      EXITED_LINE.test(r) ||
+      WARMUP_FAILED_LINE.test(r) ||
+      NOT_READY_LINE.test(r),
+    words: 'the sidecar did not start',
+  },
+];
+const CAUSE_FALLBACK = 'something is wrong';
 const STATUS_ON = '🔒';
 const STATUS_PAUSED = '🔓 paused';
 const STATUS_STARTING = '⏳ starting';
@@ -844,7 +867,9 @@ const STATUS_PARTS = ' · ';
  * a paused nullpii whose sidecar is down sends nothing, as the band's own
  * line says. */
 function statusLine(): string {
-  if (problem !== undefined && !starting()) return STATUS_BLOCKING;
+  if (problem !== undefined && !starting()) {
+    return `${STATUS_BLOCKING}${STATUS_PARTS}${blockedWords()}`;
+  }
   if (starting()) {
     const state = startPass ? STATUS_NOT_PROTECTED : STATUS_STARTING;
     return `${state}${STATUS_PARTS}${phaseText()}`;
@@ -857,19 +882,24 @@ function statusLine(): string {
  * with the model download's progress when the sidecar reports a size to go
  * by: `downloading the model 54%`. */
 function phaseText(): string {
-  if (phase !== 'downloading' || download === undefined) {
-    return PHASE_WORDS[phase ?? 'installing'];
-  }
-  const percent = downloadPercent();
-  return percent === '' ? PHASE_WORDS.downloading : `${PHASE_WORDS.downloading} ${percent}`;
+  const part = phase === 'downloading' ? downloadPart() : undefined;
+  if (part === undefined) return PHASE_WORDS[phase ?? 'installing'];
+  return `${PHASE_WORDS.downloading} ${progressBar(part, STATUS_BAR_CELLS)} ${part}%`;
 }
 
 /** How far the model download has come, in whole percent (0 to 100), or
- * an empty text when the sidecar reports no size to go by. */
-function downloadPercent(): string {
-  if (download?.total === undefined || download.total <= 0) return '';
+ * undefined when the sidecar reports no size to go by. */
+function downloadPart(): number | undefined {
+  if (download?.total === undefined || download.total <= 0) return undefined;
   const part = Math.round((download.received / download.total) * PERCENT);
-  return `${Math.max(0, Math.min(PERCENT, part))}%`;
+  return Math.max(0, Math.min(PERCENT, part));
+}
+
+/** What blocks the mod, in a few words, for the line under the prompt and
+ * the band; the full reason is in `/pii`, `/pii doctor` and the dropped
+ * prompt. */
+function blockedWords(): string {
+  return causeIn(CAUSES, problem ?? '', CAUSE_FALLBACK);
 }
 
 /** Draw the band again and pin the status line, after any change of state. */
@@ -899,14 +929,26 @@ function bypassing(): boolean {
   return (paused && problem === undefined) || (startPass && starting());
 }
 
-/** The band's line: while the person sends unprotected through a start-up,
- * it says so and keeps the phase; otherwise the usual line. */
+/** The band's line: the state in the mod's own words, with what to do when
+ * something is wrong. While the person sends unprotected through a
+ * start-up, it says so and keeps the phase. */
 function bandText(): string {
   if (starting() && problem !== undefined) {
-    const detail = problem.slice(STARTING_PREFIX.length).replace(/^ \((.*)\)$/, '$1');
-    return startPass ? `not protected yet · ${detail}` : `starting · ${detail}`;
+    return `${startPass ? 'not protected yet' : 'starting'} · ${bandPhase()}`;
   }
-  return formatBand(counts, problem, paused);
+  if (problem !== undefined) return `blocking · ${blockedWords()} · run /pii doctor`;
+  if (paused) return 'paused · everything you send reaches Claude unmasked';
+  return formatBand(counts, undefined, false);
+}
+
+/** The start-up phase for the band: the model download with a bar, the
+ * percent and the megabytes, or the phase in words. */
+function bandPhase(): string {
+  const part = phase === 'downloading' ? downloadPart() : undefined;
+  if (phase !== 'downloading' || download === undefined) return PHASE_WORDS[phase ?? 'installing'];
+  const bar = part === undefined ? '' : ` ${progressBar(part, BAND_BAR_CELLS)} ${part}%`;
+  const whole = download.total !== undefined ? ` / ${mb(download.total)}` : '';
+  return `${PHASE_WORDS.downloading}${bar} · ${mb(download.received)}${whole} MB`;
 }
 
 /** The band's colour: red for a pause or a fault, amber while nullpii

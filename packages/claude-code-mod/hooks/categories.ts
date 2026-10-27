@@ -39,6 +39,11 @@ const CATEGORY_NAMES: Readonly<Record<string, string>> = {
 
 const ALL_CATEGORIES: readonly string[] = Object.values(CATEGORY_NAMES);
 
+/** Whether `label` is one of the policy's known category identifiers. */
+export function isPiiCategoryLabel(label: string): boolean {
+  return ALL_CATEGORIES.includes(label);
+}
+
 /** The categories by the name `/pii` takes, in the order the menu lists
  * them and the order they read in. */
 export const CATEGORY_SHORT_NAMES: readonly string[] = Object.keys(CATEGORY_NAMES);
@@ -65,6 +70,14 @@ export const PII_COMMANDS: readonly PiiCommandLine[] = [
     description: 'Open this menu: pick a command, and the same code runs as if you typed it',
   },
   { args: 'status', description: 'Show what nullpii masked, and the policy in effect' },
+  {
+    args: 'doctor',
+    description: 'Check the sidecar, release, model, backend, token, policy and mod',
+  },
+  {
+    args: 'try <text>',
+    description: 'Preview masking locally; keep only the masked sample and close its session',
+  },
   {
     args: 'preset agent',
     description: 'Preset: agent (the default: names, contacts, ids and secrets)',
@@ -108,11 +121,13 @@ export function formatPiiHelp(): string {
 }
 
 /** The usage line `/pii` answers an unreadable argument with. */
-export const PII_USAGE = `Usage: /pii · /pii preset agent|secrets|all · /pii mask|ask|off <category…> · /pii reset · /pii pause|resume · /pii help. Categories: ${CATEGORY_SHORT_NAMES.join(', ')}`;
+export const PII_USAGE = `Usage: /pii · /pii status|doctor · /pii try <text> · /pii preset agent|secrets|all · /pii mask|ask|off <category…> · /pii reset · /pii pause|resume · /pii help. Categories: ${CATEGORY_SHORT_NAMES.join(', ')}`;
 
 export type PiiCommand =
   | { readonly kind: 'menu' }
   | { readonly kind: 'status' }
+  | { readonly kind: 'doctor' }
+  | { readonly kind: 'try'; readonly sample: string }
   | { readonly kind: 'help' }
   | { readonly kind: 'preset'; readonly preset: Preset }
   | { readonly kind: 'set'; readonly mode: Mode; readonly categories: readonly string[] }
@@ -125,6 +140,12 @@ export type PiiCommand =
  * `agent` preset; `pause` and `resume` stand alone. No arguments at all
  * (`/pii`) is the menu. */
 export function parsePiiCommand(args: string): PiiCommand {
+  const input = args.trimStart();
+  const separator = input.search(/\s/);
+  const first = (separator === -1 ? input : input.slice(0, separator)).toLowerCase();
+  if (first === 'try') {
+    return { kind: 'try', sample: separator === -1 ? '' : input.slice(separator + 1) };
+  }
   const words = args
     .trim()
     .toLowerCase()
@@ -133,6 +154,7 @@ export function parsePiiCommand(args: string): PiiCommand {
   const [verb, ...rest] = words;
   if (verb === undefined) return { kind: 'menu' };
   if (verb === 'status' && rest.length === 0) return { kind: 'status' };
+  if (verb === 'doctor' && rest.length === 0) return { kind: 'doctor' };
   if (verb === 'help' && rest.length === 0) return { kind: 'help' };
   if (verb === 'reset' && rest.length === 0) return { kind: 'preset', preset: 'agent' };
   if (verb === 'pause' && rest.length === 0) return { kind: 'pause' };
@@ -164,6 +186,8 @@ export function applyPiiCommand(
     PiiCommand,
     | { kind: 'menu' }
     | { kind: 'status' }
+    | { kind: 'doctor' }
+    | { kind: 'try' }
     | { kind: 'help' }
     | { kind: 'pause' }
     | { kind: 'resume' }

@@ -26,6 +26,7 @@ import {
   policyLoosening,
   shortName,
 } from './categories.ts';
+import { type ModState, formatDoctor, readDoctorStatus } from './doctor.ts';
 import { PADLOCK_COLUMNS, PADLOCK_ROWS, type PadlockTone, padlockCells } from './padlock.ts';
 import {
   PLACEHOLDER,
@@ -46,6 +47,7 @@ import {
   sidecarOrigin,
   touchesPolicyFile,
 } from './policy.ts';
+import { formatPreview } from './preview.ts';
 
 /** The manifest's default for `sidecar_url`, for an option saved empty. */
 const DEFAULT_SIDECAR_URL = 'http://127.0.0.1:8787';
@@ -166,6 +168,10 @@ const TIMED_OUT = 'the sidecar took too long to answer';
  * hook's, the host's): such a text can quote a value restored into a tool
  * call, or a sidecar answer. */
 const HIDDEN_REASON = 'an unexpected error, whose text is not shown as it may hold personal data';
+const TRY_REDACTED_ARGS = 'try [sample not stored]';
+const TRY_USAGE =
+  'Usage: /pii try <text>. Type the sample on the command, not in a menu dialog; only the masked result is kept.';
+const TRY_SESSION_PREFIX = 'try-';
 /** The error texts this mod writes, which hold no value: the only ones shown. */
 const OWN_REASONS: ReadonlySet<string> = new Set([
   NO_TOKEN,
@@ -276,6 +282,8 @@ let sessionSecret: string | undefined;
 let policy: Policy | undefined;
 // Why the mod is blocking, shown above the prompt; undefined while healthy.
 let problem: string | undefined = NO_TOKEN;
+// The most recent mod-written failure, retained after a later recovery for /pii doctor.
+let lastFailure: string | undefined;
 // The sidecar this session started, until it answers: `running`, or
 // `exited` once its process ended first.
 let started: 'running' | 'exited' | undefined;
@@ -570,6 +578,7 @@ function blocked($, event: string, failure: Failure): string {
   const reason =
     started === 'running' && failure.message === UNREACHABLE ? phaseLine() : shownReason(failure);
   problem = reason;
+  lastFailure = reason;
   const withheld =
     reason === HIDDEN_REASON && failure.message !== undefined
       ? ` (${failure.message.length} characters withheld)`
@@ -640,6 +649,7 @@ function gaveUp($, message: string): void {
   phase = undefined;
   download = undefined;
   problem = message;
+  lastFailure = message;
   $.ui.log(`nullpii: the sidecar this session started did not come up: ${message}`, {
     to: 'debug',
   });
@@ -691,7 +701,6 @@ async function waitForSidecar($): Promise<void> {
       problem = undefined;
       startPass = false;
       redraw($);
-      $.ui.toast('nullpii is on');
       return;
     }
     if (startup.phase === 'failed') {
@@ -822,7 +831,7 @@ async function askUser(
  * sign and `nullpii:` in front of the line, so the name is never repeated
  * here. The band above the prompt, drawn only when the person has
  * something to know or do, has the same state in full. */
-const STATUS_ON = '🔒 on';
+const STATUS_ON = '🔒';
 const STATUS_PAUSED = '🔓 paused';
 const STATUS_STARTING = '⏳ starting';
 const STATUS_NOT_PROTECTED = '⚠ not protected yet';
@@ -841,7 +850,7 @@ function statusLine(): string {
     return `${state}${STATUS_PARTS}${phaseText()}`;
   }
   if (paused) return STATUS_PAUSED;
-  return counts.masked === 0 ? STATUS_ON : `${STATUS_ON}${STATUS_PARTS}${counts.masked} masked`;
+  return `${STATUS_ON} ${counts.masked}`;
 }
 
 /** The start-up phase of a sidecar this session started, in a few words,
@@ -1051,8 +1060,8 @@ interface MenuEntry {
 /** The entry that runs `/pii <args>`: its text is the command's own
  * description (`PII_COMMANDS`), and the command is the one a typed
  * `/pii <args>` parses to, so both run the same code. */
-function menuEntry(args: string): MenuEntry {
-  return { label: piiCommandDescription(args), command: parsePiiCommand(args) };
+function menuEntry(args: string, described = args): MenuEntry {
+  return { label: piiCommandDescription(described), command: parsePiiCommand(args) };
 }
 
 /** The menu `/pii` opens with no arguments. The engine's dialog takes at
@@ -1071,6 +1080,7 @@ const MENU_CATEGORY_QUESTION: Readonly<Record<Mode, string>> = {
   off: 'nullpii: which categories should be left readable?',
 };
 const MENU_MORE_QUESTION = 'nullpii: what else?';
+const MENU_MORE_NEXT = 'More commands…';
 /** The entry that opens the next page of the category list. */
 const MENU_CATEGORY_MORE = 'More categories…';
 /** The categories one dialog lists: it takes four options, and the fourth
@@ -1091,9 +1101,13 @@ const MENU_PRESET_ENTRIES: readonly MenuEntry[] = [
   menuEntry('preset secrets'),
   menuEntry('preset all'),
 ];
-/** The rest: the session's masking, the default, and the commands. */
+/** Diagnostics and session controls, split so every dialog has 2–4 options. */
 const MENU_MORE_ENTRIES: readonly MenuEntry[] = [
+  menuEntry('doctor'),
+  menuEntry('try', 'try <text>'),
   menuEntry('pause'),
+];
+const MENU_REST_ENTRIES: readonly MenuEntry[] = [
   menuEntry('resume'),
   menuEntry('reset'),
   menuEntry('help'),
@@ -1204,6 +1218,19 @@ async function chooseEntry(
   return answer === undefined ? undefined : menuCommand(entries, answer);
 }
 
+/** The two "more" pages, joined by a navigation entry rather than a fifth option. */
+async function chooseMore($): Promise<RunnablePiiCommand | undefined> {
+  const answer = await askMenu($, MENU_MORE_QUESTION, [
+    ...MENU_MORE_ENTRIES.map((entry) => entry.label),
+    MENU_MORE_NEXT,
+  ]);
+  if (answer === undefined) return undefined;
+  if (answer === MENU_MORE_NEXT) {
+    return chooseEntry($, MENU_MORE_QUESTION, MENU_REST_ENTRIES);
+  }
+  return menuCommand(MENU_MORE_ENTRIES, answer);
+}
+
 /** The menu `/pii` opens with no arguments: the command the person picked,
  * or undefined when they dismissed the dialog, or no one could answer it
  * (`claude -p`). */
@@ -1212,7 +1239,7 @@ async function chooseFromMenu($): Promise<RunnablePiiCommand | undefined> {
   if (answer === undefined) return undefined;
   if (answer === MENU_PRESETS) return chooseEntry($, MENU_PRESET_QUESTION, MENU_PRESET_ENTRIES);
   if (answer === MENU_CATEGORIES) return chooseCategory($);
-  if (answer === MENU_MORE) return chooseEntry($, MENU_MORE_QUESTION, MENU_MORE_ENTRIES);
+  if (answer === MENU_MORE) return chooseMore($);
   return menuCommand([menuEntry('status')], answer);
 }
 
@@ -1232,6 +1259,84 @@ async function statusAndHelp($): Promise<string> {
   return [formatReport(counts, problem, policy, paused), formatPiiHelp()].join('\n');
 }
 
+/** The mod's user-visible state, independent of whether the sidecar answers. */
+function modState(): ModState {
+  if (starting() || phase !== undefined) return 'starting';
+  if (problem !== undefined) return 'blocking';
+  if (paused) return 'paused';
+  return 'on';
+}
+
+/** Run every doctor check, including the local ones when the sidecar is down. */
+async function runDoctor($): Promise<{ text: string }> {
+  let status: ReturnType<typeof readDoctorStatus>;
+  let sidecarReason: string | undefined;
+  try {
+    status = readDoctorStatus(await request($, 'GET', STATUS_PATH));
+    if (status === undefined) sidecarReason = HIDDEN_REASON;
+  } catch (err) {
+    sidecarReason = shownReason(failureOf(err));
+  }
+  return {
+    text: formatDoctor({
+      status,
+      sidecarReason,
+      expectedRelease: GATEWAY_RELEASE,
+      tokenSet: token !== undefined && token !== '',
+      modState: modState(),
+      lastFailure,
+    }),
+  };
+}
+
+/** Mask a sample in a random session, closing that session before returning. */
+async function previewSample($, sample: string): Promise<unknown> {
+  if (policy === undefined) await reviewPolicy($);
+  const key = TRY_SESSION_PREFIX + challengeNonce();
+  const path = SESSIONS_PATH + encodeURIComponent(key);
+  let secret: string | undefined;
+  try {
+    secret = await putSession($, key, undefined);
+    if (secret === undefined) throw new Error(HIDDEN_REASON);
+    return await request($, 'POST', `${path}/sanitize`, { value: sample }, secret, policy?.version);
+  } finally {
+    if (secret !== undefined) {
+      await request($, 'DELETE', path, undefined, secret, policy?.version);
+    }
+  }
+}
+
+type RewriteCommandArgs = (args: string) => Promise<void>;
+
+/** Preview through the current policy, rewriting command persistence before
+ * any output is returned. The original arguments are never passed onward. */
+async function runPiiTry(
+  $,
+  sample: string,
+  rewrite: RewriteCommandArgs | undefined,
+): Promise<{ text: string }> {
+  if (rewrite === undefined) return { text: TRY_USAGE };
+  let args = TRY_REDACTED_ARGS;
+  let text: string;
+  try {
+    if (sample === '') {
+      args = 'try';
+      text = TRY_USAGE;
+    } else {
+      const preview = formatPreview(await previewSample($, sample));
+      if (preview === undefined) throw new Error(HIDDEN_REASON);
+      args = `try ${preview.sanitized}`;
+      text = ['Local preview (throwaway session closed):', preview.sanitized, preview.counts].join(
+        '\n',
+      );
+    }
+  } catch (err) {
+    text = `nullpii could not preview the sample locally: ${shownReason(failureOf(err))}. The command arguments were redacted.`;
+  }
+  await rewrite(args);
+  return { text };
+}
+
 /**
  * Run the `/pii` command `command`, typed or picked in the menu: one code
  * path, so every guard holds either way — a change that masks less is put
@@ -1242,9 +1347,12 @@ async function runPiiCommand(
   $,
   command: RunnablePiiCommand,
   origin: string,
+  rewrite?: RewriteCommandArgs,
 ): Promise<{ text: string }> {
   if (command.kind === 'help') return { text: formatPiiHelp() };
   if (command.kind === 'error') return { text: command.message };
+  if (command.kind === 'doctor') return runDoctor($);
+  if (command.kind === 'try') return runPiiTry($, command.sample, rewrite);
   if (command.kind === 'status') {
     await refreshedPolicy($);
     return { text: formatReport(counts, problem, policy, paused) };
@@ -1280,7 +1388,7 @@ export function register(on, options) {
     await $.command.register({
       name: 'pii',
       description: 'Show what nullpii masked and its policy, or change it: /pii opens a menu',
-      argumentHint: '[status|preset|mask|ask|off|reset|pause|resume|help]',
+      argumentHint: '[status|doctor|try|preset|mask|ask|off|reset|pause|resume|help]',
     });
     // The address comes from the plugin option alone: options are read from
     // user and managed settings only, while a project's settings can set
@@ -1294,6 +1402,7 @@ export function register(on, options) {
     sessionBase = await $.session.id();
     sessionKey = sessionBase;
     sessionSecret = undefined;
+    lastFailure = undefined;
     // A session starts masked: a pause was the session before it's alone.
     paused = false;
     startPass = false;
@@ -1486,10 +1595,15 @@ export function register(on, options) {
     return { decision: 'ask', reason: POLICY_ASK };
   }).catch(async ($, e, next) => (next.called ? { decision: 'ask', reason: POLICY_ASK } : next(e)));
 
-  on('command.run', { command: 'pii' }, async ($, e) => {
+  on('command.run', { command: 'pii' }, async ($, e, next) => {
     const origin = e.origin?.kind ?? '';
     const command = parsePiiCommand(e.args ?? '');
-    if (command.kind !== 'menu') return runPiiCommand($, command, origin);
+    if (command.kind !== 'menu') {
+      const rewrite = async (args: string) => {
+        await next({ ...e, args });
+      };
+      return runPiiCommand($, command, origin, rewrite);
+    }
     // `/pii` with no arguments: the menu, whose every choice runs the same
     // code as the typed command. Where no dialog can be answered (a
     // dismissal, or a `claude -p` run with no one to ask), the status and
@@ -1497,6 +1611,12 @@ export function register(on, options) {
     const chosen = await chooseFromMenu($);
     if (chosen === undefined) return { text: await statusAndHelp($) };
     return runPiiCommand($, chosen, origin);
+  }).catch(async ($, e, next) => {
+    const command = parsePiiCommand(e.args ?? '');
+    if (command.kind === 'try' && !next.called) {
+      await next({ ...e, args: TRY_REDACTED_ARGS });
+    }
+    return { text: `nullpii could not run /pii: ${shownReason(next.error)}` };
   });
 
   // The transcript shows real values; what Claude reads keeps the

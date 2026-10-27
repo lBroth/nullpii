@@ -48,6 +48,7 @@ const SHELL_TOOLS = [
   'write_stdin',
 ];
 const SESSIONS_PREFIX = '/v1/sidecar/sessions/';
+const MODEL_REVISION = 'a'.repeat(40);
 
 /** A stand-in for nullpii-gateway's sidecar routes, with one vault.
  * Sessions carry secrets as the gateway's do: handed out once on
@@ -82,10 +83,19 @@ function fakeSidecar(
   const hosts: string[] = [];
   const secretsSent: Array<string | undefined> = [];
   const restoreBodies: string[] = [];
+  const sanitizeBodies: string[] = [];
   /** Set it to make `/sanitize` and `/restore` answer this text, not JSON.
    * Set `startup` to make the status answer that field, as a gateway does
    * while its model warms up (absent: a gateway that reports none). */
-  const state: { garbage?: string; startup?: unknown } = {};
+  const state: {
+    garbage?: string;
+    startup?: unknown;
+    down?: boolean;
+    status?: Record<string, unknown>;
+    failSanitize?: boolean;
+    failDelete?: boolean;
+    previewAnswer?: unknown;
+  } = {};
   // The policy the status reports, which a PUT replaces as the gateway does,
   // with a version that changes with it.
   const policy = {
@@ -151,7 +161,7 @@ function fakeSidecar(
     const method = e.init?.method ?? 'GET';
     const url = new URL(e.url);
     const path = url.pathname;
-    if (opts.down) return { deny: 'connect ECONNREFUSED 127.0.0.1:8787' };
+    if (opts.down || state.down) return { deny: 'connect ECONNREFUSED 127.0.0.1:8787' };
     tokensSent.push(e.init?.headers?.authorization !== undefined);
     if (path === '/v1/sidecar/challenge') {
       const { nonce } = JSON.parse(e.init?.body ?? '{}') as { nonce: string };
@@ -187,6 +197,9 @@ function fakeSidecar(
       if (secret === undefined) return respond(404, { error: 'session_not_found' });
       if (presented !== secret) return respond(403, { error: 'bad_session_secret' });
       if (method === 'DELETE') {
+        if (state.failDelete && key.startsWith('try-')) {
+          return respond(500, { error: 'close failed' });
+        }
         sessions.delete(key);
         return respond(204, undefined);
       }
@@ -203,8 +216,13 @@ function fakeSidecar(
       return respond(200, {
         status: 'ok',
         sessions: 1,
+        gatewayVersion: '0.5.2',
+        nullpiiVersion: '0.5.2',
+        backend: 'cpu',
+        model: { revision: MODEL_REVISION, filesPinned: true },
         policy: policyView(),
         ...(state.startup !== undefined && { startup: state.startup }),
+        ...state.status,
       });
     }
     // As the gateway: a call naming an older policy version does nothing.
@@ -222,10 +240,26 @@ function fakeSidecar(
     const body = JSON.parse(e.init?.body ?? '{}') as { value: unknown; tool?: string };
     if (path.endsWith('/restore')) restoreBodies.push(e.init?.body ?? '');
     if (path.endsWith('/sanitize')) {
+      const preview = path.startsWith(`${SESSIONS_PREFIX}try-`);
+      sanitizeBodies.push(e.init?.body ?? '');
+      if (preview && state.previewAnswer !== undefined) return respond(200, state.previewAnswer);
+      if (preview && state.failSanitize) return respond(500, { error: 'failure quoting John' });
       const byLabel: Record<string, number> = {};
       const value = walk(body.value, (s) => maskString(s, byLabel));
       const captured = Object.values(byLabel).reduce((a, b) => a + b, 0);
-      return respond(200, { value, captured, capturedByLabel: byLabel });
+      const capturedByLabel = preview
+        ? Object.fromEntries(
+            Object.entries(byLabel).map(([label, n]) => [
+              label === 'SECRET'
+                ? 'secret'
+                : label === 'PRIVATE_URL'
+                  ? 'private_url'
+                  : `private_${label.toLowerCase()}`,
+              n,
+            ]),
+          )
+        : byLabel;
+      return respond(200, { value, captured, capturedByLabel });
     }
     const counts = {
       replacementsByLabel: {},
@@ -269,6 +303,7 @@ function fakeSidecar(
     logs,
     toasts,
     restoreBodies,
+    sanitizeBodies,
     policyBodies,
     secretsSent,
     sessions,
@@ -1164,6 +1199,7 @@ test('/pii answers an unknown argument with its usage and changes nothing', asyn
 const MENU_PRESETS_ENTRY = 'Preset: agent, secrets or all…';
 const MENU_CATEGORY_ENTRY = 'A category: mask, ask or off…';
 const MENU_MORE_ENTRY = 'More: pause, reset, help…';
+const MENU_MORE_NEXT = 'More commands…';
 /** The entry that opens the next page of the category list. */
 const MENU_NEXT_CATEGORIES = 'More categories…';
 const MENU_QUESTION = 'nullpii: what do you want to do?';
@@ -1201,6 +1237,7 @@ test('/pii with no arguments opens the menu, and every entry names what it does'
       MENU_PRESETS_ENTRY,
       piiCommandDescription('preset agent'),
       MENU_MORE_ENTRY,
+      MENU_MORE_NEXT,
       piiCommandDescription('help'),
       piiCommandDescription('status'),
     ],
@@ -1228,7 +1265,12 @@ test('/pii with no arguments opens the menu, and every entry names what it does'
     piiCommandDescription('preset all'),
   ]);
   expect(asked[3]?.options).toEqual([
+    piiCommandDescription('doctor'),
+    piiCommandDescription('try <text>'),
     piiCommandDescription('pause'),
+    MENU_MORE_NEXT,
+  ]);
+  expect(asked[4]?.options).toEqual([
     piiCommandDescription('resume'),
     piiCommandDescription('reset'),
     piiCommandDescription('help'),
@@ -1251,6 +1293,7 @@ test('a preset picked in the menu sends what the typed command sends', async ($,
       MENU_PRESETS_ENTRY,
       piiCommandDescription('preset secrets'),
       MENU_MORE_ENTRY,
+      MENU_MORE_NEXT,
       piiCommandDescription('reset'),
     ],
     asked,
@@ -1335,6 +1378,7 @@ test('a pause picked in the menu is refused unless the run is the person’s own
       MENU_MORE_ENTRY,
       piiCommandDescription('pause'),
       MENU_MORE_ENTRY,
+      MENU_MORE_NEXT,
       piiCommandDescription('resume'),
     ],
     asked,
@@ -1348,7 +1392,7 @@ test('a pause picked in the menu is refused unless the run is the person’s own
   // only for the person's own typed command, and the menu runs as it does.
   expect(pause.text).toContain('pauses masking only when you ask for it yourself');
   expect(resume.text).toContain('pauses masking only when you ask for it yourself');
-  expect(asked).toHaveLength(4);
+  expect(asked).toHaveLength(5);
   expect(sidecar.policyBodies).toEqual([]);
 });
 
@@ -1436,11 +1480,230 @@ test('/pii is listed with the hint of its arguments, and a one-line description'
 
   expect(registered).toHaveLength(1);
   expect(registered[0]?.name).toBe('pii');
-  expect(registered[0]?.argumentHint).toBe('[status|preset|mask|ask|off|reset|pause|resume|help]');
+  expect(registered[0]?.argumentHint).toBe(
+    '[status|doctor|try|preset|mask|ask|off|reset|pause|resume|help]',
+  );
   const description = registered[0]?.description ?? '';
   expect(description).toContain('/pii');
   expect(description).not.toContain('\n');
   expect(description.length).toBeLessThanOrEqual(80);
+});
+
+test('/pii doctor passes every check without showing a token, path or personal value', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  await start($);
+
+  const answer = await $.command.run(typed('pii', 'doctor'));
+  const lines = answer.text.split('\n');
+
+  expect(lines).toHaveLength(8);
+  expect(lines[0]).toContain('PASS Sidecar and token proof');
+  expect(lines[1]).toContain('PASS Gateway and nullpii versions: 0.5.2 (pinned)');
+  expect(lines[2]).toBe(`PASS Model: revision ${MODEL_REVISION}; default files have SHA-256 pins`);
+  expect(lines[3]).toBe('PASS Backend: cpu');
+  expect(lines[4]).toBe('PASS Token: set (value not shown)');
+  expect(lines[5]).toBe('PASS Policy file: loaded and parsed');
+  expect(lines[6]).toBe('INFO Mod state: on');
+  expect(lines[7]).toBe('INFO Last failure: none');
+  expect(answer.text).not.toContain(TOKEN);
+  expect(answer.text).not.toContain(POLICY_FILE);
+});
+
+test('/pii doctor fails unsafe version, model, backend and policy metadata with fixes', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  await start($);
+  sidecar.state.status = {
+    gatewayVersion: '0.0.0',
+    nullpiiVersion: '9.9.9',
+    backend: 'gpu',
+    model: { revision: 'John at john@acme.io', filesPinned: false },
+    policy: { file: POLICY_FILE, loaded: 'John' },
+  };
+
+  const answer = await $.command.run(typed('pii', 'doctor'));
+
+  expect(answer.text).toContain(
+    'FAIL Gateway and nullpii versions: gateway 0.0.0, nullpii 9.9.9; pinned 0.5.2. Fix:',
+  );
+  expect(answer.text).toContain('FAIL Model:');
+  expect(answer.text).toContain('FAIL Backend:');
+  expect(answer.text).toContain('FAIL Policy file:');
+  expect(answer.text.match(/Fix:/g)).toHaveLength(4);
+  expect(answer.text).not.toContain('John');
+  expect(answer.text).not.toContain('john@acme.io');
+  expect(answer.text).not.toContain(POLICY_FILE);
+});
+
+test('/pii doctor tells an older sidecar apart from a broken one', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  await start($);
+  sidecar.state.status = {
+    gatewayVersion: undefined,
+    nullpiiVersion: undefined,
+    backend: undefined,
+    model: undefined,
+  };
+
+  const answer = await $.command.run(typed('pii', 'doctor'));
+  const lines = answer.text.split('\n');
+
+  for (const line of [lines[1], lines[2], lines[3]]) {
+    expect(line).toContain('this sidecar does not report it');
+    expect(line).toContain('an older sidecar is still running');
+  }
+  expect(lines[5]).toBe('PASS Policy file: loaded and parsed');
+});
+
+test('/pii doctor still runs local checks with the sidecar down', async ($, on) => {
+  const sidecar = fakeSidecar({ down: true });
+  stubSession(on, sidecar);
+  await start($);
+
+  const answer = await $.command.run(typed('pii', 'doctor'));
+  const lines = answer.text.split('\n');
+
+  expect(lines).toHaveLength(8);
+  expect(lines.filter((line) => line.includes('sidecar unavailable'))).toHaveLength(5);
+  expect(lines[0]).toContain('nullpii-gateway did not answer');
+  expect(lines[0]).toContain('npx or Docker (start Docker first), or enable "Start the sidecar"');
+  expect(lines[4]).toBe('PASS Token: set (value not shown)');
+  expect(lines[6]).toBe('INFO Mod state: starting');
+  expect(lines[7]).toMatch(/^INFO Last failure: (?!none$).+/);
+});
+
+test('/pii doctor reports a missing token without asking the sidecar', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar, {});
+  await start($);
+  const callsBefore = sidecar.calls.length;
+
+  const answer = await $.command.run(typed('pii', 'doctor'));
+
+  expect(answer.text).toContain('FAIL Token: not set. Fix: set sidecar_token');
+  expect(answer.text).toContain('INFO Mod state: blocking');
+  expect(answer.text).toContain('INFO Last failure: no sidecar token');
+  expect(sidecar.calls).toHaveLength(callsBefore);
+});
+
+test('/pii doctor distinguishes a policy default and a paused mod', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const questions: string[] = [];
+  answerDialog(on, 'Pause masking', questions);
+  await start($);
+  await $.command.run(typed('pii', 'pause'));
+  sidecar.state.status = { policy: { loaded: false } };
+
+  const answer = await $.command.run(typed('pii', 'doctor'));
+
+  expect(answer.text).toContain('PASS Policy file: no file; built-in defaults loaded');
+  expect(answer.text).toContain('INFO Mod state: paused');
+});
+
+test('/pii try keeps only sanitized arguments and closes its random session', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const downstream: string[] = [];
+  on('command.run', { command: 'pii' }, ($, e) => {
+    downstream.push(e.args);
+    return { text: 'downstream' };
+  });
+  await start($);
+  const conversationSecret = sidecar.sessions.get('session-1');
+  const sample = 'Mail John at john@acme.io';
+
+  const answer = await $.command.run(typed('pii', `try ${sample}`));
+
+  expect(downstream).toHaveLength(1);
+  expect(downstream[0]).toBe(`try Mail ${ph('PERSON', 1)} at ${ph('EMAIL', 0)}`);
+  expect(answer.text).toContain('Local preview (throwaway session closed):');
+  expect(answer.text).toContain('Masked: 2');
+  expect(answer.text).toContain('EMAIL 1');
+  expect(answer.text).toContain('PERSON 1');
+  expect(sidecar.sessions.get('session-1')).toBe(conversationSecret);
+  expect([...sidecar.sessions.keys()].filter((key) => key.startsWith('try-'))).toEqual([]);
+  const previewCalls = sidecar.calls.filter((call) => call.includes('/try-'));
+  expect(previewCalls).toHaveLength(3);
+  expect(previewCalls[0]).toMatch(/^PUT \/v1\/sidecar\/sessions\/try-[0-9a-f]{64}$/);
+  expect(previewCalls[1]).toMatch(/^POST \/v1\/sidecar\/sessions\/try-[0-9a-f]{64}\/sanitize$/);
+  expect(previewCalls[2]).toMatch(/^DELETE \/v1\/sidecar\/sessions\/try-[0-9a-f]{64}$/);
+  expect(sidecar.sanitizeBodies.at(-1)).toContain(sample);
+  for (const shown of [
+    answer.text,
+    downstream.join('\n'),
+    sidecar.logs.join('\n'),
+    sidecar.toasts.join('\n'),
+  ]) {
+    expect(shown).not.toContain(sample);
+    expect(shown).not.toContain('John');
+    expect(shown).not.toContain('john@acme.io');
+  }
+});
+
+test('/pii try redacts its arguments and closes the throwaway session when masking fails', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const downstream: string[] = [];
+  on('command.run', { command: 'pii' }, ($, e) => {
+    downstream.push(e.args);
+    return { text: 'downstream' };
+  });
+  await start($);
+  sidecar.state.failSanitize = true;
+  const sample = 'Mail John at john@acme.io';
+
+  const answer = await $.command.run(typed('pii', `try ${sample}`));
+
+  expect(downstream).toEqual(['try [sample not stored]']);
+  expect(answer.text).toContain(
+    'nullpii could not preview the sample locally: nullpii sidecar answered 500',
+  );
+  expect(answer.text).not.toContain('failure quoting John');
+  expect(answer.text).not.toContain(sample);
+  expect(sidecar.logs.join('\n')).not.toContain('John');
+  expect([...sidecar.sessions.keys()].filter((key) => key.startsWith('try-'))).toEqual([]);
+  expect(sidecar.calls.some((call) => /^DELETE .*\/try-/.test(call))).toBe(true);
+  expect(sidecar.sessions.has('session-1')).toBe(true);
+});
+
+test('/pii try redacts a malformed answer and still closes the session', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const downstream: string[] = [];
+  on('command.run', { command: 'pii' }, ($, e) => {
+    downstream.push(e.args);
+    return { text: 'downstream' };
+  });
+  await start($);
+  sidecar.state.previewAnswer = {
+    value: 'untrusted John',
+    captured: 1,
+    capturedByLabel: { 'john@acme.io': 1 },
+  };
+
+  const answer = await $.command.run(typed('pii', 'try Mail John at john@acme.io'));
+
+  expect(downstream).toEqual(['try [sample not stored]']);
+  expect(answer.text).not.toContain('untrusted John');
+  expect(answer.text).not.toContain('john@acme.io');
+  expect([...sidecar.sessions.keys()].filter((key) => key.startsWith('try-'))).toEqual([]);
+});
+
+test('/pii try from the menu only explains the safe typed form', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, [MENU_MORE_ENTRY, piiCommandDescription('try <text>')], asked);
+  await start($);
+
+  const answer = await $.command.run({ command: 'pii', args: '' });
+
+  expect(answer.text).toContain('Usage: /pii try <text>');
+  expect(asked[1]?.options).toHaveLength(4);
+  expect(sidecar.calls.filter((call) => call.includes('/try-'))).toEqual([]);
 });
 
 /** Answer the mod's mask dialog with `label`, recording each question. */
@@ -1824,10 +2087,10 @@ test('the band walks the start-up phases, with the model download moving', async
   // user is told; a prompt that was held back goes through once it is sent.
   sidecar.state.startup = { phase: 'ready' };
   await clock.advance(2_000);
-  expect(sidecar.toasts).toContain('nullpii is on');
+  expect(sidecar.toasts).not.toContain('nullpii is on');
   expect(await ui.find({ type: 'Text', text: 'nothing masked yet' })).toBeUndefined();
   expect(await ui.find({ type: 'Raster', key: 'nullpii-lock' })).toBeUndefined();
-  expect(lines.at(-1)).toBe('🔒 on');
+  expect(lines.at(-1)).toBe('🔒 0');
   const sent = await $.prompt.submit({
     text: 'Mail John at john@acme.io',
     wait: false,
@@ -1920,7 +2183,7 @@ test('a gateway with no start-up field to report counts as ready, and the sessio
   await clock.advance(2_000);
   opts.down = false;
   await clock.advance(2_000);
-  expect(sidecar.toasts).toContain('nullpii is on');
+  expect(sidecar.toasts).not.toContain('nullpii is on');
   const prompt = await $.prompt.submit({
     text: 'Mail John at john@acme.io',
     wait: false,
@@ -1994,7 +2257,7 @@ test('the person pauses with /pii pause, and the band that appears turns masking
   await ui.press({ key: 'nullpii-toggle' });
   expect(asked).toHaveLength(1);
   expect(await ui.find({ type: 'Button', key: 'nullpii-toggle' })).toBeUndefined();
-  expect(lines.at(-1)).toBe('🔒 on');
+  expect(lines.at(-1)).toBe('🔒 0');
   const back = await $.prompt.submit({
     text: 'Mail John at john@acme.io',
     wait: false,
@@ -2063,7 +2326,7 @@ test('a pause the user does not confirm keeps masking on', async ($, on) => {
   // Masking never paused: nothing to say above the prompt, and the line
   // under it reads on.
   expect(await ui.find({ type: 'Button', key: 'nullpii-toggle' })).toBeUndefined();
-  expect(lines.at(-1)).toBe('🔒 on');
+  expect(lines.at(-1)).toBe('🔒 0');
   const prompt = await $.prompt.submit({
     text: 'Mail John at john@acme.io',
     wait: false,
@@ -2127,9 +2390,9 @@ test('a status line under the prompt follows the state: on, masked count, paused
   on('prompt.submit', ($, e) => ({ text: e.text }));
   on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
   await start($);
-  expect(lines.at(-1)).toBe('🔒 on');
+  expect(lines.at(-1)).toBe('🔒 0');
   await $.prompt.submit({ text: 'Mail John at john@acme.io', wait: false, origin: COMPOSER });
-  expect(lines.at(-1)).toMatch(/^🔒 on · \d+ masked$/);
+  expect(lines.at(-1)).toMatch(/^🔒 [1-9]\d*$/);
   await $.command.run(typed('pii', 'pause'));
   expect(lines.at(-1)).toBe('🔓 paused');
 });

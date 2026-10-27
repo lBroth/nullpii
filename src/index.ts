@@ -60,7 +60,7 @@ export { PiiVault } from './vault.js';
 export { RestoreStream, type RestoreCapable } from './restore-stream.js';
 
 // Public engine
-export { NullPii, type InitProgress } from './nullpii.js';
+export { NullPii, type InitProgress, type NullPiiDiagnostics } from './nullpii.js';
 
 // Shared masking-policy config file (library, CLI, gateway, Claude Code mod)
 export {

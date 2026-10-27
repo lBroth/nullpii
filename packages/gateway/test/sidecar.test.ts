@@ -5,7 +5,7 @@
 // checks access control, session lifecycle and round-trips without ONNX.
 
 import type { FastifyInstance } from 'fastify';
-import type { NullPii } from 'nullpii';
+import type { BackendName, NullPii } from 'nullpii';
 import {
   DEFAULT_DISABLED_CATEGORIES,
   DEFAULT_RESTORE_TOOLS,
@@ -38,6 +38,7 @@ import { BASE_TEST_CONFIG } from './fixtures.js';
 const TOKEN = 'a'.repeat(64);
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 const TTL_MS = 60_000;
+const TEST_MODEL_REVISION = 'a'.repeat(40);
 
 const BASE_CONFIG: GatewayConfig = {
   ...BASE_TEST_CONFIG,
@@ -67,9 +68,11 @@ function buildMockNullPii(): {
   vault: PiiVault;
   modelCalls: () => number;
   policies: unknown[];
+  setBackend: (backend: BackendName) => void;
 } {
   const vault = new PiiVault();
   let calls = 0;
+  let backend: BackendName = 'cpu';
   const policies: unknown[] = [];
   const mock = {
     updatePolicy: (policy: unknown) => {
@@ -95,8 +98,22 @@ function buildMockNullPii(): {
     restore: (text: string, sessionId: string) => vault.restore(text, sessionId),
     createSession: () => vault.createSession(),
     destroySession: (sessionId: string) => vault.destroySession(sessionId),
+    diagnostics: () => ({
+      version: '0.5.2',
+      backend,
+      modelRevision: TEST_MODEL_REVISION,
+      modelFilesPinned: true,
+    }),
   };
-  return { np: mock as unknown as NullPii, vault, modelCalls: () => calls, policies };
+  return {
+    np: mock as unknown as NullPii,
+    vault,
+    modelCalls: () => calls,
+    policies,
+    setBackend: (next) => {
+      backend = next;
+    },
+  };
 }
 
 const apps: FastifyInstance[] = [];
@@ -297,6 +314,10 @@ describe('sidecar · status', () => {
     expect(res.json()).toEqual({
       status: 'ok',
       sessions: 0,
+      gatewayVersion: expect.stringMatching(/^\d+\.\d+\.\d+$/),
+      nullpiiVersion: expect.stringMatching(/^\d+\.\d+\.\d+$/),
+      backend: 'cpu',
+      model: { revision: TEST_MODEL_REVISION, filesPinned: true },
       policy: {
         version: expect.stringMatching(/^[0-9a-f]{32}$/),
         file: '/home/node/.config/nullpii/config.json',
@@ -307,6 +328,16 @@ describe('sidecar · status', () => {
         restoreTools: ['Read'],
       },
     });
+  });
+
+  it('reads the actual backend on every status request', async () => {
+    const engine = buildMockNullPii();
+    const { app } = await setup({}, engine);
+    engine.setBackend('cuda');
+
+    const res = await app.inject({ method: 'GET', url: '/v1/sidecar/status', headers: AUTH });
+
+    expect(res.json()).toMatchObject({ backend: 'cuda' });
   });
 
   it('reports the default readable categories when the policy sets none', async () => {
@@ -1221,6 +1252,12 @@ describe('sidecar · policy', () => {
       restore: (text: string, sessionId: string) => vault.restore(text, sessionId),
       createSession: () => vault.createSession(),
       destroySession: (sessionId: string) => vault.destroySession(sessionId),
+      diagnostics: () => ({
+        version: '0.5.2',
+        backend: 'cpu',
+        modelRevision: TEST_MODEL_REVISION,
+        modelFilesPinned: true,
+      }),
     } as unknown as NullPii;
     const { app } = await setup(
       { policyFile: join(policyDir, 'config.json'), restoreTools: new Set(DEFAULT_RESTORE_TOOLS) },

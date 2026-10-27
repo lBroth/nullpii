@@ -1,18 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { readFileSync } from 'node:fs';
 import { ANSI, visibleLen } from './ansi.js';
 import type { GatewayConfig } from './config.js';
-
-function pkgVersion(): string {
-  // Resolve relative to the compiled module URL — robust under pnpm
-  // hoisting / nested `node_modules/.pnpm/...` layouts where the
-  // CommonJS `require.resolve` path heuristic from `createRequire`
-  // would miss the workspace `package.json`.
-  const url = new URL('../package.json', import.meta.url);
-  const pkg = JSON.parse(readFileSync(url, 'utf8')) as { version: string };
-  return pkg.version;
-}
+import { gatewayVersion } from './runtime-info.js';
 
 /**
  * Boxed Claude-Code-style startup banner. Writes to stdout. ANSI
@@ -21,7 +11,7 @@ function pkgVersion(): string {
  */
 export function printBanner(config: GatewayConfig, mode: 'dev' | 'prod' = 'prod'): void {
   const baseUrl = `http://${config.host}:${config.port}`;
-  const version = pkgVersion();
+  const version = gatewayVersion();
   const modeTag = mode === 'dev' ? ` ${ANSI.yellow}[dev]${ANSI.reset}` : '';
   const rows = [
     `${ANSI.bold}${ANSI.cyan}✻ nullpii gateway${ANSI.reset}  ${ANSI.dim}v${version}${ANSI.reset}${modeTag}`,

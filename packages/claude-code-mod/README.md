@@ -2,7 +2,7 @@
 
 A [Claude Code mod](https://code.claude.com/docs/en/plugins/mods/overview) that masks personal data and secrets before Claude reads them. Every prompt and every tool result goes through a local nullpii sidecar first. Names, emails, phone numbers, keys and similar values reach the model as placeholders, such as `{{PII_PRIVATE_EMAIL_0_…}}`.
 
-One small place, and only the room the state needs. A line under the prompt always shows the state in a few characters, with a padlock glyph so it reads without colour (`🔒 on · 8 masked`, `🔓 paused`, `⏳ starting · downloading the model 54%`, `⚠ not protected yet`, `⚠ blocking`; Claude Code writes `nullpii:` in front, so the name is never repeated there). While nullpii is on and nothing needs saying, that line is the only thing the mod draws. A band above the prompt appears only when you have something to know or do:
+One small place, and only the room the state needs. A line under the prompt always shows the state in a few characters, with a padlock glyph so it reads without colour (`🔒 8`, a padlock and how many values it has masked so far, rising as it works; `🔓 paused`, `⏳ starting · downloading the model 54%`, `⚠ not protected yet`, `⚠ blocking`; Claude Code writes `nullpii:` in front, so the name is never repeated there). While nullpii is on and nothing needs saying, that line is the only thing the mod draws. A band above the prompt appears only when you have something to know or do:
 
 ```text
 12 masked (person 5 · email 3 · secret 2 · phone 2) · 4 restored to local tools
@@ -41,6 +41,8 @@ Change it at the prompt with `/pii`. A change applies at once and is saved in th
 |---|---|
 | `/pii` | Opens the menu: each entry is one of the commands below, and picking it runs what typing it runs |
 | `/pii status` | Shows what was masked in the session, and the mode of every category |
+| `/pii doctor` | Checks the sidecar and token proof, pinned releases and model, actual backend, token, policy and mod state; every failure includes its fix |
+| `/pii try <text>` | Previews masking under the current policy, locally in a random throwaway sidecar session; shows the sanitized text and counts by type, then closes that session |
 | `/pii preset agent` | The default above (`/pii reset` does the same) |
 | `/pii preset secrets` | Masks secrets only (API keys, tokens, passwords, private keys) |
 | `/pii preset all` | Masks every category |
@@ -51,6 +53,8 @@ Change it at the prompt with `/pii`. A change applies at once and is saved in th
 | `/pii pause` | Pauses masking for this session, after asking you first |
 | `/pii resume` | Turns masking back on (the band's on/off button does the same, while the band is drawn) |
 | `/pii help` | Lists every command and what it does |
+
+`/pii try` sends the sample only to the verified local sidecar, never to the conversation's sidecar session. Before Claude Code stores the command, the mod rewrites its arguments to the sanitized sample; on any failure it stores a fixed redaction instead. The menu's `try` entry only explains this typed form and never collects a sample in a dialog. If the policy masks nothing in a sample, its sanitized form is the same text.
 
 Categories: `person`, `email`, `phone`, `address`, `url`, `ip`, `mac`, `location`, `passport`, `license`, `vehicle`, `account`, `secret`, `date`, `organization`, `occupation`, `demographic`, `sensitive`, `title`. When the mod asks about an `ask` value, it shows the value on this machine only. If you dismiss the question, or no one can answer it (`claude -p`), the value stays masked. The mod never asks about text Claude reads from tools: that text follows the policy.
 

@@ -298,11 +298,11 @@ function formatLabels(byLabel: Readonly<Record<string, number>>, limit: number):
 /** The one line shown above the prompt. Blocking comes first: a paused
  * nullpii whose sidecar is not up sends nothing anyway (fail closed). */
 export function formatBand(counts: Counts, problem: string | undefined, paused: boolean): string {
-  if (problem !== undefined) return `nullpii · blocking: ${problem}`;
-  if (paused) return 'nullpii · paused: everything you send reaches Claude unmasked';
-  if (counts.masked === 0) return 'nullpii · on · nothing masked yet';
+  if (problem !== undefined) return `blocking: ${problem}`;
+  if (paused) return 'paused: everything you send reaches Claude unmasked';
+  if (counts.masked === 0) return 'nothing masked yet';
   const labels = formatLabels(counts.byLabel, 4);
-  return `nullpii · ${counts.masked} masked (${labels}) · ${counts.restored} restored to local tools`;
+  return `${counts.masked} masked (${labels}) · ${counts.restored} restored to local tools`;
 }
 
 /** The categories under `mode`, by short name, or `none`. */

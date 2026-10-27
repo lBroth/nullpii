@@ -3,6 +3,12 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Mod: the padlock beside the band is one row tall instead of two, and its red (paused) and amber (starting) are brighter, so the open shackle reads on a dark terminal. The name is no longer repeated: the band above the prompt starts with the state (`nothing masked yet`, `12 masked (…)`, `starting · downloading the model`, `paused: …`, `blocking: …`) beside the `on`/`off` button, and the line under the prompt says `on · 8 masked` after the `nullpii:` Claude Code writes in front of it.
+
 ## [0.5.2] — 2026-10-26
 
 ### Added

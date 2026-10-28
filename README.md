@@ -198,7 +198,7 @@ Every test was fixed before the run, except one AB-1 scoring rule changed afterw
 
 AB-1 checks two things in a coding agent's traffic. What the agent must not give to the model (secrets, contact details and addresses, ids and account numbers, names) should be masked. What it needs to read (dates, versions, paths, hostnames of public services, placeholders, code identifiers) should stay readable. Each item is scored: the leak rate on items that must be hidden, and the keep rate on items that must stay readable. There is no combined score. Every tool ran once on the frozen test set; nullpii's rows are from the release build, which includes three rules found in end-to-end testing (below). Method and limits: [AB-1 in METHOD.md](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md#agent-traffic-benchmark-ab-1).
 
-![Agent traffic, 966 documents, leak rate and keep rate per tool: rizzo-pii 8.1% and 44.5%, nullpii 0.5 9.5% and 85.4%, then openai privacy-filter 14.5% and 77.9%; every other tool lets 15.7% to 55.1% through. The table below has every value.](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/ab1-agent-traffic.svg)
+![Agent traffic, 966 documents, leak rate and keep rate per tool: rizzo-pii 8.1% and 44.5%, nullpii 9.5% and 85.4%, then openai privacy-filter 14.5% and 77.9%; every other tool lets 15.7% to 55.1% through. The table below has every value.](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/ab1-agent-traffic.svg)
 
 - **Only rizzo-pii lets fewer through** (8.1%; the gap is within the margin of error), and it masks more than half of what the agent needs to read. Every other tool lets 5 to 46 points more through. Only gliner-pii-large keeps as much readable (85.5%, too close to call), and it lets 15.9% through.
 - **Weakest categories:** person names (24% let through) and URLs (31%). On names, 11 of the 15 other tools let fewer through; on URLs, 5 do.
@@ -215,7 +215,7 @@ AB-1 checks two things in a coding agent's traffic. What the agent must not give
 | Tool | Leak rate | Keep rate | Docs with a leak | nullpii − tool, leak | nullpii − tool, keep |
 |---|---:|---:|---:|---|---|
 | rizzo-pii (tuned, +agent) | 8.1% | 44.5% | 25.1% | [−0.0, +2.6] | [+38.7, +43.4] |
-| **nullpii 0.5 (agent default)** | 9.5% | 85.4% | 27.0% | — | — |
+| **nullpii (agent default)** | 9.5% | 85.4% | 27.0% | — | — |
 | openai privacy-filter (tuned, +agent) | 14.5% | 77.9% | 33.6% | [−6.9, −3.2] | [+5.0, +9.9] |
 | OpenMed PII Large (tuned, +agent) | 15.7% | 82.2% | 39.7% | [−8.2, −4.4] | [+1.6, +5.0] |
 | gliner-pii-large (tuned, +agent) | 15.9% | 85.5% | 37.8% | [−8.5, −4.4] | [−1.9, +1.6] |
@@ -276,7 +276,7 @@ Two things compared here are built for documents: PIILO, where only the students
 | mask everything | 0.260 | | | | |
 <!-- matrix:end -->
 
-nullpii is measured with its five extended categories off, because the datasets do not label them. With every category masked (the default before 0.5), it scores 0.748 on the same labels, and 0.653 when everything it masks counts, because masking organisations, occupations and the like counts as over-masking here. The 0.5 default for coding agents leaves those five categories and dates readable. That default is measured on agent traffic (AB-1, above), not on these datasets, which label dates.
+nullpii is measured with its five extended categories off, because the datasets do not label them. With every category masked (the previous default), it scores 0.748 on the same labels, and 0.653 when everything it masks counts, because masking organisations, occupations and the like counts as over-masking here. The default for coding agents leaves those five categories and dates readable. That default is measured on agent traffic (AB-1, above), not on these datasets, which label dates.
 
 **Where nullpii is not ahead, in detail.**
 - **One dataset carries much of the lead.** Without the Greek and German clinical notes, nullpii is third (0.725). openai's privacy-filter (+0.030) and rizzo-pii (+0.027) are significantly ahead. pii-identifier and OpenMed privacy-filter-multilingual-v2 are too close to call. Without the student essays, nullpii is first (0.845; rizzo-pii is 0.039 behind).
@@ -294,7 +294,7 @@ nullpii is measured with its five extended categories off, because the datasets 
 
 ![GPU latency at 30,000 characters, median milliseconds per call: from ettin-68m at 157 to NVIDIA's nemotron server pipeline at 2,835; nullpii 463 with its core labels and 489 with every category masked, seventh of 13 tools. The tables below have every value.](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/latency-gpu.svg)
 
-nullpii is not the fastest: it is seventh of 13 tools on GPU and fifth of 15 on CPU, at 30,000 characters. Every tool runs the same coding-agent texts on the same idle machine, after a warm-up, at its default setting. nullpii has two rows: its core labels (the five extended categories off, dates on) and every category masked. Its 0.5 default, which also leaves dates readable and so asks the model for fewer labels, takes the same time as the core labels on GPU (458 ms at 30,000 characters) and about 12% less on CPU (6,104 ms); it was timed with the release build, which also matched the other nullpii rows to within 2% ([METHOD](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md)).
+nullpii is not the fastest: it is seventh of 13 tools on GPU and fifth of 15 on CPU, at 30,000 characters. Every tool runs the same coding-agent texts on the same idle machine, after a warm-up, at its default setting. nullpii has two rows: its core labels (the five extended categories off, dates on) and every category masked. Its default, which also leaves dates readable and so asks the model for fewer labels, takes the same time as the core labels on GPU (458 ms at 30,000 characters) and about 12% less on CPU (6,104 ms); it was timed with the release build, which also matched the other nullpii rows to within 2% ([METHOD](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md)).
 
 <details>
 <summary>Tables: GPU and CPU, 2,000 to 100,000 characters</summary>
@@ -361,7 +361,7 @@ new NullPii({ backend: 'mps' });   // Apple Silicon through CoreML; slower than 
 
 On Apple Silicon, use `cpu`. With CoreML the model was slower than on the CPU at every size measured (1.3 to 8 times slower, depending on the CoreML settings; measured on earlier builds). Its first call also took 18 to 26 seconds while CoreML compiled the graph, which the GLiNER head's dynamic shapes split into many parts (#51).
 
-`intraOpNumThreads` and `interOpNumThreads` are passed to ONNX Runtime.
+`intraOpNumThreads` and `interOpNumThreads` are passed to ONNX Runtime. The default intra-op count is 8 threads — ORT's all-cores default is measurably slower for this graph (thread contention on efficiency cores costs more than parallelism gains). Set `intraOpNumThreads: 0` to restore ORT's own default.
 
 ## What it doesn't do
 

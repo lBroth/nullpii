@@ -2,7 +2,7 @@
 
 import { join } from 'node:path';
 import type { InferenceSession, Tensor as TensorType } from 'onnxruntime-node';
-import { MODEL_FILES } from '../defaults.js';
+import { DEFAULT_INTRA_OP_THREADS, MODEL_FILES } from '../defaults.js';
 import { ModelNotFoundError, OrtNotInstalledError } from '../errors.js';
 import { logf } from '../log.js';
 import { fileExists } from '../paths.js';
@@ -34,7 +34,8 @@ export interface BackendOptions {
   readonly cpuFallbackOnnxFiles?: readonly string[];
   /** ORT execution providers, in priority order. Default: `['cpu']`. */
   readonly executionProviders?: ReadonlyArray<ExecutionProvider>;
-  /** ORT intra-op thread count. `0` (default) = ORT picks based on host. */
+  /** ORT intra-op thread count. `undefined` (default) = 8 threads.
+   * `0` = ORT picks based on host (all physical cores, typically slower). */
   readonly intraOpNumThreads?: number;
   /** ORT inter-op thread count. `0` (default) = ORT picks based on host. */
   readonly interOpNumThreads?: number;
@@ -129,8 +130,13 @@ export class OrtBackend {
       executionProviders: [...providers],
       graphOptimizationLevel: 'all',
     };
-    if (this.options.intraOpNumThreads !== undefined && this.options.intraOpNumThreads > 0) {
-      sessionOptions.intraOpNumThreads = this.options.intraOpNumThreads;
+    if (this.options.intraOpNumThreads !== undefined) {
+      if (this.options.intraOpNumThreads > 0) {
+        sessionOptions.intraOpNumThreads = this.options.intraOpNumThreads;
+      }
+      // 0 = explicitly request ORT's own default (all cores).
+    } else {
+      sessionOptions.intraOpNumThreads = DEFAULT_INTRA_OP_THREADS;
     }
     if (this.options.interOpNumThreads !== undefined && this.options.interOpNumThreads > 0) {
       sessionOptions.interOpNumThreads = this.options.interOpNumThreads;

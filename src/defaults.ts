@@ -22,6 +22,13 @@ import {
   vinValid,
 } from './validators.js';
 
+/** Default intra-op thread count for the ONNX Runtime session. ORT's own
+ * default (all physical cores) is measurably slower for this graph: the
+ * dynamic-shape bookkeeping dominates and thread contention on efficiency
+ * cores costs more than parallelism gains. 8 threads is the sweet spot on
+ * Apple Silicon (6P+12E M5 Pro) and a safe cap on x86 desktop CPUs. */
+export const DEFAULT_INTRA_OP_THREADS = 8;
+
 /** Backend chosen when the user passes nothing (or `'auto'`). The
  * ONNX model runtime today always resolves to `'cpu'` execution
  * providers + an optional accelerator fallback (`cuda` / `coreml`),

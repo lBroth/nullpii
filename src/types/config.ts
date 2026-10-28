@@ -62,8 +62,9 @@ export interface NullPiiConfig {
    * and sensitive attributes, dates): what an agent needs readable and
    * identifies no one on its own. `[]` masks every category. */
   readonly disabledCategories?: readonly PiiCategory[];
-  /** Number of intra-op threads for the ONNX Runtime session. `0` = ORT
-   * default (typically physical core count). */
+  /** Number of intra-op threads for the ONNX Runtime session.
+   * Default: 8 (the measured sweet spot — ORT's all-cores default is
+   * ~20% slower for this graph). `0` = ORT picks (all physical cores). */
   readonly intraOpNumThreads?: number;
   /** Number of inter-op threads. Rarely useful for span NER; default `0`. */
   readonly interOpNumThreads?: number;

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="880" height="578" viewBox="0 0 880 578" role="img" aria-labelledby="t d">
 <title id="t">Agent traffic: leak rate and keep rate per tool</title>
-<desc id="d">rizzo-pii: leak 8.1%, keep 44.5%; nullpii 0.5: leak 9.5%, keep 85.4%; openai privacy-filter: leak 14.5%, keep 77.9%; OpenMed PII Large: leak 15.7%, keep 82.2%; gliner-pii-large: leak 15.9%, keep 85.5%; nemotron-pii, NVIDIA's server: leak 16.0%, keep 75.8%; OpenMed PII Small: leak 16.1%, keep 83.0%; gliner-stream-pii: leak 16.4%, keep 67.5%; nemotron-pii, library: leak 17.6%, keep 68.4%; ettin-68m: leak 17.7%, keep 65.3%; pii-identifier: leak 18.8%, keep 77.7%; gliner_multi_pii (ONNX): leak 19.2%, keep 56.9%; OpenMed privacy-filter-multilingual-v2: leak 20.1%, keep 81.6%; piiranha: leak 23.8%, keep 68.8%; Presidio: leak 40.6%, keep 82.3%; deberta PII: leak 55.1%, keep 64.2%</desc>
+<desc id="d">rizzo-pii: leak 8.1%, keep 44.5%; nullpii: leak 9.5%, keep 85.4%; openai privacy-filter: leak 14.5%, keep 77.9%; OpenMed PII Large: leak 15.7%, keep 82.2%; gliner-pii-large: leak 15.9%, keep 85.5%; nemotron-pii, NVIDIA's server: leak 16.0%, keep 75.8%; OpenMed PII Small: leak 16.1%, keep 83.0%; gliner-stream-pii: leak 16.4%, keep 67.5%; nemotron-pii, library: leak 17.6%, keep 68.4%; ettin-68m: leak 17.7%, keep 65.3%; pii-identifier: leak 18.8%, keep 77.7%; gliner_multi_pii (ONNX): leak 19.2%, keep 56.9%; OpenMed privacy-filter-multilingual-v2: leak 20.1%, keep 81.6%; piiranha: leak 23.8%, keep 68.8%; Presidio: leak 40.6%, keep 82.3%; deberta PII: leak 55.1%, keep 64.2%</desc>
 <style>svg { --bg: #ffffff; --zone: #f6f8fa; --fg: #1f2328; --muted: #59636e; --grid: #d1d9e0; --other: #818b98; --a: #0d9488; --band: #0d948814; }
 @media (prefers-color-scheme: dark) { svg { --bg: #0d1117; --zone: #151b23; --fg: #f0f6fc; --muted: #9198a1; --grid: #3d444d; --other: #6e7681; --a: #2dd4bf; --band: #2dd4bf1f; } }
 .bg { fill: var(--bg); } .zone { fill: var(--zone); stroke: var(--grid); }
@@ -50,7 +50,7 @@ text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", 
 <path class="bar-other" d="M604.0,110.0H697.8A4,4 0 0 1 701.8,114.0V120.0A4,4 0 0 1 697.8,124.0H604.0Z"/>
 <text x="707.8" y="121.0" class="val">44.5%</text>
 <rect class="band" x="8" y="130" width="864" height="26" rx="4"/>
-<text x="282.0" y="147.5" class="label np" text-anchor="end">nullpii 0.5</text>
+<text x="282.0" y="147.5" class="label np" text-anchor="end">nullpii</text>
 <use href="#np-logo" x="18" y="134.0"/>
 <path class="bar-np" d="M298.0,136.0H314.8A4,4 0 0 1 318.8,140.0V146.0A4,4 0 0 1 314.8,150.0H298.0Z"/>
 <text x="324.8" y="147.0" class="val np">9.5%</text>

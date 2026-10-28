@@ -104,9 +104,15 @@ export async function startServer(config: GatewayConfig): Promise<FastifyInstanc
     ...(config.modelDir !== undefined && { modelDir: config.modelDir }),
   });
   const startup = new StartupTracker();
-  // The binary closes the server on SIGTERM, so the shutdown route sends it.
+  // The binary closes the server on SIGTERM, so the shutdown route sends it,
+  // and only when the starter asked for the route (`sidecarShutdown`).
   const shutdown = () => void process.kill(process.pid, 'SIGTERM');
-  const app = await buildServer({ config, np, startup, shutdown });
+  const app = await buildServer({
+    config,
+    np,
+    startup,
+    ...(config.sidecarShutdown && { shutdown }),
+  });
   await app.listen({ host: config.host, port: config.port });
   // The warmup runs after the listen, so the sidecar answers its status
   // (with the progress) while it runs; a request that needs the model

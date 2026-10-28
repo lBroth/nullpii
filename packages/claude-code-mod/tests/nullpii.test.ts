@@ -14,6 +14,7 @@ import { PADLOCK_COLUMNS, padlockCells } from '../hooks/padlock.ts';
 import {
   expectedProof,
   hmacSha256Hex,
+  keepsResultKeys,
   olderRelease,
   readSidecarSelf,
   sidecarOrigin,
@@ -104,6 +105,8 @@ function fakeSidecar(
     previewAnswer?: unknown;
     /** Answer a shutdown request as a sidecar with a session in use does. */
     refuseShutdown?: boolean;
+    /** Answer a shutdown request but keep answering after it. */
+    stayUp?: boolean;
   } = {};
   // The policy the status reports, which a PUT replaces as the gateway does,
   // with a version that changes with it.
@@ -224,7 +227,7 @@ function fakeSidecar(
     if (path === '/v1/sidecar/shutdown' && method === 'POST') {
       if (state.refuseShutdown) return respond(409, { error: 'sessions_active', sessions: 1 });
       // The process is gone once it has answered: nothing is at the address.
-      state.down = true;
+      if (!state.stayUp) state.down = true;
       return respond(202, { status: 'closing' });
     }
     if (path === '/v1/sidecar/status') {
@@ -451,9 +454,9 @@ function startAgainst(
   $,
   on,
   status: Record<string, unknown>,
-  state: { refuseShutdown?: boolean } = {},
+  state: { refuseShutdown?: boolean; stayUp?: boolean } = {},
 ) {
-  const { sidecar } = beforeStart($, on, { down: false });
+  const { sidecar, clock } = beforeStart($, on, { down: false });
   sidecar.state.status = status;
   Object.assign(sidecar.state, state);
   const spawned: string[][] = [];
@@ -461,7 +464,7 @@ function startAgainst(
     spawned.push(e.argv);
     await new Promise<never>(() => undefined);
   });
-  return { sidecar, spawned };
+  return { sidecar, spawned, clock };
 }
 
 const IDLE_OLDER = { gatewayVersion: '0.5.2', sessions: 0 };
@@ -515,6 +518,69 @@ test('a sidecar of the pinned release is never stopped', async ($, on) => {
   await start($);
   expect(sidecar.calls).not.toContain('POST /v1/sidecar/shutdown');
   expect(spawned.length).toBe(0);
+});
+
+test(
+  'with autostart off the mod would not start the pinned release, so it stops nothing',
+  { options: { autostart: false } },
+  async ($, on) => {
+    const { sidecar, spawned } = startAgainst($, on, { ...IDLE_OLDER, features: CAN_SHUTDOWN });
+    await start($);
+    expect(sidecar.calls).not.toContain('POST /v1/sidecar/shutdown');
+    expect(spawned.length).toBe(0);
+  },
+);
+
+test('an older sidecar that says it is closing but stays up is given up on after the wait', async ($, on) => {
+  const { sidecar, spawned, clock } = startAgainst(
+    $,
+    on,
+    { ...IDLE_OLDER, features: CAN_SHUTDOWN },
+    { stayUp: true },
+  );
+  const started = start($);
+  for (let i = 0; i < 70; i += 1) await clock.advance(250);
+  await started;
+  expect(sidecar.logs).toContain('nullpii: the older sidecar did not stop in time');
+  // The session opens on the sidecar that is still there; nothing is started.
+  expect(sidecar.calls).toContain('PUT /v1/sidecar/sessions/session-1');
+  expect(spawned.length).toBe(0);
+});
+
+test('a tool outside the built-in ones keeps its result keys masked, as an MCP tool may key data by a name', async ($, on) => {
+  const sidecar = fakeSidecar();
+  sidecar.state.status = { features: { sanitizeKeys: true, shutdown: false } };
+  stubSession(on, sidecar);
+  on('tool.call', () => ({ result: { stdout: 'owner: John', 'john@acme.io': 'lead' }, text: 'x' }));
+  await start($);
+  await $.tool.call({ tool: 'mcp__crm__lookup', query: 'lead' });
+  const body = sanitized(sidecar).find((b) => b.value.stdout !== undefined);
+  expect(body).toBeDefined();
+  expect(body).not.toHaveProperty('keys');
+});
+
+test('the keys flag follows the sidecar the session is open on, after it was replaced by an older one', async ($, on) => {
+  const sidecar = fakeSidecar();
+  sidecar.state.status = { features: { sanitizeKeys: true, shutdown: false } };
+  stubSession(on, sidecar);
+  on('tool.call', () => ({ result: { stdout: 'owner: John', code: 200 }, text: 'x' }));
+  await start($);
+  // An older sidecar took the address: it has no sessions and reports no features.
+  sidecar.state.status = {};
+  sidecar.sessions.clear();
+  await $.tool.call({ tool: 'Bash', command: 'cat owners.txt' });
+  const body = sanitized(sidecar).find((b) => b.value.stdout !== undefined);
+  expect(body).toBeDefined();
+  expect(body).not.toHaveProperty('keys');
+});
+
+test('only the built-in tools with a fixed output schema keep their result keys', () => {
+  for (const tool of ['Edit', 'WebFetch', 'Bash', 'Read', 'Grep']) {
+    expect(keepsResultKeys(tool)).toBe(true);
+  }
+  for (const tool of ['mcp__crm__lookup', 'mcp__web__WebFetch', 'edit', '', undefined, 7]) {
+    expect(keepsResultKeys(tool)).toBe(false);
+  }
 });
 
 test('releases compare by number, and anything else is not older', () => {
@@ -2014,6 +2080,8 @@ test('with no sidecar answering, the mod starts nullpii-gateway for the session'
     NULLPII_SIDECAR_TOKEN: TOKEN,
     NULLPII_HOST: '127.0.0.1',
     NULLPII_PORT: '8787',
+    // The route that lets a newer mod stop it again is asked for here only.
+    NULLPII_SIDECAR_SHUTDOWN: 'on',
   });
   const report = await $.command.run({ command: 'pii', args: '' });
   expect(report.text).toContain('starting nullpii-gateway');

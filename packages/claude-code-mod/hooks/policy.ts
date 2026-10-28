@@ -468,3 +468,26 @@ export function olderRelease(running: string | undefined, pinned: string): boole
   }
   return false;
 }
+
+/** The built-in tools whose result has the keys of a fixed output schema
+ * (WebFetch answers `code`, an HTTP status; Edit answers `oldString`). The
+ * host checks a result against that schema, so a key masked there fails the
+ * call. A tool outside this list (an MCP tool) can key its data by a name or
+ * an email, so its keys stay masked. */
+const SCHEMA_KEYED_TOOLS: ReadonlySet<string> = new Set([
+  'Bash',
+  'Read',
+  'Edit',
+  'MultiEdit',
+  'Write',
+  'NotebookEdit',
+  'Grep',
+  'Glob',
+  'WebFetch',
+  'WebSearch',
+]);
+
+/** Whether the keys of `tool`'s result are its schema's own and must stay. */
+export function keepsResultKeys(tool: unknown): boolean {
+  return typeof tool === 'string' && SCHEMA_KEYED_TOOLS.has(tool);
+}

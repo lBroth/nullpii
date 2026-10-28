@@ -41,6 +41,7 @@ import {
   formatPolicy,
   formatReport,
   hasPlaceholder,
+  keepsResultKeys,
   olderRelease,
   optionFlag,
   optionString,
@@ -625,6 +626,9 @@ function startSidecar($, origin: string, secretToken: string): void {
       NULLPII_SIDECAR_TOKEN: secretToken,
       NULLPII_HOST: address.hostname.replace(/^\[|\]$/g, ''),
       NULLPII_PORT: address.port === '' ? DEFAULT_SIDECAR_PORT : address.port,
+      // A sidecar the mod started is one the mod may stop again, for a
+      // newer release: no other gateway offers that route.
+      NULLPII_SIDECAR_SHUTDOWN: 'on',
     },
   });
   void (async () => {
@@ -775,8 +779,9 @@ async function replaceOlderSidecar($, autostart: boolean): Promise<void> {
   let self: ReturnType<typeof readSidecarSelf>;
   try {
     self = readSidecarSelf(await request($, 'GET', STATUS_PATH));
-  } catch {
+  } catch (err) {
     // Nothing answers (or not the sidecar): the start that follows says so.
+    $.ui.log(`nullpii: no sidecar to replace: ${shownReason(failureOf(err))}`, { to: 'debug' });
     return;
   }
   const stale = olderRelease(self.gatewayVersion, GATEWAY_RELEASE);
@@ -1679,8 +1684,10 @@ export function register(on, options) {
     // A new `{ result }` without `ref`: returning core's object would make
     // core send its own, unmasked messages to the model.
     return {
-      // The result's keys are the tool's own (WebFetch's `code`), so they stay.
-      result: await masked($, out.result, false),
+      // A built-in tool's result keys are its output schema's own (WebFetch's
+      // `code`), so they stay; any other tool (MCP) may key data by a name,
+      // so its keys are masked as before.
+      result: await masked($, out.result, !keepsResultKeys(e.tool)),
       ...(out.context !== undefined && { context: out.context }),
     };
   }).catch(async ($, e, next) => {

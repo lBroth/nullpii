@@ -29,6 +29,7 @@ describe('loadConfig', () => {
       backend: 'cpu',
       logTraffic: false,
       appendHint: true,
+      sidecarShutdown: false,
       policy: {},
     });
     expect(c.sidecarToken).toBeUndefined();
@@ -77,9 +78,18 @@ describe('loadConfig', () => {
     ['NULLPII_LOG_LEVEL', 'loud'],
     ['NULLPII_OPENAI_UPSTREAM', 'https://api.openai.com/v1'],
     ['NULLPII_SIDECAR_TOKEN', 'short'],
+    ['NULLPII_SIDECAR_SHUTDOWN', 'yes'],
   ])('rejects %s=%s', (name, value) => {
     vi.stubEnv(name, value);
     expect(() => loadConfig()).toThrow();
+  });
+
+  it.each([
+    ['on', true],
+    ['off', false],
+  ])('reads NULLPII_SIDECAR_SHUTDOWN=%s', (value, sidecarShutdown) => {
+    vi.stubEnv('NULLPII_SIDECAR_SHUTDOWN', value);
+    expect(loadConfig().sidecarShutdown).toBe(sidecarShutdown);
   });
 
   it('names the variable and the allowed range in the error', () => {

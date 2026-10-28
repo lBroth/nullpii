@@ -553,15 +553,19 @@ export interface SanitizedValue {
 }
 
 /** Sanitize every string of a parsed JSON value (a string, a tool result,
- * a prompt) into an existing vault session, object keys included (see
- * `sanitizeJsonValue`). Used by the sidecar routes. */
+ * a prompt) into an existing vault session. Object keys are sanitized too
+ * (see `sanitizeJsonValue`), unless `keys` is false: a value whose keys a
+ * schema defines (a tool result) must keep them (see `sanitizeLeaves`).
+ * Used by the sidecar routes. */
 export async function sanitizeValue(
   np: NullPii,
   value: unknown,
   sessionId: string,
+  keys = true,
 ): Promise<SanitizedValue> {
   const acc = newCaptureAccumulator();
-  const out = await sanitizeJsonValue(np, value, sessionId, acc);
+  const walk = keys ? sanitizeJsonValue : sanitizeLeaves;
+  const out = await walk(np, value, sessionId, acc);
   return {
     value: out,
     captured: acc.count,

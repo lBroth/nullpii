@@ -28,6 +28,9 @@ export interface SidecarRouteOptions {
    * `startup` field. Absent when the server was built with a pre-built
    * engine. */
   readonly startup?: StartupTracker;
+  /** Stops the process, for `POST /v1/sidecar/shutdown`. The route exists
+   * only when it is given (the binary gives it; tests do not). */
+  readonly shutdown?: () => void;
   /** Clock, injectable for tests. */
   readonly now?: () => number;
 }
@@ -83,7 +86,12 @@ const SANITIZE_BODY = {
   type: 'object',
   required: ['value'],
   additionalProperties: false,
-  properties: { value: {} },
+  properties: {
+    value: {},
+    // False keeps the object keys of `value` (a tool result's schema names
+    // them); by default they are sanitized too.
+    keys: { type: 'boolean' },
+  },
 } as const;
 
 const RESTORE_BODY = {
@@ -114,7 +122,7 @@ interface SessionRequest {
 }
 
 interface SanitizeRequest extends SessionRequest {
-  Body: { value: unknown };
+  Body: { value: unknown; keys?: boolean };
 }
 
 interface RestoreRequest extends SessionRequest {
@@ -307,6 +315,9 @@ export async function registerSidecarRoutes(
       status: 'ok',
       sessions: sessions.size,
       ...opts.runtime(),
+      // What this sidecar can do that an older one could not: a caller
+      // asks before using it, as an older sidecar refuses unknown fields.
+      features: { sanitizeKeys: true, shutdown: opts.shutdown !== undefined },
       policy: policyView(),
       ...(opts.startup !== undefined && { startup: opts.startup.current }),
     }));
@@ -367,6 +378,19 @@ export async function registerSidecarRoutes(
       },
     );
 
+    // Lets a newer mod replace this sidecar with its own release. Only an
+    // idle sidecar goes: a session in use is never cut off.
+    if (opts.shutdown !== undefined) {
+      const shutdown = opts.shutdown;
+      scope.post('/v1/sidecar/shutdown', async (_req, reply) => {
+        if (sessions.size > 0) {
+          return reply.code(409).send({ error: 'sessions_active', sessions: sessions.size });
+        }
+        setImmediate(shutdown);
+        return reply.code(202).send({ status: 'closing' });
+      });
+    }
+
     scope.post<SanitizeRequest>(
       '/v1/sidecar/sessions/:key/sanitize',
       { bodyLimit: SIDECAR_MAX_BYTES, schema: { params: SESSION_PARAMS, body: SANITIZE_BODY } },
@@ -379,13 +403,16 @@ export async function registerSidecarRoutes(
         const version = opts.policy.version;
         if (staleVersion(req, version)) return sendPolicyChanged(reply, version);
         const generation = opts.policy.generation;
-        const cacheKey = SanitizeCache.keyOf(`${version}\n${JSON.stringify(req.body.value)}`);
+        const keys = req.body.keys !== false;
+        const cacheKey = SanitizeCache.keyOf(
+          `${version}\n${keys}\n${JSON.stringify(req.body.value)}`,
+        );
         const cached = session.cache.get(cacheKey);
         if (cached !== undefined) {
           req.log.info({ cache: 'hit' }, 'sidecar.sanitize');
           return reply.header(CACHE_HEADER, 'hit').type('application/json').send(cached);
         }
-        const r = await sanitizeValue(np, req.body.value, session.vaultId);
+        const r = await sanitizeValue(np, req.body.value, session.vaultId, keys);
         // The engine reads the policy as it goes, so an answer that ran
         // across a change (even one put back since) was masked under a mix:
         // a caller that named its version gets 412, and nothing is cached.

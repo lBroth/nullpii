@@ -21,6 +21,9 @@ export interface BuildServerOptions {
    * reports (`startup` field). Passed by `startServer`, whose warmup
    * feeds it; a server with a pre-built engine needs none. */
   readonly startup?: StartupTracker;
+  /** Stops the process: gives the sidecar its `shutdown` route. Passed by
+   * `startServer`; a test server has none, so nothing can stop the runner. */
+  readonly shutdown?: () => void;
   /** Pluggable `fetch`. Defaults to the global. Tests inject a mock. */
   readonly fetchImpl?: Fetch;
   /** Clock for sidecar session expiry. Defaults to `Date.now`. Tests
@@ -82,6 +85,7 @@ export async function buildServer(opts: BuildServerOptions): Promise<FastifyInst
       runtime: () => sidecarRuntimeInfo(np),
       ...(opts.now !== undefined && { now: opts.now }),
       ...(opts.startup !== undefined && { startup: opts.startup }),
+      ...(opts.shutdown !== undefined && { shutdown: opts.shutdown }),
     });
   }
 
@@ -100,7 +104,9 @@ export async function startServer(config: GatewayConfig): Promise<FastifyInstanc
     ...(config.modelDir !== undefined && { modelDir: config.modelDir }),
   });
   const startup = new StartupTracker();
-  const app = await buildServer({ config, np, startup });
+  // The binary closes the server on SIGTERM, so the shutdown route sends it.
+  const shutdown = () => void process.kill(process.pid, 'SIGTERM');
+  const app = await buildServer({ config, np, startup, shutdown });
   await app.listen({ host: config.host, port: config.port });
   // The warmup runs after the listen, so the sidecar answers its status
   // (with the progress) while it runs; a request that needs the model

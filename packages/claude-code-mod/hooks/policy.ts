@@ -424,3 +424,47 @@ export function formatReport(
     PII_MENU_POINTER,
   ].join('\n');
 }
+
+/** What a sidecar's status says about itself, for the two decisions the mod
+ * takes from it: whether it can take `keys: false`, and whether it is an
+ * idle, older release that may be replaced. */
+export interface SidecarSelf {
+  readonly sanitizeKeys: boolean;
+  readonly shutdown: boolean;
+  readonly gatewayVersion: string | undefined;
+  readonly sessions: number | undefined;
+}
+
+const RELEASE = /^(\d+)\.(\d+)\.(\d+)(?:[-+][A-Za-z0-9.-]+)?$/;
+
+/** The sidecar facts in a status answer, each only when it has the expected
+ * type: an older sidecar reports none of the `features`, so both are false. */
+export function readSidecarSelf(status: unknown): SidecarSelf {
+  const root = (typeof status === 'object' && status !== null ? status : {}) as Record<
+    string,
+    unknown
+  >;
+  const features = (
+    typeof root.features === 'object' && root.features !== null ? root.features : {}
+  ) as Record<string, unknown>;
+  return {
+    sanitizeKeys: features.sanitizeKeys === true,
+    shutdown: features.shutdown === true,
+    gatewayVersion: typeof root.gatewayVersion === 'string' ? root.gatewayVersion : undefined,
+    sessions: typeof root.sessions === 'number' ? root.sessions : undefined,
+  };
+}
+
+/** Whether release `running` is older than release `pinned` (both
+ * `major.minor.patch`, a suffix ignored). Anything that is not a release is
+ * not older: the mod then leaves the sidecar alone. */
+export function olderRelease(running: string | undefined, pinned: string): boolean {
+  const a = RELEASE.exec(running ?? '');
+  const b = RELEASE.exec(pinned);
+  if (a === null || b === null) return false;
+  for (let i = 1; i <= 3; i += 1) {
+    const diff = Number(a[i]) - Number(b[i]);
+    if (diff !== 0) return diff < 0;
+  }
+  return false;
+}

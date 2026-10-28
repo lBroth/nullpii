@@ -11,7 +11,13 @@ import {
   piiCommandDescription,
 } from '../hooks/categories.ts';
 import { PADLOCK_COLUMNS, padlockCells } from '../hooks/padlock.ts';
-import { expectedProof, hmacSha256Hex, sidecarOrigin } from '../hooks/policy.ts';
+import {
+  expectedProof,
+  hmacSha256Hex,
+  olderRelease,
+  readSidecarSelf,
+  sidecarOrigin,
+} from '../hooks/policy.ts';
 
 const TOKEN = 't'.repeat(64);
 /** The fake sidecar's one session prefix, as nullpii mints them. */
@@ -96,6 +102,8 @@ function fakeSidecar(
     failSanitize?: boolean;
     failDelete?: boolean;
     previewAnswer?: unknown;
+    /** Answer a shutdown request as a sidecar with a session in use does. */
+    refuseShutdown?: boolean;
   } = {};
   // The policy the status reports, which a PUT replaces as the gateway does,
   // with a version that changes with it.
@@ -213,6 +221,12 @@ function fakeSidecar(
       categories: policy.categories,
       restoreTools,
     });
+    if (path === '/v1/sidecar/shutdown' && method === 'POST') {
+      if (state.refuseShutdown) return respond(409, { error: 'sessions_active', sessions: 1 });
+      // The process is gone once it has answered: nothing is at the address.
+      state.down = true;
+      return respond(202, { status: 'closing' });
+    }
     if (path === '/v1/sidecar/status') {
       return respond(200, {
         status: 'ok',
@@ -370,7 +384,9 @@ test('a prompt reaches Claude with placeholders, and the sidecar session is open
   expect(seen.length).toBe(1);
   expect(seen[0]).not.toContain('John');
   expect(seen[0]).not.toContain('john@acme.io');
-  expect(sidecar.calls[0]).toBe('PUT /v1/sidecar/sessions/session-1');
+  // The sidecar's release is read before the session opens on it.
+  expect(sidecar.calls[0]).toBe('GET /v1/sidecar/status');
+  expect(sidecar.calls[1]).toBe('PUT /v1/sidecar/sessions/session-1');
   const status = await $.command.run({ command: 'pii', args: '' });
   expect(status.text).toContain('Status: on');
 });
@@ -388,6 +404,142 @@ test('a tool result is masked and returned as a fresh result, without core ref',
   expect(JSON.stringify(out)).not.toContain('John');
   expect(out.ref).toBeUndefined();
   expect(out.text).toBeUndefined();
+});
+
+/** The sanitize request bodies of `sidecar`, parsed. */
+function sanitized(sidecar: ReturnType<typeof fakeSidecar>) {
+  return sidecar.sanitizeBodies.map(
+    (body) => JSON.parse(body) as { value: { stdout?: string }; keys?: boolean },
+  );
+}
+
+test('a tool result keeps its keys when the sidecar says it can take that', async ($, on) => {
+  const sidecar = fakeSidecar();
+  sidecar.state.status = { features: { sanitizeKeys: true, shutdown: false } };
+  stubSession(on, sidecar);
+  on('tool.call', () => ({ result: { stdout: 'owner: John', code: 200 }, text: 'x' }));
+  await start($);
+  const out = await $.tool.call({ tool: 'Bash', command: 'cat owners.txt' });
+  expect(JSON.stringify(out)).not.toContain('John');
+  expect(sanitized(sidecar).find((b) => b.value.stdout !== undefined)?.keys).toBe(false);
+});
+
+test('a tool result is sent as before to a sidecar that does not say it can keep keys', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  on('tool.call', () => ({ result: { stdout: 'owner: John', code: 200 }, text: 'x' }));
+  await start($);
+  await $.tool.call({ tool: 'Bash', command: 'cat owners.txt' });
+  const body = sanitized(sidecar).find((b) => b.value.stdout !== undefined);
+  expect(body).toBeDefined();
+  expect(body).not.toHaveProperty('keys');
+});
+
+test('a prompt is masked with its keys, whatever the sidecar can do', async ($, on) => {
+  const sidecar = fakeSidecar();
+  sidecar.state.status = { features: { sanitizeKeys: true, shutdown: false } };
+  stubSession(on, sidecar);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  await start($);
+  await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  expect(sanitized(sidecar).every((b) => b.keys === undefined)).toBe(true);
+});
+
+/** A session start on a sidecar that reports `status`, with a stand-in for
+ * the pinned sidecar the mod starts if it makes room, and what it started. */
+function startAgainst(
+  $,
+  on,
+  status: Record<string, unknown>,
+  state: { refuseShutdown?: boolean } = {},
+) {
+  const { sidecar } = beforeStart($, on, { down: false });
+  sidecar.state.status = status;
+  Object.assign(sidecar.state, state);
+  const spawned: string[][] = [];
+  on('process.spawn', async function* ($, e) {
+    spawned.push(e.argv);
+    await new Promise<never>(() => undefined);
+  });
+  return { sidecar, spawned };
+}
+
+const IDLE_OLDER = { gatewayVersion: '0.5.2', sessions: 0 };
+const CAN_SHUTDOWN = { sanitizeKeys: true, shutdown: true };
+
+test('an idle sidecar of an older release is stopped, and the pinned release is started', async ($, on) => {
+  const { sidecar, spawned } = startAgainst($, on, { ...IDLE_OLDER, features: CAN_SHUTDOWN });
+  await start($);
+  expect(sidecar.calls).toContain('POST /v1/sidecar/shutdown');
+  expect(spawned.length).toBe(1);
+  expect(spawned[0]).toContain('@lbroth/nullpii-gateway@0.5.4');
+});
+
+test('an older sidecar with a session open is left running', async ($, on) => {
+  const { sidecar, spawned } = startAgainst($, on, {
+    ...IDLE_OLDER,
+    sessions: 1,
+    features: CAN_SHUTDOWN,
+  });
+  await start($);
+  expect(sidecar.calls).not.toContain('POST /v1/sidecar/shutdown');
+  expect(spawned.length).toBe(0);
+});
+
+test('an older sidecar that refuses to stop is kept, and the session opens on it', async ($, on) => {
+  const { sidecar, spawned } = startAgainst(
+    $,
+    on,
+    { ...IDLE_OLDER, features: CAN_SHUTDOWN },
+    { refuseShutdown: true },
+  );
+  await start($);
+  expect(sidecar.calls).toContain('POST /v1/sidecar/shutdown');
+  expect(sidecar.calls).toContain('PUT /v1/sidecar/sessions/session-1');
+  expect(spawned.length).toBe(0);
+});
+
+test('an older sidecar with no shutdown route is left to the doctor', async ($, on) => {
+  const { sidecar, spawned } = startAgainst($, on, IDLE_OLDER);
+  await start($);
+  expect(sidecar.calls).not.toContain('POST /v1/sidecar/shutdown');
+  expect(spawned.length).toBe(0);
+});
+
+test('a sidecar of the pinned release is never stopped', async ($, on) => {
+  const { sidecar, spawned } = startAgainst($, on, {
+    gatewayVersion: '0.5.4',
+    sessions: 0,
+    features: CAN_SHUTDOWN,
+  });
+  await start($);
+  expect(sidecar.calls).not.toContain('POST /v1/sidecar/shutdown');
+  expect(spawned.length).toBe(0);
+});
+
+test('releases compare by number, and anything else is not older', () => {
+  expect(olderRelease('0.5.3', '0.5.4')).toBe(true);
+  expect(olderRelease('0.5.10', '0.5.4')).toBe(false);
+  expect(olderRelease('0.4.9', '0.5.0')).toBe(true);
+  expect(olderRelease('0.5.4', '0.5.4')).toBe(false);
+  expect(olderRelease('1.0.0', '0.9.9')).toBe(false);
+  expect(olderRelease('0.5.3-rc.1', '0.5.4')).toBe(true);
+  expect(olderRelease(undefined, '0.5.4')).toBe(false);
+  expect(olderRelease('latest', '0.5.4')).toBe(false);
+});
+
+test('a status that reports no features is an older sidecar', () => {
+  expect(readSidecarSelf({ status: 'ok', sessions: 0 })).toEqual({
+    sanitizeKeys: false,
+    shutdown: false,
+    gatewayVersion: undefined,
+    sessions: 0,
+  });
+  expect(readSidecarSelf('nope').sanitizeKeys).toBe(false);
+  expect(readSidecarSelf({ features: { sanitizeKeys: 'yes', shutdown: 1 } })).toMatchObject({
+    sanitizeKeys: false,
+    shutdown: false,
+  });
 });
 
 test('a result whose attached context holds personal data is withheld, since context cannot be masked', async ($, on) => {

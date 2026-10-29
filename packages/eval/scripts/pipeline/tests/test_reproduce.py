@@ -2,6 +2,7 @@
 """`reproduce` checks every output the frozen predictions give against the
 published one, and names each that differs; and PIIMB's report says
 where the tool sits on the leaderboard."""
+import importlib.util
 import json
 import subprocess
 import sys
@@ -50,6 +51,9 @@ def scored(tmp_path, monkeypatch):
     f.r3_published.mkdir(parents=True)
     for r in (*recipe.R3_RUNS, *recipe.CORE_LABEL_RUNS):
         (f.r3_published / f"{r.name}.json").write_text(json.dumps(_report(r.name)))
+        # As in the published run: each report's printout next to it, which
+        # is not a verdict.
+        (f.r3_published / f"{r.name}.log").write_text(f"report {r.name}\n")
     for v in (*recipe.VERDICTS, *recipe.CORE_LABEL_VERDICTS):
         (f.r3_published / f"{v.name}.log").write_text(f"verdict {v.name}\n")
     bench = tmp_path / "published-bench"
@@ -137,19 +141,40 @@ def test_the_piimb_report_says_where_the_tool_sits_on_the_leaderboard(tmp_path):
 
 
 def test_the_piimb_report_gives_the_average_and_place_without_a_task(tmp_path):
-    data, pred, leaderboard = _piimb_inputs(tmp_path, {"better": 0.9, "worse": 0.5})
-    # The better row is far behind on every task but nemotron-pii.
-    for t in ["ai4privacy-en", "ai4privacy-multi", "gretel", "mapa-eur-lex", "privy"]:
-        (leaderboard / "better" / f"{t}.json").write_text(json.dumps({"scores": {"test": [{"f2": 0.1}]}}))
+    data, pred, leaderboard = _piimb_inputs(tmp_path, {"better": 0.82, "worse": 0.5})
+    # The tool finds less of nemotron-pii (recall 0.6, F2 0.652); the better
+    # row is perfect there: ahead overall, behind without that task.
+    rows = [json.loads(line) for line in pred.read_text().splitlines()]
+    for row in rows:
+        if row["dataset"] == "nemotron-pii":
+            row["spans"] = [[0, 3]]
+    pred.write_text("".join(json.dumps(r) + "\n" for r in rows))
     (leaderboard / "better" / "nemotron-pii.json").write_text(json.dumps({"scores": {"test": [{"f2": 1.0}]}}))
     out = tmp_path / "piimb.json"
     subprocess.run([sys.executable, "-I", str(settings.PIIMB_SCORE), "score", "--data", str(data), "--pred", str(pred),
                     "--name", "t", "--leaderboard", str(leaderboard), "--out", str(out), "--leave-out", "nemotron-pii"],
                    check=True, stdout=subprocess.DEVNULL)
     report = json.loads(out.read_text())
+    assert report["leaderboard"] == {"rank": 2, "of": 3}
     assert report["without"]["task"] == "nemotron-pii"
     assert report["without"]["avg_f2"] == pytest.approx(5 * 0.8 / (4 + 0.8))
     assert report["without"]["leaderboard"] == {"rank": 1, "of": 3}
+
+
+def _piimb_score_module():
+    spec = importlib.util.spec_from_file_location("piimb_score", settings.PIIMB_SCORE)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_a_leaderboard_row_tied_with_the_tool_is_not_ahead_of_it():
+    assert _piimb_score_module().place(0.851, [0.851, 0.836]) == {"rank": 1, "of": 3}
+
+
+def test_the_training_family_task_is_the_one_the_published_report_leaves_out():
+    published = json.loads((settings.PUBLISHED / "piimb" / "piimb-everything.json").read_text())
+    assert published["without"]["task"] == settings.PIIMB_TRAINING_FAMILY_TASK == "nemotron-pii"
 
 
 def test_a_leaderboard_model_without_every_task_is_an_error(tmp_path):

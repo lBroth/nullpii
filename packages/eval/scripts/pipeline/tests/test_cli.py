@@ -206,3 +206,31 @@ def test_reference_refuses_to_write_over_the_published_outputs_or_the_frozen_cop
 def test_capture_run_raises_when_the_child_fails(tmp_path):
     with pytest.raises(RuntimeError, match="exited with 3"):
         capture.run([sys.executable, "-c", "raise SystemExit(3)"], cwd=Path(tmp_path))
+
+
+@pytest.mark.parametrize("preset, round_trips", [("default", True), ("everything", False)])
+def test_only_the_default_capture_runs_the_round_trip(tmp_path, children, monkeypatch, preset, round_trips):
+    from pipeline import texts
+    monkeypatch.setattr(texts, "write", lambda keys, out: 0)
+    ran = []
+    monkeypatch.setattr(capture, "roundtrip", lambda dist, t, p: ran.append(p) or {"docs": 1})
+    bench_pipeline.main(["capture", "--frozen", str(tmp_path), "--work", str(tmp_path / "w"), "--dist", str(tmp_path),
+                         "--group", "ab1", "--preset", preset])
+    assert ran == (["default"] if round_trips else [])
+    assert (tmp_path / "w" / "out" / compare.ROUNDTRIP_FILE).is_file() == round_trips
+
+
+def test_the_round_trip_result_is_the_last_line_printed(monkeypatch):
+    monkeypatch.setattr(capture, "run", lambda args, cwd=settings.EVAL: 'progress 1/2\n\n{"docs": 2, "masked": 1}\n')
+    assert capture.roundtrip(Path("dist"), Path("texts.jsonl"), "default") == {"docs": 2, "masked": 1}
+
+
+def test_the_piimb_texts_are_written_whole(tmp_path, monkeypatch):
+    def export(args, cwd=settings.EVAL):
+        Path(args[args.index("--out") + 1]).write_text("rows\n")
+        return ""
+    monkeypatch.setattr(capture, "run", export)
+    out = tmp_path / "texts" / "piimb.jsonl"
+    capture.piimb_texts(tmp_path / "sentences.jsonl", out)
+    assert out.read_text() == "rows\n"
+    assert [p.name for p in out.parent.iterdir()] == ["piimb.jsonl"]

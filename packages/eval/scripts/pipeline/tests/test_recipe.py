@@ -3,7 +3,9 @@
 the same flags, `score`'s 11 and 5 plus the 3 reports and the verdict on
 every category masked scored on core labels, which only `reproduce`
 writes (checked against the run's outputs by `reproduce`; pinned here)."""
-from pipeline import recipe, settings
+from pathlib import Path
+
+from pipeline import capture, recipe, settings
 
 PUBLISHED_REPORTS = {
     "char-r3", "char-r3-en", "char-r3-reported", "char-r3-bonferroni",
@@ -62,3 +64,33 @@ def test_every_verdict_reads_a_report_of_the_recipe():
         assert v.mode in (recipe.BETTER_ROW, recipe.TABLE_ONLY)
     # The English verdict is the table alone, as published.
     assert next(v for v in recipe.VERDICTS if v.name == "verdict-en").mode == recipe.TABLE_ONLY
+
+
+def _recorded(monkeypatch) -> list[list[str]]:
+    calls: list[list[str]] = []
+
+    def record(args, cwd=settings.EVAL):
+        calls.append([str(a) for a in args])
+        return ""
+    monkeypatch.setattr(capture, "run", record)
+    return calls
+
+
+def test_the_verdicts_leave_out_the_other_nullpii_rows(monkeypatch):
+    calls = _recorded(monkeypatch)
+    recipe.verdicts(Path("reports"), settings.BASELINE, settings.OTHER_NULLPII)
+    assert len(calls) == len(recipe.VERDICTS)
+    for call in calls:
+        assert call[call.index("--baseline") + 1] == settings.BASELINE
+        assert call[call.index("--not-competitors") + 1].split(",") == list(settings.OTHER_NULLPII)
+    assert settings.OTHER_NULLPII == (settings.tool_name("everything"),)
+
+
+def test_only_the_openmed_check_is_given_the_texts_to_exclude(monkeypatch):
+    calls = _recorded(monkeypatch)
+    excluded = Path("openmed-union.json")
+    recipe.score_r3(Path("run"), settings.BASELINE, excluded, Path("out"))
+    given = {Path(c[c.index("--out") + 1]).stem: c[c.index("--exclude") + 1] if "--exclude" in c else None
+             for c in calls}
+    assert given == {r.name: (str(excluded) if r.excludes_openmed_no_output else None) for r in recipe.R3_RUNS}
+    assert given["sens-openmed-excluded"] == str(excluded)

@@ -527,6 +527,9 @@ def test_an_ab1_bound_is_judged_at_one_decimal_of_a_point(tmp_path):
     after = run(tmp_path, "after", lambda f: f[A]["presidio"]["ci"].update(baseline_minus_tool_leak=[-0.304, -0.2]))
     assert _verdicts(compare.compare(after, run(tmp_path, "before"))) == {
         f"AB-1 ab1-a · {DEFAULT} against presidio (leak) interval low": compare.BETTER}
+    # −30.0 → −30.04 points prints −30.0: no change.
+    below = run(tmp_path, "below", lambda f: f[A]["presidio"]["ci"].update(baseline_minus_tool_leak=[-0.3004, -0.2]))
+    assert _verdicts(compare.compare(below, run(tmp_path, "before2"))) == {}
 
 
 def test_a_recall_interval_that_straddles_zero_is_no_s2_breach(tmp_path):
@@ -576,3 +579,28 @@ def test_a_tie_between_a_tools_rows_keeps_its_tuned_row(tmp_path):
         f[R3]["_macro"][DEFAULT]["f05"] = 0.61
     ranks = compare.r3_ranks(compare.load(run(tmp_path, "a", edit), compare.RUN))
     assert ranks[f"R3 char-r3 · {DEFAULT} · rank by f05 at each tool's best-F2 row of 2"].shown == 1
+
+
+def test_a_recall_interval_touching_zero_is_no_s2_breach(tmp_path):
+    # r2_verdict.s2: recall must be significantly lower (CI high < 0).
+    def edit(f):
+        _set_ci(f, "char-r3", "r3-piilo", "rizzo-pii", baseline_minus_tool_recall_ci=[-0.05, 0.0],
+                baseline_minus_tool_precision_ci=[-0.01, 0.05])
+    claims = compare.all_claims(compare.load(run(tmp_path, "a", edit), compare.RUN))
+    assert claims[f"R3 char-r3 · r3-piilo · {DEFAULT} against rizzo-pii (S2)"] == compare.S2_HOLDS
+
+
+def test_the_english_f05_rank_is_compared(tmp_path):
+    # "Fifth on English text alone", and its F0.5 rank: nullpii's 0.64 now
+    # beats rizzo-pii's best F0.5 (0.63).
+    en = "r3/char-r3-en.json"
+    after = run(tmp_path, "after", lambda f: f[en]["_macro"][DEFAULT].update(f05=0.64))
+    verdicts = _verdicts(compare.compare(after, run(tmp_path, "before")))
+    assert verdicts[f"R3 char-r3-en · {DEFAULT} · rank by f05 of 2"] == compare.BETTER
+
+
+def test_two_rows_that_are_one_configuration_once_renamed_are_refused(tmp_path):
+    reference = outputs.write(tmp_path / "ref", outputs.files(), lambda f: f[A].__setitem__("nullpii-old", f[A][DEFAULT]))
+    layout = compare.Layout(aliases={"nullpii-old": DEFAULT}, every_preset=False)
+    with pytest.raises(compare.CompareError, match=f"two rows are {DEFAULT} once renamed"):
+        compare.compare(run(tmp_path, "after"), reference, layout)

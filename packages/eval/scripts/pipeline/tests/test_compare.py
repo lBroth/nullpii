@@ -375,3 +375,94 @@ def test_a_piimb_report_of_an_older_scorer_is_refused(tmp_path):
     out = run(tmp_path, "a", lambda f: f["piimb/piimb-default.json"].pop("without"))
     with pytest.raises(compare.CompareError, match="piimb-default.json has no without"):
         compare.compare(out, out)
+
+
+def _set_ci(f, report, dataset, tool, **cis):
+    f[f"r3/{report}.json"][dataset][tool] = {**f[f"r3/{report}.json"][dataset][tool], **cis}
+
+
+def test_a_new_s2_breach_is_worse(tmp_path):
+    # nullpii's recall significantly lower, and its precision lead goes
+    # from significant (0.0083) to not (−0.0001): the tool now has higher
+    # recall at matched precision, on both of its rows.
+    def cell(low):
+        def edit(f):
+            for tool in ("rizzo-pii", "rizzo-pii@default"):
+                _set_ci(f, "char-r3", "r3-eu-clinical", tool, baseline_minus_tool_recall_ci=[-0.05, -0.01],
+                        baseline_minus_tool_precision_ci=[low, 0.05])
+        return edit
+    before = run(tmp_path, "before", cell(0.0083))
+    after = run(tmp_path, "after", cell(-0.0001))
+    changes = compare.compare(after, before)
+    for tool in ("rizzo-pii", "rizzo-pii@default"):
+        c = next(c for c in changes if c.where == f"R3 char-r3 · r3-eu-clinical · {DEFAULT} against {tool} (S2)")
+        assert (c.before, c.after, c.verdict) == (compare.S2_HOLDS, compare.S2_BREACH, compare.WORSE)
+    assert compare.exit_code(changes) == compare.EXIT_WORSE
+    # And a breach that goes away is better.
+    assert _verdicts(compare.compare(before, after))[
+        f"R3 char-r3 · r3-eu-clinical · {DEFAULT} against rizzo-pii (S2)"] == compare.BETTER
+
+
+def test_s2_is_judged_on_every_gated_verdicts_report_only(tmp_path):
+    claims = compare.all_claims(compare.load(run(tmp_path, "a"), compare.RUN))
+    s2 = {k.split(" · ")[0].removeprefix("R3 ") for k in claims if k.endswith("(S2)")}
+    assert s2 == {v.report for v in compare.recipe.VERDICTS if v.mode == compare.recipe.BETTER_ROW}
+
+
+def test_a_reversal_sign_that_flips_is_judged(tmp_path):
+    # The verdict's F1 / F0.5 reversals read these signs: nullpii goes from
+    # behind to ahead of rizzo-pii on macro F0.5, and to too close on one
+    # set's F1.
+    def edit(f):
+        f[R3]["_macro"]["rizzo-pii"]["baseline_minus_tool_f05_ci"] = [0.01, 0.02]
+        _set_ci(f, "char-r3", "r3-piilo", "rizzo-pii", baseline_minus_tool_f1_ci=[-0.01, 0.01])
+    verdicts = _verdicts(compare.compare(run(tmp_path, "after", edit), run(tmp_path, "before")))
+    assert verdicts == {f"R3 char-r3 · {DEFAULT} against rizzo-pii (F0.5)": compare.BETTER,
+                        f"R3 char-r3 · r3-piilo · {DEFAULT} against rizzo-pii (F1)": compare.WORSE}
+
+
+def test_the_per_set_rank_takes_each_tool_at_its_macro_better_row(tmp_path):
+    # rizzo-pii's macro-better row is `@default` (0.77 against 0.58). On
+    # PIILO its tuned row is ahead of nullpii and its `@default` row behind:
+    # the tables show the `@default` row, so nullpii is first there.
+    def edit(f):
+        f[R3]["r3-piilo"]["rizzo-pii"]["f2"] = 0.9
+        f[R3]["r3-piilo"]["rizzo-pii@default"]["f2"] = 0.7
+    ranks = compare.r3_ranks(compare.load(run(tmp_path, "a", edit), compare.RUN))
+    assert ranks[f"R3 char-r3 · r3-piilo · {DEFAULT} · rank by f2 of 2"].shown == 1
+
+
+@pytest.mark.parametrize("edit, where", [
+    (lambda f: f["piimb/piimb-everything.json"]["without"]["leaderboard"].update(rank=2),
+     f"PIIMB · {EVERYTHING} · without nemotron-pii · rank of 36"),
+    (lambda f: f["piimb/piimb-everything.json"]["task_ranks"]["privy"].update(rank=13),
+     f"PIIMB · {EVERYTHING} · privy rank of 36"),
+    (lambda f: f["ab1/coverage-ab1-b2.json"]["tools"][DEFAULT].update(leak_covered=0.2),
+     f"AB-1 ab1-b2 · {DEFAULT} · leak_covered"),
+    (lambda f: f["ab1/coverage-ab1-a.json"]["tools"][EVERYTHING].update(leak_uncovered=0.06),
+     f"AB-1 ab1-a · {EVERYTHING} · leak_uncovered"),
+])
+def test_nullpii_moving_the_wrong_way_is_worse(tmp_path, edit, where):
+    changes = compare.compare(run(tmp_path, "after", edit), run(tmp_path, "before"))
+    assert _verdicts(changes) == {where: compare.WORSE}
+    assert compare.exit_code(changes) == compare.EXIT_WORSE
+
+
+def test_a_precision_interval_touching_zero_is_matched_precision(tmp_path):
+    # r2_verdict.s2: precision CI low <= 0 is not significantly lower.
+    def edit(f):
+        _set_ci(f, "char-r3", "r3-piilo", "rizzo-pii", baseline_minus_tool_recall_ci=[-0.05, -0.01],
+                baseline_minus_tool_precision_ci=[0.0, 0.05])
+    claims = compare.all_claims(compare.load(run(tmp_path, "a", edit), compare.RUN))
+    assert claims[f"R3 char-r3 · r3-piilo · {DEFAULT} against rizzo-pii (S2)"] == compare.S2_BREACH
+
+
+def test_the_f05_rank_at_the_matrix_rows_is_not_the_rank_at_each_tools_best_f05(tmp_path):
+    # rizzo-pii's tuned row has the better F0.5 (0.7) but the worse F2: the
+    # matrix shows its `@default` row (F0.5 0.63), which nullpii's 0.65 beats.
+    def edit(f):
+        f[R3]["_macro"]["rizzo-pii"]["f05"] = 0.7
+        f[R3]["_macro"][DEFAULT]["f05"] = 0.65
+    ranks = compare.r3_ranks(compare.load(run(tmp_path, "a", edit), compare.RUN))
+    assert ranks[f"R3 char-r3 · {DEFAULT} · rank by f05 at each tool's best-F2 row of 2"].shown == 1
+    assert ranks[f"R3 char-r3 · {DEFAULT} · rank by f05 of 2"].shown == 2

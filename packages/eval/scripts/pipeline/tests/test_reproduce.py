@@ -132,6 +132,7 @@ def test_the_piimb_report_says_where_the_tool_sits_on_the_leaderboard(tmp_path):
     # Precision 1, recall 0.8 on every task: F2 0.833, behind one row of three.
     assert report["avg_f2"] == pytest.approx(5 * 0.8 / (4 + 0.8))
     assert report["leaderboard"] == {"rank": 2, "of": 4}
+    assert report["task_ranks"] == {t: {"rank": 2, "of": 4} for t in report["tasks"]}
     assert "without" not in report
 
 

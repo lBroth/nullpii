@@ -43,6 +43,32 @@
   "rank": 1,
   "of": 36
  },
+ "task_ranks": {
+  "ai4privacy-en": {
+   "rank": 3,
+   "of": 36
+  },
+  "ai4privacy-multi": {
+   "rank": 3,
+   "of": 36
+  },
+  "gretel": {
+   "rank": 5,
+   "of": 36
+  },
+  "mapa-eur-lex": {
+   "rank": 1,
+   "of": 36
+  },
+  "nemotron-pii": {
+   "rank": 5,
+   "of": 36
+  },
+  "privy": {
+   "rank": 7,
+   "of": 36
+  }
+ },
  "without": {
   "task": "nemotron-pii",
   "avg_f2": 0.8309127051130499,

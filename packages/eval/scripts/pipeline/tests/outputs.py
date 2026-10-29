@@ -31,23 +31,35 @@ def against(leak_ci=(-0.3, -0.2), keep_ci=(0.1, 0.2), **row):
     return ab1_row(ci={"baseline_minus_tool_leak": list(leak_ci), "baseline_minus_tool_keep": list(keep_ci)}, **row)
 
 
+# A cell's paired intervals of the baseline minus a tool, per set: nullpii
+# ahead on F2, F1 and F0.5, its recall higher and its precision lower (no
+# S2 breach).
+SET_CIS = {
+    "baseline_minus_tool_f2_ci": [0.01, 0.05], "baseline_minus_tool_f1_ci": [0.01, 0.04],
+    "baseline_minus_tool_f05_ci": [0.005, 0.03], "baseline_minus_tool_recall_ci": [0.02, 0.06],
+    "baseline_minus_tool_precision_ci": [-0.1, -0.05],
+}
+
+
 def _r3_report(datasets: tuple[str, ...], baseline: str) -> dict:
     report: dict = {}
     for i, dataset in enumerate(datasets):
         recall = GATED_RECALLS[i % len(GATED_RECALLS)]
         report[dataset] = {
             DEFAULT: {"recall": recall, "precision": 0.49, "f2": 0.758},
-            EVERYTHING: {"recall": 0.97, "precision": 0.4, "f2": 0.65},
-            "rizzo-pii": {"recall": 0.9, "precision": 0.6, "f2": 0.8},
-            "rizzo-pii@default": {"recall": 0.92, "precision": 0.58, "f2": 0.81},
+            EVERYTHING: {"recall": 0.97, "precision": 0.4, "f2": 0.65, **SET_CIS},
+            "rizzo-pii": {"recall": 0.9, "precision": 0.6, "f2": 0.8, **SET_CIS},
+            "rizzo-pii@default": {"recall": 0.92, "precision": 0.58, "f2": 0.81, **SET_CIS},
         }
-    ci = {"baseline_minus_tool_f2_ci": [0.1, 0.2]}
+    ci = {"baseline_minus_tool_f2_ci": [0.1, 0.2], "baseline_minus_tool_f1_ci": [0.05, 0.1],
+          "baseline_minus_tool_f05_ci": [-0.1, -0.05]}
     report["_macro"] = {
         DEFAULT: {"f2": 0.758, "f1": 0.62, "f05": 0.53, "f2_lodo": [0.725, 0.845]},
         EVERYTHING: {"f2": 0.653, "f1": 0.55, "f05": 0.45, "f2_lodo": [0.62, 0.7], **ci},
         "rizzo-pii": {"f2": 0.58, "f1": 0.5, "f05": 0.6, "f2_lodo": [0.5, 0.6], **ci},
         "rizzo-pii@default": {"f2": 0.77, "f1": 0.68, "f05": 0.63, "f2_lodo": [0.75, 0.8],
-                              "baseline_minus_tool_f2_ci": [-0.02, -0.003]},
+                              "baseline_minus_tool_f2_ci": [-0.02, -0.003], "baseline_minus_tool_f1_ci": [-0.1, -0.05],
+                              "baseline_minus_tool_f05_ci": [-0.12, -0.08]},
         "mask-all": {"f2": 0.26, "f1": 0.2, "f05": 0.1, "f2_lodo": [0.2, 0.3], **ci},
     }
     if baseline != DEFAULT:
@@ -72,6 +84,7 @@ def files(r3_baseline: str = DEFAULT) -> Files:
         out[compare.piimb_file(preset)] = {
             "name": settings.tool_name(preset), "avg_f2": 0.851,
             "tasks": {"privy": {"f2": 0.713}}, "leaderboard": {"rank": 1, "of": 36},
+            "task_ranks": {"privy": {"rank": 12, "of": 36}},
             "without": {"task": "nemotron-pii", "avg_f2": 0.831, "leaderboard": {"rank": 1, "of": 36}},
         }
     return out

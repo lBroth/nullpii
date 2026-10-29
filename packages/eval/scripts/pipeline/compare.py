@@ -14,18 +14,26 @@ change below the printed digit is no change:
   precision (the means of the per-set values, as the README matrix
   prints them) and the leave-one-out range, on the gated, English and
   reported sets; each leave-one-out report's macro F2;
-- PIIMB: average F2, F2 per task, the place on the leaderboard, and the
-  average and place without the task from nullpii's training family;
+- PIIMB: average F2, F2 per task, the place on the leaderboard overall
+  and on each task, and the average and place without the task from
+  nullpii's training family;
 - ranks: on R3, nullpii's among each tool's better row: by macro F2 and
   F0.5 (each tool at its best row on that measure), by macro F0.5, recall
   and precision at each tool's best-F2 row (the rows the matrix shows),
-  by F2 on each set, and by macro F2 on each leave-one-out report; on
+  by F2 on each set among the same rows, and by macro F2 on each
+  leave-one-out report; on
   AB-1, among each tool's tuned `+agent` row (the README's), by leak rate,
   keep rate and leak rate per category, on each set;
 - claims: the sign of every paired interval "nullpii minus tool" (ahead,
   too close to call, behind) and its two bounds as printed, on AB-1 (leak
   and keep) and on every R3 report of the recipe (F2), keyed by the
-  nullpii row the interval is against; and the text of every R3 verdict.
+  nullpii row the interval is against;
+- the sentences of every gated R3 verdict, from the raw intervals against
+  both rows of each tool: S1 (the macro F2 signs above), S2 per set (a
+  tool with significantly higher recall at a precision not significantly
+  lower; a new breach is worse), and the per-set F2, F1 and F0.5 and the
+  macro F1 and F0.5 signs its reversals compare; and each verdict's text,
+  which is "moved" when it changes.
 
 Like for like only. A reference row is compared with the run's row of the
 same configuration and nothing else: a reference in the published run's
@@ -63,7 +71,10 @@ DROPPED = "dropped (core regime no longer published)"
 NUMBER, CLAIM, VERDICT, REPORT = "number", "claim", "verdict", "report"
 EXIT_UNCHANGED, EXIT_CHANGED, EXIT_WORSE = 0, 3, 4
 AHEAD, CLOSE, BEHIND = "ahead", "too close to call", "behind"
-CLAIM_ORDER = {BEHIND: 0, CLOSE: 1, AHEAD: 2}
+# r2_verdict.py's S2, per set and tool row: a tool with significantly
+# higher recall at a precision not significantly lower is a breach.
+S2_BREACH, S2_HOLDS = "higher recall at matched precision", "no higher recall at matched precision"
+CLAIM_ORDER = {BEHIND: 0, CLOSE: 1, AHEAD: 2, S2_BREACH: 0, S2_HOLDS: 1}
 MASK_ALL_ROW = "mask-all"
 DEFAULT_ROW_SUFFIX = "@default"
 AGENT_ROW_SUFFIX = "+agent"
@@ -81,7 +92,13 @@ NOT_COMPARED: tuple[tuple[str, str], ...] = (
      "each is a compared rank; a count of significant leads is the compared interval signs"),
     ("the split of CredData's leaks into UUIDs and other secrets (\"268 of 490\", \"13.0%\")",
      "no output holds it: no tracked script computes it"),
-    ("F1 and F0.5 paired intervals", "in the reports, never printed in the docs"),
+    ("the bounds of the F1 and F0.5 paired intervals, and of the per-set intervals",
+     "never printed in the docs; their signs, which the verdicts' reversals read, are judged as claims"),
+    ("a verdict's text beyond its sentences (its table at four decimals, the mask-all floor)",
+     "S1 is the macro F2 interval signs, S2 the per-set recall-at-matched-precision claims and the"
+     " reversals the F2, F1 and F0.5 interval signs, all judged as claims; the table's nullpii values are"
+     " compared at the docs' three decimals, the floor is a constant; a text that changes with none of these"
+     " is \"moved\""),
     ("rows the published run scored but the docs never print",
      "earlier nullpii rows (settings.PUBLISHED_UNPRINTED) and nullpii's own `+agent` rows"),
     ("latency", "never measured in CI: timed by hand on quiet machines"),
@@ -224,7 +241,7 @@ R3_LODO_RANGE = "f2_lodo"
 R3_INTERVAL = "baseline_minus_tool_f2_ci"
 R3_DECIMALS = 3
 PIIMB_DECIMALS = 3
-PIIMB_KEYS = ("avg_f2", "tasks", "leaderboard", "without")
+PIIMB_KEYS = ("avg_f2", "tasks", "leaderboard", "task_ranks", "without")
 R3_TABLES = ("char-r3", "char-r3-en", "char-r3-reported")
 # Ranked with each tool at its best row on the measure itself.
 R3_RANKED = {"char-r3": ("f2", "f05"), "char-r3-en": ("f2", "f05")}
@@ -459,6 +476,10 @@ def piimb_metrics(o: Outputs) -> dict[str, Metric]:
             metrics[f"PIIMB · {name} · {task} F2"] = Metric(scores["f2"], HIGHER, PLAIN, PIIMB_DECIMALS)
         place = report["leaderboard"]
         metrics[f"PIIMB · {name} · rank of {place['of']}"] = Metric(place["rank"], LOWER, PLAIN, COUNT_DECIMALS)
+        # "trails on the ai4privacy, nemotron-pii and Gretel tasks": the
+        # place on each task.
+        for task, at in report["task_ranks"].items():
+            metrics[f"PIIMB · {name} · {task} rank of {at['of']}"] = Metric(at["rank"], LOWER, PLAIN, COUNT_DECIMALS)
         rest = report["without"]
         where = f"PIIMB · {name} · without {rest['task']}"
         metrics[f"{where} · average F2"] = Metric(rest["avg_f2"], HIGHER, PLAIN, PIIMB_DECIMALS)
@@ -525,6 +546,48 @@ def r3_claims(o: Outputs) -> tuple[dict[str, str], dict[str, Metric]]:
     return claims, bounds
 
 
+def _s2(row: dict) -> str:
+    """r2_verdict.s2 on one cell: nullpii minus tool recall significantly
+    below 0 while precision is not significantly above 0."""
+    recall_ci, precision_ci = row["baseline_minus_tool_recall_ci"], row["baseline_minus_tool_precision_ci"]
+    return S2_BREACH if recall_ci[1] < 0 and precision_ci[0] <= 0 else S2_HOLDS
+
+
+# The interval signs the verdicts' F1 / F0.5 reversals read: per set F2,
+# F1 and F0.5; on the macro F1 and F0.5 (macro F2 is in r3_claims).
+SET_SIGNS = {"f2": "F2", "f1": "F1", "f05": "F0.5"}
+MACRO_SIGNS = {"f1": "F1", "f05": "F0.5"}
+
+
+def verdict_claims(o: Outputs) -> dict[str, str]:
+    """Each sentence of every gated R3 verdict (`--better-row`), from the
+    raw intervals, against both rows of each tool (r2_verdict.both_rows):
+    S2 per set, and the F2 / F1 / F0.5 signs its reversals compare. S1 is
+    the macro F2 signs of r3_claims."""
+    claims: dict[str, str] = {}
+    for v in recipe.VERDICTS:
+        if v.mode != recipe.BETTER_ROW:
+            continue
+        table = o.files[r3_file(v.report)]
+        baseline = _baseline(o, table[MACRO], _has_r3_ci, r3_file(v.report))
+        if baseline is None:
+            continue
+        for dataset, rows in _sets(table).items():
+            for name, row in rows.items():
+                if not _is_competitor(name):
+                    continue
+                where = f"R3 {v.report} · {dataset} · {baseline} against {name}"
+                claims[f"{where} (S2)"] = _s2(row)
+                for f, label in SET_SIGNS.items():
+                    claims[f"{where} ({label})"] = _claim(row[f"baseline_minus_tool_{f}_ci"], True)
+        for name, row in table[MACRO].items():
+            if _is_competitor(name):
+                for f, label in MACRO_SIGNS.items():
+                    where = f"R3 {v.report} · {baseline} against {name} ({label})"
+                    claims[where] = _claim(row[f"baseline_minus_tool_{f}_ci"], True)
+    return claims
+
+
 def ab1_claims(o: Outputs) -> tuple[dict[str, str], dict[str, Metric]]:
     """nullpii's standing against each tool on AB-1, from the paired
     intervals of leak (lower is better for nullpii) and keep, and their
@@ -579,7 +642,7 @@ def _r3_rank_entry(where: str, value: float, others: list[float]) -> dict[str, M
 
 def r3_ranks(o: Outputs) -> dict[str, Metric]:
     """nullpii's rank in each configuration among the tools' better rows
-    (1 is first)."""
+    (1 is first); on each set, among each tool's macro-better row."""
     ranked = {**R3_RANKED, **{report: LODO_RANKED for report in lodo_reports()}}
     ranks: dict[str, Metric] = {}
     for table_name, fields in ranked.items():
@@ -598,8 +661,11 @@ def r3_ranks(o: Outputs) -> dict[str, Metric]:
                     where = f"R3 {table_name} · {o.renamed(name)} · rank by {f} at each tool's best-F2 row"
                     ranks |= _r3_rank_entry(where, _macro_value(table, name, f), others)
     for table_name in R3_TABLES:
-        for dataset, rows in _sets(o.files[r3_file(table_name)]).items():
-            others = list(_best_rows(rows, "f2").values())
+        table = o.files[r3_file(table_name)]
+        # Each tool at its macro-better row, as the tables and counts are.
+        shown = _f2_rows(table[MACRO]).values()
+        for dataset, rows in _sets(table).items():
+            others = [rows[row]["f2"] for row in shown if row in rows]
             for name, row in o.rows(rows).items():
                 ranks |= _r3_rank_entry(f"R3 {table_name} · {dataset} · {name} · rank by f2", row["f2"], others)
     return ranks
@@ -643,7 +709,7 @@ def ab1_ranks(o: Outputs) -> dict[str, Metric]:
 
 
 def all_claims(o: Outputs) -> dict[str, str]:
-    return {**ab1_claims(o)[0], **r3_claims(o)[0]}
+    return {**ab1_claims(o)[0], **r3_claims(o)[0], **verdict_claims(o)}
 
 
 def all_metrics(o: Outputs) -> dict[str, Metric]:
@@ -699,8 +765,8 @@ def compare_claims(before: dict[str, str], after: dict[str, str]) -> list[Change
 
 
 def compare_verdicts(before: dict[str, str], after: dict[str, str]) -> list[Change]:
-    """A verdict's text has no direction: its intervals are judged as
-    claims, so a changed text is "moved"."""
+    """A verdict's text has no direction: its sentences are judged as
+    claims (verdict_claims), so a changed text is "moved"."""
     changes = []
     for key in sorted(set(before) | set(after)):
         old, new = before.get(key), after.get(key)

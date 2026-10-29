@@ -162,8 +162,14 @@ def test_a_previous_reference_is_replaced_and_nothing_else_is_removed(tmp_path, 
     # A file of the previous reference that is not the published one now.
     (ref / "ab1" / "scores-ab1-a.json").unlink()
     (ref / "ab1" / "scores-ab1-a.json").write_text("an older reference's")
+    # A file an older reference wrote that a reference no longer writes.
+    marker = json.loads((ref / bench_pipeline.REFERENCE_MARKER).read_text())
+    (ref / "r3" / "char-r3-old.json").write_text("{}")
+    marker["files"].append("r3/char-r3-old.json")
+    (ref / bench_pipeline.REFERENCE_MARKER).write_text(json.dumps(marker))
     bench_pipeline.main(["reference", "--frozen", str(published), "--out", str(ref)])
     assert json.loads((ref / "ab1" / "scores-ab1-a.json").read_text()) == {"published": "ab1/scores-ab1-a.json"}
+    assert not (ref / "r3" / "char-r3-old.json").exists()
     assert (ref / "notes.md").read_text() == "the owner's"
 
 

@@ -152,6 +152,8 @@ def main() -> None:
         if args.leaderboard:
             # The tool's place among the leaderboard's rows by average F2.
             report["leaderboard"] = place(avg, [a for a, _, _ in board])
+            # And on each task, by that task's F2.
+            report["task_ranks"] = {t: place(ours[t]["f2"], [f2[t] for _, _, f2 in board]) for t in TASKS}
         if args.leave_out:
             report["without"] = without(ours, board, args.leave_out)
         args.out.write_text(json.dumps(report, indent=1) + "\n")

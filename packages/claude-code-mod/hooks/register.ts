@@ -1471,11 +1471,11 @@ function recordWrittenAsText($, tool: string, n: number): void {
 /**
  * Show, once a session, how many placeholders the conversation holds that
  * the sidecar can no longer put back, the first time the mod meets one
- * (`seen`, in a tool call or in a reply drawn on screen): Claude Code tells
- * a mod neither that a session was resumed (`session.start` carries no
- * such field) nor that the sidecar restarted or its session expired, so
- * the first one met is the signal. A toast, and a transcript line that is
- * not sent to the model. Counts only. A lookup that fails leaves the notice
+ * (`seen`, in a tool call or in a reply drawn on screen). A resume could be
+ * read from the classic `SessionStart` hook (`source: 'resume'`), but a
+ * sidecar restart or an expired sidecar session raises no event, so the
+ * first one met is the one signal that covers all three. A toast, and a
+ * transcript line that is not sent to the model. Counts only. A lookup that fails leaves the notice
  * to the next placeholder met, and fails the hook.
  */
 async function noticeStale($, seen: readonly string[]): Promise<void> {

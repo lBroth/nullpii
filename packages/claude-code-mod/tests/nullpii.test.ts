@@ -2749,6 +2749,57 @@ test('a call that comes back as an error after Send once is recorded as released
   expect(report.text).toContain('Released in clear on your word: WebFetch · email 1');
 });
 
+test('Send once puts a value back in an object key of a call too', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Send once'], asked);
+  const received: unknown[] = [];
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', { tool: 'mcp__crm__save' }, ($, e) => {
+    received.push(e.data);
+    return { result: 'saved' };
+  });
+  await start($);
+  await $.prompt.submit({ text: 'look up john@acme.io', wait: false, origin: COMPOSER });
+  await $.tool.call({ tool: 'mcp__crm__save', data: { [ph('EMAIL', 0)]: 'owner' } });
+  expect(asked).toHaveLength(1);
+  expect(received).toEqual([{ 'john@acme.io': 'owner' }]);
+  expect(sidecar.toasts.filter((t) => t.includes('released in clear'))).toHaveLength(1);
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).toContain('Released in clear on your word: mcp__crm__save · email 1');
+  expect(report.text).toContain('Placeholders kept in calls to other tools: 0');
+});
+
+test('while masking is paused, a value released in clear is still toasted and counted', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  on('tool.call', { tool: 'AskUserQuestion' }, ($, e) => {
+    const question = e.questions[0]?.question ?? '';
+    const label = question.includes(PAUSE_QUESTION_WORDS) ? 'Pause masking' : 'Send once';
+    return { result: { questions: e.questions, answers: { [question]: label } } };
+  });
+  const urls: string[] = [];
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', { tool: 'WebFetch' }, ($, e) => {
+    urls.push(e.url);
+    return { result: 'ok' };
+  });
+  await start($);
+  // A placeholder minted before the pause.
+  await $.prompt.submit({ text: 'look up john@acme.io', wait: false, origin: COMPOSER });
+  expect((await $.command.run(typed('pii', 'pause'))).text).toContain('Masking is paused');
+  await $.tool.call({
+    tool: 'WebFetch',
+    url: `https://example.com/?q=${ph('EMAIL', 0)}`,
+    prompt: 'x',
+  });
+  expect(urls).toEqual(['https://example.com/?q=john@acme.io']);
+  expect(sidecar.toasts.filter((t) => t.includes('released in clear'))).toHaveLength(1);
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).toContain('Released in clear on your word: WebFetch · email 1');
+});
+
 test('a masked key holding several values lists, toasts and counts each value once, with its own category', async ($, on) => {
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);

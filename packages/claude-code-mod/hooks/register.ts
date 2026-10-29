@@ -1115,31 +1115,29 @@ async function showLegend($, toolUseId: unknown, args: Readonly<Record<string, u
 }
 
 /**
- * `next(call)`, then the values the user released in clear with it toasted
- * and counted (`recordSent`), once the call has been handed on: the
- * policy-file guard ran before, and a `deny` from below (another hook)
- * records nothing. A refusal Claude Code itself makes after that (its own
- * permission prompt declined, auto mode) comes back as an error result
- * like any failed call, and the mod does not read Claude Code's error
- * texts: the values were released to the call either way, which is what
- * is recorded. A call that throws below was handed on too, so its values
- * are recorded before the error goes on: a release is never left
- * uncounted.
+ * `next(call)`, then `handed` (the values the user released in clear with
+ * it toasted and counted, and the restored and held counts), once the call
+ * has been handed on: the policy-file guard ran before, and a `deny` from
+ * below (another hook) records nothing. A refusal Claude Code itself makes
+ * after that (its own permission prompt declined, auto mode) comes back as
+ * an error result like any failed call, and the mod does not read Claude
+ * Code's error texts: the call was handed on either way, which is what is
+ * recorded. A call that throws below was handed on too, so it is recorded
+ * before the error goes on: a release is never left uncounted.
  */
 async function ranCall(
-  $,
   next: (call: Readonly<Record<string, unknown>>) => Promise<Record<string, unknown>>,
   call: Readonly<Record<string, unknown>>,
-  values: readonly ClearValue[],
+  handed: () => void,
 ): Promise<Record<string, unknown>> {
   let out: Record<string, unknown>;
   try {
     out = await next(call);
   } catch (err) {
-    recordSent($, values);
+    handed();
     throw err;
   }
-  if (out.deny === undefined) recordSent($, values);
+  if (out.deny === undefined) handed();
   return out;
 }
 
@@ -1968,11 +1966,11 @@ export function register(on, options) {
         call = restored;
       }
     }
-    const out = await ranCall($, next, call, sentInClear);
-    if (out.deny === undefined) {
+    const out = await ranCall(next, call, () => {
+      recordSent($, sentInClear);
       counts.held += heldInCall;
       counts.restored += restoredInCall;
-    }
+    });
     // Masking paused for this session, with the sidecar up: what came out
     // of the tool goes to Claude as it is. The placeholders already in the
     // conversation were still put back before it ran, and the call is still

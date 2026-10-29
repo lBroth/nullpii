@@ -2045,6 +2045,7 @@ test('a call to a tool that sends data elsewhere is put to the user first: sent 
   stubSession(on, sidecar);
   const asked: Asked[] = [];
   answerMenu(on, ['Send once'], asked);
+  const notices = recordNotices(on);
   const urls: string[] = [];
   on('prompt.submit', ($, e) => ({ text: e.text }));
   on('tool.call', { tool: 'WebFetch' }, ($, e) => {
@@ -2073,6 +2074,8 @@ test('a call to a tool that sends data elsewhere is put to the user first: sent 
   expect(report.text).toContain('Released in clear on your word: WebFetch · email 1');
   expect(report.text).not.toContain('john@acme.io');
   expect(report.text).not.toContain('joh…e.io');
+  // The legend is for Claude's own question alone.
+  expect(notices).toEqual([]);
 });
 
 test('a call to a tool that sends data elsewhere is denied when the user does not send the values', async ($, on) => {
@@ -2080,6 +2083,7 @@ test('a call to a tool that sends data elsewhere is denied when the user does no
   stubSession(on, sidecar);
   const asked: Asked[] = [];
   answerMenu(on, ['Block'], asked);
+  const notices = recordNotices(on);
   const urls: string[] = [];
   on('prompt.submit', ($, e) => ({ text: e.text }));
   on('tool.call', { tool: 'WebFetch' }, ($, e) => {
@@ -2100,6 +2104,8 @@ test('a call to a tool that sends data elsewhere is denied when the user does no
   expect(sidecar.toasts).toEqual([]);
   const report = await $.command.run({ command: 'pii', args: 'status' });
   expect(report.text).not.toContain('Released in clear');
+  // The legend is for Claude's own question alone.
+  expect(notices).toEqual([]);
 });
 
 test('Allow all sends every value of the session with no second dialog, toasting and counting each', async ($, on) => {
@@ -2140,6 +2146,7 @@ test('a call to a tool that sends data elsewhere is denied when no one answers, 
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);
   const urls: string[] = [];
+  const notices = recordNotices(on);
   on('tool.call', { tool: 'AskUserQuestion' }, () => ({ deny: 'dismissed' }));
   on('prompt.submit', ($, e) => ({ text: e.text }));
   on('tool.call', { tool: 'WebFetch' }, ($, e) => {
@@ -2158,6 +2165,8 @@ test('a call to a tool that sends data elsewhere is denied when no one answers, 
   expect(out.deny).toContain('or no one could answer (claude -p)');
   expect(urls).toEqual([]);
   expect(sidecar.logs.join('\n')).toContain('no answer about sending in clear');
+  // The legend is for Claude's own question alone.
+  expect(notices).toEqual([]);
 });
 
 test('a shell call that holds a placeholder is refused with no dialog', async ($, on) => {
@@ -2681,7 +2690,63 @@ test('the guide names as examples only tools the policy does not list', async ($
   });
   const text = sections[0]?.text ?? '';
   expect(text).toContain("Claude Code's own included (such as Agent, MCP tools)");
+  expect(text).toContain('AskUserQuestion is never asked about');
   expect(text).toContain('put the real values back before they run: Read, WebFetch, TodoWrite.');
+});
+
+test('the guide says nothing of AskUserQuestion running with placeholders when the policy lists it', async ($, on) => {
+  const sidecar = fakeSidecar({ restoreTools: ['Read', 'AskUserQuestion'] });
+  stubSession(on, sidecar);
+  on('prompt.compose', () => ({ sections: [] }));
+  await start($);
+  const { sections } = await $.prompt.compose({
+    model: 'claude-test',
+    promptModel: 'claude-test',
+    surfaces: ['terminal'],
+    tools: ['Read'],
+    outputStyle: null,
+    traits: [],
+  });
+  expect(sections[0]?.text ?? '').not.toContain('AskUserQuestion is never asked about');
+});
+
+test('a local restore into a call that throws below is counted: it was handed on', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', { tool: 'Write' }, () => {
+    throw new Error('disk full');
+  });
+  await start($);
+  await $.prompt.submit({ text: 'note john@acme.io', wait: false, origin: COMPOSER });
+  const out = await $.tool.call({ tool: 'Write', file_path: 'n.md', content: ph('EMAIL', 0) });
+  expect(out.deny).toContain("nullpii could not mask this tool's result, so it was withheld");
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).toContain('Real values put back into local tool calls: 1');
+});
+
+test('a call that comes back as an error after Send once is recorded as released', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Send once'], asked);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  // As Claude Code answers a call it declined itself: an error result.
+  on('tool.call', { tool: 'WebFetch' }, () => ({
+    result: 'Error: the user declined',
+    text: 'Error: the user declined',
+    isError: true,
+  }));
+  await start($);
+  await $.prompt.submit({ text: 'look up john@acme.io', wait: false, origin: COMPOSER });
+  await $.tool.call({
+    tool: 'WebFetch',
+    url: `https://example.com/?q=${ph('EMAIL', 0)}`,
+    prompt: 'x',
+  });
+  expect(sidecar.toasts.filter((t) => t.includes('released in clear'))).toHaveLength(1);
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).toContain('Released in clear on your word: WebFetch · email 1');
 });
 
 test('a masked key holding several values lists, toasts and counts each value once, with its own category', async ($, on) => {

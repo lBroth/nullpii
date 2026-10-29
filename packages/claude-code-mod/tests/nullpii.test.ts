@@ -134,6 +134,9 @@ function fakeSidecar(
     /** Mask object keys with placeholders the vault then does not keep: a
      * faulty sidecar, whose key placeholders stand for nothing. */
     forgetKeys?: boolean;
+    /** Make the next `$.session.messages()` fail, as a host that cannot
+     * read the transcript at that moment. */
+    failMessages?: boolean;
   } = {};
   // The policy the status reports, which a PUT replaces as the gateway does,
   // with a version that changes with it.
@@ -434,7 +437,13 @@ function stubSession(
     return { value: undefined };
   });
   on('session.id', () => ({ value: 'session-1' }));
-  on('session.messages', () => ({ value: sidecar.messages }));
+  on('session.messages', () => {
+    if (sidecar.state.failMessages) {
+      sidecar.state.failMessages = false;
+      return { deny: 'the transcript could not be read' };
+    }
+    return { value: sidecar.messages };
+  });
   on('ui.toast', ($, e) => {
     sidecar.toasts.push(e.text);
     return { value: undefined };
@@ -5769,4 +5778,175 @@ test('the guide tells Claude that such values are gone and never to invent them'
   const text = sections[0]?.text ?? '';
   expect(text).toContain('Write, Edit, MultiEdit, NotebookEdit, apply_patch');
   expect(text).toContain('ask the user for it, and never invent it');
+});
+
+/** Placeholder-shaped text with a prefix of another length than nullpii's
+ * 16 hex characters, as a test fixture or a doc writes one: not a
+ * placeholder, so nothing counts, lists or asks about it. */
+const SHORT_HEX = '{{PII_PRIVATE_EMAIL_0_a1b2c3d4}}';
+
+test('placeholderCategories reads only the 16-hex prefix nullpii mints', () => {
+  expect(placeholderCategories(`${SHORT_HEX} ${ph('EMAIL', 0)}`)).toEqual([
+    { placeholder: ph('EMAIL', 0), category: 'email' },
+  ]);
+  expect(placeholderCategories(`{{PII_PERSON_1_${'a'.repeat(17)}}}`)).toEqual([]);
+});
+
+test('short-hex fixture text next to a known value in a Write outside restoreTools is neither stale nor noticed', async ($, on) => {
+  const sidecar = fakeSidecar({ restoreTools: ['Read'] });
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Send once'], asked);
+  const written: string[] = [];
+  recordWrites(on, written);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  await start($);
+  await $.prompt.submit({ text: 'note john@acme.io', wait: false, origin: COMPOSER });
+  await $.tool.call({
+    tool: 'Write',
+    file_path: '/work/t.test.ts',
+    content: `${ph('EMAIL', 0)} fixture ${SHORT_HEX}`,
+  });
+  // Only the question about the value: none about the fixture text.
+  expect(asked.map((one) => one.options)).toEqual([['Block', 'Send once', 'Allow all']]);
+  expect(written).toEqual([`john@acme.io fixture ${SHORT_HEX}`]);
+  expect(notices(sidecar)).toEqual([]);
+});
+
+test('short-hex fixture text next to an earlier session placeholder is not counted in the question', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Block'], asked);
+  recordWrites(on, []);
+  await start($);
+  await $.tool.call({
+    tool: 'Write',
+    file_path: '/work/a.md',
+    content: `${oldPh('PERSON', 1)} ${SHORT_HEX}`,
+  });
+  expect(asked).toHaveLength(1);
+  expect(asked[0]?.question).toContain(
+    'cannot put back 1 placeholder in this Write call (person 1)',
+  );
+});
+
+test('short-hex fixture text next to a known value in a WebFetch shows no notice', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  answerMenu(on, ['Send once'], []);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', { tool: 'WebFetch' }, () => ({ result: 'ok' }));
+  await start($);
+  await $.prompt.submit({ text: 'look up john@acme.io', wait: false, origin: COMPOSER });
+  await $.tool.call({
+    tool: 'WebFetch',
+    url: `https://example.com/?q=${ph('EMAIL', 0)}&doc=${SHORT_HEX}`,
+    prompt: 'x',
+  });
+  expect(notices(sidecar)).toEqual([]);
+});
+
+test('the notice does not count short-hex fixture text in the conversation', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  on('tool.call', { tool: 'Read' }, () => ({ result: 'ok' }));
+  await start($);
+  sidecar.messages.push({ role: 'assistant', text: `see ${SHORT_HEX}`, toolUses: [] });
+  await $.tool.call({ tool: 'Read', file_path: `/work/${oldPh('PERSON', 1)}.md` });
+  expect(notices(sidecar)).toHaveLength(1);
+  expect(notices(sidecar)[0]).toContain('nullpii: 1 placeholder from before');
+});
+
+test('a reply drawn on screen counts only its placeholders the sidecar could not put back', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('ui.render', ($, e) => ({ type: 'Text', props: {}, children: [e.props.text] }));
+  await start($);
+  await $.prompt.submit({ text: 'note john@acme.io', wait: false, origin: COMPOSER });
+  // A known placeholder, short-hex fixture text, and one earlier session's.
+  const ui = await $.ui.mount(
+    messageSite(`${ph('EMAIL', 0)} ${SHORT_HEX} ${oldPh('PRIVATE_EMAIL', 2)}`),
+  );
+  await ui.unmount();
+  expect(notices(sidecar)).toHaveLength(1);
+  expect(notices(sidecar)[0]).toContain('nullpii: 1 placeholder from before');
+});
+
+test('a reply drawn on screen with an index the vault no longer holds shows the notice', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  on('ui.render', ($, e) => ({ type: 'Text', props: {}, children: [e.props.text] }));
+  await start($);
+  // This vault's prefix: the sidecar reports it unknown, not foreign.
+  const ui = await $.ui.mount(messageSite(`Sent to ${ph('PERSON', 42)}.`));
+  await ui.unmount();
+  expect(notices(sidecar)).toHaveLength(1);
+});
+
+test('short-hex fixture text in a prompt is not asked about under an ask category', async ($, on) => {
+  const sidecar = fakeSidecar({ categories: { private_email: 'ask' } });
+  stubSession(on, sidecar);
+  const questions: string[] = [];
+  answerDialog(on, 'Send readable', questions);
+  const sent: string[] = [];
+  on('prompt.submit', ($, e) => {
+    sent.push(e.text);
+    return { text: e.text };
+  });
+  await start($);
+  await $.prompt.submit({ text: `the fixture is ${SHORT_HEX}`, wait: false, origin: COMPOSER });
+  expect(questions).toEqual([]);
+  expect(sent).toEqual([`the fixture is ${SHORT_HEX}`]);
+});
+
+test('short-hex fixture text in a masked key is not listed in the key question', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Send once'], asked);
+  on('tool.call', { tool: 'mcp__crm__people' }, () => ({ result: { [`${SHORT_HEX} John`]: 1 } }));
+  await start($);
+  await $.tool.call({ tool: 'mcp__crm__people', q: 'owners' });
+  expect(asked).toHaveLength(1);
+  expect(asked[0]?.question).toContain('person "John"');
+  expect(asked[0]?.question).not.toContain('email');
+});
+
+test('a file named with an earlier session placeholder is asked about for Edit, MultiEdit and NotebookEdit too', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Block', 'Block', 'Block'], asked);
+  const ran: string[] = [];
+  on('tool.call', ($, e) => {
+    ran.push(e.tool);
+    return { result: 'ok' };
+  });
+  await start($);
+  const path = `/work/${oldPh('PERSON', 1)}.md`;
+  for (const call of [
+    { tool: 'Edit', file_path: path, old_string: 'x', new_string: 'y' },
+    { tool: 'MultiEdit', file_path: path, edits: [{ old_string: 'x', new_string: 'y' }] },
+    { tool: 'NotebookEdit', notebook_path: `${path}.ipynb`, new_source: 'y' },
+  ]) {
+    expect((await $.tool.call(call)).deny).toMatch(STALE_REFUSAL);
+  }
+  expect(asked).toHaveLength(3);
+  expect(ran).toEqual([]);
+});
+
+test('a notice whose transcript lookup fails comes at the next such placeholder met', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  on('tool.call', { tool: 'Read' }, () => ({ result: 'ok' }));
+  await start($);
+  sidecar.state.failMessages = true;
+  // Fail closed: the hook fails, and the call is refused with the mod's own text.
+  const first = await $.tool.call({ tool: 'Read', file_path: `/work/${oldPh('PERSON', 1)}.md` });
+  expect(first.deny).toContain('nullpii could not prepare this tool call');
+  expect(notices(sidecar)).toEqual([]);
+  await $.tool.call({ tool: 'Read', file_path: `/work/${oldPh('PERSON', 2)}.md` });
+  expect(notices(sidecar)).toHaveLength(1);
 });

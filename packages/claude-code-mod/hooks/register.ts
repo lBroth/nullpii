@@ -395,6 +395,12 @@ let restartable = false;
 // tool calls and tool results wait for the new sidecar under every
 // `while_starting`, and nothing goes out unmasked.
 let midSessionStart = false;
+// Counts the starts this module has begun: a start-up dialog answered after
+// its start ended (and another began) speaks for nothing in the new one.
+let startCount = 0;
+// Why a start that began mid-session gave up, until a session opens again:
+// a later call that finds no sidecar keeps this reason on the band.
+let restartGaveUp: string | undefined;
 // The person said to send unprotected until this start-up is ready: the
 // answer holds for this start only.
 let startPass = false;
@@ -620,6 +626,7 @@ async function openSessionOnce($): Promise<void> {
   sessionKey = key;
   sessionSecret = secret;
   restartable = true;
+  restartGaveUp = undefined;
   await reviewPolicy($);
   problem = undefined;
   // A band drawn before the session opened (a hot reload draws it at once,
@@ -707,6 +714,7 @@ async function untilRestarted($): Promise<void> {
  * masked until it is ready. `closing`: the sidecar at the address answered
  * `sidecar_closing`, so it may still hold the address for a while. */
 function beginStart($, origin: string, secretToken: string, closing: boolean): void {
+  startCount += 1;
   restartable = false;
   started = 'running';
   startSidecar($, origin, secretToken);
@@ -745,8 +753,15 @@ function blocked($, event: string, failure: Failure): string {
   // While the sidecar this session started comes up, say which phase it is
   // in, not that no sidecar runs (which would send the user off to start a
   // second one).
+  // A restart that gave up: a call that finds no sidecar since keeps its
+  // reason, which says what to do, on the band.
+  const unreachable = failure.message === UNREACHABLE;
   const reason =
-    started === 'running' && failure.message === UNREACHABLE ? phaseLine() : shownReason(failure);
+    started === 'running' && unreachable
+      ? phaseLine()
+      : unreachable && restartGaveUp !== undefined
+        ? restartGaveUp
+        : shownReason(failure);
   problem = reason;
   lastFailure = reason;
   const withheld =
@@ -818,6 +833,7 @@ function notReadyLine(): string {
  * (`message`), and later prompts take the normal path again — masking
  * works once some gateway answers, and until one does, fail closed. */
 function gaveUp($, message: string): void {
+  if (midSessionStart) restartGaveUp = message;
   endStart();
   problem = message;
   lastFailure = message;
@@ -1432,10 +1448,10 @@ const STATUS_PARTS = ' · ';
  * a paused nullpii whose sidecar is down sends nothing, as the band's own
  * line says. */
 function statusLine(): string {
-  if (problem !== undefined && !starting()) {
+  if (problem !== undefined && !startShown()) {
     return `${STATUS_BLOCKING}${STATUS_PARTS}${blockedWords()}`;
   }
-  if (starting()) {
+  if (startShown()) {
     const state = startPass ? STATUS_NOT_PROTECTED : STATUS_STARTING;
     return `${state}${STATUS_PARTS}${phaseText()}`;
   }
@@ -1478,6 +1494,14 @@ function starting(): boolean {
   return started === 'running' && problem?.startsWith(STARTING_PREFIX) === true;
 }
 
+/** Whether a start is shown as under way: `starting`, and also while its
+ * session opens on the ready sidecar, or while it waits for another
+ * sidecar to let go of the address (its own child exited). Nothing is
+ * blocked for a fault then, so the band and the line say starting. */
+function startShown(): boolean {
+  return started !== undefined && problem?.startsWith(STARTING_PREFIX) === true;
+}
+
 /** Whether the band above the prompt has anything to say: it is drawn only
  * when the person has something to know or do (nullpii starting, a prompt
  * sent unprotected while it starts, masking paused, a policy change being
@@ -1498,7 +1522,7 @@ function bypassing(): boolean {
  * something is wrong. While the person sends unprotected through a
  * start-up, it says so and keeps the phase. */
 function bandText(): string {
-  if (starting() && problem !== undefined) {
+  if (startShown() && problem !== undefined) {
     return `${startPass ? 'not protected yet' : 'starting'} · ${bandPhase()}`;
   }
   if (problem !== undefined) return `blocking · ${blockedWords()} · run /pii doctor`;
@@ -1520,7 +1544,7 @@ function bandPhase(): string {
  * starts (progress, not a fault), green when it is on. */
 function bandColor(): 'red' | 'yellow' | 'green' {
   if (paused) return 'red';
-  if (starting()) return 'yellow';
+  if (startShown()) return 'yellow';
   return problem !== undefined ? 'red' : 'green';
 }
 
@@ -1529,7 +1553,7 @@ function bandColor(): 'red' | 'yellow' | 'green' {
  * when broken. */
 function padlockLook(): [boolean, PadlockTone] {
   if (paused) return [true, 'red'];
-  if (starting()) return [true, 'amber'];
+  if (startShown()) return [true, 'amber'];
   return problem !== undefined ? [false, 'grey'] : [false, 'teal'];
 }
 
@@ -1574,6 +1598,7 @@ async function sendUnprotectedWhileStarting($): Promise<boolean> {
     return true;
   }
   const generation = sessionGeneration;
+  const askedIn = startCount;
   let answer: string;
   try {
     answer = await askUser($, STARTING_QUESTION, [
@@ -1587,9 +1612,10 @@ async function sendUnprotectedWhileStarting($): Promise<boolean> {
     });
     return false;
   }
-  // The answer is for the start it was asked in: after the session ended
-  // (or nullpii came up) it arms nothing and sends nothing unprotected.
-  if (generation !== sessionGeneration || !starting()) return false;
+  // The answer is for the start it was asked in: after the session ended,
+  // nullpii came up, or another start began (a mid-session restart always
+  // waits), it arms nothing and sends nothing unprotected.
+  if (generation !== sessionGeneration || askedIn !== startCount || !starting()) return false;
   if (answer === SEND_UNPROTECTED_UNTIL_READY) {
     startPass = true;
     redraw($);
@@ -1874,7 +1900,7 @@ async function statusAndHelp($): Promise<string> {
 
 /** The mod's user-visible state, independent of whether the sidecar answers. */
 function modState(): ModState {
-  if (starting() || phase !== undefined) return 'starting';
+  if (startShown() || phase !== undefined) return 'starting';
   if (problem !== undefined) return 'blocking';
   if (paused) return 'paused';
   return 'on';
@@ -2026,6 +2052,7 @@ export function register(on, options) {
     startPass = false;
     startReplacedOne = false;
     sessionGeneration += 1;
+    restartGaveUp = undefined;
     const asked = optionString(options, 'while_starting');
     whileStarting = asked === 'block' || asked === 'pass' ? asked : 'ask';
     // The band was drawn under the old state: draw it under this one.

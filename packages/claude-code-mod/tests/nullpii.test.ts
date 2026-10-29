@@ -4613,6 +4613,12 @@ async function lostMidSession($, on, exits = false) {
     sent.push(e.text);
     return { text: e.text };
   });
+  // Every line the mod pinned under the prompt.
+  const lines: string[] = [];
+  on('ui.status', ($, e) => {
+    lines.push(String(e.text ?? ''));
+    return { value: undefined };
+  });
   // The tool calls that ran, each answering a result with a name in it.
   const ran: unknown[] = [];
   on('tool.call', ($, e) => {
@@ -4625,7 +4631,7 @@ async function lostMidSession($, on, exits = false) {
   // The sidecar goes away; its sessions and vault go with it.
   opts.down = true;
   sidecar.forget();
-  return { sidecar, opts, clock, spawned, sent, ran };
+  return { sidecar, opts, clock, spawned, sent, ran, lines };
 }
 
 /** The pinned sidecar the mod started mid-session takes the address and is
@@ -5013,4 +5019,90 @@ test('two tool calls that both find the sidecar gone start it once and both wait
   expect(spawned).toHaveLength(1);
   expect(ran).toHaveLength(2);
   for (const out of results) expect(String((out as { deny?: string }).deny ?? '')).toBe('');
+});
+
+test("a start-up answer given after the session's first start ended, during a mid-session restart, sends nothing unmasked", async ($, on) => {
+  const opts = { down: true };
+  const sidecar = fakeSidecar(opts);
+  stubSession(on, sidecar);
+  const clock = mock.clock(on, { now: 1_700_000_000_000 });
+  let answer: (label: string) => void = () => undefined;
+  let asked = 0;
+  on('tool.call', { tool: 'AskUserQuestion' }, async ($, e) => {
+    const question = e.questions[0]?.question ?? '';
+    asked += 1;
+    const label = await new Promise<string>((resolve) => {
+      answer = resolve;
+    });
+    return { result: { questions: e.questions, answers: { [question]: label } } };
+  });
+  const spawned: string[][] = [];
+  on('process.spawn', async function* ($, e) {
+    spawned.push(e.argv);
+    await new Promise<never>(() => undefined);
+  });
+  const sent: string[] = [];
+  on('prompt.submit', ($, e) => {
+    sent.push(e.text);
+    return { text: e.text };
+  });
+  await start($);
+  // A prompt of the first start asks what to do; the dialog stays open.
+  const first = $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  for (let turn = 0; turn < 100 && asked === 0; turn += 1) {
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  expect(asked).toBe(1);
+  // The first start ends; the session opens; then the sidecar is lost and
+  // a prompt begins a restart.
+  comesUp(sidecar, opts);
+  await pollUntil(clock, () => statusOn($));
+  opts.down = true;
+  sidecar.forget();
+  const second = $.prompt.submit({ text: 'Call John', wait: false, origin: COMPOSER });
+  await pollUntil(clock, () => spawned.length === 2);
+  // The old dialog is answered now: it speaks for the start it was asked in.
+  answer('Send now, and do not ask again until nullpii is ready');
+  for (let turn = 0; turn < 10; turn += 1) await new Promise((r) => setTimeout(r, 10));
+  // Nothing went out, as typed or at all, and text the engine adds waits.
+  const meta = $.prompt.submit({ text: 'Mail John', wait: false, isMeta: true });
+  for (let turn = 0; turn < 10; turn += 1) await new Promise((r) => setTimeout(r, 10));
+  expect(sent).toEqual([]);
+  expect(await piiStatus($)).not.toContain('not protected');
+  comesUp(sidecar, opts);
+  await pollUntil(clock, () => statusOn($));
+  await Promise.all([first, second, meta]);
+  expect(sent).toHaveLength(3);
+  for (const text of sent) expect(text).not.toContain('John');
+});
+
+test('after a restart gives up, a later prompt keeps the give-up reason on the band', async ($, on) => {
+  const { clock, sent } = await lostMidSession($, on, true);
+  let first: { drop?: string } | undefined;
+  void $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER }).then((o) => {
+    first = o;
+  });
+  await pollUntil(clock, () => first !== undefined);
+  const second = await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  expect(second.drop).toContain('exited while');
+  expect(second.drop).not.toContain('did not answer at the sidecar address');
+  expect(await piiStatus($)).toContain('exited while');
+  expect(sent).toEqual([]);
+});
+
+test('a restart waiting for another sidecar to let go of the address shows as starting, not blocking', async ($, on) => {
+  const { sidecar, opts, clock, spawned, lines } = await lostMidSession($, on, true);
+  // The sidecar there is closing: it holds the address, and the child the
+  // mod starts exits for want of it.
+  opts.down = false;
+  sidecar.state.refuseSession = CLOSING;
+  // It waits for the restart, which this test leaves running.
+  const pending = $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  pending.catch(() => undefined);
+  await pollUntil(clock, () => spawned.length === 1);
+  await pollUntil(clock, () => sidecar.statuses.filter((s) => s === 503).length >= 3);
+  const doctor = await $.command.run({ command: 'pii', args: 'doctor' });
+  expect(doctor.text).not.toMatch(/\bblocking\b/);
+  expect(lines.at(-1)).toContain('starting');
+  expect(lines.at(-1)).not.toContain('blocking');
 });

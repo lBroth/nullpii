@@ -466,3 +466,113 @@ def test_the_f05_rank_at_the_matrix_rows_is_not_the_rank_at_each_tools_best_f05(
     ranks = compare.r3_ranks(compare.load(run(tmp_path, "a", edit), compare.RUN))
     assert ranks[f"R3 char-r3 · {DEFAULT} · rank by f05 at each tool's best-F2 row of 2"].shown == 1
     assert ranks[f"R3 char-r3 · {DEFAULT} · rank by f05 of 2"].shown == 2
+
+
+def _ab1_set(field, value):
+    def edit(f):
+        f[A][DEFAULT][field] = value
+    return edit
+
+
+def _edit_all(*edits):
+    def edit(f):
+        for e in edits:
+            e(f)
+    return edit
+
+
+# One case per compared field: the reference, then the run with nullpii's
+# value moved the wrong way across its printed digit, and the entry.
+WRONG_WAY = [
+    *[(_ab1_set(field, before), _ab1_set(field, after), f"AB-1 ab1-a · {DEFAULT} · {field}") for field, before, after in [
+        ("leak_rate", 0.0945, 0.0965), ("keep_rate", 0.8545, 0.8445), ("docs_with_leak", 0.27, 0.28),
+        ("clean_docs_masked", 0.611, 0.621), ("outside_per_1k", 10.87, 10.88), ("encoded_leak_rate", 0.1, 0.2),
+        ("json_parse_rate", 0.912, 0.902), ("diff_consistent_rate", 1.0, 0.99)]],
+    (_ab1_set("leak_by_category", {"email": [0.0, 536]}), _ab1_set("leak_by_category", {"email": [0.1, 536]}),
+     f"AB-1 ab1-a · {DEFAULT} · leak_by_category email"),
+    (_ab1_set("keep_by_kind", {"date": [0.9, 727]}), _ab1_set("keep_by_kind", {"date": [0.8, 727]}),
+     f"AB-1 ab1-a · {DEFAULT} · keep_by_kind date"),
+    *[(lambda f: None, lambda f, m=m, ci=ci: f[A]["presidio"]["ci"].update({f"baseline_minus_tool_{m}": ci}),
+       f"AB-1 ab1-a · {DEFAULT} against presidio ({m}) interval {end}") for m, ci, end in [
+        ("leak", [-0.3, -0.19], "high"), ("leak", [-0.29, -0.2], "low"),
+        ("keep", [0.1, 0.19], "high"), ("keep", [0.09, 0.2], "low")]],
+    (lambda f: None, lambda f: f[R3]["_macro"][DEFAULT].update(f2_lodo=[0.725, 0.84]),
+     f"R3 char-r3 · _macro · {DEFAULT} · leave-one-out high"),
+    (lambda f: None, lambda f: f[R3]["_macro"][DEFAULT].update(f05=0.52), f"R3 char-r3 · _macro · {DEFAULT} · f05"),
+    (lambda f: None, lambda f: f[R3]["_macro"][DEFAULT].update(f1=0.61), f"R3 char-r3 · _macro · {DEFAULT} · f1"),
+    (lambda f: None, lambda f: f[R3]["r3-piilo"][DEFAULT].update(recall=0.95),
+     f"R3 char-r3 · r3-piilo · {DEFAULT} · recall"),
+    (lambda f: None, lambda f: f[R3]["r3-piilo"][DEFAULT].update(precision=0.48),
+     f"R3 char-r3 · r3-piilo · {DEFAULT} · precision"),
+    (lambda f: None, lambda f: f[R3]["r3-piilo"][DEFAULT].update(f2=0.757), f"R3 char-r3 · r3-piilo · {DEFAULT} · f2"),
+    # 0.8492 prints 0.849: worse at the docs' three decimals, not at two.
+    (lambda f: None, lambda f: f["piimb/piimb-everything.json"].update(avg_f2=0.8492),
+     f"PIIMB · {EVERYTHING} · average F2"),
+    (lambda f: None, lambda f: f["piimb/piimb-everything.json"]["tasks"]["privy"].update(f2=0.7122),
+     f"PIIMB · {EVERYTHING} · privy F2"),
+    (lambda f: None, lambda f: f["piimb/piimb-everything.json"]["without"].update(avg_f2=0.8302),
+     f"PIIMB · {EVERYTHING} · without nemotron-pii · average F2"),
+]
+
+
+@pytest.mark.parametrize("before, after, where", WRONG_WAY, ids=[w for _, _, w in WRONG_WAY])
+def test_each_compared_entry_moved_the_wrong_way_is_worse(tmp_path, before, after, where):
+    changes = compare.compare(run(tmp_path, "after", _edit_all(before, after)), run(tmp_path, "before", before))
+    assert {c.where: c.verdict for c in changes}[where] == compare.WORSE
+    assert compare.exit_code(changes) == compare.EXIT_WORSE
+
+
+def test_an_ab1_bound_is_judged_at_one_decimal_of_a_point(tmp_path):
+    # −30.0 → −30.4 points: a change at the printed digit, lower is better.
+    after = run(tmp_path, "after", lambda f: f[A]["presidio"]["ci"].update(baseline_minus_tool_leak=[-0.304, -0.2]))
+    assert _verdicts(compare.compare(after, run(tmp_path, "before"))) == {
+        f"AB-1 ab1-a · {DEFAULT} against presidio (leak) interval low": compare.BETTER}
+
+
+def test_a_recall_interval_that_straddles_zero_is_no_s2_breach(tmp_path):
+    def edit(f):
+        _set_ci(f, "char-r3", "r3-piilo", "rizzo-pii", baseline_minus_tool_recall_ci=[-0.05, 0.01],
+                baseline_minus_tool_precision_ci=[-0.01, 0.05])
+    claims = compare.all_claims(compare.load(run(tmp_path, "a", edit), compare.RUN))
+    assert claims[f"R3 char-r3 · r3-piilo · {DEFAULT} against rizzo-pii (S2)"] == compare.S2_HOLDS
+
+
+@pytest.mark.parametrize("ci, claim", [([0.0, 0.1], compare.CLOSE), ([-0.1, 0.0], compare.CLOSE),
+                                       ([0.001, 0.1], compare.AHEAD), ([-0.1, -0.001], compare.BEHIND)])
+def test_an_interval_touching_zero_is_too_close_to_call(ci, claim):
+    assert compare._claim(ci, True) == claim
+
+
+def test_a_report_with_two_rows_without_an_interval_is_refused(tmp_path):
+    out = run(tmp_path, "a", lambda f: f[R3]["_macro"]["rizzo-pii"].pop("baseline_minus_tool_f2_ci"))
+    with pytest.raises(compare.CompareError, match="2 rows without a paired interval"):
+        compare.compare(out, out)
+    ab1 = run(tmp_path, "b", lambda f: f[A]["presidio"].pop("ci"))
+    with pytest.raises(compare.CompareError, match="2 rows without a paired interval"):
+        compare.compare(ab1, ab1)
+
+
+def test_intervals_against_an_undeclared_baseline_are_refused(tmp_path):
+    # The row without an interval is a row the docs never print: its
+    # intervals cannot be skipped as if they were another view's.
+    def edit(f):
+        f[A]["nullpii-old"] = f[A].pop(DEFAULT)
+    reference = outputs.write(tmp_path / "ref", outputs.files(), edit)
+    layout = compare.Layout(unprinted=frozenset({"nullpii-old"}), every_preset=False)
+    with pytest.raises(compare.CompareError, match="the intervals are against nullpii-old, neither measured now"):
+        compare.compare(run(tmp_path, "after"), reference, layout)
+
+
+def test_a_tool_tied_with_nullpii_is_not_ahead_of_it(tmp_path):
+    out = run(tmp_path, "a", lambda f: f[R3]["_macro"]["rizzo-pii@default"].update(f2=0.758))
+    assert compare.r3_ranks(compare.load(out, compare.RUN))[f"R3 char-r3 · {DEFAULT} · rank by f2 of 2"].shown == 1
+
+
+def test_a_tie_between_a_tools_rows_keeps_its_tuned_row(tmp_path):
+    # As r2_verdict.better_rows: on equal F2 the matrix shows the tuned row
+    # (F0.5 0.6), which nullpii's 0.61 beats; the `@default` row's 0.63 would not.
+    def edit(f):
+        f[R3]["_macro"]["rizzo-pii"]["f2"] = 0.77
+        f[R3]["_macro"][DEFAULT]["f05"] = 0.61
+    ranks = compare.r3_ranks(compare.load(run(tmp_path, "a", edit), compare.RUN))
+    assert ranks[f"R3 char-r3 · {DEFAULT} · rank by f05 at each tool's best-F2 row of 2"].shown == 1

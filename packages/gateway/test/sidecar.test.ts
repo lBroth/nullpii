@@ -31,7 +31,7 @@ import {
   SANITIZE_CACHE_MAX_ENTRIES,
   SanitizeCache,
 } from '../src/sanitize-cache.js';
-import { buildServer } from '../src/server.js';
+import { buildServer, shutdownOption } from '../src/server.js';
 import { StartupTracker } from '../src/startup.js';
 import { BASE_TEST_CONFIG } from './fixtures.js';
 
@@ -318,6 +318,7 @@ describe('sidecar · status', () => {
       nullpiiVersion: expect.stringMatching(/^\d+\.\d+\.\d+$/),
       backend: 'cpu',
       model: { revision: TEST_MODEL_REVISION, filesPinned: true },
+      features: { shutdown: false },
       policy: {
         version: expect.stringMatching(/^[0-9a-f]{32}$/),
         file: '/home/node/.config/nullpii/config.json',
@@ -695,6 +696,152 @@ describe('sidecar · sanitize and restore', () => {
     });
     expect(res.statusCode).toBe(413);
     expect(res.json()).toEqual({ error: 'response_too_large' });
+  });
+});
+
+describe('sidecar · shutdown', () => {
+  /** A server built as `startServer` builds one: the route only when the
+   * config asks for it, with a stop function the test counts calls of —
+   * the real one would end the test runner. */
+  async function withShutdown(on: boolean, startup?: StartupTracker) {
+    const { np } = buildMockNullPii();
+    let stopped = 0;
+    const clock = { t: 1_000_000 };
+    const config = { ...BASE_CONFIG, sidecarShutdown: on };
+    const app = await buildServer({
+      config,
+      np,
+      now: () => clock.t,
+      ...(startup !== undefined && { startup }),
+      ...shutdownOption(config, () => {
+        stopped += 1;
+      }),
+    });
+    apps.push(app);
+    return { app, clock, stopped: () => stopped };
+  }
+
+  const shutdownCall = (app: FastifyInstance) =>
+    app.inject({ method: 'POST', url: '/v1/sidecar/shutdown', headers: AUTH });
+
+  /** A tracker whose model is ready, as after a start-up. */
+  function readyTracker(): StartupTracker {
+    const startup = new StartupTracker();
+    startup.report({ phase: 'ready' });
+    return startup;
+  }
+
+  /** The window that started the sidecar opened its session and closed it. */
+  async function usedAndClosed(app: FastifyInstance) {
+    await open(app, 's1');
+    const del = await app.inject({
+      method: 'DELETE',
+      url: '/v1/sidecar/sessions/s1',
+      headers: authFor('s1'),
+    });
+    expect(del.statusCode).toBe(204);
+  }
+
+  /** Whether the stop function ran, once the 202's `setImmediate` had a turn. */
+  async function stopsAfterATurn(stopped: () => number) {
+    await new Promise((r) => setImmediate(r));
+    return stopped();
+  }
+
+  it('is not given to a server the starter did not ask to be stoppable', async () => {
+    const { app } = await withShutdown(false);
+    const res = await shutdownCall(app);
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('is reported in the status when the starter asked for it', async () => {
+    const { app } = await withShutdown(true);
+    const res = await app.inject({ method: 'GET', url: '/v1/sidecar/status', headers: AUTH });
+    expect(res.json()).toMatchObject({ features: { shutdown: true } });
+  });
+
+  it('needs the token', async () => {
+    const { app, stopped } = await withShutdown(true);
+    await usedAndClosed(app);
+    const res = await app.inject({ method: 'POST', url: '/v1/sidecar/shutdown' });
+    expect(res.statusCode).toBe(401);
+    expect(await stopsAfterATurn(stopped)).toBe(0);
+  });
+
+  it('stops a sidecar whose every session was closed by its caller', async () => {
+    const { app, stopped } = await withShutdown(true, readyTracker());
+    await usedAndClosed(app);
+    const res = await shutdownCall(app);
+    expect(res.statusCode).toBe(202);
+    expect(await stopsAfterATurn(stopped)).toBe(1);
+  });
+
+  it('refuses while a session is open, and stops nothing', async () => {
+    const { app, stopped } = await withShutdown(true);
+    await open(app, 's1');
+    const res = await shutdownCall(app);
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: 'sessions_active', sessions: 1 });
+    expect(await stopsAfterATurn(stopped)).toBe(0);
+  });
+
+  it('refuses while the model is still downloading or loading for the window that started it', async () => {
+    const startup = new StartupTracker();
+    const { app, stopped } = await withShutdown(true, startup);
+    const downloading = await shutdownCall(app);
+    expect(downloading.statusCode).toBe(409);
+    expect(downloading.json()).toEqual({ error: 'starting' });
+    startup.report({ phase: 'loading' });
+    const loading = await shutdownCall(app);
+    expect(loading.json()).toEqual({ error: 'starting' });
+    expect(await stopsAfterATurn(stopped)).toBe(0);
+  });
+
+  it('refuses before any session has opened: the window that started it has not got to it yet', async () => {
+    const { app, stopped } = await withShutdown(true, readyTracker());
+    const res = await shutdownCall(app);
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: 'not_used_yet' });
+    expect(await stopsAfterATurn(stopped)).toBe(0);
+  });
+
+  it('stops a sidecar whose start failed before any session opened', async () => {
+    const startup = new StartupTracker();
+    startup.failed();
+    const { app, stopped } = await withShutdown(true, startup);
+    const res = await shutdownCall(app);
+    expect(res.statusCode).toBe(202);
+    expect(await stopsAfterATurn(stopped)).toBe(1);
+  });
+
+  it('stops once its only session ended by its idle TTL: that vault is gone already', async () => {
+    const { app, clock, stopped } = await withShutdown(true, readyTracker());
+    await open(app, 's1');
+    expect((await shutdownCall(app)).json()).toEqual({ error: 'sessions_active', sessions: 1 });
+    clock.t += TTL_MS + 1;
+    const res = await shutdownCall(app);
+    expect(res.statusCode).toBe(202);
+    expect(await stopsAfterATurn(stopped)).toBe(1);
+  });
+
+  it('refuses a new session once it has answered 202, until the process ends', async () => {
+    const { app } = await withShutdown(true, readyTracker());
+    await usedAndClosed(app);
+    const res = await shutdownCall(app);
+    expect(res.statusCode).toBe(202);
+    const put = await app.inject({ method: 'PUT', url: '/v1/sidecar/sessions/s2', headers: AUTH });
+    expect(put.statusCode).toBe(503);
+    expect(put.json()).toEqual({ error: 'sidecar_closing' });
+  });
+
+  it('answers 202 again without stopping a second time', async () => {
+    const { app, stopped } = await withShutdown(true, readyTracker());
+    await usedAndClosed(app);
+    const first = await shutdownCall(app);
+    const second = await shutdownCall(app);
+    expect(first.statusCode).toBe(202);
+    expect(second.statusCode).toBe(202);
+    expect(await stopsAfterATurn(stopped)).toBe(1);
   });
 });
 

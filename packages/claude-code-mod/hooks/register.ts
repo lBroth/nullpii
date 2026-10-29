@@ -54,9 +54,11 @@ import {
   formatReport,
   hasPlaceholder,
   maskedKeys,
+  olderRelease,
   optionFlag,
   optionString,
   placeholderGuide,
+  readSidecarSelf,
   restorableArgs,
   runsWithPlaceholders,
   sameText,
@@ -72,6 +74,14 @@ const DEFAULT_SIDECAR_URL = 'http://127.0.0.1:8787';
 const SESSIONS_PATH = '/v1/sidecar/sessions/';
 const STATUS_PATH = '/v1/sidecar/status';
 const POLICY_PATH = '/v1/sidecar/policy';
+const SHUTDOWN_PATH = '/v1/sidecar/shutdown';
+/** How long the mod waits for an older sidecar it asked to stop to let go
+ * of the address, and how often it looks. */
+const SHUTDOWN_WAIT_MS = 15_000;
+const SHUTDOWN_POLL_MS = 250;
+/** The start-up phases of a sidecar whose start is over, either way: only
+ * such a sidecar may be replaced. */
+const SETTLED_PHASES: ReadonlySet<string> = new Set(['ready', 'failed']);
 /** The version of the policy this session made or accepted, sent with
  * every call: the sidecar answers 412 and does nothing once the policy has
  * changed since (the token alone can change it). */
@@ -126,6 +136,9 @@ const CHALLENGE_PATH = '/v1/sidecar/challenge';
 const JSON_TYPE = { 'content-type': 'application/json' };
 const SESSION_NOT_FOUND = 404;
 const SESSION_EXISTS = 409;
+/** The sidecar's answer to a `PUT` sessions once it has accepted a shutdown:
+ * a session opened now would die with the process, so it refuses one. */
+const SIDECAR_CLOSING = 503;
 /** Proves to the sidecar that this mod opened the session. */
 const SESSION_SECRET_HEADER = 'x-nullpii-session-secret';
 const KEY_SUFFIX_RADIX = 36;
@@ -334,9 +347,11 @@ let policy: Policy | undefined;
 let problem: string | undefined = NO_TOKEN;
 // The most recent mod-written failure, retained after a later recovery for /pii doctor.
 let lastFailure: string | undefined;
-// The sidecar this session started, until it answers: `running`, or
-// `exited` once its process ended first.
-let started: 'running' | 'exited' | undefined;
+// The sidecar this session started, until it answers: `running`,
+// `opening` once its status said ready and the session is being opened
+// (prompts then wait for that session and its policy, masked, as after the
+// start), or `exited` once its process ended first.
+let started: 'running' | 'opening' | 'exited' | undefined;
 // The start-up phase of a sidecar this session started: undefined once
 // its model is ready, or when the mod started none. While it is set
 // nothing is sent (fail closed), and the band shows the phase.
@@ -367,9 +382,35 @@ let clearQuestions: Promise<void> = Promise.resolve();
 // still coming up (the `while_starting` option): ask the person, always
 // wait, or always send it unprotected.
 let whileStarting: 'ask' | 'block' | 'pass' = 'ask';
+// Whether this window starts a sidecar when none answers (the `autostart`
+// option, "Start the sidecar"): at session start, and again mid-session.
+let autostartOn = true;
+// A session opened on a sidecar since this window last began a start: only
+// then does a sidecar that stops answering get started again mid-session.
+// A start that gave up is not tried again at every prompt (each would run
+// npx once more); the band says why, until the next session.
+let restartable = false;
+// The start running now began mid-session, because the sidecar in use was
+// lost (`restartIfGone`): the session was masked until then, so prompts,
+// tool calls and tool results wait for the new sidecar under every
+// `while_starting`, and nothing goes out unmasked.
+let midSessionStart = false;
+// Counts the starts this module has begun: a start-up dialog answered after
+// its start ended (and another began) speaks for nothing in the new one.
+let startCount = 0;
+// Why a start that began mid-session gave up, until a session opens again:
+// a later call that finds no sidecar keeps this reason on the band.
+let restartGaveUp: string | undefined;
 // The person said to send unprotected until this start-up is ready: the
 // answer holds for this start only.
 let startPass = false;
+// This start follows the mod stopping an older sidecar that was masking:
+// the session would have been masked from its first prompt, so `pass` waits
+// like `block`, without asking (under `ask` the person is still asked).
+// Set only by this window's own replacement: a window that finds the
+// address free or the old sidecar closing because another window replaced
+// it does not know what that one was.
+let startReplacedOne = false;
 // Counts the sessions this module has opened: a dialog the person answers
 // after its session ended belongs to that session, and must not pause or
 // arm anything in the next one.
@@ -584,6 +625,8 @@ async function openSessionOnce($): Promise<void> {
   }
   sessionKey = key;
   sessionSecret = secret;
+  restartable = true;
+  restartGaveUp = undefined;
   await reviewPolicy($);
   problem = undefined;
   // A band drawn before the session opened (a hot reload draws it at once,
@@ -596,14 +639,90 @@ async function openSessionOnce($): Promise<void> {
  * While a sidecar this session started comes up, nothing is sent at all:
  * the call fails closed with the band's phase line. */
 async function sanitize($, value: unknown): Promise<Sanitized> {
+  await untilRestarted($);
   if (phase !== undefined) throw new Error(phaseLine());
+  return withRestart($, async () => {
+    try {
+      return (await sidecar($, 'POST', '/sanitize', { value })) as Sanitized;
+    } catch (err) {
+      if (!(err instanceof SidecarError) || err.status !== SESSION_NOT_FOUND) throw err;
+      await openSession($);
+      return (await sidecar($, 'POST', '/sanitize', { value })) as Sanitized;
+    }
+  });
+}
+
+/** Run the session call `call`. When it fails because the sidecar in use
+ * was lost, and a restart begins (`restartIfGone`) or another call began
+ * one already, wait for the new sidecar and run it once more; otherwise
+ * fail as it did. */
+async function withRestart<T>($, call: () => Promise<T>): Promise<T> {
   try {
-    return (await sidecar($, 'POST', '/sanitize', { value })) as Sanitized;
+    return await call();
   } catch (err) {
-    if (!(err instanceof SidecarError) || err.status !== SESSION_NOT_FOUND) throw err;
-    await openSession($);
-    return (await sidecar($, 'POST', '/sanitize', { value })) as Sanitized;
+    const begun = restartIfGone($, err);
+    if (!begun && !(midSessionStart && sidecarLost(err))) throw err;
+    await untilRestarted($);
+    return call();
   }
+}
+
+/** Whether `err` says the sidecar in use is gone: nothing answers at the
+ * address, or the one there is closing. */
+function sidecarLost(err: unknown): boolean {
+  return (err instanceof Error && err.message === UNREACHABLE) || isStatus(err, SIDECAR_CLOSING);
+}
+
+/**
+ * A session call failed. When no sidecar answers at the address (it was
+ * stopped, crashed, or replaced by another window), or the one there is
+ * closing, and this window may start one (`autostart`), start the pinned
+ * sidecar as at session start and say so. A start already running is not
+ * begun twice, and one that gave up is not begun again until a session
+ * has opened (`restartable`).
+ */
+function restartIfGone($, err: unknown): boolean {
+  const closing = isStatus(err, SIDECAR_CLOSING);
+  if (!sidecarLost(err) || !restartable || started !== undefined || !autostartOn) return false;
+  if (sidecarUrl === undefined || token === undefined) return false;
+  $.ui.log('nullpii: no sidecar answers mid-session: starting the pinned one', { to: 'debug' });
+  beginStart($, sidecarUrl, token, closing);
+  midSessionStart = true;
+  // A choice to send unprotected belonged to an earlier start.
+  startPass = false;
+  redraw($);
+  return true;
+}
+
+/** While a start that began mid-session runs, wait for it to end, under
+ * every `while_starting`: the session was masked until the sidecar was
+ * lost, so nothing goes out unmasked now. A start that gave up, or did not
+ * end by the start's deadline, fails the call with the band's reason. */
+async function untilRestarted($): Promise<void> {
+  if (!midSessionStart) return;
+  const deadline = (await $.clock.now()) + STARTUP_WAIT_MS;
+  while (midSessionStart && started !== undefined && (await $.clock.now()) < deadline) {
+    await $.clock.sleep(HOLD_POLL_MS);
+  }
+  if (started !== undefined || problem !== undefined) throw new Error(problem ?? NOT_STARTED);
+}
+
+/** Start the pinned sidecar for this session, and wait for it in the
+ * background: the band shows each phase of the start as it goes through it
+ * (the packages installing, the model downloading, its bytes once the
+ * sidecar answers its status, the model loading), and nothing is sent
+ * masked until it is ready. `closing`: the sidecar at the address answered
+ * `sidecar_closing`, so it may still hold the address for a while. */
+function beginStart($, origin: string, secretToken: string, closing: boolean): void {
+  startCount += 1;
+  restartable = false;
+  started = 'running';
+  startSidecar($, origin, secretToken);
+  phase = 'installing';
+  download = undefined;
+  problem = phaseLine();
+  redraw($);
+  void waitForSidecar($, closing).catch((err) => blocked($, 'sidecar start', failureOf(err)));
 }
 
 async function masked($, value: unknown): Promise<unknown> {
@@ -634,8 +753,15 @@ function blocked($, event: string, failure: Failure): string {
   // While the sidecar this session started comes up, say which phase it is
   // in, not that no sidecar runs (which would send the user off to start a
   // second one).
+  // A restart that gave up: a call that finds no sidecar since keeps its
+  // reason, which says what to do, on the band.
+  const unreachable = failure.message === UNREACHABLE;
   const reason =
-    started === 'running' && failure.message === UNREACHABLE ? phaseLine() : shownReason(failure);
+    started === 'running' && unreachable
+      ? phaseLine()
+      : unreachable && restartGaveUp !== undefined
+        ? restartGaveUp
+        : shownReason(failure);
   problem = reason;
   lastFailure = reason;
   const withheld =
@@ -662,6 +788,9 @@ function startSidecar($, origin: string, secretToken: string): void {
       NULLPII_SIDECAR_TOKEN: secretToken,
       NULLPII_HOST: address.hostname.replace(/^\[|\]$/g, ''),
       NULLPII_PORT: address.port === '' ? DEFAULT_SIDECAR_PORT : address.port,
+      // A sidecar the mod started is one the mod may stop again, for a
+      // newer release: no other gateway offers that route.
+      NULLPII_SIDECAR_SHUTDOWN: 'on',
     },
   });
   void (async () => {
@@ -673,7 +802,7 @@ function startSidecar($, origin: string, secretToken: string): void {
     } catch (err) {
       $.ui.log(`nullpii: nullpii-gateway did not start (${errorName(err)})`, { to: 'debug' });
     }
-    if (started === 'running') started = 'exited';
+    if (started === 'running' || started === 'opening') started = 'exited';
   })();
 }
 
@@ -704,9 +833,8 @@ function notReadyLine(): string {
  * (`message`), and later prompts take the normal path again — masking
  * works once some gateway answers, and until one does, fail closed. */
 function gaveUp($, message: string): void {
-  started = undefined;
-  phase = undefined;
-  download = undefined;
+  if (midSessionStart) restartGaveUp = message;
+  endStart();
   problem = message;
   lastFailure = message;
   $.ui.log(`nullpii: the sidecar this session started did not come up: ${message}`, {
@@ -715,14 +843,32 @@ function gaveUp($, message: string): void {
   redraw($);
 }
 
+/** The start this session waited for is over, whichever way it went: no
+ * phase is left to fail calls with. */
+function endStart(): void {
+  midSessionStart = false;
+  started = undefined;
+  phase = undefined;
+  download = undefined;
+  startReplacedOne = false;
+}
+
 /** Wait for the sidecar this session started to be ready: its status says
  * which phase it is in (the model download's bytes among them), the band
  * shows each one, and the session opens once the model is ready. A
  * gateway with no `startup` field (0.5) counts as ready. Gives up after
  * `STARTUP_WAIT_MS`, or at once when the process exits or the warmup
- * fails, saying which phase it was in. */
-async function waitForSidecar($): Promise<void> {
+ * fails, saying which phase it was in. `closingAtStart`: the session start
+ * that began this wait was refused with `sidecar_closing`, so an older
+ * sidecar on its way out held the address when the pinned one was spawned. */
+async function waitForSidecar($, closingAtStart: boolean): Promise<void> {
   const deadline = (await $.clock.now()) + STARTUP_WAIT_MS;
+  // An older sidecar on its way out answered `sidecar_closing` (at the
+  // session start, or while this start waited): it held the address, so the
+  // one this session started may have exited for want of it, and is started
+  // once more when it is free.
+  let heldByClosing = closingAtStart;
+  let startedAgain = false;
   while ((await $.clock.now()) < deadline) {
     await $.clock.sleep(STARTUP_POLL_MS);
     let status: unknown;
@@ -738,7 +884,20 @@ async function waitForSidecar($): Promise<void> {
       }
       // Nothing answers yet: npx is still installing the packages. The
       // process being gone already (no package found, port taken) ends
-      // the wait at once, as before.
+      // the wait at once, as before — unless the port was taken by the
+      // older sidecar that has just let go of it: then start it again, once.
+      if (started === 'exited' && heldByClosing && !startedAgain && sidecarUrl && token) {
+        startedAgain = true;
+        started = 'running';
+        $.ui.log(
+          'nullpii: the older sidecar let go of the address: starting the pinned one again',
+          {
+            to: 'debug',
+          },
+        );
+        startSidecar($, sidecarUrl, token);
+        continue;
+      }
       if (started === 'exited') {
         gaveUp($, exitedLine());
         return;
@@ -753,10 +912,35 @@ async function waitForSidecar($): Promise<void> {
     // No field: an old gateway, already ready once it answers; `ready`:
     // the model is loaded. Either way the session opens as before.
     if (startup === undefined || startup.phase === 'ready') {
-      started = undefined;
+      // The start is over while the session opens: a prompt sent meanwhile
+      // (a policy change the person is asked about can take a while) waits
+      // for that session and its policy, and goes masked, never unprotected.
+      // A process that has exited already stays `exited`: a `sidecar_closing`
+      // answer below then starts it again once the address is free.
+      const shown = { phase, download };
+      if (started === 'running') started = 'opening';
       phase = undefined;
       download = undefined;
-      await openSession($);
+      try {
+        await openSession($);
+      } catch (err) {
+        // The sidecar that answered is the old one on its way out: it
+        // refuses a session while it closes, so keep waiting for the one
+        // this session started (unless its process has exited meanwhile).
+        if (isStatus(err, SIDECAR_CLOSING)) {
+          if (started === 'opening') started = 'running';
+          ({ phase, download } = shown);
+          problem = phaseLine();
+          redraw($);
+          heldByClosing = true;
+          continue;
+        }
+        // Any other refusal ends the start: the caller shows it, and the
+        // next call opens the session the normal way.
+        endStart();
+        throw err;
+      }
+      endStart();
       problem = undefined;
       startPass = false;
       redraw($);
@@ -787,6 +971,56 @@ async function waitForSidecar($): Promise<void> {
   // Nothing ever answered (`installing`, the phase the start began in), or
   // the model was not ready in time.
   gaveUp($, phase === 'installing' || phase === undefined ? NOT_STARTED : notReadyLine());
+}
+
+/** Whether nothing answers at the sidecar address any more. */
+async function addressFree($): Promise<boolean> {
+  try {
+    await request($, 'GET', STATUS_PATH);
+    return false;
+  } catch (err) {
+    return err instanceof Error && err.message === UNREACHABLE;
+  }
+}
+
+/**
+ * Stop a sidecar from an older release than the one this mod pins, so the
+ * session start that follows finds the address free and starts the pinned
+ * one. Only a sidecar that can be stopped (it reports `shutdown`), holds no
+ * session and is not still bringing its model up goes; the sidecar itself
+ * also refuses before any session has opened on it, for the window that
+ * started it. A window whose sidecar goes this way starts the pinned one at
+ * its next prompt (`restartIfGone`). Any other sidecar is left running and
+ * the doctor reports the older release.
+ */
+async function replaceOlderSidecar($, autostart: boolean): Promise<void> {
+  // The mod would not start the pinned one afterwards: nothing to make room for.
+  if (!autostart) return;
+  let self: ReturnType<typeof readSidecarSelf>;
+  try {
+    self = readSidecarSelf(await request($, 'GET', STATUS_PATH));
+  } catch (err) {
+    // Nothing answers (or not the sidecar): the start that follows says so.
+    $.ui.log(`nullpii: no sidecar to replace: ${shownReason(failureOf(err))}`, { to: 'debug' });
+    return;
+  }
+  const stale = olderRelease(self.gatewayVersion, GATEWAY_RELEASE);
+  if (!stale || !self.shutdown || self.sessions !== 0) return;
+  // Its model still coming up: the window that started it waits for it.
+  if (self.startupPhase !== undefined && !SETTLED_PHASES.has(self.startupPhase)) return;
+  try {
+    await request($, 'POST', SHUTDOWN_PATH);
+  } catch (err) {
+    $.ui.log(`nullpii: older sidecar not stopped: ${shownReason(failureOf(err))}`, { to: 'debug' });
+    return;
+  }
+  startReplacedOne = true;
+  const deadline = (await $.clock.now()) + SHUTDOWN_WAIT_MS;
+  while ((await $.clock.now()) < deadline) {
+    if (await addressFree($)) return;
+    await $.clock.sleep(SHUTDOWN_POLL_MS);
+  }
+  $.ui.log('nullpii: the older sidecar did not stop in time', { to: 'debug' });
 }
 
 /** Send the policy file contents `config` to the sidecar, which writes
@@ -1036,14 +1270,17 @@ interface SentCall {
 }
 
 /** The real value behind each placeholder in `found` that the sidecar
- * knows, keyed by the placeholder. */
+ * knows, keyed by the placeholder. A sidecar lost mid-session is started
+ * again and waited for first (`withRestart`, `untilRestarted`); the new one
+ * knows none of the placeholders from before, so none is asked about and
+ * the call runs as written. */
 async function knownValues(
   $,
   found: readonly { readonly placeholder: string }[],
 ): Promise<Map<string, string>> {
-  const restored = (await sidecar($, 'POST', '/restore', {
-    value: found.map((one) => one.placeholder),
-  })) as { value: unknown[] };
+  const restored = (await withRestart($, () =>
+    sidecar($, 'POST', '/restore', { value: found.map((one) => one.placeholder) }),
+  )) as { value: unknown[] };
   const known = new Map<string, string>();
   found.forEach((one, at) => {
     const value = restored.value[at];
@@ -1211,10 +1448,10 @@ const STATUS_PARTS = ' · ';
  * a paused nullpii whose sidecar is down sends nothing, as the band's own
  * line says. */
 function statusLine(): string {
-  if (problem !== undefined && !starting()) {
+  if (problem !== undefined && !startShown()) {
     return `${STATUS_BLOCKING}${STATUS_PARTS}${blockedWords()}`;
   }
-  if (starting()) {
+  if (startShown()) {
     const state = startPass ? STATUS_NOT_PROTECTED : STATUS_STARTING;
     return `${state}${STATUS_PARTS}${phaseText()}`;
   }
@@ -1257,6 +1494,14 @@ function starting(): boolean {
   return started === 'running' && problem?.startsWith(STARTING_PREFIX) === true;
 }
 
+/** Whether a start is shown as under way: `starting`, and also while its
+ * session opens on the ready sidecar, or while it waits for another
+ * sidecar to let go of the address (its own child exited). Nothing is
+ * blocked for a fault then, so the band and the line say starting. */
+function startShown(): boolean {
+  return started !== undefined && problem?.startsWith(STARTING_PREFIX) === true;
+}
+
 /** Whether the band above the prompt has anything to say: it is drawn only
  * when the person has something to know or do (nullpii starting, a prompt
  * sent unprotected while it starts, masking paused, a policy change being
@@ -1277,7 +1522,7 @@ function bypassing(): boolean {
  * something is wrong. While the person sends unprotected through a
  * start-up, it says so and keeps the phase. */
 function bandText(): string {
-  if (starting() && problem !== undefined) {
+  if (startShown() && problem !== undefined) {
     return `${startPass ? 'not protected yet' : 'starting'} · ${bandPhase()}`;
   }
   if (problem !== undefined) return `blocking · ${blockedWords()} · run /pii doctor`;
@@ -1299,7 +1544,7 @@ function bandPhase(): string {
  * starts (progress, not a fault), green when it is on. */
 function bandColor(): 'red' | 'yellow' | 'green' {
   if (paused) return 'red';
-  if (starting()) return 'yellow';
+  if (startShown()) return 'yellow';
   return problem !== undefined ? 'red' : 'green';
 }
 
@@ -1308,7 +1553,7 @@ function bandColor(): 'red' | 'yellow' | 'green' {
  * when broken. */
 function padlockLook(): [boolean, PadlockTone] {
   if (paused) return [true, 'red'];
-  if (starting()) return [true, 'amber'];
+  if (startShown()) return [true, 'amber'];
   return problem !== undefined ? [false, 'grey'] : [false, 'teal'];
 }
 
@@ -1339,14 +1584,21 @@ async function holdUntilReady($): Promise<boolean> {
  * dialog dismissed, or one no one can answer (`claude -p`), waits. */
 async function sendUnprotectedWhileStarting($): Promise<boolean> {
   if (!starting()) return false;
+  // A start that began mid-session: the session was masked until then, so
+  // every prompt waits for it, whatever `while_starting` says.
+  if (midSessionStart) return false;
   if (startPass) return true;
   if (whileStarting === 'block') return false;
+  // The mod stopped a sidecar that was masking to make this start: `pass`
+  // would send unprotected what that one would have masked, so it waits.
+  if (whileStarting === 'pass' && startReplacedOne) return false;
   if (whileStarting === 'pass') {
     startPass = true;
     redraw($);
     return true;
   }
   const generation = sessionGeneration;
+  const askedIn = startCount;
   let answer: string;
   try {
     answer = await askUser($, STARTING_QUESTION, [
@@ -1360,9 +1612,10 @@ async function sendUnprotectedWhileStarting($): Promise<boolean> {
     });
     return false;
   }
-  // The answer is for the start it was asked in: after the session ended
-  // (or nullpii came up) it arms nothing and sends nothing unprotected.
-  if (generation !== sessionGeneration || !starting()) return false;
+  // The answer is for the start it was asked in: after the session ended,
+  // nullpii came up, or another start began (a mid-session restart always
+  // waits), it arms nothing and sends nothing unprotected.
+  if (generation !== sessionGeneration || askedIn !== startCount || !starting()) return false;
   if (answer === SEND_UNPROTECTED_UNTIL_READY) {
     startPass = true;
     redraw($);
@@ -1647,7 +1900,7 @@ async function statusAndHelp($): Promise<string> {
 
 /** The mod's user-visible state, independent of whether the sidecar answers. */
 function modState(): ModState {
-  if (starting() || phase !== undefined) return 'starting';
+  if (startShown() || phase !== undefined) return 'starting';
   if (problem !== undefined) return 'blocking';
   if (paused) return 'paused';
   return 'on';
@@ -1797,28 +2050,26 @@ export function register(on, options) {
     paused = false;
     allowAll = false;
     startPass = false;
+    startReplacedOne = false;
     sessionGeneration += 1;
+    restartGaveUp = undefined;
     const asked = optionString(options, 'while_starting');
     whileStarting = asked === 'block' || asked === 'pass' ? asked : 'ask';
     // The band was drawn under the old state: draw it under this one.
     redraw($);
+    autostartOn = optionFlag(options, 'autostart', true);
+    await replaceOlderSidecar($, autostartOn);
     try {
       await openSession($);
     } catch (err) {
-      // No sidecar answers: start one for this session when allowed. The
-      // band says so, and prompts wait (they are refused) until it answers.
-      const unreachable = err instanceof Error && err.message === UNREACHABLE;
-      if (unreachable && optionFlag(options, 'autostart', true) && sidecarUrl && token) {
-        started = 'running';
-        startSidecar($, sidecarUrl, token);
-        // The band shows each phase of the start as it goes through it:
-        // the packages installing, the model downloading (its bytes, once
-        // the sidecar answers its status), the model loading.
-        phase = 'installing';
-        download = undefined;
-        problem = phaseLine();
-        redraw($);
-        void waitForSidecar($).catch((err) => blocked($, 'sidecar start', failureOf(err)));
+      // No sidecar answers — or the one there answered `sidecar_closing`, its
+      // last word before it goes — so start one for this session when
+      // allowed. The band says so, and prompts wait (they are refused) until
+      // it answers.
+      const closing = isStatus(err, SIDECAR_CLOSING);
+      const gone = (err instanceof Error && err.message === UNREACHABLE) || closing;
+      if (gone && autostartOn && sidecarUrl && token) {
+        beginStart($, sidecarUrl, token, closing);
         return next(e);
       }
       const reason = blocked($, 'session.start', failureOf(err));
@@ -1851,6 +2102,8 @@ export function register(on, options) {
     if (e.isMeta !== true && (await sendUnprotectedWhileStarting($))) return next(e);
     // Not sent unprotected: it waits for the sidecar, then goes masked.
     if (e.isMeta !== true && starting()) await holdUntilReady($);
+    // A sidecar lost mid-session is started again inside: the prompt waits
+    // for it (`untilRestarted`), and is refused if it does not come up.
     const out = (await masked($, { text: e.text, context: e.context ?? [] })) as {
       text: string;
       context: string[];
@@ -1908,6 +2161,7 @@ export function register(on, options) {
     if (isOwnQuestion(e)) return next(e);
     // A sidecar this session started is still coming up: nothing restores
     // and nothing is sent, so the call is refused up front.
+    await untilRestarted($);
     if (phase !== undefined) return { deny: CALL_NOT_RUN };
     // Known to be blocking: reach the sidecar again before the tool runs,
     // so the call is refused up front instead of run with its result
@@ -1924,7 +2178,9 @@ export function register(on, options) {
       // The sidecar decides by the tool's name: nothing for a tool outside
       // the policy's `restoreTools`, and nothing for a shell tool, whose
       // placeholders it lists so the call is refused (SECURITY.md).
-      const r = (await sidecar($, 'POST', '/restore', { value: args, tool: e.tool })) as Restored;
+      const r = (await withRestart($, () =>
+        sidecar($, 'POST', '/restore', { value: args, tool: e.tool }),
+      )) as Restored;
       const kept = r.shellKeptMasked ?? [];
       if (kept.length > 0) return { deny: shellDenied(kept) };
       // A tool the policy does not list, any tool, Claude Code's own

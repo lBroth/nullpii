@@ -18,6 +18,8 @@ import {
   expectedProof,
   hmacSha256Hex,
   maskedKeys,
+  olderRelease,
+  readSidecarSelf,
   sidecarOrigin,
   unmaskKeys,
 } from '../hooks/policy.ts';
@@ -107,6 +109,22 @@ function fakeSidecar(
     failSanitize?: boolean;
     failDelete?: boolean;
     previewAnswer?: unknown;
+    /** Answer a shutdown request as a sidecar with a session in use does. */
+    refuseShutdown?: boolean;
+    /** Answer a shutdown request but keep answering after it, refusing
+     * every new session with 503 `sidecar_closing`, as the gateway does
+     * until its process ends. */
+    stayUp?: boolean;
+    /** Refuse a `PUT` sessions with this answer: `CLOSING` as a sidecar that
+     * accepted a shutdown does while the process is on its way out, `FULL`
+     * as one with every session in use. */
+    refuseSession?: { status: number; error: string };
+    /** Run before a `PUT` sessions is answered: what happens meanwhile, such
+     * as the child the mod started exiting while the session opens. */
+    beforePut?: () => Promise<void>;
+    /** Run once a `/restore` is answered: what happens next, such as the
+     * sidecar going away before the mod's next call. */
+    afterRestore?: () => void;
     /** Answer a sanitize of an object with its first entry left out: a
      * faulty sidecar, whose answer does not have the value's shape. */
     dropFirstEntry?: boolean;
@@ -204,6 +222,10 @@ function fakeSidecar(
       secretsSent.push(presented);
       const key = decodeURIComponent(path.slice(SESSIONS_PREFIX.length).split('/')[0] ?? '');
       const secret = sessions.get(key);
+      if (method === 'PUT' && state.beforePut !== undefined) await state.beforePut();
+      if (method === 'PUT' && state.refuseSession !== undefined) {
+        return respond(state.refuseSession.status, { error: state.refuseSession.error });
+      }
       if (method === 'PUT' && secret === undefined) {
         const created = `secret-${minted++}`;
         sessions.set(key, created);
@@ -232,6 +254,15 @@ function fakeSidecar(
       categories: policy.categories,
       restoreTools,
     });
+    if (path === '/v1/sidecar/shutdown' && method === 'POST') {
+      if (state.refuseShutdown) return respond(409, { error: 'sessions_active', sessions: 1 });
+      // The process is gone once it has answered: nothing is at the address.
+      // One that stays up a while refuses sessions until it goes, as the
+      // gateway does once it has said 202.
+      if (state.stayUp) state.refuseSession = { status: 503, error: 'sidecar_closing' };
+      else state.down = true;
+      return respond(202, { status: 'closing' });
+    }
     if (path === '/v1/sidecar/status') {
       return respond(200, {
         status: 'ok',
@@ -258,7 +289,12 @@ function fakeSidecar(
       return respond(200, { status: 'ok', policy: policyView() });
     }
     const body = JSON.parse(e.init?.body ?? '{}') as { value: unknown; tool?: string };
-    if (path.endsWith('/restore')) restoreBodies.push(e.init?.body ?? '');
+    if (path.endsWith('/restore')) {
+      restoreBodies.push(e.init?.body ?? '');
+      const after = state.afterRestore;
+      state.afterRestore = undefined;
+      after?.();
+    }
     if (path.endsWith('/sanitize')) {
       const preview = path.startsWith(`${SESSIONS_PREFIX}try-`);
       sanitizeBodies.push(e.init?.body ?? '');
@@ -332,6 +368,12 @@ function fakeSidecar(
   };
   return {
     handler,
+    /** As a new sidecar process: no session, and a vault that knows none
+     * of the placeholders minted before. */
+    forget: () => {
+      vault.clear();
+      sessions.clear();
+    },
     /** A policy change this mod did not make (a command with the token). */
     replacePolicy,
     stored: opts.stored ?? {},
@@ -377,6 +419,7 @@ function stubSession(
     return { value: undefined };
   });
   on('http.fetch', sidecar.handler);
+  on('session.end', ($, e) => ({ sessionId: e.sessionId }));
   return { registered };
 }
 
@@ -419,7 +462,9 @@ test('a prompt reaches Claude with placeholders, and the sidecar session is open
   expect(seen.length).toBe(1);
   expect(seen[0]).not.toContain('John');
   expect(seen[0]).not.toContain('john@acme.io');
-  expect(sidecar.calls[0]).toBe('PUT /v1/sidecar/sessions/session-1');
+  // The sidecar's release is read before the session opens on it.
+  expect(sidecar.calls[0]).toBe('GET /v1/sidecar/status');
+  expect(sidecar.calls[1]).toBe('PUT /v1/sidecar/sessions/session-1');
   const status = await $.command.run({ command: 'pii', args: '' });
   expect(status.text).toContain('Status: on');
 });
@@ -437,6 +482,446 @@ test('a tool result is masked and returned as a fresh result, without core ref',
   expect(JSON.stringify(out)).not.toContain('John');
   expect(out.ref).toBeUndefined();
   expect(out.text).toBeUndefined();
+});
+
+/** A session start on a sidecar that reports `status`, with a stand-in for
+ * the pinned sidecar the mod starts if it makes room, and what it started. */
+function startAgainst(
+  $,
+  on,
+  status: Record<string, unknown>,
+  state: { refuseShutdown?: boolean; stayUp?: boolean } = {},
+) {
+  const { sidecar, clock } = beforeStart($, on, { down: false });
+  sidecar.state.status = status;
+  Object.assign(sidecar.state, state);
+  const spawned: string[][] = [];
+  on('process.spawn', async function* ($, e) {
+    spawned.push(e.argv);
+    await new Promise<never>(() => undefined);
+  });
+  return { sidecar, spawned, clock };
+}
+
+const IDLE_OLDER = { gatewayVersion: '0.5.2', sessions: 0 };
+const CAN_SHUTDOWN = { shutdown: true };
+/** How a sidecar refuses a session: on its way out, or with none left. */
+const CLOSING = { status: 503, error: 'sidecar_closing' };
+const FULL = { status: 429, error: 'too_many_sessions' };
+
+test('an idle sidecar of an older release is stopped, and the pinned release is started', async ($, on) => {
+  const { sidecar, spawned } = startAgainst($, on, { ...IDLE_OLDER, features: CAN_SHUTDOWN });
+  await start($);
+  expect(sidecar.calls).toContain('POST /v1/sidecar/shutdown');
+  expect(spawned.length).toBe(1);
+  expect(spawned[0]).toContain('@lbroth/nullpii-gateway@0.5.4');
+});
+
+test('an older sidecar with a session open is left running', async ($, on) => {
+  const { sidecar, spawned } = startAgainst($, on, {
+    ...IDLE_OLDER,
+    sessions: 1,
+    features: CAN_SHUTDOWN,
+  });
+  await start($);
+  expect(sidecar.calls).not.toContain('POST /v1/sidecar/shutdown');
+  expect(spawned.length).toBe(0);
+});
+
+test('an older sidecar that refuses to stop is kept, and the session opens on it', async ($, on) => {
+  const { sidecar, spawned } = startAgainst(
+    $,
+    on,
+    { ...IDLE_OLDER, features: CAN_SHUTDOWN },
+    { refuseShutdown: true },
+  );
+  await start($);
+  expect(sidecar.calls).toContain('POST /v1/sidecar/shutdown');
+  expect(sidecar.calls).toContain('PUT /v1/sidecar/sessions/session-1');
+  expect(spawned.length).toBe(0);
+});
+
+test('an older sidecar with no shutdown route is left to the doctor', async ($, on) => {
+  const { sidecar, spawned } = startAgainst($, on, IDLE_OLDER);
+  await start($);
+  expect(sidecar.calls).not.toContain('POST /v1/sidecar/shutdown');
+  expect(spawned.length).toBe(0);
+});
+
+test('a sidecar of the pinned release is never stopped', async ($, on) => {
+  const { sidecar, spawned } = startAgainst($, on, {
+    gatewayVersion: '0.5.4',
+    sessions: 0,
+    features: CAN_SHUTDOWN,
+  });
+  await start($);
+  expect(sidecar.calls).not.toContain('POST /v1/sidecar/shutdown');
+  expect(spawned.length).toBe(0);
+});
+
+test(
+  'with autostart off the mod would not start the pinned release, so it stops nothing',
+  { options: { autostart: false } },
+  async ($, on) => {
+    const { sidecar, spawned } = startAgainst($, on, { ...IDLE_OLDER, features: CAN_SHUTDOWN });
+    await start($);
+    expect(sidecar.calls).not.toContain('POST /v1/sidecar/shutdown');
+    expect(spawned.length).toBe(0);
+  },
+);
+
+/** The mod's start-up poll, as `STARTUP_POLL_MS` in the mod. */
+const POLL_MS = 2_000;
+
+/** Advance the clock a poll at a time until `check` holds. What one poll
+ * wakes goes through several host calls (the challenge, then the request),
+ * which an advance does not wait for on a loaded machine, and a poll whose
+ * sleep was set after an advance waits for the next one: so each poll is
+ * given real time to finish before the next. Bounded: a check that never
+ * holds fails the expect that follows. */
+async function pollUntil(
+  clock: { advance: (ms: number) => Promise<unknown> },
+  check: () => boolean | Promise<boolean>,
+): Promise<void> {
+  for (let poll = 0; poll < 20 && !(await check()); poll += 1) {
+    await clock.advance(POLL_MS);
+    for (let turn = 0; turn < 20 && !(await check()); turn += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+}
+
+/** What `/pii` says. */
+async function piiStatus($): Promise<string> {
+  return (await $.command.run({ command: 'pii', args: 'status' })).text;
+}
+
+/** Whether `/pii` says masking is on: the start is over and the session open. */
+async function statusOn($): Promise<boolean> {
+  return (await $.command.run({ command: 'pii', args: 'status' })).text.includes('Status: on');
+}
+
+test('an older sidecar that says it is closing but stays up gets no session: the pinned one is started and waited for', async ($, on) => {
+  const { sidecar, spawned, clock } = startAgainst(
+    $,
+    on,
+    { ...IDLE_OLDER, features: CAN_SHUTDOWN },
+    { stayUp: true },
+  );
+  const started = start($);
+  for (let i = 0; i < 70; i += 1) await clock.advance(250);
+  await started;
+  expect(sidecar.logs).toContain('nullpii: the older sidecar did not stop in time');
+  // It refuses the session (503), as the gateway does once it said 202: the
+  // mod starts the pinned release, and opens no session on the old one.
+  expect(sidecar.statuses).toContain(503);
+  expect(sidecar.statuses).not.toContain(201);
+  expect(spawned.length).toBe(1);
+  const starting = await $.command.run({ command: 'pii', args: '' });
+  expect(starting.text).toContain('starting nullpii-gateway');
+  // The old one ends; the pinned one takes the address and is ready.
+  sidecar.state.refuseSession = undefined;
+  sidecar.state.status = { gatewayVersion: '0.5.4', sessions: 0, features: CAN_SHUTDOWN };
+  sidecar.state.startup = { phase: 'ready' };
+  await pollUntil(clock, () => statusOn($));
+  expect(sidecar.statuses).toContain(201);
+  const on_ = await $.command.run({ command: 'pii', args: '' });
+  expect(on_.text).toContain('Status: on');
+});
+
+test('while the old sidecar still refuses sessions as it closes, a ready status keeps the start waiting', async ($, on) => {
+  const { sidecar, clock } = beforeStart($, on, { down: false });
+  sidecar.state.refuseSession = CLOSING;
+  on('process.spawn', async function* () {
+    await new Promise<never>(() => undefined);
+  });
+  await start($);
+  // The old one answers its status (ready) but still refuses the session.
+  sidecar.state.startup = { phase: 'ready' };
+  await pollUntil(clock, () => sidecar.statuses.filter((s) => s === 503).length >= 3);
+  expect(sidecar.statuses.filter((s) => s === 503).length).toBeGreaterThan(1);
+  const waiting = await $.command.run({ command: 'pii', args: '' });
+  expect(waiting.text).toContain('starting nullpii-gateway');
+  // The one this session started has the address now: the session opens.
+  sidecar.state.refuseSession = undefined;
+  await pollUntil(clock, () => statusOn($));
+  expect(sidecar.statuses).toContain(201);
+  const ready = await $.command.run({ command: 'pii', args: '' });
+  expect(ready.text).toContain('Status: on');
+});
+
+test('the pinned sidecar that exited while the old one held the address is started again once it is free', async ($, on) => {
+  const opts = { down: false };
+  const { sidecar, clock } = beforeStart($, on, opts);
+  sidecar.state.refuseSession = CLOSING;
+  const spawned: string[][] = [];
+  on('process.spawn', async function* ($, e) {
+    spawned.push(e.argv);
+    // The first could not bind the port the old one held, and exits.
+    if (spawned.length === 1) return { value: { code: 1, signal: null } };
+    await new Promise<never>(() => undefined);
+  });
+  await start($);
+  // A poll finds the old one answering ready, and it refuses the session again.
+  await pollUntil(clock, () => sidecar.statuses.filter((s) => s === 503).length >= 2);
+  // The old one goes: nothing answers, and the first child has exited.
+  opts.down = true;
+  await pollUntil(clock, () => spawned.length === 2);
+  expect(spawned.length).toBe(2);
+  // The second takes the address and is ready.
+  opts.down = false;
+  sidecar.state.refuseSession = undefined;
+  sidecar.state.startup = { phase: 'ready' };
+  await pollUntil(clock, () => statusOn($));
+  expect(sidecar.statuses).toContain(201);
+  const status = await $.command.run({ command: 'pii', args: '' });
+  expect(status.text).toContain('Status: on');
+  expect(status.text).not.toContain('exited while');
+});
+
+test('the pinned sidecar that exited while the old one held the address is started again, when the old one refused only the session start', async ($, on) => {
+  const opts = { down: false };
+  const { sidecar, clock } = beforeStart($, on, opts);
+  // The old one refuses the session at session.start (it accepted another
+  // window's shutdown), and is gone before the first status poll.
+  sidecar.state.refuseSession = CLOSING;
+  const spawned: string[][] = [];
+  on('process.spawn', async function* ($, e) {
+    spawned.push(e.argv);
+    // The first could not bind the port the old one held, and exits.
+    if (spawned.length === 1) return { value: { code: 1, signal: null } };
+    await new Promise<never>(() => undefined);
+  });
+  await start($);
+  expect(sidecar.statuses).toContain(503);
+  expect(spawned.length).toBe(1);
+  opts.down = true;
+  await pollUntil(clock, () => spawned.length === 2);
+  expect(spawned.length).toBe(2);
+  // The second takes the address and is ready.
+  opts.down = false;
+  sidecar.state.refuseSession = undefined;
+  sidecar.state.startup = { phase: 'ready' };
+  await pollUntil(clock, () => statusOn($));
+  expect(sidecar.statuses).toContain(201);
+  const status = await $.command.run({ command: 'pii', args: '' });
+  expect(status.text).toContain('Status: on');
+  expect(status.text).not.toContain('exited while');
+});
+
+test('a child that exits while its session opens on an old sidecar that is closing is started again once', async ($, on) => {
+  // Nothing answers at the session start: no old sidecar is known to hold
+  // the address yet.
+  const opts = { down: true };
+  const { sidecar, clock } = beforeStart($, on, opts);
+  let exitFirst: () => void = () => undefined;
+  const firstExits = new Promise<void>((resolve) => {
+    exitFirst = resolve;
+  });
+  const spawned: string[][] = [];
+  on('process.spawn', async function* ($, e) {
+    spawned.push(e.argv);
+    // The first could not keep the port the old one held, and exits while
+    // the session opens; the second runs on.
+    if (spawned.length === 1) {
+      await firstExits;
+      return { value: { code: 1, signal: null } };
+    }
+    await new Promise<never>(() => undefined);
+  });
+  await start($);
+  expect(spawned.length).toBe(1);
+  // An old sidecar on its way out answers ready, then refuses the session
+  // (503), and the first child exits in between.
+  opts.down = false;
+  sidecar.state.startup = { phase: 'ready' };
+  sidecar.state.refuseSession = CLOSING;
+  sidecar.state.beforePut = async () => {
+    exitFirst();
+    for (let turn = 0; turn < 5; turn += 1) await new Promise((r) => setTimeout(r, 10));
+  };
+  await pollUntil(clock, () => sidecar.statuses.includes(503));
+  sidecar.state.beforePut = undefined;
+  // The old one goes: the pinned one is started again, once.
+  opts.down = true;
+  await pollUntil(clock, () => spawned.length === 2);
+  expect(spawned.length).toBe(2);
+  opts.down = false;
+  sidecar.state.refuseSession = undefined;
+  await pollUntil(clock, () => statusOn($));
+  expect(sidecar.statuses).toContain(201);
+  expect(spawned.length).toBe(2);
+});
+
+test('the pinned sidecar is started again only once: a second exit ends the start', async ($, on) => {
+  const opts = { down: false };
+  const { sidecar, clock } = beforeStart($, on, opts);
+  sidecar.state.refuseSession = CLOSING;
+  const spawned: string[][] = [];
+  // biome-ignore lint/correctness/useYield: a stand-in child that exits at once.
+  on('process.spawn', async function* ($, e) {
+    spawned.push(e.argv);
+    // Every child exits at once: the address stays taken.
+    return { value: { code: 1, signal: null } };
+  });
+  await start($);
+  opts.down = true;
+  await pollUntil(clock, () => spawned.length === 2);
+  // More polls: no third start, and the start ends saying the child exited.
+  await pollUntil(clock, async () => (await piiStatus($)).includes('exited while'));
+  for (let poll = 0; poll < 3; poll += 1) await clock.advance(POLL_MS);
+  expect(spawned.length).toBe(2);
+  expect(await piiStatus($)).toContain('exited while');
+});
+
+test(
+  'with while_starting = pass, a start that a closing sidecar refused the session in goes on as a start',
+  { options: { while_starting: 'pass' } },
+  async ($, on) => {
+    const sidecar = fakeSidecar({ down: false });
+    stubSession(on, sidecar);
+    const clock = mock.clock(on, { now: 1_700_000_000_000 });
+    sidecar.state.refuseSession = CLOSING;
+    on('process.spawn', async function* () {
+      await new Promise<never>(() => undefined);
+    });
+    const sent: string[] = [];
+    on('prompt.submit', ($, e) => {
+      sent.push(e.text);
+      return { text: e.text };
+    });
+    await start($);
+    // The old one answers ready but refuses the session: still starting.
+    sidecar.state.startup = { phase: 'ready' };
+    await pollUntil(clock, () => sidecar.statuses.filter((s) => s === 503).length >= 2);
+    for (let turn = 0; turn < 5; turn += 1) await new Promise((r) => setTimeout(r, 10));
+    // Under `pass` a prompt of a start goes out as typed, and the band says so.
+    const out = await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+    expect(out.drop).toBeUndefined();
+    expect(sent.at(-1)).toBe('Mail John');
+  },
+);
+
+test('an older sidecar whose model is still coming up is not stopped: the window that started it waits for it', async ($, on) => {
+  const { sidecar, spawned } = startAgainst($, on, {
+    ...IDLE_OLDER,
+    features: CAN_SHUTDOWN,
+    startup: { phase: 'downloading', file: 'model.onnx', received: 1 },
+  });
+  await start($);
+  expect(sidecar.calls).not.toContain('POST /v1/sidecar/shutdown');
+  expect(spawned.length).toBe(0);
+});
+
+test(
+  'with while_starting = pass, the start that replaces an older sidecar still waits: nothing goes out unmasked',
+  { options: { while_starting: 'pass' } },
+  async ($, on) => {
+    const sidecar = fakeSidecar({ down: false });
+    stubSession(on, sidecar);
+    const clock = mock.clock(on, { now: 1_700_000_000_000 });
+    sidecar.state.status = { ...IDLE_OLDER, features: CAN_SHUTDOWN };
+    const spawned: string[][] = [];
+    on('process.spawn', async function* ($, e) {
+      spawned.push(e.argv);
+      await new Promise<never>(() => undefined);
+    });
+    const sent: string[] = [];
+    on('prompt.submit', ($, e) => {
+      sent.push(e.text);
+      return { text: e.text };
+    });
+    await start($);
+    expect(sidecar.calls).toContain('POST /v1/sidecar/shutdown');
+    expect(spawned.length).toBe(1);
+    const pending = $.prompt.submit({
+      text: 'Mail John at john@acme.io',
+      wait: false,
+      origin: COMPOSER,
+    });
+    await clock.advance(2_000);
+    // Held, not sent: the older sidecar would have masked it.
+    expect(sent).toEqual([]);
+    sidecar.state.down = false;
+    sidecar.state.status = { gatewayVersion: '0.5.4', sessions: 0, features: CAN_SHUTDOWN };
+    sidecar.state.startup = { phase: 'ready' };
+    await clock.advance(5_000);
+    const out = await pending;
+    expect(out.drop).toBeUndefined();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).not.toContain('John');
+    expect(sent[0]).not.toContain('john@acme.io');
+  },
+);
+
+test('a sidecar that refuses a session because it is closing is replaced like one that does not answer', async ($, on) => {
+  const { sidecar, clock } = beforeStart($, on, { down: false });
+  // The sidecar at the address accepted another window's shutdown: it
+  // still answers, but no session may open on it any more.
+  sidecar.state.refuseSession = CLOSING;
+  const spawned: string[][] = [];
+  on('process.spawn', async function* ($, e) {
+    spawned.push(e.argv);
+    await new Promise<never>(() => undefined);
+  });
+  await start($);
+  expect(sidecar.statuses).toContain(503);
+  expect(spawned.length).toBe(1);
+  // The one the mod started has taken the address, and the session opens.
+  sidecar.state.refuseSession = undefined;
+  sidecar.state.startup = { phase: 'ready' };
+  await pollUntil(clock, () => statusOn($));
+  expect(sidecar.statuses).toContain(201);
+});
+
+test('a session refused for another reason once the sidecar is ready ends the start, with that reason', async ($, on) => {
+  const { sidecar, clock } = beforeStart($, on, { down: false });
+  sidecar.state.refuseSession = CLOSING;
+  on('process.spawn', async function* () {
+    await new Promise<never>(() => undefined);
+  });
+  await start($);
+  // The one the mod started is ready, but every session is in use.
+  sidecar.state.refuseSession = FULL;
+  sidecar.state.startup = { phase: 'ready' };
+  await clock.advance(2_000);
+  expect(sidecar.statuses).toContain(FULL.status);
+  // The start is over: the band gives the refusal, not a start-up phase.
+  const status = await $.command.run({ command: 'pii', args: '' });
+  expect(status.text).not.toContain('starting nullpii-gateway');
+  expect(status.text).toContain(String(FULL.status));
+  // A session frees up: the next prompt opens one and is masked, as after
+  // any refusal. A start left unfinished would refuse it with its phase line
+  // before asking the sidecar anything.
+  sidecar.state.refuseSession = undefined;
+  await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  expect(sidecar.calls.some((c) => c.endsWith('/sanitize'))).toBe(true);
+});
+
+test('releases compare by number, and anything else is not older', () => {
+  expect(olderRelease('0.5.3', '0.5.4')).toBe(true);
+  expect(olderRelease('0.5.10', '0.5.4')).toBe(false);
+  expect(olderRelease('0.4.9', '0.5.0')).toBe(true);
+  expect(olderRelease('0.5.4', '0.5.4')).toBe(false);
+  expect(olderRelease('1.0.0', '0.9.9')).toBe(false);
+  expect(olderRelease('0.5.3-rc.1', '0.5.4')).toBe(true);
+  expect(olderRelease(undefined, '0.5.4')).toBe(false);
+  expect(olderRelease('latest', '0.5.4')).toBe(false);
+});
+
+test('a status that reports no features is an older sidecar', () => {
+  expect(readSidecarSelf({ status: 'ok', sessions: 0 })).toEqual({
+    shutdown: false,
+    gatewayVersion: undefined,
+    sessions: 0,
+    startupPhase: undefined,
+  });
+  expect(readSidecarSelf({ startup: { phase: 'loading' } }).startupPhase).toBe('loading');
+  expect(readSidecarSelf({ startup: { phase: 2 } }).startupPhase).toBeUndefined();
+  expect(readSidecarSelf('nope').shutdown).toBe(false);
+  expect(readSidecarSelf({ features: { shutdown: 1 } })).toMatchObject({
+    shutdown: false,
+  });
 });
 
 test('a result whose attached context holds personal data is withheld, since context cannot be masked', async ($, on) => {
@@ -1007,9 +1492,39 @@ test('every call on the session carries the secret the sidecar handed out, and o
   expect(sidecar.secretsSent.slice(1).every((s) => s === 'secret-0')).toBe(true);
 });
 
+const END = {
+  reason: 'prompt_input_exit',
+  sessionId: 'session-1',
+  resume: { id: 'session-1' },
+} as const;
+
+test('a reloaded module opens a new key, frees nothing, and closes only the new key at the end', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  mock.clock(on, { now: 1_700_000_000_000 });
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  await start($);
+  await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  // A reload of the module runs session.start again, with the secret gone.
+  await start($);
+  await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  const moved = [...sidecar.sessions.keys()].filter((k) => k !== 'session-1');
+  expect(moved).toHaveLength(1);
+  expect(moved[0]).toMatch(/^session-1\.[0-9a-z]+$/);
+  // The old session is still open, and nothing tried to close it: it ends
+  // by its idle TTL, which no longer keeps the sidecar from being replaced.
+  expect(sidecar.sessions.get('session-1')).toBe('secret-0');
+  expect(sidecar.calls).not.toContain('DELETE /v1/sidecar/sessions/session-1');
+  await $.session.end(END);
+  expect(sidecar.calls.filter((c) => c.startsWith('DELETE'))).toEqual([
+    `DELETE /v1/sidecar/sessions/${moved[0]}`,
+  ]);
+});
+
 test('a live session it cannot prove it owns makes the mod open a new one under a new key', async ($, on) => {
-  // As after a reload of the module: the sidecar still holds the session
-  // under the session id, and its secret went with the old module.
+  // As another Claude Code process on the same session id (a resume in
+  // another terminal, or of a window that was killed): the sidecar holds
+  // the session under the id, and its secret is that other process's.
   const sidecar = fakeSidecar({ liveKeys: ['session-1'] });
   stubSession(on, sidecar);
   mock.clock(on, { now: 1_700_000_000_000 });
@@ -3076,6 +3591,8 @@ test('with no sidecar answering, the mod starts nullpii-gateway for the session'
     NULLPII_SIDECAR_TOKEN: TOKEN,
     NULLPII_HOST: '127.0.0.1',
     NULLPII_PORT: '8787',
+    // The route that lets a newer mod stop it again is asked for here only.
+    NULLPII_SIDECAR_SHUTDOWN: 'on',
   });
   const report = await $.command.run({ command: 'pii', args: '' });
   expect(report.text).toContain('starting nullpii-gateway');
@@ -3226,6 +3743,67 @@ test(
     expect(out.drop).toBeUndefined();
     expect(asked).toEqual([]);
     expect(sent).toEqual(['Mail John']);
+  },
+);
+
+test(
+  'with while_starting = pass, a prompt sent while a ready sidecar settles a policy change goes masked',
+  { options: { while_starting: 'pass' } },
+  async ($, on) => {
+    const accepted = {
+      version: 'v-earlier',
+      file: POLICY_FILE,
+      loaded: true,
+      config: { categories: { private_person: 'mask' } },
+      categories: { private_person: 'mask' },
+      restoreTools: DEFAULT_RESTORE_TOOLS,
+    };
+    const opts = { down: true, stored: { acceptedPolicy: accepted } };
+    const sidecar = fakeSidecar(opts);
+    stubSession(on, sidecar);
+    const clock = mock.clock(on);
+    on('process.spawn', async function* () {
+      await new Promise<never>(() => undefined);
+    });
+    const sent: string[] = [];
+    on('prompt.submit', ($, e) => {
+      sent.push(e.text);
+      return { text: e.text };
+    });
+    // The policy-change dialog stays open until the test answers it.
+    const questions: string[] = [];
+    let answer: (label: string) => void = () => undefined;
+    const answered = new Promise<string>((resolve) => {
+      answer = resolve;
+    });
+    on('tool.call', { tool: 'AskUserQuestion' }, async ($, e) => {
+      const question = e.questions[0]?.question ?? '';
+      questions.push(question);
+      if (!question.startsWith('The nullpii masking policy was changed')) {
+        return { deny: 'dismissed' };
+      }
+      return { result: { questions: e.questions, answers: { [question]: await answered } } };
+    });
+    await start($);
+    opts.down = false;
+    sidecar.state.startup = { phase: 'ready' };
+    await clock.advance(2_000);
+    // The sidecar is ready and the policy change is being put to the person.
+    expect(questions).toHaveLength(1);
+    const pending = $.prompt.submit({
+      text: 'Mail John at john@acme.io',
+      wait: false,
+      origin: COMPOSER,
+    });
+    await clock.advance(1_000);
+    expect(sent).toEqual([]);
+    answer('Keep the change');
+    const out = await pending;
+    expect(out.drop).toBeUndefined();
+    // Only the policy question was asked: no start-up question on top.
+    expect(questions).toHaveLength(1);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).not.toContain('john@acme.io');
   },
 );
 
@@ -4013,4 +4591,592 @@ test('the open padlock is the closed one with the shackle cut a pixel short on o
   // One cell only, in the upper row, under the arch's right end.
   expect(differing).toEqual([2]);
   expect(PADLOCK_COLUMNS).toBe(3);
+});
+
+/** A session whose sidecar answered, then stops answering mid-session
+ * (stopped, crashed, or replaced by another window), with a stand-in for
+ * the pinned sidecar the mod starts and what it started. `exits`: each
+ * child the mod starts exits at once (its port taken, or npx failing). */
+async function lostMidSession($, on, exits = false) {
+  const opts = { down: false };
+  const sidecar = fakeSidecar(opts);
+  stubSession(on, sidecar);
+  const clock = mock.clock(on, { now: 1_700_000_000_000 });
+  const spawned: string[][] = [];
+  on('process.spawn', async function* ($, e) {
+    spawned.push(e.argv);
+    if (exits) return { value: { code: 1, signal: null } };
+    await new Promise<never>(() => undefined);
+  });
+  const sent: string[] = [];
+  on('prompt.submit', ($, e) => {
+    sent.push(e.text);
+    return { text: e.text };
+  });
+  // Every line the mod pinned under the prompt.
+  const lines: string[] = [];
+  on('ui.status', ($, e) => {
+    lines.push(String(e.text ?? ''));
+    return { value: undefined };
+  });
+  // The tool calls that ran, each answering a result with a name in it.
+  const ran: unknown[] = [];
+  on('tool.call', ($, e) => {
+    if (e.tool !== 'AskUserQuestion') ran.push(e);
+    return { result: { stdout: 'owner: John', stderr: '' } };
+  });
+  await start($);
+  expect(await statusOn($)).toBe(true);
+  expect(spawned).toHaveLength(0);
+  // The sidecar goes away; its sessions and vault go with it.
+  opts.down = true;
+  sidecar.forget();
+  return { sidecar, opts, clock, spawned, sent, ran, lines };
+}
+
+/** The pinned sidecar the mod started mid-session takes the address and is
+ * ready. */
+function comesUp(sidecar: ReturnType<typeof fakeSidecar>, opts: { down: boolean }) {
+  opts.down = false;
+  sidecar.state.startup = { phase: 'ready' };
+}
+
+test(
+  'a sidecar that stops answering mid-session is started again, and a prompt waits for it, then goes masked',
+  { options: { while_starting: 'block' } },
+  async ($, on) => {
+    const { sidecar, opts, clock, spawned, sent } = await lostMidSession($, on);
+    const pending = $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+    await pollUntil(clock, () => spawned.length === 1);
+    expect(spawned[0]).toContain('@lbroth/nullpii-gateway@0.5.4');
+    expect(await piiStatus($)).toContain('starting nullpii-gateway');
+    expect(sent).toEqual([]);
+    comesUp(sidecar, opts);
+    await pollUntil(clock, () => statusOn($));
+    const out = await pending;
+    expect(out.drop).toBeUndefined();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).not.toContain('John');
+    expect(spawned).toHaveLength(1);
+  },
+);
+
+test(
+  'with while_starting = pass, prompts sent while a lost sidecar restarts wait for it, then go masked',
+  { options: { while_starting: 'pass' } },
+  async ($, on) => {
+    const { sidecar, opts, clock, spawned, sent } = await lostMidSession($, on);
+    const first = $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+    await pollUntil(clock, () => spawned.length === 1);
+    // A prompt typed while it restarts waits too: the session was masked.
+    const second = $.prompt.submit({ text: 'Call John', wait: false, origin: COMPOSER });
+    for (let turn = 0; turn < 5; turn += 1) await new Promise((r) => setTimeout(r, 10));
+    expect(sent).toEqual([]);
+    expect(await piiStatus($)).not.toContain('not protected');
+    comesUp(sidecar, opts);
+    await pollUntil(clock, () => statusOn($));
+    expect((await first).drop).toBeUndefined();
+    expect((await second).drop).toBeUndefined();
+    expect(sent).toHaveLength(2);
+    for (const text of sent) expect(text).not.toContain('John');
+    expect(spawned).toHaveLength(1);
+  },
+);
+test('a tool result while a lost sidecar restarts waits for it, then goes masked', async ($, on) => {
+  const { sidecar, opts, clock, spawned, ran } = await lostMidSession($, on);
+  let out: unknown;
+  void $.tool.call({ tool: 'Bash', command: 'cat owners.txt' }).then((o) => {
+    out = o;
+  });
+  await pollUntil(clock, () => spawned.length === 1);
+  expect(out).toBeUndefined();
+  comesUp(sidecar, opts);
+  await pollUntil(clock, () => out !== undefined);
+  expect(ran).toHaveLength(1);
+  expect(JSON.stringify(out)).not.toContain('John');
+  expect(JSON.stringify(out)).toContain('owner: ');
+  expect(spawned).toHaveLength(1);
+});
+test('a tool call with placeholders while the sidecar is gone waits for the restart before it runs', async ($, on) => {
+  const { sidecar, opts, clock, spawned, ran } = await lostMidSession($, on);
+  let out: unknown;
+  void $.tool
+    .call({ tool: 'Write', file_path: 'a.txt', content: `Hi ${ph('PERSON', 0)}` })
+    .then((o) => {
+      out = o;
+    });
+  await pollUntil(clock, () => spawned.length === 1);
+  // Nothing runs while the sidecar is coming up.
+  expect(ran).toEqual([]);
+  expect(out).toBeUndefined();
+  comesUp(sidecar, opts);
+  await pollUntil(clock, () => out !== undefined);
+  expect(ran).toHaveLength(1);
+  expect(spawned).toHaveLength(1);
+});
+test(
+  'with autostart off, a sidecar lost mid-session is not started again: prompts are refused',
+  { options: { autostart: false } },
+  async ($, on) => {
+    const { spawned, sent } = await lostMidSession($, on);
+    const out = await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+    expect(out.drop).toContain('did not answer at the sidecar address');
+    expect(sent).toEqual([]);
+    expect(spawned).toHaveLength(0);
+  },
+);
+
+test('a restart that fails refuses the waiting prompt with why, and is not tried again at every prompt', async ($, on) => {
+  const { clock, spawned, sent } = await lostMidSession($, on, true);
+  let first: { drop?: string } | undefined;
+  void $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER }).then((o) => {
+    first = o;
+  });
+  await pollUntil(clock, () => first !== undefined);
+  expect(first?.drop).toContain('exited while');
+  expect(await piiStatus($)).toContain('exited while');
+  const second = await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  expect(second.drop).toBeDefined();
+  expect(sent).toEqual([]);
+  expect(spawned).toHaveLength(1);
+});
+test("a restart that loses the port to another window's sidecar opens its session on that one", async ($, on) => {
+  const { sidecar, opts, clock, spawned, sent } = await lostMidSession($, on, true);
+  const pending = $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  for (let turn = 0; turn < 100 && spawned.length === 0; turn += 1) {
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  expect(spawned).toHaveLength(1);
+  // Another window's restart won the port: its sidecar answers by the time
+  // this window's child has exited for want of the port.
+  comesUp(sidecar, opts);
+  await pollUntil(clock, () => statusOn($));
+  expect((await pending).drop).toBeUndefined();
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).not.toContain('John');
+  expect(sidecar.statuses).toContain(201);
+  expect(spawned).toHaveLength(1);
+});
+test(
+  'a sidecar that is closing mid-session is replaced like one that does not answer',
+  { options: { while_starting: 'block' } },
+  async ($, on) => {
+    const { sidecar, opts, clock, spawned, sent } = await lostMidSession($, on);
+    // Its session is gone and it refuses a new one: it is on its way out.
+    opts.down = false;
+    sidecar.state.refuseSession = CLOSING;
+    const pending = $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+    await pollUntil(clock, () => spawned.length === 1);
+    expect(spawned).toHaveLength(1);
+    sidecar.state.refuseSession = undefined;
+    sidecar.state.startup = { phase: 'ready' };
+    await pollUntil(clock, () => statusOn($));
+    expect((await pending).drop).toBeUndefined();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).not.toContain('John');
+  },
+);
+
+test('text the engine adds and a second tool call wait for a mid-session restart too', async ($, on) => {
+  const { sidecar, opts, clock, spawned, sent, ran } = await lostMidSession($, on);
+  // A tool result begins the restart.
+  let first: unknown;
+  void $.tool.call({ tool: 'Bash', command: 'cat owners.txt' }).then((o) => {
+    first = o;
+  });
+  await pollUntil(clock, () => spawned.length === 1);
+  // Meanwhile: a prompt the engine made, and another tool call.
+  let meta: { drop?: string } | undefined;
+  void $.prompt.submit({ text: 'Mail John', wait: false, isMeta: true }).then((o) => {
+    meta = o;
+  });
+  let second: unknown;
+  void $.tool.call({ tool: 'Bash', command: 'cat owners.txt' }).then((o) => {
+    second = o;
+  });
+  for (let turn = 0; turn < 5; turn += 1) await new Promise((r) => setTimeout(r, 10));
+  expect(meta).toBeUndefined();
+  expect(second).toBeUndefined();
+  expect(ran).toHaveLength(1);
+  comesUp(sidecar, opts);
+  await pollUntil(clock, () => first !== undefined && meta !== undefined && second !== undefined);
+  expect(meta?.drop).toBeUndefined();
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).not.toContain('John');
+  expect(ran).toHaveLength(2);
+  expect(JSON.stringify(second)).not.toContain('John');
+});
+
+test(
+  'a choice to send unprotected made in an earlier start does not carry into a mid-session restart',
+  { options: { while_starting: 'pass' } },
+  async ($, on) => {
+    const opts = { down: true };
+    const sidecar = fakeSidecar(opts);
+    stubSession(on, sidecar);
+    const clock = mock.clock(on, { now: 1_700_000_000_000 });
+    const spawned: string[][] = [];
+    on('process.spawn', async function* ($, e) {
+      spawned.push(e.argv);
+      // The session's first start fails; the restart later runs on.
+      if (spawned.length === 1) return { value: { code: 1, signal: null } };
+      await new Promise<never>(() => undefined);
+    });
+    const sent: string[] = [];
+    on('prompt.submit', ($, e) => {
+      sent.push(e.text);
+      return { text: e.text };
+    });
+    await start($);
+    // Under `pass`, a prompt of the first start goes out as typed.
+    await $.prompt.submit({ text: 'Hello', wait: false, origin: COMPOSER });
+    expect(sent).toEqual(['Hello']);
+    await pollUntil(clock, async () => (await piiStatus($)).includes('exited while'));
+    // The person starts a sidecar; the session opens on it.
+    opts.down = false;
+    await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).not.toContain('John');
+    // It is lost: a restart begins, and a prompt typed meanwhile waits.
+    opts.down = true;
+    sidecar.sessions.clear();
+    const first = $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+    await pollUntil(clock, () => spawned.length === 2);
+    const second = $.prompt.submit({ text: 'Call John', wait: false, origin: COMPOSER });
+    for (let turn = 0; turn < 5; turn += 1) await new Promise((r) => setTimeout(r, 10));
+    expect(sent).toHaveLength(2);
+    comesUp(sidecar, opts);
+    await pollUntil(clock, () => statusOn($));
+    await first;
+    await second;
+    expect(sent).toHaveLength(4);
+    for (const text of sent.slice(2)) expect(text).not.toContain('John');
+  },
+);
+
+/** A session whose WebFetch calls are recorded, with the mod's questions
+ * answered by `answers` in turn (none left: dismissed), and a stand-in for
+ * the pinned sidecar the mod starts again mid-session. */
+async function webFetchSession($, on, answers: readonly string[]) {
+  const opts = { down: false };
+  const sidecar = fakeSidecar(opts);
+  stubSession(on, sidecar);
+  const clock = mock.clock(on, { now: 1_700_000_000_000 });
+  const asked: Asked[] = [];
+  answerMenu(on, answers, asked);
+  const spawned: string[][] = [];
+  on('process.spawn', async function* ($, e) {
+    spawned.push(e.argv);
+    await new Promise<never>(() => undefined);
+  });
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  const urls: string[] = [];
+  on('tool.call', { tool: 'WebFetch' }, ($, e) => {
+    urls.push(e.url);
+    return { result: 'ok' };
+  });
+  await start($);
+  return { sidecar, opts, clock, asked, spawned, urls };
+}
+
+test('a restart begun by the lookup of the values to ask about leaves nothing to ask: the call runs as written', async ($, on) => {
+  const { sidecar, opts, clock, asked, spawned, urls } = await webFetchSession($, on, []);
+  await $.prompt.submit({ text: 'look up john@acme.io', wait: false, origin: COMPOSER });
+  // The sidecar answers which values the call holds, then goes away before
+  // the mod looks them up to ask.
+  sidecar.state.afterRestore = () => {
+    opts.down = true;
+    sidecar.forget();
+  };
+  const url = `https://example.com/?q=${ph('EMAIL', 0)}`;
+  let out: unknown;
+  void $.tool.call({ tool: 'WebFetch', url, prompt: 'x' }).then((o) => {
+    out = o;
+  });
+  await pollUntil(clock, () => spawned.length === 1);
+  expect(out).toBeUndefined();
+  comesUp(sidecar, opts);
+  await pollUntil(clock, () => out !== undefined);
+  // The new sidecar knows nothing from before: no question, no release,
+  // and the call runs with the placeholder as Claude wrote it.
+  expect(asked).toEqual([]);
+  expect(urls).toEqual([url]);
+  expect(sidecar.toasts.filter((t) => t.includes('released in clear'))).toEqual([]);
+  expect(spawned).toHaveLength(1);
+});
+
+test('an Allow all given before a mid-session restart still answers after it, for the new values', async ($, on) => {
+  const { sidecar, opts, clock, asked, spawned, urls } = await webFetchSession($, on, [
+    'Allow all',
+  ]);
+  await $.prompt.submit({ text: 'look up john@acme.io', wait: false, origin: COMPOSER });
+  await $.tool.call({
+    tool: 'WebFetch',
+    url: `https://example.com/?q=${ph('EMAIL', 0)}`,
+    prompt: 'x',
+  });
+  expect(asked).toHaveLength(1);
+  // The sidecar is lost; the next prompt starts it again and waits for it.
+  opts.down = true;
+  sidecar.forget();
+  const pending = $.prompt.submit({ text: 'look up John', wait: false, origin: COMPOSER });
+  await pollUntil(clock, () => spawned.length === 1);
+  comesUp(sidecar, opts);
+  await pollUntil(clock, () => statusOn($));
+  expect((await pending).drop).toBeUndefined();
+  await $.tool.call({
+    tool: 'WebFetch',
+    url: `https://example.com/?q=${ph('PERSON', 1)}`,
+    prompt: 'x',
+  });
+  // Same session: no second question, and both releases are counted.
+  expect(asked).toHaveLength(1);
+  expect(urls).toEqual(['https://example.com/?q=john@acme.io', 'https://example.com/?q=John']);
+  const report = await piiStatus($);
+  expect(report).toContain('WebFetch · email 1');
+  expect(report).toContain('WebFetch · person 1');
+});
+
+test('an answer given while a restart runs sends the values the question listed, and counts them', async ($, on) => {
+  const opts = { down: false };
+  const sidecar = fakeSidecar(opts);
+  stubSession(on, sidecar);
+  const clock = mock.clock(on, { now: 1_700_000_000_000 });
+  let answer: (label: string) => void = () => undefined;
+  const asked: string[] = [];
+  on('tool.call', { tool: 'AskUserQuestion' }, async ($, e) => {
+    const question = e.questions[0]?.question ?? '';
+    asked.push(question);
+    const label = await new Promise<string>((resolve) => {
+      answer = resolve;
+    });
+    return { result: { questions: e.questions, answers: { [question]: label } } };
+  });
+  const spawned: string[][] = [];
+  on('process.spawn', async function* ($, e) {
+    spawned.push(e.argv);
+    await new Promise<never>(() => undefined);
+  });
+  const sent: string[] = [];
+  on('prompt.submit', ($, e) => {
+    sent.push(e.text);
+    return { text: e.text };
+  });
+  const urls: string[] = [];
+  on('tool.call', { tool: 'WebFetch' }, ($, e) => {
+    urls.push(e.url);
+    return { result: 'ok' };
+  });
+  await start($);
+  await $.prompt.submit({ text: 'look up john@acme.io', wait: false, origin: COMPOSER });
+  let out: unknown;
+  void $.tool
+    .call({ tool: 'WebFetch', url: `https://example.com/?q=${ph('EMAIL', 0)}`, prompt: 'x' })
+    .then((o) => {
+      out = o;
+    });
+  for (let turn = 0; turn < 100 && asked.length === 0; turn += 1) {
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  expect(asked).toHaveLength(1);
+  // While the question is open, the sidecar is lost and a prompt starts it
+  // again.
+  opts.down = true;
+  sidecar.forget();
+  const pending = $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  await pollUntil(clock, () => spawned.length === 1);
+  // The person sends the value the question showed: it goes out as listed.
+  answer('Send once');
+  for (let turn = 0; turn < 100 && out === undefined; turn += 1) {
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  expect(urls).toEqual(['https://example.com/?q=john@acme.io']);
+  expect(await piiStatus($)).toContain('WebFetch · email 1');
+  // The prompt waited for the restart, and goes masked once it is up.
+  expect(sent).toHaveLength(1);
+  comesUp(sidecar, opts);
+  await pollUntil(clock, () => statusOn($));
+  expect((await pending).drop).toBeUndefined();
+  expect(sent).toHaveLength(2);
+  expect(sent[1]).not.toContain('John');
+});
+
+test('two tool calls that both find the sidecar gone start it once and both wait for it', async ($, on) => {
+  const { sidecar, opts, clock, spawned, ran } = await lostMidSession($, on);
+  const results: unknown[] = [];
+  const call = () =>
+    $.tool
+      .call({ tool: 'Write', file_path: 'a.txt', content: `Hi ${ph('PERSON', 0)}` })
+      .then((o) => {
+        results.push(o);
+      });
+  void call();
+  void call();
+  await pollUntil(clock, () => spawned.length === 1);
+  expect(ran).toEqual([]);
+  comesUp(sidecar, opts);
+  await pollUntil(clock, () => results.length === 2);
+  expect(spawned).toHaveLength(1);
+  expect(ran).toHaveLength(2);
+  for (const out of results) expect(String((out as { deny?: string }).deny ?? '')).toBe('');
+});
+
+test("a start-up answer given after the session's first start ended, during a mid-session restart, sends nothing unmasked", async ($, on) => {
+  const opts = { down: true };
+  const sidecar = fakeSidecar(opts);
+  stubSession(on, sidecar);
+  const clock = mock.clock(on, { now: 1_700_000_000_000 });
+  let answer: (label: string) => void = () => undefined;
+  let asked = 0;
+  on('tool.call', { tool: 'AskUserQuestion' }, async ($, e) => {
+    const question = e.questions[0]?.question ?? '';
+    asked += 1;
+    const label = await new Promise<string>((resolve) => {
+      answer = resolve;
+    });
+    return { result: { questions: e.questions, answers: { [question]: label } } };
+  });
+  const spawned: string[][] = [];
+  on('process.spawn', async function* ($, e) {
+    spawned.push(e.argv);
+    await new Promise<never>(() => undefined);
+  });
+  const sent: string[] = [];
+  on('prompt.submit', ($, e) => {
+    sent.push(e.text);
+    return { text: e.text };
+  });
+  await start($);
+  // A prompt of the first start asks what to do; the dialog stays open.
+  const first = $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  for (let turn = 0; turn < 100 && asked === 0; turn += 1) {
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  expect(asked).toBe(1);
+  // The first start ends; the session opens; then the sidecar is lost and
+  // a prompt begins a restart.
+  comesUp(sidecar, opts);
+  await pollUntil(clock, () => statusOn($));
+  opts.down = true;
+  sidecar.forget();
+  const second = $.prompt.submit({ text: 'Call John', wait: false, origin: COMPOSER });
+  await pollUntil(clock, () => spawned.length === 2);
+  // The old dialog is answered now: it speaks for the start it was asked in.
+  answer('Send now, and do not ask again until nullpii is ready');
+  for (let turn = 0; turn < 10; turn += 1) await new Promise((r) => setTimeout(r, 10));
+  // Nothing went out, as typed or at all, and text the engine adds waits.
+  const meta = $.prompt.submit({ text: 'Mail John', wait: false, isMeta: true });
+  for (let turn = 0; turn < 10; turn += 1) await new Promise((r) => setTimeout(r, 10));
+  expect(sent).toEqual([]);
+  expect(await piiStatus($)).not.toContain('not protected');
+  comesUp(sidecar, opts);
+  await pollUntil(clock, () => statusOn($));
+  await Promise.all([first, second, meta]);
+  expect(sent).toHaveLength(3);
+  for (const text of sent) expect(text).not.toContain('John');
+});
+
+test('after a restart gives up, a later prompt keeps the give-up reason on the band', async ($, on) => {
+  const { clock, sent } = await lostMidSession($, on, true);
+  let first: { drop?: string } | undefined;
+  void $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER }).then((o) => {
+    first = o;
+  });
+  await pollUntil(clock, () => first !== undefined);
+  const second = await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  expect(second.drop).toContain('exited while');
+  expect(second.drop).not.toContain('did not answer at the sidecar address');
+  expect(await piiStatus($)).toContain('exited while');
+  expect(sent).toEqual([]);
+});
+
+test('a restart waiting for another sidecar to let go of the address shows as starting, not blocking', async ($, on) => {
+  const { sidecar, opts, clock, spawned, lines } = await lostMidSession($, on, true);
+  // The sidecar there is closing: it holds the address, and the child the
+  // mod starts exits for want of it.
+  opts.down = false;
+  sidecar.state.refuseSession = CLOSING;
+  // It waits for the restart, which this test leaves running.
+  const pending = $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  pending.catch(() => undefined);
+  await pollUntil(clock, () => spawned.length === 1);
+  await pollUntil(clock, () => sidecar.statuses.filter((s) => s === 503).length >= 3);
+  const doctor = await $.command.run({ command: 'pii', args: 'doctor' });
+  expect(doctor.text).not.toMatch(/\bblocking\b/);
+  expect(lines.at(-1)).toContain('starting');
+  expect(lines.at(-1)).not.toContain('blocking');
+});
+
+test('the band says starting, not blocking, while a restart waits for another sidecar to let go of the address', async ($, on) => {
+  const opts = { down: false };
+  const sidecar = fakeSidecar(opts);
+  stubSession(on, sidecar);
+  const clock = mock.clock(on, { now: 1_700_000_000_000 });
+  const spawned: string[][] = [];
+  // biome-ignore lint/correctness/useYield: a stand-in child whose port is taken.
+  on('process.spawn', async function* ($, e) {
+    spawned.push(e.argv);
+    return { value: { code: 1, signal: null } };
+  });
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  // What is beneath the band: an empty line, so the band is the mod's.
+  on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
+  await start($);
+  expect(await statusOn($)).toBe(true);
+  // The sidecar in use is closing: its session is gone, it refuses a new
+  // one, and holds the address, so the child the mod starts exits.
+  sidecar.forget();
+  sidecar.state.refuseSession = CLOSING;
+  const ui = await $.ui.mount(BAND);
+  const pending = $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  pending.catch(() => undefined);
+  await pollUntil(clock, () => spawned.length === 1);
+  await pollUntil(clock, () => sidecar.statuses.filter((s) => s === 503).length >= 3);
+  expect(await ui.find({ type: 'Text', text: /blocking/ })).toBeUndefined();
+  expect(await ui.find({ type: 'Text', text: /starting/ })).toBeDefined();
+  await ui.unmount();
+});
+
+test('a mid-session restart whose child loses the port to a closing sidecar starts it again once that one is gone', async ($, on) => {
+  const opts = { down: false };
+  const sidecar = fakeSidecar(opts);
+  stubSession(on, sidecar);
+  const clock = mock.clock(on, { now: 1_700_000_000_000 });
+  const spawned: string[][] = [];
+  on('process.spawn', async function* ($, e) {
+    spawned.push(e.argv);
+    // The first child finds the port held by the closing sidecar and
+    // exits; the second runs on.
+    if (spawned.length === 1) return { value: { code: 1, signal: null } };
+    await new Promise<never>(() => undefined);
+  });
+  const sent: string[] = [];
+  on('prompt.submit', ($, e) => {
+    sent.push(e.text);
+    return { text: e.text };
+  });
+  await start($);
+  expect(await statusOn($)).toBe(true);
+  // The sidecar in use is closing: its session is gone and it refuses a
+  // new one, while it still holds the address.
+  sidecar.forget();
+  sidecar.state.refuseSession = CLOSING;
+  const pending = $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  for (let turn = 0; turn < 100 && spawned.length === 0; turn += 1) {
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  expect(spawned).toHaveLength(1);
+  // It is gone before the next status poll: the address is free.
+  opts.down = true;
+  await pollUntil(clock, () => spawned.length === 2);
+  expect(spawned).toHaveLength(2);
+  // The second child takes the address and is ready.
+  opts.down = false;
+  sidecar.state.refuseSession = undefined;
+  sidecar.state.startup = { phase: 'ready' };
+  await pollUntil(clock, () => statusOn($));
+  expect((await pending).drop).toBeUndefined();
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).not.toContain('John');
+  expect(spawned).toHaveLength(2);
 });

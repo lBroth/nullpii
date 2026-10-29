@@ -258,8 +258,8 @@ Two things compared here are built for documents: PIILO, where only the students
 <!-- matrix:begin -->
 | Tool | Macro char-F2 | F0.5 | Recall | Precision | CI of nullpii − tool (F2) |
 |---|---:|---:|---:|---:|---|
-| rizzo-pii (default) | 0.770 | 0.633 | 0.869 | 0.608 | [−0.020, −0.003] |
-| **nullpii** | **0.758** | 0.534 | **0.958** | 0.490 | — |
+| rizzo-pii (default) | **0.770** | **0.633** | 0.869 | **0.608** | [−0.020, −0.003] |
+| **nullpii** | 0.758 | 0.534 | **0.958** | 0.490 | — |
 | nemotron-pii (`nvidia/gliner-PII`, library) | 0.720 | 0.612 | 0.808 | 0.591 | [+0.025, +0.051] |
 | OpenMed privacy-filter-multilingual-v2 | 0.717 | 0.585 | 0.841 | 0.560 | [+0.031, +0.049] |
 | pii-identifier | 0.701 | 0.583 | 0.809 | 0.569 | [+0.044, +0.070] |

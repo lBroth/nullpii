@@ -55,9 +55,10 @@ export interface NullPiiConfig {
    * `DEFAULT_CATEGORY_THRESHOLDS` (IP and MAC at 0.5, date 0.125, email 0.075);
    * passing any object replaces those defaults entirely. */
   readonly categoryThresholds?: Partial<Record<PiiCategory, number>>;
-  /** Categories to leave unmasked. They are not prompted to the model
-   * (fewer labels also mean a shorter prompt per window) and their spans
-   * are dropped from every detector, recognizers included. Default:
+  /** Categories to leave unmasked. Their spans are dropped from every
+   * detector, recognizers included. One the default prompts stays in the
+   * model's prompt, since the label set moves the model's scores, but is
+   * never decoded; the others are not prompted. Default:
    * `DEFAULT_DISABLED_CATEGORIES` (companies, jobs, honorifics, demographic
    * and sensitive attributes, dates): what an agent needs readable and
    * identifies no one on its own. `[]` masks every category. */

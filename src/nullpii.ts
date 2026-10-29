@@ -80,6 +80,10 @@ const GLINER_LABELS: readonly PiiCategory[] = [
   ...GLINER_EXTENDED_CATEGORIES,
 ];
 
+/** The categories the default policy leaves readable, which are prompted
+ * only when a policy turns them on. */
+const DEFAULT_DISABLED: ReadonlySet<string> = new Set(DEFAULT_DISABLED_CATEGORIES);
+
 /** The text a sanitize call works on: the input with literal `{{`
  * escaped (`escaped`, what the vault sees), its detection-normalised form
  * (`normalized`), and the offset map between them. */
@@ -151,7 +155,8 @@ export interface NullPiiDiagnostics {
  */
 export class NullPii {
   private config: NullPiiConfig;
-  /** `GLINER_LABELS` minus `config.disabledCategories`. */
+  /** `GLINER_LABELS` the default policy prompts, plus any
+   * `config.disabledCategories` turns on. */
   private promptLabels: readonly string[] = [];
   private disabled: ReadonlySet<string> = new Set();
   /** How much of a clean URL stays readable; `null` masks every URL. */
@@ -211,7 +216,13 @@ export class NullPii {
   private derivePolicy(): void {
     const config = this.config;
     this.disabled = new Set(config.disabledCategories ?? DEFAULT_DISABLED_CATEGORIES);
-    this.promptLabels = GLINER_LABELS.filter((l) => !this.disabled.has(l));
+    // The prompt does not shrink with the policy: the label set moves the
+    // model's scores, and `secret` prompted alone flags words such as `code`
+    // or `OK` (#92). A label the policy leaves readable is prompted but never
+    // decoded (`decodeCut`).
+    this.promptLabels = GLINER_LABELS.filter(
+      (l) => !DEFAULT_DISABLED.has(l) || !this.disabled.has(l),
+    );
     this.urlPolicy = config.urlAllowlist === 'none' ? null : urlPolicy(config.urlAllowlist);
   }
 
@@ -472,14 +483,17 @@ export class NullPii {
 
   /** The lowest score a model span of each label may have to survive
    * decoding and the post-filter: the decode threshold, raised by the
-   * label's post-filter cut. The decoder applies it before NMS, so a span
-   * the thresholds would drop never suppresses another. */
+   * label's post-filter cut, and out of reach for a label the policy leaves
+   * readable. The decoder applies it before NMS, so a span the thresholds
+   * or the policy would drop never suppresses another. */
   private decodeCut(): (label: string) => number {
     const decode = this.config.threshold ?? DEFAULT_DECODE_THRESHOLD;
     const post = this.config.threshold ?? DEFAULT_POST_FILTER_THRESHOLD;
     const perLabel: Readonly<Partial<Record<string, number>>> =
       this.config.categoryThresholds ?? DEFAULT_CATEGORY_THRESHOLDS;
-    return (label) => Math.max(decode, perLabel[label] ?? post);
+    const disabled = this.disabled;
+    return (label) =>
+      disabled.has(label) ? Number.POSITIVE_INFINITY : Math.max(decode, perLabel[label] ?? post);
   }
 
   /** The configured global and per-label score cuts, or their defaults. */

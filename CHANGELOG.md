@@ -5,6 +5,10 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Core: a policy that leaves readable a category the default masks (the secrets-only preset among them) also took that category out of the model's prompt, and the label set moves the model's scores. With `secret` prompted alone, the model flagged words such as `code`, `OK`, `1`, `oldString` and `newString`, and a masked key in a tool result made Claude Code reject it. The model is now prompted with the default's labels, plus any the policy turns on, and the policy decides only what is masked: a category it leaves readable is never decoded, so it cannot suppress a span the policy masks. The default and the everything presets prompt and mask exactly as before (#92).
+
 ## [0.5.4] — 2026-10-27
 
 The mod's look and commands: a band with a progress bar and the cause of a block, a padlock that reads as open, `/pii allow` instead of `/pii off`, and a clearer `/pii doctor`.

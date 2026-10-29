@@ -208,9 +208,11 @@ describe('NullPii e2e pipeline (mocked ONNX)', () => {
     await n.sanitize('Send to alice@acme.io today.');
     expect(prompt.labels).not.toContain('private_date');
     n.updatePolicy({ disabledCategories: ['private_email'] });
-    await n.sanitize('Send to alice@acme.io today.');
+    const out = await n.sanitize('Send to alice@acme.io today.');
     expect(prompt.labels).toContain('private_date');
-    expect(prompt.labels).not.toContain('private_email');
+    // Readable now, but still prompted: the default prompts it (#92).
+    expect(prompt.labels).toContain('private_email');
+    expect(out.sanitized).toContain('alice@acme.io');
     await n.dispose();
   });
 
@@ -231,14 +233,16 @@ describe('NullPii e2e pipeline (mocked ONNX)', () => {
     await n.dispose();
   });
 
-  it('disabledCategories are neither prompted nor emitted', async () => {
+  it('disabledCategories are never emitted; the prompt stays the default one', async () => {
     const n = new NullPii({
       modelDir: '/fake',
       backend: 'cpu',
       disabledCategories: ['private_email', 'private_occupation'],
     });
     const out = await n.sanitize('Send to alice@acme.io today.');
-    expect(prompt.labels).not.toContain('private_email');
+    // A category the default prompts stays in the prompt: the label set
+    // moves the model's scores (#92). One the default leaves out stays out.
+    expect(prompt.labels).toContain('private_email');
     expect(prompt.labels).not.toContain('private_occupation');
     expect(prompt.labels).toContain('private_person');
     // The recognizer pack matches the address, but its label is off.

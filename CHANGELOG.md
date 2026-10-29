@@ -7,11 +7,16 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- Mod and gateway: at the start of a session the mod stops a sidecar of an older release than the one it pins and starts the pinned one, so a plugin update no longer keeps talking to the old process. It does so only for a sidecar the mod started (the mod sets the new `NULLPII_SIDECAR_SHUTDOWN=on` on it, which adds `POST /v1/sidecar/shutdown`, and no other launch has the route) and only while no session is open; otherwise the sidecar stays and `/pii doctor` reports its release. Once the route has answered 202, the sidecar refuses new sessions with 503 `sidecar_closing` until the process ends. The sidecar status reports `features: { shutdown }`.
+- Mod and gateway: at the start of a session the mod stops a sidecar of an older release than the one it pins and starts the pinned one, so a plugin update no longer keeps talking to the old process. It does so only for a sidecar the mod started (the mod sets the new `NULLPII_SIDECAR_SHUTDOWN=on` on it, which adds `POST /v1/sidecar/shutdown`, and no other launch has the route), and only once no window may still count on it: no session is open, the model is not still downloading or loading, at least one session has opened (unless the start failed), and every session that ended by its idle TTL was opened or closed again by its window. Otherwise the route answers 409, the sidecar stays, and `/pii doctor` reports its release. Once the route has answered 202, the sidecar refuses new sessions with 503 `sidecar_closing` until the process ends. The sidecar status reports `features: { shutdown }`. While its own replacement starts, a window's `while_starting = pass` waits like `block`, since the older sidecar would have masked those prompts; another window that opens a session during that restart sends unprotected under `pass`, as in any start.
+
+### Fixed
+
+- Mod and gateway: a mod reloaded with its sidecar session open (a plugin update in a running session, for example) no longer leaves that session behind as a window that may come back. It still opens a new session under a new key, as it has lost the old secret, so **placeholders from before the reload no longer get their values back** (they stay masked). Now its `PUT /v1/sidecar/sessions/:key` sends the new header `x-nullpii-supersedes: <session id>`, and once the sidecar creates that session, the other keys under the same id are not remembered as unclosed when their idle TTL ends them. Without it, such a key kept the sidecar from ever being replaced (`sessions_unclosed`). The header needs the token, reaches only keys under that id (the id itself, or `<id>.<suffix>`; any other value is 400 `invalid_supersedes`), frees no live session and gives no access to its values: the old session stays open until its TTL, and a call its owner makes before then undoes it.
 
 ### Notes
 
 - A sidecar that is already running, of any release before this one, does not have the route: stop it once by hand after updating (find it with `lsof -nP -iTCP:8787 -sTCP:LISTEN`), and the replacement is automatic from then on.
+- A sidecar whose window ended without closing its session is not replaced either, since it cannot be told apart from a window left open and idle: stop it by hand the same way. That is a Claude Code that was killed, unless that Claude Code session is resumed (`claude --resume`) under the same session id: the resumed window opens that key again, or opens a new one that supersedes it.
 
 ## [0.5.4] — 2026-10-27
 

@@ -25,6 +25,7 @@ import {
   POLICY_VERSION_HEADER,
   SESSION_SECRET_HEADER,
   SIDECAR_MAX_BYTES,
+  SUPERSEDES_HEADER,
 } from '../src/routes/sidecar.js';
 import {
   SANITIZE_CACHE_MAX_CHARS,
@@ -703,70 +704,328 @@ describe('sidecar · shutdown', () => {
   /** A server built as `startServer` builds one: the route only when the
    * config asks for it, with a stop function the test counts calls of —
    * the real one would end the test runner. */
-  async function withShutdown(on: boolean) {
+  async function withShutdown(on: boolean, startup?: StartupTracker) {
     const { np } = buildMockNullPii();
     let stopped = 0;
+    const clock = { t: 1_000_000 };
     const config = { ...BASE_CONFIG, sidecarShutdown: on };
     const app = await buildServer({
       config,
       np,
+      now: () => clock.t,
+      ...(startup !== undefined && { startup }),
       ...shutdownOption(config, () => {
         stopped += 1;
       }),
     });
     apps.push(app);
-    return { app, stopped: () => stopped };
+    return { app, clock, stopped: () => stopped };
+  }
+
+  const shutdownCall = (app: FastifyInstance) =>
+    app.inject({ method: 'POST', url: '/v1/sidecar/shutdown', headers: AUTH });
+
+  /** A tracker whose model is ready, as after a start-up. */
+  function readyTracker(): StartupTracker {
+    const startup = new StartupTracker();
+    startup.report({ phase: 'ready' });
+    return startup;
+  }
+
+  /** The window that started the sidecar opened its session and closed it. */
+  async function usedAndClosed(app: FastifyInstance) {
+    await open(app, 's1');
+    const del = await app.inject({
+      method: 'DELETE',
+      url: '/v1/sidecar/sessions/s1',
+      headers: authFor('s1'),
+    });
+    expect(del.statusCode).toBe(204);
+  }
+
+  /** Whether the stop function ran, once the 202's `setImmediate` had a turn. */
+  async function stopsAfterATurn(stopped: () => number) {
+    await new Promise((r) => setImmediate(r));
+    return stopped();
   }
 
   it('is not given to a server the starter did not ask to be stoppable', async () => {
     const { app } = await withShutdown(false);
-    const res = await app.inject({ method: 'POST', url: '/v1/sidecar/shutdown', headers: AUTH });
+    const res = await shutdownCall(app);
     expect(res.statusCode).toBe(404);
+  });
+
+  it('is reported in the status when the starter asked for it', async () => {
+    const { app } = await withShutdown(true);
+    const res = await app.inject({ method: 'GET', url: '/v1/sidecar/status', headers: AUTH });
+    expect(res.json()).toMatchObject({ features: { shutdown: true } });
   });
 
   it('needs the token', async () => {
     const { app, stopped } = await withShutdown(true);
+    await usedAndClosed(app);
     const res = await app.inject({ method: 'POST', url: '/v1/sidecar/shutdown' });
     expect(res.statusCode).toBe(401);
-    await new Promise((r) => setImmediate(r));
-    expect(stopped()).toBe(0);
+    expect(await stopsAfterATurn(stopped)).toBe(0);
   });
 
-  it('stops an idle sidecar the starter asked to be stoppable', async () => {
-    const { app, stopped } = await withShutdown(true);
-    const res = await app.inject({ method: 'POST', url: '/v1/sidecar/shutdown', headers: AUTH });
+  it('stops a sidecar whose every session was closed by its caller', async () => {
+    const { app, stopped } = await withShutdown(true, readyTracker());
+    await usedAndClosed(app);
+    const res = await shutdownCall(app);
     expect(res.statusCode).toBe(202);
-    await new Promise((r) => setImmediate(r));
-    expect(stopped()).toBe(1);
+    expect(await stopsAfterATurn(stopped)).toBe(1);
   });
 
   it('refuses while a session is open, and stops nothing', async () => {
     const { app, stopped } = await withShutdown(true);
     await open(app, 's1');
-    const res = await app.inject({ method: 'POST', url: '/v1/sidecar/shutdown', headers: AUTH });
+    const res = await shutdownCall(app);
     expect(res.statusCode).toBe(409);
     expect(res.json()).toEqual({ error: 'sessions_active', sessions: 1 });
-    await new Promise((r) => setImmediate(r));
-    expect(stopped()).toBe(0);
+    expect(await stopsAfterATurn(stopped)).toBe(0);
+  });
+
+  it('refuses while the model is still downloading or loading for the window that started it', async () => {
+    const startup = new StartupTracker();
+    const { app, stopped } = await withShutdown(true, startup);
+    const downloading = await shutdownCall(app);
+    expect(downloading.statusCode).toBe(409);
+    expect(downloading.json()).toEqual({ error: 'starting' });
+    startup.report({ phase: 'loading' });
+    const loading = await shutdownCall(app);
+    expect(loading.json()).toEqual({ error: 'starting' });
+    expect(await stopsAfterATurn(stopped)).toBe(0);
+  });
+
+  it('refuses before any session has opened: the window that started it has not got to it yet', async () => {
+    const { app, stopped } = await withShutdown(true, readyTracker());
+    const res = await shutdownCall(app);
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: 'not_used_yet' });
+    expect(await stopsAfterATurn(stopped)).toBe(0);
+  });
+
+  it('stops a sidecar whose start failed before any session opened', async () => {
+    const startup = new StartupTracker();
+    startup.failed();
+    const { app, stopped } = await withShutdown(true, startup);
+    const res = await shutdownCall(app);
+    expect(res.statusCode).toBe(202);
+    expect(await stopsAfterATurn(stopped)).toBe(1);
+  });
+
+  it('refuses once a session ended by its idle TTL: the window may still be open', async () => {
+    const { app, clock, stopped } = await withShutdown(true, readyTracker());
+    await open(app, 's1');
+    clock.t += TTL_MS + 1;
+    const res = await shutdownCall(app);
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: 'sessions_unclosed' });
+    expect(await stopsAfterATurn(stopped)).toBe(0);
+  });
+
+  it('stops once the caller of an expired session opened it again and closed it', async () => {
+    const { app, clock, stopped } = await withShutdown(true, readyTracker());
+    await open(app, 's1');
+    clock.t += TTL_MS + 1;
+    secrets.delete('s1');
+    await usedAndClosed(app);
+    const res = await shutdownCall(app);
+    expect(res.statusCode).toBe(202);
+    expect(await stopsAfterATurn(stopped)).toBe(1);
+  });
+
+  it('stops once the caller of an expired session closed it, though it was already gone', async () => {
+    const { app, clock, stopped } = await withShutdown(true, readyTracker());
+    await open(app, 's1');
+    clock.t += TTL_MS + 1;
+    expect((await shutdownCall(app)).json()).toEqual({ error: 'sessions_unclosed' });
+    const del = await app.inject({
+      method: 'DELETE',
+      url: '/v1/sidecar/sessions/s1',
+      headers: authFor('s1'),
+    });
+    expect(del.statusCode).toBe(404);
+    const res = await shutdownCall(app);
+    expect(res.statusCode).toBe(202);
+    expect(await stopsAfterATurn(stopped)).toBe(1);
+  });
+
+  /** Open `key` as a caller that names `base` in the supersedes header,
+   * keeping the secret it hands out. */
+  async function openSuperseding(app: FastifyInstance, key: string, base: string) {
+    const res = await app.inject({
+      method: 'PUT',
+      url: `/v1/sidecar/sessions/${key}`,
+      headers: { ...AUTH, [SUPERSEDES_HEADER]: base },
+    });
+    const body = res.json() as { secret?: string };
+    if (body.secret !== undefined) secrets.set(key, body.secret);
+    return res;
+  }
+
+  /** As a mod reloaded with its session open: its secret is gone, so the
+   * session id is refused, and the mod moves to a key under it. */
+  async function reloadedWindow(app: FastifyInstance, supersede: boolean) {
+    await open(app, 'w1');
+    const again = await app.inject({
+      method: 'PUT',
+      url: '/v1/sidecar/sessions/w1',
+      headers: AUTH,
+    });
+    expect(again.statusCode).toBe(409);
+    const moved = supersede ? await openSuperseding(app, 'w1.r1', 'w1') : await open(app, 'w1.r1');
+    expect(moved.statusCode).toBe(201);
+    // The reloaded window ends normally: it closes the key it holds.
+    const del = await app.inject({
+      method: 'DELETE',
+      url: '/v1/sidecar/sessions/w1.r1',
+      headers: authFor('w1.r1'),
+    });
+    expect(del.statusCode).toBe(204);
+  }
+
+  it('stops once a key its window left on a reload has ended by its TTL', async () => {
+    const { app, clock, stopped } = await withShutdown(true, readyTracker());
+    await reloadedWindow(app, true);
+    // The left key is still open until its TTL: nothing is freed early.
+    expect((await shutdownCall(app)).json()).toEqual({ error: 'sessions_active', sessions: 1 });
+    clock.t += TTL_MS + 1;
+    const res = await shutdownCall(app);
+    expect(res.statusCode).toBe(202);
+    expect(await stopsAfterATurn(stopped)).toBe(1);
+  });
+
+  it('without the supersede, the key left on a reload keeps the sidecar from stopping', async () => {
+    const { app, clock, stopped } = await withShutdown(true, readyTracker());
+    await reloadedWindow(app, false);
+    clock.t += TTL_MS + 1;
+    expect((await shutdownCall(app)).json()).toEqual({ error: 'sessions_unclosed' });
+    expect(await stopsAfterATurn(stopped)).toBe(0);
+  });
+
+  it('forgets a remembered expired key under the base a new session supersedes', async () => {
+    const { app, clock, stopped } = await withShutdown(true, readyTracker());
+    await open(app, 'w1');
+    await open(app, 'w1.r1');
+    clock.t += TTL_MS + 1;
+    expect((await shutdownCall(app)).json()).toEqual({ error: 'sessions_unclosed' });
+    secrets.clear();
+    expect((await openSuperseding(app, 'w1', 'w1')).statusCode).toBe(201);
+    await app.inject({ method: 'DELETE', url: '/v1/sidecar/sessions/w1', headers: authFor('w1') });
+    const res = await shutdownCall(app);
+    expect(res.statusCode).toBe(202);
+    expect(await stopsAfterATurn(stopped)).toBe(1);
+  });
+
+  it('a supersede never frees a live session: its owner keeps its values, and its next call undoes it', async () => {
+    const { app, clock, stopped } = await withShutdown(true, readyTracker());
+    await open(app, 'w1');
+    const masked = await app.inject({
+      method: 'POST',
+      url: '/v1/sidecar/sessions/w1/sanitize',
+      headers: authFor('w1'),
+      payload: { value: 'Mail John' },
+    });
+    const placeholder = (masked.json() as { value: string }).value;
+    // A token holder supersedes the window's key from a key of its own.
+    expect((await openSuperseding(app, 'w1.x', 'w1')).statusCode).toBe(201);
+    // It gets nothing of the old session: its secret opens only its own.
+    const stolen = await app.inject({
+      method: 'POST',
+      url: '/v1/sidecar/sessions/w1/restore',
+      headers: { ...AUTH, [SESSION_SECRET_HEADER]: secrets.get('w1.x') ?? '' },
+      payload: { value: placeholder },
+    });
+    expect(stolen.statusCode).toBe(403);
+    // The window is still served, with its values.
+    const restored = await app.inject({
+      method: 'POST',
+      url: '/v1/sidecar/sessions/w1/restore',
+      headers: authFor('w1'),
+      payload: { value: placeholder },
+    });
+    expect((restored.json() as { value: string }).value).toBe('Mail John');
+    await app.inject({
+      method: 'DELETE',
+      url: '/v1/sidecar/sessions/w1.x',
+      headers: authFor('w1.x'),
+    });
+    expect((await shutdownCall(app)).json()).toEqual({ error: 'sessions_active', sessions: 1 });
+    // That call proved the window is still here: idle past its TTL, it
+    // counts as a window that may come back, as without the supersede.
+    clock.t += TTL_MS + 1;
+    expect((await shutdownCall(app)).json()).toEqual({ error: 'sessions_unclosed' });
+    expect(await stopsAfterATurn(stopped)).toBe(0);
+  });
+
+  it('a supersede reaches only keys under its base', async () => {
+    // Another window's key, and one that only starts with the same letters.
+    for (const other of ['w2', 'w10']) {
+      const { app, clock } = await withShutdown(true, readyTracker());
+      await open(app, other);
+      clock.t += TTL_MS + 1;
+      expect((await openSuperseding(app, 'w1', 'w1')).statusCode).toBe(201);
+      await app.inject({
+        method: 'DELETE',
+        url: '/v1/sidecar/sessions/w1',
+        headers: authFor('w1'),
+      });
+      expect((await shutdownCall(app)).json()).toEqual({ error: 'sessions_unclosed' });
+    }
+  });
+
+  it('refuses a supersedes base the key is not under, and opens nothing', async () => {
+    const { app } = await withShutdown(true, readyTracker());
+    for (const [key, base] of [
+      ['w2.x', 'w1'],
+      ['w1x', 'w1'],
+      ['w1', 'w1.x'],
+      ['w1', 'bad key'],
+    ]) {
+      const res = await openSuperseding(app, key ?? '', base ?? '');
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({ error: 'invalid_supersedes' });
+    }
+    const repeated = await app.inject({
+      method: 'PUT',
+      url: '/v1/sidecar/sessions/w1',
+      headers: { ...AUTH, [SUPERSEDES_HEADER]: ['w1', 'w1'] },
+    });
+    expect(repeated.statusCode).toBe(400);
+    const status = await app.inject({ method: 'GET', url: '/v1/sidecar/status', headers: AUTH });
+    expect(status.json()).toMatchObject({ sessions: 0 });
+  });
+
+  it('a supersede needs the token', async () => {
+    const { app } = await withShutdown(true, readyTracker());
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/v1/sidecar/sessions/w1.x',
+      headers: { [SUPERSEDES_HEADER]: 'w1' },
+    });
+    expect(res.statusCode).toBe(401);
   });
 
   it('refuses a new session once it has answered 202, until the process ends', async () => {
-    const { app } = await withShutdown(true);
-    const res = await app.inject({ method: 'POST', url: '/v1/sidecar/shutdown', headers: AUTH });
+    const { app } = await withShutdown(true, readyTracker());
+    await usedAndClosed(app);
+    const res = await shutdownCall(app);
     expect(res.statusCode).toBe(202);
-    const put = await app.inject({ method: 'PUT', url: '/v1/sidecar/sessions/s1', headers: AUTH });
+    const put = await app.inject({ method: 'PUT', url: '/v1/sidecar/sessions/s2', headers: AUTH });
     expect(put.statusCode).toBe(503);
     expect(put.json()).toEqual({ error: 'sidecar_closing' });
   });
 
   it('answers 202 again without stopping a second time', async () => {
-    const { app, stopped } = await withShutdown(true);
-    const first = await app.inject({ method: 'POST', url: '/v1/sidecar/shutdown', headers: AUTH });
-    const second = await app.inject({ method: 'POST', url: '/v1/sidecar/shutdown', headers: AUTH });
+    const { app, stopped } = await withShutdown(true, readyTracker());
+    await usedAndClosed(app);
+    const first = await shutdownCall(app);
+    const second = await shutdownCall(app);
     expect(first.statusCode).toBe(202);
     expect(second.statusCode).toBe(202);
-    await new Promise((r) => setImmediate(r));
-    expect(stopped()).toBe(1);
+    expect(await stopsAfterATurn(stopped)).toBe(1);
   });
 });
 

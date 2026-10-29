@@ -427,11 +427,13 @@ export function formatReport(
 
 /** What a sidecar's status says about itself, for the decision the mod
  * takes from it: whether it is an idle, older release that may be
- * replaced. */
+ * replaced. `startupPhase` is its model's start-up phase (`downloading`,
+ * `loading`, `ready`, `failed`), undefined for a gateway that reports none. */
 export interface SidecarSelf {
   readonly shutdown: boolean;
   readonly gatewayVersion: string | undefined;
   readonly sessions: number | undefined;
+  readonly startupPhase: string | undefined;
 }
 
 const RELEASE = /^(\d+)\.(\d+)\.(\d+)(?:[-+][A-Za-z0-9.-]+)?$/;
@@ -446,10 +448,14 @@ export function readSidecarSelf(status: unknown): SidecarSelf {
   const features = (
     typeof root.features === 'object' && root.features !== null ? root.features : {}
   ) as Record<string, unknown>;
+  const startup = (
+    typeof root.startup === 'object' && root.startup !== null ? root.startup : {}
+  ) as Record<string, unknown>;
   return {
     shutdown: features.shutdown === true,
     gatewayVersion: typeof root.gatewayVersion === 'string' ? root.gatewayVersion : undefined,
     sessions: typeof root.sessions === 'number' ? root.sessions : undefined,
+    startupPhase: typeof startup.phase === 'string' ? startup.phase : undefined,
   };
 }
 

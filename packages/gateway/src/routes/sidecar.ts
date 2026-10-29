@@ -8,7 +8,12 @@ import type { SidecarRuntimeInfo } from '../runtime-info.js';
 import { SanitizeCache } from '../sanitize-cache.js';
 import { restoreValue, sanitizeValue } from '../sanitizer.js';
 import { countPlaceholders, isShellTool } from '../shell-tools.js';
-import { type SessionRefusal, SidecarSessions, isValidSessionKey } from '../sidecar-sessions.js';
+import {
+  type SessionRefusal,
+  SidecarSessions,
+  isUnderBase,
+  isValidSessionKey,
+} from '../sidecar-sessions.js';
 import type { StartupTracker } from '../startup.js';
 
 /** What the sidecar routes need: the engine, the bearer token, session
@@ -52,10 +57,19 @@ export const SESSION_SECRET_HEADER = 'x-nullpii-session-secret';
  * of a change it did not make before it masks, restores or overwrites
  * under it. */
 export const POLICY_VERSION_HEADER = 'x-nullpii-policy-version';
+/** On `PUT /v1/sidecar/sessions/:key`: the base the key is under (the key
+ * itself, or the key is `<base>.<suffix>`). The caller says it left the
+ * other keys under that base, whose secrets it lost (a reload): once the
+ * session is created, they are not remembered as unclosed when their idle
+ * TTL ends them. A live one stays open and usable by its owner, whose next
+ * call undoes this. */
+export const SUPERSEDES_HEADER = 'x-nullpii-supersedes';
 const POLICY_CHANGED = 412;
 /** A shutdown was accepted: until the process ends, new sessions are
  * refused, since one opened now would die with it. */
 const SIDECAR_CLOSING = 503;
+/** A shutdown refused, for one of `shutdownRefusal`'s reasons. */
+const SHUTDOWN_REFUSED = 409;
 const REFUSAL_REPLIES: Readonly<Record<SessionRefusal, { status: number; error: string }>> = {
   not_found: { status: 404, error: 'session_not_found' },
   forbidden: { status: 403, error: 'bad_session_secret' },
@@ -139,6 +153,16 @@ function sha256(value: string): Buffer {
 function presentedSecret(req: FastifyRequest): string | undefined {
   const value = req.headers[SESSION_SECRET_HEADER];
   return typeof value === 'string' ? value : undefined;
+}
+
+/** The supersedes base the request names: undefined when it names none,
+ * `invalid` when it is repeated, not a session key, or not a base the
+ * session key is under. */
+function presentedSupersedes(req: FastifyRequest, key: string): string | 'invalid' | undefined {
+  const value = req.headers[SUPERSEDES_HEADER];
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || !isValidSessionKey(value)) return 'invalid';
+  return isUnderBase(key, value) ? value : 'invalid';
 }
 
 /** Whether the request names a policy version other than `current`. */
@@ -358,7 +382,9 @@ export async function registerSidecarRoutes(
         if (!isValidSessionKey(req.params.key)) {
           return reply.code(400).send({ error: 'invalid_session_key' });
         }
-        const opened = sessions.open(req.params.key, presentedSecret(req));
+        const supersedes = presentedSupersedes(req, req.params.key);
+        if (supersedes === 'invalid') return reply.code(400).send({ error: 'invalid_supersedes' });
+        const opened = sessions.open(req.params.key, presentedSecret(req), supersedes);
         switch (opened.kind) {
           case 'created':
             return reply.code(201).send({ status: 'created', secret: opened.secret });
@@ -382,15 +408,16 @@ export async function registerSidecarRoutes(
       },
     );
 
-    // Lets a newer mod replace this sidecar with its own release. Only an
-    // idle sidecar goes: a session in use is never cut off.
+    // Lets a newer mod replace this sidecar with its own release. Only a
+    // sidecar no one may still count on goes (`shutdownRefusal`).
     if (opts.shutdown !== undefined) {
       const shutdown = opts.shutdown;
       scope.post('/v1/sidecar/shutdown', async (_req, reply) => {
-        if (sessions.size > 0) {
-          return reply.code(409).send({ error: 'sessions_active', sessions: sessions.size });
-        }
-        // A second call is told the same, and stops nothing twice.
+        // A session past its idle TTL counts as ended by it, not as open.
+        sessions.sweep();
+        // Once closing, a second call is told the same, and stops nothing twice.
+        const refusal = closing ? undefined : shutdownRefusal(sessions, opts.startup);
+        if (refusal !== undefined) return reply.code(SHUTDOWN_REFUSED).send(refusal);
         if (!closing) {
           closing = true;
           setImmediate(shutdown);
@@ -489,4 +516,28 @@ export async function registerSidecarRoutes(
       },
     );
   });
+}
+
+/** Why this sidecar may not stop now, or undefined when it may. A window
+ * that uses it, or waits for it, would lose masking with it, and only the
+ * window that started it can start another one: so it stops only once every
+ * session that opened here was closed by its caller, and its model is not
+ * still coming up for the window that started it.
+ * - `sessions_active`: a session is open.
+ * - `starting`: the model is still downloading or loading.
+ * - `not_used_yet`: no session has opened yet, so the window that started
+ *   it has not got to it (unless the start failed: then no one can).
+ * - `sessions_unclosed`: a session ended by its idle TTL, and its caller has
+ *   not closed it since: a window left idle looks just like that, and would
+ *   find the sidecar gone at its next prompt. */
+export function shutdownRefusal(
+  sessions: Pick<SidecarSessions, 'size' | 'everOpened' | 'unclosed'>,
+  startup: StartupTracker | undefined,
+): { readonly error: string; readonly sessions?: number } | undefined {
+  if (sessions.size > 0) return { error: 'sessions_active', sessions: sessions.size };
+  const phase = startup?.current.phase;
+  if (phase === 'downloading' || phase === 'loading') return { error: 'starting' };
+  if (!sessions.everOpened && phase !== 'failed') return { error: 'not_used_yet' };
+  if (sessions.unclosed) return { error: 'sessions_unclosed' };
+  return undefined;
 }

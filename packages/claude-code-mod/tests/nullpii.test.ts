@@ -89,6 +89,10 @@ function fakeSidecar(
   /** `host:port` of every request, wherever it was sent. */
   const hosts: string[] = [];
   const secretsSent: Array<string | undefined> = [];
+  /** The supersedes header of the last PUT of each key, and the keys a
+   * created session made count as left. */
+  const supersedes = new Map<string, string | undefined>();
+  const left: string[] = [];
   const restoreBodies: string[] = [];
   const sanitizeBodies: string[] = [];
   /** Set it to make `/sanitize` and `/restore` answer this text, not JSON.
@@ -104,7 +108,9 @@ function fakeSidecar(
     previewAnswer?: unknown;
     /** Answer a shutdown request as a sidecar with a session in use does. */
     refuseShutdown?: boolean;
-    /** Answer a shutdown request but keep answering after it. */
+    /** Answer a shutdown request but keep answering after it, refusing
+     * every new session with 503 `sidecar_closing`, as the gateway does
+     * until its process ends. */
     stayUp?: boolean;
     /** Refuse a `PUT` sessions with this answer: `CLOSING` as a sidecar that
      * accepted a shutdown does while the process is on its way out, `FULL`
@@ -202,8 +208,17 @@ function fakeSidecar(
       if (method === 'PUT' && state.refuseSession !== undefined) {
         return respond(state.refuseSession.status, { error: state.refuseSession.error });
       }
+      if (method === 'PUT') supersedes.set(key, e.init?.headers?.['x-nullpii-supersedes']);
       if (method === 'PUT' && secret === undefined) {
         const created = `secret-${minted++}`;
+        // As the gateway: once created, the other keys under the base it
+        // names count as left by their caller (they stay open).
+        const base = supersedes.get(key);
+        if (base !== undefined) {
+          for (const other of sessions.keys()) {
+            if (other === base || other.startsWith(`${base}.`)) left.push(other);
+          }
+        }
         sessions.set(key, created);
         return respond(201, { status: 'created', secret: created });
       }
@@ -233,7 +248,10 @@ function fakeSidecar(
     if (path === '/v1/sidecar/shutdown' && method === 'POST') {
       if (state.refuseShutdown) return respond(409, { error: 'sessions_active', sessions: 1 });
       // The process is gone once it has answered: nothing is at the address.
-      if (!state.stayUp) state.down = true;
+      // One that stays up a while refuses sessions until it goes, as the
+      // gateway does once it has said 202.
+      if (state.stayUp) state.refuseSession = { status: 503, error: 'sidecar_closing' };
+      else state.down = true;
       return respond(202, { status: 'closing' });
     }
     if (path === '/v1/sidecar/status') {
@@ -331,6 +349,8 @@ function fakeSidecar(
     policyBodies,
     secretsSent,
     sessions,
+    supersedes,
+    left,
     state,
     statuses,
     tokensSent,
@@ -363,6 +383,7 @@ function stubSession(
     return { value: undefined };
   });
   on('http.fetch', sidecar.handler);
+  on('session.end', ($, e) => ({ sessionId: e.sessionId }));
   return { registered };
 }
 
@@ -501,7 +522,33 @@ test(
   },
 );
 
-test('an older sidecar that says it is closing but stays up is given up on after the wait', async ($, on) => {
+/** The mod's start-up poll, as `STARTUP_POLL_MS` in the mod. */
+const POLL_MS = 2_000;
+
+/** Advance the clock a poll at a time until `check` holds. What one poll
+ * wakes goes through several host calls (the challenge, then the request),
+ * which an advance does not wait for on a loaded machine, and a poll whose
+ * sleep was set after an advance waits for the next one: so each poll is
+ * given real time to finish before the next. Bounded: a check that never
+ * holds fails the expect that follows. */
+async function pollUntil(
+  clock: { advance: (ms: number) => Promise<unknown> },
+  check: () => boolean | Promise<boolean>,
+): Promise<void> {
+  for (let poll = 0; poll < 20 && !(await check()); poll += 1) {
+    await clock.advance(POLL_MS);
+    for (let turn = 0; turn < 20 && !(await check()); turn += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+}
+
+/** Whether `/pii` says masking is on: the start is over and the session open. */
+async function statusOn($): Promise<boolean> {
+  return (await $.command.run({ command: 'pii', args: '' })).text.includes('Status: on');
+}
+
+test('an older sidecar that says it is closing but stays up gets no session: the pinned one is started and waited for', async ($, on) => {
   const { sidecar, spawned, clock } = startAgainst(
     $,
     on,
@@ -512,10 +559,154 @@ test('an older sidecar that says it is closing but stays up is given up on after
   for (let i = 0; i < 70; i += 1) await clock.advance(250);
   await started;
   expect(sidecar.logs).toContain('nullpii: the older sidecar did not stop in time');
-  // The session opens on the sidecar that is still there; nothing is started.
-  expect(sidecar.calls).toContain('PUT /v1/sidecar/sessions/session-1');
+  // It refuses the session (503), as the gateway does once it said 202: the
+  // mod starts the pinned release, and opens no session on the old one.
+  expect(sidecar.statuses).toContain(503);
+  expect(sidecar.statuses).not.toContain(201);
+  expect(spawned.length).toBe(1);
+  const starting = await $.command.run({ command: 'pii', args: '' });
+  expect(starting.text).toContain('starting nullpii-gateway');
+  // The old one ends; the pinned one takes the address and is ready.
+  sidecar.state.refuseSession = undefined;
+  sidecar.state.status = { gatewayVersion: '0.5.4', sessions: 0, features: CAN_SHUTDOWN };
+  sidecar.state.startup = { phase: 'ready' };
+  await pollUntil(clock, () => statusOn($));
+  expect(sidecar.statuses).toContain(201);
+  const on_ = await $.command.run({ command: 'pii', args: '' });
+  expect(on_.text).toContain('Status: on');
+});
+
+test('while the old sidecar still refuses sessions as it closes, a ready status keeps the start waiting', async ($, on) => {
+  const { sidecar, clock } = beforeStart($, on, { down: false });
+  sidecar.state.refuseSession = CLOSING;
+  on('process.spawn', async function* () {
+    await new Promise<never>(() => undefined);
+  });
+  await start($);
+  // The old one answers its status (ready) but still refuses the session.
+  sidecar.state.startup = { phase: 'ready' };
+  await pollUntil(clock, () => sidecar.statuses.filter((s) => s === 503).length >= 3);
+  expect(sidecar.statuses.filter((s) => s === 503).length).toBeGreaterThan(1);
+  const waiting = await $.command.run({ command: 'pii', args: '' });
+  expect(waiting.text).toContain('starting nullpii-gateway');
+  // The one this session started has the address now: the session opens.
+  sidecar.state.refuseSession = undefined;
+  await pollUntil(clock, () => statusOn($));
+  expect(sidecar.statuses).toContain(201);
+  const ready = await $.command.run({ command: 'pii', args: '' });
+  expect(ready.text).toContain('Status: on');
+});
+
+test('the pinned sidecar that exited while the old one held the address is started again once it is free', async ($, on) => {
+  const opts = { down: false };
+  const { sidecar, clock } = beforeStart($, on, opts);
+  sidecar.state.refuseSession = CLOSING;
+  const spawned: string[][] = [];
+  on('process.spawn', async function* ($, e) {
+    spawned.push(e.argv);
+    // The first could not bind the port the old one held, and exits.
+    if (spawned.length === 1) return { value: { code: 1, signal: null } };
+    await new Promise<never>(() => undefined);
+  });
+  await start($);
+  // A poll finds the old one answering ready, and it refuses the session again.
+  await pollUntil(clock, () => sidecar.statuses.filter((s) => s === 503).length >= 2);
+  // The old one goes: nothing answers, and the first child has exited.
+  opts.down = true;
+  await pollUntil(clock, () => spawned.length === 2);
+  expect(spawned.length).toBe(2);
+  // The second takes the address and is ready.
+  opts.down = false;
+  sidecar.state.refuseSession = undefined;
+  sidecar.state.startup = { phase: 'ready' };
+  await pollUntil(clock, () => statusOn($));
+  expect(sidecar.statuses).toContain(201);
+  const status = await $.command.run({ command: 'pii', args: '' });
+  expect(status.text).toContain('Status: on');
+  expect(status.text).not.toContain('exited while');
+});
+
+test('the pinned sidecar that exited while the old one held the address is started again, when the old one refused only the session start', async ($, on) => {
+  const opts = { down: false };
+  const { sidecar, clock } = beforeStart($, on, opts);
+  // The old one refuses the session at session.start (it accepted another
+  // window's shutdown), and is gone before the first status poll.
+  sidecar.state.refuseSession = CLOSING;
+  const spawned: string[][] = [];
+  on('process.spawn', async function* ($, e) {
+    spawned.push(e.argv);
+    // The first could not bind the port the old one held, and exits.
+    if (spawned.length === 1) return { value: { code: 1, signal: null } };
+    await new Promise<never>(() => undefined);
+  });
+  await start($);
+  expect(sidecar.statuses).toContain(503);
+  expect(spawned.length).toBe(1);
+  opts.down = true;
+  await pollUntil(clock, () => spawned.length === 2);
+  expect(spawned.length).toBe(2);
+  // The second takes the address and is ready.
+  opts.down = false;
+  sidecar.state.refuseSession = undefined;
+  sidecar.state.startup = { phase: 'ready' };
+  await pollUntil(clock, () => statusOn($));
+  expect(sidecar.statuses).toContain(201);
+  const status = await $.command.run({ command: 'pii', args: '' });
+  expect(status.text).toContain('Status: on');
+  expect(status.text).not.toContain('exited while');
+});
+
+test('an older sidecar whose model is still coming up is not stopped: the window that started it waits for it', async ($, on) => {
+  const { sidecar, spawned } = startAgainst($, on, {
+    ...IDLE_OLDER,
+    features: CAN_SHUTDOWN,
+    startup: { phase: 'downloading', file: 'model.onnx', received: 1 },
+  });
+  await start($);
+  expect(sidecar.calls).not.toContain('POST /v1/sidecar/shutdown');
   expect(spawned.length).toBe(0);
 });
+
+test(
+  'with while_starting = pass, the start that replaces an older sidecar still waits: nothing goes out unmasked',
+  { options: { while_starting: 'pass' } },
+  async ($, on) => {
+    const sidecar = fakeSidecar({ down: false });
+    stubSession(on, sidecar);
+    const clock = mock.clock(on, { now: 1_700_000_000_000 });
+    sidecar.state.status = { ...IDLE_OLDER, features: CAN_SHUTDOWN };
+    const spawned: string[][] = [];
+    on('process.spawn', async function* ($, e) {
+      spawned.push(e.argv);
+      await new Promise<never>(() => undefined);
+    });
+    const sent: string[] = [];
+    on('prompt.submit', ($, e) => {
+      sent.push(e.text);
+      return { text: e.text };
+    });
+    await start($);
+    expect(sidecar.calls).toContain('POST /v1/sidecar/shutdown');
+    expect(spawned.length).toBe(1);
+    const pending = $.prompt.submit({
+      text: 'Mail John at john@acme.io',
+      wait: false,
+      origin: COMPOSER,
+    });
+    await clock.advance(2_000);
+    // Held, not sent: the older sidecar would have masked it.
+    expect(sent).toEqual([]);
+    sidecar.state.down = false;
+    sidecar.state.status = { gatewayVersion: '0.5.4', sessions: 0, features: CAN_SHUTDOWN };
+    sidecar.state.startup = { phase: 'ready' };
+    await clock.advance(5_000);
+    const out = await pending;
+    expect(out.drop).toBeUndefined();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).not.toContain('John');
+    expect(sent[0]).not.toContain('john@acme.io');
+  },
+);
 
 test('a sidecar that refuses a session because it is closing is replaced like one that does not answer', async ($, on) => {
   const { sidecar, clock } = beforeStart($, on, { down: false });
@@ -533,7 +724,7 @@ test('a sidecar that refuses a session because it is closing is replaced like on
   // The one the mod started has taken the address, and the session opens.
   sidecar.state.refuseSession = undefined;
   sidecar.state.startup = { phase: 'ready' };
-  await clock.advance(2_000);
+  await pollUntil(clock, () => statusOn($));
   expect(sidecar.statuses).toContain(201);
 });
 
@@ -577,7 +768,10 @@ test('a status that reports no features is an older sidecar', () => {
     shutdown: false,
     gatewayVersion: undefined,
     sessions: 0,
+    startupPhase: undefined,
   });
+  expect(readSidecarSelf({ startup: { phase: 'loading' } }).startupPhase).toBe('loading');
+  expect(readSidecarSelf({ startup: { phase: 2 } }).startupPhase).toBeUndefined();
   expect(readSidecarSelf('nope').shutdown).toBe(false);
   expect(readSidecarSelf({ features: { shutdown: 1 } })).toMatchObject({
     shutdown: false,
@@ -1122,9 +1316,53 @@ test('every call on the session carries the secret the sidecar handed out, and o
   expect(sidecar.secretsSent.slice(1).every((s) => s === 'secret-0')).toBe(true);
 });
 
+const END = {
+  reason: 'prompt_input_exit',
+  sessionId: 'session-1',
+  resume: { id: 'session-1' },
+} as const;
+
+test('a reloaded module opens a new key, tells the sidecar it left the old one, and frees nothing', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  mock.clock(on, { now: 1_700_000_000_000 });
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  await start($);
+  await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  // A reload of the module runs session.start again, with the secret gone.
+  await start($);
+  await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  const moved = [...sidecar.sessions.keys()].filter((k) => k !== 'session-1');
+  expect(moved).toHaveLength(1);
+  expect(moved[0]).toMatch(/^session-1\.[0-9a-z]+$/);
+  // The new key names the session id it is under: the sidecar then counts
+  // the old key as left by this window, not as one that may come back.
+  expect(sidecar.supersedes.get(moved[0] ?? '')).toBe('session-1');
+  expect(sidecar.left).toEqual(['session-1']);
+  // The old session is still open, and nothing tried to close it.
+  expect(sidecar.sessions.get('session-1')).toBe('secret-0');
+  expect(sidecar.calls).not.toContain('DELETE /v1/sidecar/sessions/session-1');
+  await $.session.end(END);
+  expect(sidecar.calls.filter((c) => c.startsWith('DELETE'))).toEqual([
+    `DELETE /v1/sidecar/sessions/${moved[0]}`,
+  ]);
+});
+
+test('every session the mod opens names its session id; a /pii try session names none', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  await start($);
+  expect(sidecar.supersedes.get('session-1')).toBe('session-1');
+  await $.command.run(typed('pii', 'try Mail John'));
+  const tries = [...sidecar.supersedes.keys()].filter((k) => k.startsWith('try-'));
+  expect(tries).toHaveLength(1);
+  expect(sidecar.supersedes.get(tries[0] ?? '')).toBeUndefined();
+});
+
 test('a live session it cannot prove it owns makes the mod open a new one under a new key', async ($, on) => {
-  // As after a reload of the module: the sidecar still holds the session
-  // under the session id, and its secret went with the old module.
+  // As after Claude Code restarted on a resumed session: the sidecar still
+  // holds the session under the session id, and its secret went with the
+  // process that ended.
   const sidecar = fakeSidecar({ liveKeys: ['session-1'] });
   stubSession(on, sidecar);
   mock.clock(on, { now: 1_700_000_000_000 });
@@ -2208,6 +2446,67 @@ test(
     expect(out.drop).toBeUndefined();
     expect(asked).toEqual([]);
     expect(sent).toEqual(['Mail John']);
+  },
+);
+
+test(
+  'with while_starting = pass, a prompt sent while a ready sidecar settles a policy change goes masked',
+  { options: { while_starting: 'pass' } },
+  async ($, on) => {
+    const accepted = {
+      version: 'v-earlier',
+      file: POLICY_FILE,
+      loaded: true,
+      config: { categories: { private_person: 'mask' } },
+      categories: { private_person: 'mask' },
+      restoreTools: DEFAULT_RESTORE_TOOLS,
+    };
+    const opts = { down: true, stored: { acceptedPolicy: accepted } };
+    const sidecar = fakeSidecar(opts);
+    stubSession(on, sidecar);
+    const clock = mock.clock(on);
+    on('process.spawn', async function* () {
+      await new Promise<never>(() => undefined);
+    });
+    const sent: string[] = [];
+    on('prompt.submit', ($, e) => {
+      sent.push(e.text);
+      return { text: e.text };
+    });
+    // The policy-change dialog stays open until the test answers it.
+    const questions: string[] = [];
+    let answer: (label: string) => void = () => undefined;
+    const answered = new Promise<string>((resolve) => {
+      answer = resolve;
+    });
+    on('tool.call', { tool: 'AskUserQuestion' }, async ($, e) => {
+      const question = e.questions[0]?.question ?? '';
+      questions.push(question);
+      if (!question.startsWith('The nullpii masking policy was changed')) {
+        return { deny: 'dismissed' };
+      }
+      return { result: { questions: e.questions, answers: { [question]: await answered } } };
+    });
+    await start($);
+    opts.down = false;
+    sidecar.state.startup = { phase: 'ready' };
+    await clock.advance(2_000);
+    // The sidecar is ready and the policy change is being put to the person.
+    expect(questions).toHaveLength(1);
+    const pending = $.prompt.submit({
+      text: 'Mail John at john@acme.io',
+      wait: false,
+      origin: COMPOSER,
+    });
+    await clock.advance(1_000);
+    expect(sent).toEqual([]);
+    answer('Keep the change');
+    const out = await pending;
+    expect(out.drop).toBeUndefined();
+    // Only the policy question was asked: no start-up question on top.
+    expect(questions).toHaveLength(1);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).not.toContain('john@acme.io');
   },
 );
 

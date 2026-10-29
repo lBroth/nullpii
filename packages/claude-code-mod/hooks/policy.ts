@@ -165,6 +165,107 @@ export function hasPlaceholder(value: unknown): boolean {
   return PLACEHOLDER.test(JSON.stringify(value) ?? '');
 }
 
+/** One object key the sidecar masked: the key as the tool wrote it, which
+ * carries a value of its own, and the key as it came back, which holds the
+ * placeholder that stands for that value. */
+export interface MaskedKey {
+  readonly key: string;
+  readonly masked: string;
+}
+
+/** `ResultShapeError`'s text: fixed, it quotes nothing of the result, so
+ * the mod shows it as written. */
+export const RESULT_SHAPE_MISMATCH =
+  'the sidecar answered a masked tool result that does not have the shape of the result';
+
+/** A masked tool result that does not have its result's shape. The sidecar
+ * masks every key in place and keeps every entry in its order, so this is
+ * a fault, never a case to work around: no key can be matched, and the
+ * result is not let through. */
+export class ResultShapeError extends Error {
+  constructor() {
+    super(RESULT_SHAPE_MISMATCH);
+    this.name = 'ResultShapeError';
+  }
+}
+
+/** The object entries of `value`, in their order; `undefined` for anything
+ * but a plain object (an array has number keys, which never mask). */
+function entriesOf(value: unknown): [string, unknown][] | undefined {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  return Object.entries(value);
+}
+
+/** The items of two arrays side by side; `undefined` when neither is an
+ * array. Throws `ResultShapeError` when only one is, or their lengths
+ * differ. */
+function pairedItems(original: unknown, masked: unknown): [unknown, unknown][] | undefined {
+  const isList = Array.isArray(original);
+  if (!isList && !Array.isArray(masked)) return undefined;
+  if (!isList || !Array.isArray(masked) || original.length !== masked.length) {
+    throw new ResultShapeError();
+  }
+  return original.map((one, at) => [one, masked[at]]);
+}
+
+/** One entry of an object and the entry the sidecar answered in its place. */
+interface PairedEntry {
+  readonly key: string;
+  readonly value: unknown;
+  readonly maskedKey: string;
+  readonly maskedValue: unknown;
+}
+
+/** The entries of two objects side by side, in their order; `undefined`
+ * when neither is a plain object. Throws `ResultShapeError` when only one
+ * is, or their entries do not pair up one to one. */
+function pairedEntries(original: unknown, masked: unknown): PairedEntry[] | undefined {
+  const from = entriesOf(original);
+  const to = entriesOf(masked);
+  if (from === undefined && to === undefined) return undefined;
+  if (from === undefined || to === undefined || from.length !== to.length) {
+    throw new ResultShapeError();
+  }
+  return from.map(([key, value], at) => {
+    const [maskedKey, maskedValue] = to[at] as [string, unknown];
+    return { key, value, maskedKey, maskedValue };
+  });
+}
+
+/**
+ * The object keys of `original` that came back masked in `masked`, in the
+ * order the walk meets them. The sidecar masks a key in place, keeping an
+ * object's entries in their order, so the two walk in step; where they do
+ * not, `ResultShapeError` is thrown. The values under the keys stay masked.
+ */
+export function maskedKeys(original: unknown, masked: unknown): readonly MaskedKey[] {
+  const items = pairedItems(original, masked);
+  if (items !== undefined) return items.flatMap(([one, other]) => maskedKeys(one, other));
+  const entries = pairedEntries(original, masked);
+  if (entries === undefined) return [];
+  return entries.flatMap(({ key, value, maskedKey, maskedValue }) => [
+    ...(maskedKey === key ? [] : [{ key, masked: maskedKey }]),
+    ...maskedKeys(value, maskedValue),
+  ]);
+}
+
+/**
+ * `masked` with `original`'s object keys put back: every key that was
+ * replaced by a placeholder is the key the tool wrote again, and every
+ * value stays as it came back masked. A key carries a value of its own, so
+ * the caller puts them back only on the user's word. Throws
+ * `ResultShapeError` where the two do not walk in step.
+ */
+export function unmaskKeys(original: unknown, masked: unknown): unknown {
+  const items = pairedItems(original, masked);
+  if (items !== undefined) return items.map(([one, other]) => unmaskKeys(one, other));
+  const entries = pairedEntries(original, masked);
+  if (entries === undefined) return masked;
+  return Object.fromEntries(
+    entries.map(({ key, value, maskedValue }) => [key, unmaskKeys(value, maskedValue)]),
+  );
+}
+
 /** File tools and the argument that names the file they write. */
 const WRITE_PATH_FIELDS: Readonly<Record<string, string>> = {
   Write: 'file_path',
@@ -264,10 +365,26 @@ export interface Counts {
   /** Placeholders kept in calls to tools outside `restoreTools`. */
   held: number;
   byLabel: Record<string, number>;
+  /** Values sent in clear on the user's word, by the tool they went to and
+   * their category. Never a value or a short form of one: the report's text
+   * may reach the model. */
+  sent: Record<string, Record<string, number>>;
 }
 
 export function emptyCounts(): Counts {
-  return { masked: 0, restored: 0, held: 0, byLabel: {} };
+  // `sent` is keyed by tool names, which a model picks: no prototype to hit.
+  return { masked: 0, restored: 0, held: 0, byLabel: {}, sent: Object.create(null) };
+}
+
+/** Count a value sent in clear on the user's word, under its tool and
+ * category. */
+export function addSent(counts: Counts, tool: string, category: string): void {
+  let byCategory = counts.sent[tool];
+  if (byCategory === undefined) {
+    byCategory = Object.create(null);
+    counts.sent[tool] = byCategory;
+  }
+  byCategory[category] = (byCategory[category] ?? 0) + 1;
 }
 
 /** Add one sidecar sanitize response to the session's counts. */
@@ -397,9 +514,24 @@ export function formatPolicy(policy: Policy | undefined): string[] {
   return [formatCategories(policy), formatSettings(policy), PII_MENU_POINTER];
 }
 
+/** The report's lines of values sent in clear on the user's word: one per
+ * tool and category with its count. None while none were sent. */
+function formatSent(counts: Counts): string[] {
+  return Object.entries(counts.sent)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .flatMap(([tool, byCategory]) =>
+      Object.entries(byCategory)
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(
+          ([category, n]) => `Sent in clear on your word: ${tool} · ${shortName(category)} ${n}`,
+        ),
+    );
+}
+
 /** The `/pii` status: the state, the session's counts on one line, the
- * categories by mode, the policy, and where the commands are. Short on
- * purpose: `/pii help` lists them. */
+ * values sent in clear one line per tool and category, the categories by
+ * mode, the policy, and where the commands are. Short on purpose: `/pii
+ * help` lists them. */
 export function formatReport(
   counts: Counts,
   problem: string | undefined,
@@ -418,6 +550,7 @@ export function formatReport(
       `Real values put back into local tool calls: ${counts.restored}`,
       `Placeholders kept in calls to other tools: ${counts.held}`,
     ].join(' · '),
+    ...formatSent(counts),
     ...(policy === undefined
       ? ['Policy: unknown (the sidecar has not answered)']
       : [formatCategories(policy), formatSettings(policy)]),

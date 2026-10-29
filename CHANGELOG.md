@@ -5,6 +5,11 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Mod: the mod asks before a value goes out in clear, where it once decided alone. One dialog, three answers — Block, Send once, Allow all. It asks when a tool result's object keys were masked (a key can itself hold personal data, and a key read in its masked form can make Claude Code reject the result against the tool's schema): Send once puts the original keys back with the values under them still masked, Block withholds the whole result. And it asks before a call to a tool outside `restoreTools` that holds placeholders (`WebFetch`, `WebSearch`, an MCP tool): Send once restores the values and runs the call through the same checks as a call the restore path rewrites, Block refuses the call. A shell command is never asked (the refusal stands), a tool in `restoreTools` never is, and a placeholder nothing stands behind runs as written. No answer — a dismissed dialog, or a `claude -p` run — is Block.
+- Mod: Allow all answers Send once for the rest of the session, with no further dialog, and ends with the session. Each key or value sent in clear gets a toast (the tool, the category, a short form of the value), shown on that machine only, and `/pii` counts it by tool and category (`Sent in clear on your word: WebFetch · email 1`) — never a value or a short form, since the report's text may reach the model.
+
 ## [0.5.4] — 2026-10-27
 
 The mod's look and commands: a band with a progress bar and the cause of a block, a padlock that reads as open, `/pii allow` instead of `/pii off`, and a clearer `/pii doctor`.

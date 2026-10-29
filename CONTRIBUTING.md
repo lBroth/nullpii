@@ -36,7 +36,10 @@ Non-negotiable — PRs that violate these will not be merged.
 
 ### Real-ONNX end-to-end (`npm run test:e2e`)
 
-The default `npm test` mocks `OrtBackend` + `GlinerTokenizer` so CI stays ONNX-free. The opt-in E2E suite under `test/e2e/` loads the real GLiNER model and asserts representative fixtures produce representative spans — catches regressions in ScatterND clamping, decoder index math, chunk-boundary dedupe, recognizer/ML reconciliation, and the base64 layer.
+The default `npm test` mocks `OrtBackend` + `GlinerTokenizer` so CI stays ONNX-free. The opt-in E2E suite loads the real GLiNER model and lives in two folders:
+
+- `test/e2e/`, the core: representative fixtures produce representative spans, and the whole sanitize → model → restore pipeline holds (sessions, placeholders an LLM hands back, user-written `{{…}}` templates, the policy of a running engine, texts longer than one model window, what the default policy leaves readable). It catches regressions in ScatterND clamping, decoder index math, chunk-boundary dedupe, recognizer/ML reconciliation, the base64 layer, the placeholder-escape sentinels and the policy prompt.
+- `packages/gateway/test/e2e/`, the gateway on the real engine: the sidecar's sessions, sanitize, restore per tool and policy changes, and the Messages proxy against a fake upstream (no value reaches the upstream, the answer comes back restored in JSON and SSE). A change to the gateway's routing or restore rules should be checked here too.
 
 ```bash
 # Point at a local model directory containing model.onnx + tokenizer.json
@@ -44,9 +47,9 @@ The default `npm test` mocks `OrtBackend` + `GlinerTokenizer` so CI stays ONNX-f
 NULLPII_MODEL_DIR=/path/to/model npm run test:e2e
 ```
 
-`test/e2e/*.test.ts` are excluded from the default `vitest run`; the `test:e2e` script sets `NULLPII_E2E=1` so the same `vitest.config.ts` swaps include/exclude lists.
+Both folders (`test/e2e/` and `packages/gateway/test/e2e/`) are excluded from the default `vitest run`; the `test:e2e` script sets `NULLPII_E2E=1` so the same `vitest.config.ts` swaps include/exclude lists and runs both.
 
-In CI the `e2e-onnx` job (`.github/workflows/ci.yml`) runs the same suite against the model the library pins (`DEFAULT_MODEL_REPO` and `DEFAULT_MODEL_REVISION` in `src/defaults.ts`): it builds the library, fails unless that revision is a 40-character commit SHA, fetches it with `nullpii prefetch` as a user's install would (cached between runs), and points `NULLPII_MODEL_DIR` at it. The job is opt-in: set the repository variable `NULLPII_E2E_ENABLED=true` once the pinned revision downloads anonymously from Hugging Face.
+In CI the `e2e-onnx` job (`.github/workflows/ci.yml`) runs the same suite, both folders, against the model the library pins (`DEFAULT_MODEL_REPO` and `DEFAULT_MODEL_REVISION` in `src/defaults.ts`): it builds the library, fails unless that revision is a 40-character commit SHA, fetches it with `nullpii prefetch` as a user's install would (cached between runs), and points `NULLPII_MODEL_DIR` at it. The job runs only while the repository variable `NULLPII_E2E_ENABLED` is `true`; it is set, since the pinned revision downloads anonymously from Hugging Face. Any other value turns the job off.
 
 ## Test data
 

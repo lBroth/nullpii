@@ -78,11 +78,12 @@ jobs:
       - run: python -m pytest -q packages/eval/scripts/r3/traces_v3_gen/tests
 
   e2e-onnx:
-    # Real-ONNX end-to-end suite (test/e2e/). Loads the GLiNER model and
-    # runs a small fixture set through the real inference path, so CI
-    # catches regressions the mocked unit suite cannot (ScatterND clamping,
-    # decoder index math, chunk-boundary dedupe, recognizer/ML
-    # reconciliation, base64 layer).
+    # Real-ONNX end-to-end suite: the core (test/e2e/) and the gateway on
+    # the real engine (packages/gateway/test/e2e/). Loads the GLiNER model
+    # and runs fixtures through the real inference path, so CI catches
+    # regressions the mocked unit suite cannot (ScatterND clamping, decoder
+    # index math, chunk-boundary dedupe, recognizer/ML reconciliation,
+    # base64 layer, the policy prompt, the sidecar and the Messages proxy).
     #
     # The model is the one the library pins (DEFAULT_MODEL_REPO and
     # DEFAULT_MODEL_REVISION in src/defaults.ts, DEFAULT_MODEL in
@@ -91,8 +92,9 @@ jobs:
     # unless that revision is a commit SHA, so it never tests a moving
     # `main`.
     #
-    # Opt-in via the repository variable `NULLPII_E2E_ENABLED=true`: set
-    # it once the pinned revision downloads anonymously from Hugging Face.
+    # Gated on the repository variable `NULLPII_E2E_ENABLED`: it is set to
+    # `true` (the pinned revision downloads anonymously from Hugging Face);
+    # any other value turns the job off.
     name: e2e (real ONNX)
     if: ${{ vars.NULLPII_E2E_ENABLED == 'true' }}
     runs-on: ubuntu-latest

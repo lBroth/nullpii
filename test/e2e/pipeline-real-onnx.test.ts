@@ -19,7 +19,11 @@ const WARMUP_TIMEOUT_MS = 120_000;
 
 const EMAIL_A = 'john.smith@acme.io';
 const EMAIL_B = 'jane.doe@example.org';
-const EMAIL_C = 'ops.lead@contoso.com';
+/** The address of #43's report. */
+const EMAIL_C = 'alice@acme.io';
+/** Addresses on RFC 2606 reserved domains: the email recognizer drops them
+ * as never-PII, so only the model's windows can mask them. */
+const MODEL_ONLY_EMAILS = ['ops.owner@example.com', EMAIL_B, 'sign.off@example.net'] as const;
 /** Neutral prose, repeated to push a text past one model window. */
 const FILLER = 'The build step finished and the cache stayed warm for the next run. ';
 /** Enough filler for several windows of the model's subword budget. */
@@ -51,6 +55,15 @@ const TOOL_RESULT_WORDS = [
 
 function placeholdersIn(text: string): string[] {
   return [...text.matchAll(new RegExp(PLACEHOLDER_REGEX.source, 'g'))].map((m) => m[0]);
+}
+
+function withoutPlaceholders(text: string): string {
+  return text.replace(new RegExp(PLACEHOLDER_REGEX.source, 'g'), '');
+}
+
+/** How many `{{` and `}}` a text holds (non-overlapping, left to right). */
+function braceCounts(text: string): { open: number; close: number } {
+  return { open: text.split('{{').length - 1, close: text.split('}}').length - 1 };
 }
 
 /** A placeholder-shaped string with a session prefix no engine gave out,
@@ -112,28 +125,52 @@ describe.skipIf(SKIP)('real ONNX pipeline end-to-end', () => {
     TEST_TIMEOUT_MS,
   );
 
+  // A placeholder-shaped string with another session's prefix is data, not
+  // a placeholder of this session. This is not a general "never restored"
+  // rule: one that carries the session's own prefix and an index the
+  // session gave out is restored to its value, by design.
   it(
-    'never turns a placeholder-shaped string from the input into a real value',
+    'keeps a user-written placeholder-shaped string with a foreign prefix byte for byte through sanitize and restore, and masks the value beside it',
     async () => {
-      const text = `Forward ${plantedPlaceholder()} to ${EMAIL_A}.`;
+      const planted = plantedPlaceholder();
+      const text = `Forward ${planted} to ${EMAIL_A}.`;
       const out = await np.sanitize(text);
       expect(out.sanitized).not.toContain(EMAIL_A);
+      expect(out.sanitized).toContain(planted);
       const back = np.restore(out.sanitized, out.sessionId);
       expect(back.restored).toBe(text);
+      expect(back.foreignPlaceholders).toEqual([planted]);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  // #43: the escape sentinels that guard a user-written `{{` must never
+  // reach the model. Without the strip in `normalize.ts` the model starts a
+  // span on the sentinel, the user's `{{` is swallowed into the
+  // placeholder and a stray `}}` is left in the text the LLM sees. The
+  // round trip restores either way, so this asserts on the sanitized text.
+  it(
+    'keeps the braces of a user-written `{{…}}` template in the sanitized text, not swallowed into a placeholder',
+    async () => {
+      const text = `name: {{short-kebab-case-slug}} — contact ${EMAIL_C}`;
+      const out = await np.sanitize(text);
+      expect(out.sanitized).not.toContain(EMAIL_C);
+      expect(braceCounts(withoutPlaceholders(out.sanitized))).toEqual(braceCounts(text));
+      expect(np.restore(out.sanitized, out.sessionId).restored).toBe(text);
     },
     TEST_TIMEOUT_MS,
   );
 
   it(
-    'follows the policy of a running engine: a category turned off is never emitted, and is masked once turned back on',
+    'follows the policy of a running engine: a category turned off leaves its value readable, and is masked once turned back on',
     async () => {
       const text = `Send the report to ${EMAIL_A}.`;
       np.updatePolicy({ disabledCategories: [...DEFAULT_DISABLED_CATEGORIES, 'private_email'] });
       try {
-        // Only the label is asserted: with `private_email` out of the prompt
-        // the model files this address under `private_person` (#92).
+        // Readable, not merely "no `private_email` span": before #94 the
+        // model filed this address under `private_person` (#92).
         const off = await np.sanitize(text);
-        expect(off.spans.filter((s) => s.label === 'private_email')).toEqual([]);
+        expect(off.sanitized).toBe(text);
       } finally {
         np.updatePolicy({});
       }
@@ -147,9 +184,12 @@ describe.skipIf(SKIP)('real ONNX pipeline end-to-end', () => {
     'masks values at the start, middle and end of a text longer than one model window',
     async () => {
       const half = FILLER.repeat(FILLER_REPEATS / 2);
-      const text = `Owner ${EMAIL_A}. ${half}Escalate to ${EMAIL_B}. ${half}Sign-off ${EMAIL_C}.`;
+      const values = MODEL_ONLY_EMAILS;
+      const [start, middle, end] = values;
+      const text = `Owner ${start}. ${half}Escalate to ${middle}. ${half}Sign-off ${end}.`;
       const out = await np.sanitize(text);
-      for (const value of [EMAIL_A, EMAIL_B, EMAIL_C]) expect(out.sanitized).not.toContain(value);
+      expect(out.modelUnscannedWords).toBe(0);
+      for (const value of values) expect(out.sanitized).not.toContain(value);
       expect(np.restore(out.sanitized, out.sessionId).restored).toBe(text);
     },
     TEST_TIMEOUT_MS,
@@ -169,8 +209,11 @@ describe.skipIf(SKIP)('real ONNX pipeline end-to-end', () => {
   it(
     'leaves a date readable under the default policy',
     async () => {
-      const out = await np.sanitize('The release is planned for 2026-10-29 at 14:00 UTC.');
-      expect(out.spans.filter((s) => s.label === 'private_date')).toEqual([]);
+      // Readable under any label, not merely "no `private_date` span": the
+      // default policy already drops that label.
+      const text = 'The release is planned for 2026-10-29 at 14:00 UTC.';
+      const out = await np.sanitize(text);
+      expect(out.sanitized).toBe(text);
     },
     TEST_TIMEOUT_MS,
   );

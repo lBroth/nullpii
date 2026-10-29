@@ -5106,3 +5106,33 @@ test('a restart waiting for another sidecar to let go of the address shows as st
   expect(lines.at(-1)).toContain('starting');
   expect(lines.at(-1)).not.toContain('blocking');
 });
+
+test('the band says starting, not blocking, while a restart waits for another sidecar to let go of the address', async ($, on) => {
+  const opts = { down: false };
+  const sidecar = fakeSidecar(opts);
+  stubSession(on, sidecar);
+  const clock = mock.clock(on, { now: 1_700_000_000_000 });
+  const spawned: string[][] = [];
+  // biome-ignore lint/correctness/useYield: a stand-in child whose port is taken.
+  on('process.spawn', async function* ($, e) {
+    spawned.push(e.argv);
+    return { value: { code: 1, signal: null } };
+  });
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  // What is beneath the band: an empty line, so the band is the mod's.
+  on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }));
+  await start($);
+  expect(await statusOn($)).toBe(true);
+  // The sidecar in use is closing: its session is gone, it refuses a new
+  // one, and holds the address, so the child the mod starts exits.
+  sidecar.forget();
+  sidecar.state.refuseSession = CLOSING;
+  const ui = await $.ui.mount(BAND);
+  const pending = $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  pending.catch(() => undefined);
+  await pollUntil(clock, () => spawned.length === 1);
+  await pollUntil(clock, () => sidecar.statuses.filter((s) => s === 503).length >= 3);
+  expect(await ui.find({ type: 'Text', text: /blocking/ })).toBeUndefined();
+  expect(await ui.find({ type: 'Text', text: /starting/ })).toBeDefined();
+  await ui.unmount();
+});

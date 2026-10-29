@@ -111,15 +111,6 @@ const SESSION_EXISTS = 409;
 const SIDECAR_CLOSING = 503;
 /** Proves to the sidecar that this mod opened the session. */
 const SESSION_SECRET_HEADER = 'x-nullpii-session-secret';
-/** Tells the sidecar, when this mod opens a session after a reload of its
- * module, the key the module before it held and can no longer close (its
- * secret went with it): the sidecar then does not count that key as a
- * window that may still come back once its idle TTL ends it. */
-const SUPERSEDES_HEADER = 'x-nullpii-supersedes';
-/** The sidecar key this Claude Code process holds open, kept in `$.state`
- * so a reload of the module knows it held one. Never the secret: any
- * plugin can read `$.state`. */
-const HELD_KEY = { plugin: 'nullpii', key: 'heldKey' } as const;
 const KEY_SUFFIX_RADIX = 36;
 const NO_TOKEN =
   'no sidecar token: set it with /plugin configure (sidecar_token), or NULLPII_SIDECAR_TOKEN';
@@ -282,14 +273,9 @@ interface Failure {
   readonly message?: string;
 }
 // Module scope is how a mod's hooks share data: the mods API passes no
-// context object between them. A reload of the module starts these over,
-// the session secret included: it stays in this module's memory only
-// (`$.state` would survive the reload, but any plugin can read it). Only
-// the key this process holds open is kept in `$.state` (`HELD_KEY`), so the
-// reloaded module, which opens a new sidecar session under a new key, can
-// tell the sidecar it left that one (`SUPERSEDES_HEADER`). Another Claude
-// Code process on the same session id (a resume in another terminal) has
-// no such key, and names none.
+// context object between them. `$.state` would survive a reload of the
+// module, but nothing here needs to (a reloaded mod opens a new sidecar
+// session), and the session secret must stay in this process's memory.
 
 // Display-only restores, keyed by the masked text. In memory only, bounded,
 // and cleared when the session ends.
@@ -308,10 +294,6 @@ let sessionKey = '';
 // The secret the sidecar handed out for `sessionKey`: without it the
 // bearer token alone (which commands may inherit) reads nothing.
 let sessionSecret: string | undefined;
-// The key an earlier load of this module in this process held open and
-// could not close (`HELD_KEY`), until a session opens and the sidecar has
-// been told this window left it.
-let leftKey: string | undefined;
 // The policy the sidecar runs with, as this session made or accepted it:
 // read when the session opens, replaced by /pii and by the user's answer
 // about a change made elsewhere.
@@ -346,6 +328,19 @@ let paused = false;
 // still coming up (the `while_starting` option): ask the person, always
 // wait, or always send it unprotected.
 let whileStarting: 'ask' | 'block' | 'pass' = 'ask';
+// Whether this window starts a sidecar when none answers (the `autostart`
+// option, "Start the sidecar"): at session start, and again mid-session.
+let autostartOn = true;
+// A session opened on a sidecar since this window last began a start: only
+// then does a sidecar that stops answering get started again mid-session.
+// A start that gave up is not tried again at every prompt (each would run
+// npx once more); the band says why, until the next session.
+let restartable = false;
+// The start running now began mid-session, because the sidecar in use was
+// lost (`restartIfGone`): the session was masked until then, so prompts,
+// tool calls and tool results wait for the new sidecar under every
+// `while_starting`, and nothing goes out unmasked.
+let midSessionStart = false;
 // The person said to send unprotected until this start-up is ready: the
 // answer holds for this start only.
 let startPass = false;
@@ -389,7 +384,6 @@ async function request(
   body?: unknown,
   secret?: string,
   version: string | undefined = policy?.version,
-  extra: Readonly<Record<string, string>> = {},
 ): Promise<unknown> {
   if (sidecarUrl === undefined) throw new Error(NOT_LOOPBACK);
   if (token === undefined) throw new Error(NO_TOKEN);
@@ -400,7 +394,7 @@ async function request(
   const seen = version === undefined ? {} : { [POLICY_VERSION_HEADER]: version };
   const res = await fetchSidecar($, sidecarUrl + path, {
     method,
-    headers: { authorization: `Bearer ${token}`, ...json, ...owner, ...seen, ...extra },
+    headers: { authorization: `Bearer ${token}`, ...json, ...owner, ...seen },
     ...(body !== undefined && { body: JSON.stringify(body) }),
   });
   if (!res.ok) throw new SidecarError(res.status);
@@ -534,21 +528,12 @@ async function accept($, accepted: Policy): Promise<void> {
   await $.store.set(ACCEPTED_POLICY_KEY, accepted);
 }
 
-/** PUT the session `key`, presenting `secret` when there is one, and
- * `supersedes`, a key this process held and left, when there is one;
- * resolves with the secret that now holds it: a new one when the sidecar
- * created the session, else the one presented. */
-async function putSession(
-  $,
-  key: string,
-  secret: string | undefined,
-  supersedes?: string,
-): Promise<string | undefined> {
+/** PUT the session `key`, presenting `secret` when there is one; resolves
+ * with the secret that now holds it: a new one when the sidecar created
+ * the session, else the one presented. */
+async function putSession($, key: string, secret: string | undefined): Promise<string | undefined> {
   const path = SESSIONS_PATH + encodeURIComponent(key);
-  const extra = supersedes === undefined ? {} : { [SUPERSEDES_HEADER]: supersedes };
-  const opened = (await request($, 'PUT', path, undefined, secret, policy?.version, extra)) as {
-    secret?: string;
-  };
+  const opened = (await request($, 'PUT', path, undefined, secret)) as { secret?: string };
   return opened.secret ?? secret;
 }
 
@@ -563,39 +548,24 @@ function openSession($): Promise<void> {
   return opening;
 }
 
-/** The key this window left that a session opened under `key` may name
- * to the sidecar: the one an earlier load of this module held, when it is
- * another key under the same session id (the sidecar refuses any other). */
-function leftFor(key: string): string | undefined {
-  if (leftKey === undefined || leftKey === key) return undefined;
-  const sameBase = leftKey === sessionBase || leftKey.startsWith(`${sessionBase}.`);
-  return sameBase ? leftKey : undefined;
-}
-
 /** A live session under the key whose secret this module no longer has
- * (it was reloaded, or another Claude Code process opened it: a resume in
- * another terminal, or of a window that was killed) cannot be taken over,
- * so a new one opens under a new key: placeholders from before stay
- * masked, as after a sidecar restart. After a reload, the PUT names the
- * key the module before held (`leftFor`), so the sidecar does not remember
- * it as a window that may come back once its idle TTL ends it; a key
- * another process holds is never named. The key and its secret change
- * together, once the sidecar holds both, and the key is kept in `$.state`. */
+ * (it was reloaded) cannot be taken over, so a new one opens under a new
+ * key: placeholders from before stay masked, as after a sidecar restart.
+ * The key and its secret change together, once the sidecar holds both. */
 async function openSessionOnce($): Promise<void> {
   let key = sessionKey;
   let secret: string | undefined;
   try {
-    secret = await putSession($, key, sessionSecret, leftFor(key));
+    secret = await putSession($, key, sessionSecret);
   } catch (err) {
     if (!(err instanceof SidecarError) || err.status !== SESSION_EXISTS) throw err;
     const now = await $.clock.now();
     key = `${sessionBase}.${Math.floor(now).toString(KEY_SUFFIX_RADIX)}`;
-    secret = await putSession($, key, undefined, leftFor(key));
+    secret = await putSession($, key, undefined);
   }
   sessionKey = key;
   sessionSecret = secret;
-  leftKey = undefined;
-  await $.state.set(HELD_KEY, key);
+  restartable = true;
   await reviewPolicy($);
   problem = undefined;
   // A band drawn before the session opened (a hot reload draws it at once,
@@ -608,14 +578,82 @@ async function openSessionOnce($): Promise<void> {
  * While a sidecar this session started comes up, nothing is sent at all:
  * the call fails closed with the band's phase line. */
 async function sanitize($, value: unknown): Promise<Sanitized> {
+  await untilRestarted($);
   if (phase !== undefined) throw new Error(phaseLine());
+  return withRestart($, async () => {
+    try {
+      return (await sidecar($, 'POST', '/sanitize', { value })) as Sanitized;
+    } catch (err) {
+      if (!(err instanceof SidecarError) || err.status !== SESSION_NOT_FOUND) throw err;
+      await openSession($);
+      return (await sidecar($, 'POST', '/sanitize', { value })) as Sanitized;
+    }
+  });
+}
+
+/** Run the session call `call`. When it fails because the sidecar in use
+ * was lost and a restart begins (`restartIfGone`), wait for the new
+ * sidecar and run it once more; otherwise fail as it did. */
+async function withRestart<T>($, call: () => Promise<T>): Promise<T> {
   try {
-    return (await sidecar($, 'POST', '/sanitize', { value })) as Sanitized;
+    return await call();
   } catch (err) {
-    if (!(err instanceof SidecarError) || err.status !== SESSION_NOT_FOUND) throw err;
-    await openSession($);
-    return (await sidecar($, 'POST', '/sanitize', { value })) as Sanitized;
+    if (!restartIfGone($, err)) throw err;
+    await untilRestarted($);
+    return call();
   }
+}
+
+/**
+ * A session call failed. When no sidecar answers at the address (it was
+ * stopped, crashed, or replaced by another window), or the one there is
+ * closing, and this window may start one (`autostart`), start the pinned
+ * sidecar as at session start and say so. A start already running is not
+ * begun twice, and one that gave up is not begun again until a session
+ * has opened (`restartable`).
+ */
+function restartIfGone($, err: unknown): boolean {
+  const closing = isStatus(err, SIDECAR_CLOSING);
+  const gone = (err instanceof Error && err.message === UNREACHABLE) || closing;
+  if (!gone || !restartable || started !== undefined || !autostartOn) return false;
+  if (sidecarUrl === undefined || token === undefined) return false;
+  $.ui.log('nullpii: no sidecar answers mid-session: starting the pinned one', { to: 'debug' });
+  beginStart($, sidecarUrl, token, closing);
+  midSessionStart = true;
+  // A choice to send unprotected belonged to an earlier start.
+  startPass = false;
+  redraw($);
+  return true;
+}
+
+/** While a start that began mid-session runs, wait for it to end, under
+ * every `while_starting`: the session was masked until the sidecar was
+ * lost, so nothing goes out unmasked now. A start that gave up, or did not
+ * end by the start's deadline, fails the call with the band's reason. */
+async function untilRestarted($): Promise<void> {
+  if (!midSessionStart) return;
+  const deadline = (await $.clock.now()) + STARTUP_WAIT_MS;
+  while (midSessionStart && started !== undefined && (await $.clock.now()) < deadline) {
+    await $.clock.sleep(HOLD_POLL_MS);
+  }
+  if (started !== undefined || problem !== undefined) throw new Error(problem ?? NOT_STARTED);
+}
+
+/** Start the pinned sidecar for this session, and wait for it in the
+ * background: the band shows each phase of the start as it goes through it
+ * (the packages installing, the model downloading, its bytes once the
+ * sidecar answers its status, the model loading), and nothing is sent
+ * masked until it is ready. `closing`: the sidecar at the address answered
+ * `sidecar_closing`, so it may still hold the address for a while. */
+function beginStart($, origin: string, secretToken: string, closing: boolean): void {
+  restartable = false;
+  started = 'running';
+  startSidecar($, origin, secretToken);
+  phase = 'installing';
+  download = undefined;
+  problem = phaseLine();
+  redraw($);
+  void waitForSidecar($, closing).catch((err) => blocked($, 'sidecar start', failureOf(err)));
 }
 
 async function masked($, value: unknown): Promise<unknown> {
@@ -731,6 +769,7 @@ function gaveUp($, message: string): void {
 /** The start this session waited for is over, whichever way it went: no
  * phase is left to fail calls with. */
 function endStart(): void {
+  midSessionStart = false;
   started = undefined;
   phase = undefined;
   download = undefined;
@@ -872,10 +911,10 @@ async function addressFree($): Promise<boolean> {
  * session start that follows finds the address free and starts the pinned
  * one. Only a sidecar that can be stopped (it reports `shutdown`), holds no
  * session and is not still bringing its model up goes; the sidecar itself
- * also refuses while a window may still count on it (a session ended by its
- * idle TTL, or none opened yet), since that window would not get a sidecar
- * back. Any other sidecar is left running and the doctor reports the older
- * release.
+ * also refuses before any session has opened on it, for the window that
+ * started it. A window whose sidecar goes this way starts the pinned one at
+ * its next prompt (`restartIfGone`). Any other sidecar is left running and
+ * the doctor reports the older release.
  */
 async function replaceOlderSidecar($, autostart: boolean): Promise<void> {
   // The mod would not start the pinned one afterwards: nothing to make room for.
@@ -1168,6 +1207,9 @@ async function holdUntilReady($): Promise<boolean> {
  * dialog dismissed, or one no one can answer (`claude -p`), waits. */
 async function sendUnprotectedWhileStarting($): Promise<boolean> {
   if (!starting()) return false;
+  // A start that began mid-session: the session was masked until then, so
+  // every prompt waits for it, whatever `while_starting` says.
+  if (midSessionStart) return false;
   if (startPass) return true;
   if (whileStarting === 'block') return false;
   // The mod stopped a sidecar that was masking to make this start: `pass`
@@ -1623,9 +1665,6 @@ export function register(on, options) {
     sessionBase = await $.session.id();
     sessionKey = sessionBase;
     sessionSecret = undefined;
-    // A reload of the module runs this hook again: a key the module before
-    // it held open is one this window left.
-    leftKey = ((await $.state.get(HELD_KEY)) as { value?: string | null }).value ?? undefined;
     lastFailure = undefined;
     // A session starts masked: a pause was the session before it's alone.
     paused = false;
@@ -1636,7 +1675,8 @@ export function register(on, options) {
     whileStarting = asked === 'block' || asked === 'pass' ? asked : 'ask';
     // The band was drawn under the old state: draw it under this one.
     redraw($);
-    await replaceOlderSidecar($, optionFlag(options, 'autostart', true));
+    autostartOn = optionFlag(options, 'autostart', true);
+    await replaceOlderSidecar($, autostartOn);
     try {
       await openSession($);
     } catch (err) {
@@ -1646,17 +1686,8 @@ export function register(on, options) {
       // it answers.
       const closing = isStatus(err, SIDECAR_CLOSING);
       const gone = (err instanceof Error && err.message === UNREACHABLE) || closing;
-      if (gone && optionFlag(options, 'autostart', true) && sidecarUrl && token) {
-        started = 'running';
-        startSidecar($, sidecarUrl, token);
-        // The band shows each phase of the start as it goes through it:
-        // the packages installing, the model downloading (its bytes, once
-        // the sidecar answers its status), the model loading.
-        phase = 'installing';
-        download = undefined;
-        problem = phaseLine();
-        redraw($);
-        void waitForSidecar($, closing).catch((err) => blocked($, 'sidecar start', failureOf(err)));
+      if (gone && autostartOn && sidecarUrl && token) {
+        beginStart($, sidecarUrl, token, closing);
         return next(e);
       }
       const reason = blocked($, 'session.start', failureOf(err));
@@ -1670,7 +1701,6 @@ export function register(on, options) {
     try {
       await sidecar($, 'DELETE', '');
       sessionSecret = undefined;
-      await $.state.set(HELD_KEY, null);
     } catch (err) {
       // The sidecar's idle TTL drops the session anyway.
       $.ui.log(`nullpii: session not closed: ${shownReason(failureOf(err))}`, { to: 'debug' });
@@ -1690,6 +1720,8 @@ export function register(on, options) {
     if (e.isMeta !== true && (await sendUnprotectedWhileStarting($))) return next(e);
     // Not sent unprotected: it waits for the sidecar, then goes masked.
     if (e.isMeta !== true && starting()) await holdUntilReady($);
+    // A sidecar lost mid-session is started again inside: the prompt waits
+    // for it (`untilRestarted`), and is refused if it does not come up.
     const out = (await masked($, { text: e.text, context: e.context ?? [] })) as {
       text: string;
       context: string[];
@@ -1747,6 +1779,7 @@ export function register(on, options) {
     if (isOwnQuestion(e)) return next(e);
     // A sidecar this session started is still coming up: nothing restores
     // and nothing is sent, so the call is refused up front.
+    await untilRestarted($);
     if (phase !== undefined) return { deny: CALL_NOT_RUN };
     // Known to be blocking: reach the sidecar again before the tool runs,
     // so the call is refused up front instead of run with its result
@@ -1758,7 +1791,9 @@ export function register(on, options) {
       // The sidecar decides by the tool's name: nothing for a tool outside
       // the policy's `restoreTools`, and nothing for a shell tool, whose
       // placeholders it lists so the call is refused (SECURITY.md).
-      const r = (await sidecar($, 'POST', '/restore', { value: args, tool: e.tool })) as Restored;
+      const r = (await withRestart($, () =>
+        sidecar($, 'POST', '/restore', { value: args, tool: e.tool }),
+      )) as Restored;
       counts.held += r.heldForTool ?? 0;
       const kept = r.shellKeptMasked ?? [];
       if (kept.length > 0) return { deny: shellDenied(kept) };

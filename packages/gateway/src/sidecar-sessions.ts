@@ -10,30 +10,10 @@ import { SanitizeCache } from './sanitize-cache.js';
 const SESSION_KEY_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
 /** Random bytes in a session secret, sent base64url-encoded. */
 const SESSION_SECRET_BYTES = 32;
-/** How many keys of sessions that ended by their idle TTL are remembered,
- * until their caller opens or closes them again. Past it, the table counts
- * as never released (`unclosed`), so nothing is forgotten silently. */
-const UNCLOSED_KEYS_MAX = 1024;
-
-/** Separates a session base from the suffix a caller adds to it when it
- * moves to a new key under the same base (`<base>.<suffix>`). */
-const BASE_SEPARATOR = '.';
 
 /** Whether `key` can name a sidecar session (`SESSION_KEY_PATTERN`). */
 export function isValidSessionKey(key: string): boolean {
   return SESSION_KEY_PATTERN.test(key);
-}
-
-/** The base of `key`: the part before its first `.`, or the key itself. */
-function baseOf(key: string): string {
-  const cut = key.indexOf(BASE_SEPARATOR);
-  return cut === -1 ? key : key.slice(0, cut);
-}
-
-/** Whether `left` can be superseded by a session opened under `key`: another
- * key under the same base (`<base>` or `<base>.<suffix>`). */
-export function canSupersede(key: string, left: string): boolean {
-  return left !== key && baseOf(left) === baseOf(key);
 }
 
 export interface SidecarSessionsOptions {
@@ -63,10 +43,6 @@ interface Entry {
   /** SHA-256 of the session secret; the secret itself is not kept. */
   readonly secretDigest: Buffer;
   lastUsed: number;
-  /** A session opened later under the same base named this key as one its
-   * caller left (`open`'s `supersedes`), and no call has proved its owner is
-   * still here since: when its idle TTL ends it, its key is not remembered. */
-  left: boolean;
 }
 
 /** What a caller gets for a live session. */
@@ -95,12 +71,6 @@ function sha256(value: string): Buffer {
  */
 export class SidecarSessions {
   private readonly entries = new Map<string, Entry>();
-  // Keys whose session ended by the idle TTL and whose caller has not come
-  // back since (to open it again, or to close it): a window left open and
-  // idle looks just like this, so these keys tell the shutdown route that
-  // someone may still count on this sidecar.
-  private readonly expiredKeys = new Set<string>();
-  private expiredOverflow = false;
   private openedAny = false;
   private readonly now: () => number;
 
@@ -111,53 +81,26 @@ export class SidecarSessions {
     this.now = opts.now ?? Date.now;
   }
 
-  /**
-   * Create the session for `key` and hand out its secret, or keep the
-   * existing one alive when `secret` is its own.
-   *
-   * `supersedes` is one other key under the same base as `key`, which the
-   * caller says it held and left (it lost its secret, as after a reload of
-   * the mod). It counts only when the session is created. Remembered as
-   * expired, that key is forgotten; live, it stays open, its vault and
-   * secret untouched, and only its expiry is not remembered later, unless
-   * its owner proves itself on a call before then. A `supersedes` that
-   * `canSupersede` refuses is a caller's bug (the route answers 400 first),
-   * and throws.
-   */
-  open(key: string, secret: string | undefined, supersedes?: string): OpenResult {
-    if (supersedes !== undefined && !canSupersede(key, supersedes)) {
-      throw new Error('supersedes names no other key under the session key base');
-    }
+  /** Create the session for `key` and hand out its secret, or keep the
+   * existing one alive when `secret` is its own. */
+  open(key: string, secret: string | undefined): OpenResult {
     this.sweep();
     const existing = this.entries.get(key);
     if (existing !== undefined) {
       if (!ownsEntry(existing, secret)) return { kind: 'conflict' };
       existing.lastUsed = this.now();
-      existing.left = false;
       return { kind: 'exists' };
     }
     if (this.entries.size >= this.opts.maxSessions) return { kind: 'full' };
     const created = randomBytes(SESSION_SECRET_BYTES).toString('base64url');
-    // The caller of an expired session is back: it no longer counts as gone
-    // without a word.
-    this.expiredKeys.delete(key);
     this.openedAny = true;
     this.entries.set(key, {
       vaultId: this.np.createSession(),
       cache: new SanitizeCache(),
       secretDigest: sha256(created),
       lastUsed: this.now(),
-      left: false,
     });
-    if (supersedes !== undefined) this.leave(supersedes);
     return { kind: 'created', secret: created };
-  }
-
-  /** The key `left` was left by its caller. */
-  private leave(left: string): void {
-    this.expiredKeys.delete(left);
-    const entry = this.entries.get(left);
-    if (entry !== undefined) entry.left = true;
   }
 
   /** The live session under `key` when `secret` is its own, refreshing
@@ -168,20 +111,13 @@ export class SidecarSessions {
     if (entry === undefined) return 'not_found';
     if (!ownsEntry(entry, secret)) return 'forbidden';
     entry.lastUsed = this.now();
-    // Its owner is still here: a supersede from another key no longer holds.
-    entry.left = false;
     return entry;
   }
 
   /** Drop the session and its vault entries when `secret` is its own. */
   close(key: string, secret: string | undefined): 'closed' | SessionRefusal {
     const entry = this.entries.get(key);
-    if (entry === undefined) {
-      // A caller closing a session its idle TTL already ended has said it is
-      // done with it, all the same.
-      this.expiredKeys.delete(key);
-      return 'not_found';
-    }
+    if (entry === undefined) return 'not_found';
     if (!ownsEntry(entry, secret)) return 'forbidden';
     this.drop(key, entry);
     return 'closed';
@@ -191,19 +127,8 @@ export class SidecarSessions {
   sweep(): void {
     const cutoff = this.now() - this.opts.ttlMs;
     for (const [key, entry] of this.entries) {
-      if (entry.lastUsed > cutoff) continue;
-      this.drop(key, entry);
-      // A key its caller said it left is no window that may come back.
-      if (!entry.left) this.rememberExpired(key);
+      if (entry.lastUsed <= cutoff) this.drop(key, entry);
     }
-  }
-
-  private rememberExpired(key: string): void {
-    if (this.expiredKeys.size >= UNCLOSED_KEYS_MAX) {
-      this.expiredOverflow = true;
-      return;
-    }
-    this.expiredKeys.add(key);
   }
 
   /** Forget every session's cached sanitize responses, as after a policy
@@ -229,13 +154,6 @@ export class SidecarSessions {
   /** Whether any session was ever opened here. */
   get everOpened(): boolean {
     return this.openedAny;
-  }
-
-  /** Whether a session ended by its idle TTL and its caller has neither
-   * opened nor closed it since: that caller (a window left idle) may still
-   * be counting on this process. */
-  get unclosed(): boolean {
-    return this.expiredOverflow || this.expiredKeys.size > 0;
   }
 }
 

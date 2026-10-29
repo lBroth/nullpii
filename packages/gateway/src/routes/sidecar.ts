@@ -8,12 +8,7 @@ import type { SidecarRuntimeInfo } from '../runtime-info.js';
 import { SanitizeCache } from '../sanitize-cache.js';
 import { restoreValue, sanitizeValue } from '../sanitizer.js';
 import { countPlaceholders, isShellTool } from '../shell-tools.js';
-import {
-  type SessionRefusal,
-  SidecarSessions,
-  canSupersede,
-  isValidSessionKey,
-} from '../sidecar-sessions.js';
+import { type SessionRefusal, SidecarSessions, isValidSessionKey } from '../sidecar-sessions.js';
 import type { StartupTracker } from '../startup.js';
 
 /** What the sidecar routes need: the engine, the bearer token, session
@@ -57,12 +52,6 @@ export const SESSION_SECRET_HEADER = 'x-nullpii-session-secret';
  * of a change it did not make before it masks, restores or overwrites
  * under it. */
 export const POLICY_VERSION_HEADER = 'x-nullpii-policy-version';
-/** On `PUT /v1/sidecar/sessions/:key`: one other key under the same base
- * (`<base>` or `<base>.<suffix>`) that the caller held and left, as it lost
- * its secret (a reload of the mod): once the session is created, that key
- * is not remembered as unclosed when its idle TTL ends it. Live, it stays
- * open and usable by its owner, whose next call undoes this. */
-export const SUPERSEDES_HEADER = 'x-nullpii-supersedes';
 const POLICY_CHANGED = 412;
 /** A shutdown was accepted: until the process ends, new sessions are
  * refused, since one opened now would die with it. */
@@ -152,16 +141,6 @@ function sha256(value: string): Buffer {
 function presentedSecret(req: FastifyRequest): string | undefined {
   const value = req.headers[SESSION_SECRET_HEADER];
   return typeof value === 'string' ? value : undefined;
-}
-
-/** The key the request says its caller left: undefined when it names
- * none, `invalid` when it is repeated, not a session key, or not another
- * key under the session key's base. */
-function presentedSupersedes(req: FastifyRequest, key: string): string | 'invalid' | undefined {
-  const value = req.headers[SUPERSEDES_HEADER];
-  if (value === undefined) return undefined;
-  if (typeof value !== 'string' || !isValidSessionKey(value)) return 'invalid';
-  return canSupersede(key, value) ? value : 'invalid';
 }
 
 /** Whether the request names a policy version other than `current`. */
@@ -381,9 +360,7 @@ export async function registerSidecarRoutes(
         if (!isValidSessionKey(req.params.key)) {
           return reply.code(400).send({ error: 'invalid_session_key' });
         }
-        const supersedes = presentedSupersedes(req, req.params.key);
-        if (supersedes === 'invalid') return reply.code(400).send({ error: 'invalid_supersedes' });
-        const opened = sessions.open(req.params.key, presentedSecret(req), supersedes);
+        const opened = sessions.open(req.params.key, presentedSecret(req));
         switch (opened.kind) {
           case 'created':
             return reply.code(201).send({ status: 'created', secret: opened.secret });
@@ -517,26 +494,25 @@ export async function registerSidecarRoutes(
   });
 }
 
-/** Why this sidecar may not stop now, or undefined when it may. A window
- * that uses it, or waits for it, would lose masking with it, and only the
- * window that started it can start another one: so it stops only once every
- * session that opened here was closed by its caller, and its model is not
- * still coming up for the window that started it.
- * - `sessions_active`: a session is open.
- * - `starting`: the model is still downloading or loading.
+/** Why this sidecar may not stop now, or undefined when it may. Each
+ * reason is a window that would lose something it is using or waiting for:
+ * - `sessions_active`: a session is open, with real values in its vault
+ *   that would be lost with the process.
+ * - `starting`: the model is still downloading or loading, for the window
+ *   that started this sidecar and is waiting for it.
  * - `not_used_yet`: no session has opened yet, so the window that started
- *   it has not got to it (unless the start failed: then no one can).
- * - `sessions_unclosed`: a session ended by its idle TTL, and its caller has
- *   not closed it since: a window left idle looks just like that, and would
- *   find the sidecar gone at its next prompt. */
+ *   it has not opened its session on it (unless the start failed: then no
+ *   one will).
+ * A session that ended by its idle TTL does not count: its vault is gone
+ * already, and the Claude Code mod starts a sidecar again for a window
+ * that finds none at its next prompt. */
 export function shutdownRefusal(
-  sessions: Pick<SidecarSessions, 'size' | 'everOpened' | 'unclosed'>,
+  sessions: Pick<SidecarSessions, 'size' | 'everOpened'>,
   startup: StartupTracker | undefined,
 ): { readonly error: string; readonly sessions?: number } | undefined {
   if (sessions.size > 0) return { error: 'sessions_active', sessions: sessions.size };
   const phase = startup?.current.phase;
   if (phase === 'downloading' || phase === 'loading') return { error: 'starting' };
   if (!sessions.everOpened && phase !== 'failed') return { error: 'not_used_yet' };
-  if (sessions.unclosed) return { error: 'sessions_unclosed' };
   return undefined;
 }

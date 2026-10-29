@@ -64,7 +64,8 @@ jobs:
       - run: claude plugin test packages/claude-code-mod
 
   eval-python:
-    # The tracked Python tests of the eval kit (the traces-v3 generator).
+    # The tracked Python tests of the eval kit (the traces-v3 generator and
+    # the benchmark pipeline).
     name: eval kit (pytest)
     runs-on: ubuntu-latest
     steps:
@@ -76,6 +77,7 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install pytest==8.4.2
       - run: python -m pytest -q packages/eval/scripts/r3/traces_v3_gen/tests
+      - run: python -m pytest -q packages/eval/scripts/pipeline/tests
 
   e2e-onnx:
     # Real-ONNX end-to-end suite (test/e2e/). Loads the GLiNER model and

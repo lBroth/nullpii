@@ -141,7 +141,7 @@ Details, the full list of scanned fields, and the sidecar API: [`packages/gatewa
 
 - It masks prompts, tool results, @-mentioned files and `CLAUDE.md` before Claude reads them.
 - It shows your prompts and Claude's replies on screen with the real values.
-- It puts real values back only into the tools the policy lists.
+- It puts real values back into the tools the policy lists (by default the local file tools). Any other tool gets a real value only on your answer to a dialog (Block, Send once, Allow all); in `claude -p`, where no one can answer, such a call is refused unless Allow all was given, and a shell command never gets one.
 - A band above the prompt shows what was masked, by type. `/pii` shows the counts and the policy in effect.
 
 The mod talks to the gateway's local sidecar. If no sidecar answers, it starts one for the session. If it cannot reach the sidecar, it sends nothing unmasked.
@@ -151,7 +151,7 @@ The mod talks to the gateway's local sidecar. If no sidecar answers, it starts o
 - `/pii preset agent` (the default), `/pii preset secrets` (secrets only) or `/pii preset all` (every category). `/pii reset` goes back to `agent`.
 - `/pii mask <category…>`, `/pii allow <category…>` (readable) and `/pii ask <category…>` set one mode for each category you name.
 
-For a category in `ask` mode, the mod asks you about each of its values in your own prompt before the prompt is sent. You can mask it, send it readable, or send it readable and stop asking for that category. If you close the question, or no one can answer it (`claude -p`), the value stays masked. The mod only asks about your own prompt: values in a tool's result follow the policy without a question. Categories: `person`, `email`, `phone`, `address`, `url`, `ip`, `mac`, `location`, `passport`, `license`, `vehicle`, `account`, `secret`, `date`, `organization`, `occupation`, `demographic`, `sensitive`, `title`.
+For a category in `ask` mode, the mod asks you about each of its values in your own prompt before the prompt is sent. You can mask it, send it readable, or send it readable and stop asking for that category. If you close the question, or no one can answer it (`claude -p`), the value stays masked. Apart from that, values in a tool's result follow the policy without a question; the mod asks before a masked value goes out in clear to a tool outside the policy's list, or a masked object key of such a tool's result goes to Claude in clear ([Ask before a value leaves](https://github.com/lBroth/nullpii/tree/main/packages/claude-code-mod#ask-before-a-value-leaves)). Categories: `person`, `email`, `phone`, `address`, `url`, `ip`, `mac`, `location`, `passport`, `license`, `vehicle`, `account`, `secret`, `date`, `organization`, `occupation`, `demographic`, `sensitive`, `title`.
 
 To install it you need a sidecar token ([set up](https://github.com/lBroth/nullpii/tree/main/packages/claude-code-mod#set-up); the mod starts the gateway itself when none answers). Then, at the prompt of a Claude Code session:
 

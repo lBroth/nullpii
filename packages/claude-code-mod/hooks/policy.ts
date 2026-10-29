@@ -434,6 +434,65 @@ export function asksAboutResultKeys(
   return restoreTools?.includes(tool) !== true;
 }
 
+/**
+ * The tools that write a file, as a closed list, whatever `restoreTools`
+ * says: a placeholder the sidecar can no longer put back (from before a
+ * `--resume`, or from a sidecar session that expired or restarted) would
+ * land in the file as placeholder text, so the mod asks before such a call
+ * runs (`register.ts`). `Read`, `Grep` and `Glob` change no file, and a
+ * placeholder in their arguments only finds nothing. A shell command with
+ * a placeholder is refused anyway. A tool not listed here (an MCP tool) is
+ * not known to write a file, and is not asked about.
+ */
+export const FILE_WRITE_TOOLS: readonly string[] = [
+  'Write',
+  'Edit',
+  'MultiEdit',
+  'NotebookEdit',
+  'apply_patch',
+];
+
+/** Per file-writing tool, the arguments it writes into a file or names the
+ * file by. `Edit`'s `old_string` is left out: it only matches text already
+ * in the file, so an Edit that replaces placeholder text with a real value
+ * is a fix. A listed tool missing here (`apply_patch`, whose patch holds
+ * removed and added lines in one text) is read whole. */
+const WRITTEN_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  Write: ['file_path', 'content'],
+  Edit: ['file_path', 'new_string'],
+  NotebookEdit: ['notebook_path', 'new_source'],
+};
+/** MultiEdit's argument naming its file, its list of edits, and the field
+ * of each edit that it writes. */
+const MULTI_EDIT_PATH = 'file_path';
+const MULTI_EDIT_EDITS = 'edits';
+const MULTI_EDIT_WRITTEN = 'new_string';
+
+/**
+ * The text a call to a file-writing tool (`FILE_WRITE_TOOLS`) writes into
+ * a file or names it by, as one string to look for placeholders in;
+ * `undefined` for any other tool. `args` are the tool's own arguments
+ * (`restorableArgs`).
+ */
+export function writtenText(
+  tool: string,
+  args: Readonly<Record<string, unknown>>,
+): string | undefined {
+  if (!FILE_WRITE_TOOLS.includes(tool)) return undefined;
+  if (tool === 'MultiEdit') {
+    const edits = args[MULTI_EDIT_EDITS];
+    const written = (Array.isArray(edits) ? (edits as unknown[]) : []).map((one) =>
+      one !== null && typeof one === 'object'
+        ? (one as Readonly<Record<string, unknown>>)[MULTI_EDIT_WRITTEN]
+        : undefined,
+    );
+    return JSON.stringify([args[MULTI_EDIT_PATH], written]);
+  }
+  const fields = WRITTEN_FIELDS[tool];
+  if (fields === undefined) return JSON.stringify(args);
+  return JSON.stringify(fields.map((field) => args[field]));
+}
+
 /** File tools and the argument that names the file they write. */
 const WRITE_PATH_FIELDS: Readonly<Record<string, string>> = {
   Write: 'file_path',
@@ -537,11 +596,24 @@ export interface Counts {
    * their category. Never a value or a short form of one: the report's text
    * may reach the model. */
   sent: Record<string, Record<string, number>>;
+  /** Placeholders the sidecar could no longer put back, in calls that write
+   * a file (`FILE_WRITE_TOOLS`): refused, or written into the file as
+   * placeholder text on the user's word. */
+  staleRefused: number;
+  staleWritten: number;
 }
 
 export function emptyCounts(): Counts {
-  // `sent` is keyed by tool names, which a model picks: no prototype to hit.
-  return { masked: 0, restored: 0, held: 0, byLabel: {}, sent: Object.create(null) };
+  return {
+    masked: 0,
+    restored: 0,
+    held: 0,
+    byLabel: {},
+    // `sent` is keyed by tool names, which a model picks: no prototype to hit.
+    sent: Object.create(null),
+    staleRefused: 0,
+    staleWritten: 0,
+  };
 }
 
 /** Count a value released in clear on the user's word, under its tool and
@@ -636,6 +708,7 @@ export function placeholderGuide(restoreTools: readonly string[] | undefined): s
     otherTools(restoreTools),
     ...questionTool(restoreTools),
     'A call the user does not agree to is refused, and so is every such call when no one can answer (claude -p) unless the user allowed all for the session; a placeholder nothing stands behind is passed as written.',
+    `Except in a call that writes a file (${FILE_WRITE_TOOLS.join(', ')}): one that would still write a placeholder nullpii cannot put back is asked about first, and refused when no one can answer. Such a value is no longer available (it comes from an earlier session, or from a nullpii session that expired or restarted, and nullpii keeps no value on disk): ask the user for it, and never invent it.`,
     'A shell command that holds a placeholder is refused.',
   ].join(' ');
 }
@@ -720,6 +793,15 @@ function formatSent(counts: Counts): string[] {
     );
 }
 
+/** The report's line on placeholders that could not be put back in calls
+ * that write a file, as counts. None while there were none. */
+function formatStale(counts: Counts): string[] {
+  if (counts.staleRefused === 0 && counts.staleWritten === 0) return [];
+  return [
+    `Placeholders that could not be put back, in calls that write a file: refused ${counts.staleRefused} · written as text ${counts.staleWritten}`,
+  ];
+}
+
 /** The `/pii` status: the state, the session's counts on one line, the
  * values released in clear one line per tool and category, the categories by
  * mode, the policy, and where the commands are. Short on purpose: `/pii
@@ -743,6 +825,7 @@ export function formatReport(
       `Placeholders kept in calls to other tools: ${counts.held}`,
     ].join(' · '),
     ...formatSent(counts),
+    ...formatStale(counts),
     ...(policy === undefined
       ? ['Policy: unknown (the sidecar has not answered)']
       : [formatCategories(policy), formatSettings(policy)]),

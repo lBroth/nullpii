@@ -47,6 +47,9 @@ const SECRETS: ReadonlyArray<[RegExp, string]> = [
   [/https:\/\/docs\.acme\.io\/\S*/g, 'PRIVATE_URL'],
   // A phone number that is also an array index when it is an object key.
   [/\b2125551234\b/g, 'PHONE'],
+  // A real value shaped like a placeholder (text about nullpii itself):
+  // put back, it is a value, not a placeholder nothing stands behind.
+  [/\{\{PII_DEMO_1_0000000000000000\}\}/g, 'SECRET'],
 ];
 
 const SECRET_HEADER = 'x-nullpii-session-secret';
@@ -155,8 +158,12 @@ function fakeSidecar(
   const logs: string[] = [];
   /** Every toast the mod showed. */
   const toasts: string[] = [];
+  /** The `$.ui.log` lines drawn in the transcript (not sent to the model). */
+  const transcript: string[] = [];
   /** The status of every answer. */
   const statuses: number[] = [];
+  /** What `$.session.messages()` answers: the conversation so far. */
+  const messages: unknown[] = [];
   let next = 0;
   const maskString = (s: string, byLabel: Record<string, number>) => {
     let out = s;
@@ -356,15 +363,30 @@ function fakeSidecar(
       });
     }
     let replacements = 0;
+    // As the gateway: a placeholder nothing stands behind is left as it is
+    // and counted, as another vault's (`foreign`: its prefix is not this
+    // vault's) or as an index of this one it does not hold (`unknown`).
+    let unknownPlaceholders = 0;
+    let foreignPlaceholders = 0;
     const value = walk(body.value, (s) =>
       s.replace(PLACEHOLDER_ANY, (placeholder) => {
         const real = vault.get(placeholder);
-        if (real === undefined) return placeholder;
-        replacements += 1;
-        return real;
+        if (real !== undefined) {
+          replacements += 1;
+          return real;
+        }
+        if (placeholder.endsWith(`_${PREFIX}}}`)) unknownPlaceholders += 1;
+        else foreignPlaceholders += 1;
+        return placeholder;
       }),
     );
-    return respond(200, { value, replacements, ...counts });
+    return respond(200, {
+      value,
+      replacements,
+      ...counts,
+      unknownPlaceholders,
+      foreignPlaceholders,
+    });
   };
   return {
     handler,
@@ -390,6 +412,8 @@ function fakeSidecar(
     state,
     statuses,
     tokensSent,
+    messages,
+    transcript,
   };
 }
 
@@ -410,12 +434,14 @@ function stubSession(
     return { value: undefined };
   });
   on('session.id', () => ({ value: 'session-1' }));
+  on('session.messages', () => ({ value: sidecar.messages }));
   on('ui.toast', ($, e) => {
     sidecar.toasts.push(e.text);
     return { value: undefined };
   });
   on('ui.log', ($, e) => {
     sidecar.logs.push(e.text);
+    if (e.to !== 'debug') sidecar.transcript.push(e.text);
     return { value: undefined };
   });
   on('http.fetch', sidecar.handler);
@@ -4700,11 +4726,11 @@ test('a tool result while a lost sidecar restarts waits for it, then goes masked
 test('a tool call with placeholders while the sidecar is gone waits for the restart before it runs', async ($, on) => {
   const { sidecar, opts, clock, spawned, ran } = await lostMidSession($, on);
   let out: unknown;
-  void $.tool
-    .call({ tool: 'Write', file_path: 'a.txt', content: `Hi ${ph('PERSON', 0)}` })
-    .then((o) => {
-      out = o;
-    });
+  // A Read: a Write of a placeholder from before the restart would be asked
+  // about (its value is gone with the old sidecar's vault).
+  void $.tool.call({ tool: 'Read', file_path: `/work/${ph('PERSON', 0)}.txt` }).then((o) => {
+    out = o;
+  });
   await pollUntil(clock, () => spawned.length === 1);
   // Nothing runs while the sidecar is coming up.
   expect(ran).toEqual([]);
@@ -5005,11 +5031,9 @@ test('two tool calls that both find the sidecar gone start it once and both wait
   const { sidecar, opts, clock, spawned, ran } = await lostMidSession($, on);
   const results: unknown[] = [];
   const call = () =>
-    $.tool
-      .call({ tool: 'Write', file_path: 'a.txt', content: `Hi ${ph('PERSON', 0)}` })
-      .then((o) => {
-        results.push(o);
-      });
+    $.tool.call({ tool: 'Read', file_path: `/work/${ph('PERSON', 0)}.txt` }).then((o) => {
+      results.push(o);
+    });
   void call();
   void call();
   await pollUntil(clock, () => spawned.length === 1);
@@ -5179,4 +5203,570 @@ test('a mid-session restart whose child loses the port to a closing sidecar star
   expect(sent).toHaveLength(1);
   expect(sent[0]).not.toContain('John');
   expect(spawned).toHaveLength(2);
+});
+
+// Placeholders the sidecar can no longer put back: an earlier session's
+// (after `--resume` or `-c`, another vault's prefix), or an index of this
+// session's vault that it no longer holds (an expired or restarted sidecar
+// session). The vault is never saved to disk.
+
+/** Another vault's prefix, as a resumed conversation's placeholders carry. */
+const OLD_PREFIX = 'fedcba9876543210';
+const oldPh = (label: string, index: number) => `{{PII_${label}_${index}_${OLD_PREFIX}}}`;
+const STALE_REFUSAL = /values are no longer available/;
+const STALE_ANSWERS = ['Block', 'Write as text', 'Write as text for the session'];
+const NOTICE_WORDS = 'can no longer be put back';
+
+/** A Write hook below the mod that records what it would write. */
+function recordWrites(on, written: string[]) {
+  on('tool.call', { tool: 'Write' }, ($, e) => {
+    written.push(e.content);
+    return { result: 'wrote' };
+  });
+}
+
+/** The toasts of the one-time notice. */
+function notices(sidecar: ReturnType<typeof fakeSidecar>): string[] {
+  return sidecar.toasts.filter((t) => t.includes(NOTICE_WORDS));
+}
+
+test('after a resume, a Write holding an earlier session placeholder asks first, and Block refuses it in plain words', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Block'], asked);
+  const written: string[] = [];
+  recordWrites(on, written);
+  await start($);
+  const out = await $.tool.call({
+    tool: 'Write',
+    file_path: '/work/notes.md',
+    content: `mail ${oldPh('PRIVATE_EMAIL', 3)}, ${oldPh('PERSON', 4)} and ${oldPh('PERSON', 5)}`,
+  });
+  expect(asked).toHaveLength(1);
+  expect(asked[0]?.options).toEqual(STALE_ANSWERS);
+  expect(asked[0]?.question).toContain(
+    'cannot put back 3 placeholders in this Write call (email 1, person 2)',
+  );
+  // Counts by category, never a placeholder (the mod holds no value).
+  expect(asked[0]?.question).not.toContain(OLD_PREFIX);
+  expect(out.deny).toMatch(STALE_REFUSAL);
+  expect(out.deny).toContain('earlier session');
+  expect(out.deny).toContain('expired or restarted');
+  expect(out.deny).toContain('nullpii keeps no value on disk');
+  expect(out.deny).toContain('Ask the user for those values');
+  expect(out.deny).toContain('never invent them');
+  expect(written).toEqual([]);
+  expect(await piiStatus($)).toContain(
+    'Placeholders that could not be put back, in calls that write a file: refused 3 · written as text 0',
+  );
+});
+
+test('/pii says nothing of such placeholders while there were none', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  await start($);
+  expect(await piiStatus($)).not.toContain('could not be put back');
+});
+
+test('Write as text writes the placeholder as written, once, and counts and toasts it', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Write as text', 'Block'], asked);
+  const written: string[] = [];
+  recordWrites(on, written);
+  await start($);
+  const content = `a ${oldPh('PERSON', 1)}`;
+  await $.tool.call({ tool: 'Write', file_path: '/work/a.md', content });
+  expect(written).toEqual([content]);
+  expect(sidecar.toasts).toContain('nullpii wrote 1 placeholder as text with Write, on your word');
+  expect(await piiStatus($)).toContain('refused 0 · written as text 1');
+  // Once: the next such call is asked again.
+  const second = await $.tool.call({ tool: 'Write', file_path: '/work/b.md', content });
+  expect(asked).toHaveLength(2);
+  expect(second.deny).toMatch(STALE_REFUSAL);
+  expect(written).toEqual([content]);
+  expect(await piiStatus($)).toContain('refused 1 · written as text 1');
+});
+
+test('Write as text is counted only when the call is handed on: a refusal below counts nothing', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  answerMenu(on, ['Write as text'], []);
+  on('tool.call', { tool: 'Write' }, () => ({ deny: 'refused below' }));
+  await start($);
+  const out = await $.tool.call({
+    tool: 'Write',
+    file_path: '/work/a.md',
+    content: oldPh('PERSON', 1),
+  });
+  expect(out.deny).toContain('refused below');
+  expect(sidecar.toasts.filter((t) => t.includes('as text'))).toEqual([]);
+  expect(await piiStatus($)).not.toContain('written as text 1');
+});
+
+test('Write as text for the session asks no more, and ends with the session', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Write as text for the session'], asked);
+  const written: string[] = [];
+  recordWrites(on, written);
+  await start($);
+  const content = `a ${oldPh('PERSON', 1)}`;
+  await $.tool.call({ tool: 'Write', file_path: '/work/a.md', content });
+  await $.tool.call({ tool: 'Write', file_path: '/work/b.md', content });
+  expect(asked).toHaveLength(1);
+  expect(written).toEqual([content, content]);
+  // Each such write is still toasted.
+  expect(sidecar.toasts.filter((t) => t.includes('as text with Write'))).toHaveLength(2);
+  // A new session asks again; the list has run out, so no answer. The
+  // sidecar holds no session under that key, as when a new one opens.
+  sidecar.sessions.delete('session-1');
+  await start($);
+  const out = await $.tool.call({ tool: 'Write', file_path: '/work/c.md', content });
+  expect(asked).toHaveLength(2);
+  expect(out.deny).toMatch(STALE_REFUSAL);
+});
+
+test('Write as text for the session is not Allow all: a value the session masked is still asked about', async ($, on) => {
+  const sidecar = fakeSidecar({ restoreTools: ['Read'] });
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Write as text for the session', 'Block'], asked);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  const urls: string[] = [];
+  on('tool.call', { tool: 'WebFetch' }, ($, e) => {
+    urls.push(e.url);
+    return { result: 'ok' };
+  });
+  on('tool.call', { tool: 'Write' }, () => ({ result: 'wrote' }));
+  await start($);
+  await $.prompt.submit({ text: 'look up john@acme.io', wait: false, origin: COMPOSER });
+  await $.tool.call({ tool: 'Write', file_path: '/work/a.md', content: oldPh('PERSON', 1) });
+  const out = await $.tool.call({
+    tool: 'WebFetch',
+    url: `https://example.com/?q=${ph('EMAIL', 0)}`,
+    prompt: 'x',
+  });
+  expect(asked).toHaveLength(2);
+  expect(asked[1]?.options).toEqual(['Block', 'Send once', 'Allow all']);
+  expect(out.deny).toContain('did not agree to send those values');
+  expect(urls).toEqual([]);
+});
+
+test('with no one to answer (claude -p, a dismissed dialog), such a write is refused', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, [], asked);
+  const written: string[] = [];
+  recordWrites(on, written);
+  await start($);
+  const out = await $.tool.call({
+    tool: 'Write',
+    file_path: '/work/a.md',
+    content: oldPh('PERSON', 1),
+  });
+  expect(asked).toHaveLength(1);
+  expect(out.deny).toMatch(STALE_REFUSAL);
+  expect(out.deny).toContain('never invent them');
+  expect(written).toEqual([]);
+  expect(sidecar.logs.some((l) => l.includes('no answer about placeholders'))).toBe(true);
+});
+
+test('a placeholder this session knows is put back with no question; an index of its vault it does not hold is asked about', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Block'], asked);
+  const written: string[] = [];
+  recordWrites(on, written);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  await start($);
+  await $.prompt.submit({ text: 'note john@acme.io', wait: false, origin: COMPOSER });
+  await $.tool.call({ tool: 'Write', file_path: '/work/a.md', content: `to ${ph('EMAIL', 0)}` });
+  expect(asked).toEqual([]);
+  expect(written).toEqual(['to john@acme.io']);
+  expect(notices(sidecar)).toEqual([]);
+  // This vault's prefix, an index it does not hold (a vault that expired or
+  // restarted): the sidecar reports it unknown.
+  const out = await $.tool.call({
+    tool: 'Write',
+    file_path: '/work/b.md',
+    content: `to ${ph('EMAIL', 0)} and ${ph('PERSON', 42)}`,
+  });
+  expect(asked).toHaveLength(1);
+  expect(asked[0]?.question).toContain('1 placeholder in this Write call (person 1)');
+  expect(out.deny).toMatch(STALE_REFUSAL);
+  expect(written).toEqual(['to john@acme.io']);
+});
+
+test('every file-writing tool is asked about what it writes; Read and an Edit whose old_string holds one are not', async ($, on) => {
+  const sidecar = fakeSidecar({ restoreTools: [...DEFAULT_RESTORE_TOOLS, 'apply_patch'] });
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Block', 'Block', 'Block', 'Block', 'Block', 'Block'], asked);
+  const ran: string[] = [];
+  on('tool.call', ($, e) => {
+    ran.push(e.tool);
+    return { result: 'ok' };
+  });
+  await start($);
+  const stale = oldPh('PERSON', 1);
+  for (const call of [
+    { tool: 'Write', file_path: `/work/${stale}.md`, content: 'x' },
+    { tool: 'Edit', file_path: '/work/a.md', old_string: 'x', new_string: stale },
+    { tool: 'MultiEdit', file_path: '/work/a.md', edits: [{ old_string: 'x', new_string: stale }] },
+    { tool: 'NotebookEdit', notebook_path: '/work/n.ipynb', new_source: stale },
+    { tool: 'apply_patch', input: `+${stale}` },
+  ]) {
+    const out = await $.tool.call(call);
+    expect(out.deny).toMatch(STALE_REFUSAL);
+  }
+  expect(asked).toHaveLength(5);
+  expect(ran).toEqual([]);
+  // An Edit that replaces placeholder text in a file writes none, and a
+  // Read or a MultiEdit matching it changes no file with it: none is asked.
+  await $.tool.call({ tool: 'Edit', file_path: '/work/a.md', old_string: stale, new_string: 'y' });
+  await $.tool.call({
+    tool: 'MultiEdit',
+    file_path: '/work/a.md',
+    edits: [{ old_string: stale, new_string: 'y' }],
+  });
+  await $.tool.call({ tool: 'Read', file_path: `/work/${stale}.md` });
+  expect(asked).toHaveLength(5);
+  expect(ran).toEqual(['Edit', 'MultiEdit', 'Read']);
+});
+
+test('a Write outside restoreTools holding only an earlier session placeholder gets that question alone', async ($, on) => {
+  const sidecar = fakeSidecar({ restoreTools: ['Read'] });
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Block'], asked);
+  const written: string[] = [];
+  recordWrites(on, written);
+  await start($);
+  const out = await $.tool.call({
+    tool: 'Write',
+    file_path: '/work/a.md',
+    content: oldPh('PERSON', 1),
+  });
+  expect(asked).toHaveLength(1);
+  expect(asked[0]?.options).toEqual(STALE_ANSWERS);
+  expect(out.deny).toMatch(STALE_REFUSAL);
+  expect(written).toEqual([]);
+});
+
+/** A session whose Write is outside restoreTools, with a value the session
+ * masked, and the mod's questions answered by `answers` in turn. */
+async function writeOutsideRestoreTools($, on, answers: readonly string[]) {
+  const sidecar = fakeSidecar({ restoreTools: ['Read'] });
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, answers, asked);
+  const written: string[] = [];
+  recordWrites(on, written);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  await start($);
+  await $.prompt.submit({ text: 'note john@acme.io', wait: false, origin: COMPOSER });
+  const write = (file: string) =>
+    $.tool.call({
+      tool: 'Write',
+      file_path: `/work/${file}`,
+      content: `${ph('EMAIL', 0)} ${oldPh('PERSON', 1)}`,
+    });
+  return { sidecar, asked, written, write };
+}
+
+test('a Write outside restoreTools with a known value and a stale placeholder: Block on the stale one asks nothing more', async ($, on) => {
+  const { sidecar, asked, written, write } = await writeOutsideRestoreTools($, on, ['Block']);
+  const out = await write('a.md');
+  expect(asked).toHaveLength(1);
+  expect(asked[0]?.options).toEqual(STALE_ANSWERS);
+  expect(out.deny).toMatch(STALE_REFUSAL);
+  expect(written).toEqual([]);
+  expect(sidecar.toasts.filter((t) => t.includes('released in clear'))).toEqual([]);
+});
+
+test('a Write outside restoreTools with a known value and a stale placeholder: Write as text, then Send once', async ($, on) => {
+  const { sidecar, asked, written, write } = await writeOutsideRestoreTools($, on, [
+    'Write as text',
+    'Send once',
+  ]);
+  await write('a.md');
+  expect(asked.map((one) => one.options)).toEqual([
+    STALE_ANSWERS,
+    ['Block', 'Send once', 'Allow all'],
+  ]);
+  // The known value goes in clear on the user's word; the stale one as text.
+  expect(written).toEqual([`john@acme.io ${oldPh('PERSON', 1)}`]);
+  const report = await piiStatus($);
+  expect(report).toContain('Released in clear on your word: Write · email 1');
+  expect(report).toContain('refused 0 · written as text 1');
+  expect(sidecar.toasts).toContain('nullpii wrote 1 placeholder as text with Write, on your word');
+  expectNoValueShown(sidecar, ['john@acme.io']);
+});
+
+test('a Write outside restoreTools: Write as text, then Block on the values runs nothing and counts no write', async ($, on) => {
+  const { asked, written, write } = await writeOutsideRestoreTools($, on, [
+    'Write as text',
+    'Block',
+  ]);
+  const out = await write('a.md');
+  expect(asked).toHaveLength(2);
+  expect(out.deny).toContain('did not agree to send those values');
+  expect(written).toEqual([]);
+  expect(await piiStatus($)).not.toContain('could not be put back');
+});
+
+test('each session answer spares its own question only: Write as text for the session, then Allow all', async ($, on) => {
+  const { asked, written, write } = await writeOutsideRestoreTools($, on, [
+    'Write as text for the session',
+    'Allow all',
+  ]);
+  await write('a.md');
+  await write('b.md');
+  // Two questions for the first call, none for the second.
+  expect(asked).toHaveLength(2);
+  expect(written).toHaveLength(2);
+});
+
+test('under Allow all, the stale question is still put, and alone', async ($, on) => {
+  const { asked, written, write } = await writeOutsideRestoreTools($, on, [
+    'Write as text',
+    'Allow all',
+    'Block',
+  ]);
+  await write('a.md');
+  expect(asked).toHaveLength(2);
+  const out = await write('b.md');
+  expect(asked).toHaveLength(3);
+  expect(asked[2]?.options).toEqual(STALE_ANSWERS);
+  expect(out.deny).toMatch(STALE_REFUSAL);
+  expect(written).toHaveLength(1);
+});
+
+test('the first placeholder that cannot be put back shows one notice, with the conversation count and no value', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  answerMenu(on, [], []);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', { tool: 'Read' }, () => ({ result: 'ok' }));
+  await start($);
+  await $.prompt.submit({ text: 'note john@acme.io', wait: false, origin: COMPOSER });
+  // A resumed conversation: two placeholders of an earlier session, one of
+  // them twice, and one this session knows.
+  sidecar.messages.push(
+    { role: 'user', text: `hi ${oldPh('PERSON', 1)}`, toolUses: [] },
+    {
+      role: 'assistant',
+      text: `${oldPh('PERSON', 1)} at ${oldPh('PRIVATE_EMAIL', 2)}, now ${ph('EMAIL', 0)}`,
+      toolUses: [],
+    },
+  );
+  await $.tool.call({ tool: 'Read', file_path: `/work/${oldPh('PERSON', 1)}.md` });
+  const notice =
+    'nullpii: 2 placeholders from before (an earlier session, or a sidecar session that expired or restarted) can no longer be put back: nullpii keeps no value on disk. A call that would write one into a file asks you first.';
+  expect(notices(sidecar)).toEqual([notice]);
+  // The transcript line, which Claude does not read: not a debug line.
+  expect(sidecar.transcript).toEqual([notice]);
+  expectNoValueShown(sidecar, ['john@acme.io']);
+  // Once a session: another one met later shows nothing new.
+  await $.tool.call({ tool: 'Read', file_path: `/work/${oldPh('PERSON', 9)}.md` });
+  expect(notices(sidecar)).toHaveLength(1);
+  // A new session shows it again, the first time it meets one.
+  sidecar.sessions.delete('session-1');
+  await start($);
+  await $.tool.call({ tool: 'Read', file_path: `/work/${oldPh('PERSON', 9)}.md` });
+  expect(notices(sidecar)).toHaveLength(2);
+});
+
+test('the notice counts a placeholder met in the call even when the conversation does not hold it yet', async ($, on) => {
+  const sidecar = fakeSidecar({ restoreTools: ['Read'] });
+  stubSession(on, sidecar);
+  on('tool.call', { tool: 'WebFetch' }, () => ({ result: 'ok' }));
+  await start($);
+  await $.tool.call({
+    tool: 'WebFetch',
+    url: `https://example.com/?q=${oldPh('PERSON', 1)}`,
+    prompt: 'x',
+  });
+  expect(notices(sidecar)).toEqual([
+    'nullpii: 1 placeholder from before (an earlier session, or a sidecar session that expired or restarted) can no longer be put back: nullpii keeps no value on disk. A call that would write one into a file asks you first.',
+  ]);
+});
+
+test('no notice while every placeholder met is one the session knows', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', { tool: 'Read' }, () => ({ result: 'ok' }));
+  on('ui.render', ($, e) => ({ type: 'Text', props: {}, children: [e.props.text] }));
+  await start($);
+  await $.prompt.submit({ text: 'note john@acme.io', wait: false, origin: COMPOSER });
+  await $.tool.call({ tool: 'Read', file_path: `/work/${ph('EMAIL', 0)}.md` });
+  const ui = await $.ui.mount(messageSite(`to ${ph('EMAIL', 0)}`));
+  await ui.unmount();
+  expect(notices(sidecar)).toEqual([]);
+});
+
+test('a resumed reply drawn on screen with an earlier session placeholder shows the notice', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  on('ui.render', ($, e) => ({ type: 'Text', props: {}, children: [e.props.text] }));
+  await start($);
+  const text = `Sent the draft to ${oldPh('PRIVATE_EMAIL', 2)}.`;
+  sidecar.messages.push({ role: 'assistant', text, toolUses: [] });
+  const ui = await $.ui.mount(messageSite(text));
+  expect(await ui.find({ type: 'Text', text })).toBeDefined();
+  await ui.unmount();
+  expect(notices(sidecar).filter((t) => t.includes('1 placeholder from before'))).toHaveLength(1);
+});
+
+test('a real value shaped like a placeholder, put back by the sidecar, is not asked about', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Block'], asked);
+  const written: string[] = [];
+  recordWrites(on, written);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  await start($);
+  const shaped = '{{PII_DEMO_1_0000000000000000}}';
+  await $.prompt.submit({ text: `document ${shaped}`, wait: false, origin: COMPOSER });
+  // Next to a placeholder of this vault it does not hold: the sidecar
+  // reports one, and the shaped value it put back is still not asked about.
+  const out = await $.tool.call({
+    tool: 'Write',
+    file_path: '/work/doc.md',
+    content: `${ph('SECRET', 0)} ${ph('PERSON', 42)}`,
+  });
+  expect(asked).toHaveLength(1);
+  expect(asked[0]?.question).toContain('1 placeholder in this Write call (person 1)');
+  expect(out.deny).toMatch(STALE_REFUSAL);
+  await $.tool.call({ tool: 'Write', file_path: '/work/doc.md', content: ph('SECRET', 0) });
+  expect(asked).toHaveLength(1);
+  expect(written).toEqual([shaped]);
+});
+
+test('an answer about writing as text given after its session ended holds for nothing', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: string[] = [];
+  const test$ = $;
+  on('tool.call', { tool: 'AskUserQuestion' }, async (_hook$, e) => {
+    const question = e.questions[0]?.question ?? '';
+    asked.push(question);
+    if (asked.length === 1) {
+      sidecar.sessions.delete('session-1');
+      await start(test$);
+    }
+    return {
+      result: { questions: e.questions, answers: { [question]: 'Write as text for the session' } },
+    };
+  });
+  const written: string[] = [];
+  recordWrites(on, written);
+  await start($);
+  const content = oldPh('PERSON', 1);
+  const late = await $.tool.call({ tool: 'Write', file_path: '/work/a.md', content });
+  expect(late.deny).toMatch(STALE_REFUSAL);
+  expect(written).toEqual([]);
+  // The new session asks again: the late answer allowed it nothing.
+  await $.tool.call({ tool: 'Write', file_path: '/work/a.md', content });
+  expect(asked).toHaveLength(2);
+  expect(written).toEqual([content]);
+});
+
+test('after a mid-session restart, a Write holding a placeholder from before it is asked about, and the notice shows', async ($, on) => {
+  const opts = { down: false };
+  const sidecar = fakeSidecar(opts);
+  stubSession(on, sidecar);
+  const clock = mock.clock(on, { now: 1_700_000_000_000 });
+  const spawned: string[][] = [];
+  on('process.spawn', async function* ($, e) {
+    spawned.push(e.argv);
+    await new Promise<never>(() => undefined);
+  });
+  const asked: Asked[] = [];
+  answerMenu(on, ['Block'], asked);
+  const written: string[] = [];
+  recordWrites(on, written);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  await start($);
+  await $.prompt.submit({ text: 'note john@acme.io', wait: false, origin: COMPOSER });
+  // Its value was put back before the sidecar was lost.
+  await $.tool.call({ tool: 'Write', file_path: '/work/a.md', content: ph('EMAIL', 0) });
+  expect(written).toEqual(['john@acme.io']);
+  // The sidecar goes away with its vault; the Write starts it again.
+  opts.down = true;
+  sidecar.forget();
+  let out: { deny?: string } | undefined;
+  void $.tool
+    .call({ tool: 'Write', file_path: '/work/b.md', content: ph('EMAIL', 0) })
+    .then((o) => {
+      out = o;
+    });
+  await pollUntil(clock, () => spawned.length === 1);
+  comesUp(sidecar, opts);
+  await pollUntil(clock, () => out !== undefined);
+  expect(spawned).toHaveLength(1);
+  expect(asked).toHaveLength(1);
+  expect(asked[0]?.question).toContain('1 placeholder in this Write call (email 1)');
+  expect(out?.deny).toMatch(STALE_REFUSAL);
+  expect(out?.deny).toContain('restarted');
+  expect(written).toEqual(['john@acme.io']);
+  expect(notices(sidecar)).toHaveLength(1);
+});
+
+test('a Write as text for the session given before a mid-session restart still holds after it', async ($, on) => {
+  const opts = { down: false };
+  const sidecar = fakeSidecar(opts);
+  stubSession(on, sidecar);
+  const clock = mock.clock(on, { now: 1_700_000_000_000 });
+  const spawned: string[][] = [];
+  on('process.spawn', async function* ($, e) {
+    spawned.push(e.argv);
+    await new Promise<never>(() => undefined);
+  });
+  const asked: Asked[] = [];
+  answerMenu(on, ['Write as text for the session'], asked);
+  const written: string[] = [];
+  recordWrites(on, written);
+  await start($);
+  await $.tool.call({ tool: 'Write', file_path: '/work/a.md', content: oldPh('PERSON', 1) });
+  expect(asked).toHaveLength(1);
+  opts.down = true;
+  sidecar.forget();
+  let out: unknown;
+  void $.tool
+    .call({ tool: 'Write', file_path: '/work/b.md', content: oldPh('PERSON', 2) })
+    .then((o) => {
+      out = o;
+    });
+  await pollUntil(clock, () => spawned.length === 1);
+  comesUp(sidecar, opts);
+  await pollUntil(clock, () => out !== undefined);
+  expect(asked).toHaveLength(1);
+  expect(written).toEqual([oldPh('PERSON', 1), oldPh('PERSON', 2)]);
+});
+
+test('the guide tells Claude that such values are gone and never to invent them', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  on('prompt.compose', () => ({ sections: [] }));
+  await start($);
+  const { sections } = await $.prompt.compose({
+    model: 'claude-test',
+    promptModel: 'claude-test',
+    surfaces: ['terminal'],
+    tools: ['Read'],
+    outputStyle: null,
+    traits: [],
+  });
+  const text = sections[0]?.text ?? '';
+  expect(text).toContain('Write, Edit, MultiEdit, NotebookEdit, apply_patch');
+  expect(text).toContain('ask the user for it, and never invent it');
 });

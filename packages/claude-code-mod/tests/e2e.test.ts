@@ -75,6 +75,12 @@ const NO_ONE_ANSWERS = 'no one to answer (claude -p)';
 const NOT_RUN = 'nullpii did not run this call';
 /** How the mod withholds a result whose masked keys the user did not send. */
 const WITHHELD = "nullpii withheld this tool's result";
+/** The answers the mod offers before a file gets placeholders it can no
+ * longer put back, and how it refuses such a call. */
+const STALE_ANSWERS = ['Block', 'Write as text', 'Write as text for the session'];
+const STALE_REFUSAL = 'values are no longer available';
+/** Every placeholder in a text. */
+const PLACEHOLDERS = new RegExp(PLACEHOLDER.source, 'g');
 /** The bridge answers from memory, so a scenario is quick; room for a slow runner. */
 const TEST_TIMEOUT_MS = 20_000;
 
@@ -94,6 +100,8 @@ interface Scene {
   readonly toasts: string[];
   /** Each toast the mod showed and each line it logged: none may hold a value. */
   readonly shownLines: string[];
+  /** What `$.session.messages()` answers: the conversation so far. */
+  readonly messages: unknown[];
 }
 
 interface Scenario {
@@ -107,8 +115,9 @@ interface Scenario {
 function stubSession(
   on: On,
   key: string,
-): Pick<Scene, 'prompts' | 'statusLines' | 'toasts' | 'shownLines'> {
+): Pick<Scene, 'prompts' | 'statusLines' | 'toasts' | 'shownLines' | 'messages'> {
   const prompts: string[] = [];
+  const messages: unknown[] = [];
   const statusLines: (string | undefined)[] = [];
   const toasts: string[] = [];
   const shownLines: string[] = [];
@@ -116,6 +125,7 @@ function stubSession(
   on('session.start', () => ({ cwd: CWD }));
   on('session.cwd', () => ({ value: CWD }));
   on('session.id', () => ({ value: key }));
+  on('session.messages', () => ({ value: messages }));
   on('session.end', ($, e) => ({ sessionId: e.sessionId }));
   on('command.register', ($, e) => ({ value: { command: e.name } }));
   on('ui.toast', ($, e) => {
@@ -135,7 +145,7 @@ function stubSession(
     prompts.push(e.text);
     return { text: e.text };
   });
-  return { prompts, statusLines, toasts, shownLines };
+  return { prompts, statusLines, toasts, shownLines, messages };
 }
 
 /** One question the mod put to the user in its own dialog. */
@@ -609,6 +619,62 @@ const SCENARIOS: readonly Scenario[] = [
       });
       expect(after.status).toBe(404);
       expect(JSON.parse(after.text)).toEqual({ error: 'session_not_found' });
+    },
+  },
+  {
+    id: 'stale-write',
+    name: 'after a resume, a Write of a placeholder the sidecar can no longer put back is put to the user, and with no one to answer it never runs',
+    async body(scene) {
+      const dialogs = answerDialogs(scene.on, []);
+      const written: string[] = [];
+      scene.on('tool.call', { tool: 'Write' }, ($, e) => {
+        written.push(e.content);
+        return { result: { type: 'create', filePath: e.file_path, content: e.content } };
+      });
+      await start(scene);
+      const masked = await submit(scene, PROMPT);
+      const email = lastWord(masked);
+      expect(email).toMatch(PLACEHOLDER);
+      // The session ends with its vault; the conversation goes on in a new
+      // one, as after `claude --resume`, its history holding the prompt.
+      await scene.$.session.end({
+        reason: 'prompt_input_exit',
+        sessionId: scene.key,
+        resume: { id: scene.key },
+      });
+      scene.messages.push({ role: 'user', text: masked, toolUses: [] });
+      await start(scene);
+      expect(routes(scene.wire).filter((route) => route.endsWith(' 201'))).toHaveLength(2);
+      const out = await scene.$.tool.call({
+        tool: 'Write',
+        file_path: `${CWD}/notes.md`,
+        content: `Mail ${email}`,
+      });
+      // The real sidecar reported the placeholder as one it cannot put back.
+      const restores = scene.wire.calls.filter(({ request }) => request.path.endsWith('/restore'));
+      const first = restores[0];
+      if (first === undefined) throw new Error('no restore call');
+      const reported = answerBody(first);
+      expect(Number(reported.unknownPlaceholders) + Number(reported.foreignPlaceholders)).toBe(1);
+      expect(dialogs.modAsked).toHaveLength(1);
+      expect(dialogs.modAsked[0]?.options).toEqual(STALE_ANSWERS);
+      expect(dialogs.modAsked[0]?.question).toContain(
+        'cannot put back 1 placeholder in this Write call (email 1)',
+      );
+      expect(written).toEqual([]);
+      expect(out.deny).toContain(STALE_REFUSAL);
+      expect(out.deny).toContain('never invent them');
+      expectNoValue(out, 'the refusal Claude reads');
+      // One notice, with the conversation's count of such placeholders.
+      const stale = new Set(masked.match(PLACEHOLDERS) ?? []).size;
+      const notices = scene.toasts.filter((line) => line.includes('can no longer be put back'));
+      expect(notices).toHaveLength(1);
+      expect(notices[0]).toContain(`nullpii: ${stale} placeholder`);
+      const report = await pii(scene, 'status');
+      expect(report).toContain(
+        'Placeholders that could not be put back, in calls that write a file: refused 1 · written as text 0',
+      );
+      expectNoValue(report, 'the /pii report');
     },
   },
   {

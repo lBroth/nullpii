@@ -213,6 +213,14 @@ export function substitutePlaceholders(
   return { value: out, replacements, changed };
 }
 
+/** The placeholders in `masked` that `original` does not hold, each once,
+ * in order: the ones the sidecar put in, not a placeholder text the tool
+ * wrote itself, which the sidecar passes through. */
+export function addedPlaceholders(original: string, masked: string): string[] {
+  const before = new Set(original.match(PLACEHOLDER_ALL) ?? []);
+  return [...new Set(masked.match(PLACEHOLDER_ALL) ?? [])].filter((one) => !before.has(one));
+}
+
 /** Every string and object key in `value`. */
 export function textsOf(value: unknown): Set<string> {
   const texts = new Set<string>();
@@ -228,19 +236,6 @@ export function textsOf(value: unknown): Set<string> {
   };
   walk(value);
   return texts;
-}
-
-/** `value` with every string and key that `back` maps (a whole text, never
- * a part of one) replaced by the text it maps to. */
-export function putBackTexts(value: unknown, back: ReadonlyMap<string, string>): unknown {
-  const inText = (text: string) => back.get(text) ?? text;
-  const walk = (one: unknown): unknown => {
-    if (typeof one === 'string') return inText(one);
-    if (Array.isArray(one)) return one.map(walk);
-    if (one === null || typeof one !== 'object') return one;
-    return Object.fromEntries(Object.entries(one).map(([key, sub]) => [inText(key), walk(sub)]));
-  };
-  return walk(value);
 }
 
 /** The field of an `AskUserQuestion` result that holds the user's answers,
@@ -262,52 +257,82 @@ export class QuestionEchoError extends Error {
   }
 }
 
+/** A value the user sent in clear, and the placeholder Claude wrote for it. */
+export interface SentValue {
+  readonly value: string;
+  readonly placeholder: string;
+}
+
+/** Characters a regular expression reads as syntax. */
+const REGEX_SYNTAX = /[.*+?^${}()|[\]\\]/g;
+
+/** `text` with every occurrence of each value in `sent` replaced by its
+ * placeholder: longest value first, in one pass, so a shorter value is
+ * never found again inside a placeholder or a longer value. */
+function maskSentValues(text: string, sent: readonly SentValue[]): string {
+  if (sent.length === 0) return text;
+  const byValue = new Map(sent.map((one) => [one.value, one.placeholder]));
+  const longestFirst = [...byValue.keys()].sort((a, b) => b.length - a.length);
+  const pattern = new RegExp(
+    longestFirst.map((one) => one.replace(REGEX_SYNTAX, '\\$&')).join('|'),
+    'g',
+  );
+  return text.replace(pattern, (found) => byValue.get(found) ?? found);
+}
+
 /**
  * The result of Claude's own `AskUserQuestion` after the user sent real
- * values into its question: every text the mod restored in the call
- * (`changed`) put back, whole, to the text Claude wrote, so the questions
- * it echoes and the keys of its answers read as Claude wrote them, with
- * their placeholders. This does not rest on the sidecar detecting the
- * values again: a short value, or one joined to a word, may not be.
- * Throws `QuestionEchoError` when a text still holds one of `sent` and is
- * neither one Claude wrote (`written`, every text of the masked call) nor
- * an answer of the user's (a value under `answers`, which the sidecar then
- * masks as it masks any text).
+ * values into its question, as Claude may read it. It does not rest on the
+ * sidecar detecting the values again (a short value, or one joined to a
+ * word, it may miss):
+ *
+ * - every text the mod restored in the call (`changed`) is put back, whole,
+ *   to the text Claude wrote, so the questions the result echoes and the
+ *   keys of its answers read as Claude wrote them;
+ * - in the user's answers (the values under `answers`, and anything inside
+ *   them), every occurrence of a value in `sent` is replaced by its
+ *   placeholder, so labels the user picked, joined by Claude Code (`a, b`),
+ *   or text they typed carry no sent value;
+ * - anywhere else, a text that still holds a sent value and is not one
+ *   Claude wrote (`written`, every text of the masked call) throws
+ *   `QuestionEchoError`: the question came back in a form the mod did not
+ *   send, and the result is withheld.
  */
 export function questionResultAsWritten(
   result: unknown,
   changed: ReadonlyMap<string, string>,
   written: ReadonlySet<string>,
-  sent: readonly string[],
+  sent: readonly SentValue[],
 ): unknown {
-  const back = putBackTexts(result, changed);
-  const leaks = (text: string) => !written.has(text) && sent.some((one) => text.includes(one));
+  const leaks = (text: string) =>
+    !written.has(text) && sent.some((one) => text.includes(one.value));
   // `top`: the result itself; `answers`: its answers, keyed by question;
-  // `answer`: what the user answered, theirs to mask as any text.
+  // `answer`: what the user answered; `inner`: anything else.
   type Where = 'top' | 'inner' | 'answers' | 'answer';
-  const check = (one: unknown, where: Where): void => {
-    if (typeof one === 'string') {
-      if (where !== 'answer' && leaks(one)) throw new QuestionEchoError();
-      return;
-    }
-    if (Array.isArray(one)) {
-      for (const item of one) check(item, where === 'answer' ? 'answer' : 'inner');
-      return;
-    }
-    if (one === null || typeof one !== 'object') return;
-    for (const [key, sub] of Object.entries(one)) {
-      if (where !== 'answer' && leaks(key)) throw new QuestionEchoError();
-      const next: Where =
-        where === 'answers' || where === 'answer'
-          ? 'answer'
-          : where === 'top' && key === ANSWERS_FIELD
-            ? 'answers'
-            : 'inner';
-      check(sub, next);
-    }
+  const text = (one: string, where: Where): string => {
+    if (where === 'answer') return maskSentValues(one, sent);
+    const back = changed.get(one) ?? one;
+    if (leaks(back)) throw new QuestionEchoError();
+    return back;
   };
-  check(back, 'top');
-  return back;
+  const walk = (one: unknown, where: Where): unknown => {
+    if (typeof one === 'string') return text(one, where);
+    if (Array.isArray(one))
+      return one.map((item) => walk(item, where === 'answer' ? 'answer' : 'inner'));
+    if (one === null || typeof one !== 'object') return one;
+    return Object.fromEntries(
+      Object.entries(one).map(([key, sub]) => {
+        const next: Where =
+          where === 'answers' || where === 'answer'
+            ? 'answer'
+            : where === 'top' && key === ANSWERS_FIELD
+              ? 'answers'
+              : 'inner';
+        return [text(key, where), walk(sub, next)];
+      }),
+    );
+  };
+  return walk(result, 'top');
 }
 
 /** One object key the sidecar masked: the key as the tool wrote it, which
@@ -403,9 +428,12 @@ function pairedEntries(original: unknown, masked: unknown): PairedEntry[] | unde
   const answer = masked as Readonly<Record<string, unknown>>;
   const changedFrom = from.filter((key) => !Object.hasOwn(answer, key));
   const changedTo = to.filter((key) => !Object.hasOwn(source, key));
-  if (changedFrom.length !== changedTo.length || !changedTo.every((key) => PLACEHOLDER.test(key))) {
-    throw new ResultShapeError();
-  }
+  if (changedFrom.length !== changedTo.length) throw new ResultShapeError();
+  // Each changed key, paired in order, must hold a placeholder its original
+  // did not: a placeholder text the tool wrote itself passes through.
+  changedFrom.forEach((key, at) => {
+    if (addedPlaceholders(key, changedTo[at] as string).length === 0) throw new ResultShapeError();
+  });
   return from.map((key) => {
     const at = changedFrom.indexOf(key);
     const maskedKey = at === -1 ? key : (changedTo[at] as string);

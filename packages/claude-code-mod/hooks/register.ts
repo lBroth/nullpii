@@ -43,6 +43,7 @@ import {
   RESULT_SHAPE_MISMATCH,
   addMasked,
   addSent,
+  addedPlaceholders,
   asSent,
   asksAboutResultKeys,
   challengeNonce,
@@ -946,6 +947,8 @@ interface ClearValue {
   readonly to: string;
   readonly category: string;
   readonly value: string;
+  /** The placeholder that stood for the value. */
+  readonly placeholder: string;
 }
 
 /** Toast and count each value in `values`, which went out in clear on the
@@ -996,12 +999,17 @@ async function sentMaskedKeys(
   tool: string,
   keys: readonly MaskedKey[],
 ): Promise<readonly ClearValue[] | undefined> {
-  const found = placeholderCategories(keys.map((one) => one.masked).join(' '));
+  // Per key, only the placeholders the sidecar put in: a placeholder text
+  // the tool wrote in its own key passes through, and sends nothing.
+  const added = new Set(keys.flatMap((one) => addedPlaceholders(one.key, one.masked)));
+  const found = placeholderCategories(keys.map((one) => one.masked).join(' ')).filter((one) =>
+    added.has(one.placeholder),
+  );
   const known = await knownValues($, found);
   const values = found.map(({ placeholder, category }) => {
     const value = known.get(placeholder);
     if (value === undefined) throw new Error(KEY_VALUE_UNKNOWN);
-    return { tool, to: `Claude (a key of a ${tool} result)`, category, value };
+    return { tool, to: `Claude (a key of a ${tool} result)`, category, value, placeholder };
   });
   const question = () => {
     const listed = values.map((one) => listedValue(one.category, one.value));
@@ -1062,7 +1070,9 @@ async function sentHeld(
   if (known.size === 0) return { restored: held, values: [], changed: new Map() };
   const values = found.flatMap(({ placeholder, category }) => {
     const value = known.get(placeholder);
-    return value === undefined ? [] : [{ tool, to: `the ${tool} call`, category, value }];
+    return value === undefined
+      ? []
+      : [{ tool, to: `the ${tool} call`, category, value, placeholder }];
   });
   const question = () => {
     const listed = values.map((one) => listedValue(one.category, one.value));
@@ -1962,12 +1972,7 @@ export function register(on, options) {
     const result =
       questionTexts.size === 0
         ? out.result
-        : questionResultAsWritten(
-            out.result,
-            questionTexts,
-            textsOf(e),
-            sentInClear.map((one) => one.value),
-          );
+        : questionResultAsWritten(out.result, questionTexts, textsOf(e), sentInClear);
     const clean = await maskedResult($, e.tool, result);
     if (clean === undefined) return { deny: KEYS_WITHHELD };
     recordSent($, clean.sent);

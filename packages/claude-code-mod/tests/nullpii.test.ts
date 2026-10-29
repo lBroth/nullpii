@@ -5136,3 +5136,47 @@ test('the band says starting, not blocking, while a restart waits for another si
   expect(await ui.find({ type: 'Text', text: /starting/ })).toBeDefined();
   await ui.unmount();
 });
+
+test('a mid-session restart whose child loses the port to a closing sidecar starts it again once that one is gone', async ($, on) => {
+  const opts = { down: false };
+  const sidecar = fakeSidecar(opts);
+  stubSession(on, sidecar);
+  const clock = mock.clock(on, { now: 1_700_000_000_000 });
+  const spawned: string[][] = [];
+  on('process.spawn', async function* ($, e) {
+    spawned.push(e.argv);
+    // The first child finds the port held by the closing sidecar and
+    // exits; the second runs on.
+    if (spawned.length === 1) return { value: { code: 1, signal: null } };
+    await new Promise<never>(() => undefined);
+  });
+  const sent: string[] = [];
+  on('prompt.submit', ($, e) => {
+    sent.push(e.text);
+    return { text: e.text };
+  });
+  await start($);
+  expect(await statusOn($)).toBe(true);
+  // The sidecar in use is closing: its session is gone and it refuses a
+  // new one, while it still holds the address.
+  sidecar.forget();
+  sidecar.state.refuseSession = CLOSING;
+  const pending = $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  for (let turn = 0; turn < 100 && spawned.length === 0; turn += 1) {
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  expect(spawned).toHaveLength(1);
+  // It is gone before the next status poll: the address is free.
+  opts.down = true;
+  await pollUntil(clock, () => spawned.length === 2);
+  expect(spawned).toHaveLength(2);
+  // The second child takes the address and is ready.
+  opts.down = false;
+  sidecar.state.refuseSession = undefined;
+  sidecar.state.startup = { phase: 'ready' };
+  await pollUntil(clock, () => statusOn($));
+  expect((await pending).drop).toBeUndefined();
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).not.toContain('John');
+  expect(spawned).toHaveLength(2);
+});

@@ -102,7 +102,7 @@ Each was decided and logged before any tool ran on any AB-1 set, unless the entr
 
 ### Results
 
-Every tool ran on the frozen sets; the tables use the run redone after the adapter fix, scored with the corrected rule. Rows are sorted by leak rate, then by keep rate. Intervals are paired bootstrap 95% intervals of nullpii minus the tool, in percentage points: a negative leak difference or a positive keep difference favours nullpii. The aggregates are in [`published-bench/ab1/`](https://github.com/lBroth/nullpii/blob/main/packages/eval/published-bench/ab1). nullpii's rows are from the release build, which includes the three rules described at the end of these results. nullpii's round trip, run with the same build: all 16,572 documents, 13,704 of them with something masked, came back as their exact original text after masking and restoring.
+Every tool ran on the frozen sets; the tables use the run redone after the adapter fix, scored with the corrected rule. Rows are sorted by leak rate, then by keep rate. Intervals are paired bootstrap 95% intervals of nullpii minus the tool, in percentage points: a negative leak difference or a positive keep difference favours nullpii. In the main tables, bold marks nullpii's name and the best leak rate, keep rate and docs-with-a-leak value of the rows shown. The aggregates are in [`published-bench/ab1/`](https://github.com/lBroth/nullpii/blob/main/packages/eval/published-bench/ab1). nullpii's rows are from the release build, which includes the three rules described at the end of these results. nullpii's round trip, run with the same build: all 16,572 documents, 13,704 of them with something masked, came back as their exact original text after masking and restoring.
 
 **A. Agent traffic** — one row per tool per operating point, plus its `+agent` variant.
 
@@ -111,8 +111,8 @@ Every tool ran on the frozen sets; the tables use the run redone after the adapt
 
 | Tool | Leak rate | Keep rate | Docs with a leak | nullpii − tool, leak | nullpii − tool, keep |
 |---|---:|---:|---:|---|---|
-| rizzo-pii (tuned, +agent) | 8.1% | 44.5% | 25.1% | [−0.0, +2.6] | [+38.7, +43.4] |
-| rizzo-pii (tuned) | 8.1% | 32.6% | 25.1% | [−0.0, +2.6] | [+50.2, +55.6] |
+| rizzo-pii (tuned, +agent) | **8.1%** | 44.5% | **25.1%** | [−0.0, +2.6] | [+38.7, +43.4] |
+| rizzo-pii (tuned) | **8.1%** | 32.6% | **25.1%** | [−0.0, +2.6] | [+50.2, +55.6] |
 | **nullpii 0.5 (agent default)** | 9.5% | 85.4% | 27.0% | — | — |
 | openai privacy-filter (tuned) | 14.2% | 71.8% | 32.9% | [−6.6, −3.0] | [+10.5, +16.6] |
 | openai privacy-filter (tuned, +agent) | 14.5% | 77.9% | 33.6% | [−6.9, −3.2] | [+5.0, +9.9] |
@@ -168,7 +168,7 @@ Every tool ran on the frozen sets; the tables use the run redone after the adapt
 | Presidio (tuned) | 40.4% | 71.6% | 77.6% | [−33.0, −28.8] | [+11.7, +16.2] |
 | Presidio (default, +agent) | 40.5% | 72.5% | 77.7% | [−33.2, −29.0] | [+10.6, +15.5] |
 | Presidio (tuned, +agent) | 40.6% | 82.3% | 77.9% | [−33.2, −29.0] | [+1.4, +5.1] |
-| piiranha (default, +agent) | 48.0% | 97.1% | 83.8% | [−40.7, −36.5] | [−13.1, −10.2] |
+| piiranha (default, +agent) | 48.0% | **97.1%** | 83.8% | [−40.7, −36.5] | [−13.1, −10.2] |
 | piiranha (default) | 48.0% | 97.0% | 83.8% | [−40.7, −36.5] | [−13.1, −10.2] |
 | deberta PII (tuned) | 55.1% | 60.0% | 81.2% | [−48.7, −42.3] | [+22.2, +28.6] |
 | deberta PII (tuned, +agent) | 55.1% | 64.2% | 81.2% | [−48.7, −42.4] | [+18.0, +24.3] |
@@ -221,8 +221,8 @@ Leak rate per category (items in brackets):
 
 | Tool | Leak rate | Keep rate | Docs with a leak | nullpii − tool, leak | nullpii − tool, keep |
 |---|---:|---:|---:|---|---|
-| openai privacy-filter (tuned, +agent) | 13.2% | 77.1% | 13.2% | [+9.0, +13.7] | [−14.7, −10.1] |
-| openai privacy-filter (tuned) | 13.2% | 77.0% | 13.2% | [+9.0, +13.7] | [−14.6, −9.9] |
+| openai privacy-filter (tuned, +agent) | **13.2%** | 77.1% | **13.2%** | [+9.0, +13.7] | [−14.7, −10.1] |
+| openai privacy-filter (tuned) | **13.2%** | 77.0% | **13.2%** | [+9.0, +13.7] | [−14.6, −9.9] |
 | nemotron-pii, library (tuned, +agent) | 14.5% | 34.0% | 14.5% | [+8.0, +12.0] | [+28.2, +33.1] |
 | nemotron-pii, library (tuned) | 14.5% | 32.8% | 14.5% | [+8.0, +12.0] | [+29.4, +34.3] |
 | gliner-pii-large (tuned, +agent) | 16.7% | 61.1% | 16.7% | [+6.0, +9.7] | [+1.1, +6.3] |
@@ -274,8 +274,8 @@ Leak rate per category (items in brackets):
 | piiranha (tuned) | 72.2% | 61.7% | 72.2% | [−50.3, −45.3] | [+0.6, +5.6] |
 | pii-identifier (default, +agent) | 74.9% | 88.5% | 74.9% | [−52.9, −47.8] | [−26.0, −21.7] |
 | pii-identifier (default) | 74.9% | 87.8% | 74.9% | [−52.9, −47.8] | [−25.3, −20.9] |
-| piiranha (default) | 85.2% | 95.0% | 85.2% | [−62.9, −58.6] | [−32.3, −28.0] |
-| piiranha (default, +agent) | 85.2% | 95.0% | 85.2% | [−62.9, −58.6] | [−32.3, −28.0] |
+| piiranha (default) | 85.2% | **95.0%** | 85.2% | [−62.9, −58.6] | [−32.3, −28.0] |
+| piiranha (default, +agent) | 85.2% | **95.0%** | 85.2% | [−62.9, −58.6] | [−32.3, −28.0] |
 | rizzo-pii (default, +agent) | 89.2% | 85.2% | 89.2% | [−66.8, −62.4] | [−22.8, −18.1] |
 | rizzo-pii (default) | 89.2% | 84.2% | 89.2% | [−66.8, −62.4] | [−21.7, −17.1] |
 | Presidio (default) | 94.2% | 63.5% | 94.2% | [−71.8, −67.6] | [−1.6, +4.2] |
@@ -289,8 +289,8 @@ Leak rate per category (items in brackets):
 
 | Tool | Leak rate | Keep rate | Docs with a leak | nullpii − tool, leak | nullpii − tool, keep |
 |---|---:|---:|---:|---|---|
-| openai privacy-filter (tuned, +agent) | 8.2% | 74.6% | 8.2% | [+2.5, +4.2] | [+1.2, +4.1] |
-| openai privacy-filter (tuned) | 8.2% | 74.5% | 8.2% | [+2.5, +4.2] | [+1.3, +4.2] |
+| openai privacy-filter (tuned, +agent) | **8.2%** | 74.6% | **8.2%** | [+2.5, +4.2] | [+1.2, +4.1] |
+| openai privacy-filter (tuned) | **8.2%** | 74.5% | **8.2%** | [+2.5, +4.2] | [+1.3, +4.2] |
 | **nullpii 0.5 (agent default)** | 11.5% | 77.2% | 11.5% | — | — |
 | openai privacy-filter (default, +agent) | 13.5% | 86.2% | 13.5% | [−3.0, −0.9] | [−10.3, −7.6] |
 | openai privacy-filter (default) | 13.5% | 86.2% | 13.5% | [−3.0, −0.9] | [−10.2, −7.6] |
@@ -348,8 +348,8 @@ Leak rate per category (items in brackets):
 | Presidio (tuned, +agent) | 79.1% | 67.3% | 79.1% | [−68.7, −66.3] | [+8.4, +11.6] |
 | piiranha (tuned, +agent) | 92.3% | 72.9% | 92.3% | [−81.8, −79.7] | [+2.8, +5.9] |
 | piiranha (tuned) | 92.3% | 72.7% | 92.3% | [−81.8, −79.7] | [+2.9, +6.1] |
-| piiranha (default) | 99.1% | 98.1% | 99.1% | [−88.4, −86.7] | [−22.0, −19.7] |
-| piiranha (default, +agent) | 99.1% | 98.1% | 99.1% | [−88.4, −86.7] | [−22.0, −19.7] |
+| piiranha (default) | 99.1% | **98.1%** | 99.1% | [−88.4, −86.7] | [−22.0, −19.7] |
+| piiranha (default, +agent) | 99.1% | **98.1%** | 99.1% | [−88.4, −86.7] | [−22.0, −19.7] |
 <!-- ab1-b2:end -->
 
 **Secrets by recognizer coverage.** The secrets' leak rate, in each set, on the items nullpii's recognizer pack covers and on the rest. An item is covered when the pack, run alone on the raw text without the model or the base64 pass, masks every letter and digit of the value. This split was computed after the freeze, from the pack itself, and is only reported. Items: A 88 covered of 585, B1 125 of 2,000, B2 1,979 of 5,776 (the release build's pack no longer has the UUID recognizer).

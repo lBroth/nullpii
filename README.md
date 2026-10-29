@@ -214,11 +214,11 @@ AB-1 checks two things in a coding agent's traffic. What the agent must not give
 
 | Tool | Leak rate | Keep rate | Docs with a leak | nullpii − tool, leak | nullpii − tool, keep |
 |---|---:|---:|---:|---|---|
-| rizzo-pii (tuned, +agent) | 8.1% | 44.5% | 25.1% | [−0.0, +2.6] | [+38.7, +43.4] |
+| rizzo-pii (tuned, +agent) | **8.1%** | 44.5% | **25.1%** | [−0.0, +2.6] | [+38.7, +43.4] |
 | **nullpii 0.5 (agent default)** | 9.5% | 85.4% | 27.0% | — | — |
 | openai privacy-filter (tuned, +agent) | 14.5% | 77.9% | 33.6% | [−6.9, −3.2] | [+5.0, +9.9] |
 | OpenMed PII Large (tuned, +agent) | 15.7% | 82.2% | 39.7% | [−8.2, −4.4] | [+1.6, +5.0] |
-| gliner-pii-large (tuned, +agent) | 15.9% | 85.5% | 37.8% | [−8.5, −4.4] | [−1.9, +1.6] |
+| gliner-pii-large (tuned, +agent) | 15.9% | **85.5%** | 37.8% | [−8.5, −4.4] | [−1.9, +1.6] |
 | nemotron-pii, NVIDIA's server (tuned, +agent) | 16.0% | 75.8% | 42.8% | [−8.2, −4.9] | [+7.7, +11.9] |
 | OpenMed PII Small (tuned, +agent) | 16.1% | 83.0% | 40.4% | [−8.3, −4.9] | [+0.8, +4.1] |
 | gliner-stream-pii (tuned, +agent) | 16.4% | 67.5% | 43.3% | [−9.0, −4.9] | [+15.9, +19.9] |
@@ -232,7 +232,7 @@ AB-1 checks two things in a coding agent's traffic. What the agent must not give
 | deberta PII (tuned, +agent) | 55.1% | 64.2% | 81.2% | [−48.7, −42.4] | [+18.0, +24.3] |
 <!-- ab1-a:end -->
 
-Each row is the tool at its tuned setting, with the agent-policy filter. [`METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md#results) has every other row, B1 (CredData), B2 (issue secrets), the leak rate per category, and the secrets split by recognizer coverage. The raw numbers are in [`published-bench/ab1/`](https://github.com/lBroth/nullpii/blob/main/packages/eval/published-bench/ab1).
+Each row is the tool at its tuned setting, with the agent-policy filter. Bold marks nullpii's name and the best value in each column. [`METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md#results) has every other row, B1 (CredData), B2 (issue secrets), the leak rate per category, and the secrets split by recognizer coverage. The raw numbers are in [`published-bench/ab1/`](https://github.com/lBroth/nullpii/blob/main/packages/eval/published-bench/ab1).
 
 </details>
 

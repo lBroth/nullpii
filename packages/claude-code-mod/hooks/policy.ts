@@ -173,6 +173,10 @@ const PLACEHOLDER_ALL = new RegExp(PLACEHOLDER.source, 'g');
 export interface Substituted {
   readonly value: unknown;
   readonly replacements: number;
+  /** Each string or key the replace changed, as it reads now, mapped to
+   * the text it was (with its placeholders): what puts a restored text
+   * that comes back in a result to the form Claude wrote it in. */
+  readonly changed: ReadonlyMap<string, string>;
 }
 
 /**
@@ -188,13 +192,17 @@ export function substitutePlaceholders(
   values: ReadonlyMap<string, string>,
 ): Substituted {
   let replacements = 0;
-  const inText = (text: string) =>
-    text.replace(PLACEHOLDER_ALL, (placeholder) => {
+  const changed = new Map<string, string>();
+  const inText = (text: string) => {
+    const out = text.replace(PLACEHOLDER_ALL, (placeholder) => {
       const real = values.get(placeholder);
       if (real === undefined) return placeholder;
       replacements += 1;
       return real;
     });
+    if (out !== text && !changed.has(out)) changed.set(out, text);
+    return out;
+  };
   const walk = (one: unknown): unknown => {
     if (typeof one === 'string') return inText(one);
     if (Array.isArray(one)) return one.map(walk);
@@ -202,7 +210,104 @@ export function substitutePlaceholders(
     return Object.fromEntries(Object.entries(one).map(([key, sub]) => [inText(key), walk(sub)]));
   };
   const out = walk(value);
-  return { value: out, replacements };
+  return { value: out, replacements, changed };
+}
+
+/** Every string and object key in `value`. */
+export function textsOf(value: unknown): Set<string> {
+  const texts = new Set<string>();
+  const walk = (one: unknown): void => {
+    if (typeof one === 'string') texts.add(one);
+    else if (Array.isArray(one)) one.forEach(walk);
+    else if (one !== null && typeof one === 'object') {
+      for (const [key, sub] of Object.entries(one)) {
+        texts.add(key);
+        walk(sub);
+      }
+    }
+  };
+  walk(value);
+  return texts;
+}
+
+/** `value` with every string and key that `back` maps (a whole text, never
+ * a part of one) replaced by the text it maps to. */
+export function putBackTexts(value: unknown, back: ReadonlyMap<string, string>): unknown {
+  const inText = (text: string) => back.get(text) ?? text;
+  const walk = (one: unknown): unknown => {
+    if (typeof one === 'string') return inText(one);
+    if (Array.isArray(one)) return one.map(walk);
+    if (one === null || typeof one !== 'object') return one;
+    return Object.fromEntries(Object.entries(one).map(([key, sub]) => [inText(key), walk(sub)]));
+  };
+  return walk(value);
+}
+
+/** The field of an `AskUserQuestion` result that holds the user's answers,
+ * keyed by question. */
+const ANSWERS_FIELD = 'answers';
+
+/** `QuestionEchoError`'s text: fixed, it quotes nothing of the result. */
+export const QUESTION_ECHO =
+  "Claude's question came back with a value sent in clear in a form nullpii cannot put back";
+
+/** An `AskUserQuestion` result that still holds a real value the user sent
+ * in clear, outside the user's own answers and outside any text Claude
+ * wrote: the question in a form the mod did not send. The result is
+ * withheld rather than masked by detection alone. */
+export class QuestionEchoError extends Error {
+  constructor() {
+    super(QUESTION_ECHO);
+    this.name = 'QuestionEchoError';
+  }
+}
+
+/**
+ * The result of Claude's own `AskUserQuestion` after the user sent real
+ * values into its question: every text the mod restored in the call
+ * (`changed`) put back, whole, to the text Claude wrote, so the questions
+ * it echoes and the keys of its answers read as Claude wrote them, with
+ * their placeholders. This does not rest on the sidecar detecting the
+ * values again: a short value, or one joined to a word, may not be.
+ * Throws `QuestionEchoError` when a text still holds one of `sent` and is
+ * neither one Claude wrote (`written`, every text of the masked call) nor
+ * an answer of the user's (a value under `answers`, which the sidecar then
+ * masks as it masks any text).
+ */
+export function questionResultAsWritten(
+  result: unknown,
+  changed: ReadonlyMap<string, string>,
+  written: ReadonlySet<string>,
+  sent: readonly string[],
+): unknown {
+  const back = putBackTexts(result, changed);
+  const leaks = (text: string) => !written.has(text) && sent.some((one) => text.includes(one));
+  // `top`: the result itself; `answers`: its answers, keyed by question;
+  // `answer`: what the user answered, theirs to mask as any text.
+  type Where = 'top' | 'inner' | 'answers' | 'answer';
+  const check = (one: unknown, where: Where): void => {
+    if (typeof one === 'string') {
+      if (where !== 'answer' && leaks(one)) throw new QuestionEchoError();
+      return;
+    }
+    if (Array.isArray(one)) {
+      for (const item of one) check(item, where === 'answer' ? 'answer' : 'inner');
+      return;
+    }
+    if (one === null || typeof one !== 'object') return;
+    for (const [key, sub] of Object.entries(one)) {
+      if (where !== 'answer' && leaks(key)) throw new QuestionEchoError();
+      const next: Where =
+        where === 'answers' || where === 'answer'
+          ? 'answer'
+          : where === 'top' && key === ANSWERS_FIELD
+            ? 'answers'
+            : 'inner';
+      check(sub, next);
+    }
+  };
+  check(back, 'top');
+  return back;
 }
 
 /** One object key the sidecar masked: the key as the tool wrote it, which
@@ -612,10 +717,27 @@ export function placeholderGuide(restoreTools: readonly string[] | undefined): s
     'Use a placeholder as you would use its value, and copy it exactly and in full, hex part included.',
     'Do not ask the user for the real value, and do not tell them it is hidden: nullpii shows them the real values.',
     restoringTools(restoreTools),
-    "Every other tool, Claude Code's own included (TodoWrite, Agent, AskUserQuestion, WebFetch, MCP tools), gets the real values only when the user agrees in a dialog nullpii puts to them.",
+    otherTools(restoreTools),
     'A call the user does not agree to is refused, and so is every such call when no one can answer (claude -p) unless the user allowed all for the session; a placeholder nothing stands behind is passed as written.',
     'A shell command that holds a placeholder is refused.',
   ].join(' ');
+}
+
+/** Tools the guide names as examples of the ones that ask, besides MCP
+ * tools: each only while `restoreTools` does not list it. */
+const GUIDE_EXAMPLE_TOOLS: readonly string[] = [
+  'TodoWrite',
+  'Agent',
+  'AskUserQuestion',
+  'WebFetch',
+];
+
+/** The guide's sentence on the tools outside `restoreTools`, with examples
+ * that are true for this policy. */
+function otherTools(restoreTools: readonly string[] | undefined): string {
+  const examples = GUIDE_EXAMPLE_TOOLS.filter((tool) => restoreTools?.includes(tool) !== true);
+  const named = [...examples, 'MCP tools'].join(', ');
+  return `Every other tool, Claude Code's own included (such as ${named}), gets the real values only when the user agrees in a dialog nullpii puts to them.`;
 }
 
 function restoringTools(restoreTools: readonly string[] | undefined): string {

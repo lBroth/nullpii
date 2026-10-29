@@ -3,10 +3,13 @@
 // nullpii mod: every prompt and every tool result goes through the local
 // nullpii sidecar (`nullpii-gateway` with NULLPII_SIDECAR_TOKEN set) before
 // Claude reads it, so personal data and secrets reach the model as
-// placeholders. Real values go back only into the arguments of the tools
-// the sidecar's policy lists (`restoreTools` in the shared config file, by
-// default the tools that run on this machine), so files and commands see
-// what the user has, and nothing masked leaves through a web or MCP tool.
+// placeholders. Real values go back into the arguments of the tools the
+// sidecar's policy lists (`restoreTools` in the shared config file, by
+// default the file tools that run on this machine), so files see what the
+// user has. Any other tool gets a real value only on the user's word, asked
+// in a dialog (Block / Send once / Allow all); with no one to answer
+// (`claude -p`) its call is refused unless Allow all was given. A shell
+// command never gets one.
 //
 // Fail closed: when the sidecar cannot be reached, a prompt is handed back
 // to the user and a tool call is refused, instead of going out unmasked.
@@ -36,6 +39,7 @@ import {
   type MaskedKey,
   PLACEHOLDER,
   type Policy,
+  QUESTION_ECHO,
   RESULT_SHAPE_MISMATCH,
   addMasked,
   addSent,
@@ -53,10 +57,12 @@ import {
   optionFlag,
   optionString,
   placeholderGuide,
+  questionResultAsWritten,
   restorableArgs,
   sameText,
   sidecarOrigin,
   substitutePlaceholders,
+  textsOf,
   touchesPolicyFile,
   unmaskKeys,
 } from './policy.ts';
@@ -202,6 +208,9 @@ const TRY_REDACTED_ARGS = 'try [sample not stored]';
 const TRY_USAGE =
   'Usage: /pii try <text>. Type the sample on the command, not in a menu dialog; only the masked result is kept.';
 const TRY_SESSION_PREFIX = 'try-';
+/** A masked key of a tool result holds a placeholder the sidecar does not
+ * know: the key cannot be named to the user, so nothing is sent. */
+const KEY_VALUE_UNKNOWN = 'the sidecar does not know a placeholder it put in a masked key';
 /** The error texts this mod writes, which hold no value: the only ones shown. */
 const OWN_REASONS: ReadonlySet<string> = new Set([
   NO_TOKEN,
@@ -212,6 +221,8 @@ const OWN_REASONS: ReadonlySet<string> = new Set([
   NOT_STARTED,
   NO_POLICY,
   RESULT_SHAPE_MISMATCH,
+  KEY_VALUE_UNKNOWN,
+  QUESTION_ECHO,
 ]);
 /** SidecarError's text, the one with a variable part. */
 const SIDECAR_STATUS = /^nullpii sidecar answered \d{3}$/;
@@ -889,12 +900,6 @@ function listedValue(category: string, value: string): string {
   return `${shortName(category)} "${shortForm(value)}"`;
 }
 
-/** The category a masked object key stands for: the category named in the
- * first placeholder the sidecar put in its place. */
-function keyCategory(masked: string): string {
-  return placeholderCategories(masked)[0]?.category ?? '';
-}
-
 /** Run `task` once every earlier question about sending values in clear
  * is over. Its own outcome, failure included, goes to the caller; the next
  * question waits for it either way. */
@@ -969,29 +974,38 @@ const DESTINATION_WORDS: Readonly<Record<ClearDestination, string>> = {
   mcp: 'Sent in clear, the real values go to the MCP server that runs this tool and can leave this machine through it.',
   user: "Sent in clear, the real values are shown to you in Claude's question, on this machine; your answer goes back to Claude masked.",
   internal:
-    'Sent in clear, the real values go to this Claude Code tool. nullpii masks what it returns, but has no hook on what it hands on inside Claude Code (a subagent prompt for Agent or Task, a message for SendMessage), so they can reach a Claude model unmasked.',
+    'Sent in clear, the real values go to this Claude Code tool. nullpii masks what it returns, but has no hook on what it hands on inside Claude Code (a subagent prompt for Agent or Task, a message for SendMessage), so they can reach a Claude model unmasked. A subagent then holds them as plain text, not placeholders, and can pass them to any tool, a shell command included, with no further question.',
   unknown:
     'Sent in clear, the real values go to this tool. nullpii does not know where it sends them: it masks what the tool returns, nothing else.',
 };
 
+/** What the key question says follows from sending keys in clear. */
+const KEYS_IN_CLEAR_WORDS =
+  'Claude then reads them as plain text, not placeholders, and can copy them into any later call, a shell command included, with no further question; the values under the keys stay masked.';
+
 /** The user's word on the object keys the sidecar masked in one tool
  * result, before they go to Claude in clear — asked first, unless Allow
- * all already answered for the rest of the session. The keys to toast and
- * count once the result goes; `undefined` when they were not sent. */
+ * all already answered for the rest of the session. A key can hold several
+ * values (`John <john@acme.io>`), and one key can come back many times in a
+ * result: the question lists, and the caller toasts and counts, each value
+ * once, by the placeholder that stands for it, with its own category and
+ * short form. `undefined` when the keys were not sent. Throws when the
+ * sidecar does not know a placeholder it just put in a key. */
 async function sentMaskedKeys(
   $,
   tool: string,
   keys: readonly MaskedKey[],
 ): Promise<readonly ClearValue[] | undefined> {
-  const values = keys.map(({ key, masked }) => ({
-    tool,
-    to: `Claude (a key of a ${tool} result)`,
-    category: keyCategory(masked),
-    value: key,
-  }));
+  const found = placeholderCategories(keys.map((one) => one.masked).join(' '));
+  const known = await knownValues($, found);
+  const values = found.map(({ placeholder, category }) => {
+    const value = known.get(placeholder);
+    if (value === undefined) throw new Error(KEY_VALUE_UNKNOWN);
+    return { tool, to: `Claude (a key of a ${tool} result)`, category, value };
+  });
   const question = () => {
     const listed = values.map((one) => listedValue(one.category, one.value));
-    return `nullpii masked keys of this ${tool} result that hold personal data: ${listed.join(', ')}. Send those keys in clear? Claude then reads them; the values under them stay masked.`;
+    return `nullpii masked personal data in object keys of this ${tool} result: ${listed.join(', ')}. Send those keys in clear? ${KEYS_IN_CLEAR_WORDS}`;
   };
   return (await allowedInClear($, question)) ? values : undefined;
 }
@@ -1002,6 +1016,9 @@ interface SentCall {
   readonly restored: Restored;
   /** The values the question listed, to toast and count once the call ran. */
   readonly values: readonly ClearValue[];
+  /** Each text the mod restored, mapped to the text Claude wrote
+   * (`substitutePlaceholders`): empty when nothing was restored. */
+  readonly changed: ReadonlyMap<string, string>;
 }
 
 /** The real value behind each placeholder in `found` that the sidecar
@@ -1042,7 +1059,7 @@ async function sentHeld(
 ): Promise<SentCall | undefined> {
   const found = placeholderCategories(JSON.stringify(args) ?? '');
   const known = await knownValues($, found);
-  if (known.size === 0) return { restored: held, values: [] };
+  if (known.size === 0) return { restored: held, values: [], changed: new Map() };
   const values = found.flatMap(({ placeholder, category }) => {
     const value = known.get(placeholder);
     return value === undefined ? [] : [{ tool, to: `the ${tool} call`, category, value }];
@@ -1056,6 +1073,7 @@ async function sentHeld(
   return {
     restored: { value: put.value as Record<string, unknown>, replacements: put.replacements },
     values,
+    changed: put.changed,
   };
 }
 
@@ -1863,6 +1881,10 @@ export function register(on, options) {
     // the user sent in clear, and the placeholders left in it.
     let sentInClear: readonly ClearValue[] = [];
     let heldInCall = 0;
+    let restoredInCall = 0;
+    // Claude's own question, with the values the user sent put into it: the
+    // texts to put back in its result, to the form Claude wrote.
+    let questionTexts: ReadonlyMap<string, string> = new Map();
     if (hasPlaceholder(args)) {
       // The sidecar decides by the tool's name: nothing for a tool outside
       // the policy's `restoreTools`, and nothing for a shell tool, whose
@@ -1878,10 +1900,11 @@ export function register(on, options) {
       const destination = held > 0 ? clearDestination(e.tool) : undefined;
       const asked =
         destination === undefined
-          ? { restored: r, values: [] }
+          ? { restored: r, values: [], changed: new Map<string, string>() }
           : await sentHeld($, e.tool, destination, args, r);
       if (asked === undefined) return { deny: HELD_NOT_SENT };
       sentInClear = asked.values;
+      if (destination === 'user') questionTexts = asked.changed;
       // The placeholders still in the call if it runs: none the user sent.
       heldInCall = held > 0 ? held - asked.restored.replacements : 0;
       // Rewrite the call only when a placeholder was replaced: a rewritten
@@ -1898,12 +1921,17 @@ export function register(on, options) {
         ) {
           return { deny: POLICY_DENIED };
         }
-        counts.restored += asked.restored.replacements;
+        // Values the user sent in clear count as sent, not as restored into
+        // a local tool: `restoreTools` alone is that path.
+        restoredInCall = destination === undefined ? asked.restored.replacements : 0;
         call = restored;
       }
     }
     const out = await ranCall($, next, call, sentInClear);
-    if (out.deny === undefined) counts.held += heldInCall;
+    if (out.deny === undefined) {
+      counts.held += heldInCall;
+      counts.restored += restoredInCall;
+    }
     // Masking paused for this session, with the sidecar up: what came out
     // of the tool goes to Claude as it is. The placeholders already in the
     // conversation were still put back before it ran, and the call is still
@@ -1929,7 +1957,18 @@ export function register(on, options) {
     // counted as the result goes. A new `{ result }` without `ref`: another
     // plugin's, or core's own, would make core send its own unmasked
     // messages to the model.
-    const clean = await maskedResult($, e.tool, out.result);
+    // Claude's own question after a Send once: its echo and the keys of its
+    // answers go back to the text Claude wrote, whole, not by detection.
+    const result =
+      questionTexts.size === 0
+        ? out.result
+        : questionResultAsWritten(
+            out.result,
+            questionTexts,
+            textsOf(e),
+            sentInClear.map((one) => one.value),
+          );
+    const clean = await maskedResult($, e.tool, result);
     if (clean === undefined) return { deny: KEYS_WITHHELD };
     recordSent($, clean.sent);
     return {

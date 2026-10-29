@@ -134,3 +134,18 @@ jobs:
         env:
           NULLPII_MODEL_DIR: ${{ steps.model.outputs.dir }}
         run: npm run test:e2e
+      # The Claude Code mod end to end, under Claude Code's own test runner,
+      # against this checkout's gateway with the same model: every request
+      # the mod sends is answered by the real sidecar (how, and why through
+      # a bridge, is in packages/claude-code-mod/tests/e2e-run.mjs). The
+      # gateway's binary imports `nullpii`, which is this checkout's core.
+      - name: Link nullpii to this checkout for the gateway
+        run: ln -s .. node_modules/nullpii
+      - name: Build the gateway
+        working-directory: packages/gateway
+        run: npm run build
+      - run: npm install --global @anthropic-ai/claude-code@2.1.305
+      - name: Run the mod's E2E suite against a real gateway
+        env:
+          NULLPII_MODEL_DIR: ${{ steps.model.outputs.dir }}
+        run: node packages/claude-code-mod/tests/e2e-sidecar.mjs

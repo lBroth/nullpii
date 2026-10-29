@@ -165,6 +165,46 @@ export function hasPlaceholder(value: unknown): boolean {
   return PLACEHOLDER.test(JSON.stringify(value) ?? '');
 }
 
+/** Every placeholder in a text, for a replace. */
+const PLACEHOLDER_ALL = new RegExp(PLACEHOLDER.source, 'g');
+
+/** `value` with the placeholders `values` names replaced by their real
+ * values, and how many were replaced. */
+export interface Substituted {
+  readonly value: unknown;
+  readonly replacements: number;
+}
+
+/**
+ * `value` with each placeholder that `values` maps replaced by its real
+ * value, in every string and every object key, as the sidecar's restore
+ * walks a value; every other placeholder is left as it is. The values the
+ * user was asked about, and only those, so nothing the vault learns later
+ * goes out unasked. One pass per string: a real value that reads like a
+ * placeholder is not replaced again.
+ */
+export function substitutePlaceholders(
+  value: unknown,
+  values: ReadonlyMap<string, string>,
+): Substituted {
+  let replacements = 0;
+  const inText = (text: string) =>
+    text.replace(PLACEHOLDER_ALL, (placeholder) => {
+      const real = values.get(placeholder);
+      if (real === undefined) return placeholder;
+      replacements += 1;
+      return real;
+    });
+  const walk = (one: unknown): unknown => {
+    if (typeof one === 'string') return inText(one);
+    if (Array.isArray(one)) return one.map(walk);
+    if (one === null || typeof one !== 'object') return one;
+    return Object.fromEntries(Object.entries(one).map(([key, sub]) => [inText(key), walk(sub)]));
+  };
+  const out = walk(value);
+  return { value: out, replacements };
+}
+
 /** One object key the sidecar masked: the key as the tool wrote it, which
  * carries a value of its own, and the key as it came back, which holds the
  * placeholder that stands for that value. */
@@ -178,10 +218,11 @@ export interface MaskedKey {
 export const RESULT_SHAPE_MISMATCH =
   'the sidecar answered a masked tool result that does not have the shape of the result';
 
-/** A masked tool result that does not have its result's shape. The sidecar
- * masks every key in place and keeps every entry in its order, so this is
- * a fault, never a case to work around: no key can be matched, and the
- * result is not let through. */
+/** A masked tool result that does not have the shape of what the sidecar
+ * was sent (`asSent`). The sidecar answers every entry it was sent, each
+ * key either as it was or with a placeholder in it, so this is a fault,
+ * never a case to work around: no key can be matched, and the result is
+ * not let through. */
 export class ResultShapeError extends Error {
   constructor() {
     super(RESULT_SHAPE_MISMATCH);
@@ -189,11 +230,24 @@ export class ResultShapeError extends Error {
   }
 }
 
-/** The object entries of `value`, in their order; `undefined` for anything
- * but a plain object (an array has number keys, which never mask). */
-function entriesOf(value: unknown): [string, unknown][] | undefined {
+/**
+ * `value` as the sidecar receives it inside a request body `{ value }`:
+ * through `JSON.stringify`, which drops an `undefined` or function
+ * property, turns a `Date` into a string and a `Buffer` into an object of
+ * its own. The sidecar's answer has this shape, not the in-memory one, so
+ * the mod pairs keys against it. `undefined` when JSON has no form for
+ * `value` at all (the body then carries no `value`).
+ */
+export function asSent(value: unknown): unknown {
+  const body = JSON.stringify({ value });
+  return (JSON.parse(body) as { value?: unknown }).value;
+}
+
+/** The object keys of `value`; `undefined` for anything but a plain object
+ * (an array has number keys, which never mask). */
+function keysOf(value: unknown): string[] | undefined {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
-  return Object.entries(value);
+  return Object.keys(value);
 }
 
 /** The items of two arrays side by side; `undefined` when neither is an
@@ -216,27 +270,50 @@ interface PairedEntry {
   readonly maskedValue: unknown;
 }
 
-/** The entries of two objects side by side, in their order; `undefined`
- * when neither is a plain object. Throws `ResultShapeError` when only one
- * is, or their entries do not pair up one to one. */
+/**
+ * The entries of two objects side by side; `undefined` when neither is a
+ * plain object. Pairing is by key, never by position: an object lists its
+ * integer-like keys (`"1"`, `"2125551234"`) first, in numeric order, so a
+ * masked integer-like key (now a placeholder, a string key) moves behind
+ * the integer-like keys left as they were. So:
+ *
+ * 1. a key found in both objects pairs with itself;
+ * 2. the keys of `original` missing from `masked` pair, in their order,
+ *    with the keys of `masked` missing from `original`, in theirs. The
+ *    first list is in the order the sidecar walked `original` (it parsed
+ *    the same JSON); the second holds placeholders, never an integer-like
+ *    key, so it stays in the order the sidecar inserted them: the same.
+ *
+ * Throws `ResultShapeError` when only one is a plain object, when the key
+ * counts differ, or when a key on the second list holds no placeholder.
+ */
 function pairedEntries(original: unknown, masked: unknown): PairedEntry[] | undefined {
-  const from = entriesOf(original);
-  const to = entriesOf(masked);
+  const from = keysOf(original);
+  const to = keysOf(masked);
   if (from === undefined && to === undefined) return undefined;
   if (from === undefined || to === undefined || from.length !== to.length) {
     throw new ResultShapeError();
   }
-  return from.map(([key, value], at) => {
-    const [maskedKey, maskedValue] = to[at] as [string, unknown];
-    return { key, value, maskedKey, maskedValue };
+  const source = original as Readonly<Record<string, unknown>>;
+  const answer = masked as Readonly<Record<string, unknown>>;
+  const changedFrom = from.filter((key) => !Object.hasOwn(answer, key));
+  const changedTo = to.filter((key) => !Object.hasOwn(source, key));
+  if (changedFrom.length !== changedTo.length || !changedTo.every((key) => PLACEHOLDER.test(key))) {
+    throw new ResultShapeError();
+  }
+  return from.map((key) => {
+    const at = changedFrom.indexOf(key);
+    const maskedKey = at === -1 ? key : (changedTo[at] as string);
+    return { key, value: source[key], maskedKey, maskedValue: answer[maskedKey] };
   });
 }
 
 /**
  * The object keys of `original` that came back masked in `masked`, in the
- * order the walk meets them. The sidecar masks a key in place, keeping an
- * object's entries in their order, so the two walk in step; where they do
- * not, `ResultShapeError` is thrown. The values under the keys stay masked.
+ * order the walk meets them. `original` is the value as the sidecar was
+ * sent it (`asSent`). Keys pair by name, then the masked ones in their
+ * order (`pairedEntries`); where the two do not pair up, `ResultShapeError`
+ * is thrown. The values under the keys stay masked.
  */
 export function maskedKeys(original: unknown, masked: unknown): readonly MaskedKey[] {
   const items = pairedItems(original, masked);
@@ -264,6 +341,76 @@ export function unmaskKeys(original: unknown, masked: unknown): unknown {
   return Object.fromEntries(
     entries.map(({ key, value, maskedValue }) => [key, unmaskKeys(value, maskedValue)]),
   );
+}
+
+/**
+ * Where the real values go when the user sends them in clear to a tool
+ * outside the policy's `restoreTools`, as the mod's question says it:
+ *
+ * - `model`: Claude Code runs the tool through a Claude model (`WebSearch`
+ *   searches server-side; `WebFetch` hands the page and its prompt to a
+ *   model), so that model reads the real values;
+ * - `mcp`: an MCP tool, whose server gets the real values and can send them
+ *   off this machine;
+ * - `user`: `AskUserQuestion`, Claude's own question to the user, shown on
+ *   this machine; the user's answer goes back to Claude masked, with the
+ *   question as its key (`asksAboutResultKeys`);
+ * - `internal`: another of Claude Code's own tools. The mod masks what it
+ *   returns, but has no hook on what it hands on inside Claude Code (a
+ *   subagent's prompt, a message to another agent), which can reach a
+ *   Claude model unmasked;
+ * - `unknown`: any other tool; the mod does not know where it sends them.
+ */
+export type ClearDestination = 'model' | 'mcp' | 'user' | 'internal' | 'unknown';
+
+/** Claude Code's tools that run through a Claude model. */
+const MODEL_RUN_TOOLS: ReadonlySet<string> = new Set(['WebFetch', 'WebSearch']);
+/** The prefix Claude Code gives every MCP tool's name. */
+const MCP_TOOL_PREFIX = 'mcp__';
+/** Claude Code's tool that puts Claude's own question to the user. */
+const USER_QUESTION_TOOL = 'AskUserQuestion';
+/** Claude Code's own tools, other than the ones above, that talk only to
+ * Claude, its subagents or the user. */
+const INTERNAL_TOOLS: ReadonlySet<string> = new Set([
+  'TodoWrite',
+  'Agent',
+  'Task',
+  'ExitPlanMode',
+  'SendMessage',
+  'Skill',
+]);
+
+/**
+ * The closed rule for a call to a tool outside `restoreTools` that holds a
+ * placeholder the session knows: every such tool is asked about first
+ * (Block / Send once / Allow all), Claude Code's own tools and tools the
+ * mod does not know included, and this names where the values would go. A
+ * shell tool never gets here (its call is refused), and a tool in
+ * `restoreTools` gets its values with no question.
+ */
+export function clearDestination(tool: string): ClearDestination {
+  if (MODEL_RUN_TOOLS.has(tool)) return 'model';
+  if (tool.startsWith(MCP_TOOL_PREFIX)) return 'mcp';
+  if (tool === USER_QUESTION_TOOL) return 'user';
+  if (INTERNAL_TOOLS.has(tool)) return 'internal';
+  return 'unknown';
+}
+
+/**
+ * Whether the mod asks before the masked object keys of `tool`'s result
+ * go to Claude in clear: yes for every tool outside `restoreTools`, except
+ * `AskUserQuestion`. Its result is keyed by the question Claude wrote, so
+ * a masked key there is Claude's own placeholder coming back: it goes to
+ * Claude masked, as Claude wrote it, with the user's answer under it.
+ * Asking would put the real value in what Claude reads (Send once) or
+ * lose the user's answer (Block).
+ */
+export function asksAboutResultKeys(
+  tool: string,
+  restoreTools: readonly string[] | undefined,
+): boolean {
+  if (tool === USER_QUESTION_TOOL) return false;
+  return restoreTools?.includes(tool) !== true;
 }
 
 /** File tools and the argument that names the file they write. */
@@ -465,7 +612,8 @@ export function placeholderGuide(restoreTools: readonly string[] | undefined): s
     'Use a placeholder as you would use its value, and copy it exactly and in full, hex part included.',
     'Do not ask the user for the real value, and do not tell them it is hidden: nullpii shows them the real values.',
     restoringTools(restoreTools),
-    'Every other tool, such as a web fetch or an MCP tool, gets the placeholder itself, never the value.',
+    "Every other tool, Claude Code's own included (TodoWrite, Agent, AskUserQuestion, WebFetch, MCP tools), gets the real values only when the user agrees in a dialog nullpii puts to them.",
+    'A call the user does not agree to is refused, and so is every such call when no one can answer (claude -p) unless the user allowed all for the session; a placeholder nothing stands behind is passed as written.',
     'A shell command that holds a placeholder is refused.',
   ].join(' ');
 }
@@ -474,7 +622,7 @@ function restoringTools(restoreTools: readonly string[] | undefined): string {
   if (restoreTools === undefined) {
     return 'The file tools that run on this machine put the real values back before they run, so a file they write holds the real values.';
   }
-  if (restoreTools.length === 0) return 'No tool gets the real values back.';
+  if (restoreTools.length === 0) return 'No tool gets the real values back on its own.';
   return `These tools put the real values back before they run: ${restoreTools.join(', ')}. So a file they write holds the real values.`;
 }
 

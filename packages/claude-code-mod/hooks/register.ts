@@ -63,7 +63,6 @@ import {
   sameText,
   sidecarOrigin,
   substitutePlaceholders,
-  textsOf,
   touchesPolicyFile,
   unmaskKeys,
 } from './policy.ts';
@@ -1967,12 +1966,13 @@ export function register(on, options) {
     // counted as the result goes. A new `{ result }` without `ref`: another
     // plugin's, or core's own, would make core send its own unmasked
     // messages to the model.
-    // Claude's own question after a Send once: its echo and the keys of its
-    // answers go back to the text Claude wrote, whole, not by detection.
+    // Claude's own question after a Send once: Claude's texts go back as it
+    // wrote them, the user's have each sent value masked, anything else
+    // holding one is withheld (`questionResultAsWritten`).
     const result =
       questionTexts.size === 0
         ? out.result
-        : questionResultAsWritten(out.result, questionTexts, textsOf(e), sentInClear);
+        : questionResultAsWritten(out.result, call, e, questionTexts, sentInClear);
     const clean = await maskedResult($, e.tool, result);
     if (clean === undefined) return { deny: KEYS_WITHHELD };
     recordSent($, clean.sent);

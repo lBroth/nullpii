@@ -238,18 +238,14 @@ export function textsOf(value: unknown): Set<string> {
   return texts;
 }
 
-/** The field of an `AskUserQuestion` result that holds the user's answers,
- * keyed by question. */
-const ANSWERS_FIELD = 'answers';
-
 /** `QuestionEchoError`'s text: fixed, it quotes nothing of the result. */
 export const QUESTION_ECHO =
   "Claude's question came back with a value sent in clear in a form nullpii cannot put back";
 
-/** An `AskUserQuestion` result that still holds a real value the user sent
- * in clear, outside the user's own answers and outside any text Claude
- * wrote: the question in a form the mod did not send. The result is
- * withheld rather than masked by detection alone. */
+/** An `AskUserQuestion` result that holds a real value the user sent in
+ * clear in a text that is neither Claude's own nor the user's
+ * (`questionResultAsWritten`). The result is withheld rather than masked
+ * by detection alone. */
 export class QuestionEchoError extends Error {
   constructor() {
     super(QUESTION_ECHO);
@@ -263,76 +259,149 @@ export interface SentValue {
   readonly placeholder: string;
 }
 
+/** The fields of an `AskUserQuestion` result (Claude Code 2.1.312's output
+ * schema) that the closed rule of `questionResultAsWritten` names. */
+const ANSWERS_FIELD = 'answers';
+const RESPONSE_FIELD = 'response';
+const ANNOTATIONS_FIELD = 'annotations';
+const NOTES_FIELD = 'notes';
+/** How Claude Code joins the labels of a multi-select answer ("multi-select
+ * answers are comma-separated"; `$.ui.ask` joins them with `", "`). */
+const LABEL_JOIN = ', ';
+
 /** Characters a regular expression reads as syntax. */
 const REGEX_SYNTAX = /[.*+?^${}()|[\]\\]/g;
+/** What may not touch a sent value for it to match in user text: a letter
+ * or a digit, in any script. So `John` matches in `John,`, `(John)` and
+ * `John_notes` (an underscore, a dot or a dash is a boundary), never in
+ * `Johnson`, nor `Max` in `Maximum`; a text that is the value matches. A
+ * value matches as it was sent, case and all. */
+const WORD_CHAR = '[\\p{L}\\p{N}]';
 
-/** `text` with every occurrence of each value in `sent` replaced by its
+/** `text`, typed by the user, with every occurrence of each value in
+ * `sent` that stands as a word of its own (`WORD_CHAR`) replaced by its
  * placeholder: longest value first, in one pass, so a shorter value is
- * never found again inside a placeholder or a longer value. */
+ * never found again inside a longer one or a placeholder. */
 function maskSentValues(text: string, sent: readonly SentValue[]): string {
   if (sent.length === 0) return text;
   const byValue = new Map(sent.map((one) => [one.value, one.placeholder]));
   const longestFirst = [...byValue.keys()].sort((a, b) => b.length - a.length);
-  const pattern = new RegExp(
-    longestFirst.map((one) => one.replace(REGEX_SYNTAX, '\\$&')).join('|'),
-    'g',
-  );
+  const values = longestFirst.map((one) => one.replace(REGEX_SYNTAX, '\\$&')).join('|');
+  const pattern = new RegExp(`(?<!${WORD_CHAR})(?:${values})(?!${WORD_CHAR})`, 'gu');
   return text.replace(pattern, (found) => byValue.get(found) ?? found);
+}
+
+/** Every option label of an `AskUserQuestion` call as the user was shown
+ * it, mapped to the label as Claude wrote it. */
+function labelsOf(shown: unknown, written: unknown): Map<string, string> {
+  const questions = (call: unknown) =>
+    ((call as { questions?: unknown })?.questions ?? []) as {
+      options?: { label?: unknown }[];
+    }[];
+  const labels = new Map<string, string>();
+  const asWritten = questions(written);
+  questions(shown).forEach((question, at) => {
+    (question.options ?? []).forEach((option, place) => {
+      const label = asWritten[at]?.options?.[place]?.label;
+      if (typeof option.label === 'string' && typeof label === 'string') {
+        labels.set(option.label, label);
+      }
+    });
+  });
+  return labels;
+}
+
+/** `answer` read as labels the user picked, joined by `LABEL_JOIN`, each
+ * one a label they were shown: the labels as Claude wrote them, joined the
+ * same way; `undefined` when it is not only labels (text they typed). */
+function pickedLabels(answer: string, labels: ReadonlyMap<string, string>): string | undefined {
+  const from = (at: number): string[] | undefined => {
+    if (at === answer.length) return [];
+    for (const [shown, written] of labels) {
+      if (!answer.startsWith(shown, at)) continue;
+      const end = at + shown.length;
+      if (end === answer.length) return [written];
+      if (!answer.startsWith(LABEL_JOIN, end)) continue;
+      const rest = from(end + LABEL_JOIN.length);
+      if (rest !== undefined && rest.length > 0) return [written, ...rest];
+    }
+    return undefined;
+  };
+  return answer === '' ? undefined : from(0)?.join(LABEL_JOIN);
 }
 
 /**
  * The result of Claude's own `AskUserQuestion` after the user sent real
- * values into its question, as Claude may read it. It does not rest on the
- * sidecar detecting the values again (a short value, or one joined to a
- * word, it may miss):
+ * values into it (`shown`, the call as the user saw it; `written`, as
+ * Claude wrote it), as Claude may read it. One closed rule, which does not
+ * rest on the sidecar finding the values again (a short value, or one
+ * joined to a word, it may miss):
  *
- * - every text the mod restored in the call (`changed`) is put back, whole,
- *   to the text Claude wrote, so the questions the result echoes and the
- *   keys of its answers read as Claude wrote them;
- * - in the user's answers (the values under `answers`, and anything inside
- *   them), every occurrence of a value in `sent` is replaced by its
- *   placeholder, so labels the user picked, joined by Claude Code (`a, b`),
- *   or text they typed carry no sent value;
- * - anywhere else, a text that still holds a sent value and is not one
- *   Claude wrote (`written`, every text of the masked call) throws
- *   `QuestionEchoError`: the question came back in a form the mod did not
- *   send, and the result is withheld.
+ * 1. Claude's own texts go back exactly as Claude wrote them: the
+ *    questions it echoes and every text in them (question, header, option
+ *    labels, descriptions, previews), the question that keys `answers` and
+ *    `annotations`, and an answer that is the labels the user picked (one,
+ *    or several joined by `LABEL_JOIN`). A shown text maps back through
+ *    `changed`; a text Claude wrote stays.
+ * 2. What the user typed is the user's text: an answer that is not only
+ *    labels, `response` (free text typed instead of an option) and
+ *    `annotations.*.notes`. Each value in `sent` is replaced there by its
+ *    placeholder where it stands as a word (`maskSentValues`); the sidecar
+ *    then masks it as it masks a prompt. It is never withheld.
+ * 3. Anything else that holds a value in `sent`, and is not a text Claude
+ *    wrote, throws `QuestionEchoError`: the result is withheld.
  */
 export function questionResultAsWritten(
   result: unknown,
+  shown: unknown,
+  written: unknown,
   changed: ReadonlyMap<string, string>,
-  written: ReadonlySet<string>,
   sent: readonly SentValue[],
 ): unknown {
-  const leaks = (text: string) =>
-    !written.has(text) && sent.some((one) => text.includes(one.value));
-  // `top`: the result itself; `answers`: its answers, keyed by question;
-  // `answer`: what the user answered; `inner`: anything else.
-  type Where = 'top' | 'inner' | 'answers' | 'answer';
-  const text = (one: string, where: Where): string => {
-    if (where === 'answer') return maskSentValues(one, sent);
-    const back = changed.get(one) ?? one;
-    if (leaks(back)) throw new QuestionEchoError();
+  const own = textsOf(written);
+  const labels = labelsOf(shown, written);
+  const claudes = (text: string): string => {
+    const back = changed.get(text) ?? text;
+    if (!own.has(back) && sent.some((one) => back.includes(one.value))) {
+      throw new QuestionEchoError();
+    }
     return back;
   };
-  const walk = (one: unknown, where: Where): unknown => {
-    if (typeof one === 'string') return text(one, where);
-    if (Array.isArray(one))
-      return one.map((item) => walk(item, where === 'answer' ? 'answer' : 'inner'));
-    if (one === null || typeof one !== 'object') return one;
-    return Object.fromEntries(
-      Object.entries(one).map(([key, sub]) => {
-        const next: Where =
-          where === 'answers' || where === 'answer'
-            ? 'answer'
-            : where === 'top' && key === ANSWERS_FIELD
-              ? 'answers'
-              : 'inner';
-        return [text(key, where), walk(sub, next)];
-      }),
-    );
+  const users = (text: string) => maskSentValues(text, sent);
+  const answer = (one: unknown): unknown => {
+    if (typeof one === 'string') return pickedLabels(one, labels) ?? users(one);
+    if (Array.isArray(one)) return one.map(answer);
+    return claudesIn(one);
   };
-  return walk(result, 'top');
+  const entries = (one: unknown, value: (key: string, sub: unknown) => unknown) =>
+    Object.fromEntries(
+      Object.entries(one as Record<string, unknown>).map(([key, sub]) => [
+        claudes(key),
+        value(key, sub),
+      ]),
+    );
+  const isRecord = (one: unknown) => one !== null && typeof one === 'object' && !Array.isArray(one);
+  function claudesIn(one: unknown): unknown {
+    if (typeof one === 'string') return claudes(one);
+    if (Array.isArray(one)) return one.map(claudesIn);
+    if (!isRecord(one)) return one;
+    return entries(one, (_key, sub) => claudesIn(sub));
+  }
+  const annotation = (one: unknown): unknown =>
+    isRecord(one)
+      ? entries(one, (key, sub) =>
+          key === NOTES_FIELD && typeof sub === 'string' ? users(sub) : claudesIn(sub),
+        )
+      : claudesIn(one);
+  if (!isRecord(result)) return claudesIn(result);
+  return entries(result, (key, sub) => {
+    if (key === RESPONSE_FIELD && typeof sub === 'string') return users(sub);
+    if (key === ANSWERS_FIELD && isRecord(sub)) return entries(sub, (_q, one) => answer(one));
+    if (key === ANNOTATIONS_FIELD && isRecord(sub)) {
+      return entries(sub, (_q, one) => annotation(one));
+    }
+    return claudesIn(sub);
+  });
 }
 
 /** One object key the sidecar masked: the key as the tool wrote it, which

@@ -2907,6 +2907,156 @@ test("labels the user picked in Claude's question come back masked, even joined 
   expect(answers).toEqual({ 'Which files?': `${account}_notes.txt, ${account}_todo.txt` });
 });
 
+/** Put Claude's own question `questions` after the user sent `prompt`'s
+ * values with Send once, the user answering with `answer(e)`. */
+async function askedAfterSend(
+  $,
+  on,
+  prompt: string,
+  questions,
+  answer: (e) => Record<string, unknown>,
+) {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  answerQuestions(on, 'Send once', answer);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  await start($);
+  await $.prompt.submit({ text: prompt, wait: false, origin: COMPOSER });
+  return $.tool.call({ tool: 'AskUserQuestion', questions });
+}
+
+test('free text the user typed instead of an option (`response`) is kept, its sent value masked', async ($, on) => {
+  const question = `Create ${ph('ACCOUNT', 0)}_notes.txt?`;
+  const out = await askedAfterSend(
+    $,
+    on,
+    'my account is jdoe',
+    [
+      {
+        question,
+        header: 'File',
+        options: [
+          { label: 'Yes', description: 'a' },
+          { label: 'No', description: 'b' },
+        ],
+      },
+    ],
+    (e) => ({ questions: e.questions, answers: {}, response: 'no, write jdoe_old.txt instead' }),
+  );
+  expect(out.deny).toBeUndefined();
+  const result = out.result as { response: string };
+  expect(result.response).toBe(`no, write ${ph('ACCOUNT', 0)}_old.txt instead`);
+});
+
+test("the user's notes are kept with their sent value masked; Claude's preview comes back as Claude wrote it", async ($, on) => {
+  const account = ph('ACCOUNT', 0);
+  const question = `Create ${account}_notes.txt?`;
+  // Claude wrote `jdoe_old.txt` itself in its preview: it stays as written.
+  const preview = `Rename jdoe_old.txt to ${account}_new.txt`;
+  const out = await askedAfterSend(
+    $,
+    on,
+    'my account is jdoe',
+    [
+      {
+        question,
+        header: 'File',
+        options: [
+          { label: 'Yes', description: 'a', preview },
+          { label: 'No', description: 'b' },
+        ],
+      },
+    ],
+    (e) => {
+      const q = e.questions[0];
+      return {
+        questions: e.questions,
+        answers: { [q.question]: 'Yes' },
+        annotations: {
+          [q.question]: { preview: q.options[0].preview, notes: 'also jdoe_old.txt' },
+        },
+      };
+    },
+  );
+  expect(out.deny).toBeUndefined();
+  const result = out.result as { annotations: Record<string, { preview: string; notes: string }> };
+  expect(result.annotations).toEqual({
+    [question]: { preview, notes: `also ${account}_old.txt` },
+  });
+});
+
+test("a label the user picked comes back exactly as Claude wrote it, even where a sent value's letters appear in it", async ($, on) => {
+  const account = ph('ACCOUNT', 0);
+  const question = `Create ${account}_notes.txt?`;
+  const options = [
+    { label: `Use ${account}_new.txt`, description: 'a' },
+    { label: 'Keep jdoe_old.txt', description: 'b' },
+  ];
+  const out = await askedAfterSend(
+    $,
+    on,
+    'my account is jdoe',
+    [{ question, header: 'File', multiSelect: true, options }],
+    (e) => {
+      const q = e.questions[0];
+      return {
+        questions: e.questions,
+        answers: { [q.question]: q.options.map((o) => o.label).join(', ') },
+      };
+    },
+  );
+  const answers = (out.result as { answers: Record<string, string> }).answers;
+  expect(answers).toEqual({ [question]: `Use ${account}_new.txt, Keep jdoe_old.txt` });
+});
+
+test('in what the user typed, a sent value is masked only where it stands as a word of its own', async ($, on) => {
+  const person = ph('PERSON', 0);
+  const question = `Email ${person}?`;
+  const out = await askedAfterSend(
+    $,
+    on,
+    'ask John',
+    [
+      {
+        question,
+        header: 'Mail',
+        options: [
+          { label: 'Use the Johnson template', description: 'a' },
+          { label: 'No', description: 'b' },
+        ],
+      },
+    ],
+    (e) => ({
+      questions: e.questions,
+      answers: { [e.questions[0].question]: 'Use the Johnson template' },
+      response: 'Johnson, not John; (John) and john_notes too',
+    }),
+  );
+  const result = out.result as { answers: Record<string, string>; response: string };
+  // A label: exactly as Claude wrote it.
+  expect(result.answers).toEqual({ [question]: 'Use the Johnson template' });
+  // Typed text: `John` alone, or next to punctuation or `_`, never inside
+  // `Johnson`. The value is matched as it was sent, case and all.
+  expect(result.response).toBe(`Johnson, not ${person}; (${person}) and john_notes too`);
+});
+
+test('in what the user typed, a sent value that holds another is masked as a whole, longest first', async ($, on) => {
+  const email = ph('EMAIL', 0);
+  const account = ph('ACCOUNT', 1);
+  const out = await askedAfterSend(
+    $,
+    on,
+    'mail jdoe@acme.io as jdoe',
+    [{ question: `Write to ${email} as ${account}?`, header: 'Mail', options: [] }],
+    (e) => ({
+      questions: e.questions,
+      answers: { [e.questions[0].question]: 'send to jdoe@acme.io as jdoe' },
+    }),
+  );
+  const answers = (out.result as { answers: Record<string, string> }).answers;
+  expect(Object.values(answers)).toEqual([`send to ${email} as ${account}`]);
+});
+
 test('in the answers, a sent value that holds another sent value is masked as a whole', async ($, on) => {
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);

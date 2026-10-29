@@ -1,51 +1,19 @@
 # SPDX-License-Identifier: Apache-2.0
 """A change is judged at the printed precision, in the metric's own
-direction, and so is every derived claim."""
-import json
-from pathlib import Path
+direction, and so is every derived claim; only like is compared with like
+(the published core regime is dropped, never better or worse); outputs
+that lack something, or hold an undeclared nullpii row, are an error,
+never "nothing moved"."""
+import re
 
-from pipeline import compare
+import pytest
 
+from pipeline import compare, settings
+from pipeline.tests import outputs
+from pipeline.tests.outputs import DEFAULT, EVERYTHING, against, run
 
-def _ab1_row(leak=0.0945, keep=0.8545, **extra):
-    row = {
-        "leak_rate": leak, "keep_rate": keep, "docs_with_leak": 0.27, "clean_docs_masked": 0.611,
-        "outside_per_1k": 10.87, "encoded_leak_rate": None, "json_parse_rate": 0.912,
-        "diff_consistent_rate": 1.0, "leak_by_category": {"email": [0.0, 536]}, "keep_by_kind": {"date": [0.9, 727]},
-        "ci": {"leak": [0.08, 0.1], "keep": [0.84, 0.87]},
-    }
-    row.update(extra)
-    return row
-
-
-def _competitor(leak_ci, keep_ci):
-    return {**_ab1_row(), "ci": {"baseline_minus_tool_leak": leak_ci, "baseline_minus_tool_keep": keep_ci}}
-
-
-def _write(out: Path, name: str, data: dict) -> None:
-    path = out / name
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data))
-
-
-def _r3(f2_default: float, rizzo_ci=(-0.02, -0.003), rizzo_f2=0.77) -> dict:
-    row = {"recall": 0.95, "precision": 0.5, "f2": f2_default}
-    return {
-        "r3-redact": {"nullpii-default": row, "rizzo-pii": {"recall": 0.9, "precision": 0.6, "f2": 0.8}},
-        "_macro": {
-            "nullpii-default": {"f2": f2_default, "f1": 0.62, "f05": 0.53},
-            "rizzo-pii": {"f2": 0.58, "f1": 0.5, "f05": 0.6, "baseline_minus_tool_f2_ci": [0.1, 0.2]},
-            "rizzo-pii@default": {"f2": rizzo_f2, "f1": 0.68, "f05": 0.63, "baseline_minus_tool_f2_ci": list(rizzo_ci)},
-            "mask-all": {"f2": 0.26, "f1": 0.2, "f05": 0.1, "baseline_minus_tool_f2_ci": [0.4, 0.5]},
-        },
-    }
-
-
-def _run(tmp_path, name, ab1=None, r3=None):
-    out = tmp_path / name
-    _write(out, "ab1/scores-ab1-a.json", ab1 or {"nullpii-default": _ab1_row()})
-    _write(out, "r3/char-r3.json", r3 or _r3(0.758))
-    return out
+A = "ab1/scores-ab1-a.json"
+R3 = "r3/char-r3.json"
 
 
 def _verdicts(changes):
@@ -53,84 +21,357 @@ def _verdicts(changes):
 
 
 def test_a_run_compared_with_itself_moved_nothing(tmp_path):
-    a = _run(tmp_path, "a")
-    changes = compare.compare(a, a, {})
+    a = run(tmp_path, "a")
+    changes = compare.compare(a, a)
     assert _verdicts(changes) == {}
     assert compare.exit_code(changes) == compare.EXIT_UNCHANGED
 
 
+def test_the_report_counts_every_number_and_claim_both_sides_have(tmp_path):
+    a = run(tmp_path, "a")
+    changes = compare.compare(a, a)
+    numbers = sum(1 for c in changes if c.kind == compare.NUMBER)
+    claims = sum(1 for c in changes if c.kind == compare.CLAIM)
+    verdicts = sum(1 for c in changes if c.kind == compare.VERDICT)
+    assert claims > 0 and verdicts == len(compare.recipe.VERDICTS)
+    text = compare.report(changes)
+    assert text.splitlines()[0] == (f"**nothing moved** (of {numbers} numbers, {claims} claims and {verdicts} verdicts"
+                                    " both sides have, like for like).")
+    # What is not compared is said, with why.
+    assert all(f"- {what}: {why}." in text for what, why in compare.NOT_COMPARED)
+
+
+def test_a_new_entry_is_not_counted_as_compared(tmp_path):
+    before = run(tmp_path, "before")
+    after = run(tmp_path, "after", lambda f: f[A].__setitem__("gliner", against()))
+    head = compare.report(compare.compare(after, before)).splitlines()[0]
+    same = compare.report(compare.compare(before, before)).splitlines()[0]
+    # Its two claims and their four bounds.
+    assert head.startswith("**6 new**")
+    assert re.search(r"\(of .*\)", head).group() == re.search(r"\(of .*\)", same).group()
+
+
 def test_a_change_below_the_printed_digit_is_no_change(tmp_path):
     # Both print as 9.5%.
-    before = _run(tmp_path, "before", ab1={"nullpii-default": _ab1_row(leak=0.09451)})
-    after = _run(tmp_path, "after", ab1={"nullpii-default": _ab1_row(leak=0.09459)})
-    assert _verdicts(compare.compare(after, before, {})) == {}
+    before = run(tmp_path, "before", lambda f: f[A][DEFAULT].update(leak_rate=0.09451))
+    after = run(tmp_path, "after", lambda f: f[A][DEFAULT].update(leak_rate=0.09459))
+    assert _verdicts(compare.compare(after, before)) == {}
     # Across the printed digit it is a change, however small.
-    across = _run(tmp_path, "across", ab1={"nullpii-default": _ab1_row(leak=0.09449)})
-    assert _verdicts(compare.compare(across, before, {})) == {"AB-1 ab1-a · nullpii-default · leak_rate": compare.BETTER}
+    across = run(tmp_path, "across", lambda f: f[A][DEFAULT].update(leak_rate=0.09449))
+    assert _verdicts(compare.compare(across, before)) == {f"AB-1 ab1-a · {DEFAULT} · leak_rate": compare.BETTER}
 
 
 def test_a_lower_leak_is_better_and_a_lower_keep_is_worse(tmp_path):
-    before = _run(tmp_path, "before")
-    after = _run(tmp_path, "after", ab1={"nullpii-default": _ab1_row(leak=0.085, keep=0.84)})
-    changes = compare.compare(after, before, {})
+    before = run(tmp_path, "before")
+    after = run(tmp_path, "after", lambda f: f[A][DEFAULT].update(leak_rate=0.085, keep_rate=0.84))
+    changes = compare.compare(after, before)
     verdicts = _verdicts(changes)
-    assert verdicts["AB-1 ab1-a · nullpii-default · leak_rate"] == compare.BETTER
-    assert verdicts["AB-1 ab1-a · nullpii-default · keep_rate"] == compare.WORSE
+    assert verdicts[f"AB-1 ab1-a · {DEFAULT} · leak_rate"] == compare.BETTER
+    assert verdicts[f"AB-1 ab1-a · {DEFAULT} · keep_rate"] == compare.WORSE
     assert compare.exit_code(changes) == compare.EXIT_WORSE
 
 
 def test_a_rate_a_set_has_no_item_for_is_not_compared(tmp_path):
-    out = _run(tmp_path, "a")
-    assert not any("encoded_leak_rate" in k for k in compare.ab1_metrics(out, {}))
+    o = compare.load(run(tmp_path, "a"), compare.RUN)
+    assert not any("encoded_leak_rate" in k for k in compare.ab1_metrics(o))
 
 
-def test_published_row_names_are_read_under_their_current_ones(tmp_path):
-    before = _run(tmp_path, "before", ab1={"nullpii-H3b-cuda-agent": _ab1_row()})
-    after = _run(tmp_path, "after")
-    assert _verdicts(compare.compare(after, before, {"nullpii-H3b-cuda-agent": "nullpii-default"})) == {}
-
-
-def test_a_metric_only_one_side_has_is_new_or_gone(tmp_path):
-    before = _run(tmp_path, "before")
-    after = _run(tmp_path, "after")
-    _write(after, "piimb/piimb-default.json", {"avg_f2": 0.85, "tasks": {"privy": {"f2": 0.713}}})
-    (before / "r3" / "char-r3.json").unlink()
-    verdicts = _verdicts(compare.compare(after, before, {}))
-    assert verdicts["PIIMB · nullpii-default · average F2"] == compare.NEW
-    assert verdicts["R3 char-r3 · _macro · nullpii-default · f2"] == compare.NEW
-    changes = compare.compare(before, after, {})
-    assert _verdicts(changes)["PIIMB · nullpii-default · privy F2"] == compare.GONE
+def test_the_recognizer_coverage_counts_and_every_tools_cells_are_compared(tmp_path):
+    def covers_ten_more(f):
+        cov = f["ab1/coverage-ab1-b2.json"]
+        cov["covered"], cov["uncovered"] = cov["covered"] + 10, cov["uncovered"] - 10
+        cov["tools"]["presidio"]["leak_covered"] = 0.2
+    before = run(tmp_path, "before")
+    after = run(tmp_path, "after", covers_ten_more)
+    changes = compare.compare(after, before)
+    assert _verdicts(changes) == {
+        "AB-1 ab1-b2 · secrets covered by nullpii's recognizer pack": compare.MOVED,
+        "AB-1 ab1-b2 · secrets uncovered by nullpii's recognizer pack": compare.MOVED,
+        "AB-1 ab1-b2 · presidio · leak_covered": compare.MOVED,
+    }
     assert compare.exit_code(changes) == compare.EXIT_CHANGED
 
 
+def test_one_more_masked_document_in_the_round_trip_is_a_move(tmp_path):
+    before = run(tmp_path, "before")
+    after = run(tmp_path, "after", lambda f: f[compare.ROUNDTRIP_FILE].update(masked=13705))
+    assert _verdicts(compare.compare(after, before)) == {"AB-1 · round trip · masked": compare.MOVED}
+    failing = run(tmp_path, "failing", lambda f: f[compare.ROUNDTRIP_FILE].update(roundtrip_failures=1))
+    assert _verdicts(compare.compare(failing, before)) == {"AB-1 · round trip · roundtrip_failures": compare.WORSE}
+
+
+def test_a_macro_recall_that_crosses_its_digit_is_seen_though_no_set_recall_does(tmp_path):
+    # Each per-set recall keeps its three decimals; their mean goes from
+    # 0.9577 (0.958) to 0.9573 (0.957).
+    lower = (0.97456, 0.98659, 0.96446, 0.96056, 0.90053)
+
+    def drop(f):
+        for dataset, recall in zip(settings.R3_GATED, lower):
+            f[R3][dataset][DEFAULT]["recall"] = recall
+    before = run(tmp_path, "before")
+    after = run(tmp_path, "after", drop)
+    assert _verdicts(compare.compare(after, before)) == {f"R3 char-r3 · _macro · {DEFAULT} · recall": compare.WORSE}
+
+
+def test_the_leave_one_out_range_and_reports_and_ranks_are_compared(tmp_path):
+    lodo = "r3/char-r3-lodo-r3-eu-clinical.json"
+
+    def change(f):
+        f[R3]["_macro"][DEFAULT]["f2_lodo"] = [0.724, 0.845]
+        f[lodo]["_macro"][DEFAULT]["f2"] = 0.79
+    before = run(tmp_path, "before")
+    after = run(tmp_path, "after", change)
+    assert _verdicts(compare.compare(after, before)) == {
+        f"R3 char-r3 · _macro · {DEFAULT} · leave-one-out low": compare.WORSE,
+        f"R3 char-r3-lodo-r3-eu-clinical · _macro · {DEFAULT} · f2": compare.BETTER,
+        f"R3 char-r3-lodo-r3-eu-clinical · {DEFAULT} · rank by f2 of 2": compare.BETTER,
+    }
+
+
+def test_the_piimb_place_is_compared(tmp_path):
+    before = run(tmp_path, "before")
+    after = run(tmp_path, "after", lambda f: f["piimb/piimb-everything.json"]["leaderboard"].update(rank=2))
+    assert _verdicts(compare.compare(after, before)) == {f"PIIMB · {EVERYTHING} · rank of 36": compare.WORSE}
+
+
+def _published(tmp_path, edit=None):
+    return outputs.write(tmp_path / "published", outputs.published(), edit)
+
+
+def test_published_rows_are_compared_like_for_like_only(tmp_path):
+    changes = compare.compare(run(tmp_path, "after"), _published(tmp_path), compare.PUBLISHED)
+    by = {c.where: c for c in changes}
+    # AB-1: the 0.5 agent default is `default`, so its numbers and its
+    # intervals are compared; `everything` was never published there.
+    assert by[f"AB-1 ab1-a · {DEFAULT} · leak_rate"].verdict == compare.SAME
+    assert by[f"AB-1 ab1-a · {DEFAULT} against presidio (leak)"].verdict == compare.SAME
+    assert by[f"AB-1 ab1-a · {EVERYTHING} · leak_rate"].verdict == compare.NEW
+    # R3: every category masked is `everything`, compared like for like.
+    assert by[f"R3 char-r3 · _macro · {EVERYTHING} · f2"].verdict == compare.SAME
+    assert by[f"R3 char-r3 · r3-piilo · {EVERYTHING} · f2"].verdict == compare.SAME
+    # The core regime is dropped: its rows, the intervals and verdicts
+    # against it, and its own reports; never compared with `default`.
+    core = settings.PUBLISHED_R3_BASELINE
+    assert by[f"R3 char-r3 · _macro · {core} · f2"].verdict == compare.DROPPED
+    assert by[f"R3 char-r3 · {core} against rizzo-pii (F2)"].verdict == compare.DROPPED
+    assert by[f"R3 char-r3 · {core} against rizzo-pii (F2) interval low"].verdict == compare.DROPPED
+    assert by[f"R3 verdict · verdict against {core}"].verdict == compare.DROPPED
+    for rel in compare.published_dropped_files():
+        assert by[rel].verdict == compare.DROPPED and by[rel].kind == compare.REPORT
+    # The run's `default` on R3, its intervals and verdicts, are new.
+    assert by[f"R3 char-r3 · _macro · {DEFAULT} · f2"].verdict == compare.NEW
+    assert by[f"R3 char-r3 · {DEFAULT} against rizzo-pii (F2)"].verdict == compare.NEW
+    assert by[f"R3 verdict · verdict against {DEFAULT}"].verdict == compare.NEW
+    # Nothing of the core regime is judged against anything measured now,
+    # and no row the docs never print shows up at all.
+    judged = [c for c in changes if c.verdict in (compare.SAME, compare.BETTER, compare.WORSE, compare.MOVED)]
+    assert not any(core in c.where or settings.PUBLISHED_R3_CORE_LABELS_BASELINE in c.where for c in judged)
+    assert not any(n in c.where for c in changes for n in settings.PUBLISHED_UNPRINTED)
+    assert {c.verdict for c in changes if core in c.where} == {compare.DROPPED}
+    # A declared drop was the owner's decision: it needs no approval.
+    assert compare.exit_code(changes) == compare.EXIT_CHANGED
+
+
+def test_a_published_number_of_everything_that_dropped_is_worse(tmp_path):
+    after = run(tmp_path, "after", lambda f: f[R3]["r3-piilo"][EVERYTHING].update(f2=0.6))
+    changes = compare.compare(after, _published(tmp_path), compare.PUBLISHED)
+    assert next(c for c in changes if c.where == f"R3 char-r3 · r3-piilo · {EVERYTHING} · f2").verdict == compare.WORSE
+    assert compare.exit_code(changes) == compare.EXIT_WORSE
+
+
+def test_the_published_piimb_report_is_judged(tmp_path):
+    # PIIMB was published with every category masked: a drop is worse.
+    after = run(tmp_path, "after", lambda f: f["piimb/piimb-everything.json"]["without"].update(avg_f2=0.82))
+    changes = compare.compare(after, _published(tmp_path), compare.PUBLISHED)
+    verdicts = {c.where: c.verdict for c in changes}
+    assert verdicts[f"PIIMB · {EVERYTHING} · without nemotron-pii · average F2"] == compare.WORSE
+    assert verdicts[f"PIIMB · {DEFAULT} · average F2"] == compare.NEW
+
+
+def test_the_published_layout_may_lack_only_the_default_piimb_report(tmp_path):
+    after = run(tmp_path, "after")
+    published = _published(tmp_path)
+    with pytest.raises(compare.CompareError, match="piimb/piimb-default.json"):
+        compare.compare(after, published)
+    for rel in (compare.ROUNDTRIP_FILE, "piimb/piimb-everything.json", "r3/verdict-en.txt",
+                *compare.published_dropped_files()):
+        lacking = outputs.write(tmp_path / f"lacks-{rel.replace('/', '-')}", outputs.published(), lambda f: f.pop(rel))
+        with pytest.raises(compare.CompareError, match=re.escape(rel)):
+            compare.compare(after, lacking, compare.PUBLISHED)
+
+
+def test_a_core_regime_row_is_refused_where_it_is_not_declared_dropped(tmp_path):
+    # The same files with the aliases but nothing declared dropped.
+    layout = compare.Layout(aliases=dict(settings.PUBLISHED_ALIASES), unprinted=settings.PUBLISHED_UNPRINTED,
+                            may_lack=settings.PUBLISHED_ABSENT, every_preset=False)
+    with pytest.raises(compare.CompareError, match=f"neither measured now nor declared: {settings.PUBLISHED_R3_BASELINE}"):
+        compare.compare(run(tmp_path, "after"), _published(tmp_path), layout)
+
+
+@pytest.mark.parametrize("rel", [A, "ab1/coverage-ab1-b1.json", R3, "r3/sens-openmed-excluded.json",
+                                 "piimb/piimb-everything.json"])
+def test_a_run_without_one_of_its_outputs_is_refused(tmp_path, rel):
+    before = run(tmp_path, "before")
+    after = run(tmp_path, "after", lambda f: f.pop(rel))
+    with pytest.raises(compare.CompareError, match=re.escape(rel)):
+        compare.compare(after, before)
+
+
+def test_folders_that_do_not_exist_are_refused(tmp_path):
+    with pytest.raises(compare.CompareError, match="is not a directory"):
+        compare.compare(tmp_path / "nothing", tmp_path / "nothing")
+    with pytest.raises(compare.CompareError, match="is not a directory"):
+        compare.compare(tmp_path / "nothing", run(tmp_path, "a"))
+    (tmp_path / "empty").mkdir()
+    with pytest.raises(compare.CompareError, match="missing"):
+        compare.compare(tmp_path / "empty", run(tmp_path, "b"))
+
+
+def test_a_table_without_a_presets_row_is_refused(tmp_path):
+    before = run(tmp_path, "before")
+    after = run(tmp_path, "after", lambda f: f[R3]["r3-piilo"].pop(EVERYTHING))
+    with pytest.raises(compare.CompareError, match=f"r3/char-r3.json r3-piilo: no row {EVERYTHING}"):
+        compare.compare(after, before)
+
+
+def test_an_undeclared_nullpii_row_is_refused(tmp_path):
+    reference = outputs.write(tmp_path / "ref", outputs.files(), lambda f: f[A].__setitem__("nullpii-old", against()))
+    with pytest.raises(compare.CompareError, match="ab1/scores-ab1-a.json: nullpii rows neither .* nullpii-old"):
+        compare.compare(run(tmp_path, "after"), reference)
+
+
+def test_a_reference_with_no_nullpii_row_under_a_current_name_is_refused(tmp_path):
+    def only_dropped(f):
+        f[A]["nullpii-core"] = f[A].pop(DEFAULT)
+        f[A].pop(EVERYTHING)
+    reference = outputs.write(tmp_path / "ref", outputs.files(), only_dropped)
+    layout = compare.Layout(dropped=frozenset({"nullpii-core"}), every_preset=False)
+    with pytest.raises(compare.CompareError, match="ab1/scores-ab1-a.json: no nullpii row under a current name"):
+        compare.compare(run(tmp_path, "after"), reference, layout)
+
+
 def test_a_lead_that_becomes_too_close_to_call_is_worse(tmp_path):
-    before = _run(tmp_path, "before", ab1={"nullpii-default": _ab1_row(), "presidio": _competitor([-0.3, -0.2], [0.1, 0.2])})
-    after = _run(tmp_path, "after", ab1={"nullpii-default": _ab1_row(), "presidio": _competitor([-0.05, 0.01], [0.1, 0.2])})
-    verdicts = _verdicts(compare.compare(after, before, {}))
-    assert verdicts == {"AB-1 ab1-a · nullpii against presidio (leak)": compare.WORSE}
+    before = run(tmp_path, "before")
+    after = run(tmp_path, "after", lambda f: f[A]["presidio"]["ci"].update(baseline_minus_tool_leak=[-0.05, 0.01]))
+    where = f"AB-1 ab1-a · {DEFAULT} against presidio (leak)"
+    # The bounds as printed, in points: −30.0 → −5.0, −20.0 → +1.0.
+    assert _verdicts(compare.compare(after, before)) == {
+        where: compare.WORSE, f"{where} interval low": compare.WORSE, f"{where} interval high": compare.WORSE}
 
 
 def test_a_gap_that_closes_on_r3_is_better(tmp_path):
-    before = _run(tmp_path, "before")
-    after = _run(tmp_path, "after", r3=_r3(0.758, rizzo_ci=(-0.01, 0.004)))
-    verdicts = _verdicts(compare.compare(after, before, {}))
-    assert verdicts == {"R3 char-r3 · nullpii against rizzo-pii@default (F2)": compare.BETTER}
+    before = run(tmp_path, "before")
+    after = run(tmp_path, "after",
+                lambda f: f[R3]["_macro"]["rizzo-pii@default"].update(baseline_minus_tool_f2_ci=[-0.01, 0.004]))
+    where = f"R3 char-r3 · {DEFAULT} against rizzo-pii@default (F2)"
+    assert _verdicts(compare.compare(after, before)) == {
+        where: compare.BETTER, f"{where} interval low": compare.BETTER, f"{where} interval high": compare.BETTER}
 
 
 def test_the_rank_counts_each_tool_once_at_its_better_row(tmp_path):
-    out = _run(tmp_path, "a")
-    ranks = compare.r3_ranks(out, {})
+    out = run(tmp_path, "a")
+    ranks = compare.r3_ranks(compare.load(out, compare.RUN))
     # rizzo-pii's better row (0.77) is ahead; mask-all is not a tool.
-    assert ranks["R3 char-r3 · nullpii-default · rank by f2 of 2"].shown == 2
-    after = _run(tmp_path, "b", r3=_r3(0.78))
-    verdicts = _verdicts(compare.compare(after, out, {}))
-    assert verdicts["R3 char-r3 · nullpii-default · rank by f2 of 2"] == compare.BETTER
+    assert ranks[f"R3 char-r3 · {DEFAULT} · rank by f2 of 2"].shown == 2
+    after = run(tmp_path, "b", lambda f: f[R3]["_macro"][DEFAULT].update(f2=0.78))
+    verdicts = _verdicts(compare.compare(after, out))
+    assert verdicts[f"R3 char-r3 · {DEFAULT} · rank by f2 of 2"] == compare.BETTER
+
+
+def _ab1_tools(leak: float):
+    """AB-1 A with two other tools' README rows (tuned, `+agent`), and rows
+    of theirs that are not in the README, which never count."""
+    def edit(f):
+        scores = f[A]
+        scores[DEFAULT].update(leak_rate=leak)
+        scores["rizzo-pii+agent"] = against(leak=0.095, keep=0.445)
+        scores["rizzo-pii"] = against(leak=0.01, keep=0.99)
+        scores["rizzo-pii@default+agent"] = against(leak=0.01, keep=0.99)
+        scores["openai-privacy-filter+agent"] = against(leak=0.145, keep=0.9)
+        scores["openai-privacy-filter+agent"]["leak_by_category"] = {}
+    return edit
+
+
+def test_the_ab1_rank_is_among_each_tools_readme_row(tmp_path):
+    ranks = compare.ab1_ranks(compare.load(run(tmp_path, "a", _ab1_tools(0.0951)), compare.RUN))
+    assert ranks[f"AB-1 ab1-a · {DEFAULT} · rank by leak_rate of 3"].shown == 2
+    assert ranks[f"AB-1 ab1-a · {DEFAULT} · rank by keep_rate of 3"].shown == 2
+    # openai's row has no email item, so only rizzo-pii is ranked with it.
+    assert ranks[f"AB-1 ab1-a · {DEFAULT} · rank by leak_by_category email of 2"].shown == 1
+
+
+def test_a_tool_passed_below_the_printed_digit_moves_the_ab1_rank(tmp_path):
+    # 9.51% and 9.49% both print 9.5%, but rizzo-pii's 9.50% is now behind.
+    before = run(tmp_path, "before", _ab1_tools(0.0951))
+    after = run(tmp_path, "after", _ab1_tools(0.0949))
+    assert _verdicts(compare.compare(after, before)) == {
+        f"AB-1 ab1-a · {DEFAULT} · rank by leak_rate of 3": compare.BETTER}
+
+
+def test_a_number_the_run_no_longer_gives_needs_approval(tmp_path):
+    before = run(tmp_path, "before")
+    after = run(tmp_path, "after", lambda f: f[A][DEFAULT]["leak_by_category"].pop("email"))
+    changes = compare.compare(after, before)
+    assert _verdicts(changes) == {
+        f"AB-1 ab1-a · {DEFAULT} · leak_by_category email": compare.GONE,
+        f"AB-1 ab1-a · {DEFAULT} · rank by leak_by_category email of 1": compare.GONE,
+    }
+    assert compare.exit_code(changes) == compare.EXIT_WORSE
+
+
+def test_a_claim_the_run_no_longer_gives_needs_approval(tmp_path):
+    before = run(tmp_path, "before")
+    after = run(tmp_path, "after", lambda f: f[A].pop("presidio"))
+    changes = compare.compare(after, before)
+    gone = {c.where for c in changes if c.verdict == compare.GONE and c.kind == compare.CLAIM}
+    assert gone == {f"AB-1 ab1-a · {DEFAULT} against presidio (leak)", f"AB-1 ab1-a · {DEFAULT} against presidio (keep)"}
+    assert compare.exit_code(changes) == compare.EXIT_WORSE
 
 
 def test_the_report_puts_worse_changes_first(tmp_path):
-    before = _run(tmp_path, "before")
-    after = _run(tmp_path, "after", ab1={"nullpii-default": _ab1_row(leak=0.085, keep=0.84)})
-    text = compare.report(compare.compare(after, before, {}))
+    before = run(tmp_path, "before")
+    after = run(tmp_path, "after", lambda f: f[A][DEFAULT].update(leak_rate=0.085, keep_rate=0.84))
+    text = compare.report(compare.compare(after, before))
     assert text.startswith("**1 worse, 1 better**")
     rows = [line for line in text.splitlines() if line.startswith("| AB-1")]
     assert rows[0].endswith("| worse |")
+
+
+def test_what_needs_approval_comes_first_in_the_report(tmp_path):
+    before = run(tmp_path, "before")
+    after = run(tmp_path, "after", lambda f: (f[A][DEFAULT].update(keep_rate=0.9),
+                                              f[A][DEFAULT]["leak_by_category"].pop("email")))
+    rows = [line for line in compare.report(compare.compare(after, before)).splitlines() if line.startswith("| AB-1")]
+    assert rows[0].endswith(f"| {compare.GONE} |")
+
+
+def test_a_changed_verdict_text_is_a_move(tmp_path):
+    before = run(tmp_path, "before")
+    after = run(tmp_path, "after", lambda f: f.__setitem__("r3/verdict-en.txt", "another verdict\n"))
+    changes = compare.compare(after, before)
+    assert _verdicts(changes) == {f"R3 verdict-en · verdict against {DEFAULT}": compare.MOVED}
+    assert compare.exit_code(changes) == compare.EXIT_CHANGED
+
+
+def test_the_matrix_ranks_take_each_tool_at_its_best_f2_row(tmp_path):
+    ranks = compare.r3_ranks(compare.load(run(tmp_path, "a"), compare.RUN))
+    # rizzo-pii's best-F2 row is `@default` (F0.5 0.63, ahead of nullpii's
+    # 0.53); its tuned row's F0.5 (0.6) is not the matrix's.
+    assert ranks[f"R3 char-r3 · {DEFAULT} · rank by f05 at each tool's best-F2 row of 2"].shown == 2
+    # Recall: the mean of nullpii's per-set recalls (0.958) against 0.92.
+    assert ranks[f"R3 char-r3 · {DEFAULT} · rank by recall at each tool's best-F2 row of 2"].shown == 1
+    assert ranks[f"R3 char-r3 · {DEFAULT} · rank by precision at each tool's best-F2 row of 2"].shown == 2
+    # Per set: rizzo-pii's better row there (0.81) is ahead of 0.758.
+    assert ranks[f"R3 char-r3 · r3-piilo · {DEFAULT} · rank by f2 of 2"].shown == 2
+
+
+def test_a_tool_that_is_in_no_set_is_refused(tmp_path):
+    out = run(tmp_path, "a", lambda f: f[R3]["_macro"].__setitem__("ghost", dict(f[R3]["_macro"]["rizzo-pii"])))
+    with pytest.raises(compare.CompareError, match="ghost has a macro row but is in no set"):
+        compare.compare(out, out)
+
+
+def test_a_piimb_report_of_an_older_scorer_is_refused(tmp_path):
+    out = run(tmp_path, "a", lambda f: f["piimb/piimb-default.json"].pop("without"))
+    with pytest.raises(compare.CompareError, match="piimb-default.json has no without"):
+        compare.compare(out, out)

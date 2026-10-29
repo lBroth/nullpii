@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-"""The recipe is the published run's: the same reports with the same
-flags (checked against its outputs by `reproduce`; pinned here)."""
+"""The recipe is the published run's: its 14 reports and 6 verdicts with
+the same flags, `score`'s 11 and 5 plus the 3 reports and the verdict on
+every category masked scored on core labels, which only `reproduce`
+writes (checked against the run's outputs by `reproduce`; pinned here)."""
 from pipeline import recipe, settings
 
 PUBLISHED_REPORTS = {
@@ -11,10 +13,27 @@ PUBLISHED_REPORTS = {
 }
 
 
+PUBLISHED_CORE_LABEL_REPORTS = {"char-r3-defcore", "char-r3-bonferroni-defcore", "sens-default-core"}
+PUBLISHED_VERDICTS = {
+    "verdict", "verdict-en", "verdict-reported", "sens-cluster-rows-verdict", "sens-openmed-excluded-verdict",
+}
+PUBLISHED_CORE_LABEL_VERDICTS = {"sens-default-core-verdict"}
+
+
 def test_the_reports_are_the_published_ones():
     names = [r.name for r in recipe.R3_RUNS]
     assert len(names) == len(set(names))
     assert set(names) == PUBLISHED_REPORTS
+    assert {r.name for r in recipe.CORE_LABEL_RUNS} == PUBLISHED_CORE_LABEL_REPORTS
+    assert len(PUBLISHED_REPORTS | PUBLISHED_CORE_LABEL_REPORTS) == 14
+
+
+def test_the_verdicts_are_the_published_ones():
+    assert {v.name for v in recipe.VERDICTS} == PUBLISHED_VERDICTS
+    assert {v.name for v in recipe.CORE_LABEL_VERDICTS} == PUBLISHED_CORE_LABEL_VERDICTS
+    assert len(PUBLISHED_VERDICTS | PUBLISHED_CORE_LABEL_VERDICTS) == 6
+    core_reports = {r.name for r in recipe.CORE_LABEL_RUNS}
+    assert all(v.report in core_reports for v in recipe.CORE_LABEL_VERDICTS)
 
 
 def test_each_leave_one_out_report_drops_its_set_and_has_no_mask_all_floor():

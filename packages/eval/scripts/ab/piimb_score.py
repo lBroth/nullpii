@@ -7,10 +7,12 @@ within each task, then averaged over its six tasks. This module reproduces
 sits on the published leaderboard (piimb/pii-masking-benchmark-results).
 
   python piimb_score.py export --data test_sentences.jsonl --out texts.jsonl
-  python piimb_score.py score --data test_sentences.jsonl --pred spans.jsonl [--leaderboard dir]
+  python piimb_score.py score --data test_sentences.jsonl --pred spans.jsonl [--leaderboard dir] [--leave-out task]
 
 `export` writes `score_capture.mjs` input (dataset = task, idx per task in
-file order); `score` reads its `--out` spans. The dataset is CC-BY-NC-4.0:
+file order); `score` reads its `--out` spans. With `--leave-out`, the
+report also gives the average and the leaderboard place without that task
+(a task from the tool's own training family). The dataset is CC-BY-NC-4.0:
 evaluation only, never redistributed or trained on.
 """
 from __future__ import annotations
@@ -93,14 +95,34 @@ def score(data: Path, pred: Path) -> dict[str, dict[str, float]]:
 
 
 def leaderboard(directory: Path) -> list[tuple[float, str, dict[str, float]]]:
+    """Every model of the leaderboard snapshot in `directory`. A model
+    without a score for each task is an error, never left out: leaving it
+    out would move every place."""
     rows = []
     for model in sorted(p for p in directory.iterdir() if p.is_dir()):
         try:
             f2 = {t: json.loads((model / f"{t}.json").read_text())["scores"]["test"][0]["f2"] for t in TASKS}
-        except (OSError, KeyError, ValueError):
-            continue
+        except (OSError, KeyError, IndexError, ValueError) as e:
+            raise SystemExit(f"leaderboard model {model.name} has no F2 for every task: {e}") from e
         rows.append((sum(f2.values()) / len(TASKS), model.name, f2))
     return sorted(rows, reverse=True)
+
+
+def place(avg: float, others: list[float]) -> dict[str, int]:
+    """The place of `avg` among `others` (1 is first), and how many are
+    ranked, itself included."""
+    return {"rank": 1 + sum(1 for a in others if a > avg), "of": len(others) + 1}
+
+
+def without(ours: dict[str, dict[str, float]], board: list, task: str) -> dict:
+    """The average F2 over every task but `task`, and its place among the
+    leaderboard's rows averaged the same way."""
+    if task not in TASKS:
+        raise SystemExit(f"--leave-out {task}: not a PIIMB task ({', '.join(TASKS)})")
+    rest = [t for t in TASKS if t != task]
+    avg = sum(ours[t]["f2"] for t in rest) / len(rest)
+    others = [sum(f2[t] for t in rest) / len(rest) for _, _, f2 in board]
+    return {"task": task, "avg_f2": avg, "leaderboard": place(avg, others)}
 
 
 def main() -> None:
@@ -115,15 +137,24 @@ def main() -> None:
     s.add_argument("--name", default="nullpii")
     s.add_argument("--leaderboard", type=Path)
     s.add_argument("--out", type=Path)
+    s.add_argument("--leave-out", help="also report the average and place without this task (needs --leaderboard)")
     args = ap.parse_args()
     if args.cmd == "export":
         export(args.data, args.out)
         return
+    if args.leave_out and not args.leaderboard:
+        raise SystemExit("--leave-out needs --leaderboard")
     ours = score(args.data, args.pred)
     avg = sum(ours[t]["f2"] for t in TASKS) / len(TASKS)
-    if args.out:
-        args.out.write_text(json.dumps({"name": args.name, "avg_f2": avg, "tasks": ours}, indent=1) + "\n")
     board = leaderboard(args.leaderboard) if args.leaderboard else []
+    if args.out:
+        report = {"name": args.name, "avg_f2": avg, "tasks": ours}
+        if args.leaderboard:
+            # The tool's place among the leaderboard's rows by average F2.
+            report["leaderboard"] = place(avg, [a for a, _, _ in board])
+        if args.leave_out:
+            report["without"] = without(ours, board, args.leave_out)
+        args.out.write_text(json.dumps(report, indent=1) + "\n")
     board.append((avg, f">>> {args.name}", {t: ours[t]["f2"] for t in TASKS}))
     board.sort(reverse=True)
     print(f"{'model':58s} avgF2  " + "  ".join(f"{t[:10]:10s}" for t in TASKS))

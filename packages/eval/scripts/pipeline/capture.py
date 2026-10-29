@@ -34,13 +34,16 @@ def checkpoints(dist: Path, texts: Path, out_dir: Path, preset: str, resume: boo
     run(args + (["--resume", "1"] if resume else []))
 
 
-def spans(dist: Path, texts: Path, out: Path, preset: str) -> None:
-    """nullpii's spans on every row of `texts` into one file (PIIMB's form)."""
-    run([
+def spans(dist: Path, texts: Path, out: Path, preset: str, resume: bool = False) -> None:
+    """nullpii's spans on every row of `texts` into one file (PIIMB's form).
+    With `resume`, the rows `out` already holds are kept and skipped;
+    without it, `out` is written anew."""
+    args = [
         settings.NODE, str(settings.SCORE_CAPTURE),
         "--dist", str(dist), "--texts", str(texts), "--out", str(out),
         "--config", settings.preset_config(preset),
-    ])
+    ]
+    run(args + (["--resume", "1"] if resume else []))
 
 
 def recognizer_spans(dist: Path, gold: Path, out: Path) -> None:
@@ -60,10 +63,9 @@ def roundtrip(dist: Path, texts: Path, preset: str) -> dict:
     return json.loads(lines[-1])
 
 
-def piimb_texts(out: Path) -> None:
-    """PIIMB's sentences as rows nullpii runs on, written whole or not at
-    all (see `texts.write`)."""
-    sentences = settings.RESULTS / "ab-loop" / "piimb" / settings.PIIMB_SENTENCES
+def piimb_texts(sentences: Path, out: Path) -> None:
+    """PIIMB's `sentences` (the checked frozen copy's) as rows nullpii runs
+    on, written whole or not at all (see `texts.write`)."""
     out.parent.mkdir(parents=True, exist_ok=True)
     partial = out.with_name(f"{out.name}.{os.getpid()}.partial")
     run([sys.executable, "-I", str(settings.PIIMB_SCORE), "export", "--data", str(sentences), "--out", str(partial)])

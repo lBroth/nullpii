@@ -1,10 +1,20 @@
 # SPDX-License-Identifier: Apache-2.0
 """Score the published run again from its frozen predictions and check
-that every output is the published one: AB-1 against
-`published-bench/ab1/`, R3 and its verdicts against the run's own outputs.
+that every output that can be scored from them is the published one:
+
+- AB-1: the 3 score files, against `published-bench/ab1/`;
+- R3: the 14 reports and 6 verdicts of the published run, against the
+  run's own outputs (the recipe's 11 and 5, plus the 3 reports and the
+  verdict on every category masked scored on core labels);
+- PIIMB: nullpii's published spans (every category masked), against
+  `published-bench/piimb/`.
 
 It shows the scorers, the frozen inputs and the recipe still give the
-published numbers, so a change in a new run comes from nullpii."""
+published numbers, so a change in a new run comes from nullpii.
+
+Not checked, because they come from running nullpii itself and no frozen
+prediction holds them: AB-1's recognizer coverage (it needs the
+recognizer pack's own spans) and the mask-restore round trip."""
 from __future__ import annotations
 
 import json
@@ -26,28 +36,82 @@ def _compare_json(produced: Path, published: Path) -> list[str]:
     )
 
 
-def ab1(frozen: Frozen, work: Path) -> list[str]:
+def _compare_verdicts(texts: dict[str, str], published: Path) -> list[str]:
+    return [
+        f"{name}: the verdict text differs"
+        for name, text in texts.items()
+        if text.strip() != (published / f"{name}.log").read_text(encoding="utf-8").strip()
+    ]
+
+
+def ab1(frozen: Frozen, work: Path, published: Path = settings.PUBLISHED) -> list[str]:
     out = work / "ab1"
-    recipe.score_ab1(frozen.ab1_checkpoints, settings.PUBLISHED_AB1_BASELINE, out)
+    recipe.score_ab1(frozen.ab1_checkpoints, settings.PUBLISHED_AB1_BASELINE, frozen.dataset("ab1"), out)
     return [d for key in settings.AB1_GOLD for d in _compare_json(
-        out / f"scores-{key}.json", settings.PUBLISHED / "ab1" / f"scores-{key}.json")]
+        out / f"scores-{key}.json", published / "ab1" / f"scores-{key}.json")]
+
+
+def _core_label_others() -> tuple[str, ...]:
+    """The other nullpii rows of the core-label reports, in the published
+    run's order: the headline row first, then the earlier ones."""
+    rest = (n for n in settings.PUBLISHED_R3_OTHER_NULLPII if n != settings.PUBLISHED_R3_CORE_LABELS_BASELINE)
+    return (settings.PUBLISHED_R3_BASELINE, *rest)
+
+
+def declared_outputs() -> tuple[set[str], set[str]]:
+    """The R3 reports and verdicts the recipe declares: those `score` writes
+    and those of the core regime, which only `reproduce` writes."""
+    reports = {r.name for r in (*recipe.R3_RUNS, *recipe.CORE_LABEL_RUNS)}
+    verdicts = {v.name for v in (*recipe.VERDICTS, *recipe.CORE_LABEL_VERDICTS)}
+    return reports, verdicts
+
+
+def undeclared(published: Path) -> list[str]:
+    """How the published run's R3 outputs differ from the declared set:
+    each report is a `<name>.json` (with its `<name>.log`), each verdict a
+    `<name>.log` alone. A published output the recipe does not declare, or
+    one it declares that is not there, is a difference."""
+    reports, verdicts = declared_outputs()
+    jsons = {p.stem for p in published.glob("*.json")}
+    logs = {p.stem for p in published.glob("*.log")} - jsons
+    problems = [f"published report not in the recipe: {n}" for n in sorted(jsons - reports)]
+    problems += [f"report of the recipe not published: {n}" for n in sorted(reports - jsons)]
+    problems += [f"published verdict not in the recipe: {n}" for n in sorted(logs - verdicts)]
+    problems += [f"verdict of the recipe not published: {n}" for n in sorted(verdicts - logs)]
+    return problems
 
 
 def r3(frozen: Frozen, work: Path) -> list[str]:
+    missing = undeclared(frozen.r3_published)
+    if missing:
+        return missing
     out = work / "r3"
-    recipe.score_r3(frozen.r3_run, settings.PUBLISHED_R3_BASELINE, frozen.openmed_no_output, out)
-    diffs = [d for run in recipe.R3_RUNS for d in _compare_json(
-        out / f"{run.name}.json", frozen.r3_published / f"{run.name}.json")]
-    texts = recipe.verdicts(out, settings.PUBLISHED_R3_BASELINE, settings.PUBLISHED_R3_OTHER_NULLPII)
-    for name, text in texts.items():
-        published = (frozen.r3_published / f"{name}.log").read_text(encoding="utf-8")
-        if text.strip() != published.strip():
-            diffs.append(f"{name}: the verdict text differs")
+    groups = (
+        (settings.PUBLISHED_R3_BASELINE, settings.PUBLISHED_R3_OTHER_NULLPII, recipe.R3_RUNS, recipe.VERDICTS),
+        (settings.PUBLISHED_R3_CORE_LABELS_BASELINE, _core_label_others(),
+         recipe.CORE_LABEL_RUNS, recipe.CORE_LABEL_VERDICTS),
+    )
+    diffs: list[str] = []
+    for baseline, others, runs, verdicts in groups:
+        recipe.score_r3(frozen.r3_run, baseline, frozen.openmed_no_output, out, runs)
+        diffs += [d for run in runs for d in _compare_json(
+            out / f"{run.name}.json", frozen.r3_published / f"{run.name}.json")]
+        diffs += _compare_verdicts(recipe.verdicts(out, baseline, others, verdicts), frozen.r3_published)
     return diffs
 
 
-def check(frozen: Frozen, work: Path) -> None:
+def piimb(frozen: Frozen, work: Path, published: Path = settings.PUBLISHED) -> list[str]:
+    name = f"piimb-{settings.PIIMB_PUBLISHED_PRESET}.json"
+    produced = work / "piimb" / name
+    recipe.score_piimb(
+        frozen.piimb_sentences, frozen.piimb_published_spans,
+        frozen.piimb_leaderboard, settings.tool_name(settings.PIIMB_PUBLISHED_PRESET), produced,
+    )
+    return _compare_json(produced, published / "piimb" / name)
+
+
+def check(frozen: Frozen, work: Path, published: Path = settings.PUBLISHED) -> None:
     """Raise listing every difference; return quietly when there is none."""
-    diffs = ab1(frozen, work) + r3(frozen, work)
+    diffs = ab1(frozen, work, published) + r3(frozen, work) + piimb(frozen, work, published)
     if diffs:
         raise AssertionError("the published run does not reproduce:\n  " + "\n  ".join(diffs))

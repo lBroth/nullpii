@@ -8,7 +8,8 @@ from pathlib import Path
 
 EVAL = Path(__file__).resolve().parents[2]
 SCRIPTS = EVAL / "scripts"
-# Where bench_full.py and the scorers read the frozen sets from.
+# Where bench_full.py's loaders read the frozen sets from (`fetch` links
+# them there; the loaders check each set's SHA-256).
 RESULTS = EVAL / "results"
 PUBLISHED = EVAL / "published-bench"
 
@@ -17,8 +18,15 @@ PUBLISHED = EVAL / "published-bench"
 FROZEN_REPO = "lBroth/nullpii-bench-private"
 FROZEN_REVISION = "eadb7b382e3bad85cf8f7b54ca24c1f19642b95f"
 MANIFEST = "MANIFEST.json"
+# The SHA-256 of MANIFEST.json at FROZEN_REVISION. A copy is checked
+# against its manifest, so pinning the manifest binds every file of the
+# copy to the pinned revision, wherever the copy came from.
+FROZEN_MANIFEST_SHA256 = "b53c4708bff6e1bc4e4265e014e93fc8876ca9ff585f464d191fb5d610cd424c"
 # Files of the frozen repository that the manifest does not list.
 UNLISTED = frozenset({MANIFEST, "README.md", ".gitattributes"})
+# The folder huggingface_hub keeps its download metadata in, inside the
+# copy: not a frozen file.
+DOWNLOAD_METADATA = (".cache", "huggingface")
 
 # The configurations nullpii is published in: what a user gets without
 # configuring anything, and every category masked.
@@ -75,13 +83,37 @@ PUBLISHED_R3_OTHER_NULLPII = (
     "nullpii-H3b-A11-cuda-core",
     "nullpii-H3b-A11-cuda-default",
 )
-# The published rows that stand for the configurations measured now, for
-# comparing the first run with them: the 0.5 agent default on AB-1, and
-# every category masked on R3. The core regime has no counterpart.
+# The published run's reports on every category masked scored on core
+# labels only (`nullpii-rel-cuda-default@core`), a configuration no longer
+# measured: `reproduce` checks them, `score` does not write them.
+PUBLISHED_R3_CORE_LABELS_BASELINE = "nullpii-rel-cuda-default@core"
+
+# Comparing the first run with the published outputs, like for like only
+# (owner, 2026-10-29: nullpii is published as `default` and `everything`
+# from now on):
+# - the published rows that are a configuration measured now, read under
+#   its name: the 0.5 agent default on AB-1 is `default`, every category
+#   masked on R3 (all its spans) is `everything`;
 PUBLISHED_ALIASES = {
     PUBLISHED_AB1_BASELINE: tool_name("default"),
     "nullpii-rel-cuda-default": tool_name("everything"),
 }
+# - the published core regime (R3's headline row, and every category masked
+#   scored on core labels only) is no longer published: its rows, the
+#   intervals and verdicts against it, and its own reports are reported as
+#   dropped, never as better or worse than anything measured now;
+PUBLISHED_CORE_REGIME = frozenset({PUBLISHED_R3_BASELINE, PUBLISHED_R3_CORE_LABELS_BASELINE})
+# - earlier rows the published run scored but the docs never printed.
+PUBLISHED_UNPRINTED = frozenset({"nullpii-H3b-A11-cuda-core", "nullpii-H3b-A11-cuda-default"})
+# The R3 verdicts were published against the core regime's row.
+PUBLISHED_VERDICT_BASELINE = PUBLISHED_R3_BASELINE
+# PIIMB was published with every category masked only, so a reference of
+# the published outputs has no PIIMB report of the default.
+PIIMB_PUBLISHED_PRESET = "everything"
+PUBLISHED_ABSENT = frozenset({f"piimb/piimb-{p}.json" for p in PRESETS if p != PIIMB_PUBLISHED_PRESET})
+# The PIIMB task from nullpii's own training family: the docs also give the
+# average and the place without it.
+PIIMB_TRAINING_FAMILY_TASK = "nemotron-pii"
 
 NODE = "node"
 SCORE_CAPTURE = SCRIPTS / "ab" / "score_capture.mjs"

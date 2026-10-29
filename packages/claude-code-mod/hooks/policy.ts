@@ -392,7 +392,7 @@ const INTERNAL_TOOLS: ReadonlySet<string> = new Set([
  * Whether a call to `tool` outside `restoreTools` runs as Claude wrote it,
  * with its placeholders and no question: `AskUserQuestion` alone. Claude's
  * own question to the user never gets a real value; the mod shows the user,
- * on this machine, which value each placeholder in it stands for, and the
+ * under its dialog, which value each placeholder in it stands for, and the
  * result goes back to Claude as Claude Code returns it, masked like any
  * result. Every other tool outside `restoreTools` is asked about first
  * (`clearDestination`).
@@ -533,7 +533,7 @@ export interface Counts {
   /** Placeholders kept in calls to tools outside `restoreTools`. */
   held: number;
   byLabel: Record<string, number>;
-  /** Values sent in clear on the user's word, by the tool they went to and
+  /** Values released in clear on the user's word, by the tool they went to and
    * their category. Never a value or a short form of one: the report's text
    * may reach the model. */
   sent: Record<string, Record<string, number>>;
@@ -544,7 +544,7 @@ export function emptyCounts(): Counts {
   return { masked: 0, restored: 0, held: 0, byLabel: {}, sent: Object.create(null) };
 }
 
-/** Count a value sent in clear on the user's word, under its tool and
+/** Count a value released in clear on the user's word, under its tool and
  * category. */
 export function addSent(counts: Counts, tool: string, category: string): void {
   let byCategory = counts.sent[tool];
@@ -705,7 +705,7 @@ export function formatPolicy(policy: Policy | undefined): string[] {
   return [formatCategories(policy), formatSettings(policy), PII_MENU_POINTER];
 }
 
-/** The report's lines of values sent in clear on the user's word: one per
+/** The report's lines of values released in clear on the user's word: one per
  * tool and category with its count. None while none were sent. */
 function formatSent(counts: Counts): string[] {
   return Object.entries(counts.sent)
@@ -714,13 +714,14 @@ function formatSent(counts: Counts): string[] {
       Object.entries(byCategory)
         .sort((a, b) => a[0].localeCompare(b[0]))
         .map(
-          ([category, n]) => `Sent in clear on your word: ${tool} · ${shortName(category)} ${n}`,
+          ([category, n]) =>
+            `Released in clear on your word: ${tool} · ${shortName(category)} ${n}`,
         ),
     );
 }
 
 /** The `/pii` status: the state, the session's counts on one line, the
- * values sent in clear one line per tool and category, the categories by
+ * values released in clear one line per tool and category, the categories by
  * mode, the policy, and where the commands are. Short on purpose: `/pii
  * help` lists them. */
 export function formatReport(

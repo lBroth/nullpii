@@ -938,7 +938,8 @@ function allowedInClear($, question: () => string): Promise<boolean> {
 
 /** One value the user agreed to send in clear, with where it goes (`to`,
  * as the toast names it), the tool the count goes under, and its
- * category. Recorded (`recordSent`) only once it has actually gone. */
+ * category. The value itself is for the question alone: no toast, count
+ * or log line carries it. */
 interface ClearValue {
   readonly tool: string;
   readonly to: string;
@@ -946,20 +947,34 @@ interface ClearValue {
   readonly value: string;
 }
 
-/** Toast and count each value in `values`, which went out in clear on the
- * user's word: where it went, its category and its short form. The toast
- * is on this machine only, like the question; `/pii` counts by tool and
- * category and never shows a value; the debug log keeps counts. Called
- * only once nothing can stop the values any more: the call ran, or the
- * result is on its way to Claude. */
+/** How the release toast joins its parts. */
+const RELEASE_JOIN = ', ';
+
+/**
+ * Toast and count the values in `values`, which the mod released in clear
+ * to a call or to Claude on the user's word: one toast per destination,
+ * naming it and each category with its count, never a value or a short
+ * form of one (Claude Code writes a toast's text to its debug log, and can
+ * draw it on a remote surface). `/pii` counts by tool and category; the
+ * debug log keeps the number. Called once nothing the mod can see refuses
+ * the call any more: it was handed on and no refusal came back from below,
+ * or the result is on its way to Claude. Whether Claude Code then ran the
+ * call (its own permission prompt can still decline it) the mod cannot
+ * know, so what it records is the release, not the run.
+ */
 function recordSent($, values: readonly ClearValue[]): void {
+  const byDestination = new Map<string, Map<string, number>>();
   for (const one of values) {
     addSent(counts, one.tool, one.category);
-    $.ui.toast(
-      `nullpii sent ${shortName(one.category)} "${shortForm(one.value)}" in clear to ${one.to} on your word`,
-    );
+    const categories = byDestination.get(one.to) ?? new Map<string, number>();
+    categories.set(one.category, (categories.get(one.category) ?? 0) + 1);
+    byDestination.set(one.to, categories);
   }
-  if (values.length > 0) $.ui.log(`nullpii: ${values.length} sent in clear`, { to: 'debug' });
+  for (const [to, categories] of byDestination) {
+    const listed = [...categories].map(([category, n]) => `${shortName(category)} ${n}`);
+    $.ui.toast(`nullpii released in clear to ${to} on your word: ${listed.join(RELEASE_JOIN)}`);
+  }
+  if (values.length > 0) $.ui.log(`nullpii: ${values.length} released in clear`, { to: 'debug' });
 }
 
 /** What the question says a value reaches, per destination of the tool
@@ -1081,8 +1096,9 @@ const LEGEND_PREFIX = "nullpii, for Claude's question: ";
 const LEGEND_JOIN = ' · ';
 
 /**
- * Show the user, under the dialog of Claude's own question (`$.ui.notice`,
- * a line on this machine that the model never reads), which real value each
+ * Show the user, under the dialog of Claude's own question (`$.ui.notice`:
+ * drawn for the open call only, never added to the conversation, and given
+ * to Claude Code's debug log as its length at most), which real value each
  * placeholder in it stands for: the question runs with the placeholders
  * Claude wrote (`runsWithPlaceholders`), which the user could not read
  * otherwise. Values are shown whole, as the mod draws them in Claude's
@@ -1099,13 +1115,16 @@ async function showLegend($, toolUseId: unknown, args: Readonly<Record<string, u
 }
 
 /**
- * `next(call)`, then the values the user sent in clear with it toasted and
- * counted (`recordSent`), once the call is past everything that can still
- * refuse it: the policy-file guard ran before, and a refusal from below
- * (another hook, or Claude Code, which in auto mode denies a call a hook
- * rewrote) comes back as `deny`, so a refused call records nothing. A call
- * that throws below was handed on and may have run, so its values are
- * recorded before the error goes on: a leak is never left uncounted.
+ * `next(call)`, then the values the user released in clear with it toasted
+ * and counted (`recordSent`), once the call has been handed on: the
+ * policy-file guard ran before, and a `deny` from below (another hook)
+ * records nothing. A refusal Claude Code itself makes after that (its own
+ * permission prompt declined, auto mode) comes back as an error result
+ * like any failed call, and the mod does not read Claude Code's error
+ * texts: the values were released to the call either way, which is what
+ * is recorded. A call that throws below was handed on too, so its values
+ * are recorded before the error goes on: a release is never left
+ * uncounted.
  */
 async function ranCall(
   $,

@@ -384,6 +384,15 @@ async function start($) {
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' });
 }
 
+/** No toast and no `$.ui.log` line (transcript or debug) holds any of
+ * `values`: a value, or a short form of one, is for the dialog and the
+ * legend alone. */
+function expectNoValueShown(sidecar: ReturnType<typeof fakeSidecar>, values: readonly string[]) {
+  for (const line of [...sidecar.toasts, ...sidecar.logs]) {
+    for (const value of values) expect(line).not.toContain(value);
+  }
+}
+
 const COMPOSER = { kind: 'composer' } as const;
 /** Real time a test gives a call started beside another to reach its own
  * dialog: every step before it is a resolved promise, so a few ms is ample. */
@@ -515,7 +524,7 @@ test('a tool that sends data elsewhere keeps a placeholder nothing stands behind
   expect(asked).toEqual([]);
   const report = await $.command.run({ command: 'pii', args: '' });
   expect(report.text).toContain('Placeholders kept in calls to other tools: 1');
-  expect(report.text).not.toContain('Sent in clear');
+  expect(report.text).not.toContain('Released in clear');
 });
 
 test('an errored tool result reaches Claude masked, as a refusal', async ($, on) => {
@@ -870,7 +879,7 @@ test('a policy that drops a local tool denies its calls unless the user sends th
   // The call did not run, so no placeholder was kept in one.
   const report = await $.command.run({ command: 'pii', args: 'status' });
   expect(report.text).toContain('Placeholders kept in calls to other tools: 0');
-  expect(report.text).not.toContain('Sent in clear');
+  expect(report.text).not.toContain('Released in clear');
 });
 
 test('a call without placeholders does not ask the sidecar to restore', async ($, on) => {
@@ -1955,10 +1964,12 @@ test('a tool result with personal data in an object key is put to the user: sent
   // the walk masked the key first (EMAIL_0), then the value (PERSON_1).
   expect(out.result).toEqual({ 'john@acme.io': `owner ${ph('PERSON', 1)}`, role: 'admin' });
   expect(JSON.stringify(out)).not.toContain('John');
+  // The toast names the tool and the category, and no value or short form.
   expect(sidecar.toasts[0]).toContain('WebSearch');
-  expect(sidecar.toasts[0]).toContain('email "joh…e.io"');
+  expect(sidecar.toasts[0]).toContain('email 1');
+  expectNoValueShown(sidecar, ['john@acme.io', 'joh…e.io', 'John']);
   const report = await $.command.run({ command: 'pii', args: 'status' });
-  expect(report.text).toContain('Sent in clear on your word: WebSearch · email 1');
+  expect(report.text).toContain('Released in clear on your word: WebSearch · email 1');
   // The report may reach the model: no value and no short form in it.
   expect(report.text).not.toContain('john@acme.io');
   expect(report.text).not.toContain('joh…e.io');
@@ -1992,7 +2003,7 @@ test('a masked object key the user does not send withholds the whole result', as
   expect(JSON.stringify(out)).not.toContain('john@acme.io');
   expect(sidecar.toasts).toEqual([]);
   const report = await $.command.run({ command: 'pii', args: 'status' });
-  expect(report.text).not.toContain('Sent in clear');
+  expect(report.text).not.toContain('Released in clear');
 });
 
 test('Allow all sends every masked key of the session with no second dialog, toasting and counting each', async ($, on) => {
@@ -2011,8 +2022,9 @@ test('Allow all sends every masked key of the session with no second dialog, toa
   expect(second.result).toEqual({ 'john@acme.io': `owner ${ph('PERSON', 3)}` });
   expect(JSON.stringify([first, second])).not.toContain('John');
   expect(sidecar.toasts).toHaveLength(2);
+  expectNoValueShown(sidecar, ['john@acme.io', 'joh…e.io', 'John']);
   const report = await $.command.run({ command: 'pii', args: 'status' });
-  expect(report.text).toContain('Sent in clear on your word: WebSearch · email 2');
+  expect(report.text).toContain('Released in clear on your word: WebSearch · email 2');
 });
 
 test('a masked object key no one answers withholds the result, and the log says so', async ($, on) => {
@@ -2056,8 +2068,9 @@ test('a call to a tool that sends data elsewhere is put to the user first: sent 
   // Send once: the tool runs with the real values.
   expect(urls).toEqual(['https://example.com/?q=john@acme.io']);
   expect(sidecar.toasts[0]).toContain('WebFetch');
+  expectNoValueShown(sidecar, ['john@acme.io', 'joh…e.io']);
   const report = await $.command.run({ command: 'pii', args: 'status' });
-  expect(report.text).toContain('Sent in clear on your word: WebFetch · email 1');
+  expect(report.text).toContain('Released in clear on your word: WebFetch · email 1');
   expect(report.text).not.toContain('john@acme.io');
   expect(report.text).not.toContain('joh…e.io');
 });
@@ -2086,7 +2099,7 @@ test('a call to a tool that sends data elsewhere is denied when the user does no
   expect(urls).toEqual([]);
   expect(sidecar.toasts).toEqual([]);
   const report = await $.command.run({ command: 'pii', args: 'status' });
-  expect(report.text).not.toContain('Sent in clear');
+  expect(report.text).not.toContain('Released in clear');
 });
 
 test('Allow all sends every value of the session with no second dialog, toasting and counting each', async ($, on) => {
@@ -2116,9 +2129,10 @@ test('Allow all sends every value of the session with no second dialog, toasting
   expect(asked).toHaveLength(1);
   expect(urls).toEqual(['https://example.com/?q=john@acme.io', 'https://example.com/?q=John']);
   expect(sidecar.toasts).toHaveLength(2);
+  expectNoValueShown(sidecar, ['john@acme.io', 'joh…e.io', 'John']);
   const report = await $.command.run({ command: 'pii', args: 'status' });
-  expect(report.text).toContain('Sent in clear on your word: WebFetch · email 1');
-  expect(report.text).toContain('Sent in clear on your word: WebFetch · person 1');
+  expect(report.text).toContain('Released in clear on your word: WebFetch · email 1');
+  expect(report.text).toContain('Released in clear on your word: WebFetch · person 1');
   expect(report.text).not.toContain('john@acme.io');
 });
 
@@ -2346,7 +2360,7 @@ test('a call holding a placeholder the session knows and one it does not counts 
   expect(urls).toEqual([`https://example.com/?a=john@acme.io&b=${unknown}`]);
   const report = await $.command.run({ command: 'pii', args: 'status' });
   expect(report.text).toContain('Placeholders kept in calls to other tools: 1');
-  expect(report.text).toContain('Sent in clear on your word: WebFetch · email 1');
+  expect(report.text).toContain('Released in clear on your word: WebFetch · email 1');
 });
 
 test('maskedKeys and unmaskKeys pair keys by name, not by position: integer-like keys move', () => {
@@ -2413,7 +2427,7 @@ test('a masked integer-like key is sent back under its own name, with no value s
     '3000000000': 'order',
   });
   const report = await $.command.run({ command: 'pii', args: 'status' });
-  expect(report.text).toContain('Sent in clear on your word: WebSearch · phone 1');
+  expect(report.text).toContain('Released in clear on your word: WebSearch · phone 1');
 });
 
 test('a result field JSON drops is not a sidecar fault: the result goes on, its keys asked about as sent', async ($, on) => {
@@ -2496,7 +2510,7 @@ test('a value sent once is toasted and counted only when the call runs: a refusa
   expect(out.deny).toBeDefined();
   expect(sidecar.toasts.filter((t) => t.includes('in clear'))).toEqual([]);
   const report = await $.command.run({ command: 'pii', args: 'status' });
-  expect(report.text).not.toContain('Sent in clear');
+  expect(report.text).not.toContain('Released in clear');
   // Neither the sent value nor the unknown placeholder beside it went
   // anywhere: the call was refused.
   expect(report.text).toContain('Real values put back into local tool calls: 0');
@@ -2523,7 +2537,7 @@ test('a call to an MCP tool is put to the user, and the question says the values
   expect(asked[0]?.question).toContain('leave this machine');
   expect(saved).toEqual(['contact john@acme.io']);
   const report = await $.command.run({ command: 'pii', args: 'status' });
-  expect(report.text).toContain('Sent in clear on your word: mcp__notes__save · email 1');
+  expect(report.text).toContain('Released in clear on your word: mcp__notes__save · email 1');
 });
 
 /** Claude Code's own tools that talk only to Claude, its subagents or the
@@ -2601,8 +2615,8 @@ test("Allow all lets Claude Code's own tools run with the real values, each toas
   for (const line of ran) expect(line).toContain('john@acme.io');
   expect(sidecar.toasts.filter((t) => t.includes('in clear'))).toHaveLength(INTERNAL_TOOLS.length);
   const report = await $.command.run({ command: 'pii', args: 'status' });
-  expect(report.text).toContain('Sent in clear on your word: TodoWrite · email 1');
-  expect(report.text).toContain('Sent in clear on your word: Agent · email 1');
+  expect(report.text).toContain('Released in clear on your word: TodoWrite · email 1');
+  expect(report.text).toContain('Released in clear on your word: Agent · email 1');
 });
 
 test('a masked object key in the result of a tool outside restoreTools is asked about; one in restoreTools is not', async ($, on) => {
@@ -2649,7 +2663,7 @@ test('Send once on a file tool the policy drops still goes through the policy-fi
   // Refused after the answer: nothing was sent, so nothing is toasted or counted.
   expect(sidecar.toasts.filter((t) => t.includes('in clear'))).toEqual([]);
   const report = await $.command.run({ command: 'pii', args: 'status' });
-  expect(report.text).not.toContain('Sent in clear');
+  expect(report.text).not.toContain('Released in clear');
 });
 
 test('the guide names as examples only tools the policy does not list', async ($, on) => {
@@ -2690,10 +2704,14 @@ test('a masked key holding several values lists, toasts and counts each value on
   expect(question).not.toContain('Joh…ner)');
   expect(question.split('email "').length - 1).toBe(1);
   expect(out.result).toEqual({ rows: [1, 2, 3, 4, 5].map((n) => ({ [key]: n })) });
-  expect(sidecar.toasts.filter((t) => t.includes('in clear'))).toHaveLength(2);
+  // One toast for the result, each category counted once, no value in it.
+  expect(sidecar.toasts.filter((t) => t.includes('in clear'))).toEqual([
+    'nullpii released in clear to Claude (a key of a mcp__crm__people result) on your word: person 1, email 1',
+  ]);
+  expectNoValueShown(sidecar, ['john@acme.io', 'joh…e.io', 'John']);
   const report = await $.command.run({ command: 'pii', args: 'status' });
-  expect(report.text).toContain('Sent in clear on your word: mcp__crm__people · email 1');
-  expect(report.text).toContain('Sent in clear on your word: mcp__crm__people · person 1');
+  expect(report.text).toContain('Released in clear on your word: mcp__crm__people · email 1');
+  expect(report.text).toContain('Released in clear on your word: mcp__crm__people · person 1');
 });
 
 test('the key question says Claude can copy keys sent in clear into any later call', async ($, on) => {
@@ -2727,7 +2745,7 @@ test('values sent in clear count as sent, not as restored into a local tool; a l
   });
   await $.tool.call({ tool: 'Write', file_path: 'n.md', content: ph('EMAIL', 0) });
   const report = await $.command.run({ command: 'pii', args: 'status' });
-  expect(report.text).toContain('Sent in clear on your word: WebFetch · email 1');
+  expect(report.text).toContain('Released in clear on your word: WebFetch · email 1');
   expect(report.text).toContain('Real values put back into local tool calls: 0');
 });
 
@@ -2751,7 +2769,7 @@ test('a call that throws below after Send once is recorded as sent, and its resu
   // It may have run: the value is toasted and counted, never left uncounted.
   expect(sidecar.toasts.filter((t) => t.includes('in clear'))).toHaveLength(1);
   const report = await $.command.run({ command: 'pii', args: 'status' });
-  expect(report.text).toContain('Sent in clear on your word: WebFetch · email 1');
+  expect(report.text).toContain('Released in clear on your word: WebFetch · email 1');
 });
 
 /** Answer the mod's own dialogs with `modAnswer` (none: dismissed) and
@@ -2823,9 +2841,10 @@ test("Claude's own question runs with its placeholders, unasked, and the user is
   expect(answers[question]).toMatch(/^Yes, and cc \{\{PII_PERSON_\d+_[0-9a-f]{16}\}\}$/);
   expect(JSON.stringify(out)).not.toContain('john@acme.io');
   expect(JSON.stringify(out)).not.toContain("for Claude's question");
+  expectNoValueShown(sidecar, ['john@acme.io', 'joh…e.io', 'John']);
   expect(sidecar.toasts.filter((t) => t.includes('in clear'))).toEqual([]);
   const report = await $.command.run({ command: 'pii', args: 'status' });
-  expect(report.text).not.toContain('Sent in clear');
+  expect(report.text).not.toContain('Released in clear');
 });
 
 test("Claude's own question holding only placeholders the session does not know shows no legend", async ($, on) => {
@@ -2887,9 +2906,10 @@ test('a placeholder text a tool wrote in its own key is not asked about, sent or
   expect(asked[0]?.question).toContain('person "Mary Ann"');
   expect(asked[0]?.question).not.toContain('email');
   expect(out.result).toEqual({ [`${stale} John`]: 1, [`${ph('EMAIL', 0)} Mary Ann`]: 2 });
-  expect(sidecar.toasts.filter((t) => t.includes('in clear'))).toHaveLength(2);
+  expect(sidecar.toasts.filter((t) => t.includes('in clear'))).toHaveLength(1);
+  expectNoValueShown(sidecar, ['John', 'Mary Ann']);
   const report = await $.command.run({ command: 'pii', args: 'status' });
-  expect(report.text).toContain('Sent in clear on your word: mcp__notes__list · person 2');
+  expect(report.text).toContain('Released in clear on your word: mcp__notes__list · person 2');
   expect(report.text).not.toContain('mcp__notes__list · email');
 });
 

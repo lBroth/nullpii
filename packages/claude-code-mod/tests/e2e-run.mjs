@@ -19,19 +19,28 @@
 // records (tests/e2e-bridge.ts). Each round, this script runs the suite on
 // a scratch copy of the mod that holds those answers, reads the requests
 // the scenarios are waiting on (the `nullpii-e2e wait` lines it prints),
-// sends each to the sidecar, records the answer, and runs the suite again. The
+// sends each to the sidecar, records the answer, and runs the suite again.
+// The first challenge the mod sends (a `nullpii-e2e challenge` line) is
+// sent and recorded the same way; the bridge answers every later one,
+// which must be that request but for its nonce, with a proof it signs
+// itself (its nonce is new each time, so no recorded answer fits). The
 // round in which nothing waits is the verdict, and its report is printed:
 // a scenario that waits passes in the rounds before (it has no answer to
-// test yet), one that fails keeps failing, and the others go on to their end.
+// test yet), one that fails keeps failing, and the others go on to their
+// end. Then each challenge the bridge answered in the verdict round (its
+// `nullpii-e2e signed` lines) is sent to the sidecar exactly as the mod
+// wrote it, and the run fails unless the sidecar answers it as the bridge
+// did (status, content type, body).
 //
 // The scratch copy (a private temporary folder, removed at the end, and on
-// Ctrl-C or a kill) holds
-// the mod's plugin.json, its hooks and the e2e test files; the sidecar's
-// address, token and answers go into its tests/e2e-exchange.ts. The token
-// is never printed: the suite prints requests with it replaced.
+// Ctrl-C, a kill or a hang-up) holds the mod's plugin.json, its hooks and
+// the e2e test files; the sidecar's address, token and answers go into its
+// tests/e2e-exchange.ts. The token is never printed: the suite prints
+// requests with it replaced.
 //
 // Needs the `claude` CLI on PATH. Exits 0 when every scenario passed, 1
-// when one failed, 2 when the variables are missing.
+// when one failed (or the suite could not run), 2 when the variables are
+// missing.
 
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -39,6 +48,7 @@ import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { killGroup, onExitSignals } from './e2e-process.mjs';
 
 const URL_VARIABLE = 'NULLPII_E2E_SIDECAR_URL';
 const TOKEN_VARIABLE = 'NULLPII_E2E_SIDECAR_TOKEN';
@@ -48,8 +58,6 @@ const LINE_PREFIX = 'nullpii-e2e';
 /** What a printed request carries in place of the token. Kept in step
  * with `REDACTED_AUTHORIZATION` in e2e-bridge.ts. */
 const REDACTED_AUTHORIZATION = 'Bearer <the sidecar token>';
-const CHALLENGE_PATH = '/v1/sidecar/challenge';
-const NONCE_BYTES = 32;
 const RUN_ID_BYTES = 8;
 /** Rounds before the run gives up: a scenario makes about ten requests. */
 const MAX_ROUNDS = 40;
@@ -58,9 +66,8 @@ const REQUEST_TIMEOUT_MS = 120_000;
 const SUITE_TIMEOUT_MS = 300_000;
 const EXIT_FAILED = 1;
 const EXIT_USAGE = 2;
-const SIGNAL_EXIT_BASE = 128;
-const SIGNAL_NUMBERS = { SIGINT: 2, SIGTERM: 15 };
 const PRIVATE_FILE_MODE = 0o600;
+const CONTENT_TYPE = 'content-type';
 
 const MOD_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 /** What the scratch copy of the mod holds, from the mod's folder. */
@@ -108,22 +115,6 @@ async function forward(sidecar, request) {
   return { status: res.status, headers: Object.fromEntries(res.headers), text: await res.text() };
 }
 
-/** One challenge, answered by the real sidecar: the suite checks the proof. */
-async function realChallenge(sidecar) {
-  const nonce = randomBytes(NONCE_BYTES).toString('hex');
-  const res = await fetch(sidecar.url + CHALLENGE_PATH, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ nonce }),
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  });
-  if (!res.ok) throw new Error(`the sidecar answered the challenge with ${res.status}`);
-  const { proof } = await res.json();
-  if (typeof proof !== 'string')
-    throw new Error('the sidecar answered the challenge without proof');
-  return { nonce, proof };
-}
-
 /** A private scratch copy of the mod, with the e2e test files only. */
 function stageMod() {
   const dir = mkdtempSync(join(tmpdir(), 'nullpii-mod-e2e-'));
@@ -141,16 +132,46 @@ function writeExchange(dir, exchange) {
   writeFileSync(join(dir, EXCHANGE_FILE), source, { mode: PRIVATE_FILE_MODE });
 }
 
+/** Why `claude` did not start, in words. */
+function spawnFailure(err) {
+  if (err.code === 'ENOENT') return new Error(`the \`claude\` CLI is not on PATH (${err.message})`);
+  return err;
+}
+
 /** Run `claude plugin test` on the scratch copy, its output captured, its
- * process kept in `running` while it runs. */
+ * process kept in `running` while it runs, and killed when it outlasts
+ * SUITE_TIMEOUT_MS. The timer is this script's own, not spawn's `timeout`
+ * option: Node clears that one only on the child's 'exit', which a child
+ * that never started never emits, so it would hold this process (and the
+ * gateway e2e-sidecar.mjs started) for the whole timeout.
+ *
+ * `claude` may be a launcher that runs the test in a process of its own,
+ * which shares its stdout and stderr: killing the launcher alone leaves
+ * that one running, holding the pipes, so 'close' never comes. So `claude`
+ * leads a process group of its own (`detached`), and the whole group is
+ * killed. Once timed out, the run ends on the launcher's 'exit', its pipes
+ * closed, so a process that left the group cannot hold the run up. */
 function runSuite(dir, running) {
   return new Promise((resolve, reject) => {
     const child = spawn('claude', ['plugin', 'test', dir], {
       stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: SUITE_TIMEOUT_MS,
+      detached: true,
     });
     running.add(child);
-    child.once('close', () => running.delete(child));
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killGroup(child);
+    }, SUITE_TIMEOUT_MS);
+    child.once('exit', () => {
+      if (!timedOut) return;
+      child.stdout.destroy();
+      child.stderr.destroy();
+    });
+    const settle = () => {
+      clearTimeout(timer);
+      running.delete(child);
+    };
     const out = { stdout: '', stderr: '' };
     child.stdout.setEncoding('utf8').on('data', (piece) => {
       out.stdout += piece;
@@ -158,8 +179,15 @@ function runSuite(dir, running) {
     child.stderr.setEncoding('utf8').on('data', (piece) => {
       out.stderr += piece;
     });
-    child.on('error', reject);
-    child.on('close', (status, signal) => resolve({ ...out, status: status ?? signal }));
+    child.on('error', (err) => {
+      settle();
+      reject(spawnFailure(err));
+    });
+    child.once('close', (status, signal) => {
+      settle();
+      if (timedOut) reject(new Error(`the suite did not end within ${SUITE_TIMEOUT_MS / 1000} s`));
+      else resolve({ ...out, status: status ?? signal });
+    });
   });
 }
 
@@ -167,6 +195,8 @@ function runSuite(dir, running) {
 function takeLine(lines, kind, payload) {
   if (kind === 'plan') lines.plan = payload;
   else if (kind === 'wait') lines.waits.push(payload);
+  else if (kind === 'challenge') lines.challenges.push(payload);
+  else if (kind === 'signed') lines.signed.push(payload);
   else if (kind === 'done') lines.done.add(payload);
   else throw new Error(`unknown line from the suite: ${kind}`);
 }
@@ -175,7 +205,15 @@ function takeLine(lines, kind, payload) {
  * writes a test's console to stderr), and the rest: the runner's report
  * (stdout) and anything else on stderr. */
 function readLines(suite) {
-  const lines = { plan: undefined, waits: [], done: new Set(), report: [], other: [] };
+  const lines = {
+    plan: undefined,
+    waits: [],
+    challenges: [],
+    signed: [],
+    done: new Set(),
+    report: [],
+    other: [],
+  };
   for (const [stream, rest] of [
     [suite.stdout, lines.report],
     [suite.stderr, lines.other],
@@ -189,6 +227,20 @@ function readLines(suite) {
   return lines;
 }
 
+/** Send the first of the mod's challenges the scenarios wait on, exactly
+ * as the mod wrote it, and record the answer: the bridge answers each
+ * later challenge that is this one but for its nonce. Resolves with the
+ * number of requests sent. */
+async function answerChallenge(sidecar, exchange, challenges) {
+  const [first] = challenges;
+  if (first === undefined) return 0;
+  if (exchange.challenge !== undefined) {
+    throw new Error(`scenario ${first.scenario} waits on a challenge, which was answered already`);
+  }
+  exchange.challenge = { request: first.request, response: await forward(sidecar, first.request) };
+  return 1;
+}
+
 /** Send each request a scenario waits on, and record the answers. */
 async function answerWaits(sidecar, steps, waits) {
   for (const { scenario, index, request } of waits) {
@@ -199,6 +251,31 @@ async function answerWaits(sidecar, steps, waits) {
     }
     recorded.push({ request, response: await forward(sidecar, request) });
   }
+}
+
+/** Why the sidecar's answer `real` is not the bridge's `signed`; undefined
+ * when they are the same answer. */
+function answerMismatch(real, signed) {
+  if (real.status !== signed.status) return `status ${real.status}, the bridge's ${signed.status}`;
+  if (real.headers[CONTENT_TYPE] !== signed.headers[CONTENT_TYPE]) {
+    return `content type ${real.headers[CONTENT_TYPE]}, the bridge's ${signed.headers[CONTENT_TYPE]}`;
+  }
+  if (real.text !== signed.text) return 'another body';
+  return undefined;
+}
+
+/** Send each challenge the bridge answered itself (`signed`) to the
+ * sidecar, exactly as the mod wrote it; resolves with how many the
+ * sidecar answered otherwise than the bridge, each one said. */
+async function checkSigned(sidecar, signed) {
+  let wrong = 0;
+  for (const { scenario, request, response } of signed) {
+    const why = answerMismatch(await forward(sidecar, request), response);
+    if (why === undefined) continue;
+    wrong += 1;
+    say(`scenario ${scenario}: the sidecar answers a challenge the bridge answered with ${why}`);
+  }
+  return wrong;
 }
 
 /** Print what the suite reported, without the bridge's lines. */
@@ -224,7 +301,6 @@ async function runRounds(sidecar, dir, running) {
     url: sidecar.url,
     token: sidecar.token,
     run: randomBytes(RUN_ID_BYTES).toString('hex'),
-    challenge: await realChallenge(sidecar),
     steps: {},
   };
   let asked = 0;
@@ -232,11 +308,18 @@ async function runRounds(sidecar, dir, running) {
     writeExchange(dir, exchange);
     const suite = await runSuite(dir, running);
     const lines = readLines(suite);
-    if (lines.waits.length === 0) {
+    if (lines.waits.length === 0 && lines.challenges.length === 0) {
       printReport(lines);
-      say(`${round} rounds, ${asked} requests answered by the sidecar`);
-      return verdict(suite, lines);
+      const wrong = await checkSigned(sidecar, lines.signed);
+      say(
+        `${round} rounds, ${asked} requests answered by the sidecar during the rounds, one of them the mod's first challenge; the verdict round's ${lines.signed.length} challenges, which the bridge answered, sent to the sidecar after it: ${lines.signed.length - wrong} answered the same`,
+      );
+      // The mod challenges the sidecar before every request, so a verdict
+      // round with none signed means the bridge reported none: none checked.
+      if (lines.signed.length === 0) say('the bridge reported no challenge it answered');
+      return verdict(suite, lines) && lines.signed.length > 0 && wrong === 0;
     }
+    asked += await answerChallenge(sidecar, exchange, lines.challenges);
     await answerWaits(sidecar, exchange.steps, lines.waits);
     asked += lines.waits.length;
   }
@@ -260,18 +343,18 @@ async function main() {
   }
 }
 
-/** On Ctrl-C or a kill: stop the suite, remove the scratch copy (its
- * exchange file holds the token), and exit as the signal would. `on`, not
- * `once`: a second signal (Ctrl-C reaches e2e-sidecar.mjs too, which
- * passes it on) must not find the default action, which kills at once. */
+/** On Ctrl-C, a kill or a hang-up: kill the suite, with every process it
+ * started (its process group: being a group of its own, it does not get
+ * the terminal's Ctrl-C itself), remove the scratch
+ * copy (its exchange file holds the token), and exit as the signal would.
+ * A second signal (Ctrl-C reaches e2e-sidecar.mjs too, which passes it
+ * on) finds this handler again. */
 function removeOnSignal(dir, running) {
-  for (const [signal, number] of Object.entries(SIGNAL_NUMBERS)) {
-    process.on(signal, () => {
-      for (const child of running) child.kill('SIGKILL');
-      rmSync(dir, { recursive: true, force: true });
-      process.exit(SIGNAL_EXIT_BASE + number);
-    });
-  }
+  onExitSignals((signal, exitCode) => {
+    for (const child of running) killGroup(child);
+    rmSync(dir, { recursive: true, force: true });
+    process.exit(exitCode);
+  });
 }
 
 main().then(

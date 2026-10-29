@@ -27,6 +27,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+import { onExitSignals, stopChild } from './e2e-process.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(HERE, '..', '..', '..');
@@ -46,8 +47,6 @@ const STOP_TIMEOUT_MS = 10_000;
 const LOG_LINES_KEPT = 200;
 const EXIT_FAILED = 1;
 const EXIT_USAGE = 2;
-const SIGNAL_EXIT_BASE = 128;
-const SIGNAL_NUMBERS = { SIGINT: 2, SIGTERM: 15 };
 const PRIVATE_FILE_MODE = 0o600;
 
 function say(line) {
@@ -150,30 +149,32 @@ function runSuite(url, token, suites) {
   });
 }
 
-/** Stop the gateway, and kill it if it does not stop in time. */
+/** Stop the gateway, and kill it if it does not stop in time; nothing
+ * when it was not started. */
 async function stopGateway(gateway) {
-  if (gateway.child.exitCode !== null || gateway.child.signalCode !== null) return;
-  gateway.child.kill('SIGTERM');
-  const stopped = await Promise.race([gateway.exited, sleep(STOP_TIMEOUT_MS, 'timeout')]);
-  if (stopped === 'timeout') {
-    say('the gateway did not stop in time: killing it');
-    gateway.child.kill('SIGKILL');
-    await gateway.exited;
+  if (gateway === undefined) return;
+  if (await stopChild(gateway.child, gateway.exited, STOP_TIMEOUT_MS)) {
+    say(`the gateway did not stop within ${STOP_TIMEOUT_MS / 1000} s: killed it`);
   }
 }
 
-/** On Ctrl-C or a kill: kill the gateway, pass the signal on to the suite
- * (which then removes its own scratch copy), and exit as the signal would.
- * `on`, not `once`, so a second signal finds this handler again. */
-function stopOnSignal(gateway, scratch, suites) {
-  for (const [signal, number] of Object.entries(SIGNAL_NUMBERS)) {
-    process.on(signal, () => {
-      gateway.child.kill('SIGKILL');
-      for (const suite of suites) suite.kill(signal);
-      rmSync(scratch, { recursive: true, force: true });
-      process.exit(SIGNAL_EXIT_BASE + number);
-    });
-  }
+/** Remove the gateway's scratch folder; nothing when it was not made. */
+function removeScratch(scratch) {
+  if (scratch !== undefined) rmSync(scratch, { recursive: true, force: true });
+}
+
+/** On Ctrl-C, a kill or a hang-up: kill the gateway, pass the signal on
+ * to the suite (which then removes its own scratch copy), remove the
+ * gateway's scratch folder, and exit as the signal would. `run` holds
+ * what was made so far (`scratch`, `gateway`, `suites`), so the handler is
+ * in place before anything is made. A second signal finds it again. */
+function stopOnSignal(run) {
+  onExitSignals((signal, exitCode) => {
+    run.gateway?.child.kill('SIGKILL');
+    for (const suite of run.suites) suite.kill(signal);
+    removeScratch(run.scratch);
+    process.exit(exitCode);
+  });
 }
 
 async function main() {
@@ -182,32 +183,33 @@ async function main() {
     say('set NULLPII_MODEL_DIR to the folder of the model (the core e2e suite uses the same one)');
     return EXIT_USAGE;
   }
-  const scratch = mkdtempSync(join(tmpdir(), 'nullpii-e2e-gateway-'));
-  const policyFile = join(scratch, 'config.json');
-  writeFileSync(policyFile, '{}\n', { mode: PRIVATE_FILE_MODE });
-  const token = randomBytes(TOKEN_BYTES).toString('hex');
-  const port = await freePort();
-  const url = `http://${HOST}:${port}`;
-  const gateway = startGateway({
-    NULLPII_SIDECAR_TOKEN: token,
-    NULLPII_HOST: HOST,
-    NULLPII_PORT: String(port),
-    NULLPII_MODEL_DIR: modelDir,
-    NULLPII_CONFIG: policyFile,
-  });
-  const suites = new Set();
-  stopOnSignal(gateway, scratch, suites);
+  const run = { scratch: undefined, gateway: undefined, suites: new Set() };
+  stopOnSignal(run);
   try {
+    run.scratch = mkdtempSync(join(tmpdir(), 'nullpii-e2e-gateway-'));
+    const policyFile = join(run.scratch, 'config.json');
+    writeFileSync(policyFile, '{}\n', { mode: PRIVATE_FILE_MODE });
+    const token = randomBytes(TOKEN_BYTES).toString('hex');
+    const port = await freePort();
+    const url = `http://${HOST}:${port}`;
+    run.gateway = startGateway({
+      NULLPII_SIDECAR_TOKEN: token,
+      NULLPII_HOST: HOST,
+      NULLPII_PORT: String(port),
+      NULLPII_MODEL_DIR: modelDir,
+      NULLPII_CONFIG: policyFile,
+    });
+    const { gateway } = run;
     const started = Date.now();
     await waitReady(gateway, url, token).catch((err) => {
       process.stderr.write(`${gateway.log.join('\n')}\n`);
       throw err;
     });
     say(`gateway ready on ${url} after ${((Date.now() - started) / 1000).toFixed(1)} s`);
-    return await runSuite(url, token, suites);
+    return await runSuite(url, token, run.suites);
   } finally {
-    await stopGateway(gateway);
-    rmSync(scratch, { recursive: true, force: true });
+    await stopGateway(run.gateway);
+    removeScratch(run.scratch);
   }
 }
 

@@ -4,8 +4,13 @@
 // fake masks anything here. Each scenario stubs only what the mod needs
 // from a session (its id, directory, store, toasts, the line under the
 // prompt) and the results of the tools it calls. Every request the mod
-// sends goes to the sidecar through e2e-bridge.ts, which says why that is
-// a bridge and not a fetch.
+// sends goes through e2e-bridge.ts, which answers it with the real
+// sidecar's answer to that very request, but for a challenge: its nonce is
+// new each time, so the bridge answers it itself when it is the mod's first
+// one, which the sidecar answered, but for its nonce, and the runner sends
+// each challenge the bridge answered to the sidecar once the run is over,
+// to check the sidecar answers it the same. The bridge says why it is a
+// bridge and not a fetch.
 //
 // Run it with `node packages/claude-code-mod/tests/e2e-sidecar.mjs`, which
 // starts a gateway, or with tests/e2e-run.mjs against a gateway you
@@ -22,6 +27,7 @@ import type { Engine } from 'claude-code/testing';
 import { expect, mock, test } from 'claude-code/testing';
 import { PLACEHOLDER, expectedProof } from '../hooks/policy.ts';
 import {
+  CHALLENGE_PATH,
   type Exchange,
   type Wire,
   type WireStep,
@@ -48,6 +54,7 @@ const VALUES = [NAME, SURNAME, EMAIL, FILE_EMAIL];
 const SESSIONS_PATH = '/v1/sidecar/sessions/';
 const SECRET_HEADER = 'x-nullpii-session-secret';
 const JSON_TYPE = { 'content-type': 'application/json' } as const;
+const HTTP_OK = 200;
 const CREATED = 201;
 const COMPOSER = { kind: 'composer' } as const;
 /** How a command typed at the prompt is drawn: the main screen, 100 columns. */
@@ -203,10 +210,24 @@ function replySite(text: string) {
 const SCENARIOS: readonly Scenario[] = [
   {
     id: 'challenge',
-    name: 'the real sidecar proves it holds the token the way the mod checks it',
+    name: "the real sidecar answers the mod's own challenge with the proof the mod expects",
     async body(scene) {
-      const { nonce, proof } = scene.exchange.challenge;
-      expect(await expectedProof(scene.exchange.token, nonce)).toBe(proof);
+      await start(scene);
+      // The first challenge the mod sent, as it sent it, and the real
+      // sidecar's answer to it.
+      const recorded = scene.exchange.challenge;
+      if (recorded === undefined) throw new Error("no challenge of the mod's was recorded");
+      expect(recorded.request.path).toBe(CHALLENGE_PATH);
+      expect(recorded.response.status).toBe(HTTP_OK);
+      const nonce: unknown = JSON.parse(recorded.request.body ?? '{}').nonce;
+      if (typeof nonce !== 'string') throw new Error("the mod's challenge holds no nonce");
+      const proof: unknown = JSON.parse(recorded.response.text).proof;
+      expect(proof).toBe(await expectedProof(scene.exchange.token, nonce));
+      // The mod challenges the sidecar before each of its requests, and
+      // each challenge was that one but for its nonce (the bridge answered
+      // them; the runner checks the sidecar answers them the same).
+      expect(scene.wire.calls.length).toBeGreaterThan(0);
+      expect(scene.wire.challenges).toBe(scene.wire.calls.length);
     },
   },
   {

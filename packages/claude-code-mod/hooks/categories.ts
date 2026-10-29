@@ -395,18 +395,25 @@ export function shortName(category: string): string {
   return Object.entries(CATEGORY_NAMES).find(([, full]) => full === category)?.[0] ?? category;
 }
 
+/** The category of every placeholder in `text`, with each placeholder once.
+ * A placeholder names its category in upper case: `{{PII_PRIVATE_URL_0_…}}`
+ * is `private_url`. */
+export function placeholderCategories(
+  text: string,
+): { readonly placeholder: string; readonly category: string }[] {
+  const found = new Map<string, string>();
+  for (const m of text.matchAll(/\{\{PII_([A-Z_]+?)_\d+_[0-9a-f]+\}\}/g)) {
+    found.set(m[0], (m[1] ?? '').toLowerCase());
+  }
+  return [...found].map(([placeholder, category]) => ({ placeholder, category }));
+}
+
 /** The categories of the placeholders in `text` whose mode is `ask`,
- * with each placeholder once. A placeholder names its category in upper
- * case: `{{PII_PRIVATE_URL_0_…}}` is `private_url`. */
+ * with each placeholder once. */
 export function placeholdersToAsk(
   text: string,
   modes: Readonly<Record<string, string>> | undefined,
 ): { readonly placeholder: string; readonly category: string }[] {
   if (modes === undefined) return [];
-  const found = new Map<string, string>();
-  for (const m of text.matchAll(/\{\{PII_([A-Z_]+?)_\d+_[0-9a-f]+\}\}/g)) {
-    const category = (m[1] ?? '').toLowerCase();
-    if (modes[category] === 'ask') found.set(m[0], category);
-  }
-  return [...found].map(([placeholder, category]) => ({ placeholder, category }));
+  return placeholderCategories(text).filter(({ category }) => modes[category] === 'ask');
 }

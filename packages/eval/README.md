@@ -40,6 +40,23 @@ python scripts/ab/r2_verdict.py --report char.json --baseline nullpii --better-r
 - `overlap_check.py`: shingle overlap between a dataset and training or tuning text.
 - `piimb_score.py`: PIIMB with the leaderboard's own scoring.
 
+## Benchmark pipeline
+
+`scripts/bench_pipeline.py` scores nullpii again on AB-1, R3 and PIIMB, in its two published configurations (`default`, what a user gets without configuring anything, and `everything`, every category masked), next to every other tool's predictions from the published run, which are frozen rather than run again. It uses the scorers above with the published run's own recipe (`scripts/pipeline/recipe.py`).
+
+The frozen inputs (the sets, every tool's per-document predictions, the published run's scoring outputs) are in a private Hugging Face dataset, pinned to a revision in `scripts/pipeline/settings.py`; it holds real secrets and data that may not be passed on, so no step prints a row. Install the extra with `pip install -e '.[pipeline]'`, and give a token with read access (`HF_TOKEN`, or `hf auth login`).
+
+```bash
+python scripts/bench_pipeline.py fetch --frozen F --download          # download, check every file's SHA-256, install the sets under results/
+python scripts/bench_pipeline.py reproduce --frozen F --work W         # the published run, scored again from its frozen predictions: must match exactly
+python scripts/bench_pipeline.py capture --frozen F --work W --dist <nullpii dist> --group recognizers
+python scripts/bench_pipeline.py capture --frozen F --work W --dist <nullpii dist> --group r3 --preset default   # and ab1, piimb; and --preset everything
+python scripts/bench_pipeline.py score --frozen F --work W
+python scripts/bench_pipeline.py compare --new W/out --reference R --report report.md
+```
+
+`compare` judges every nullpii number at the precision the docs print it, in its own direction (a lower leak rate is better, a lower keep rate worse), and the claims derived from the other tools too: nullpii's rank, and the sign of each paired interval of nullpii minus a tool. It exits 0 when nothing moved, 3 when something did, and 4 when something got worse. `reference --frozen F --out R` lays out the published outputs for a first comparison, with `compare --published-names`.
+
 ## Latency
 
 ```bash

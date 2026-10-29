@@ -63,7 +63,7 @@ By default nullpii masks what is risky to give to a coding agent's model: names,
 
 ## Results
 
-These numbers are for nullpii as a whole: this model plus the recognizers and filters. They are not for the model alone. Every test was fixed before the run, except one AB-1 scoring rule changed after the scores were first read; that change helped the other tools more, and both scorings are published. The results include the cases nullpii loses. The method is in [METHOD.md](https://lbroth.github.io/nullpii/method).
+These numbers are for nullpii as a whole: this model plus the recognizers and filters. They are not for the model alone. Every test was fixed before the run, except one AB-1 scoring rule changed after the scores were first read; that change helped the other tools more, and the first scoring's files are kept in the repository's history ([`strict-rule/`](https://github.com/lBroth/nullpii/tree/230ce9fd1933f5df5263ca9c87d248e064eddc77/packages/eval/published-bench/ab1/strict-rule)). The results include the cases nullpii loses. The method is in [METHOD.md](https://lbroth.github.io/nullpii/method).
 
 ![Agent traffic: leak rate and keep rate per tool](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/ab1-agent-traffic.svg)
 

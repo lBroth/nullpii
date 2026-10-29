@@ -89,9 +89,24 @@ def wanted(report: dict, readme: bool) -> list[str]:
     return sorted(keys, key=lambda k: (report[k]["leak_rate"], -report[k]["keep_rate"], k))
 
 
-def row(report: dict, k: str) -> str:
-    r, ci = report[k], report[k].get("ci", {})
-    return (f"| {label(k)} | {pct(r['leak_rate'])} | {pct(r['keep_rate'])} | {pct(r['docs_with_leak'])} | "
+# The main table's value columns and which end is best. Bold marks the best
+# printed value of each column among the rows shown (every row that prints
+# it, on a tie), as in the README's other tables.
+MAIN_COLUMNS = (("leak_rate", min), ("keep_rate", max), ("docs_with_leak", min))
+
+
+def best_cells(report: dict, keys: list[str]) -> dict[str, str]:
+    """Per main column, the best value among `keys`, as printed."""
+    return {field: pct(pick(report[k][field] for k in keys)) for field, pick in MAIN_COLUMNS}
+
+
+def row(report: dict, k: str, best: dict[str, str]) -> str:
+    ci = report[k].get("ci", {})
+    cells = []
+    for field, _ in MAIN_COLUMNS:
+        text = pct(report[k][field])
+        cells.append(f"**{text}**" if text == best[field] else text)
+    return (f"| {label(k)} | {' | '.join(cells)} | "
             f"{pp(ci.get('baseline_minus_tool_leak'))} | {pp(ci.get('baseline_minus_tool_keep'))} |")
 
 
@@ -102,7 +117,9 @@ def caption(report: dict) -> str:
 
 
 def main_table(report: dict, readme: bool) -> str:
-    return "\n".join([caption(report), "", HEAD] + [row(report, k) for k in wanted(report, readme)])
+    keys = wanted(report, readme)
+    best = best_cells(report, keys)
+    return "\n".join([caption(report), "", HEAD] + [row(report, k, best) for k in keys])
 
 
 def secondary(report: dict) -> str:

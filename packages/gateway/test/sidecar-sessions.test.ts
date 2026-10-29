@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// SidecarSessions on its own: what a supersede does to the other keys
-// under a base, with a counting stand-in for the engine's vault.
+// SidecarSessions on its own: what a supersede does to the key it names,
+// and the cap on remembered keys, with a counting stand-in for the vault.
 
 import type { NullPii } from 'nullpii';
 import { describe, expect, it } from 'vitest';
-import { SidecarSessions, isUnderBase } from '../src/sidecar-sessions.js';
+import { SidecarSessions, canSupersede } from '../src/sidecar-sessions.js';
 
 const TTL_MS = 1_000;
+/** As `UNCLOSED_KEYS_MAX` in the table: the keys it remembers one by one. */
+const REMEMBERED_MAX = 1024;
 
 function table(maxSessions = 8) {
   let vaults = 0;
@@ -30,13 +32,13 @@ function secretOf(result: ReturnType<SidecarSessions['open']>): string {
 }
 
 describe('SidecarSessions · supersedes', () => {
-  it('names a key and the keys under it, and nothing else', () => {
-    expect(isUnderBase('w1', 'w1')).toBe(true);
-    expect(isUnderBase('w1.r1', 'w1')).toBe(true);
-    expect(isUnderBase('w1.r1.r2', 'w1')).toBe(true);
-    expect(isUnderBase('w10', 'w1')).toBe(false);
-    expect(isUnderBase('w2.r1', 'w1')).toBe(false);
-    expect(isUnderBase('w1', 'w1.r1')).toBe(false);
+  it('names another key under the same base, and nothing else', () => {
+    expect(canSupersede('w1.r1', 'w1')).toBe(true);
+    expect(canSupersede('w1', 'w1.r1')).toBe(true);
+    expect(canSupersede('w1.r2', 'w1.r1')).toBe(true);
+    expect(canSupersede('w1', 'w1')).toBe(false);
+    expect(canSupersede('w10', 'w1')).toBe(false);
+    expect(canSupersede('w2.r1', 'w1')).toBe(false);
   });
 
   it("leaves a live key open with its vault, and its owner's next use undoes the supersede", () => {
@@ -46,7 +48,6 @@ describe('SidecarSessions · supersedes', () => {
     expect(sessions.size).toBe(2);
     expect(destroyed).toEqual([]);
     expect(sessions.use('w1', first)).not.toBe('not_found');
-    // That use proved the owner of w1 is here: the supersede no longer holds.
     clock.t += TTL_MS + 1;
     sessions.sweep();
     expect(sessions.unclosed).toBe(true);
@@ -87,10 +88,34 @@ describe('SidecarSessions · supersedes', () => {
     expect(sessions.unclosed).toBe(true);
   });
 
-  it('throws on a base the key is not under, and opens nothing', () => {
+  it('throws on a key it cannot supersede, and opens nothing', () => {
     const { sessions } = table();
-    expect(() => sessions.open('w2.r1', undefined, 'w1')).toThrow(/not under/);
+    expect(() => sessions.open('w2.r1', undefined, 'w1')).toThrow(/no other key/);
+    expect(() => sessions.open('w1', undefined, 'w1')).toThrow(/no other key/);
     expect(sessions.size).toBe(0);
     expect(sessions.everOpened).toBe(false);
+  });
+});
+
+describe('SidecarSessions · remembered keys', () => {
+  it('past the cap, the table stays unclosed after every remembered key is closed', () => {
+    const { sessions, clock } = table(REMEMBERED_MAX + 1);
+    const keys = Array.from({ length: REMEMBERED_MAX + 1 }, (_, i) => `k${i}`);
+    for (const key of keys) sessions.open(key, undefined);
+    clock.t += TTL_MS + 1;
+    sessions.sweep();
+    // Each caller closes the key its TTL already ended (404 on the route).
+    for (const key of keys) expect(sessions.close(key, undefined)).toBe('not_found');
+    expect(sessions.unclosed).toBe(true);
+  });
+
+  it('under the cap, closing every remembered key releases the table', () => {
+    const { sessions, clock } = table(REMEMBERED_MAX);
+    const keys = Array.from({ length: REMEMBERED_MAX }, (_, i) => `k${i}`);
+    for (const key of keys) sessions.open(key, undefined);
+    clock.t += TTL_MS + 1;
+    sessions.sweep();
+    for (const key of keys) sessions.close(key, undefined);
+    expect(sessions.unclosed).toBe(false);
   });
 });

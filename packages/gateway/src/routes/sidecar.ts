@@ -11,7 +11,7 @@ import { countPlaceholders, isShellTool } from '../shell-tools.js';
 import {
   type SessionRefusal,
   SidecarSessions,
-  isUnderBase,
+  canSupersede,
   isValidSessionKey,
 } from '../sidecar-sessions.js';
 import type { StartupTracker } from '../startup.js';
@@ -57,12 +57,11 @@ export const SESSION_SECRET_HEADER = 'x-nullpii-session-secret';
  * of a change it did not make before it masks, restores or overwrites
  * under it. */
 export const POLICY_VERSION_HEADER = 'x-nullpii-policy-version';
-/** On `PUT /v1/sidecar/sessions/:key`: the base the key is under (the key
- * itself, or the key is `<base>.<suffix>`). The caller says it left the
- * other keys under that base, whose secrets it lost (a reload): once the
- * session is created, they are not remembered as unclosed when their idle
- * TTL ends them. A live one stays open and usable by its owner, whose next
- * call undoes this. */
+/** On `PUT /v1/sidecar/sessions/:key`: one other key under the same base
+ * (`<base>` or `<base>.<suffix>`) that the caller held and left, as it lost
+ * its secret (a reload of the mod): once the session is created, that key
+ * is not remembered as unclosed when its idle TTL ends it. Live, it stays
+ * open and usable by its owner, whose next call undoes this. */
 export const SUPERSEDES_HEADER = 'x-nullpii-supersedes';
 const POLICY_CHANGED = 412;
 /** A shutdown was accepted: until the process ends, new sessions are
@@ -155,14 +154,14 @@ function presentedSecret(req: FastifyRequest): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
-/** The supersedes base the request names: undefined when it names none,
- * `invalid` when it is repeated, not a session key, or not a base the
- * session key is under. */
+/** The key the request says its caller left: undefined when it names
+ * none, `invalid` when it is repeated, not a session key, or not another
+ * key under the session key's base. */
 function presentedSupersedes(req: FastifyRequest, key: string): string | 'invalid' | undefined {
   const value = req.headers[SUPERSEDES_HEADER];
   if (value === undefined) return undefined;
   if (typeof value !== 'string' || !isValidSessionKey(value)) return 'invalid';
-  return isUnderBase(key, value) ? value : 'invalid';
+  return canSupersede(key, value) ? value : 'invalid';
 }
 
 /** Whether the request names a policy version other than `current`. */

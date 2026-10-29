@@ -24,9 +24,16 @@ export function isValidSessionKey(key: string): boolean {
   return SESSION_KEY_PATTERN.test(key);
 }
 
-/** Whether `key` is `base` itself or a key under it (`<base>.<suffix>`). */
-export function isUnderBase(key: string, base: string): boolean {
-  return key === base || key.startsWith(base + BASE_SEPARATOR);
+/** The base of `key`: the part before its first `.`, or the key itself. */
+function baseOf(key: string): string {
+  const cut = key.indexOf(BASE_SEPARATOR);
+  return cut === -1 ? key : key.slice(0, cut);
+}
+
+/** Whether `left` can be superseded by a session opened under `key`: another
+ * key under the same base (`<base>` or `<base>.<suffix>`). */
+export function canSupersede(key: string, left: string): boolean {
+  return left !== key && baseOf(left) === baseOf(key);
 }
 
 export interface SidecarSessionsOptions {
@@ -56,9 +63,9 @@ interface Entry {
   /** SHA-256 of the session secret; the secret itself is not kept. */
   readonly secretDigest: Buffer;
   lastUsed: number;
-  /** A session opened later under the same base said its caller left this
-   * one (`open`'s `supersedes`), and no call has proved its owner is still
-   * here since: when its idle TTL ends it, its key is not remembered. */
+  /** A session opened later under the same base named this key as one its
+   * caller left (`open`'s `supersedes`), and no call has proved its owner is
+   * still here since: when its idle TTL ends it, its key is not remembered. */
   left: boolean;
 }
 
@@ -108,18 +115,18 @@ export class SidecarSessions {
    * Create the session for `key` and hand out its secret, or keep the
    * existing one alive when `secret` is its own.
    *
-   * `supersedes` is the base `key` is under (`key` itself, or `key` is
-   * `<base>.<suffix>`): the caller says the other keys under that base are
-   * ones it left (it lost their secrets, as after a reload). It counts only
-   * when the session is created. A remembered expired key under it is
-   * forgotten; a live one stays open, its vault and secret untouched, and
-   * only its expiry is not remembered later, unless its owner proves itself
-   * on a call before then. A `supersedes` that `key` is not under is a
-   * caller's bug (the route answers 400 first), and throws.
+   * `supersedes` is one other key under the same base as `key`, which the
+   * caller says it held and left (it lost its secret, as after a reload of
+   * the mod). It counts only when the session is created. Remembered as
+   * expired, that key is forgotten; live, it stays open, its vault and
+   * secret untouched, and only its expiry is not remembered later, unless
+   * its owner proves itself on a call before then. A `supersedes` that
+   * `canSupersede` refuses is a caller's bug (the route answers 400 first),
+   * and throws.
    */
   open(key: string, secret: string | undefined, supersedes?: string): OpenResult {
-    if (supersedes !== undefined && !isUnderBase(key, supersedes)) {
-      throw new Error('supersedes names a base the session key is not under');
+    if (supersedes !== undefined && !canSupersede(key, supersedes)) {
+      throw new Error('supersedes names no other key under the session key base');
     }
     this.sweep();
     const existing = this.entries.get(key);
@@ -142,18 +149,15 @@ export class SidecarSessions {
       lastUsed: this.now(),
       left: false,
     });
-    if (supersedes !== undefined) this.leave(supersedes, key);
+    if (supersedes !== undefined) this.leave(supersedes);
     return { kind: 'created', secret: created };
   }
 
-  /** The keys under `base` other than `kept` were left by their caller. */
-  private leave(base: string, kept: string): void {
-    for (const key of [...this.expiredKeys]) {
-      if (key !== kept && isUnderBase(key, base)) this.expiredKeys.delete(key);
-    }
-    for (const [key, entry] of this.entries) {
-      if (key !== kept && isUnderBase(key, base)) entry.left = true;
-    }
+  /** The key `left` was left by its caller. */
+  private leave(left: string): void {
+    this.expiredKeys.delete(left);
+    const entry = this.entries.get(left);
+    if (entry !== undefined) entry.left = true;
   }
 
   /** The live session under `key` when `secret` is its own, refreshing

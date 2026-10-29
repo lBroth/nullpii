@@ -852,17 +852,27 @@ describe('sidecar · shutdown', () => {
     expect(await stopsAfterATurn(stopped)).toBe(1);
   });
 
-  /** Open `key` as a caller that names `base` in the supersedes header,
-   * keeping the secret it hands out. */
-  async function openSuperseding(app: FastifyInstance, key: string, base: string) {
+  /** Open `key` as a caller that names `left`, a key it held and left, in
+   * the supersedes header, keeping the secret it hands out. */
+  async function openSuperseding(app: FastifyInstance, key: string, left: string) {
     const res = await app.inject({
       method: 'PUT',
       url: `/v1/sidecar/sessions/${key}`,
-      headers: { ...AUTH, [SUPERSEDES_HEADER]: base },
+      headers: { ...authFor(key), [SUPERSEDES_HEADER]: left },
     });
     const body = res.json() as { secret?: string };
     if (body.secret !== undefined) secrets.set(key, body.secret);
     return res;
+  }
+
+  /** Close session `key` with its secret, as its window does at the end. */
+  async function closeOwn(app: FastifyInstance, key: string) {
+    const del = await app.inject({
+      method: 'DELETE',
+      url: `/v1/sidecar/sessions/${key}`,
+      headers: authFor(key),
+    });
+    expect(del.statusCode).toBe(204);
   }
 
   /** As a mod reloaded with its session open: its secret is gone, so the
@@ -878,12 +888,7 @@ describe('sidecar · shutdown', () => {
     const moved = supersede ? await openSuperseding(app, 'w1.r1', 'w1') : await open(app, 'w1.r1');
     expect(moved.statusCode).toBe(201);
     // The reloaded window ends normally: it closes the key it holds.
-    const del = await app.inject({
-      method: 'DELETE',
-      url: '/v1/sidecar/sessions/w1.r1',
-      headers: authFor('w1.r1'),
-    });
-    expect(del.statusCode).toBe(204);
+    await closeOwn(app, 'w1.r1');
   }
 
   it('stops once a key its window left on a reload has ended by its TTL', async () => {
@@ -905,15 +910,28 @@ describe('sidecar · shutdown', () => {
     expect(await stopsAfterATurn(stopped)).toBe(0);
   });
 
-  it('forgets a remembered expired key under the base a new session supersedes', async () => {
+  it('a supersede never counts the new key itself as left', async () => {
+    const { app, clock } = await withShutdown(true, readyTracker());
+    await open(app, 'w1');
+    await closeOwn(app, 'w1');
+    expect((await openSuperseding(app, 'w1.r1', 'w1')).statusCode).toBe(201);
+    // The window under the new key goes idle and never closes it.
+    clock.t += TTL_MS + 1;
+    expect((await shutdownCall(app)).json()).toEqual({ error: 'sessions_unclosed' });
+  });
+
+  it('forgets only the remembered expired key it names', async () => {
     const { app, clock, stopped } = await withShutdown(true, readyTracker());
     await open(app, 'w1');
     await open(app, 'w1.r1');
     clock.t += TTL_MS + 1;
     expect((await shutdownCall(app)).json()).toEqual({ error: 'sessions_unclosed' });
-    secrets.clear();
-    expect((await openSuperseding(app, 'w1', 'w1')).statusCode).toBe(201);
-    await app.inject({ method: 'DELETE', url: '/v1/sidecar/sessions/w1', headers: authFor('w1') });
+    expect((await openSuperseding(app, 'w1.r2', 'w1')).statusCode).toBe(201);
+    await closeOwn(app, 'w1.r2');
+    // w1.r1 is not named: it is still a window that may come back.
+    expect((await shutdownCall(app)).json()).toEqual({ error: 'sessions_unclosed' });
+    expect((await openSuperseding(app, 'w1.r3', 'w1.r1')).statusCode).toBe(201);
+    await closeOwn(app, 'w1.r3');
     const res = await shutdownCall(app);
     expect(res.statusCode).toBe(202);
     expect(await stopsAfterATurn(stopped)).toBe(1);
@@ -947,11 +965,7 @@ describe('sidecar · shutdown', () => {
       payload: { value: placeholder },
     });
     expect((restored.json() as { value: string }).value).toBe('Mail John');
-    await app.inject({
-      method: 'DELETE',
-      url: '/v1/sidecar/sessions/w1.x',
-      headers: authFor('w1.x'),
-    });
+    await closeOwn(app, 'w1.x');
     expect((await shutdownCall(app)).json()).toEqual({ error: 'sessions_active', sessions: 1 });
     // That call proved the window is still here: idle past its TTL, it
     // counts as a window that may come back, as without the supersede.
@@ -960,37 +974,44 @@ describe('sidecar · shutdown', () => {
     expect(await stopsAfterATurn(stopped)).toBe(0);
   });
 
-  it('a supersede reaches only keys under its base', async () => {
-    // Another window's key, and one that only starts with the same letters.
-    for (const other of ['w2', 'w10']) {
-      const { app, clock } = await withShutdown(true, readyTracker());
-      await open(app, other);
-      clock.t += TTL_MS + 1;
-      expect((await openSuperseding(app, 'w1', 'w1')).statusCode).toBe(201);
-      await app.inject({
-        method: 'DELETE',
-        url: '/v1/sidecar/sessions/w1',
-        headers: authFor('w1'),
-      });
-      expect((await shutdownCall(app)).json()).toEqual({ error: 'sessions_unclosed' });
-    }
+  it("the owner's keep-alive PUT with its secret undoes a supersede too", async () => {
+    const { app, clock } = await withShutdown(true, readyTracker());
+    await open(app, 'w1');
+    expect((await openSuperseding(app, 'w1.x', 'w1')).statusCode).toBe(201);
+    await closeOwn(app, 'w1.x');
+    expect((await open(app, 'w1')).statusCode).toBe(200);
+    clock.t += TTL_MS + 1;
+    expect((await shutdownCall(app)).json()).toEqual({ error: 'sessions_unclosed' });
   });
 
-  it('refuses a supersedes base the key is not under, and opens nothing', async () => {
+  it('a supersede counts only when it creates the session: on an existing one it does nothing', async () => {
+    const { app, clock } = await withShutdown(true, readyTracker());
+    await open(app, 'w1');
+    await open(app, 'w1.r1');
+    // The owner of w1.r1 keeps it alive and names w1: nothing is created.
+    expect((await openSuperseding(app, 'w1.r1', 'w1')).statusCode).toBe(200);
+    await closeOwn(app, 'w1.r1');
+    clock.t += TTL_MS + 1;
+    expect((await shutdownCall(app)).json()).toEqual({ error: 'sessions_unclosed' });
+  });
+
+  it('refuses a supersedes that is not another key under the same base, and opens nothing', async () => {
     const { app } = await withShutdown(true, readyTracker());
-    for (const [key, base] of [
+    for (const [key, left] of [
       ['w2.x', 'w1'],
       ['w1x', 'w1'],
-      ['w1', 'w1.x'],
+      ['w1', 'w10'],
+      ['w1', 'w1'],
+      ['w1.r1', 'w1.r1'],
       ['w1', 'bad key'],
     ]) {
-      const res = await openSuperseding(app, key ?? '', base ?? '');
+      const res = await openSuperseding(app, key ?? '', left ?? '');
       expect(res.statusCode).toBe(400);
       expect(res.json()).toEqual({ error: 'invalid_supersedes' });
     }
     const repeated = await app.inject({
       method: 'PUT',
-      url: '/v1/sidecar/sessions/w1',
+      url: '/v1/sidecar/sessions/w1.r1',
       headers: { ...AUTH, [SUPERSEDES_HEADER]: ['w1', 'w1'] },
     });
     expect(repeated.statusCode).toBe(400);

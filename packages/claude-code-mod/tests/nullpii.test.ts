@@ -89,8 +89,8 @@ function fakeSidecar(
   /** `host:port` of every request, wherever it was sent. */
   const hosts: string[] = [];
   const secretsSent: Array<string | undefined> = [];
-  /** The supersedes header of the last PUT of each key, and the keys a
-   * created session made count as left. */
+  /** The supersedes header of the last PUT of each key, and the keys
+   * created sessions named as left. */
   const supersedes = new Map<string, string | undefined>();
   const left: string[] = [];
   const restoreBodies: string[] = [];
@@ -116,6 +116,9 @@ function fakeSidecar(
      * accepted a shutdown does while the process is on its way out, `FULL`
      * as one with every session in use. */
     refuseSession?: { status: number; error: string };
+    /** Run before a `PUT` sessions is answered: what happens meanwhile, such
+     * as the child the mod started exiting while the session opens. */
+    beforePut?: () => Promise<void>;
   } = {};
   // The policy the status reports, which a PUT replaces as the gateway does,
   // with a version that changes with it.
@@ -205,20 +208,17 @@ function fakeSidecar(
       secretsSent.push(presented);
       const key = decodeURIComponent(path.slice(SESSIONS_PREFIX.length).split('/')[0] ?? '');
       const secret = sessions.get(key);
+      if (method === 'PUT' && state.beforePut !== undefined) await state.beforePut();
       if (method === 'PUT' && state.refuseSession !== undefined) {
         return respond(state.refuseSession.status, { error: state.refuseSession.error });
       }
       if (method === 'PUT') supersedes.set(key, e.init?.headers?.['x-nullpii-supersedes']);
       if (method === 'PUT' && secret === undefined) {
         const created = `secret-${minted++}`;
-        // As the gateway: once created, the other keys under the base it
-        // names count as left by their caller (they stay open).
-        const base = supersedes.get(key);
-        if (base !== undefined) {
-          for (const other of sessions.keys()) {
-            if (other === base || other.startsWith(`${base}.`)) left.push(other);
-          }
-        }
+        // As the gateway: once created, the key it names counts as left by
+        // its caller (it stays open).
+        const named = supersedes.get(key);
+        if (named !== undefined) left.push(named);
         sessions.set(key, created);
         return respond(201, { status: 'created', secret: created });
       }
@@ -543,6 +543,11 @@ async function pollUntil(
   }
 }
 
+/** What `/pii` says. */
+async function piiStatus($): Promise<string> {
+  return (await $.command.run({ command: 'pii', args: '' })).text;
+}
+
 /** Whether `/pii` says masking is on: the start is over and the session open. */
 async function statusOn($): Promise<boolean> {
   return (await $.command.run({ command: 'pii', args: '' })).text.includes('Status: on');
@@ -655,6 +660,99 @@ test('the pinned sidecar that exited while the old one held the address is start
   expect(status.text).toContain('Status: on');
   expect(status.text).not.toContain('exited while');
 });
+
+test('a child that exits while its session opens on an old sidecar that is closing is started again once', async ($, on) => {
+  // Nothing answers at the session start: no old sidecar is known to hold
+  // the address yet.
+  const opts = { down: true };
+  const { sidecar, clock } = beforeStart($, on, opts);
+  let exitFirst: () => void = () => undefined;
+  const firstExits = new Promise<void>((resolve) => {
+    exitFirst = resolve;
+  });
+  const spawned: string[][] = [];
+  on('process.spawn', async function* ($, e) {
+    spawned.push(e.argv);
+    // The first could not keep the port the old one held, and exits while
+    // the session opens; the second runs on.
+    if (spawned.length === 1) {
+      await firstExits;
+      return { value: { code: 1, signal: null } };
+    }
+    await new Promise<never>(() => undefined);
+  });
+  await start($);
+  expect(spawned.length).toBe(1);
+  // An old sidecar on its way out answers ready, then refuses the session
+  // (503), and the first child exits in between.
+  opts.down = false;
+  sidecar.state.startup = { phase: 'ready' };
+  sidecar.state.refuseSession = CLOSING;
+  sidecar.state.beforePut = async () => {
+    exitFirst();
+    for (let turn = 0; turn < 5; turn += 1) await new Promise((r) => setTimeout(r, 10));
+  };
+  await pollUntil(clock, () => sidecar.statuses.includes(503));
+  sidecar.state.beforePut = undefined;
+  // The old one goes: the pinned one is started again, once.
+  opts.down = true;
+  await pollUntil(clock, () => spawned.length === 2);
+  expect(spawned.length).toBe(2);
+  opts.down = false;
+  sidecar.state.refuseSession = undefined;
+  await pollUntil(clock, () => statusOn($));
+  expect(sidecar.statuses).toContain(201);
+  expect(spawned.length).toBe(2);
+});
+
+test('the pinned sidecar is started again only once: a second exit ends the start', async ($, on) => {
+  const opts = { down: false };
+  const { sidecar, clock } = beforeStart($, on, opts);
+  sidecar.state.refuseSession = CLOSING;
+  const spawned: string[][] = [];
+  // biome-ignore lint/correctness/useYield: a stand-in child that exits at once.
+  on('process.spawn', async function* ($, e) {
+    spawned.push(e.argv);
+    // Every child exits at once: the address stays taken.
+    return { value: { code: 1, signal: null } };
+  });
+  await start($);
+  opts.down = true;
+  await pollUntil(clock, () => spawned.length === 2);
+  // More polls: no third start, and the start ends saying the child exited.
+  await pollUntil(clock, async () => (await piiStatus($)).includes('exited while'));
+  for (let poll = 0; poll < 3; poll += 1) await clock.advance(POLL_MS);
+  expect(spawned.length).toBe(2);
+  expect(await piiStatus($)).toContain('exited while');
+});
+
+test(
+  'with while_starting = pass, a start that a closing sidecar refused the session in goes on as a start',
+  { options: { while_starting: 'pass' } },
+  async ($, on) => {
+    const sidecar = fakeSidecar({ down: false });
+    stubSession(on, sidecar);
+    const clock = mock.clock(on, { now: 1_700_000_000_000 });
+    sidecar.state.refuseSession = CLOSING;
+    on('process.spawn', async function* () {
+      await new Promise<never>(() => undefined);
+    });
+    const sent: string[] = [];
+    on('prompt.submit', ($, e) => {
+      sent.push(e.text);
+      return { text: e.text };
+    });
+    await start($);
+    // The old one answers ready but refuses the session: still starting.
+    sidecar.state.startup = { phase: 'ready' };
+    await pollUntil(clock, () => sidecar.statuses.filter((s) => s === 503).length >= 2);
+    for (let turn = 0; turn < 5; turn += 1) await new Promise((r) => setTimeout(r, 10));
+    // Under `pass` a prompt of a start goes out as typed, and the band says so.
+    const out = await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+    expect(out.drop).toBeUndefined();
+    expect(sent.at(-1)).toBe('Mail John');
+  },
+);
 
 test('an older sidecar whose model is still coming up is not stopped: the window that started it waits for it', async ($, on) => {
   const { sidecar, spawned } = startAgainst($, on, {
@@ -1348,21 +1446,34 @@ test('a reloaded module opens a new key, tells the sidecar it left the old one, 
   ]);
 });
 
-test('every session the mod opens names its session id; a /pii try session names none', async ($, on) => {
-  const sidecar = fakeSidecar();
+test('a start after the session was closed names no key, and a /pii try session names none', async ($, on) => {
+  // Another process holds the session id, so each start moves to a new key.
+  const sidecar = fakeSidecar({ liveKeys: ['session-1'] });
   stubSession(on, sidecar);
+  const clock = mock.clock(on, { now: 1_700_000_000_000 });
   await start($);
-  expect(sidecar.supersedes.get('session-1')).toBe('session-1');
+  const first = [...sidecar.sessions.keys()].filter((k) => k !== 'session-1');
+  expect(first).toHaveLength(1);
+  await $.session.end(END);
+  expect(sidecar.sessions.has(first[0] ?? '')).toBe(false);
+  // The key this process held is closed: nothing is left to name.
+  await clock.advance(1_000);
+  await start($);
+  const second = [...sidecar.sessions.keys()].filter((k) => k !== 'session-1');
+  expect(second).toHaveLength(1);
+  expect(second[0]).not.toBe(first[0]);
+  expect(sidecar.supersedes.get(second[0] ?? '')).toBeUndefined();
   await $.command.run(typed('pii', 'try Mail John'));
   const tries = [...sidecar.supersedes.keys()].filter((k) => k.startsWith('try-'));
   expect(tries).toHaveLength(1);
   expect(sidecar.supersedes.get(tries[0] ?? '')).toBeUndefined();
+  expect(sidecar.left).toEqual([]);
 });
 
 test('a live session it cannot prove it owns makes the mod open a new one under a new key', async ($, on) => {
-  // As after Claude Code restarted on a resumed session: the sidecar still
-  // holds the session under the session id, and its secret went with the
-  // process that ended.
+  // As another Claude Code process on the same session id (a resume in
+  // another terminal, or of a window that was killed): the sidecar holds
+  // the session under the id, and its secret is that other process's.
   const sidecar = fakeSidecar({ liveKeys: ['session-1'] });
   stubSession(on, sidecar);
   mock.clock(on, { now: 1_700_000_000_000 });
@@ -1378,6 +1489,11 @@ test('a live session it cannot prove it owns makes the mod open a new one under 
   const opened = [...sidecar.sessions.keys()].filter((k) => k !== 'session-1');
   expect(opened).toHaveLength(1);
   expect(opened[0]).toMatch(/^session-1\.[0-9a-z]+$/);
+  // That key is another process's (this one never held it): it is not
+  // named as left, so the sidecar still counts it as a window that may come
+  // back, which keeps it from being replaced while that window is idle.
+  expect(sidecar.supersedes.get(opened[0] ?? '')).toBeUndefined();
+  expect(sidecar.left).toEqual([]);
   const status = await $.command.run({ command: 'pii', args: '' });
   expect(status.text).toContain('Status: on');
 });

@@ -111,11 +111,15 @@ const SESSION_EXISTS = 409;
 const SIDECAR_CLOSING = 503;
 /** Proves to the sidecar that this mod opened the session. */
 const SESSION_SECRET_HEADER = 'x-nullpii-session-secret';
-/** Tells the sidecar, when this mod opens a session, which Claude Code
- * session id it holds keys under: the other keys under that id are ones
- * this window left (a reload loses their secrets), so the sidecar does not
- * count them as a window that may still come back once they expire. */
+/** Tells the sidecar, when this mod opens a session after a reload of its
+ * module, the key the module before it held and can no longer close (its
+ * secret went with it): the sidecar then does not count that key as a
+ * window that may still come back once its idle TTL ends it. */
 const SUPERSEDES_HEADER = 'x-nullpii-supersedes';
+/** The sidecar key this Claude Code process holds open, kept in `$.state`
+ * so a reload of the module knows it held one. Never the secret: any
+ * plugin can read `$.state`. */
+const HELD_KEY = { plugin: 'nullpii', key: 'heldKey' } as const;
 const KEY_SUFFIX_RADIX = 36;
 const NO_TOKEN =
   'no sidecar token: set it with /plugin configure (sidecar_token), or NULLPII_SIDECAR_TOKEN';
@@ -280,9 +284,12 @@ interface Failure {
 // Module scope is how a mod's hooks share data: the mods API passes no
 // context object between them. A reload of the module starts these over,
 // the session secret included: it stays in this module's memory only
-// (`$.state` would survive the reload, but any plugin can read it). The
-// reloaded module opens a new sidecar session under a new key, and tells
-// the sidecar that it left the old one (`SUPERSEDES_HEADER`).
+// (`$.state` would survive the reload, but any plugin can read it). Only
+// the key this process holds open is kept in `$.state` (`HELD_KEY`), so the
+// reloaded module, which opens a new sidecar session under a new key, can
+// tell the sidecar it left that one (`SUPERSEDES_HEADER`). Another Claude
+// Code process on the same session id (a resume in another terminal) has
+// no such key, and names none.
 
 // Display-only restores, keyed by the masked text. In memory only, bounded,
 // and cleared when the session ends.
@@ -301,6 +308,10 @@ let sessionKey = '';
 // The secret the sidecar handed out for `sessionKey`: without it the
 // bearer token alone (which commands may inherit) reads nothing.
 let sessionSecret: string | undefined;
+// The key an earlier load of this module in this process held open and
+// could not close (`HELD_KEY`), until a session opens and the sidecar has
+// been told this window left it.
+let leftKey: string | undefined;
 // The policy the sidecar runs with, as this session made or accepted it:
 // read when the session opens, replaced by /pii and by the user's answer
 // about a change made elsewhere.
@@ -524,10 +535,9 @@ async function accept($, accepted: Policy): Promise<void> {
 }
 
 /** PUT the session `key`, presenting `secret` when there is one, and
- * `supersedes`, the Claude Code session id this window holds its keys
- * under, when it is this window's own session; resolves with the secret
- * that now holds it: a new one when the sidecar created the session, else
- * the one presented. */
+ * `supersedes`, a key this process held and left, when there is one;
+ * resolves with the secret that now holds it: a new one when the sidecar
+ * created the session, else the one presented. */
 async function putSession(
   $,
   key: string,
@@ -553,29 +563,39 @@ function openSession($): Promise<void> {
   return opening;
 }
 
+/** The key this window left that a session opened under `key` may name
+ * to the sidecar: the one an earlier load of this module held, when it is
+ * another key under the same session id (the sidecar refuses any other). */
+function leftFor(key: string): string | undefined {
+  if (leftKey === undefined || leftKey === key) return undefined;
+  const sameBase = leftKey === sessionBase || leftKey.startsWith(`${sessionBase}.`);
+  return sameBase ? leftKey : undefined;
+}
+
 /** A live session under the key whose secret this module no longer has
- * (it was reloaded, or a Claude Code process that ended opened it for a
- * resumed session) cannot be taken over, so a new one opens under a new
- * key: placeholders from before stay masked, as after a sidecar restart.
- * Every PUT names the session id this window's keys are under, so the
- * sidecar, once it creates the session, counts the other keys under that
- * id as left by this window: they still end by their idle TTL, but are not
- * remembered as a window that may come back (which would keep the sidecar
- * from being replaced). The key and its secret change together, once the
- * sidecar holds both. */
+ * (it was reloaded, or another Claude Code process opened it: a resume in
+ * another terminal, or of a window that was killed) cannot be taken over,
+ * so a new one opens under a new key: placeholders from before stay
+ * masked, as after a sidecar restart. After a reload, the PUT names the
+ * key the module before held (`leftFor`), so the sidecar does not remember
+ * it as a window that may come back once its idle TTL ends it; a key
+ * another process holds is never named. The key and its secret change
+ * together, once the sidecar holds both, and the key is kept in `$.state`. */
 async function openSessionOnce($): Promise<void> {
   let key = sessionKey;
   let secret: string | undefined;
   try {
-    secret = await putSession($, key, sessionSecret, sessionBase);
+    secret = await putSession($, key, sessionSecret, leftFor(key));
   } catch (err) {
     if (!(err instanceof SidecarError) || err.status !== SESSION_EXISTS) throw err;
     const now = await $.clock.now();
     key = `${sessionBase}.${Math.floor(now).toString(KEY_SUFFIX_RADIX)}`;
-    secret = await putSession($, key, undefined, sessionBase);
+    secret = await putSession($, key, undefined, leftFor(key));
   }
   sessionKey = key;
   sessionSecret = secret;
+  leftKey = undefined;
+  await $.state.set(HELD_KEY, key);
   await reviewPolicy($);
   problem = undefined;
   // A band drawn before the session opened (a hot reload draws it at once,
@@ -1603,6 +1623,9 @@ export function register(on, options) {
     sessionBase = await $.session.id();
     sessionKey = sessionBase;
     sessionSecret = undefined;
+    // A reload of the module runs this hook again: a key the module before
+    // it held open is one this window left.
+    leftKey = ((await $.state.get(HELD_KEY)) as { value?: string | null }).value ?? undefined;
     lastFailure = undefined;
     // A session starts masked: a pause was the session before it's alone.
     paused = false;
@@ -1647,6 +1670,7 @@ export function register(on, options) {
     try {
       await sidecar($, 'DELETE', '');
       sessionSecret = undefined;
+      await $.state.set(HELD_KEY, null);
     } catch (err) {
       // The sidecar's idle TTL drops the session anyway.
       $.ui.log(`nullpii: session not closed: ${shownReason(failureOf(err))}`, { to: 'debug' });

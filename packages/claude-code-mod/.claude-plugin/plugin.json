@@ -6,6 +6,7 @@
     "name": "nullpii contributors"
   },
   "license": "Apache-2.0",
+  "types": "./types/index.d.ts",
   "homepage": "https://lbroth.github.io/nullpii/",
   "userConfig": {
     "sidecar_token": {

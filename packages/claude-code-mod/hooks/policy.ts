@@ -425,11 +425,10 @@ export function formatReport(
   ].join('\n');
 }
 
-/** What a sidecar's status says about itself, for the two decisions the mod
- * takes from it: whether it can take `keys: false`, and whether it is an
- * idle, older release that may be replaced. */
+/** What a sidecar's status says about itself, for the decision the mod
+ * takes from it: whether it is an idle, older release that may be
+ * replaced. */
 export interface SidecarSelf {
-  readonly sanitizeKeys: boolean;
   readonly shutdown: boolean;
   readonly gatewayVersion: string | undefined;
   readonly sessions: number | undefined;
@@ -438,7 +437,7 @@ export interface SidecarSelf {
 const RELEASE = /^(\d+)\.(\d+)\.(\d+)(?:[-+][A-Za-z0-9.-]+)?$/;
 
 /** The sidecar facts in a status answer, each only when it has the expected
- * type: an older sidecar reports none of the `features`, so both are false. */
+ * type: an older sidecar reports no `features`, so `shutdown` is false. */
 export function readSidecarSelf(status: unknown): SidecarSelf {
   const root = (typeof status === 'object' && status !== null ? status : {}) as Record<
     string,
@@ -448,7 +447,6 @@ export function readSidecarSelf(status: unknown): SidecarSelf {
     typeof root.features === 'object' && root.features !== null ? root.features : {}
   ) as Record<string, unknown>;
   return {
-    sanitizeKeys: features.sanitizeKeys === true,
     shutdown: features.shutdown === true,
     gatewayVersion: typeof root.gatewayVersion === 'string' ? root.gatewayVersion : undefined,
     sessions: typeof root.sessions === 'number' ? root.sessions : undefined,
@@ -467,27 +465,4 @@ export function olderRelease(running: string | undefined, pinned: string): boole
     if (diff !== 0) return diff < 0;
   }
   return false;
-}
-
-/** The built-in tools whose result has the keys of a fixed output schema
- * (WebFetch answers `code`, an HTTP status; Edit answers `oldString`). The
- * host checks a result against that schema, so a key masked there fails the
- * call. A tool outside this list (an MCP tool) can key its data by a name or
- * an email, so its keys stay masked. */
-const SCHEMA_KEYED_TOOLS: ReadonlySet<string> = new Set([
-  'Bash',
-  'Read',
-  'Edit',
-  'MultiEdit',
-  'Write',
-  'NotebookEdit',
-  'Grep',
-  'Glob',
-  'WebFetch',
-  'WebSearch',
-]);
-
-/** Whether the keys of `tool`'s result are its schema's own and must stay. */
-export function keepsResultKeys(tool: unknown): boolean {
-  return typeof tool === 'string' && SCHEMA_KEYED_TOOLS.has(tool);
 }

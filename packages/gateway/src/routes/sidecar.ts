@@ -53,6 +53,9 @@ export const SESSION_SECRET_HEADER = 'x-nullpii-session-secret';
  * under it. */
 export const POLICY_VERSION_HEADER = 'x-nullpii-policy-version';
 const POLICY_CHANGED = 412;
+/** A shutdown was accepted: until the process ends, new sessions are
+ * refused, since one opened now would die with it. */
+const SIDECAR_CLOSING = 503;
 const REFUSAL_REPLIES: Readonly<Record<SessionRefusal, { status: number; error: string }>> = {
   not_found: { status: 404, error: 'session_not_found' },
   forbidden: { status: 403, error: 'bad_session_secret' },
@@ -86,12 +89,7 @@ const SANITIZE_BODY = {
   type: 'object',
   required: ['value'],
   additionalProperties: false,
-  properties: {
-    value: {},
-    // False keeps the object keys of `value` (a tool result's schema names
-    // them); by default they are sanitized too.
-    keys: { type: 'boolean' },
-  },
+  properties: { value: {} },
 } as const;
 
 const RESTORE_BODY = {
@@ -122,7 +120,7 @@ interface SessionRequest {
 }
 
 interface SanitizeRequest extends SessionRequest {
-  Body: { value: unknown; keys?: boolean };
+  Body: { value: unknown };
 }
 
 interface RestoreRequest extends SessionRequest {
@@ -274,6 +272,9 @@ export async function registerSidecarRoutes(
     clearInterval(sweeper);
     sessions.closeAll();
   });
+  // Set once a shutdown call was accepted: the process is on its way out,
+  // so no session may open in the time the 202 and the exit are apart.
+  let closing = false;
 
   await app.register(async (scope) => {
     // One string leaf over the engine's per-call cap: the caller has to
@@ -316,8 +317,8 @@ export async function registerSidecarRoutes(
       sessions: sessions.size,
       ...opts.runtime(),
       // What this sidecar can do that an older one could not: a caller
-      // asks before using it, as an older sidecar refuses unknown fields.
-      features: { sanitizeKeys: true, shutdown: opts.shutdown !== undefined },
+      // asks before using it, as an older sidecar has no such route.
+      features: { shutdown: opts.shutdown !== undefined },
       policy: policyView(),
       ...(opts.startup !== undefined && { startup: opts.startup.current }),
     }));
@@ -351,6 +352,9 @@ export async function registerSidecarRoutes(
       '/v1/sidecar/sessions/:key',
       { schema: { params: SESSION_PARAMS } },
       async (req, reply) => {
+        // A sidecar that answered 202 is going away: a session opened now
+        // would die with the process, so it is refused.
+        if (closing) return reply.code(SIDECAR_CLOSING).send({ error: 'sidecar_closing' });
         if (!isValidSessionKey(req.params.key)) {
           return reply.code(400).send({ error: 'invalid_session_key' });
         }
@@ -386,7 +390,11 @@ export async function registerSidecarRoutes(
         if (sessions.size > 0) {
           return reply.code(409).send({ error: 'sessions_active', sessions: sessions.size });
         }
-        setImmediate(shutdown);
+        // A second call is told the same, and stops nothing twice.
+        if (!closing) {
+          closing = true;
+          setImmediate(shutdown);
+        }
         return reply.code(202).send({ status: 'closing' });
       });
     }
@@ -403,16 +411,13 @@ export async function registerSidecarRoutes(
         const version = opts.policy.version;
         if (staleVersion(req, version)) return sendPolicyChanged(reply, version);
         const generation = opts.policy.generation;
-        const keys = req.body.keys !== false;
-        const cacheKey = SanitizeCache.keyOf(
-          `${version}\n${keys}\n${JSON.stringify(req.body.value)}`,
-        );
+        const cacheKey = SanitizeCache.keyOf(`${version}\n${JSON.stringify(req.body.value)}`);
         const cached = session.cache.get(cacheKey);
         if (cached !== undefined) {
           req.log.info({ cache: 'hit' }, 'sidecar.sanitize');
           return reply.header(CACHE_HEADER, 'hit').type('application/json').send(cached);
         }
-        const r = await sanitizeValue(np, req.body.value, session.vaultId, keys);
+        const r = await sanitizeValue(np, req.body.value, session.vaultId);
         // The engine reads the policy as it goes, so an answer that ran
         // across a change (even one put back since) was masked under a mix:
         // a caller that named its version gets 412, and nothing is cached.

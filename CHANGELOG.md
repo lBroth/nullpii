@@ -5,17 +5,13 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Fixed
-
-- Mod and gateway: a built-in tool's result could fail with `tool.call step resolved WebFetch with a result that does not match its output shape` (or Edit, with `oldString` and `newString`) when the detector flagged a key of the result, such as `code`: the sidecar masked the key, and Claude Code checks the result against the tool's output schema. `POST /v1/sidecar/sessions/:key/sanitize` takes `keys: false` to leave the object keys as they are and mask the values only, and the mod sends it for the results of the built-in tools with a fixed output schema (`Bash`, `Read`, `Edit`, `MultiEdit`, `Write`, `NotebookEdit`, `Grep`, `Glob`, `WebFetch`, `WebSearch`). The result of any other tool, an MCP tool for one, keeps its keys masked, since it may key data by a name or an email, and a prompt is masked as before. The mod sends the field only to a sidecar whose status says it takes it (`features.sanitizeKeys`), so an older sidecar still gets what it understands.
-
 ### Added
 
-- Mod and gateway: at the start of a session the mod stops a sidecar of an older release than the one it pins and starts the pinned one, so a plugin update no longer keeps talking to the old process. It does so only for a sidecar the mod started (the mod sets the new `NULLPII_SIDECAR_SHUTDOWN=on` on it, which adds `POST /v1/sidecar/shutdown`, and no other launch has the route) and only while no session is open; otherwise the sidecar stays and `/pii doctor` reports its release. The sidecar status reports `features: { sanitizeKeys, shutdown }`.
+- Mod and gateway: at the start of a session the mod stops a sidecar of an older release than the one it pins and starts the pinned one, so a plugin update no longer keeps talking to the old process. It does so only for a sidecar the mod started (the mod sets the new `NULLPII_SIDECAR_SHUTDOWN=on` on it, which adds `POST /v1/sidecar/shutdown`, and no other launch has the route) and only while no session is open; otherwise the sidecar stays and `/pii doctor` reports its release. Once the route has answered 202, the sidecar refuses new sessions with 503 `sidecar_closing` until the process ends. The sidecar status reports `features: { shutdown }`.
 
 ### Notes
 
-- A sidecar that is already running, of any release before this one, has neither the route nor the `keys` field: stop it once by hand after updating (find it with `lsof -nP -iTCP:8787 -sTCP:LISTEN`), and the replacement is automatic from then on.
+- A sidecar that is already running, of any release before this one, does not have the route: stop it once by hand after updating (find it with `lsof -nP -iTCP:8787 -sTCP:LISTEN`), and the replacement is automatic from then on.
 
 ## [0.5.4] — 2026-10-27
 

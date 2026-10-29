@@ -92,6 +92,27 @@ export async function buildServer(opts: BuildServerOptions): Promise<FastifyInst
   return app;
 }
 
+/** The `buildServer` option that gives the sidecar its shutdown route:
+ * only a starter that asked for it with `NULLPII_SIDECAR_SHUTDOWN=on`
+ * gets one, so a gateway started any other way (Docker, by hand, inside
+ * an app) cannot be stopped by a caller with the token. */
+export function shutdownOption(
+  config: GatewayConfig,
+  stop: () => void,
+): Pick<BuildServerOptions, 'shutdown'> {
+  return config.sidecarShutdown ? { shutdown: stop } : {};
+}
+
+/** Ask this process to stop the way its own SIGTERM handling does: run the
+ * listeners the binary registered (close the server, then exit) on every
+ * platform, and fall back to the signal only when there is none. On
+ * Windows the signal itself ends the process without running any listener,
+ * so the shutdown route's 202 would never reach its caller that way. */
+function requestStop(): void {
+  if (process.emit('SIGTERM', 'SIGTERM')) return;
+  process.kill(process.pid, 'SIGTERM');
+}
+
 /** Create the engine from `config` (its policy, backend and model
  * directory), build the app and listen on `config.host:config.port`, then
  * warm the model up in the background (its first start downloads it, about
@@ -104,14 +125,11 @@ export async function startServer(config: GatewayConfig): Promise<FastifyInstanc
     ...(config.modelDir !== undefined && { modelDir: config.modelDir }),
   });
   const startup = new StartupTracker();
-  // The binary closes the server on SIGTERM, so the shutdown route sends it,
-  // and only when the starter asked for the route (`sidecarShutdown`).
-  const shutdown = () => void process.kill(process.pid, 'SIGTERM');
   const app = await buildServer({
     config,
     np,
     startup,
-    ...(config.sidecarShutdown && { shutdown }),
+    ...shutdownOption(config, requestStop),
   });
   await app.listen({ host: config.host, port: config.port });
   // The warmup runs after the listen, so the sidecar answers its status

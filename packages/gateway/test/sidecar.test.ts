@@ -31,7 +31,7 @@ import {
   SANITIZE_CACHE_MAX_ENTRIES,
   SanitizeCache,
 } from '../src/sanitize-cache.js';
-import { buildServer } from '../src/server.js';
+import { buildServer, shutdownOption } from '../src/server.js';
 import { StartupTracker } from '../src/startup.js';
 import { BASE_TEST_CONFIG } from './fixtures.js';
 
@@ -318,7 +318,7 @@ describe('sidecar · status', () => {
       nullpiiVersion: expect.stringMatching(/^\d+\.\d+\.\d+$/),
       backend: 'cpu',
       model: { revision: TEST_MODEL_REVISION, filesPinned: true },
-      features: { sanitizeKeys: true, shutdown: false },
+      features: { shutdown: false },
       policy: {
         version: expect.stringMatching(/^[0-9a-f]{32}$/),
         file: '/home/node/.config/nullpii/config.json',
@@ -585,68 +585,6 @@ describe('sidecar · sanitize and restore', () => {
     expect(body.replacements).toBe(2);
   });
 
-  /** A session whose detector also flags the bare word `code`, then
-   * `value` sanitized in it with the request's `keys` flag. */
-  async function sanitizeWithFlaggedCode(value: unknown, keys?: boolean) {
-    const engine = buildMockNullPii();
-    const base = engine.np.sanitize.bind(engine.np);
-    const flagged = engine.np as unknown as { sanitize: NullPii['sanitize'] };
-    flagged.sanitize = async (text, sessionId) => {
-      if (text !== 'code') return base(text, sessionId);
-      const id = sessionId ?? engine.vault.createSession();
-      const spans = [{ label: 'secret' as const, start: 0, end: text.length, text, score: 1 }];
-      const r = engine.vault.sanitize(text, spans, id);
-      return { sessionId: id, sanitized: r.sanitized, spans, modelUnscannedWords: 0 };
-    };
-    const { app } = await setup({}, engine);
-    await open(app, 's1');
-    const res = await app.inject({
-      method: 'POST',
-      url: '/v1/sidecar/sessions/s1/sanitize',
-      headers: authFor('s1'),
-      payload: { value, ...(keys !== undefined && { keys }) },
-    });
-    expect(res.statusCode).toBe(200);
-    return (res.json() as { value: Record<string, unknown> }).value;
-  }
-
-  it('keeps the keys a tool result is defined by when the request says keys: false', async () => {
-    // A tool's result schema names its keys (WebFetch: `code`, an HTTP
-    // status). A masked key makes the host reject the result with
-    // "expected number, received undefined", so the call fails.
-    const out = await sanitizeWithFlaggedCode({ code: 200, bytes: 10 }, false);
-    expect(Object.keys(out)).toEqual(['code', 'bytes']);
-    expect(out.code).toBe(200);
-  });
-
-  it('still masks object keys by default', async () => {
-    const out = await sanitizeWithFlaggedCode({ code: 200, bytes: 10 });
-    expect(Object.keys(out)).toEqual([expect.stringContaining('{{PII_'), 'bytes']);
-  });
-
-  it('masks the string values even with keys: false', async () => {
-    const out = await sanitizeWithFlaggedCode({ code: 'code', owner: 'John' }, false);
-    expect(Object.keys(out)).toEqual(['code', 'owner']);
-    expect(out.code).toContain('{{PII_');
-    expect(out.owner).toContain('{{PII_');
-  });
-
-  it('answers a value again when only its keys flag differs (the cache keys on it)', async () => {
-    const { app } = await setup();
-    await open(app, 's1');
-    const ask = async (keys: boolean) => {
-      const res = await app.inject({
-        method: 'POST',
-        url: '/v1/sidecar/sessions/s1/sanitize',
-        headers: authFor('s1'),
-        payload: { value: { 'john@acme.io': 'owner' }, keys },
-      });
-      return Object.keys((res.json() as { value: object }).value);
-    };
-    expect(await ask(true)).toEqual([expect.stringContaining('{{PII_')]);
-    expect(await ask(false)).toEqual(['john@acme.io']);
-  });
-
   it('restores only the named fields of a tool input', async () => {
     const { app } = await setup();
     await open(app, 's1');
@@ -762,52 +700,73 @@ describe('sidecar · sanitize and restore', () => {
 });
 
 describe('sidecar · shutdown', () => {
-  async function withShutdown(onShutdown: () => void) {
+  /** A server built as `startServer` builds one: the route only when the
+   * config asks for it, with a stop function the test counts calls of —
+   * the real one would end the test runner. */
+  async function withShutdown(on: boolean) {
     const { np } = buildMockNullPii();
-    const app = await buildServer({ config: BASE_CONFIG, np, shutdown: onShutdown });
+    let stopped = 0;
+    const config = { ...BASE_CONFIG, sidecarShutdown: on };
+    const app = await buildServer({
+      config,
+      np,
+      ...shutdownOption(config, () => {
+        stopped += 1;
+      }),
+    });
     apps.push(app);
-    return app;
+    return { app, stopped: () => stopped };
   }
 
-  it('is not registered when the server has no way to stop', async () => {
-    const { app } = await setup();
+  it('is not given to a server the starter did not ask to be stoppable', async () => {
+    const { app } = await withShutdown(false);
     const res = await app.inject({ method: 'POST', url: '/v1/sidecar/shutdown', headers: AUTH });
     expect(res.statusCode).toBe(404);
   });
 
   it('needs the token', async () => {
-    let stopped = 0;
-    const app = await withShutdown(() => {
-      stopped += 1;
-    });
+    const { app, stopped } = await withShutdown(true);
     const res = await app.inject({ method: 'POST', url: '/v1/sidecar/shutdown' });
     expect(res.statusCode).toBe(401);
     await new Promise((r) => setImmediate(r));
-    expect(stopped).toBe(0);
+    expect(stopped()).toBe(0);
   });
 
-  it('stops an idle sidecar', async () => {
-    let stopped = 0;
-    const app = await withShutdown(() => {
-      stopped += 1;
-    });
+  it('stops an idle sidecar the starter asked to be stoppable', async () => {
+    const { app, stopped } = await withShutdown(true);
     const res = await app.inject({ method: 'POST', url: '/v1/sidecar/shutdown', headers: AUTH });
     expect(res.statusCode).toBe(202);
     await new Promise((r) => setImmediate(r));
-    expect(stopped).toBe(1);
+    expect(stopped()).toBe(1);
   });
 
   it('refuses while a session is open, and stops nothing', async () => {
-    let stopped = 0;
-    const app = await withShutdown(() => {
-      stopped += 1;
-    });
+    const { app, stopped } = await withShutdown(true);
     await open(app, 's1');
     const res = await app.inject({ method: 'POST', url: '/v1/sidecar/shutdown', headers: AUTH });
     expect(res.statusCode).toBe(409);
     expect(res.json()).toEqual({ error: 'sessions_active', sessions: 1 });
     await new Promise((r) => setImmediate(r));
-    expect(stopped).toBe(0);
+    expect(stopped()).toBe(0);
+  });
+
+  it('refuses a new session once it has answered 202, until the process ends', async () => {
+    const { app } = await withShutdown(true);
+    const res = await app.inject({ method: 'POST', url: '/v1/sidecar/shutdown', headers: AUTH });
+    expect(res.statusCode).toBe(202);
+    const put = await app.inject({ method: 'PUT', url: '/v1/sidecar/sessions/s1', headers: AUTH });
+    expect(put.statusCode).toBe(503);
+    expect(put.json()).toEqual({ error: 'sidecar_closing' });
+  });
+
+  it('answers 202 again without stopping a second time', async () => {
+    const { app, stopped } = await withShutdown(true);
+    const first = await app.inject({ method: 'POST', url: '/v1/sidecar/shutdown', headers: AUTH });
+    const second = await app.inject({ method: 'POST', url: '/v1/sidecar/shutdown', headers: AUTH });
+    expect(first.statusCode).toBe(202);
+    expect(second.statusCode).toBe(202);
+    await new Promise((r) => setImmediate(r));
+    expect(stopped()).toBe(1);
   });
 });
 

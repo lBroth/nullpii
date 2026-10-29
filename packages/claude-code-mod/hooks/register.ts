@@ -41,7 +41,6 @@ import {
   formatPolicy,
   formatReport,
   hasPlaceholder,
-  keepsResultKeys,
   olderRelease,
   optionFlag,
   optionString,
@@ -104,6 +103,9 @@ const CHALLENGE_PATH = '/v1/sidecar/challenge';
 const JSON_TYPE = { 'content-type': 'application/json' };
 const SESSION_NOT_FOUND = 404;
 const SESSION_EXISTS = 409;
+/** The sidecar's answer to a `PUT` sessions once it has accepted a shutdown:
+ * a session opened now would die with the process, so it refuses one. */
+const SIDECAR_CLOSING = 503;
 /** Proves to the sidecar that this mod opened the session. */
 const SESSION_SECRET_HEADER = 'x-nullpii-session-secret';
 const KEY_SUFFIX_RADIX = 36;
@@ -293,10 +295,6 @@ let sessionSecret: string | undefined;
 // read when the session opens, replaced by /pii and by the user's answer
 // about a change made elsewhere.
 let policy: Policy | undefined;
-// Whether the sidecar takes `keys: false` on a sanitize, as its status says:
-// a tool result keeps its keys then. An older sidecar refuses the field, so
-// until a status says so the result is sent as before.
-let sidecarKeepsKeys = false;
 // Why the mod is blocking, shown above the prompt; undefined while healthy.
 let problem: string | undefined = NO_TOKEN;
 // The most recent mod-written failure, retained after a later recovery for /pii doctor.
@@ -452,7 +450,6 @@ function reviewPolicy($): Promise<void> {
   if (reviewing !== undefined) return reviewing;
   reviewing = (async () => {
     const status = (await request($, 'GET', STATUS_PATH)) as { policy?: Policy };
-    sidecarKeepsKeys = readSidecarSelf(status).sanitizeKeys;
     await settlePolicy($, status.policy);
   })().finally(() => {
     reviewing = undefined;
@@ -550,28 +547,23 @@ async function openSessionOnce($): Promise<void> {
   redraw($);
 }
 
-/** Mask every string in `value`, and its object keys unless `keys` is false
- * (a value whose keys a schema defines, a tool result, keeps them: a masked
- * key fails the host's check of the result). A session the sidecar dropped
- * (restart or idle TTL) is opened again: nothing restores into it, but
- * masking works. While a sidecar this session started comes up, nothing is
- * sent at all: the call fails closed with the band's phase line. */
-async function sanitize($, value: unknown, keys = true): Promise<Sanitized> {
+/** Mask every string in `value`. A session the sidecar dropped (restart or
+ * idle TTL) is opened again: nothing restores into it, but masking works.
+ * While a sidecar this session started comes up, nothing is sent at all:
+ * the call fails closed with the band's phase line. */
+async function sanitize($, value: unknown): Promise<Sanitized> {
   if (phase !== undefined) throw new Error(phaseLine());
-  // An older sidecar refuses the field, so it is sent only when the status
-  // said it is understood (read again whenever the session is opened).
-  const body = () => (keys || !sidecarKeepsKeys ? { value } : { value, keys: false });
   try {
-    return (await sidecar($, 'POST', '/sanitize', body())) as Sanitized;
+    return (await sidecar($, 'POST', '/sanitize', { value })) as Sanitized;
   } catch (err) {
     if (!(err instanceof SidecarError) || err.status !== SESSION_NOT_FOUND) throw err;
     await openSession($);
-    return (await sidecar($, 'POST', '/sanitize', body())) as Sanitized;
+    return (await sidecar($, 'POST', '/sanitize', { value })) as Sanitized;
   }
 }
 
-async function masked($, value: unknown, keys = true): Promise<unknown> {
-  const r = await sanitize($, value, keys);
+async function masked($, value: unknown): Promise<unknown> {
+  const r = await sanitize($, value);
   addMasked(counts, r.captured, r.capturedByLabel);
   redraw($);
   return r.value;
@@ -671,15 +663,21 @@ function notReadyLine(): string {
  * (`message`), and later prompts take the normal path again — masking
  * works once some gateway answers, and until one does, fail closed. */
 function gaveUp($, message: string): void {
-  started = undefined;
-  phase = undefined;
-  download = undefined;
+  endStart();
   problem = message;
   lastFailure = message;
   $.ui.log(`nullpii: the sidecar this session started did not come up: ${message}`, {
     to: 'debug',
   });
   redraw($);
+}
+
+/** The start this session waited for is over, whichever way it went: no
+ * phase is left to fail calls with. */
+function endStart(): void {
+  started = undefined;
+  phase = undefined;
+  download = undefined;
 }
 
 /** Wait for the sidecar this session started to be ready: its status says
@@ -720,10 +718,19 @@ async function waitForSidecar($): Promise<void> {
     // No field: an old gateway, already ready once it answers; `ready`:
     // the model is loaded. Either way the session opens as before.
     if (startup === undefined || startup.phase === 'ready') {
-      started = undefined;
-      phase = undefined;
-      download = undefined;
-      await openSession($);
+      try {
+        await openSession($);
+      } catch (err) {
+        // The sidecar that answered is the old one on its way out: it
+        // refuses a session while it closes, so keep waiting for the one
+        // this session started.
+        if (isStatus(err, SIDECAR_CLOSING)) continue;
+        // Any other refusal ends the start: the caller shows it, and the
+        // next call opens the session the normal way.
+        endStart();
+        throw err;
+      }
+      endStart();
       problem = undefined;
       startPass = false;
       redraw($);
@@ -1526,10 +1533,13 @@ export function register(on, options) {
     try {
       await openSession($);
     } catch (err) {
-      // No sidecar answers: start one for this session when allowed. The
-      // band says so, and prompts wait (they are refused) until it answers.
-      const unreachable = err instanceof Error && err.message === UNREACHABLE;
-      if (unreachable && optionFlag(options, 'autostart', true) && sidecarUrl && token) {
+      // No sidecar answers — or the one there answered `sidecar_closing`, its
+      // last word before it goes — so start one for this session when
+      // allowed. The band says so, and prompts wait (they are refused) until
+      // it answers.
+      const gone =
+        (err instanceof Error && err.message === UNREACHABLE) || isStatus(err, SIDECAR_CLOSING);
+      if (gone && optionFlag(options, 'autostart', true) && sidecarUrl && token) {
         started = 'running';
         startSidecar($, sidecarUrl, token);
         // The band shows each phase of the start as it goes through it:
@@ -1684,10 +1694,7 @@ export function register(on, options) {
     // A new `{ result }` without `ref`: returning core's object would make
     // core send its own, unmasked messages to the model.
     return {
-      // A built-in tool's result keys are its output schema's own (WebFetch's
-      // `code`), so they stay; any other tool (MCP) may key data by a name,
-      // so its keys are masked as before.
-      result: await masked($, out.result, !keepsResultKeys(e.tool)),
+      result: await masked($, out.result),
       ...(out.context !== undefined && { context: out.context }),
     };
   }).catch(async ($, e, next) => {

@@ -14,7 +14,6 @@ import { PADLOCK_COLUMNS, padlockCells } from '../hooks/padlock.ts';
 import {
   expectedProof,
   hmacSha256Hex,
-  keepsResultKeys,
   olderRelease,
   readSidecarSelf,
   sidecarOrigin,
@@ -107,6 +106,10 @@ function fakeSidecar(
     refuseShutdown?: boolean;
     /** Answer a shutdown request but keep answering after it. */
     stayUp?: boolean;
+    /** Refuse a `PUT` sessions with this answer: `CLOSING` as a sidecar that
+     * accepted a shutdown does while the process is on its way out, `FULL`
+     * as one with every session in use. */
+    refuseSession?: { status: number; error: string };
   } = {};
   // The policy the status reports, which a PUT replaces as the gateway does,
   // with a version that changes with it.
@@ -196,6 +199,9 @@ function fakeSidecar(
       secretsSent.push(presented);
       const key = decodeURIComponent(path.slice(SESSIONS_PREFIX.length).split('/')[0] ?? '');
       const secret = sessions.get(key);
+      if (method === 'PUT' && state.refuseSession !== undefined) {
+        return respond(state.refuseSession.status, { error: state.refuseSession.error });
+      }
       if (method === 'PUT' && secret === undefined) {
         const created = `secret-${minted++}`;
         sessions.set(key, created);
@@ -409,45 +415,6 @@ test('a tool result is masked and returned as a fresh result, without core ref',
   expect(out.text).toBeUndefined();
 });
 
-/** The sanitize request bodies of `sidecar`, parsed. */
-function sanitized(sidecar: ReturnType<typeof fakeSidecar>) {
-  return sidecar.sanitizeBodies.map(
-    (body) => JSON.parse(body) as { value: { stdout?: string }; keys?: boolean },
-  );
-}
-
-test('a tool result keeps its keys when the sidecar says it can take that', async ($, on) => {
-  const sidecar = fakeSidecar();
-  sidecar.state.status = { features: { sanitizeKeys: true, shutdown: false } };
-  stubSession(on, sidecar);
-  on('tool.call', () => ({ result: { stdout: 'owner: John', code: 200 }, text: 'x' }));
-  await start($);
-  const out = await $.tool.call({ tool: 'Bash', command: 'cat owners.txt' });
-  expect(JSON.stringify(out)).not.toContain('John');
-  expect(sanitized(sidecar).find((b) => b.value.stdout !== undefined)?.keys).toBe(false);
-});
-
-test('a tool result is sent as before to a sidecar that does not say it can keep keys', async ($, on) => {
-  const sidecar = fakeSidecar();
-  stubSession(on, sidecar);
-  on('tool.call', () => ({ result: { stdout: 'owner: John', code: 200 }, text: 'x' }));
-  await start($);
-  await $.tool.call({ tool: 'Bash', command: 'cat owners.txt' });
-  const body = sanitized(sidecar).find((b) => b.value.stdout !== undefined);
-  expect(body).toBeDefined();
-  expect(body).not.toHaveProperty('keys');
-});
-
-test('a prompt is masked with its keys, whatever the sidecar can do', async ($, on) => {
-  const sidecar = fakeSidecar();
-  sidecar.state.status = { features: { sanitizeKeys: true, shutdown: false } };
-  stubSession(on, sidecar);
-  on('prompt.submit', ($, e) => ({ text: e.text }));
-  await start($);
-  await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
-  expect(sanitized(sidecar).every((b) => b.keys === undefined)).toBe(true);
-});
-
 /** A session start on a sidecar that reports `status`, with a stand-in for
  * the pinned sidecar the mod starts if it makes room, and what it started. */
 function startAgainst(
@@ -468,7 +435,10 @@ function startAgainst(
 }
 
 const IDLE_OLDER = { gatewayVersion: '0.5.2', sessions: 0 };
-const CAN_SHUTDOWN = { sanitizeKeys: true, shutdown: true };
+const CAN_SHUTDOWN = { shutdown: true };
+/** How a sidecar refuses a session: on its way out, or with none left. */
+const CLOSING = { status: 503, error: 'sidecar_closing' };
+const FULL = { status: 429, error: 'too_many_sessions' };
 
 test('an idle sidecar of an older release is stopped, and the pinned release is started', async ($, on) => {
   const { sidecar, spawned } = startAgainst($, on, { ...IDLE_OLDER, features: CAN_SHUTDOWN });
@@ -547,40 +517,48 @@ test('an older sidecar that says it is closing but stays up is given up on after
   expect(spawned.length).toBe(0);
 });
 
-test('a tool outside the built-in ones keeps its result keys masked, as an MCP tool may key data by a name', async ($, on) => {
-  const sidecar = fakeSidecar();
-  sidecar.state.status = { features: { sanitizeKeys: true, shutdown: false } };
-  stubSession(on, sidecar);
-  on('tool.call', () => ({ result: { stdout: 'owner: John', 'john@acme.io': 'lead' }, text: 'x' }));
+test('a sidecar that refuses a session because it is closing is replaced like one that does not answer', async ($, on) => {
+  const { sidecar, clock } = beforeStart($, on, { down: false });
+  // The sidecar at the address accepted another window's shutdown: it
+  // still answers, but no session may open on it any more.
+  sidecar.state.refuseSession = CLOSING;
+  const spawned: string[][] = [];
+  on('process.spawn', async function* ($, e) {
+    spawned.push(e.argv);
+    await new Promise<never>(() => undefined);
+  });
   await start($);
-  await $.tool.call({ tool: 'mcp__crm__lookup', query: 'lead' });
-  const body = sanitized(sidecar).find((b) => b.value.stdout !== undefined);
-  expect(body).toBeDefined();
-  expect(body).not.toHaveProperty('keys');
+  expect(sidecar.statuses).toContain(503);
+  expect(spawned.length).toBe(1);
+  // The one the mod started has taken the address, and the session opens.
+  sidecar.state.refuseSession = undefined;
+  sidecar.state.startup = { phase: 'ready' };
+  await clock.advance(2_000);
+  expect(sidecar.statuses).toContain(201);
 });
 
-test('the keys flag follows the sidecar the session is open on, after it was replaced by an older one', async ($, on) => {
-  const sidecar = fakeSidecar();
-  sidecar.state.status = { features: { sanitizeKeys: true, shutdown: false } };
-  stubSession(on, sidecar);
-  on('tool.call', () => ({ result: { stdout: 'owner: John', code: 200 }, text: 'x' }));
+test('a session refused for another reason once the sidecar is ready ends the start, with that reason', async ($, on) => {
+  const { sidecar, clock } = beforeStart($, on, { down: false });
+  sidecar.state.refuseSession = CLOSING;
+  on('process.spawn', async function* () {
+    await new Promise<never>(() => undefined);
+  });
   await start($);
-  // An older sidecar took the address: it has no sessions and reports no features.
-  sidecar.state.status = {};
-  sidecar.sessions.clear();
-  await $.tool.call({ tool: 'Bash', command: 'cat owners.txt' });
-  const body = sanitized(sidecar).find((b) => b.value.stdout !== undefined);
-  expect(body).toBeDefined();
-  expect(body).not.toHaveProperty('keys');
-});
-
-test('only the built-in tools with a fixed output schema keep their result keys', () => {
-  for (const tool of ['Edit', 'WebFetch', 'Bash', 'Read', 'Grep']) {
-    expect(keepsResultKeys(tool)).toBe(true);
-  }
-  for (const tool of ['mcp__crm__lookup', 'mcp__web__WebFetch', 'edit', '', undefined, 7]) {
-    expect(keepsResultKeys(tool)).toBe(false);
-  }
+  // The one the mod started is ready, but every session is in use.
+  sidecar.state.refuseSession = FULL;
+  sidecar.state.startup = { phase: 'ready' };
+  await clock.advance(2_000);
+  expect(sidecar.statuses).toContain(FULL.status);
+  // The start is over: the band gives the refusal, not a start-up phase.
+  const status = await $.command.run({ command: 'pii', args: '' });
+  expect(status.text).not.toContain('starting nullpii-gateway');
+  expect(status.text).toContain(String(FULL.status));
+  // A session frees up: the next prompt opens one and is masked, as after
+  // any refusal. A start left unfinished would refuse it with its phase line
+  // before asking the sidecar anything.
+  sidecar.state.refuseSession = undefined;
+  await $.prompt.submit({ text: 'Mail John', wait: false, origin: COMPOSER });
+  expect(sidecar.calls.some((c) => c.endsWith('/sanitize'))).toBe(true);
 });
 
 test('releases compare by number, and anything else is not older', () => {
@@ -596,14 +574,12 @@ test('releases compare by number, and anything else is not older', () => {
 
 test('a status that reports no features is an older sidecar', () => {
   expect(readSidecarSelf({ status: 'ok', sessions: 0 })).toEqual({
-    sanitizeKeys: false,
     shutdown: false,
     gatewayVersion: undefined,
     sessions: 0,
   });
-  expect(readSidecarSelf('nope').sanitizeKeys).toBe(false);
-  expect(readSidecarSelf({ features: { sanitizeKeys: 'yes', shutdown: 1 } })).toMatchObject({
-    sanitizeKeys: false,
+  expect(readSidecarSelf('nope').shutdown).toBe(false);
+  expect(readSidecarSelf({ features: { shutdown: 1 } })).toMatchObject({
     shutdown: false,
   });
 });

@@ -39,7 +39,6 @@ import {
   type MaskedKey,
   PLACEHOLDER,
   type Policy,
-  QUESTION_ECHO,
   RESULT_SHAPE_MISMATCH,
   addMasked,
   addSent,
@@ -58,8 +57,8 @@ import {
   optionFlag,
   optionString,
   placeholderGuide,
-  questionResultAsWritten,
   restorableArgs,
+  runsWithPlaceholders,
   sameText,
   sidecarOrigin,
   substitutePlaceholders,
@@ -222,7 +221,6 @@ const OWN_REASONS: ReadonlySet<string> = new Set([
   NO_POLICY,
   RESULT_SHAPE_MISMATCH,
   KEY_VALUE_UNKNOWN,
-  QUESTION_ECHO,
 ]);
 /** SidecarError's text, the one with a variable part. */
 const SIDECAR_STATUS = /^nullpii sidecar answered \d{3}$/;
@@ -946,8 +944,6 @@ interface ClearValue {
   readonly to: string;
   readonly category: string;
   readonly value: string;
-  /** The placeholder that stood for the value. */
-  readonly placeholder: string;
 }
 
 /** Toast and count each value in `values`, which went out in clear on the
@@ -974,7 +970,6 @@ const DESTINATION_WORDS: Readonly<Record<ClearDestination, string>> = {
   model:
     'Claude Code runs this tool through a Claude model, so sent in clear the real values reach that model (and for WebFetch, the site its URL names).',
   mcp: 'Sent in clear, the real values go to the MCP server that runs this tool and can leave this machine through it.',
-  user: "Sent in clear, the real values are shown to you in Claude's question, on this machine; your answer goes back to Claude masked.",
   internal:
     'Sent in clear, the real values go to this Claude Code tool. nullpii masks what it returns, but has no hook on what it hands on inside Claude Code (a subagent prompt for Agent or Task, a message for SendMessage), so they can reach a Claude model unmasked. A subagent then holds them as plain text, not placeholders, and can pass them to any tool, a shell command included, with no further question.',
   unknown:
@@ -1008,7 +1003,7 @@ async function sentMaskedKeys(
   const values = found.map(({ placeholder, category }) => {
     const value = known.get(placeholder);
     if (value === undefined) throw new Error(KEY_VALUE_UNKNOWN);
-    return { tool, to: `Claude (a key of a ${tool} result)`, category, value, placeholder };
+    return { tool, to: `Claude (a key of a ${tool} result)`, category, value };
   });
   const question = () => {
     const listed = values.map((one) => listedValue(one.category, one.value));
@@ -1023,9 +1018,6 @@ interface SentCall {
   readonly restored: Restored;
   /** The values the question listed, to toast and count once the call ran. */
   readonly values: readonly ClearValue[];
-  /** Each text the mod restored, mapped to the text Claude wrote
-   * (`substitutePlaceholders`): empty when nothing was restored. */
-  readonly changed: ReadonlyMap<string, string>;
 }
 
 /** The real value behind each placeholder in `found` that the sidecar
@@ -1066,12 +1058,10 @@ async function sentHeld(
 ): Promise<SentCall | undefined> {
   const found = placeholderCategories(JSON.stringify(args) ?? '');
   const known = await knownValues($, found);
-  if (known.size === 0) return { restored: held, values: [], changed: new Map() };
+  if (known.size === 0) return { restored: held, values: [] };
   const values = found.flatMap(({ placeholder, category }) => {
     const value = known.get(placeholder);
-    return value === undefined
-      ? []
-      : [{ tool, to: `the ${tool} call`, category, value, placeholder }];
+    return value === undefined ? [] : [{ tool, to: `the ${tool} call`, category, value }];
   });
   const question = () => {
     const listed = values.map((one) => listedValue(one.category, one.value));
@@ -1082,8 +1072,30 @@ async function sentHeld(
   return {
     restored: { value: put.value as Record<string, unknown>, replacements: put.replacements },
     values,
-    changed: put.changed,
   };
+}
+
+/** How the legend of Claude's own question (`showLegend`) writes one
+ * placeholder and the value it stands for. */
+const LEGEND_PREFIX = "nullpii, for Claude's question: ";
+const LEGEND_JOIN = ' · ';
+
+/**
+ * Show the user, under the dialog of Claude's own question (`$.ui.notice`,
+ * a line on this machine that the model never reads), which real value each
+ * placeholder in it stands for: the question runs with the placeholders
+ * Claude wrote (`runsWithPlaceholders`), which the user could not read
+ * otherwise. Values are shown whole, as the mod draws them in Claude's
+ * replies on screen; nothing is logged. A placeholder the session does not
+ * know is left out; with none known, nothing is shown.
+ */
+async function showLegend($, toolUseId: unknown, args: Readonly<Record<string, unknown>>) {
+  if (typeof toolUseId !== 'string') return;
+  const found = placeholderCategories(JSON.stringify(args) ?? '');
+  const known = await knownValues($, found);
+  if (known.size === 0) return;
+  const lines = [...known].map(([placeholder, value]) => `${placeholder} = ${value}`);
+  $.ui.notice(toolUseId, LEGEND_PREFIX + lines.join(LEGEND_JOIN));
 }
 
 /**
@@ -1891,9 +1903,6 @@ export function register(on, options) {
     let sentInClear: readonly ClearValue[] = [];
     let heldInCall = 0;
     let restoredInCall = 0;
-    // Claude's own question, with the values the user sent put into it: the
-    // texts to put back in its result, to the form Claude wrote.
-    let questionTexts: ReadonlyMap<string, string> = new Map();
     if (hasPlaceholder(args)) {
       // The sidecar decides by the tool's name: nothing for a tool outside
       // the policy's `restoreTools`, and nothing for a shell tool, whose
@@ -1905,15 +1914,19 @@ export function register(on, options) {
       // included: the values the session knows go out in clear only on the
       // user's word (Allow all: their word for the rest of the session),
       // else the call is denied, also when no one can answer (claude -p).
+      // Claude's own question to the user is the one exception: it runs as
+      // Claude wrote it, and the user is shown what its placeholders stand
+      // for (`runsWithPlaceholders`).
       const held = r.heldForTool ?? 0;
-      const destination = held > 0 ? clearDestination(e.tool) : undefined;
+      const asksFirst = held > 0 && !runsWithPlaceholders(e.tool);
+      if (held > 0 && !asksFirst) await showLegend($, e.tool_use_id, args);
+      const destination = asksFirst ? clearDestination(e.tool) : undefined;
       const asked =
         destination === undefined
-          ? { restored: r, values: [], changed: new Map<string, string>() }
+          ? { restored: r, values: [] }
           : await sentHeld($, e.tool, destination, args, r);
       if (asked === undefined) return { deny: HELD_NOT_SENT };
       sentInClear = asked.values;
-      if (destination === 'user') questionTexts = asked.changed;
       // The placeholders still in the call if it runs: none the user sent.
       heldInCall = held > 0 ? held - asked.restored.replacements : 0;
       // Rewrite the call only when a placeholder was replaced: a rewritten
@@ -1966,14 +1979,7 @@ export function register(on, options) {
     // counted as the result goes. A new `{ result }` without `ref`: another
     // plugin's, or core's own, would make core send its own unmasked
     // messages to the model.
-    // Claude's own question after a Send once: Claude's texts go back as it
-    // wrote them, the user's have each sent value masked, anything else
-    // holding one is withheld (`questionResultAsWritten`).
-    const result =
-      questionTexts.size === 0
-        ? out.result
-        : questionResultAsWritten(out.result, call, e, questionTexts, sentInClear);
-    const clean = await maskedResult($, e.tool, result);
+    const clean = await maskedResult($, e.tool, out.result);
     if (clean === undefined) return { deny: KEYS_WITHHELD };
     recordSent($, clean.sent);
     return {

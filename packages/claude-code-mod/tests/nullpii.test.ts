@@ -45,11 +45,6 @@ const SECRETS: ReadonlyArray<[RegExp, string]> = [
   [/https:\/\/docs\.acme\.io\/\S*/g, 'PRIVATE_URL'],
   // A phone number that is also an array index when it is an object key.
   [/\b2125551234\b/g, 'PHONE'],
-  // An account name, found only as a word of its own: like the real
-  // detector, not inside `jdoe_notes.txt`.
-  // An email that holds the account name: masked first, as a whole.
-  [/jdoe@acme\.io/g, 'EMAIL'],
-  [/\bjdoe\b/g, 'ACCOUNT'],
 ];
 
 const SECRET_HEADER = 'x-nullpii-session-secret';
@@ -578,9 +573,13 @@ test('the system prompt says what the placeholders are and which tools get value
   // Claude is told the truth about every other tool: no claim that it only
   // ever gets placeholders, and what happens with no one to answer.
   expect(sections[1].text).toContain(
-    "Every other tool, Claude Code's own included (such as TodoWrite, Agent, AskUserQuestion, WebFetch, MCP tools), gets the real values only when the user agrees",
+    "Every other tool, Claude Code's own included (such as TodoWrite, Agent, WebFetch, MCP tools), gets the real values only when the user agrees",
   );
   expect(sections[1].text).toContain('when no one can answer (claude -p)');
+  // Claude's own question is the exception, said plainly.
+  expect(sections[1].text).toContain(
+    'AskUserQuestion is never asked about and never gets a real value: write placeholders in a question as they are',
+  );
   expect(sections[1].text).not.toContain(
     'such as a web fetch or an MCP tool, gets the placeholder',
   );
@@ -2606,40 +2605,6 @@ test("Allow all lets Claude Code's own tools run with the real values, each toas
   expect(report.text).toContain('Sent in clear on your word: Agent · email 1');
 });
 
-test("Claude's own question is asked about, shown with the real value, and its answer reaches Claude masked", async ($, on) => {
-  const sidecar = fakeSidecar();
-  stubSession(on, sidecar);
-  const modAsked: string[] = [];
-  const shown: string[] = [];
-  on('tool.call', { tool: 'AskUserQuestion' }, ($, e) => {
-    const first = e.questions?.[0];
-    if (first?.header === 'nullpii') {
-      modAsked.push(first.question);
-      return { result: { questions: e.questions, answers: { [first.question]: 'Send once' } } };
-    }
-    // Claude's own question, as the user sees it, answered "Yes".
-    shown.push(first?.question ?? '');
-    return { result: { questions: e.questions, answers: { [first?.question ?? '']: 'Yes' } } };
-  });
-  on('prompt.submit', ($, e) => ({ text: e.text }));
-  await start($);
-  await $.prompt.submit({ text: 'write to john@acme.io', wait: false, origin: COMPOSER });
-  const out = await $.tool.call({
-    tool: 'AskUserQuestion',
-    questions: [{ question: `Should I email ${ph('EMAIL', 0)}?`, header: 'Email', options: [] }],
-  });
-  // One question from the mod, about the call; none about the result's
-  // keys, and the mod's own dialog is never asked about itself.
-  expect(modAsked).toHaveLength(1);
-  expect(modAsked[0]).toContain("shown to you in Claude's question");
-  expect(shown).toEqual(['Should I email john@acme.io?']);
-  // The answer is not lost, and the real value is not in what Claude reads.
-  expect(out.deny).toBeUndefined();
-  const answers = (out.result as { answers: Record<string, string> }).answers;
-  expect(Object.values(answers)).toEqual(['Yes']);
-  expect(JSON.stringify(out)).not.toContain('john@acme.io');
-});
-
 test('a masked object key in the result of a tool outside restoreTools is asked about; one in restoreTools is not', async ($, on) => {
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);
@@ -2701,7 +2666,7 @@ test('the guide names as examples only tools the policy does not list', async ($
     traits: [],
   });
   const text = sections[0]?.text ?? '';
-  expect(text).toContain("Claude Code's own included (such as Agent, AskUserQuestion, MCP tools)");
+  expect(text).toContain("Claude Code's own included (such as Agent, MCP tools)");
   expect(text).toContain('put the real values back before they run: Read, WebFetch, TodoWrite.');
 });
 
@@ -2742,68 +2707,6 @@ test('the key question says Claude can copy keys sent in clear into any later ca
   expect(asked[0]?.question).toContain(
     'can copy them into any later call, a shell command included',
   );
-});
-
-test("Claude's question after Send once reaches Claude as Claude wrote it, even where detection would miss the value", async ($, on) => {
-  const sidecar = fakeSidecar();
-  stubSession(on, sidecar);
-  const shown: string[] = [];
-  on('tool.call', { tool: 'AskUserQuestion' }, ($, e) => {
-    const first = e.questions?.[0];
-    if (first?.header === 'nullpii') {
-      return { result: { questions: e.questions, answers: { [first.question]: 'Send once' } } };
-    }
-    shown.push(first?.question ?? '');
-    // As Claude Code: the questions echoed, the answers keyed by question.
-    return { result: { questions: e.questions, answers: { [first?.question ?? '']: 'Yes' } } };
-  });
-  on('prompt.submit', ($, e) => ({ text: e.text }));
-  await start($);
-  await $.prompt.submit({ text: 'my account is jdoe', wait: false, origin: COMPOSER });
-  const question = `Create ${ph('ACCOUNT', 0)}_notes.txt?`;
-  const out = await $.tool.call({
-    tool: 'AskUserQuestion',
-    questions: [{ question, header: 'File', options: [] }],
-  });
-  // The user saw the real value; the sidecar would not find it again in
-  // `jdoe_notes.txt`, yet Claude reads its question as it wrote it.
-  expect(shown).toEqual(['Create jdoe_notes.txt?']);
-  expect(out.deny).toBeUndefined();
-  expect(JSON.stringify(out)).not.toContain('jdoe');
-  const result = out.result as {
-    questions: { question: string }[];
-    answers: Record<string, string>;
-  };
-  expect(result.answers).toEqual({ [question]: 'Yes' });
-  expect(result.questions[0]?.question).toBe(question);
-});
-
-test("Claude's question result holding a sent value in a text Claude did not write is withheld, and the mod says why", async ($, on) => {
-  const sidecar = fakeSidecar();
-  stubSession(on, sidecar);
-  on('tool.call', { tool: 'AskUserQuestion' }, ($, e) => {
-    const first = e.questions?.[0];
-    if (first?.header === 'nullpii') {
-      return { result: { questions: e.questions, answers: { [first.question]: 'Send once' } } };
-    }
-    return {
-      result: {
-        answers: { [first?.question ?? '']: 'Yes' },
-        note: `asked: ${first?.question ?? ''}`,
-      },
-    };
-  });
-  on('prompt.submit', ($, e) => ({ text: e.text }));
-  await start($);
-  await $.prompt.submit({ text: 'my account is jdoe', wait: false, origin: COMPOSER });
-  const out = await $.tool.call({
-    tool: 'AskUserQuestion',
-    questions: [{ question: `Create ${ph('ACCOUNT', 0)}_notes.txt?`, header: 'File', options: [] }],
-  });
-  expect(out.deny).toContain("nullpii could not mask this tool's result");
-  expect(JSON.stringify(out)).not.toContain('jdoe');
-  const report = await $.command.run({ command: 'pii', args: 'status' });
-  expect(report.text).toContain('in a form nullpii cannot put back');
 });
 
 test('values sent in clear count as sent, not as restored into a local tool; a local restore counts once the call ran', async ($, on) => {
@@ -2874,284 +2777,73 @@ function answerQuestions(
   return { modAsked, shown };
 }
 
-test("labels the user picked in Claude's question come back masked, even joined by Claude Code", async ($, on) => {
-  const sidecar = fakeSidecar();
-  stubSession(on, sidecar);
-  answerQuestions(on, 'Send once', (e) => {
-    const first = e.questions[0];
-    // As Claude Code for a multi-select: the picked labels joined by ", ".
-    const picked = first.options.map((o) => o.label).join(', ');
-    return { questions: e.questions, answers: { [first.question]: picked } };
+/** Record each `$.ui.notice` line the mod draws, by the call it is for. */
+function recordNotices(on) {
+  const notices: { tool_use_id: string; text: string | undefined }[] = [];
+  on('ui.notice', ($, e) => {
+    notices.push({ tool_use_id: e.tool_use_id, text: e.text });
+    return { value: undefined };
   });
-  on('prompt.submit', ($, e) => ({ text: e.text }));
-  await start($);
-  await $.prompt.submit({ text: 'my account is jdoe', wait: false, origin: COMPOSER });
-  const account = ph('ACCOUNT', 0);
-  const out = await $.tool.call({
-    tool: 'AskUserQuestion',
-    questions: [
-      {
-        question: 'Which files?',
-        header: 'File',
-        multiSelect: true,
-        options: [
-          { label: `${account}_notes.txt`, description: 'a' },
-          { label: `${account}_todo.txt`, description: 'b' },
-        ],
-      },
-    ],
-  });
-  expect(out.deny).toBeUndefined();
-  expect(JSON.stringify(out)).not.toContain('jdoe');
-  const answers = (out.result as { answers: Record<string, string> }).answers;
-  expect(answers).toEqual({ 'Which files?': `${account}_notes.txt, ${account}_todo.txt` });
-});
-
-/** Put Claude's own question `questions` after the user sent `prompt`'s
- * values with Send once, the user answering with `answer(e)`. */
-async function askedAfterSend(
-  $,
-  on,
-  prompt: string,
-  questions,
-  answer: (e) => Record<string, unknown>,
-) {
-  const sidecar = fakeSidecar();
-  stubSession(on, sidecar);
-  answerQuestions(on, 'Send once', answer);
-  on('prompt.submit', ($, e) => ({ text: e.text }));
-  await start($);
-  await $.prompt.submit({ text: prompt, wait: false, origin: COMPOSER });
-  return $.tool.call({ tool: 'AskUserQuestion', questions });
+  return notices;
 }
 
-test('free text the user typed instead of an option (`response`) is kept, its sent value masked', async ($, on) => {
-  const question = `Create ${ph('ACCOUNT', 0)}_notes.txt?`;
-  const out = await askedAfterSend(
-    $,
-    on,
-    'my account is jdoe',
-    [
-      {
-        question,
-        header: 'File',
-        options: [
-          { label: 'Yes', description: 'a' },
-          { label: 'No', description: 'b' },
-        ],
-      },
-    ],
-    (e) => ({ questions: e.questions, answers: {}, response: 'no, write jdoe_old.txt instead' }),
-  );
-  expect(out.deny).toBeUndefined();
-  const result = out.result as { response: string };
-  expect(result.response).toBe(`no, write ${ph('ACCOUNT', 0)}_old.txt instead`);
-});
-
-test("the user's notes are kept with their sent value masked; Claude's preview comes back as Claude wrote it", async ($, on) => {
-  const account = ph('ACCOUNT', 0);
-  const question = `Create ${account}_notes.txt?`;
-  // Claude wrote `jdoe_old.txt` itself in its preview: it stays as written.
-  const preview = `Rename jdoe_old.txt to ${account}_new.txt`;
-  const out = await askedAfterSend(
-    $,
-    on,
-    'my account is jdoe',
-    [
-      {
-        question,
-        header: 'File',
-        options: [
-          { label: 'Yes', description: 'a', preview },
-          { label: 'No', description: 'b' },
-        ],
-      },
-    ],
-    (e) => {
-      const q = e.questions[0];
-      return {
-        questions: e.questions,
-        answers: { [q.question]: 'Yes' },
-        annotations: {
-          [q.question]: { preview: q.options[0].preview, notes: 'also jdoe_old.txt' },
-        },
-      };
-    },
-  );
-  expect(out.deny).toBeUndefined();
-  const result = out.result as { annotations: Record<string, { preview: string; notes: string }> };
-  expect(result.annotations).toEqual({
-    [question]: { preview, notes: `also ${account}_old.txt` },
-  });
-});
-
-test("a label the user picked comes back exactly as Claude wrote it, even where a sent value's letters appear in it", async ($, on) => {
-  const account = ph('ACCOUNT', 0);
-  const question = `Create ${account}_notes.txt?`;
-  const options = [
-    { label: `Use ${account}_new.txt`, description: 'a' },
-    { label: 'Keep jdoe_old.txt', description: 'b' },
-  ];
-  const out = await askedAfterSend(
-    $,
-    on,
-    'my account is jdoe',
-    [{ question, header: 'File', multiSelect: true, options }],
-    (e) => {
-      const q = e.questions[0];
-      return {
-        questions: e.questions,
-        answers: { [q.question]: q.options.map((o) => o.label).join(', ') },
-      };
-    },
-  );
-  const answers = (out.result as { answers: Record<string, string> }).answers;
-  expect(answers).toEqual({ [question]: `Use ${account}_new.txt, Keep jdoe_old.txt` });
-});
-
-test('in what the user typed, a sent value is masked only where it stands as a word of its own', async ($, on) => {
-  const person = ph('PERSON', 0);
-  const question = `Email ${person}?`;
-  const out = await askedAfterSend(
-    $,
-    on,
-    'ask John',
-    [
-      {
-        question,
-        header: 'Mail',
-        options: [
-          { label: 'Use the Johnson template', description: 'a' },
-          { label: 'No', description: 'b' },
-        ],
-      },
-    ],
-    (e) => ({
-      questions: e.questions,
-      answers: { [e.questions[0].question]: 'Use the Johnson template' },
-      response: 'Johnson, not John; (John) and john_notes too',
-    }),
-  );
-  const result = out.result as { answers: Record<string, string>; response: string };
-  // A label: exactly as Claude wrote it.
-  expect(result.answers).toEqual({ [question]: 'Use the Johnson template' });
-  // Typed text: `John` alone, or next to punctuation or `_`, never inside
-  // `Johnson`. The value is matched as it was sent, case and all.
-  expect(result.response).toBe(`Johnson, not ${person}; (${person}) and john_notes too`);
-});
-
-test('in what the user typed, a sent value that holds another is masked as a whole, longest first', async ($, on) => {
-  const email = ph('EMAIL', 0);
-  const account = ph('ACCOUNT', 1);
-  const out = await askedAfterSend(
-    $,
-    on,
-    'mail jdoe@acme.io as jdoe',
-    [{ question: `Write to ${email} as ${account}?`, header: 'Mail', options: [] }],
-    (e) => ({
-      questions: e.questions,
-      answers: { [e.questions[0].question]: 'send to jdoe@acme.io as jdoe' },
-    }),
-  );
-  const answers = (out.result as { answers: Record<string, string> }).answers;
-  expect(Object.values(answers)).toEqual([`send to ${email} as ${account}`]);
-});
-
-test('in the answers, a sent value that holds another sent value is masked as a whole', async ($, on) => {
+test("Claude's own question runs with its placeholders, unasked, and the user is shown what they stand for", async ($, on) => {
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);
-  answerQuestions(on, 'Send once', (e) => {
-    const first = e.questions[0];
-    const picked = first.options.map((o) => o.label).join(', ');
-    return { questions: e.questions, answers: { [first.question]: picked } };
-  });
-  on('prompt.submit', ($, e) => ({ text: e.text }));
-  await start($);
-  // `jdoe@acme.io` (EMAIL_0) holds `jdoe` (ACCOUNT_1).
-  await $.prompt.submit({ text: 'mail jdoe@acme.io as jdoe', wait: false, origin: COMPOSER });
-  const email = ph('EMAIL', 0);
-  const account = ph('ACCOUNT', 1);
-  const out = await $.tool.call({
-    tool: 'AskUserQuestion',
-    questions: [
-      {
-        question: 'Which?',
-        header: 'Pick',
-        multiSelect: true,
-        options: [
-          { label: email, description: 'a' },
-          { label: account, description: 'b' },
-        ],
-      },
-    ],
-  });
-  const answers = (out.result as { answers: Record<string, string> }).answers;
-  expect(answers).toEqual({ 'Which?': `${email}, ${account}` });
-  expect(JSON.stringify(out)).not.toContain('acme.io');
-});
-
-test('an answer the user typed with a value they sent is kept, masked, not withheld', async ($, on) => {
-  const sidecar = fakeSidecar();
-  stubSession(on, sidecar);
-  answerQuestions(on, 'Send once', (e) => ({
+  const notices = recordNotices(on);
+  // No one answers the mod, as in `claude -p`: the question runs anyway.
+  const { modAsked, shown } = answerQuestions(on, undefined, (e) => ({
     questions: e.questions,
-    answers: { [e.questions[0].question]: 'Yes, and jdoe_old.txt too' },
+    answers: { [e.questions[0].question]: 'Yes, and cc John' },
   }));
   on('prompt.submit', ($, e) => ({ text: e.text }));
   await start($);
-  await $.prompt.submit({ text: 'my account is jdoe', wait: false, origin: COMPOSER });
-  const question = `Create ${ph('ACCOUNT', 0)}_notes.txt?`;
+  await $.prompt.submit({ text: 'write to john@acme.io', wait: false, origin: COMPOSER });
+  const email = ph('EMAIL', 0);
+  const unknown = ph('EMAIL', 7);
+  const question = `Should I email ${email} or ${unknown}?`;
   const out = await $.tool.call({
     tool: 'AskUserQuestion',
-    questions: [{ question, header: 'File', options: [] }],
+    tool_use_id: 'toolu_q1',
+    questions: [{ question, header: 'Email', options: [] }],
   });
+  expect(modAsked).toEqual([]);
+  // The tool got the question as Claude wrote it.
+  expect(shown).toEqual([question]);
+  // The legend: under that call's dialog, the known placeholder and its
+  // value, whole; the unknown one left out.
+  expect(notices).toEqual([
+    { tool_use_id: 'toolu_q1', text: `nullpii, for Claude's question: ${email} = john@acme.io` },
+  ]);
+  // Claude reads the result as Claude Code returned it, masked like any
+  // result: the question key as written, the typed name masked.
   expect(out.deny).toBeUndefined();
   const answers = (out.result as { answers: Record<string, string> }).answers;
-  expect(answers).toEqual({ [question]: `Yes, and ${ph('ACCOUNT', 0)}_old.txt too` });
+  expect(Object.keys(answers)).toEqual([question]);
+  expect(answers[question]).toMatch(/^Yes, and cc \{\{PII_PERSON_\d+_[0-9a-f]{16}\}\}$/);
+  expect(JSON.stringify(out)).not.toContain('john@acme.io');
+  expect(JSON.stringify(out)).not.toContain("for Claude's question");
+  expect(sidecar.toasts.filter((t) => t.includes('in clear'))).toEqual([]);
+  const report = await $.command.run({ command: 'pii', args: 'status' });
+  expect(report.text).not.toContain('Sent in clear');
 });
 
-test('an answer key holding a sent value in a form the mod did not send withholds the result', async ($, on) => {
+test("Claude's own question holding only placeholders the session does not know shows no legend", async ($, on) => {
   const sidecar = fakeSidecar();
   stubSession(on, sidecar);
-  answerQuestions(on, 'Send once', (e) => ({
-    // The question as Claude Code might rewrite it: not a text the mod sent.
-    answers: { [`${e.questions[0].question} `]: 'Yes' },
-  }));
-  on('prompt.submit', ($, e) => ({ text: e.text }));
-  await start($);
-  await $.prompt.submit({ text: 'my account is jdoe', wait: false, origin: COMPOSER });
-  const out = await $.tool.call({
-    tool: 'AskUserQuestion',
-    questions: [{ question: `Create ${ph('ACCOUNT', 0)}_notes.txt?`, header: 'File', options: [] }],
-  });
-  expect(out.deny).toContain("nullpii could not mask this tool's result");
-  expect(JSON.stringify(out)).not.toContain('jdoe');
-});
-
-test("a text Claude wrote that holds the sent value's letters is echoed as Claude wrote it", async ($, on) => {
-  const sidecar = fakeSidecar();
-  stubSession(on, sidecar);
-  answerQuestions(on, 'Send once', (e) => ({
+  const notices = recordNotices(on);
+  answerQuestions(on, undefined, (e) => ({
     questions: e.questions,
     answers: { [e.questions[0].question]: 'Yes' },
   }));
-  on('prompt.submit', ($, e) => ({ text: e.text }));
   await start($);
-  await $.prompt.submit({ text: 'my account is jdoe', wait: false, origin: COMPOSER });
-  // Claude wrote `jdoe_old.txt` itself (the detector does not find `jdoe`
-  // there), next to a placeholder the user sends.
-  const question = `Rename jdoe_old.txt to ${ph('ACCOUNT', 0)}_new.txt?`;
   const out = await $.tool.call({
     tool: 'AskUserQuestion',
-    questions: [{ question, header: 'Rename', options: [] }],
+    tool_use_id: 'toolu_q2',
+    questions: [{ question: `Email ${ph('EMAIL', 7)}?`, header: 'Email', options: [] }],
   });
   expect(out.deny).toBeUndefined();
-  const result = out.result as {
-    questions: { question: string }[];
-    answers: Record<string, string>;
-  };
-  expect(result.questions[0]?.question).toBe(question);
-  expect(result.answers).toEqual({ [question]: 'Yes' });
+  expect(notices).toEqual([]);
 });
 
 test("Claude's question keyed by a value the sidecar masks gets no key question, and its answer is kept", async ($, on) => {
@@ -3172,23 +2864,6 @@ test("Claude's question keyed by a value the sidecar masks gets no key question,
   const answers = (out.result as { answers: Record<string, string> }).answers;
   expect(Object.values(answers)).toEqual(['Yes']);
   expect(JSON.stringify(out)).not.toContain('John');
-});
-
-test("only Claude's own question is put back as written: another tool's result is masked as any result", async ($, on) => {
-  const sidecar = fakeSidecar();
-  stubSession(on, sidecar);
-  const asked: Asked[] = [];
-  answerMenu(on, ['Send once'], asked);
-  on('prompt.submit', ($, e) => ({ text: e.text }));
-  on('tool.call', { tool: 'TodoWrite' }, () => ({ result: { note: 'saved jdoe_todo.txt' } }));
-  await start($);
-  await $.prompt.submit({ text: 'my account is jdoe', wait: false, origin: COMPOSER });
-  const out = await $.tool.call({
-    tool: 'TodoWrite',
-    todos: [{ content: `Mail ${ph('ACCOUNT', 0)}` }],
-  });
-  expect(asked).toHaveLength(1);
-  expect(out.deny).toBeUndefined();
 });
 
 test('a placeholder text a tool wrote in its own key is not asked about, sent or counted', async ($, on) => {

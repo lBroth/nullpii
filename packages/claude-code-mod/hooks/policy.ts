@@ -173,10 +173,6 @@ const PLACEHOLDER_ALL = new RegExp(PLACEHOLDER.source, 'g');
 export interface Substituted {
   readonly value: unknown;
   readonly replacements: number;
-  /** Each string or key the replace changed, as it reads now, mapped to
-   * the text it was (with its placeholders): what puts a restored text
-   * that comes back in a result to the form Claude wrote it in. */
-  readonly changed: ReadonlyMap<string, string>;
 }
 
 /**
@@ -192,17 +188,13 @@ export function substitutePlaceholders(
   values: ReadonlyMap<string, string>,
 ): Substituted {
   let replacements = 0;
-  const changed = new Map<string, string>();
-  const inText = (text: string) => {
-    const out = text.replace(PLACEHOLDER_ALL, (placeholder) => {
+  const inText = (text: string) =>
+    text.replace(PLACEHOLDER_ALL, (placeholder) => {
       const real = values.get(placeholder);
       if (real === undefined) return placeholder;
       replacements += 1;
       return real;
     });
-    if (out !== text && !changed.has(out)) changed.set(out, text);
-    return out;
-  };
   const walk = (one: unknown): unknown => {
     if (typeof one === 'string') return inText(one);
     if (Array.isArray(one)) return one.map(walk);
@@ -210,7 +202,7 @@ export function substitutePlaceholders(
     return Object.fromEntries(Object.entries(one).map(([key, sub]) => [inText(key), walk(sub)]));
   };
   const out = walk(value);
-  return { value: out, replacements, changed };
+  return { value: out, replacements };
 }
 
 /** The placeholders in `masked` that `original` does not hold, each once,
@@ -219,189 +211,6 @@ export function substitutePlaceholders(
 export function addedPlaceholders(original: string, masked: string): string[] {
   const before = new Set(original.match(PLACEHOLDER_ALL) ?? []);
   return [...new Set(masked.match(PLACEHOLDER_ALL) ?? [])].filter((one) => !before.has(one));
-}
-
-/** Every string and object key in `value`. */
-export function textsOf(value: unknown): Set<string> {
-  const texts = new Set<string>();
-  const walk = (one: unknown): void => {
-    if (typeof one === 'string') texts.add(one);
-    else if (Array.isArray(one)) one.forEach(walk);
-    else if (one !== null && typeof one === 'object') {
-      for (const [key, sub] of Object.entries(one)) {
-        texts.add(key);
-        walk(sub);
-      }
-    }
-  };
-  walk(value);
-  return texts;
-}
-
-/** `QuestionEchoError`'s text: fixed, it quotes nothing of the result. */
-export const QUESTION_ECHO =
-  "Claude's question came back with a value sent in clear in a form nullpii cannot put back";
-
-/** An `AskUserQuestion` result that holds a real value the user sent in
- * clear in a text that is neither Claude's own nor the user's
- * (`questionResultAsWritten`). The result is withheld rather than masked
- * by detection alone. */
-export class QuestionEchoError extends Error {
-  constructor() {
-    super(QUESTION_ECHO);
-    this.name = 'QuestionEchoError';
-  }
-}
-
-/** A value the user sent in clear, and the placeholder Claude wrote for it. */
-export interface SentValue {
-  readonly value: string;
-  readonly placeholder: string;
-}
-
-/** The fields of an `AskUserQuestion` result (Claude Code 2.1.312's output
- * schema) that the closed rule of `questionResultAsWritten` names. */
-const ANSWERS_FIELD = 'answers';
-const RESPONSE_FIELD = 'response';
-const ANNOTATIONS_FIELD = 'annotations';
-const NOTES_FIELD = 'notes';
-/** How Claude Code joins the labels of a multi-select answer ("multi-select
- * answers are comma-separated"; `$.ui.ask` joins them with `", "`). */
-const LABEL_JOIN = ', ';
-
-/** Characters a regular expression reads as syntax. */
-const REGEX_SYNTAX = /[.*+?^${}()|[\]\\]/g;
-/** What may not touch a sent value for it to match in user text: a letter
- * or a digit, in any script. So `John` matches in `John,`, `(John)` and
- * `John_notes` (an underscore, a dot or a dash is a boundary), never in
- * `Johnson`, nor `Max` in `Maximum`; a text that is the value matches. A
- * value matches as it was sent, case and all. */
-const WORD_CHAR = '[\\p{L}\\p{N}]';
-
-/** `text`, typed by the user, with every occurrence of each value in
- * `sent` that stands as a word of its own (`WORD_CHAR`) replaced by its
- * placeholder: longest value first, in one pass, so a shorter value is
- * never found again inside a longer one or a placeholder. */
-function maskSentValues(text: string, sent: readonly SentValue[]): string {
-  if (sent.length === 0) return text;
-  const byValue = new Map(sent.map((one) => [one.value, one.placeholder]));
-  const longestFirst = [...byValue.keys()].sort((a, b) => b.length - a.length);
-  const values = longestFirst.map((one) => one.replace(REGEX_SYNTAX, '\\$&')).join('|');
-  const pattern = new RegExp(`(?<!${WORD_CHAR})(?:${values})(?!${WORD_CHAR})`, 'gu');
-  return text.replace(pattern, (found) => byValue.get(found) ?? found);
-}
-
-/** Every option label of an `AskUserQuestion` call as the user was shown
- * it, mapped to the label as Claude wrote it. */
-function labelsOf(shown: unknown, written: unknown): Map<string, string> {
-  const questions = (call: unknown) =>
-    ((call as { questions?: unknown })?.questions ?? []) as {
-      options?: { label?: unknown }[];
-    }[];
-  const labels = new Map<string, string>();
-  const asWritten = questions(written);
-  questions(shown).forEach((question, at) => {
-    (question.options ?? []).forEach((option, place) => {
-      const label = asWritten[at]?.options?.[place]?.label;
-      if (typeof option.label === 'string' && typeof label === 'string') {
-        labels.set(option.label, label);
-      }
-    });
-  });
-  return labels;
-}
-
-/** `answer` read as labels the user picked, joined by `LABEL_JOIN`, each
- * one a label they were shown: the labels as Claude wrote them, joined the
- * same way; `undefined` when it is not only labels (text they typed). */
-function pickedLabels(answer: string, labels: ReadonlyMap<string, string>): string | undefined {
-  const from = (at: number): string[] | undefined => {
-    if (at === answer.length) return [];
-    for (const [shown, written] of labels) {
-      if (!answer.startsWith(shown, at)) continue;
-      const end = at + shown.length;
-      if (end === answer.length) return [written];
-      if (!answer.startsWith(LABEL_JOIN, end)) continue;
-      const rest = from(end + LABEL_JOIN.length);
-      if (rest !== undefined && rest.length > 0) return [written, ...rest];
-    }
-    return undefined;
-  };
-  return answer === '' ? undefined : from(0)?.join(LABEL_JOIN);
-}
-
-/**
- * The result of Claude's own `AskUserQuestion` after the user sent real
- * values into it (`shown`, the call as the user saw it; `written`, as
- * Claude wrote it), as Claude may read it. One closed rule, which does not
- * rest on the sidecar finding the values again (a short value, or one
- * joined to a word, it may miss):
- *
- * 1. Claude's own texts go back exactly as Claude wrote them: the
- *    questions it echoes and every text in them (question, header, option
- *    labels, descriptions, previews), the question that keys `answers` and
- *    `annotations`, and an answer that is the labels the user picked (one,
- *    or several joined by `LABEL_JOIN`). A shown text maps back through
- *    `changed`; a text Claude wrote stays.
- * 2. What the user typed is the user's text: an answer that is not only
- *    labels, `response` (free text typed instead of an option) and
- *    `annotations.*.notes`. Each value in `sent` is replaced there by its
- *    placeholder where it stands as a word (`maskSentValues`); the sidecar
- *    then masks it as it masks a prompt. It is never withheld.
- * 3. Anything else that holds a value in `sent`, and is not a text Claude
- *    wrote, throws `QuestionEchoError`: the result is withheld.
- */
-export function questionResultAsWritten(
-  result: unknown,
-  shown: unknown,
-  written: unknown,
-  changed: ReadonlyMap<string, string>,
-  sent: readonly SentValue[],
-): unknown {
-  const own = textsOf(written);
-  const labels = labelsOf(shown, written);
-  const claudes = (text: string): string => {
-    const back = changed.get(text) ?? text;
-    if (!own.has(back) && sent.some((one) => back.includes(one.value))) {
-      throw new QuestionEchoError();
-    }
-    return back;
-  };
-  const users = (text: string) => maskSentValues(text, sent);
-  const answer = (one: unknown): unknown => {
-    if (typeof one === 'string') return pickedLabels(one, labels) ?? users(one);
-    if (Array.isArray(one)) return one.map(answer);
-    return claudesIn(one);
-  };
-  const entries = (one: unknown, value: (key: string, sub: unknown) => unknown) =>
-    Object.fromEntries(
-      Object.entries(one as Record<string, unknown>).map(([key, sub]) => [
-        claudes(key),
-        value(key, sub),
-      ]),
-    );
-  const isRecord = (one: unknown) => one !== null && typeof one === 'object' && !Array.isArray(one);
-  function claudesIn(one: unknown): unknown {
-    if (typeof one === 'string') return claudes(one);
-    if (Array.isArray(one)) return one.map(claudesIn);
-    if (!isRecord(one)) return one;
-    return entries(one, (_key, sub) => claudesIn(sub));
-  }
-  const annotation = (one: unknown): unknown =>
-    isRecord(one)
-      ? entries(one, (key, sub) =>
-          key === NOTES_FIELD && typeof sub === 'string' ? users(sub) : claudesIn(sub),
-        )
-      : claudesIn(one);
-  if (!isRecord(result)) return claudesIn(result);
-  return entries(result, (key, sub) => {
-    if (key === RESPONSE_FIELD && typeof sub === 'string') return users(sub);
-    if (key === ANSWERS_FIELD && isRecord(sub)) return entries(sub, (_q, one) => answer(one));
-    if (key === ANNOTATIONS_FIELD && isRecord(sub)) {
-      return entries(sub, (_q, one) => annotation(one));
-    }
-    return claudesIn(sub);
-  });
 }
 
 /** One object key the sidecar masked: the key as the tool wrote it, which
@@ -554,16 +363,13 @@ export function unmaskKeys(original: unknown, masked: unknown): unknown {
  *   model), so that model reads the real values;
  * - `mcp`: an MCP tool, whose server gets the real values and can send them
  *   off this machine;
- * - `user`: `AskUserQuestion`, Claude's own question to the user, shown on
- *   this machine; the user's answer goes back to Claude masked, with the
- *   question as its key (`asksAboutResultKeys`);
  * - `internal`: another of Claude Code's own tools. The mod masks what it
  *   returns, but has no hook on what it hands on inside Claude Code (a
  *   subagent's prompt, a message to another agent), which can reach a
  *   Claude model unmasked;
  * - `unknown`: any other tool; the mod does not know where it sends them.
  */
-export type ClearDestination = 'model' | 'mcp' | 'user' | 'internal' | 'unknown';
+export type ClearDestination = 'model' | 'mcp' | 'internal' | 'unknown';
 
 /** Claude Code's tools that run through a Claude model. */
 const MODEL_RUN_TOOLS: ReadonlySet<string> = new Set(['WebFetch', 'WebSearch']);
@@ -571,7 +377,7 @@ const MODEL_RUN_TOOLS: ReadonlySet<string> = new Set(['WebFetch', 'WebSearch']);
 const MCP_TOOL_PREFIX = 'mcp__';
 /** Claude Code's tool that puts Claude's own question to the user. */
 const USER_QUESTION_TOOL = 'AskUserQuestion';
-/** Claude Code's own tools, other than the ones above, that talk only to
+/** Claude Code's own tools, other than `AskUserQuestion`, that talk only to
  * Claude, its subagents or the user. */
 const INTERNAL_TOOLS: ReadonlySet<string> = new Set([
   'TodoWrite',
@@ -583,17 +389,30 @@ const INTERNAL_TOOLS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Whether a call to `tool` outside `restoreTools` runs as Claude wrote it,
+ * with its placeholders and no question: `AskUserQuestion` alone. Claude's
+ * own question to the user never gets a real value; the mod shows the user,
+ * on this machine, which value each placeholder in it stands for, and the
+ * result goes back to Claude as Claude Code returns it, masked like any
+ * result. Every other tool outside `restoreTools` is asked about first
+ * (`clearDestination`).
+ */
+export function runsWithPlaceholders(tool: string): boolean {
+  return tool === USER_QUESTION_TOOL;
+}
+
+/**
  * The closed rule for a call to a tool outside `restoreTools` that holds a
- * placeholder the session knows: every such tool is asked about first
- * (Block / Send once / Allow all), Claude Code's own tools and tools the
- * mod does not know included, and this names where the values would go. A
- * shell tool never gets here (its call is refused), and a tool in
- * `restoreTools` gets its values with no question.
+ * placeholder the session knows, `AskUserQuestion` aside
+ * (`runsWithPlaceholders`): every such tool is asked about first (Block /
+ * Send once / Allow all), Claude Code's own tools and tools the mod does
+ * not know included, and this names where the values would go. A shell
+ * tool never gets here (its call is refused), and a tool in `restoreTools`
+ * gets its values with no question.
  */
 export function clearDestination(tool: string): ClearDestination {
   if (MODEL_RUN_TOOLS.has(tool)) return 'model';
   if (tool.startsWith(MCP_TOOL_PREFIX)) return 'mcp';
-  if (tool === USER_QUESTION_TOOL) return 'user';
   if (INTERNAL_TOOLS.has(tool)) return 'internal';
   return 'unknown';
 }
@@ -601,11 +420,11 @@ export function clearDestination(tool: string): ClearDestination {
 /**
  * Whether the mod asks before the masked object keys of `tool`'s result
  * go to Claude in clear: yes for every tool outside `restoreTools`, except
- * `AskUserQuestion`. Its result is keyed by the question Claude wrote, so
- * a masked key there is Claude's own placeholder coming back: it goes to
- * Claude masked, as Claude wrote it, with the user's answer under it.
- * Asking would put the real value in what Claude reads (Send once) or
- * lose the user's answer (Block).
+ * `AskUserQuestion`. Its result is keyed by the question Claude wrote:
+ * where the sidecar masks a value Claude wrote there itself, the key goes
+ * to Claude masked, with the user's answer under it. Asking would put that
+ * value in what Claude reads (Send once) or lose the user's answer (Block,
+ * or no one to answer).
  */
 export function asksAboutResultKeys(
   tool: string,
@@ -815,6 +634,7 @@ export function placeholderGuide(restoreTools: readonly string[] | undefined): s
     'Do not ask the user for the real value, and do not tell them it is hidden: nullpii shows them the real values.',
     restoringTools(restoreTools),
     otherTools(restoreTools),
+    ...questionTool(restoreTools),
     'A call the user does not agree to is refused, and so is every such call when no one can answer (claude -p) unless the user allowed all for the session; a placeholder nothing stands behind is passed as written.',
     'A shell command that holds a placeholder is refused.',
   ].join(' ');
@@ -822,12 +642,7 @@ export function placeholderGuide(restoreTools: readonly string[] | undefined): s
 
 /** Tools the guide names as examples of the ones that ask, besides MCP
  * tools: each only while `restoreTools` does not list it. */
-const GUIDE_EXAMPLE_TOOLS: readonly string[] = [
-  'TodoWrite',
-  'Agent',
-  'AskUserQuestion',
-  'WebFetch',
-];
+const GUIDE_EXAMPLE_TOOLS: readonly string[] = ['TodoWrite', 'Agent', 'WebFetch'];
 
 /** The guide's sentence on the tools outside `restoreTools`, with examples
  * that are true for this policy. */
@@ -835,6 +650,15 @@ function otherTools(restoreTools: readonly string[] | undefined): string {
   const examples = GUIDE_EXAMPLE_TOOLS.filter((tool) => restoreTools?.includes(tool) !== true);
   const named = [...examples, 'MCP tools'].join(', ');
   return `Every other tool, Claude Code's own included (such as ${named}), gets the real values only when the user agrees in a dialog nullpii puts to them.`;
+}
+
+/** The guide's sentence on `AskUserQuestion` (`runsWithPlaceholders`),
+ * while `restoreTools` does not list it. */
+function questionTool(restoreTools: readonly string[] | undefined): string[] {
+  if (restoreTools?.includes(USER_QUESTION_TOOL) === true) return [];
+  return [
+    `${USER_QUESTION_TOOL} is never asked about and never gets a real value: write placeholders in a question as they are, and nullpii shows the user which value each stands for.`,
+  ];
 }
 
 function restoringTools(restoreTools: readonly string[] | undefined): string {

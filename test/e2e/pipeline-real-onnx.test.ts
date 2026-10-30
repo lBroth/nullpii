@@ -7,6 +7,7 @@
 // skipped unless `NULLPII_E2E=1` and `NULLPII_MODEL_DIR` are set.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { DEFAULT_MAX_WORDS_PER_CHUNK } from '../../src/chunking.js';
 import { DEFAULT_DISABLED_CATEGORIES } from '../../src/defaults.js';
 import { NullPii } from '../../src/nullpii.js';
 import { PLACEHOLDER_REGEX } from '../../src/types/index.js';
@@ -17,17 +18,22 @@ const SKIP = process.env.NULLPII_E2E !== '1' || MODEL_DIR === undefined;
 const TEST_TIMEOUT_MS = 60_000;
 const WARMUP_TIMEOUT_MS = 120_000;
 
-const EMAIL_A = 'john.smith@acme.io';
+/** On `*.example` (RFC 2606): reserved, yet the recognizer still sees it. */
+const EMAIL_A = 'john.smith@acme.example';
 const EMAIL_B = 'jane.doe@example.org';
-/** The address of #43's report. */
-const EMAIL_C = 'alice@acme.io';
+/** The address of #43's report, on a reserved domain. */
+const EMAIL_C = 'alice@acme.example';
 /** Addresses on RFC 2606 reserved domains: the email recognizer drops them
  * as never-PII, so only the model's windows can mask them. */
 const MODEL_ONLY_EMAILS = ['ops.owner@example.com', EMAIL_B, 'sign.off@example.net'] as const;
 /** Neutral prose, repeated to push a text past one model window. */
 const FILLER = 'The build step finished and the cache stayed warm for the next run. ';
-/** Enough filler for several windows of the model's subword budget. */
-const FILLER_REPEATS = 300;
+/** Model windows the filler fills: the three values land in different
+ * windows, and the test stays a few model calls long on a slow CI CPU. */
+const FILLER_WINDOWS = 4;
+const FILLER_REPEATS = Math.ceil(
+  (FILLER_WINDOWS * DEFAULT_MAX_WORDS_PER_CHUNK) / FILLER.trim().split(/\s+/).length,
+);
 /** Keys and values of built-in tool results (WebFetch, Edit, Bash, Read)
  * that once came back masked and broke the tool's output schema (#92). */
 const TOOL_RESULT_WORDS = [

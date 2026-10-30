@@ -42,7 +42,7 @@ export const TEST_TIMEOUT_MS = 30_000;
 /** Values the core suite proves the real model detects. */
 export const PII = {
   person: 'Claude Dupont',
-  email: 'john.smith@acme.io',
+  email: 'john.smith@acme.example',
   iban: 'GB29 NWBK 6016 1331 9268 19',
   awsKey: 'AKIAIOSFODNN7EXAMPLE',
 } as const;
@@ -120,8 +120,20 @@ export function total(counts: Readonly<Record<string, number | undefined>>): num
 /** `text` cut in the middle of its first placeholder, so a stream sends
  * that placeholder in two pieces. */
 export function splitInsideFirstPlaceholder(text: string): [string, string] {
-  const first = placeholderPattern().exec(text);
-  if (first === null) throw new Error('no placeholder to split');
+  const first = firstPlaceholder(text);
   const at = first.index + Math.floor(first[0].length / 2);
   return [text.slice(0, at), text.slice(at)];
+}
+
+/** `text` cut between the two `{` that open its first placeholder: a
+ * stream must hold back a trailing single `{` too. */
+export function splitBetweenOpeningBraces(text: string): [string, string] {
+  const at = firstPlaceholder(text).index + 1;
+  return [text.slice(0, at), text.slice(at)];
+}
+
+function firstPlaceholder(text: string): RegExpExecArray {
+  const first = placeholderPattern().exec(text);
+  if (first === null) throw new Error('no placeholder to split');
+  return first;
 }

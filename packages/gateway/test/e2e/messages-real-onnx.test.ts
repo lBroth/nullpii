@@ -11,6 +11,7 @@
 import type { FastifyInstance } from 'fastify';
 import { LLM_PRESERVATION_HINT, type NullPii, PLACEHOLDER_TEMPLATE } from 'nullpii';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import type { GatewayConfig } from '../../src/config.js';
 import { buildServer } from '../../src/server.js';
 import type {
   AnthropicContentBlock,
@@ -39,6 +40,7 @@ import {
   WARMUP_TIMEOUT_MS,
   distinctPlaceholders,
   leaked,
+  splitBetweenOpeningBraces,
   splitInsideFirstPlaceholder,
   startRealEngine,
 } from './helpers.js';
@@ -57,6 +59,8 @@ const SYSTEM_PROMPT = 'You are a billing assistant.';
 const LOOKUP_ID = 'toolu_lookup';
 const REPLY_PREFIX = 'Here is your request back: ';
 const NOTES_FILE = '/repo/docs/NOTES';
+/** A shell tool: kept masked whatever `restoreTools` says. */
+const SHELL_TOOL = 'Bash';
 const CRM_URL = 'https://crm.example/lookup';
 const INPUT_TOKENS = 321;
 /** Small enough that frames, and placeholders in them, arrive cut. */
@@ -135,7 +139,7 @@ function echoMessage(f: Forwarded): AnthropicResponse {
       { type: 'text', text: `${REPLY_PREFIX}${f.prompt} ${FOREIGN}` },
       toolUse('toolu_write', 'Write', writeInput(f)),
       toolUse('toolu_fetch', 'WebFetch', fetchInput(f)),
-      toolUse('toolu_bash', 'Bash', bashInput(f)),
+      toolUse('toolu_bash', SHELL_TOOL, bashInput(f)),
     ],
   };
 }
@@ -157,9 +161,10 @@ function blockStart(index: number, block: Record<string, unknown>): StreamEvent 
 }
 
 /** The frames of `echoMessage` as a stream, its text and its Write input
- * each sent in two deltas cut inside a placeholder. */
+ * each sent in two deltas cut in a placeholder: the text between its two
+ * opening braces, the Write input in its middle. */
 function echoFrames(f: Forwarded): string[] {
-  const [textHead, textTail] = splitInsideFirstPlaceholder(`${REPLY_PREFIX}${f.prompt}`);
+  const [textHead, textTail] = splitBetweenOpeningBraces(`${REPLY_PREFIX}${f.prompt}`);
   const [writeHead, writeTail] = splitInsideFirstPlaceholder(JSON.stringify(writeInput(f)));
   const events: StreamEvent[] = [
     {
@@ -177,6 +182,9 @@ function echoFrames(f: Forwarded): string[] {
     blockStart(2, { type: 'tool_use', id: 'toolu_fetch', name: 'WebFetch', input: {} }),
     jsonDelta(2, JSON.stringify(fetchInput(f))),
     { type: 'content_block_stop', index: 2 },
+    blockStart(3, { type: 'tool_use', id: 'toolu_bash', name: SHELL_TOOL, input: {} }),
+    jsonDelta(3, JSON.stringify(bashInput(f))),
+    { type: 'content_block_stop', index: 3 },
     { type: 'message_delta', delta: { stop_reason: 'tool_use' } },
     { type: 'message_stop' },
   ];
@@ -236,8 +244,11 @@ describe.skipIf(SKIP)('gateway e2e · Messages proxy on the real model', () => {
   });
 
   /** A gateway on the shared engine whose upstream is `upstream`. */
-  async function proxyTo(upstream: FakeUpstream): Promise<FastifyInstance> {
-    const app = await buildServer({ config: E2E_CONFIG, np, fetchImpl: upstream.fetchImpl });
+  async function proxyTo(
+    upstream: FakeUpstream,
+    config: GatewayConfig = E2E_CONFIG,
+  ): Promise<FastifyInstance> {
+    const app = await buildServer({ config, np, fetchImpl: upstream.fetchImpl });
     apps.push(app);
     return app;
   }
@@ -263,9 +274,10 @@ describe.skipIf(SKIP)('gateway e2e · Messages proxy on the real model', () => {
         // minted stays as it came.
         { type: 'text', text: `${REPLY_PREFIX}${PROMPT} ${FOREIGN}` },
         toolUse('toolu_write', 'Write', { file_path: NOTES_FILE, content: TOOL_RESULT_TEXT }),
-        // A tool outside restoreTools, and a shell tool, keep them masked.
+        // Tools outside restoreTools keep them masked (the shell rule on
+        // its own, with the shell in restoreTools, is tested below).
         toolUse('toolu_fetch', 'WebFetch', fetchInput(forwarded)),
-        toolUse('toolu_bash', 'Bash', bashInput(forwarded)),
+        toolUse('toolu_bash', SHELL_TOOL, bashInput(forwarded)),
       ]);
       expect(leaked(JSON.stringify([fetchInput(forwarded), bashInput(forwarded)]))).toEqual([]);
     },
@@ -297,7 +309,44 @@ describe.skipIf(SKIP)('gateway e2e · Messages proxy on the real model', () => {
       const held = blocks.input.get(2) ?? '';
       expect(JSON.parse(held)).toEqual(fetchInput(forwarded));
       expect(leaked(held)).toEqual([]);
+      expect(JSON.parse(blocks.input.get(3) ?? '')).toEqual(bashInput(forwarded));
       expect(events.at(-1)?.type).toBe('message_stop');
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'keeps a shell call masked even when restoreTools names the shell, in a JSON and a streamed reply',
+    async () => {
+      const config: GatewayConfig = {
+        ...E2E_CONFIG,
+        restoreTools: new Set([...E2E_CONFIG.restoreTools, SHELL_TOOL]),
+      };
+      for (const stream of [false, true]) {
+        const upstream = fakeUpstream((request) =>
+          stream
+            ? sseAnswer(echoFrames(forwardedTexts(request)), SSE_CHUNK_BYTES)
+            : jsonAnswer(echoMessage(forwardedTexts(request))),
+        );
+        const app = await proxyTo(upstream, config);
+
+        const res = await post(app, MESSAGES_PATH, messagesRequest(stream));
+
+        expect(res.statusCode).toBe(OK);
+        const forwarded = forwardedTexts(onlyCall(upstream).request);
+        const bash = stream
+          ? (reassemble(sseEvents(res.body)).input.get(3) ?? '')
+          : JSON.stringify(
+              res
+                .json<AnthropicResponse>()
+                .content.find((b) => b.type === 'tool_use' && b.name === SHELL_TOOL)?.input,
+            );
+        expect({ stream, input: JSON.parse(bash) }).toEqual({
+          stream,
+          input: bashInput(forwarded),
+        });
+        expect(leaked(bash)).toEqual([]);
+      }
     },
     TEST_TIMEOUT_MS,
   );

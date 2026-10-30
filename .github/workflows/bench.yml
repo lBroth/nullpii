@@ -467,6 +467,6 @@ jobs:
           gh label create bench --force --color 1d76db --description "A benchmark re-measurement opened by bench.yml"
           gh label create bench-worse --force --color b60205 --description "bench.yml found a published number or claim that got worse"
           gh label create bench-accept-worse --force --color 0e8a16 --description "The owner accepts the worse numbers of this numbers PR"
-          labels=bench
-          if [ "$CODE" = 4 ]; then labels=bench,bench-worse; fi
-          gh pr edit "$PR" --add-label "$labels"
+          labels=(-f 'labels[]=bench')
+          if [ "$CODE" = 4 ]; then labels+=(-f 'labels[]=bench-worse'); fi
+          gh api --method POST "repos/$GH_REPO/issues/$PR/labels" "${labels[@]}" > /dev/null

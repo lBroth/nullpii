@@ -51,6 +51,11 @@ export interface GatewayConfig {
    * instead of evicting a live session, whose placeholders would then no
    * longer restore. */
   readonly sidecarMaxSessions: number;
+  /** Whether the sidecar offers `POST /v1/sidecar/shutdown`
+   * (`NULLPII_SIDECAR_SHUTDOWN=on`). Off by default: only the mod sets it,
+   * on the sidecar it starts, so a gateway started any other way (Docker,
+   * by hand, inside an app) cannot be stopped by a caller with the token. */
+  readonly sidecarShutdown: boolean;
   /** The masking policy shared with the library, the CLI and the mod:
    * the file at `NULLPII_CONFIG`, else `~/.config/nullpii/config.json`
    * if present, else none (`{}`). */
@@ -95,6 +100,7 @@ export const NULLPII_BODY_LIMIT_BYTES = 'NULLPII_BODY_LIMIT_BYTES';
 export const NULLPII_LOG_TRAFFIC = 'NULLPII_LOG_TRAFFIC';
 export const NULLPII_SIDECAR_TOKEN = 'NULLPII_SIDECAR_TOKEN';
 export const NULLPII_SIDECAR_MAX_SESSIONS = 'NULLPII_SIDECAR_MAX_SESSIONS';
+export const NULLPII_SIDECAR_SHUTDOWN = 'NULLPII_SIDECAR_SHUTDOWN';
 export const NULLPII_DISABLE_HINT = 'NULLPII_DISABLE_HINT';
 
 /** An upstream variable and the path its route appends to it. */
@@ -135,6 +141,7 @@ const DIGITS = /^\d+$/;
 const VALID_BACKENDS = new Set(['cpu', 'mps', 'cuda', 'auto']);
 const VALID_LOG_LEVELS = new Set(['fatal', 'error', 'warn', 'info', 'debug', 'trace']);
 const VALID_LOG_TRAFFIC = new Set(['wire', 'off']);
+const VALID_ON_OFF = new Set(['on', 'off']);
 /** `NULLPII_DISABLE_HINT` values: `1` turns the hint off, `0` leaves it on. */
 const HINT_OFF = '1';
 const HINT_ON = '0';
@@ -246,6 +253,7 @@ export function loadConfig(): GatewayConfig {
       DEFAULT_SIDECAR_MAX_SESSIONS,
       AT_LEAST_ONE,
     ),
+    sidecarShutdown: readEnum<'on' | 'off'>(NULLPII_SIDECAR_SHUTDOWN, VALID_ON_OFF, 'off') === 'on',
     policy,
     policyFile: loadedFile ?? defaultConfigPath(),
     policyLoaded: loadedFile !== null,

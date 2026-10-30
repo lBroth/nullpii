@@ -71,6 +71,7 @@ function sha256(value: string): Buffer {
  */
 export class SidecarSessions {
   private readonly entries = new Map<string, Entry>();
+  private openedAny = false;
   private readonly now: () => number;
 
   constructor(
@@ -92,6 +93,7 @@ export class SidecarSessions {
     }
     if (this.entries.size >= this.opts.maxSessions) return { kind: 'full' };
     const created = randomBytes(SESSION_SECRET_BYTES).toString('base64url');
+    this.openedAny = true;
     this.entries.set(key, {
       vaultId: this.np.createSession(),
       cache: new SanitizeCache(),
@@ -147,6 +149,11 @@ export class SidecarSessions {
 
   get size(): number {
     return this.entries.size;
+  }
+
+  /** Whether any session was ever opened here. */
+  get everOpened(): boolean {
+    return this.openedAny;
   }
 }
 

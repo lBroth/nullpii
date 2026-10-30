@@ -23,13 +23,13 @@
     "autostart": {
       "type": "boolean",
       "title": "Start the sidecar",
-      "description": "When no nullpii-gateway answers at the sidecar URL, start one for the session (npx with this release's packages; its first start downloads the model). It uses the sidecar token above and stops with the session.",
+      "description": "When no nullpii-gateway answers at the sidecar URL, at the start of a session or once the one in use stops answering mid-session, start one for the session (npx with this release's packages; its first start downloads the model). It uses the sidecar token above and stops with the session.",
       "default": true
     },
     "while_starting": {
       "type": "string",
       "title": "While nullpii starts",
-      "description": "What happens to a prompt you send while the sidecar this session started is still coming up (its first start downloads the model): ask (the default: wait for nullpii, or send it now unprotected), block (always wait), or pass (always send it unprotected, with the band saying so).",
+      "description": "What happens to a prompt you send while the sidecar this session started is still coming up (its first start downloads the model): ask (the default: wait for nullpii, or send it now unprotected), block (always wait), or pass (always send it unprotected, with the band saying so; a start that follows this window's own replacement of an older sidecar waits instead). A sidecar started again mid-session is always waited for.",
       "default": "ask"
     }
   }

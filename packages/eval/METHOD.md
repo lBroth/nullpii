@@ -486,7 +486,9 @@ Two of the things compared here are built for documents. PIILO is a set of stude
 
 ## Results
 
+<!-- results-measured:begin -->
 nullpii 0.5 (the release build and the published weights, in fp32), in the configurations it is published in, measured on CUDA. Its CUDA and CPU outputs agree on all but a few documents in a thousand (37 of the 14,701 tuning-set documents differ; release build, fp32 on both). The fp16 model that nullpii loads on CUDA by default scored the same macro F2 on these sets as fp32 in the 0.5 run's core regime, which is no longer published (0.7576 against 0.7575), with the same macro recall (0.9577). It takes 14–15% less time at 30k and 100k characters (463 ms against 537 ms, and 1,650 ms against 1,945 ms; median per call on the RTX 4070 Ti). Competitors run at their default and tuned operating points, and each row shows a tool's better one. The rows are from the release build, which includes the three rules from end-to-end testing described under AB-1; they changed only documents holding a UUID, an IPv4 address, a loopback host or the word "Claude". The CUDA and CPU agreement above was measured on the build before those rules, and the timings were checked on the release build, which takes the same time (fp16 459 ms and 1,640 ms, fp32 535 ms and 1,909 ms at 30k and 100k characters).
+<!-- results-measured:end -->
 
 **Gated sets** (char-F2; each tool at its better row, `(default)` where that is its default)
 

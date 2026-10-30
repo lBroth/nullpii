@@ -1,0 +1,6 @@
+# The benchmark pipeline's Python dependencies (scripts/bench_pipeline.py),
+# as bench.yml installs them and CI runs the pipeline's tests with. Pinned:
+# a scorer's numbers must not move with a dependency. Install with
+# `pip install --only-binary :all: -r requirements-pipeline.txt`.
+numpy==2.4.4
+huggingface-hub==1.14.0

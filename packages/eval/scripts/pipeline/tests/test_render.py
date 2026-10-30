@@ -424,3 +424,25 @@ def test_a_tool_tied_with_nullpii_on_r3_is_not_ahead_of_it(tmp_path):
         f[R3]["_macro"]["rizzo-pii@default"].update(f2=0.758)
     text = _r3(tmp_path, blocks_r3.readme_bullets, tied)
     assert text.startswith("- **First of 2** by macro char-F2 in its agent default (0.758;")
+
+
+def test_a_run_of_the_pipeline_is_labelled_a_cpu_re_measurement(tmp_path):
+    run, root, published = ro.write_run(tmp_path / "run"), ro.docs_root(tmp_path), tmp_path / "pb"
+    render.render(run, published, root)
+    version = views.package_version()
+    readme, method = (root / docs.README).read_text(), (root / docs.METHOD).read_text()
+    intro = render._body(readme, "bench-intro")
+    assert f"nullpii's rows are a CPU re-measurement of nullpii {version}" in intro
+    assert "published 0.5 run, which measured nullpii on CUDA" in intro
+    measured = render._body(method, "results-measured")
+    assert measured.startswith(f"nullpii {version} (") and "re-measured on CPU on a GitHub-hosted runner" in measured
+    assert "measured on CUDA. Its CUDA" not in measured
+    assert docs.CUDA_CPU_AGREEMENT in measured
+
+
+def test_the_published_run_is_labelled_as_measured_on_cuda(tmp_path):
+    ref, root, published = ro.write_reference(tmp_path / "ref"), ro.docs_root(tmp_path), tmp_path / "pb"
+    render.render(ref, published, root)
+    method = (root / docs.METHOD).read_text()
+    assert render._body(method, "results-measured") == docs.PUBLISHED_MEASURED + "\n"
+    assert render._body((root / docs.README).read_text(), "bench-intro") == docs.BENCH_INTRO + "\n"

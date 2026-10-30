@@ -211,7 +211,45 @@ def test_a_download_is_checked_against_the_pinned_manifest(tmp_path, monkeypatch
     with pytest.raises(frozen.FrozenError, match="is not the manifest of"):
         frozen.download(tmp_path)
     assert downloads == [{"repo_id": settings.FROZEN_REPO, "repo_type": "dataset",
-                          "revision": settings.FROZEN_REVISION, "local_dir": tmp_path}]
+                          "revision": settings.FROZEN_REVISION, "local_dir": tmp_path, "allow_patterns": None}]
+
+
+def test_a_download_of_the_sets_alone_asks_for_them_and_the_manifest(tmp_path, monkeypatch):
+    downloads = _fake_hub(monkeypatch, lambda repo, revision: types.SimpleNamespace(sha=settings.FROZEN_REVISION))
+    _bundle(tmp_path)
+    with pytest.raises(frozen.FrozenError, match="is not the manifest of"):
+        frozen.download(tmp_path, frozen.SETS)
+    assert downloads[0]["allow_patterns"] == [settings.MANIFEST, "datasets/*"]
+
+
+def _sets_only(root: Path) -> Path:
+    import shutil
+    _bundle(root)
+    shutil.rmtree(root / "predictions")
+    return root
+
+
+def test_a_copy_of_the_sets_alone_is_accepted_for_the_sets_only(tmp_path):
+    root = _sets_only(tmp_path)
+    assert frozen.verify(root, _pin(root), only=frozen.SETS).root == root.resolve()
+    with pytest.raises(frozen.FrozenError, match="missing: predictions/"):
+        frozen.verify(root, _pin(root))
+
+
+def test_a_copy_of_the_sets_alone_still_checks_every_set_and_everything_present(tmp_path):
+    root = _sets_only(tmp_path)
+    (root / "datasets" / "ab1" / "b2.jsonl").write_text('{"text": "changed"}\n')
+    with pytest.raises(frozen.FrozenError, match="datasets/ab1/b2.jsonl"):
+        frozen.verify(root, _pin(root), only=frozen.SETS)
+    root = _sets_only(tmp_path / "again")
+    (root / "datasets" / "r3" / "redact.jsonl").unlink()
+    with pytest.raises(frozen.FrozenError, match="missing: datasets/r3/redact.jsonl"):
+        frozen.verify(root, _pin(root), only=frozen.SETS)
+    root = _sets_only(tmp_path / "extra")
+    (root / "predictions").mkdir()
+    (root / "predictions" / "planted.jsonl").write_text("{}\n")
+    with pytest.raises(frozen.FrozenError, match="not in the manifest: predictions/planted.jsonl"):
+        frozen.verify(root, _pin(root), only=frozen.SETS)
 
 
 def test_a_link_to_a_relative_source_is_made_absolute(tmp_path, monkeypatch):

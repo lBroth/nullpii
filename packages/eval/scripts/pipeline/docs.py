@@ -104,6 +104,54 @@ def readme_matrix(b: views.Bench) -> str:
     return r3.matrix(b) + "\n\n" + r3.matrix_note(b)
 
 
+# How nullpii's numbers were measured ---------------------------------------------
+# The published run measured nullpii on CUDA; a run of the pipeline runs it
+# on CPU (score_capture.mjs's backend), on a GitHub-hosted runner when
+# bench.yml runs it, and scores every other tool from the published run's
+# predictions. The 0.5 run's own checks stay its history.
+
+BENCH_INTRO = ("Every test was fixed before the run, except one AB-1 scoring rule changed afterwards (see below)."
+               " Every result is published. How the numbers are made:"
+               " [`METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md).")
+CUDA_CPU_AGREEMENT = "37 of the 14,701 tuning-set documents differ"
+FP16_CHECK = (
+    "The fp16 model that nullpii loads on CUDA by default scored the same macro F2 on these sets as fp32 in the 0.5"
+    " run's core regime, which is no longer published (0.7576 against 0.7575), with the same macro recall (0.9577)."
+    " It takes 14–15% less time at 30k and 100k characters (463 ms against 537 ms, and 1,650 ms against 1,945 ms;"
+    " median per call on the RTX 4070 Ti).")
+OPERATING_POINTS = "Competitors run at their default and tuned operating points, and each row shows a tool's better one."
+PUBLISHED_MEASURED = (
+    "nullpii 0.5 (the release build and the published weights, in fp32), in the configurations it is published in,"
+    " measured on CUDA. Its CUDA and CPU outputs agree on all but a few documents in a thousand"
+    f" ({CUDA_CPU_AGREEMENT}; release build, fp32 on both). {FP16_CHECK} {OPERATING_POINTS} The rows are from the"
+    " release build, which includes the three rules from end-to-end testing described under AB-1; they changed only"
+    " documents holding a UUID, an IPv4 address, a loopback host or the word \"Claude\". The CUDA and CPU agreement"
+    " above was measured on the build before those rules, and the timings were checked on the release build, which"
+    " takes the same time (fp16 459 ms and 1,640 ms, fp32 535 ms and 1,909 ms at 30k and 100k characters).")
+
+
+def readme_intro(b: views.Bench) -> str:
+    if b.names == views.PUBLISHED_NAMES:
+        return BENCH_INTRO
+    return (f"{BENCH_INTRO} nullpii's rows are a CPU re-measurement of nullpii {b.version} by the benchmark workflow;"
+            f" every other tool's rows come from its predictions in the published {views.PUBLISHED_VERSION} run,"
+            " which measured nullpii on CUDA.")
+
+
+def method_measured(b: views.Bench) -> str:
+    if b.names == views.PUBLISHED_NAMES:
+        return PUBLISHED_MEASURED
+    return (
+        f"nullpii {b.version} (the build of `main` the benchmark workflow measured, with the published weights in"
+        " fp32), in the configurations it is published in, re-measured on CPU on a GitHub-hosted runner by the"
+        " benchmark pipeline ([`packages/eval/README.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/"
+        f"README.md#benchmark-workflow)). Every other tool's rows are scored from its predictions in the published"
+        f" {views.PUBLISHED_VERSION} run, on the same documents. That run measured nullpii on CUDA, and nullpii's CUDA"
+        " and CPU outputs agreed then on all but a few documents in a thousand"
+        f" ({CUDA_CPU_AGREEMENT}; fp32 on both, on the build before the three rules from end-to-end testing described"
+        f" under AB-1). {FP16_CHECK} {OPERATING_POINTS}")
+
+
 # METHOD -------------------------------------------------------------------------
 
 LATENCY_GLANCE = ("| Latency on GPU (RTX 4070 Ti), 30,000 characters | 463 ms; every category masked 489 ms |\n"
@@ -195,6 +243,7 @@ def card_limits(b: views.Bench) -> str:
 
 BLOCKS: dict = {
     README: {
+        "bench-intro": readme_intro,
         "summary": readme_summary,
         "fig-ab1": fig_ab1,
         "ab1-claims": readme_ab1,
@@ -216,6 +265,7 @@ BLOCKS: dict = {
         "ab1-coverage-items": method_coverage_intro,
         "ab1-coverage": ab1.coverage_table,
         "ab1-rules": method_rules,
+        "results-measured": method_measured,
         "r3-gated": r3.method_table(views.R3_MAIN),
         "r3-reported": r3.method_table(views.R3_REPORTED),
         "r3-en": r3.method_table(views.R3_EN),

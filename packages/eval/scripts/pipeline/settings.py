@@ -13,17 +13,25 @@ SCRIPTS = EVAL / "scripts"
 RESULTS = EVAL / "results"
 PUBLISHED = EVAL / "published-bench"
 
-# The frozen datasets and every tool's predictions of the published 0.5
-# run, private (it holds real secrets and data that may not be passed on).
+# The frozen datasets, every tool's predictions of the published 0.5 run
+# and that run's scoring outputs, private (it holds real secrets and data
+# that may not be passed on). Revision d6300af added `published-0.5/` to
+# eadb7b38 and changed nothing else but the manifest.
 FROZEN_REPO = "lBroth/nullpii-bench-private"
-FROZEN_REVISION = "eadb7b382e3bad85cf8f7b54ca24c1f19642b95f"
+FROZEN_REVISION = "d6300af293aa49b25e62209c5206faccc6191ce8"
 MANIFEST = "MANIFEST.json"
 # The SHA-256 of MANIFEST.json at FROZEN_REVISION. A copy is checked
 # against its manifest, so pinning the manifest binds every file of the
 # copy to the pinned revision, wherever the copy came from.
-FROZEN_MANIFEST_SHA256 = "b53c4708bff6e1bc4e4265e014e93fc8876ca9ff585f464d191fb5d610cd424c"
+FROZEN_MANIFEST_SHA256 = "7b12cd16747756834c0a6dbdff1a0dcec6cda67d107f17dfcd6596c951d3cf1e"
 # Files of the frozen repository that the manifest does not list.
 UNLISTED = frozenset({MANIFEST, "README.md", ".gitattributes"})
+# The published 0.5 run's AB-1 and PIIMB outputs, as `score` lays its own
+# out (`ab1/`, `piimb/`), in the frozen copy: `reproduce` checks the frozen
+# predictions give them, and `reference` lays them out for a first
+# `compare`. They were in published-bench/ until a run of the pipeline
+# took their place there.
+PUBLISHED_RUN_OUTPUTS = "published-0.5"
 # The folder huggingface_hub keeps its download metadata in, inside the
 # copy: not a frozen file.
 DOWNLOAD_METADATA = (".cache", "huggingface")

@@ -195,7 +195,9 @@ nullpii decodes hidden input before it looks for values: Unicode look-alikes and
 
 ## Benchmark
 
+<!-- bench-intro:begin -->
 Every test was fixed before the run, except one AB-1 scoring rule changed afterwards (see below). Every result is published. How the numbers are made: [`METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md).
+<!-- bench-intro:end -->
 
 ### Agent traffic (AB-1)
 

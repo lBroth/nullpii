@@ -15,17 +15,59 @@ sys.path.insert(0, str(settings.SCRIPTS))
 import bench_pipeline  # noqa: E402
 
 
+# Two texts of each set the captures read, made up.
+FAKE_SETS = {"ab1": tuple(settings.AB1_GOLD), "r3": (*settings.R3_GATED, *settings.R3_REPORTED),
+             "piimb": ("ai4privacy-en", "privy")}
+
+
+def _fake_texts(keys, out: Path) -> int:
+    out.parent.mkdir(parents=True, exist_ok=True)
+    rows = [{"dataset": k, "idx": i, "text": "abc" * (i + 1)} for k in keys for i in range(2)]
+    out.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    return len(rows)
+
+
+def _fake_node(args: list[str]) -> str:
+    """What score_capture.mjs and roundtrip.mjs write and print, on the
+    texts they are given: no span, every text."""
+    texts = [json.loads(line) for line in Path(_value(args, "--texts")).read_text().splitlines() if line]
+    if str(settings.ROUNDTRIP) in args:
+        return json.dumps({"docs": len(texts), "masked": 0, "roundtrip_failures": 0, "failing_idx": {}}) + "\n"
+    if "--checkpoints" in args:
+        out_dir, tool = Path(_value(args, "--checkpoints")), _value(args, "--tool")
+        for dataset in dict.fromkeys(t["dataset"] for t in texts):
+            rows = [{"idx": t["idx"], "spans": []} for t in texts if t["dataset"] == dataset]
+            (out_dir / f"{tool}-{dataset}.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    elif "--out" in args:
+        rows = [{"dataset": t["dataset"], "idx": t["idx"], "spans": []} for t in texts]
+        Path(_value(args, "--out")).write_text("".join(json.dumps(r) + "\n" for r in rows))
+    return ""
+
+
 @pytest.fixture
 def children(monkeypatch):
-    """Every child process the step would run, recorded instead."""
+    """Every child process the step would run, recorded instead; the
+    captures' own children write what they would, on made-up texts."""
+    from pipeline import texts
     calls: list[list[str]] = []
 
     def record(args, cwd=settings.EVAL):
-        calls.append([str(a) for a in args])
+        args = [str(a) for a in args]
+        calls.append(args)
+        if str(settings.SCORE_CAPTURE) in args or str(settings.ROUNDTRIP) in args:
+            return _fake_node(args)
+        if str(settings.RECOGNIZER_SPANS) in args:
+            Path(_value(args, "--out")).write_text(json.dumps({"idx": 0, "spans": []}) + "\n")
         return ""
+
+    def piimb_texts(sentences, out):
+        calls.append(["piimb_texts", str(sentences)])
+        _fake_texts(FAKE_SETS["piimb"], out)
+
     monkeypatch.setattr(capture, "run", record)
-    monkeypatch.setattr(capture, "piimb_texts", lambda sentences, out: calls.append(["piimb_texts", str(sentences)]))
-    monkeypatch.setattr(frozen, "verify", lambda root: frozen.Frozen(root))
+    monkeypatch.setattr(capture, "piimb_texts", piimb_texts)
+    monkeypatch.setattr(texts, "write", _fake_texts)
+    monkeypatch.setattr(frozen, "verify", lambda root, only=None: frozen.Frozen(root))
     return calls
 
 
@@ -33,20 +75,29 @@ def _score_capture(calls):
     return [c for c in calls if str(settings.SCORE_CAPTURE) in c]
 
 
-def test_a_resumed_piimb_capture_keeps_what_it_wrote(tmp_path, children):
+def _capture(tmp_path, *args):
     bench_pipeline.main(["capture", "--frozen", str(tmp_path), "--work", str(tmp_path / "w"), "--dist", str(tmp_path),
-                         "--group", "piimb", "--preset", "everything", "--resume"])
+                         *args])
+
+
+def _part(tmp_path, name):
+    return tmp_path / "w" / "parts" / name
+
+
+def test_a_resumed_piimb_capture_keeps_what_it_wrote(tmp_path, children):
+    _capture(tmp_path, "--group", "piimb", "--preset", "everything", "--resume")
     [call] = _score_capture(children)
-    assert call[call.index("--out") + 1] == str(tmp_path / "w" / "spans" / "piimb-everything.jsonl")
+    assert call[call.index("--out") + 1] == str(_part(tmp_path, "piimb-everything-1-of-1") / "piimb-everything.jsonl")
     assert call[-2:] == ["--resume", "1"]
 
 
 def test_a_fresh_piimb_capture_writes_anew(tmp_path, children):
-    bench_pipeline.main(["capture", "--frozen", str(tmp_path), "--work", str(tmp_path / "w"), "--dist", str(tmp_path),
-                         "--group", "piimb"])
+    _capture(tmp_path, "--group", "piimb")
     [call] = _score_capture(children)
     assert "--resume" not in call
     assert json.loads(call[call.index("--config") + 1]) == settings.PRESETS["default"]
+    marker = json.loads((_part(tmp_path, "piimb-default-1-of-1") / "PART.json").read_text())
+    assert marker["rows"] == marker["totals"] == {"ai4privacy-en": 2, "privy": 2}
 
 
 def _value(call, flag):
@@ -63,8 +114,18 @@ def test_the_captures_read_the_sets_from_the_checked_copy(tmp_path, children):
     assert [_value(c, "--gold") for c in recognizers] == [str(f.dataset("ab1", g)) for g in settings.AB1_GOLD.values()]
 
 
+def _capture_everything(tmp_path, shards: int = 1):
+    """Every capture `score` needs, each group in `shards` parts."""
+    for group, preset in bench_pipeline.CAPTURES:
+        for k in range(1, shards + 1):
+            _capture(tmp_path, "--group", group, "--preset", preset, "--shard", f"{k}/{shards}")
+    _capture(tmp_path, "--group", "recognizers")
+
+
 def test_score_hands_the_scorers_the_checked_copys_sets(tmp_path, children):
     f = frozen.Frozen(tmp_path / "frozen")
+    _capture_everything(tmp_path)
+    children.clear()
     bench_pipeline.main(["score", "--frozen", str(f.root), "--work", str(tmp_path / "w")])
     gold = [_value(c, "--gold") for c in children if "--gold" in c]
     assert gold == ([str(f.dataset("ab1", g)) for g in settings.AB1_GOLD.values()] * 2
@@ -77,12 +138,79 @@ def test_score_hands_the_scorers_the_checked_copys_sets(tmp_path, children):
     assert not any(str(settings.RESULTS) in arg for c in children for arg in c)
 
 
-@pytest.mark.parametrize("flag", [["--resume"], ["--preset", "everything"]])
+@pytest.mark.parametrize("shards", [1, 3])
+def test_score_puts_the_parts_together_where_the_scorers_read_them(tmp_path, children, shards):
+    _capture_everything(tmp_path, shards)
+    bench_pipeline.main(["score", "--frozen", str(tmp_path / "frozen"), "--work", str(tmp_path / "w")])
+    w = bench_pipeline.Work(tmp_path / "w")
+    for preset in settings.PRESETS:
+        for key in (*FAKE_SETS["ab1"], *FAKE_SETS["r3"]):
+            rows = (w.checkpoints / f"{settings.tool_name(preset)}-{key}.jsonl").read_text().splitlines()
+            assert [json.loads(r)["idx"] for r in rows] == [0, 1]
+        spans = [json.loads(r) for r in w.piimb_spans(preset).read_text().splitlines()]
+        assert [(r["dataset"], r["idx"]) for r in spans] == [(d, i) for d in FAKE_SETS["piimb"] for i in range(2)]
+    assert json.loads(w.roundtrip.read_text())["docs"] == 2 * len(FAKE_SETS["ab1"])
+
+
+def test_score_names_every_capture_that_is_missing(tmp_path, children):
+    _capture(tmp_path, "--group", "ab1", "--preset", "default", "--shard", "1/2")
+    _capture(tmp_path, "--group", "r3", "--preset", "default")
+    with pytest.raises(SystemExit, match="ab1 default: shard 2 of 2 not captured"):
+        bench_pipeline.main(["score", "--frozen", str(tmp_path), "--work", str(tmp_path / "w")])
+    _capture(tmp_path, "--group", "ab1", "--preset", "default", "--shard", "2/2")
+    with pytest.raises(SystemExit) as caught:
+        bench_pipeline.main(["score", "--frozen", str(tmp_path), "--work", str(tmp_path / "w")])
+    said = str(caught.value)
+    assert "capture --group ab1 --preset everything" in said and "capture --group roundtrip --preset default" in said
+    assert "capture --group r3 --preset default" not in said and "recognizers (ab1-a)" in said
+
+
+def test_a_limited_capture_is_never_scored(tmp_path, children):
+    _capture_everything(tmp_path)
+    _capture(tmp_path, "--group", "r3", "--preset", "default", "--limit", "1")
+    marker = json.loads((_part(tmp_path, "r3-default-1-of-1") / "PART.json").read_text())
+    assert marker["limit"] == 1 and set(marker["rows"].values()) == {1}
+    with pytest.raises(SystemExit, match="limited capture"):
+        bench_pipeline.main(["score", "--frozen", str(tmp_path), "--work", str(tmp_path / "w")])
+    # Its parts are refused too, wherever they are put together.
+    (tmp_path / "w" / "LIMITED.json").unlink()
+    with pytest.raises(SystemExit, match="r3 default: a limited capture"):
+        bench_pipeline.main(["score", "--frozen", str(tmp_path), "--work", str(tmp_path / "w")])
+
+
+def test_an_interrupted_capture_is_not_a_part(tmp_path, children, monkeypatch):
+    def dies(args, cwd=settings.EVAL):
+        raise RuntimeError("node … exited with 1")
+    _capture(tmp_path, "--group", "r3", "--preset", "default")
+    monkeypatch.setattr(capture, "run", dies)
+    with pytest.raises(RuntimeError):
+        _capture(tmp_path, "--group", "r3", "--preset", "default")
+    assert not (_part(tmp_path, "r3-default-1-of-1") / "PART.json").exists()
+
+
+def test_a_capture_that_misses_texts_is_refused(tmp_path, children, monkeypatch):
+    def short(args, cwd=settings.EVAL):
+        out = _fake_node([str(a) for a in args])
+        for path in Path(_value([str(a) for a in args], "--checkpoints")).glob("*.jsonl"):
+            path.write_text(path.read_text().splitlines()[0] + "\n")
+        return out
+    monkeypatch.setattr(capture, "run", short)
+    with pytest.raises(Exception, match="1 rows of ab1-a captured for 2 texts"):
+        _capture(tmp_path, "--group", "ab1", "--preset", "default")
+
+
+@pytest.mark.parametrize("flag", [["--resume"], ["--preset", "everything"], ["--shard", "1/2"], ["--limit", "3"]])
 def test_the_recognizer_capture_refuses_what_it_cannot_honour(tmp_path, children, flag):
-    with pytest.raises(SystemExit, match="takes neither --preset nor --resume"):
+    with pytest.raises(SystemExit, match="takes none of --preset, --resume, --shard, --limit"):
         bench_pipeline.main(["capture", "--frozen", str(tmp_path), "--work", str(tmp_path), "--dist", str(tmp_path),
                              "--group", "recognizers", *flag])
     assert children == []
+
+
+@pytest.mark.parametrize("shard", ["0/2", "3/2", "1", "a/b", "1/0", "-1/2"])
+def test_a_shard_is_k_of_n_from_1(tmp_path, children, shard):
+    with pytest.raises((SystemExit, ValueError)):
+        _capture(tmp_path, "--group", "r3", "--shard", shard)
 
 
 def test_every_path_is_made_absolute(tmp_path, monkeypatch):
@@ -113,7 +241,7 @@ def test_compare_refuses_a_missing_or_mistyped_run(tmp_path):
 
 
 def test_a_local_copy_is_said_to_be_one(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(frozen, "verify", lambda root: frozen.Frozen(root))
+    monkeypatch.setattr(frozen, "verify", lambda root, only=None: frozen.Frozen(root))
     monkeypatch.setattr(frozen, "install_datasets", lambda f: None)
     bench_pipeline.main(["fetch", "--frozen", str(tmp_path)])
     said = capsys.readouterr().out
@@ -122,21 +250,24 @@ def test_a_local_copy_is_said_to_be_one(tmp_path, monkeypatch, capsys):
 
 @pytest.fixture
 def published(tmp_path, monkeypatch):
-    """A made-up published-bench and frozen copy for `reference`."""
+    """A made-up frozen copy for `reference` (the published run's outputs
+    in it), and a published-bench that holds a run of the pipeline."""
     bench = tmp_path / "published-bench"
-    for rel in compare.expected_files():
-        if rel.startswith(("ab1/", "piimb/")) and rel not in settings.PUBLISHED_ABSENT:
-            (bench / rel).parent.mkdir(parents=True, exist_ok=True)
-            (bench / rel).write_text(json.dumps({"published": rel}))
+    bench.mkdir()
+    (bench / "OUTPUTS.json").write_text(json.dumps({"names": "run", "files": []}))
     root = tmp_path / "frozen"
     f = frozen.Frozen(root)
+    for rel in compare.expected_files():
+        if rel.startswith(("ab1/", "piimb/")) and rel not in settings.PUBLISHED_ABSENT:
+            (f.published_outputs / rel).parent.mkdir(parents=True, exist_ok=True)
+            (f.published_outputs / rel).write_text(json.dumps({"published": rel}))
     f.r3_published.mkdir(parents=True)
     for r3 in (*recipe.R3_RUNS, *recipe.CORE_LABEL_RUNS):
         (f.r3_published / f"{r3.name}.json").write_text(json.dumps({"published": r3.name}))
     for v in (*recipe.VERDICTS, *recipe.CORE_LABEL_VERDICTS):
         (f.r3_published / f"{v.name}.log").write_text(f"verdict {v.name}\n")
     monkeypatch.setattr(settings, "PUBLISHED", bench)
-    monkeypatch.setattr(frozen, "verify", lambda r: frozen.Frozen(r))
+    monkeypatch.setattr(frozen, "verify", lambda r, only=None: frozen.Frozen(r))
     return root
 
 
@@ -211,16 +342,16 @@ def test_capture_run_raises_when_the_child_fails(tmp_path):
         capture.run([sys.executable, "-c", "raise SystemExit(3)"], cwd=Path(tmp_path))
 
 
-@pytest.mark.parametrize("preset, round_trips", [("default", True), ("everything", False)])
-def test_only_the_default_capture_runs_the_round_trip(tmp_path, children, monkeypatch, preset, round_trips):
-    from pipeline import texts
-    monkeypatch.setattr(texts, "write", lambda keys, out: 0)
-    ran = []
-    monkeypatch.setattr(capture, "roundtrip", lambda dist, t, p: ran.append(p) or {"docs": 1})
-    bench_pipeline.main(["capture", "--frozen", str(tmp_path), "--work", str(tmp_path / "w"), "--dist", str(tmp_path),
-                         "--group", "ab1", "--preset", preset])
-    assert ran == (["default"] if round_trips else [])
-    assert (tmp_path / "w" / "out" / compare.ROUNDTRIP_FILE).is_file() == round_trips
+def test_the_round_trip_is_a_capture_of_its_own_in_the_default_preset(tmp_path, children):
+    _capture(tmp_path, "--group", "ab1", "--preset", "default")
+    assert not [c for c in children if str(settings.ROUNDTRIP) in c]
+    _capture(tmp_path, "--group", "roundtrip")
+    [call] = [c for c in children if str(settings.ROUNDTRIP) in c]
+    assert json.loads(_value(call, "--config")) == settings.PRESETS["default"]
+    result = json.loads((_part(tmp_path, "roundtrip-default-1-of-1") / "roundtrip.json").read_text())
+    assert result["docs"] == 2 * len(FAKE_SETS["ab1"])
+    with pytest.raises(SystemExit, match="default preset only"):
+        _capture(tmp_path, "--group", "roundtrip", "--preset", "everything")
 
 
 def test_the_round_trip_result_is_the_last_line_printed(monkeypatch):
@@ -239,9 +370,92 @@ def test_the_piimb_texts_are_written_whole(tmp_path, monkeypatch):
     assert [p.name for p in out.parent.iterdir()] == ["piimb.jsonl"]
 
 
-@pytest.mark.parametrize("step", ["reference", "reproduce"])
-def test_the_published_run_steps_refuse_a_published_bench_that_holds_a_run(tmp_path, published, step):
-    (settings.PUBLISHED / "OUTPUTS.json").write_text(json.dumps({"names": "run", "files": []}))
-    args = ["--out", str(tmp_path / "ref")] if step == "reference" else ["--work", str(tmp_path / "w")]
-    with pytest.raises(SystemExit, match="holds a run of the pipeline"):
-        bench_pipeline.main([step, "--frozen", str(published), *args])
+def test_reference_reads_the_published_run_from_the_frozen_copy_whatever_published_bench_holds(tmp_path, published):
+    ref = tmp_path / "ref"
+    bench_pipeline.main(["reference", "--frozen", str(published), "--out", str(ref)])
+    for rel in ("ab1/scores-ab1-a.json", "piimb/piimb-everything.json"):
+        assert (ref / rel).resolve() == (frozen.Frozen(published).published_outputs / rel).resolve()
+        assert not _inside_bench(ref / rel)
+
+
+def _inside_bench(path: Path) -> bool:
+    return settings.PUBLISHED.resolve() in path.resolve().parents
+
+
+def _published_bench(tmp_path, monkeypatch, names: str, data=None) -> Path:
+    from pipeline.tests import outputs as made_up
+    bench = made_up.write(tmp_path / "published-bench", data if data is not None else made_up.files())
+    (bench / "OUTPUTS.json").write_text(json.dumps({"names": names, "files": [], "version": "0.6"}))
+    monkeypatch.setattr(settings, "PUBLISHED", bench)
+    return bench
+
+
+def _frozen_published_run(tmp_path, monkeypatch) -> Path:
+    """A frozen copy holding the published run's outputs where `reference`
+    reads them."""
+    from pipeline.tests import outputs as made_up
+    f = frozen.Frozen(tmp_path / "frozen")
+    for rel, value in made_up.published().items():
+        if rel.startswith("r3/"):
+            name = Path(rel).stem
+            target = f.r3_published / (f"{name}.json" if rel.endswith(".json") else f"{name}.log")
+        else:
+            target = f.published_outputs / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(value if isinstance(value, str) else json.dumps(value))
+    monkeypatch.setattr(frozen, "verify", lambda r, only=None: frozen.Frozen(r))
+    return f.root
+
+
+def test_compare_with_published_bench_holding_a_run_reads_it_as_a_run(tmp_path, monkeypatch):
+    _published_bench(tmp_path, monkeypatch, "run")
+    same = run(tmp_path, "same")
+    worse = run(tmp_path, "worse", lambda f: f["ab1/scores-ab1-a.json"][DEFAULT].update(keep_rate=0.5))
+    report = tmp_path / "report.md"
+    args = ["--published-bench", "--frozen", str(tmp_path / "none"), "--report", str(report)]
+    assert bench_pipeline.main(["compare", "--new", str(same), *args]) == compare.EXIT_UNCHANGED
+    assert bench_pipeline.main(["compare", "--new", str(worse), *args]) == compare.EXIT_WORSE
+    assert report.read_text().startswith("**1 worse**")
+    assert report.read_text().rstrip().endswith("Compared with published-bench/, a run of the pipeline (0.6).")
+
+
+def test_compare_with_published_bench_holding_the_published_run_reads_it_like_for_like(tmp_path, monkeypatch):
+    from pipeline.tests import outputs as made_up
+    _published_bench(tmp_path, monkeypatch, "published", made_up.published())
+    root = _frozen_published_run(tmp_path, monkeypatch)
+    new = run(tmp_path, "new")
+    report = tmp_path / "report.md"
+    import tempfile
+    (tmp_path / "tmp").mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path / "tmp"))
+    code = bench_pipeline.main(["compare", "--new", str(new), "--published-bench", "--frozen", str(root),
+                                "--report", str(report)])
+    expected = compare.compare(new, bench_reference(root, tmp_path / "ref"), compare.PUBLISHED)
+    assert code == compare.exit_code(expected) and code in (compare.EXIT_CHANGED, compare.EXIT_WORSE)
+    text = report.read_text()
+    assert "dropped (core regime no longer published)" in text
+    assert "Compared with the published 0.5 run" in text
+    # The reference was laid out in a directory of its own, and removed.
+    assert list((tmp_path / "tmp").iterdir()) == []
+
+
+def bench_reference(root: Path, out: Path) -> Path:
+    bench_pipeline.main(["reference", "--frozen", str(root), "--out", str(out)])
+    return out
+
+
+@pytest.mark.parametrize("args, said", [
+    (["--reference", "R", "--frozen", "F"], "--frozen goes with --published-bench"),
+    (["--published-bench"], "takes --frozen"),
+    (["--published-bench", "--frozen", "F", "--published-names"], "takes --frozen"),
+])
+def test_compare_refuses_arguments_that_do_not_go_together(tmp_path, args, said):
+    with pytest.raises(SystemExit, match=said):
+        bench_pipeline.main(["compare", "--new", str(tmp_path), *args])
+
+
+def test_compare_needs_a_reference_or_published_bench(tmp_path):
+    with pytest.raises(SystemExit):
+        bench_pipeline.main(["compare", "--new", str(tmp_path)])
+    with pytest.raises(SystemExit):
+        bench_pipeline.main(["compare", "--new", str(tmp_path), "--reference", "R", "--published-bench"])

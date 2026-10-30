@@ -10,7 +10,7 @@ import json
 import pytest
 
 import bench_pipeline
-from pipeline import blocks_ab1, blocks_r3, compare, docs, render, views
+from pipeline import blocks_ab1, blocks_r3, compare, docs, render, settings, views
 from pipeline.prose import RenderError
 from pipeline.tests import outputs
 from pipeline.tests import render_outputs as ro
@@ -338,13 +338,15 @@ def test_a_runs_intervals_are_against_its_default(tmp_path):
     b = _bench(tmp_path)
     assert "| rizzo-pii (default) | **0.770** | **0.630** | 0.920 | **0.580** | [−0.020, −0.003] |" in blocks_r3.matrix(b)
     assert blocks_r3.matrix_note(b).endswith("The intervals are of nullpii 0.5 (agent default) minus each tool.")
-    assert "significantly behind 1, rizzo-pii at its default," in blocks_r3.comparisons(b)
+    text = blocks_r3.comparisons(b)
+    assert "significantly behind 1 (rizzo-pii at its default)." in text
+    assert ",." not in text and ",." not in blocks_r3.interval_bullet(b)
 
 
 def test_a_lead_that_becomes_too_close_to_call_is_reworded(tmp_path):
     def close(f):
         f[R3]["_macro"]["rizzo-pii@default"]["baseline_minus_tool_f2_ci"] = [-0.02, 0.003]
-    assert "too close to call with 1, rizzo-pii at its default," in _r3(tmp_path, blocks_r3.comparisons, close)
+    assert "too close to call with 1 (rizzo-pii at its default) and" in _r3(tmp_path, blocks_r3.comparisons, close)
 
 
 def test_bold_marks_the_best_printed_value_of_each_column(tmp_path):
@@ -397,14 +399,47 @@ def test_the_matrix_counts_nvidias_two_pipelines_as_one_tool_at_the_better_one(t
     assert "| nemotron-pii (`nvidia/gliner-PII`, library) | 0.720 |" in blocks_r3.matrix(library)
 
 
-def test_the_measured_version_labels_the_rows_and_survives_a_version_bump(tmp_path, monkeypatch):
-    run, root, published = ro.write_run(tmp_path / "run"), ro.docs_root(tmp_path), tmp_path / "pb"
+def test_the_measured_version_labels_the_rows_and_no_version_bump_relabels_them(tmp_path, monkeypatch):
+    measured = {**ro.RUN_MEASURED, "nullpii": "9.9.1"}
+    run, root, published = ro.write_run(tmp_path / "run", measured=measured), ro.docs_root(tmp_path), tmp_path / "pb"
     render.render(run, published, root)
-    assert json.loads((published / views.OUTPUTS_MARKER).read_text())[views.VERSION_KEY] == views.package_version()
-    monkeypatch.setattr(views, "package_version", lambda: "9.9")
+    marker = json.loads((published / views.OUTPUTS_MARKER).read_text())
+    assert marker[views.VERSION_KEY] == "9.9" and marker[views.MEASURED_KEY] == measured
+    assert "reference_of" not in marker
+    # The tree's version at render time changes nothing.
+    monkeypatch.setattr(views, "package_version", lambda: "0.1")
     assert render.check(published, published, root) == []
+    assert "| **nullpii 9.9 (agent default)** |" in blocks_ab1.readme_table(views.load(published))
     assert views.load(ro.write_reference(tmp_path / "ref")).version == views.PUBLISHED_VERSION
-    assert "| **nullpii 9.9 (agent default)** |" in blocks_ab1.readme_table(_bench(tmp_path, name="bumped"))
+
+
+def test_a_run_without_what_it_measured_is_refused(tmp_path):
+    run = ro.write_run(tmp_path / "run")
+    (run / views.MEASURED_FILE).unlink()
+    with pytest.raises(views.ViewError, match="MEASURED.json"):
+        views.load(run)
+    (run / views.MEASURED_FILE).write_text(json.dumps({"nullpii": "0.5.4"}))
+    with pytest.raises(views.ViewError, match="nullpii, model, backend"):
+        views.load(run)
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_a_non_finite_value_is_refused(tmp_path, value):
+    with pytest.raises(views.ViewError, match="not a finite number"):
+        _bench(tmp_path, lambda f: f[A][DEFAULT].update(leak_rate=value))
+
+
+def test_the_published_runs_marker_names_the_pinned_frozen_revision(tmp_path):
+    ref, root, published = ro.write_reference(tmp_path / "ref"), ro.docs_root(tmp_path), tmp_path / "pb"
+    render.render(ref, published, root)
+    want = f"{settings.FROZEN_REPO}@{settings.FROZEN_REVISION}"
+    assert json.loads((published / views.OUTPUTS_MARKER).read_text())["reference_of"] == want
+    # Rendered again from itself, carrying an older pin: the current one.
+    marker = json.loads((published / views.OUTPUTS_MARKER).read_text())
+    marker["reference_of"] = "lBroth/nullpii-bench-private@" + "e" * 40
+    (published / views.OUTPUTS_MARKER).write_text(json.dumps(marker, indent=1, sort_keys=True) + "\n")
+    render.render(published, published, root)
+    assert json.loads((published / views.OUTPUTS_MARKER).read_text())["reference_of"] == want
 
 
 def test_leading_on_one_secrets_set_is_not_leading_on_secrets(tmp_path):

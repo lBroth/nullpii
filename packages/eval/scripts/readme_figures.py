@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import math
 import re
 import sys
 from pathlib import Path
@@ -173,11 +174,28 @@ def chart_name(tool: str, nullpii: dict[str, str]) -> str:
     return nullpii[tool] if tool in nullpii else render_ab1.NAMES[tool]
 
 
+R3_STEP = 0.05
+# The axis the published chart was drawn on; it widens, by whole steps,
+# only when a value falls outside it.
+R3_AXIS = (8, 16)
+
+
+def r3_axis(values: list[float]) -> tuple[float, float, int]:
+    """The R3 axis's ends and its number of steps: 0.40 to 0.80, widened to
+    the nearest 0.05 below the lowest value and above the highest."""
+    low = min(R3_AXIS[0], math.floor(min(values) / R3_STEP + 1e-9))
+    high = max(R3_AXIS[1], math.ceil(max(values) / R3_STEP - 1e-9))
+    if low < 0 or high * R3_STEP > 1 + 1e-9:
+        raise ValueError("an R3 score outside 0 to 1")
+    return low * R3_STEP, high * R3_STEP, high - low
+
+
 def r3_chart(rows: list[tuple[str, float, float, bool]], floor: float) -> str:
     """`rows`: each tool's name, macro char-F2 on the five sets and on
     English documents, and whether it is a nullpii row; `floor`: the
     mask-everything row's macro char-F2."""
-    width, row, top, label_x, x0, plot_w, lo, hi = 880, 24, 112, 262, 280, 430, 0.40, 0.80
+    width, row, top, label_x, x0, plot_w = 880, 24, 112, 262, 280, 430
+    lo, hi, steps = r3_axis([v for _, a, e, _ in rows for v in (a, e)])
     height = top + len(rows) * row + 58
     bottom = top + len(rows) * row
 
@@ -193,8 +211,8 @@ def r3_chart(rows: list[tuple[str, float, float, bool]], floor: float) -> str:
             f'<circle class="dot-b" cx="{x0 + 136}" cy="76" r="6"/>',
             text(x0 + 148, 80, "English documents only (no clinical notes)", "label"),
             text(790, top - 10, "5 sets", "hint", "end"), text(858, top - 10, "English", "hint", "end")]
-    for i in range(9):
-        v = lo + i * 0.05
+    for i in range(steps + 1):
+        v = lo + i * R3_STEP
         body += [f'<line class="grid" x1="{x(v):.1f}" x2="{x(v):.1f}" y1="{top - 4}" y2="{bottom}"/>',
                  text(x(v), bottom + 16, f"{v:.2f}", "axis", "middle")]
     for i, (name, all5, english, mine) in enumerate(rows):

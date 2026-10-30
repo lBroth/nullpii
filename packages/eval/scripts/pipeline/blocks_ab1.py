@@ -13,7 +13,7 @@ import sys
 from dataclasses import dataclass
 
 from pipeline import compare, settings, views
-from pipeline.prose import listing, number, pct, refuse, verb
+from pipeline.prose import as_printed_pct, listing, number, pct, refuse, verb
 
 sys.path.insert(0, str(settings.SCRIPTS / "ab1"))
 
@@ -56,11 +56,15 @@ class Standing:
     keep_ci: dict[str, list[float]]
 
     def _strictly(self, field: str, lower: bool) -> list[str]:
-        mine = self.me[field]
-        ties = [k for k, r in self.others.items() if r[field] == mine]
+        """The tools whose rate, as printed, is lower (or higher); a tie
+        as printed is refused, since "fewer" next to equal figures reads
+        false."""
+        mine = as_printed_pct(self.me[field])
+        ties = [k for k, r in self.others.items() if as_printed_pct(r[field]) == mine]
         if ties:
-            raise refuse(f"a {field} tied with nullpii's", f"{', '.join(ties)}: no wording for a tie")
-        found = [k for k, r in self.others.items() if (r[field] < mine if lower else r[field] > mine)]
+            raise refuse(f"a {field} tied with nullpii's as printed", f"{', '.join(ties)}: no wording for a tie")
+        found = [k for k, r in self.others.items()
+                 if (as_printed_pct(r[field]) < mine if lower else as_printed_pct(r[field]) > mine)]
         return sorted(found, key=lambda k: (self.others[k][field], k), reverse=not lower)
 
     def fewer(self) -> list[str]:
@@ -72,8 +76,8 @@ class Standing:
 
     def keep_as_much(self) -> list[str]:
         """The tools that keep at least as much readable, most first."""
-        mine = self.me["keep_rate"]
-        found = [k for k, r in self.others.items() if r["keep_rate"] >= mine]
+        mine = as_printed_pct(self.me["keep_rate"])
+        found = [k for k, r in self.others.items() if as_printed_pct(r["keep_rate"]) >= mine]
         return sorted(found, key=lambda k: (-self.others[k]["keep_rate"], k))
 
 
@@ -173,8 +177,12 @@ def _keep_sign(ci: list[float]) -> str:
     raise refuse("a tool that keeps as much readable", "its keep interval says nullpii keeps significantly more")
 
 
-def _points(s: Standing, keys: list[str]) -> list[int]:
-    return [round(POINTS * (s.others[k]["leak_rate"] - s.me["leak_rate"])) for k in keys]
+def _points(s: Standing, keys: list[str]) -> list[str]:
+    """How many points more each tool lets through, in whole points, or to
+    a tenth when one gap is under half a point (never "0 points")."""
+    gaps = [POINTS * (s.others[k]["leak_rate"] - s.me["leak_rate"]) for k in keys]
+    decimals = 1 if min(round(g) for g in gaps) == 0 else 0
+    return [f"{g:.{decimals}f}" for g in sorted(gaps)]
 
 
 def lead_bullet(s: Standing) -> str:
@@ -191,7 +199,7 @@ def lead_bullet(s: Standing) -> str:
     parts = [head]
     if more:
         gaps = _points(s, more)
-        lo, hi = min(gaps), max(gaps)
+        lo, hi = gaps[0], gaps[-1]
         if len(more) == 1:
             parts.append(f"The other tool lets {lo} points more through.")
         else:
@@ -226,6 +234,8 @@ def weakest(b: views.Bench) -> list[Weak]:
     s = standing(b, A)
     by = s.me[compare.AB1_RANKED_BREAKDOWN]
     ordered = sorted(by, key=lambda c: -by[c][0])
+    if len(ordered) < WEAKEST:
+        raise refuse("nullpii's weakest categories", f"fewer than {WEAKEST} categories to name")
     if len(ordered) > WEAKEST and by[ordered[WEAKEST - 1]][0] == by[ordered[WEAKEST]][0]:
         raise refuse("nullpii's weakest categories", "a tie for the last place named")
     found = []
@@ -311,14 +321,19 @@ def _without_rank(s: Split) -> str:
     return f", and {len(fewer)} of the {len(s.others)} other tools {verb(len(fewer), 'lets', 'let')} fewer through"
 
 
-def _uuid_share(s: Split, most: str, some: str) -> str:
+def _uuid_share(s: Split, most: str, some: str, none: str) -> str:
+    if s.total == 0:
+        raise refuse("B1's split of nullpii's leaks", "nullpii lets no B1 secret through: there is nothing to split")
+    if s.me["leaked"] == 0:
+        return none
     return most if 2 * s.me["leaked"] > s.total else some
 
 
 def uuid_split(b: views.Bench) -> str:
     s = kind_split(b)
     share = _uuid_share(s, f"More than half of nullpii's leaks there ({s.me['leaked']} of {s.total}) are UUIDs",
-                        f"{s.me['leaked']} of nullpii's {s.total} leaks there are UUIDs")
+                        f"{s.me['leaked']} of nullpii's {s.total} leaks there are UUIDs",
+                        f"None of nullpii's {s.total} leaks there is a UUID")
     return (f"{share}: CredData counts {s.items:,} UUIDs as credentials, mostly after keys that name ids (`id`, `uid`,"
             " `_postman_id`) or after no key, while nullpii, and AB-1's own specification, treat a UUID as an id to keep"
             f" readable. Without them nullpii lets {pct(s.me['leak_other'])} through{_without_rank(s)} (an analysis made"
@@ -327,7 +342,7 @@ def uuid_split(b: views.Bench) -> str:
 
 def uuid_aside(b: views.Bench) -> str:
     s = kind_split(b)
-    share = _uuid_share(s, "most of it UUIDs", f"{s.me['leaked']} of its {s.total} leaks UUIDs")
+    share = _uuid_share(s, "most of it UUIDs", f"{s.me['leaked']} of its {s.total} leaks UUIDs", "none of it UUIDs")
     return (f", {share} that CredData counts as credentials and nullpii keeps readable as ids"
             f" ({pct(s.me['leak_other'])} without them)")
 
@@ -355,7 +370,10 @@ def _b1_clause(s: Standing) -> str:
         return f"On CredData it lets {pct(s.me['leak_rate'])} through, and no other tool lets fewer through."
     head = (f"On CredData it lets {pct(s.me['leak_rate'])} through, and {len(fewer)} of the {len(s.others)} other tools"
             f" {verb(len(fewer), 'lets', 'let')} fewer through")
-    both = [k for k in fewer if s.others[k]["keep_rate"] > s.me["keep_rate"]]
+    mine = as_printed_pct(s.me["keep_rate"])
+    if ties := [k for k in fewer if as_printed_pct(s.others[k]["keep_rate"]) == mine]:
+        raise refuse("a CredData keep rate tied with nullpii's as printed", f"{', '.join(ties)}: no wording for a tie")
+    both = [k for k in fewer if as_printed_pct(s.others[k]["keep_rate"]) > mine]
     if not both:
         return head + "; none of them keeps as much readable."
     if len(both) == 1:
@@ -367,11 +385,11 @@ def _b1_clause(s: Standing) -> str:
 
 
 def _keep_against(s: Standing, key: str) -> str:
-    mine, theirs = s.me["keep_rate"], s.others[key]["keep_rate"]
+    mine, theirs = as_printed_pct(s.me["keep_rate"]), as_printed_pct(s.others[key]["keep_rate"])
     if mine > theirs:
-        return f"nullpii keeps more readable ({pct(mine)} against {pct(theirs)})"
+        return f"nullpii keeps more readable ({pct(s.me['keep_rate'])} against {pct(s.others[key]['keep_rate'])})"
     if mine < theirs:
-        return f"it keeps more readable too ({pct(theirs)} against {pct(mine)})"
+        return f"it keeps more readable too ({pct(s.others[key]['keep_rate'])} against {pct(s.me['keep_rate'])})"
     raise refuse("a keep rate tied with nullpii's", "no wording for a tie")
 
 
@@ -411,9 +429,12 @@ def card_weak_bullet(b: views.Bench) -> str:
                   f" against {pct(s2.me['leak_rate'])})")
     else:
         issues = f"{len(fewer2)} other tools let fewer GitHub-issue secrets through than its {pct(s2.me['leak_rate'])}"
+    fewer1 = s1.fewer()
+    credata = (f", and {len(fewer1)} of the {len(s1.others)} other tools {verb(len(fewer1), 'lets', 'let')} fewer"
+               " through there" if fewer1 else ", and no other tool lets fewer through there")
     return (f"- **Weak spots:** {CATEGORIES[first.category][0]} ({_rate0(first.rate)} let through; {_fewer_count(first)})"
-            f" and {CATEGORIES[second.category][0]} ({_rate0(second.rate)}). {_secrets_head(b)}: {issues}, and on CredData"
-            f" nullpii lets {pct(s1.me['leak_rate'])} through{uuid_aside(b)}.")
+            f" and {CATEGORIES[second.category][0]} ({_rate0(second.rate)}). {_secrets_head(b)}: {issues}; on CredData"
+            f" nullpii lets {pct(s1.me['leak_rate'])} through{uuid_aside(b)}{credata}.")
 
 
 def card_traffic_bullet(b: views.Bench) -> str:

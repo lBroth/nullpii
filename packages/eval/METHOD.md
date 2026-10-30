@@ -21,8 +21,8 @@ This page explains how the numbers in the README are made, and what they show an
 | Agent traffic on CredData (B1) / GitHub issues (B2): lets through | 24.5% / 11.5% (B1: 13.0% without the items CredData labels `UUID`) |
 | Documents (R3), macro char-F2 over five held-out sets | 0.653 with every category masked, tenth of 15 (rizzo-pii 0.770); English only 0.603 |
 | Scored with the PIIMB leaderboard's method | 0.851 average F2 (every category masked) |
-| Latency on GPU (RTX 4070 Ti), 30,000 characters | 463 ms; every category masked 489 ms |
-| Latency on CPU (Core i7-13700KF), 30,000 characters | 6,984 ms |
+| Latency of nullpii 0.5 (timed by hand) on GPU (RTX 4070 Ti), 30,000 characters | 463 ms; every category masked 489 ms |
+| Latency of nullpii 0.5 (timed by hand) on CPU (Core i7-13700KF), 30,000 characters | 6,984 ms |
 <!-- glance:end -->
 
 The sections below say how each number is made, with every tool's row.
@@ -79,7 +79,7 @@ nullpii's default is built for a coding agent's traffic (Claude Code): prompts, 
   - whether diff hunks still have a consistent line count after masking (the carriers' pre-images are not shipped, so `git apply --check` is not possible);
   - the secrets' leak rate split by whether nullpii's recognizer pack covers their key format. This split was computed after the freeze, from the pack itself (`recognizer_spans.mjs`, `secret_coverage.py`), and is only reported.
 - Uncertainty: paired bootstrap over documents, 1,000 resamples, seed 0. It gives 95% intervals of each tool's overall leak and keep rates, and of nullpii minus each tool (not per category). A difference counts as a win or a loss only when its interval excludes 0.
-- Baseline: nullpii 0.5 in its agent default, with the categories the agent policy leaves readable turned off (dates, organisations, occupations, titles, demographic and sensitive attributes).
+- Baseline: nullpii in its agent default (0.5 when this specification was written), with the categories the agent policy leaves readable turned off (dates, organisations, occupations, titles, demographic and sensitive attributes).
 
 ### Competitors
 
@@ -95,7 +95,7 @@ Each was decided and logged before any tool ran on any AB-1 set, unless the entr
 
 - **Carriers.** The specification names two carrier datasets, both English. WildChat-1M prompts and GitHub issues were added, so that prompts and tickets in it/de/fr/es also start from real material half the time. A first build without them had 20% carriers for those two kinds, and was rebuilt. A second agent (DeepSeek V4.1 Flash) chose the added material and extended the generator, following the maintainers' written instructions, also without access to any nullpii repository.
 - **Masked item: whitespace.** The specification counts any unmasked character as a leak. Whitespace and `\n`/`\r`/`\t` layout escapes inside an item are not counted, so masking a key line by line is not a leak.
-- **Masked item: punctuation (decided after the scores were first read).** A value counts as masked when every letter and digit of it is masked; the commas and dots between the pieces of an address that a tool masks separately reveal nothing, so they are not counted. Keep rates do not change, since an item is kept when no character of it is masked. The change helps the other tools more than nullpii: with the first rule nullpii had the lowest leak rate on A, with this one rizzo-pii has. Where the rule can be too lenient: a password whose symbols are left between masked pieces counts as masked.
+- **Masked item: punctuation (decided after the scores were first read).** A value counts as masked when every letter and digit of it is masked; the commas and dots between the pieces of an address that a tool masks separately reveal nothing, so they are not counted. Keep rates do not change, since an item is kept when no character of it is masked. The rule was changed after the 0.5 run's scores were first read; that run's first scoring is kept in the repository's history ([`strict-rule/`](https://github.com/lBroth/nullpii/tree/230ce9fd1933f5df5263ca9c87d248e064eddc77/packages/eval/published-bench/ab1/strict-rule)). Where the rule can be too lenient: a password whose symbols are left between masked pieces counts as masked.
 - **Diff structure.** Hunk line counts are checked after masking, instead of `git apply --check`, because the carriers' pre-images are not shipped.
 - **Rows.** The specification has two rows per tool: default, and the agent policy where the tool can turn categories off. Instead, each tool is shown at its default and at its tuned operating point (tuned on the tuning set, as in the document benchmark), each raw and with the agent-policy post-filter, which works for every tool.
 - **Unmapped labels** are kept, as scoring that ignores labels requires (see Competitors).
@@ -108,7 +108,9 @@ Each was decided and logged before any tool ran on any AB-1 set, unless the entr
 
 ### Results
 
+<!-- ab1-results-intro:begin -->
 Every tool ran on the frozen sets; the tables use the run redone after the adapter fix, scored with the corrected rule. Rows are sorted by leak rate, then by keep rate. Intervals are paired bootstrap 95% intervals of nullpii minus the tool, in percentage points: a negative leak difference or a positive keep difference favours nullpii. In the main tables, bold marks nullpii's name and the best leak rate, keep rate and docs-with-a-leak value of the rows shown. The aggregates are in [`published-bench/ab1/`](https://github.com/lBroth/nullpii/blob/main/packages/eval/published-bench/ab1). nullpii's rows are from the release build, which includes the three rules described at the end of these results.
+<!-- ab1-results-intro:end -->
 
 <!-- ab1-roundtrip:begin -->
 nullpii's round trip, run with the same build: all 16,572 documents, 13,704 of them with something masked, came back as their exact original text after masking and restoring.

@@ -88,10 +88,9 @@ AB1_HISTORY = (
     " is an id, not an account number; an IP address is labelled as one, so documentation, private and local addresses"
     " stay readable; \"Claude\" is a product, not a person. They raised its keep rate (A: 81.9% → 85.4%; issues: 69.2%"
     " → 77.2%) and its CredData leak rate (14.6% → 24.5%, the UUIDs above). The other tools' rows are unchanged.\n"
-    "- **One scoring rule was changed after the scores were first read, and the change works against nullpii.**"
-    " Punctuation left between masked pieces of a value (like the comma between a street and a city) no longer counts"
-    " as a leak. With the first rule nullpii led (11.0% against rizzo-pii's 15.0%). The first scoring's files are kept"
-    " in the repository's history ([`strict-rule/`](https://github.com/lBroth/nullpii/tree/"
+    "- **One scoring rule was changed after the 0.5 run's scores were first read.** Punctuation left between masked"
+    " pieces of a value (like the comma between a street and a city) no longer counts as a leak. The first scoring's"
+    " files are kept in the repository's history ([`strict-rule/`](https://github.com/lBroth/nullpii/tree/"
     "230ce9fd1933f5df5263ca9c87d248e064eddc77/packages/eval/published-bench/ab1/strict-rule))."
 )
 
@@ -152,10 +151,45 @@ def method_measured(b: views.Bench) -> str:
         f" under AB-1). {FP16_CHECK} {OPERATING_POINTS}")
 
 
+# Where nullpii's rows come from ---------------------------------------------------
+# The published 0.5 run measured the release build; a run of the pipeline
+# measures the build it names (b.measured). Each paragraph keeps its text
+# around the sentence that says which.
+
+AB1_INTRO = ("AB-1 checks two things in a coding agent's traffic. What the agent must not give to the model (secrets, contact details and addresses, ids and account numbers, names) should be masked. What it needs to read (dates, versions, paths, hostnames of public services, placeholders, code identifiers) should stay readable. Each item is scored: the leak rate on items that must be hidden, and the keep rate on items that must stay readable. There is no combined score. Every tool ran on the frozen test set, and the run was redone once for every tool after an adapter fix; ", ' Method and limits: [AB-1 in METHOD.md](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md#agent-traffic-benchmark-ab-1).')
+AB1_INTRO_PUBLISHED = "nullpii's rows are from the release build, which includes three rules found in end-to-end testing (below)."
+AB1_INTRO_RUN = "nullpii's rows are a CPU re-measurement of nullpii {v} by the benchmark pipeline, a build with three rules found in end-to-end testing (below)."
+
+R3_INTRO = ("R3 measures document anonymisation, a different job from agent traffic. It uses five datasets, frozen before any tool ran on them: REDACT, TonicAI's human-annotated Privacy-Bench, PIILO student essays, Greek and German clinical notes, and a synthetic coding-agent trace set built for this benchmark from a specification we wrote. Each has under 1% measured overlap with nullpii's training data and with the public training sets the other tools declare (three declared sources, among them rizzo-pii's Italian sets, were not compared). The score is per character and ignores labels. F2 counts recall twice as much as precision, because a missed character leaks. ", '')
+R3_INTRO_PUBLISHED = 'nullpii\'s rows are from the release build, with the three rules described under AB-1; they changed only documents that hold a UUID, an IP address, a loopback host or the word "Claude".'
+R3_INTRO_RUN = "nullpii's rows are a CPU re-measurement of nullpii {v} by the benchmark pipeline, a build with the three rules described under AB-1."
+
+AB1_RESULTS_INTRO = ("Every tool ran on the frozen sets; the tables use the run redone after the adapter fix, scored with the corrected rule. Rows are sorted by leak rate, then by keep rate. Intervals are paired bootstrap 95% intervals of nullpii minus the tool, in percentage points: a negative leak difference or a positive keep difference favours nullpii. In the main tables, bold marks nullpii's name and the best leak rate, keep rate and docs-with-a-leak value of the rows shown. The aggregates are in [`published-bench/ab1/`](https://github.com/lBroth/nullpii/blob/main/packages/eval/published-bench/ab1). ", '')
+AB1_RESULTS_INTRO_PUBLISHED = "nullpii's rows are from the release build, which includes the three rules described at the end of these results."
+AB1_RESULTS_INTRO_RUN = "nullpii's rows are a CPU re-measurement of nullpii {v} by the benchmark pipeline (see the R3 results), a build with the three rules described at the end of these results."
+
+
+def readme_ab1_intro(b: views.Bench) -> str:
+    said = AB1_INTRO_PUBLISHED if b.names == views.PUBLISHED_NAMES else AB1_INTRO_RUN.format(v=b.version)
+    return AB1_INTRO[0] + said + AB1_INTRO[1]
+
+
+def readme_r3_intro(b: views.Bench) -> str:
+    said = R3_INTRO_PUBLISHED if b.names == views.PUBLISHED_NAMES else R3_INTRO_RUN.format(v=b.version)
+    return R3_INTRO[0] + said + R3_INTRO[1]
+
+
+def method_ab1_intro(b: views.Bench) -> str:
+    said = AB1_RESULTS_INTRO_PUBLISHED if b.names == views.PUBLISHED_NAMES else AB1_RESULTS_INTRO_RUN.format(v=b.version)
+    return AB1_RESULTS_INTRO[0] + said + AB1_RESULTS_INTRO[1]
+
+
 # METHOD -------------------------------------------------------------------------
 
-LATENCY_GLANCE = ("| Latency on GPU (RTX 4070 Ti), 30,000 characters | 463 ms; every category masked 489 ms |\n"
-                  "| Latency on CPU (Core i7-13700KF), 30,000 characters | 6,984 ms |")
+# Timed by hand on nullpii 0.5, whatever version the other rows measured.
+LATENCY_GLANCE = ("| Latency of nullpii 0.5 (timed by hand) on GPU (RTX 4070 Ti), 30,000 characters | 463 ms; every"
+                  " category masked 489 ms |\n"
+                  "| Latency of nullpii 0.5 (timed by hand) on CPU (Core i7-13700KF), 30,000 characters | 6,984 ms |")
 
 
 def glance(b: views.Bench) -> str:
@@ -245,6 +279,8 @@ BLOCKS: dict = {
     README: {
         "bench-intro": readme_intro,
         "summary": readme_summary,
+        "ab1-intro": readme_ab1_intro,
+        "r3-intro": readme_r3_intro,
         "fig-ab1": fig_ab1,
         "ab1-claims": readme_ab1,
         "ab1-a": ab1.readme_table,
@@ -259,6 +295,7 @@ BLOCKS: dict = {
         "fig-r3": fig_r3,
         "glance": glance,
         "ab1-roundtrip": ab1.roundtrip_sentence,
+        "ab1-results-intro": method_ab1_intro,
         "ab1-a": ab1.method_table_a,
         "ab1-b1": ab1.method_table(ab1.B1),
         "ab1-b2": ab1.method_table(ab1.B2),

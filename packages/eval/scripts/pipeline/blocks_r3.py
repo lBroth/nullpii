@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 from pipeline import compare, settings, views
 from pipeline.blocks_ab1 import render_ab1
-from pipeline.prose import f3, interval, listing, number, ordinal, refuse, signed, tools
+from pipeline.prose import as_printed, f3, interval, listing, number, ordinal, refuse, signed, tools
 
 SET_NAMES = {
     "r3-redact": "REDACT", "r3-tonic-human": "Tonic", "r3-piilo": "PIILO", "r3-eu-clinical": "eu-clinical",
@@ -127,10 +127,13 @@ def chart_rows(b: views.Bench) -> list[tuple[str, float, float, bool]]:
     for r in _method_rows(b, views.R3_MAIN):
         if r.key == compare.MASK_ALL_ROW:
             continue
+        key = r.nullpii or views.tool_of(r.key)
+        if key not in english:
+            raise refuse("the R3 chart's English bars", f"{r.label} has no row in the English report")
         if r.nullpii:
-            out.append((b.chart_label(r.nullpii), r.f2, english[r.nullpii], True))
+            out.append((b.chart_label(r.nullpii), r.f2, english[key], True))
         else:
-            out.append((R3_NAMES[views.tool_of(r.key)], r.f2, english[views.tool_of(r.key)], False))
+            out.append((R3_NAMES[key], r.f2, english[key], False))
     return out
 
 
@@ -202,7 +205,7 @@ def _signs(b: views.Bench, report: str, rows: list[views.Row]) -> dict[str, list
 
 def _sign_counts(signs: dict[str, list[views.Row]]) -> str:
     def named(rows: list[views.Row]) -> str:
-        return f"{len(rows)}, {listing([_plain(r) for r in rows])}," if 0 < len(rows) <= LODO_LISTED else str(len(rows))
+        return f"{len(rows)} ({listing([_plain(r) for r in rows])})" if 0 < len(rows) <= LODO_LISTED else str(len(rows))
     return (f"significantly ahead of {named(signs[compare.AHEAD])}, too close to call with "
             f"{named(signs[compare.CLOSE])} and significantly behind {named(signs[compare.BEHIND])}")
 
@@ -352,14 +355,25 @@ def _english_detail(b: views.Bench, name: str) -> str:
     return text + "."
 
 
-def _piimb_detail(name: str, r: dict) -> str:
+# The training-family overlap was measured for the weights the published
+# run measured; another model needs it measured again.
+TRAINING_OVERLAP = "2.5% of its sampled text overlaps nullpii's training data, and 5.2% overlaps Nemotron-PII's"
+
+
+def training_overlap(b: views.Bench) -> str:
+    if b.measured["model"] != settings.PUBLISHED_MODEL:
+        raise refuse("PIIMB's training-family overlap", f"it was measured for {settings.PUBLISHED_MODEL}, not"
+                     f" {b.measured['model']}: measure it for this model")
+    return TRAINING_OVERLAP
+
+
+def _piimb_detail(b: views.Bench, name: str, r: dict) -> str:
     rest = r["without"]
     tasks = [f"{TASK_NAMES[t]} {ordinal(at['rank'])}" for t, at in r["task_ranks"].items()]
     return (f"- **PIIMB** ([leaderboard](https://huggingface.co/spaces/piimb/pii-masking-benchmark-leaderboard), `sentences`"
             f" subset, scored by us with the leaderboard's method, not a submitted entry, {config_words(name)}): average F2"
             f" {f3(r['avg_f2'])}, {_piimb_place(r['leaderboard'], 'all')}. One of the six tasks, {rest['task']}, comes from"
-            " nullpii's training family: 2.5% of its sampled text overlaps nullpii's training data, and 5.2% overlaps"
-            f" Nemotron-PII's. Without that task nullpii averages {f3(rest['avg_f2'])}, {_piimb_place(rest['leaderboard'], 'all')}."
+            f" nullpii's training family: {training_overlap(b)}. Without that task nullpii averages {f3(rest['avg_f2'])}, {_piimb_place(rest['leaderboard'], 'all')}."
             " The leaderboard gives no intervals, so no difference on it can be called significant. Its place on each task,"
             f" of {next(iter(r['task_ranks'].values()))['of']}: {', '.join(tasks)}.")
 
@@ -372,7 +386,7 @@ def detail(b: views.Bench) -> str:
              f"- **Leaving one set out** (macro char-F2, and the place of {matrix_place(b, name).of}):"
              f" {_lodo_places(b, name)}.",
              f"- **English documents only.** {_english_detail(b, name)}"]
-    lines += [_piimb_detail(n, r) for n, r in b.piimb().items()]
+    lines += [_piimb_detail(b, n, r) for n, r in b.piimb().items()]
     return "\n".join(lines)
 
 
@@ -510,8 +524,12 @@ def lodo_table(b: views.Bench) -> str:
     for report, left_out in lodo_reports():
         me = _me(b, report, b.headline)
         rows = [r for r in b.r3_competitors(report, R3_NAMES, grouped=False)]
-        ahead = sorted((r for r in rows if r.f2 > me.f2), key=lambda r: -r.f2)
-        behind = sorted((r for r in rows if r.f2 <= me.f2), key=lambda r: -r.f2)
+        mine = as_printed(me.f2)
+        if ties := [r.label for r in rows if as_printed(r.f2) == mine]:
+            raise refuse(f"the tools ahead of and behind nullpii without {SET_NAMES[left_out]}",
+                         f"{', '.join(ties)} tied with nullpii as printed: no wording for a tie")
+        ahead = sorted((r for r in rows if as_printed(r.f2) > mine), key=lambda r: -r.f2)
+        behind = sorted((r for r in rows if as_printed(r.f2) < mine), key=lambda r: -r.f2)
         if not ahead:
             ahead_cell = "none"
         elif len(ahead) <= LODO_LISTED:
@@ -534,10 +552,13 @@ def _sensitivity_result(b: views.Bench, report: str) -> str:
     signs, main = _signs(b, report, rows), _signs(b, views.R3_MAIN, main_rows)
     if signs is None or main is None:
         return f"macro char-F2 {f3(me.f2)}"
-    def by_tool(found: dict[str, list[views.Row]]) -> dict[str, str]:
-        return {r.label: sign for sign, rs in found.items() for r in rs}
+    def by_tool(found: dict[str, list[views.Row]]) -> dict[str, tuple[str, str]]:
+        return {views.tool_of(r.key): (sign, _plain(r)) for sign, rs in found.items() for r in rs}
     now, before = by_tool(signs), by_tool(main)
-    moved = sorted(t for t in now.keys() & before.keys() if now[t] != before[t])
+    if now.keys() != before.keys():
+        raise refuse(f"the sensitivity check {report}'s conclusions",
+                     "it compares other tools than the gated table does: no wording for that")
+    moved = sorted(now[t][1] for t in now if now[t][0] != before[t][0])
     return "conclusions unchanged" if not moved else f"the interval's sign changes against {listing(moved)}"
 
 
@@ -556,6 +577,12 @@ def sensitivity(b: views.Bench) -> str:
     return "\n".join(lines)
 
 
+def _piimb_build(b: views.Bench) -> str:
+    if b.names == views.PUBLISHED_NAMES:
+        return "These are the release build's."
+    return f"These are nullpii {b.version}'s, re-measured on the CPU."
+
+
 def piimb_method(b: views.Bench) -> str:
     out = []
     for name, r in b.piimb().items():
@@ -564,8 +591,9 @@ def piimb_method(b: views.Bench) -> str:
         out.append(f"**PIIMB** (`sentences` subset, 150,022 texts; {PIIMB_CONFIG[preset]}), scored by us with the"
                    " leaderboard's method (`scripts/ab/piimb_score.py`), not a submitted entry: average F2"
                    f" {f3(r['avg_f2'])}, {_piimb_place(r['leaderboard'], 'all')}. nullpii's F2 per task: {tasks}."
-                   " These are the release build's. Caveats:")
+                   f" {_piimb_build(b)} Caveats:")
         rest = r["without"]
+        training_overlap(b)
         out.append(f"- the {rest['task']} task is in nullpii's training family (2.5% of its sampled text overlaps"
                    " nullpii's training corpus, 5.2% overlaps Nemotron-PII's); without it nullpii averages"
                    f" {f3(rest['avg_f2'])}, {_piimb_place(rest['leaderboard'], 'all')}, and the leaderboard gives no"
@@ -584,7 +612,7 @@ def card_documents(b: views.Bench) -> str:
     parts = []
     for me in b.r3_nullpii(views.R3_MAIN):
         p = place(matrix_rows(b), me)
-        first = f"; the first is {_plain(p.ahead[0])} ({f3(p.ahead[0].f2)})" if p.ahead else ""
+        first = f"; the first is {_plain(p.ahead[0])}, {f3(p.ahead[0].f2)}" if p.ahead else ""
         en = matrix_place(b, me.nullpii, views.R3_EN)
         en_me = _me(b, views.R3_EN, me.nullpii)
         parts.append(f"{config_words(me.nullpii)}, nullpii is {p.words} tools (macro char-F2 {f3(me.f2)}{first}); on"

@@ -62,6 +62,16 @@ def f3(x: float) -> str:
     return f"{x:.3f}"
 
 
+def as_printed_pct(x: float, decimals: int = 1) -> float:
+    """A rate as `pct` prints it, so a claim compares what a reader sees."""
+    return round(HUNDRED * x, decimals)
+
+
+def as_printed(x: float) -> float:
+    """A score as `f3` prints it."""
+    return round(x, 3)
+
+
 def signed(x: float, decimals: int = 3) -> str:
     return f"{x:+.{decimals}f}".replace("-", MINUS)
 

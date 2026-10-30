@@ -201,7 +201,9 @@ Every test was fixed before the run, except one AB-1 scoring rule changed afterw
 
 ### Agent traffic (AB-1)
 
+<!-- ab1-intro:begin -->
 AB-1 checks two things in a coding agent's traffic. What the agent must not give to the model (secrets, contact details and addresses, ids and account numbers, names) should be masked. What it needs to read (dates, versions, paths, hostnames of public services, placeholders, code identifiers) should stay readable. Each item is scored: the leak rate on items that must be hidden, and the keep rate on items that must stay readable. There is no combined score. Every tool ran on the frozen test set, and the run was redone once for every tool after an adapter fix; nullpii's rows are from the release build, which includes three rules found in end-to-end testing (below). Method and limits: [AB-1 in METHOD.md](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md#agent-traffic-benchmark-ab-1).
+<!-- ab1-intro:end -->
 
 <!-- fig-ab1:begin -->
 ![Agent traffic, 966 documents, leak rate and keep rate per tool: rizzo-pii 8.1% and 44.5%, nullpii 0.5 9.5% and 85.4%, then openai privacy-filter 14.5% and 77.9%; every other tool lets 15.7% to 55.1% through. The table below has every value.](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/ab1-agent-traffic.svg)
@@ -212,7 +214,7 @@ AB-1 checks two things in a coding agent's traffic. What the agent must not give
 - **Weakest categories:** person names (24% let through) and URLs (31%). On names, 11 of the 15 other tools let fewer through; on URLs, 5 do.
 - **On secrets alone, nullpii does not lead.** On CredData it lets 24.5% through, and 7 of the 15 other tools let fewer through; openai's privacy-filter lets 13.2% through and keeps more readable (77.1% against 64.8%). More than half of nullpii's leaks there (268 of 490) are UUIDs: CredData counts 294 UUIDs as credentials, mostly after keys that name ids (`id`, `uid`, `_postman_id`) or after no key, while nullpii, and AB-1's own specification, treat a UUID as an id to keep readable. Without them nullpii lets 13.0% through, the fewest of all tools (an analysis made after the scores were read). On secrets in GitHub issues, openai's privacy-filter lets fewer through (8.2% against 11.5%), and nullpii keeps more readable (77.2% against 74.6%).
 - **nullpii was measured again after three rules found in end-to-end testing,** added after the first run: a UUID is an id, not an account number; an IP address is labelled as one, so documentation, private and local addresses stay readable; "Claude" is a product, not a person. They raised its keep rate (A: 81.9% → 85.4%; issues: 69.2% → 77.2%) and its CredData leak rate (14.6% → 24.5%, the UUIDs above). The other tools' rows are unchanged.
-- **One scoring rule was changed after the scores were first read, and the change works against nullpii.** Punctuation left between masked pieces of a value (like the comma between a street and a city) no longer counts as a leak. With the first rule nullpii led (11.0% against rizzo-pii's 15.0%). The first scoring's files are kept in the repository's history ([`strict-rule/`](https://github.com/lBroth/nullpii/tree/230ce9fd1933f5df5263ca9c87d248e064eddc77/packages/eval/published-bench/ab1/strict-rule)).
+- **One scoring rule was changed after the 0.5 run's scores were first read.** Punctuation left between masked pieces of a value (like the comma between a street and a city) no longer counts as a leak. The first scoring's files are kept in the repository's history ([`strict-rule/`](https://github.com/lBroth/nullpii/tree/230ce9fd1933f5df5263ca9c87d248e064eddc77/packages/eval/published-bench/ab1/strict-rule)).
 <!-- ab1-claims:end -->
 
 <details>
@@ -247,7 +249,9 @@ Each row is the tool at its tuned setting, with the agent-policy filter. Bold ma
 
 ### Documents (R3)
 
+<!-- r3-intro:begin -->
 R3 measures document anonymisation, a different job from agent traffic. It uses five datasets, frozen before any tool ran on them: REDACT, TonicAI's human-annotated Privacy-Bench, PIILO student essays, Greek and German clinical notes, and a synthetic coding-agent trace set built for this benchmark from a specification we wrote. Each has under 1% measured overlap with nullpii's training data and with the public training sets the other tools declare (three declared sources, among them rizzo-pii's Italian sets, were not compared). The score is per character and ignores labels. F2 counts recall twice as much as precision, because a missed character leaks. nullpii's rows are from the release build, with the three rules described under AB-1; they changed only documents that hold a UUID, an IP address, a loopback host or the word "Claude".
+<!-- r3-intro:end -->
 
 <!-- fig-r3:begin -->
 ![Documents, macro char-F2 per tool over five sets and over English documents only: rizzo-pii 0.770 and 0.742, nvidia/gliner-PII (library) 0.720 and 0.672, OpenMed privacy-filter-multilingual-v2 0.717 and 0.717, pii-identifier 0.701 and 0.714, ettin-68m 0.699 and 0.706, openai privacy-filter 0.693 and 0.746, OpenMed PII Large 0.682 and 0.700, OpenMed PII Small 0.673 and 0.683, gliner-pii-large 0.656 and 0.590, nullpii 0.5, every category 0.653 and 0.603. The table below has every value.](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/r3-documents.svg)
@@ -374,7 +378,7 @@ new NullPii({ backend: 'cuda' });  // NVIDIA GPU, fp16 when the model ships it; 
 new NullPii({ backend: 'mps' });   // Apple Silicon through CoreML; slower than 'cpu' today, see below
 ```
 
-`backend: 'cuda'` needs the CUDA libraries that the installed `onnxruntime-node` was built with. For 1.30 on Linux x64 that is CUDA 13 (`libcudart.so.13`, `libcublas.so.13`, `libcublasLt.so.13`) and cuDNN 9, even though its installer calls the build `cuda12`. If nullpii cannot start a CUDA or CoreML session (a missing library, an unsupported graph, too little memory), it runs on the CPU instead. It then emits a process warning with code `NULLPII_BACKEND_FALLBACK` that names the cause (listen with `process.on('warning', …)`). A model downloaded for CUDA has only the fp16 file. The CPU can run it too, but the benchmark measures the fp32 file (accuracy on CUDA, the CPU latency table on the CPU).
+`backend: 'cuda'` needs the CUDA libraries that the installed `onnxruntime-node` was built with. For 1.30 on Linux x64 that is CUDA 13 (`libcudart.so.13`, `libcublas.so.13`, `libcublasLt.so.13`) and cuDNN 9, even though its installer calls the build `cuda12`. If nullpii cannot start a CUDA or CoreML session (a missing library, an unsupported graph, too little memory), it runs on the CPU instead. It then emits a process warning with code `NULLPII_BACKEND_FALLBACK` that names the cause (listen with `process.on('warning', …)`). A model downloaded for CUDA has only the fp16 file. The CPU can run it too, but the benchmark measures the fp32 file; [METHOD](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md) says on which backend each run measured accuracy, and the CPU latency table is timed on the CPU.
 
 On Apple Silicon, use `cpu`. With CoreML the model was slower than on the CPU at every size measured (1.3 to 8 times slower, depending on the CoreML settings; measured on earlier builds). Its first call also took 18 to 26 seconds while CoreML compiled the graph, which the GLiNER head's dynamic shapes split into many parts (#51).
 

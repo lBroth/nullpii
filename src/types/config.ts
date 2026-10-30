@@ -58,7 +58,15 @@ export interface NullPiiConfig {
   /** Categories to leave unmasked. Their spans are dropped from every
    * detector, recognizers included. One the default prompts stays in the
    * model's prompt, since the label set moves the model's scores, but is
-   * never decoded; the others are not prompted. Default:
+   * never decoded; the others are not prompted. When this list leaves
+   * readable a category the default prompts and `secret` is masked, the
+   * model reads the text a second time for secrets, prompted with the
+   * masked categories alone, and its secrets are masked where the first
+   * read found something, a recognizer matched, or the first read could
+   * not read (`secret-pass.ts`); with none of these, no second read: a
+   * credential the default's prompt files under a readable category (a
+   * token in a URL, a key the model calls an account number) stays
+   * masked. Default:
    * `DEFAULT_DISABLED_CATEGORIES` (companies, jobs, honorifics, demographic
    * and sensitive attributes, dates): what an agent needs readable and
    * identifies no one on its own. `[]` masks every category. */

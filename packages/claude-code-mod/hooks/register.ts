@@ -3,10 +3,16 @@
 // nullpii mod: every prompt and every tool result goes through the local
 // nullpii sidecar (`nullpii-gateway` with NULLPII_SIDECAR_TOKEN set) before
 // Claude reads it, so personal data and secrets reach the model as
-// placeholders. Real values go back only into the arguments of the tools
-// the sidecar's policy lists (`restoreTools` in the shared config file, by
-// default the tools that run on this machine), so files and commands see
-// what the user has, and nothing masked leaves through a web or MCP tool.
+// placeholders. Real values go back into the arguments of the tools the
+// sidecar's policy lists (`restoreTools` in the shared config file, by
+// default the file tools that run on this machine), so files see what the
+// user has. Any other tool gets a real value only on the user's word, asked
+// in a dialog (Block / Send once / Allow all); with no one to answer
+// (`claude -p`) its call is refused unless Allow all was given. A shell
+// command never gets one. A call that writes a file and would still hold a
+// placeholder the sidecar can no longer put back (from before a resume, or
+// from a sidecar session that expired or restarted: the vault is never
+// saved to disk) is asked about first, and refused with no one to answer.
 //
 // Fail closed: when the sidecar cannot be reached, a prompt is handed back
 // to the user and a tool call is refused, instead of going out unmasked.
@@ -23,6 +29,7 @@ import {
   formatPiiHelp,
   parsePiiCommand,
   piiCommandDescription,
+  placeholderCategories,
   placeholdersToAsk,
   policyLoosening,
   shortName,
@@ -31,23 +38,38 @@ import { type ModState, formatDoctor, readDoctorStatus } from './doctor.ts';
 import { type CauseWords, causeIn, progressBar } from './look.ts';
 import { PADLOCK_COLUMNS, PADLOCK_ROWS, type PadlockTone, padlockCells } from './padlock.ts';
 import {
+  type ClearDestination,
+  type MaskedKey,
   PLACEHOLDER,
   type Policy,
+  RESULT_SHAPE_MISMATCH,
   addMasked,
+  addSent,
+  addedPlaceholders,
+  asSent,
+  asksAboutResultKeys,
   challengeNonce,
+  clearDestination,
   emptyCounts,
   expectedProof,
   formatBand,
   formatPolicy,
   formatReport,
   hasPlaceholder,
+  maskedKeys,
+  olderRelease,
   optionFlag,
   optionString,
   placeholderGuide,
+  readSidecarSelf,
   restorableArgs,
+  runsWithPlaceholders,
   sameText,
   sidecarOrigin,
+  substitutePlaceholders,
   touchesPolicyFile,
+  unmaskKeys,
+  writtenText,
 } from './policy.ts';
 import { formatPreview } from './preview.ts';
 
@@ -56,6 +78,14 @@ const DEFAULT_SIDECAR_URL = 'http://127.0.0.1:8787';
 const SESSIONS_PATH = '/v1/sidecar/sessions/';
 const STATUS_PATH = '/v1/sidecar/status';
 const POLICY_PATH = '/v1/sidecar/policy';
+const SHUTDOWN_PATH = '/v1/sidecar/shutdown';
+/** How long the mod waits for an older sidecar it asked to stop to let go
+ * of the address, and how often it looks. */
+const SHUTDOWN_WAIT_MS = 15_000;
+const SHUTDOWN_POLL_MS = 250;
+/** The start-up phases of a sidecar whose start is over, either way: only
+ * such a sidecar may be replaced. */
+const SETTLED_PHASES: ReadonlySet<string> = new Set(['ready', 'failed']);
 /** The version of the policy this session made or accepted, sent with
  * every call: the sidecar answers 412 and does nothing once the policy has
  * changed since (the token alone can change it). */
@@ -78,6 +108,20 @@ const ASK_READABLE = 'Send readable';
 const ASK_ALWAYS_READABLE = 'Always readable';
 /** How much of a value the dialog shows. */
 const ASK_PREVIEW_CHARS = 60;
+/** The answers of the dialog that asks before a value goes out in clear: a
+ * masked key of a tool result, or a call to a tool outside the policy's
+ * `restoreTools`. Block comes first, so a quick confirm sends nothing. */
+const BLOCK = 'Block';
+const SEND_ONCE = 'Send once';
+const ALLOW_ALL = 'Allow all';
+/** How much of a value the mod's own question and its toasts show: the
+ * whole value while it is `SHORT_WHOLE` characters or fewer, else its
+ * first `SHORT_HEAD` and last `SHORT_TAIL` characters, with an ellipsis
+ * between: enough to recognise the value, too little to carry it. */
+const SHORT_WHOLE = 10;
+const SHORT_HEAD = 3;
+const SHORT_TAIL = 4;
+const ELLIPSIS = '…';
 /** The answers of the dialog that asks before masking is paused: keeping
  * it comes first, so a quick confirm keeps masking on. */
 const KEEP_MASKING = 'Keep masking';
@@ -96,6 +140,9 @@ const CHALLENGE_PATH = '/v1/sidecar/challenge';
 const JSON_TYPE = { 'content-type': 'application/json' };
 const SESSION_NOT_FOUND = 404;
 const SESSION_EXISTS = 409;
+/** The sidecar's answer to a `PUT` sessions once it has accepted a shutdown:
+ * a session opened now would die with the process, so it refuses one. */
+const SIDECAR_CLOSING = 503;
 /** Proves to the sidecar that this mod opened the session. */
 const SESSION_SECRET_HEADER = 'x-nullpii-session-secret';
 const KEY_SUFFIX_RADIX = 36;
@@ -177,6 +224,9 @@ const TRY_REDACTED_ARGS = 'try [sample not stored]';
 const TRY_USAGE =
   'Usage: /pii try <text>. Type the sample on the command, not in a menu dialog; only the masked result is kept.';
 const TRY_SESSION_PREFIX = 'try-';
+/** A masked key of a tool result holds a placeholder the sidecar does not
+ * know: the key cannot be named to the user, so nothing is sent. */
+const KEY_VALUE_UNKNOWN = 'the sidecar does not know a placeholder it put in a masked key';
 /** The error texts this mod writes, which hold no value: the only ones shown. */
 const OWN_REASONS: ReadonlySet<string> = new Set([
   NO_TOKEN,
@@ -186,6 +236,8 @@ const OWN_REASONS: ReadonlySet<string> = new Set([
   NOT_SIDECAR,
   NOT_STARTED,
   NO_POLICY,
+  RESULT_SHAPE_MISMATCH,
+  KEY_VALUE_UNKNOWN,
 ]);
 /** SidecarError's text, the one with a variable part. */
 const SIDECAR_STATUS = /^nullpii sidecar answered \d{3}$/;
@@ -229,6 +281,21 @@ const RESULT_WITHHELD =
   "nullpii could not mask this tool's result, so it was withheld. The user sees why above the prompt and in /pii.";
 const CONTEXT_WITHHELD =
   "nullpii withheld this tool's result: a hook attached text for Claude that holds personal data, and that text cannot be masked.";
+/** The refusal when the user did not send a tool result's masked object
+ * keys in clear: the tool ran, and its result does not reach Claude. */
+const KEYS_WITHHELD =
+  "nullpii withheld this tool's result: it named personal data in an object key, and the user did not send that in clear. Ask them to allow it (the mod asks), or read the result another way.";
+/** The refusal when the user did not send in clear the values a call to a
+ * tool outside the policy's `restoreTools` holds (`clearDestination`), or
+ * no one could answer: the call is not run. It names no way around the question: a policy that lists the tool
+ * in `restoreTools` would send every value with no question at all. */
+const HELD_NOT_SENT =
+  'nullpii did not run this call: it holds placeholders for real values, and the user did not agree to send those values to this tool, or no one could answer (claude -p). Ask the user how to go on, or do the task without those values.';
+/** The refusal when a call that writes a file would still hold
+ * placeholders the sidecar can no longer put back, and the user did not let
+ * it write them as text, or no one could answer (claude -p). */
+const STALE_NOT_WRITTEN =
+  'nullpii did not run this call: it would write placeholders whose real values are no longer available (they come from an earlier session, or from a nullpii session that expired or restarted, and nullpii keeps no value on disk), so the file would hold the placeholder text instead of the data. Ask the user for those values and use what they give you; never invent them. If the placeholder text itself belongs in the file, say so to the user: nullpii asks them to confirm.';
 const POLICY_DENIED =
   'nullpii refused this call: with the real values put back it would change the nullpii masking policy file, which the user was not asked about. Ask the user to make that change themselves.';
 const POLICY_ASK =
@@ -252,6 +319,11 @@ interface Restored {
   shellKeptMasked?: string[];
   /** For a tool outside the policy's `restoreTools`: the placeholders kept. */
   heldForTool?: number;
+  /** For a tool the sidecar restores into, and a restore with no tool: the
+   * placeholders it could not put back, an index its vault does not hold
+   * (`unknown`) or another vault's prefix (`foreign`). */
+  unknownPlaceholders?: number;
+  foreignPlaceholders?: number;
 }
 
 /** Why a hook failed: what a `.catch` handler reads as `next.error`. */
@@ -289,9 +361,11 @@ let policy: Policy | undefined;
 let problem: string | undefined = NO_TOKEN;
 // The most recent mod-written failure, retained after a later recovery for /pii doctor.
 let lastFailure: string | undefined;
-// The sidecar this session started, until it answers: `running`, or
-// `exited` once its process ended first.
-let started: 'running' | 'exited' | undefined;
+// The sidecar this session started, until it answers: `running`,
+// `opening` once its status said ready and the session is being opened
+// (prompts then wait for that session and its policy, masked, as after the
+// start), or `exited` once its process ended first.
+let started: 'running' | 'opening' | 'exited' | undefined;
 // The start-up phase of a sidecar this session started: undefined once
 // its model is ready, or when the mod started none. While it is set
 // nothing is sent (fail closed), and the band shows the phase.
@@ -309,13 +383,57 @@ let opening: Promise<void> | undefined;
 // a paused session whose sidecar is not up still sends nothing (fail
 // closed, through `problem`).
 let paused = false;
+// Whether the user allowed every value to go out in clear for the rest of
+// the session (the dialog's Allow all): nothing is asked again, and each
+// value that goes out still shows in a toast and counts in /pii. This
+// session's state alone, in memory, like `paused`.
+let allowAll = false;
+// The end of the last question about sending values in clear: they are put
+// one at a time, so calls that run side by side never stack dialogs, and an
+// Allow all answers the calls that were waiting behind it.
+let clearQuestions: Promise<void> = Promise.resolve();
+// Whether the user let placeholders the sidecar can no longer put back be
+// written into files as text for the rest of the session (the dialog's
+// "Write as text for the session"). A flag of its own, apart from Allow
+// all: it lets placeholder text into a file and sends no value anywhere.
+// This session's state alone, in memory, like `allowAll`.
+let staleAsText = false;
+// Whether this session showed its one notice about placeholders that can
+// no longer be put back.
+let staleNoticed = false;
 // What to do with a prompt sent while the sidecar this session started is
 // still coming up (the `while_starting` option): ask the person, always
 // wait, or always send it unprotected.
 let whileStarting: 'ask' | 'block' | 'pass' = 'ask';
+// Whether this window starts a sidecar when none answers (the `autostart`
+// option, "Start the sidecar"): at session start, and again mid-session.
+let autostartOn = true;
+// A session opened on a sidecar since this window last began a start: only
+// then does a sidecar that stops answering get started again mid-session.
+// A start that gave up is not tried again at every prompt (each would run
+// npx once more); the band says why, until the next session.
+let restartable = false;
+// The start running now began mid-session, because the sidecar in use was
+// lost (`restartIfGone`): the session was masked until then, so prompts,
+// tool calls and tool results wait for the new sidecar under every
+// `while_starting`, and nothing goes out unmasked.
+let midSessionStart = false;
+// Counts the starts this module has begun: a start-up dialog answered after
+// its start ended (and another began) speaks for nothing in the new one.
+let startCount = 0;
+// Why a start that began mid-session gave up, until a session opens again:
+// a later call that finds no sidecar keeps this reason on the band.
+let restartGaveUp: string | undefined;
 // The person said to send unprotected until this start-up is ready: the
 // answer holds for this start only.
 let startPass = false;
+// This start follows the mod stopping an older sidecar that was masking:
+// the session would have been masked from its first prompt, so `pass` waits
+// like `block`, without asking (under `ask` the person is still asked).
+// Set only by this window's own replacement: a window that finds the
+// address free or the old sidecar closing because another window replaced
+// it does not know what that one was.
+let startReplacedOne = false;
 // Counts the sessions this module has opened: a dialog the person answers
 // after its session ended belongs to that session, and must not pause or
 // arm anything in the next one.
@@ -530,6 +648,8 @@ async function openSessionOnce($): Promise<void> {
   }
   sessionKey = key;
   sessionSecret = secret;
+  restartable = true;
+  restartGaveUp = undefined;
   await reviewPolicy($);
   problem = undefined;
   // A band drawn before the session opened (a hot reload draws it at once,
@@ -542,14 +662,90 @@ async function openSessionOnce($): Promise<void> {
  * While a sidecar this session started comes up, nothing is sent at all:
  * the call fails closed with the band's phase line. */
 async function sanitize($, value: unknown): Promise<Sanitized> {
+  await untilRestarted($);
   if (phase !== undefined) throw new Error(phaseLine());
+  return withRestart($, async () => {
+    try {
+      return (await sidecar($, 'POST', '/sanitize', { value })) as Sanitized;
+    } catch (err) {
+      if (!(err instanceof SidecarError) || err.status !== SESSION_NOT_FOUND) throw err;
+      await openSession($);
+      return (await sidecar($, 'POST', '/sanitize', { value })) as Sanitized;
+    }
+  });
+}
+
+/** Run the session call `call`. When it fails because the sidecar in use
+ * was lost, and a restart begins (`restartIfGone`) or another call began
+ * one already, wait for the new sidecar and run it once more; otherwise
+ * fail as it did. */
+async function withRestart<T>($, call: () => Promise<T>): Promise<T> {
   try {
-    return (await sidecar($, 'POST', '/sanitize', { value })) as Sanitized;
+    return await call();
   } catch (err) {
-    if (!(err instanceof SidecarError) || err.status !== SESSION_NOT_FOUND) throw err;
-    await openSession($);
-    return (await sidecar($, 'POST', '/sanitize', { value })) as Sanitized;
+    const begun = restartIfGone($, err);
+    if (!begun && !(midSessionStart && sidecarLost(err))) throw err;
+    await untilRestarted($);
+    return call();
   }
+}
+
+/** Whether `err` says the sidecar in use is gone: nothing answers at the
+ * address, or the one there is closing. */
+function sidecarLost(err: unknown): boolean {
+  return (err instanceof Error && err.message === UNREACHABLE) || isStatus(err, SIDECAR_CLOSING);
+}
+
+/**
+ * A session call failed. When no sidecar answers at the address (it was
+ * stopped, crashed, or replaced by another window), or the one there is
+ * closing, and this window may start one (`autostart`), start the pinned
+ * sidecar as at session start and say so. A start already running is not
+ * begun twice, and one that gave up is not begun again until a session
+ * has opened (`restartable`).
+ */
+function restartIfGone($, err: unknown): boolean {
+  const closing = isStatus(err, SIDECAR_CLOSING);
+  if (!sidecarLost(err) || !restartable || started !== undefined || !autostartOn) return false;
+  if (sidecarUrl === undefined || token === undefined) return false;
+  $.ui.log('nullpii: no sidecar answers mid-session: starting the pinned one', { to: 'debug' });
+  beginStart($, sidecarUrl, token, closing);
+  midSessionStart = true;
+  // A choice to send unprotected belonged to an earlier start.
+  startPass = false;
+  redraw($);
+  return true;
+}
+
+/** While a start that began mid-session runs, wait for it to end, under
+ * every `while_starting`: the session was masked until the sidecar was
+ * lost, so nothing goes out unmasked now. A start that gave up, or did not
+ * end by the start's deadline, fails the call with the band's reason. */
+async function untilRestarted($): Promise<void> {
+  if (!midSessionStart) return;
+  const deadline = (await $.clock.now()) + STARTUP_WAIT_MS;
+  while (midSessionStart && started !== undefined && (await $.clock.now()) < deadline) {
+    await $.clock.sleep(HOLD_POLL_MS);
+  }
+  if (started !== undefined || problem !== undefined) throw new Error(problem ?? NOT_STARTED);
+}
+
+/** Start the pinned sidecar for this session, and wait for it in the
+ * background: the band shows each phase of the start as it goes through it
+ * (the packages installing, the model downloading, its bytes once the
+ * sidecar answers its status, the model loading), and nothing is sent
+ * masked until it is ready. `closing`: the sidecar at the address answered
+ * `sidecar_closing`, so it may still hold the address for a while. */
+function beginStart($, origin: string, secretToken: string, closing: boolean): void {
+  startCount += 1;
+  restartable = false;
+  started = 'running';
+  startSidecar($, origin, secretToken);
+  phase = 'installing';
+  download = undefined;
+  problem = phaseLine();
+  redraw($);
+  void waitForSidecar($, closing).catch((err) => blocked($, 'sidecar start', failureOf(err)));
 }
 
 async function masked($, value: unknown): Promise<unknown> {
@@ -580,8 +776,15 @@ function blocked($, event: string, failure: Failure): string {
   // While the sidecar this session started comes up, say which phase it is
   // in, not that no sidecar runs (which would send the user off to start a
   // second one).
+  // A restart that gave up: a call that finds no sidecar since keeps its
+  // reason, which says what to do, on the band.
+  const unreachable = failure.message === UNREACHABLE;
   const reason =
-    started === 'running' && failure.message === UNREACHABLE ? phaseLine() : shownReason(failure);
+    started === 'running' && unreachable
+      ? phaseLine()
+      : unreachable && restartGaveUp !== undefined
+        ? restartGaveUp
+        : shownReason(failure);
   problem = reason;
   lastFailure = reason;
   const withheld =
@@ -608,6 +811,9 @@ function startSidecar($, origin: string, secretToken: string): void {
       NULLPII_SIDECAR_TOKEN: secretToken,
       NULLPII_HOST: address.hostname.replace(/^\[|\]$/g, ''),
       NULLPII_PORT: address.port === '' ? DEFAULT_SIDECAR_PORT : address.port,
+      // A sidecar the mod started is one the mod may stop again, for a
+      // newer release: no other gateway offers that route.
+      NULLPII_SIDECAR_SHUTDOWN: 'on',
     },
   });
   void (async () => {
@@ -619,7 +825,7 @@ function startSidecar($, origin: string, secretToken: string): void {
     } catch (err) {
       $.ui.log(`nullpii: nullpii-gateway did not start (${errorName(err)})`, { to: 'debug' });
     }
-    if (started === 'running') started = 'exited';
+    if (started === 'running' || started === 'opening') started = 'exited';
   })();
 }
 
@@ -650,9 +856,8 @@ function notReadyLine(): string {
  * (`message`), and later prompts take the normal path again — masking
  * works once some gateway answers, and until one does, fail closed. */
 function gaveUp($, message: string): void {
-  started = undefined;
-  phase = undefined;
-  download = undefined;
+  if (midSessionStart) restartGaveUp = message;
+  endStart();
   problem = message;
   lastFailure = message;
   $.ui.log(`nullpii: the sidecar this session started did not come up: ${message}`, {
@@ -661,14 +866,32 @@ function gaveUp($, message: string): void {
   redraw($);
 }
 
+/** The start this session waited for is over, whichever way it went: no
+ * phase is left to fail calls with. */
+function endStart(): void {
+  midSessionStart = false;
+  started = undefined;
+  phase = undefined;
+  download = undefined;
+  startReplacedOne = false;
+}
+
 /** Wait for the sidecar this session started to be ready: its status says
  * which phase it is in (the model download's bytes among them), the band
  * shows each one, and the session opens once the model is ready. A
  * gateway with no `startup` field (0.5) counts as ready. Gives up after
  * `STARTUP_WAIT_MS`, or at once when the process exits or the warmup
- * fails, saying which phase it was in. */
-async function waitForSidecar($): Promise<void> {
+ * fails, saying which phase it was in. `closingAtStart`: the session start
+ * that began this wait was refused with `sidecar_closing`, so an older
+ * sidecar on its way out held the address when the pinned one was spawned. */
+async function waitForSidecar($, closingAtStart: boolean): Promise<void> {
   const deadline = (await $.clock.now()) + STARTUP_WAIT_MS;
+  // An older sidecar on its way out answered `sidecar_closing` (at the
+  // session start, or while this start waited): it held the address, so the
+  // one this session started may have exited for want of it, and is started
+  // once more when it is free.
+  let heldByClosing = closingAtStart;
+  let startedAgain = false;
   while ((await $.clock.now()) < deadline) {
     await $.clock.sleep(STARTUP_POLL_MS);
     let status: unknown;
@@ -684,7 +907,20 @@ async function waitForSidecar($): Promise<void> {
       }
       // Nothing answers yet: npx is still installing the packages. The
       // process being gone already (no package found, port taken) ends
-      // the wait at once, as before.
+      // the wait at once, as before — unless the port was taken by the
+      // older sidecar that has just let go of it: then start it again, once.
+      if (started === 'exited' && heldByClosing && !startedAgain && sidecarUrl && token) {
+        startedAgain = true;
+        started = 'running';
+        $.ui.log(
+          'nullpii: the older sidecar let go of the address: starting the pinned one again',
+          {
+            to: 'debug',
+          },
+        );
+        startSidecar($, sidecarUrl, token);
+        continue;
+      }
       if (started === 'exited') {
         gaveUp($, exitedLine());
         return;
@@ -699,10 +935,35 @@ async function waitForSidecar($): Promise<void> {
     // No field: an old gateway, already ready once it answers; `ready`:
     // the model is loaded. Either way the session opens as before.
     if (startup === undefined || startup.phase === 'ready') {
-      started = undefined;
+      // The start is over while the session opens: a prompt sent meanwhile
+      // (a policy change the person is asked about can take a while) waits
+      // for that session and its policy, and goes masked, never unprotected.
+      // A process that has exited already stays `exited`: a `sidecar_closing`
+      // answer below then starts it again once the address is free.
+      const shown = { phase, download };
+      if (started === 'running') started = 'opening';
       phase = undefined;
       download = undefined;
-      await openSession($);
+      try {
+        await openSession($);
+      } catch (err) {
+        // The sidecar that answered is the old one on its way out: it
+        // refuses a session while it closes, so keep waiting for the one
+        // this session started (unless its process has exited meanwhile).
+        if (isStatus(err, SIDECAR_CLOSING)) {
+          if (started === 'opening') started = 'running';
+          ({ phase, download } = shown);
+          problem = phaseLine();
+          redraw($);
+          heldByClosing = true;
+          continue;
+        }
+        // Any other refusal ends the start: the caller shows it, and the
+        // next call opens the session the normal way.
+        endStart();
+        throw err;
+      }
+      endStart();
       problem = undefined;
       startPass = false;
       redraw($);
@@ -733,6 +994,56 @@ async function waitForSidecar($): Promise<void> {
   // Nothing ever answered (`installing`, the phase the start began in), or
   // the model was not ready in time.
   gaveUp($, phase === 'installing' || phase === undefined ? NOT_STARTED : notReadyLine());
+}
+
+/** Whether nothing answers at the sidecar address any more. */
+async function addressFree($): Promise<boolean> {
+  try {
+    await request($, 'GET', STATUS_PATH);
+    return false;
+  } catch (err) {
+    return err instanceof Error && err.message === UNREACHABLE;
+  }
+}
+
+/**
+ * Stop a sidecar from an older release than the one this mod pins, so the
+ * session start that follows finds the address free and starts the pinned
+ * one. Only a sidecar that can be stopped (it reports `shutdown`), holds no
+ * session and is not still bringing its model up goes; the sidecar itself
+ * also refuses before any session has opened on it, for the window that
+ * started it. A window whose sidecar goes this way starts the pinned one at
+ * its next prompt (`restartIfGone`). Any other sidecar is left running and
+ * the doctor reports the older release.
+ */
+async function replaceOlderSidecar($, autostart: boolean): Promise<void> {
+  // The mod would not start the pinned one afterwards: nothing to make room for.
+  if (!autostart) return;
+  let self: ReturnType<typeof readSidecarSelf>;
+  try {
+    self = readSidecarSelf(await request($, 'GET', STATUS_PATH));
+  } catch (err) {
+    // Nothing answers (or not the sidecar): the start that follows says so.
+    $.ui.log(`nullpii: no sidecar to replace: ${shownReason(failureOf(err))}`, { to: 'debug' });
+    return;
+  }
+  const stale = olderRelease(self.gatewayVersion, GATEWAY_RELEASE);
+  if (!stale || !self.shutdown || self.sessions !== 0) return;
+  // Its model still coming up: the window that started it waits for it.
+  if (self.startupPhase !== undefined && !SETTLED_PHASES.has(self.startupPhase)) return;
+  try {
+    await request($, 'POST', SHUTDOWN_PATH);
+  } catch (err) {
+    $.ui.log(`nullpii: older sidecar not stopped: ${shownReason(failureOf(err))}`, { to: 'debug' });
+    return;
+  }
+  startReplacedOne = true;
+  const deadline = (await $.clock.now()) + SHUTDOWN_WAIT_MS;
+  while ((await $.clock.now()) < deadline) {
+    if (await addressFree($)) return;
+    await $.clock.sleep(SHUTDOWN_POLL_MS);
+  }
+  $.ui.log('nullpii: the older sidecar did not stop in time', { to: 'debug' });
 }
 
 /** Send the policy file contents `config` to the sidecar, which writes
@@ -830,6 +1141,452 @@ async function askUser(
   }
 }
 
+/** The short form of a value, as the mod's own question and its toasts
+ * show it (`shortForm`): the whole value while it is short, else its
+ * first and last characters with an ellipsis between. */
+function shortForm(value: string): string {
+  if (value.length <= SHORT_WHOLE) return value;
+  return `${value.slice(0, SHORT_HEAD)}${ELLIPSIS}${value.slice(-SHORT_TAIL)}`;
+}
+
+/** One value in the mod's own question, as it lists each: the value's
+ * category and its short form. */
+function listedValue(category: string, value: string): string {
+  return `${shortName(category)} "${shortForm(value)}"`;
+}
+
+/** Run `task` once every earlier question about sending values in clear
+ * is over. Its own outcome, failure included, goes to the caller; the next
+ * question waits for it either way. */
+function afterOtherClearQuestions<T>(task: () => Promise<T>): Promise<T> {
+  const run = clearQuestions.then(task);
+  clearQuestions = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
+/** Whether values may go out in clear: yes under Allow all, else the user's
+ * answer to `question`, put after any question still open. Send once says
+ * yes this time; Allow all says yes for the rest of the session in which it
+ * was asked. Block, and no answer at all (`$.ui.ask` rejects when the dialog
+ * is dismissed, and in a `claude -p` run), keep the values masked. */
+function allowedInClear($, question: () => string): Promise<boolean> {
+  return afterOtherClearQuestions(async () => {
+    // An Allow all given while this call waited answers it too.
+    if (allowAll) return true;
+    const generation = sessionGeneration;
+    let answer: string;
+    try {
+      answer = await askUser($, question(), [BLOCK, SEND_ONCE, ALLOW_ALL]);
+    } catch (err) {
+      $.ui.log(`nullpii: no answer about sending in clear (${errorName(err)}); kept masked`, {
+        to: 'debug',
+      });
+      return false;
+    }
+    // An answer given after its session ended speaks for nothing now.
+    if (generation !== sessionGeneration) return false;
+    if (answer === ALLOW_ALL) allowAll = true;
+    return answer === SEND_ONCE || answer === ALLOW_ALL;
+  });
+}
+
+/** One value the user agreed to send in clear, with where it goes (`to`,
+ * as the toast names it), the tool the count goes under, and its
+ * category. The value itself is for the question alone: no toast, count
+ * or log line carries it. */
+interface ClearValue {
+  readonly tool: string;
+  readonly to: string;
+  readonly category: string;
+  readonly value: string;
+}
+
+/** How the release toast joins its parts. */
+const RELEASE_JOIN = ', ';
+
+/**
+ * Toast and count the values in `values`, which the mod released in clear
+ * to a call or to Claude on the user's word: one toast per destination,
+ * naming it and each category with its count, never a value or a short
+ * form of one (Claude Code writes a toast's text to its debug log, and can
+ * draw it on a remote surface). `/pii` counts by tool and category; the
+ * debug log keeps the number. Called once nothing the mod can see refuses
+ * the call any more: it was handed on and no refusal came back from below,
+ * or the result is on its way to Claude. Whether Claude Code then ran the
+ * call (its own permission prompt can still decline it) the mod cannot
+ * know, so what it records is the release, not the run.
+ */
+function recordSent($, values: readonly ClearValue[]): void {
+  const byDestination = new Map<string, Map<string, number>>();
+  for (const one of values) {
+    addSent(counts, one.tool, one.category);
+    const categories = byDestination.get(one.to) ?? new Map<string, number>();
+    categories.set(one.category, (categories.get(one.category) ?? 0) + 1);
+    byDestination.set(one.to, categories);
+  }
+  for (const [to, categories] of byDestination) {
+    const listed = [...categories].map(([category, n]) => `${shortName(category)} ${n}`);
+    $.ui.toast(`nullpii released in clear to ${to} on your word: ${listed.join(RELEASE_JOIN)}`);
+  }
+  if (values.length > 0) $.ui.log(`nullpii: ${values.length} released in clear`, { to: 'debug' });
+}
+
+/** What the question says a value reaches, per destination of the tool
+ * (`clearDestination`): only what the mod knows. It has no hook on what a
+ * tool hands on inside Claude Code, nor on Claude Code's requests to the
+ * model, so it claims no masking there. */
+const DESTINATION_WORDS: Readonly<Record<ClearDestination, string>> = {
+  model:
+    'Claude Code runs this tool through a Claude model, so sent in clear the real values reach that model (and for WebFetch, the site its URL names).',
+  mcp: 'Sent in clear, the real values go to the MCP server that runs this tool and can leave this machine through it.',
+  internal:
+    'Sent in clear, the real values go to this Claude Code tool. nullpii masks what it returns, but has no hook on what it hands on inside Claude Code (a subagent prompt for Agent or Task, a message for SendMessage), so they can reach a Claude model unmasked. A subagent then holds them as plain text, not placeholders, and can pass them to any tool, a shell command included, with no further question.',
+  unknown:
+    'Sent in clear, the real values go to this tool. nullpii does not know where it sends them: it masks what the tool returns, nothing else.',
+};
+
+/** What the key question says follows from sending keys in clear. */
+const KEYS_IN_CLEAR_WORDS =
+  'Claude then reads them as plain text, not placeholders, and can copy them into any later call, a shell command included, with no further question; the values under the keys stay masked.';
+
+/** The user's word on the object keys the sidecar masked in one tool
+ * result, before they go to Claude in clear — asked first, unless Allow
+ * all already answered for the rest of the session. A key can hold several
+ * values (`John <john@acme.io>`), and one key can come back many times in a
+ * result: the question lists, and the caller toasts and counts, each value
+ * once, by the placeholder that stands for it, with its own category and
+ * short form. `undefined` when the keys were not sent. Throws when the
+ * sidecar does not know a placeholder it just put in a key. */
+async function sentMaskedKeys(
+  $,
+  tool: string,
+  keys: readonly MaskedKey[],
+): Promise<readonly ClearValue[] | undefined> {
+  // Per key, only the placeholders the sidecar put in: a placeholder text
+  // the tool wrote in its own key passes through, and sends nothing.
+  const added = new Set(keys.flatMap((one) => addedPlaceholders(one.key, one.masked)));
+  const found = placeholderCategories(keys.map((one) => one.masked).join(' ')).filter((one) =>
+    added.has(one.placeholder),
+  );
+  const known = await knownValues($, found);
+  const values = found.map(({ placeholder, category }) => {
+    const value = known.get(placeholder);
+    if (value === undefined) throw new Error(KEY_VALUE_UNKNOWN);
+    return { tool, to: `Claude (a key of a ${tool} result)`, category, value };
+  });
+  const question = () => {
+    const listed = values.map((one) => listedValue(one.category, one.value));
+    return `nullpii masked personal data in object keys of this ${tool} result: ${listed.join(', ')}. Send those keys in clear? ${KEYS_IN_CLEAR_WORDS}`;
+  };
+  return (await allowedInClear($, question)) ? values : undefined;
+}
+
+/** A call to a tool outside `restoreTools`, with the values the user sent. */
+interface SentCall {
+  /** The arguments to run with, and how many placeholders were replaced. */
+  readonly restored: Restored;
+  /** The values the question listed, to toast and count once the call ran. */
+  readonly values: readonly ClearValue[];
+}
+
+/** The real value behind each placeholder in `found` that the sidecar
+ * knows, keyed by the placeholder. A sidecar lost mid-session is started
+ * again and waited for first (`withRestart`, `untilRestarted`); the new one
+ * knows none of the placeholders from before, so none is asked about and
+ * the call runs as written. */
+async function knownValues(
+  $,
+  found: readonly { readonly placeholder: string }[],
+): Promise<Map<string, string>> {
+  const restored = (await withRestart($, () =>
+    sidecar($, 'POST', '/restore', { value: found.map((one) => one.placeholder) }),
+  )) as { value: unknown[] };
+  const known = new Map<string, string>();
+  found.forEach((one, at) => {
+    const value = restored.value[at];
+    if (typeof value === 'string' && value !== one.placeholder) known.set(one.placeholder, value);
+  });
+  return known;
+}
+
+/**
+ * The arguments of a call to a tool outside the policy's `restoreTools`,
+ * with real values back on the user's word: asked first, unless Allow all
+ * already answered. `undefined` when the user did not send them: the call
+ * is denied. Only a value the sidecar knows when the question is put is
+ * asked about, and exactly those values are put back, here, in the
+ * arguments: a placeholder that pointed at nothing then stays as written,
+ * even if the vault mints it while the dialog is open. When the sidecar
+ * knows none (an earlier session's placeholder, or one typed by hand),
+ * `held`, the sidecar's answer for the tool, stands and the call runs as
+ * written. `found` are the placeholders in `args`, and `known` the values
+ * the sidecar knows of them (`knownValues`), looked up once by the caller.
+ */
+async function sentHeld(
+  $,
+  tool: string,
+  destination: ClearDestination,
+  args: Readonly<Record<string, unknown>>,
+  held: Restored,
+  found: readonly FoundPlaceholder[],
+  known: ReadonlyMap<string, string>,
+): Promise<SentCall | undefined> {
+  if (known.size === 0) return { restored: held, values: [] };
+  const values = found.flatMap(({ placeholder, category }) => {
+    const value = known.get(placeholder);
+    return value === undefined ? [] : [{ tool, to: `the ${tool} call`, category, value }];
+  });
+  const question = () => {
+    const listed = values.map((one) => listedValue(one.category, one.value));
+    return `nullpii kept real values out of this ${tool} call: ${listed.join(', ')}. ${DESTINATION_WORDS[destination]} Send them in clear?`;
+  };
+  if (!(await allowedInClear($, question))) return undefined;
+  const put = substitutePlaceholders(args, known);
+  return {
+    restored: { value: put.value as Record<string, unknown>, replacements: put.replacements },
+    values,
+  };
+}
+
+/** A placeholder found in a text, with the category it names. */
+type FoundPlaceholder = { readonly placeholder: string; readonly category: string };
+
+/** The answers to the question about a call that would write placeholders
+ * the sidecar can no longer put back into a file. Block comes first, so a
+ * quick confirm writes nothing. */
+const WRITE_AS_TEXT = 'Write as text';
+const WRITE_AS_TEXT_ALL = 'Write as text for the session';
+/** How that question joins its counts by category. */
+const STALE_JOIN = ', ';
+
+/** What the mod learnt of the placeholders in one tool call: the values
+ * the sidecar knows, keyed by placeholder; the placeholders it can no
+ * longer put back (`unknown`); and those of them the call would write into
+ * a file or name it by (`written`, `writtenText`). */
+interface CallLookup {
+  readonly known: ReadonlyMap<string, string>;
+  readonly unknown: readonly FoundPlaceholder[];
+  readonly written: readonly FoundPlaceholder[];
+}
+
+const NOTHING_LOOKED_UP: CallLookup = { known: new Map(), unknown: [], written: [] };
+
+/**
+ * Look up, once, which of the placeholders `found` in a call to `tool`
+ * (its arguments `args`) the sidecar knows. Only the placeholders Claude
+ * wrote are looked at, never the text the restore put back, so a real
+ * value shaped like a placeholder is a value, not a stale placeholder.
+ */
+async function lookUpCall(
+  $,
+  tool: string,
+  args: Readonly<Record<string, unknown>>,
+  found: readonly FoundPlaceholder[],
+): Promise<CallLookup> {
+  const known = await knownValues($, found);
+  const unknown = found.filter((one) => !known.has(one.placeholder));
+  const text = writtenText(tool, args);
+  const written = text === undefined ? [] : unknown.filter((one) => text.includes(one.placeholder));
+  return { known, unknown, written };
+}
+
+/** `n placeholder(s)`, as the mod's texts count them. */
+function placeholderCount(n: number): string {
+  return `${n} placeholder${n === 1 ? '' : 's'}`;
+}
+
+/** The question about a call that would write placeholders the sidecar can
+ * no longer put back: how many, by category, never a value (the mod has
+ * none) nor a placeholder. */
+function staleQuestion(tool: string, stale: readonly FoundPlaceholder[]): string {
+  const byCategory = new Map<string, number>();
+  for (const one of stale) {
+    const name = shortName(one.category);
+    byCategory.set(name, (byCategory.get(name) ?? 0) + 1);
+  }
+  const listed = [...byCategory].map(([name, n]) => `${name} ${n}`).join(STALE_JOIN);
+  return `nullpii cannot put back ${placeholderCount(stale.length)} in this ${tool} call (${listed}): their real values are no longer available (from an earlier session, or from a sidecar session that expired or restarted; nullpii keeps no value on disk). Written, the file holds the placeholder text, not your data. Write them into the file as text?`;
+}
+
+/**
+ * Whether a call to `tool` may write `stale`, placeholders the sidecar can
+ * no longer put back, into a file as placeholder text: yes once the user
+ * said so for the session, else their answer, put after any question still
+ * open. Block, and no answer at all (a dismissed dialog, `claude -p`), say
+ * no. An answer given after its session ended speaks for nothing. The
+ * session answer belongs to the Claude Code session, not to the sidecar,
+ * as Allow all does: a mid-session restart only makes more placeholders
+ * stale, and the answer lets placeholder text into a file, never a value
+ * anywhere, so it holds across one.
+ */
+function allowedAsText($, tool: string, stale: readonly FoundPlaceholder[]): Promise<boolean> {
+  return afterOtherClearQuestions(async () => {
+    if (staleAsText) return true;
+    const generation = sessionGeneration;
+    let answer: string;
+    try {
+      answer = await askUser($, staleQuestion(tool, stale), [
+        BLOCK,
+        WRITE_AS_TEXT,
+        WRITE_AS_TEXT_ALL,
+      ]);
+    } catch (err) {
+      $.ui.log(
+        `nullpii: no answer about placeholders it cannot put back (${errorName(err)}); call refused`,
+        { to: 'debug' },
+      );
+      return false;
+    }
+    if (generation !== sessionGeneration) return false;
+    if (answer === WRITE_AS_TEXT_ALL) staleAsText = true;
+    return answer === WRITE_AS_TEXT || answer === WRITE_AS_TEXT_ALL;
+  });
+}
+
+/** Whether a call to `tool` that would write `written`, placeholders the
+ * sidecar can no longer put back, may run (`allowedAsText`); a refusal is
+ * counted. A call that writes none goes on with no question. */
+async function staleWriteAllowed(
+  $,
+  tool: string,
+  written: readonly FoundPlaceholder[],
+): Promise<boolean> {
+  if (written.length === 0) return true;
+  if (await allowedAsText($, tool, written)) return true;
+  counts.staleRefused += written.length;
+  return false;
+}
+
+/** Count and toast the placeholders a file-writing call wrote as text on
+ * the user's word, once the call was handed on. Counts only. */
+function recordWrittenAsText($, tool: string, n: number): void {
+  if (n === 0) return;
+  counts.staleWritten += n;
+  $.ui.toast(`nullpii wrote ${placeholderCount(n)} as text with ${tool}, on your word`);
+}
+
+/**
+ * Show, once a session, how many placeholders the conversation holds that
+ * the sidecar can no longer put back, the first time the mod meets one
+ * (`seen`, in a tool call or in a reply drawn on screen). A resume could be
+ * read from the classic `SessionStart` hook (`source: 'resume'`), but a
+ * sidecar restart or an expired sidecar session raises no event, so the
+ * first one met is the one signal that covers all three. A toast, and a
+ * transcript line that is not sent to the model. Counts only. A lookup that fails leaves the notice
+ * to the next placeholder met, and fails the hook.
+ */
+async function noticeStale($, seen: readonly string[]): Promise<void> {
+  if (seen.length === 0 || staleNoticed) return;
+  staleNoticed = true;
+  let count: number;
+  try {
+    count = await staleInConversation($, seen);
+  } catch (err) {
+    staleNoticed = false;
+    throw err;
+  }
+  const text = `nullpii: ${placeholderCount(count)} from before (an earlier session, or a sidecar session that expired or restarted) can no longer be put back: nullpii keeps no value on disk. A call that would write one into a file asks you first.`;
+  $.ui.toast(text);
+  $.ui.log(text);
+}
+
+/** How many distinct placeholders the conversation so far and `seen` hold
+ * that the sidecar does not know. */
+async function staleInConversation($, seen: readonly string[]): Promise<number> {
+  const messages = await $.session.messages();
+  const found = placeholderCategories(JSON.stringify(messages) ?? '');
+  const known = await knownValues($, found);
+  const stale = new Set(seen);
+  for (const one of found) if (!known.has(one.placeholder)) stale.add(one.placeholder);
+  return stale.size;
+}
+
+/** How the legend of Claude's own question (`showLegend`) writes one
+ * placeholder and the value it stands for. */
+const LEGEND_PREFIX = "nullpii, for Claude's question: ";
+const LEGEND_JOIN = ' · ';
+
+/**
+ * Show the user, under the dialog of Claude's own question (`$.ui.notice`:
+ * drawn for the open call only, never added to the conversation, and given
+ * to Claude Code's debug log as its length at most), which real value each
+ * placeholder in it stands for: the question runs with the placeholders
+ * Claude wrote (`runsWithPlaceholders`), which the user could not read
+ * otherwise. Values are shown whole, as the mod draws them in Claude's
+ * replies on screen; nothing is logged. A placeholder the session does not
+ * know is left out; with none known, nothing is shown.
+ */
+async function showLegend($, toolUseId: unknown, args: Readonly<Record<string, unknown>>) {
+  if (typeof toolUseId !== 'string') return;
+  const found = placeholderCategories(JSON.stringify(args) ?? '');
+  const known = await knownValues($, found);
+  if (known.size === 0) return;
+  const lines = [...known].map(([placeholder, value]) => `${placeholder} = ${value}`);
+  $.ui.notice(toolUseId, LEGEND_PREFIX + lines.join(LEGEND_JOIN));
+}
+
+/**
+ * `next(call)`, then `handed` (the values the user released in clear with
+ * it toasted and counted, and the restored and held counts), once the call
+ * has been handed on: the policy-file guard ran before, and a `deny` from
+ * below (another hook) records nothing. A refusal Claude Code itself makes
+ * after that (its own permission prompt declined, auto mode) comes back as
+ * an error result like any failed call, and the mod does not read Claude
+ * Code's error texts: the call was handed on either way, which is what is
+ * recorded. A call that throws below was handed on too, so it is recorded
+ * before the error goes on: a release is never left uncounted.
+ */
+async function ranCall(
+  next: (call: Readonly<Record<string, unknown>>) => Promise<Record<string, unknown>>,
+  call: Readonly<Record<string, unknown>>,
+  handed: () => void,
+): Promise<Record<string, unknown>> {
+  let out: Record<string, unknown>;
+  try {
+    out = await next(call);
+  } catch (err) {
+    handed();
+    throw err;
+  }
+  if (out.deny === undefined) handed();
+  return out;
+}
+
+/** The result of one tool call, masked for Claude, and the keys sent in
+ * clear with it (to toast and count as it goes). */
+interface CleanResult {
+  readonly result: unknown;
+  readonly sent: readonly ClearValue[];
+}
+
+/**
+ * The result of one tool call, masked for Claude. For a tool outside the
+ * policy's `restoreTools` (`asksAboutResultKeys`), with its original object
+ * keys where the user sent them in clear: the sidecar masks a key that
+ * holds personal data (a key carries a value of its own), which can make
+ * Claude Code reject the result against the tool's own schema. `undefined`
+ * when the user did not send the keys: the result is withheld. A tool in
+ * `restoreTools`, and `AskUserQuestion`, get their result to Claude masked,
+ * keys included, with no question. Keys pair against the
+ * result as the sidecar was sent it (`asSent`): a field JSON drops or
+ * transforms (`undefined`, a `Date`) is not a fault of the sidecar.
+ */
+async function maskedResult($, tool: string, original: unknown): Promise<CleanResult | undefined> {
+  const clean = await sanitize($, original);
+  addMasked(counts, clean.captured, clean.capturedByLabel);
+  redraw($);
+  if (!asksAboutResultKeys(tool, policy?.restoreTools)) return { result: clean.value, sent: [] };
+  const sentForm = asSent(original);
+  const keys = maskedKeys(sentForm, clean.value);
+  if (keys.length === 0) return { result: clean.value, sent: [] };
+  const sent = await sentMaskedKeys($, tool, keys);
+  if (sent === undefined) return undefined;
+  return { result: unmaskKeys(sentForm, clean.value), sent };
+}
+
 /** What blocks the mod, in a few words: the texts the mod writes for a block
  * and the words that stand for them under the prompt and in the band. */
 const CAUSES: readonly CauseWords[] = [
@@ -868,10 +1625,10 @@ const STATUS_PARTS = ' · ';
  * a paused nullpii whose sidecar is down sends nothing, as the band's own
  * line says. */
 function statusLine(): string {
-  if (problem !== undefined && !starting()) {
+  if (problem !== undefined && !startShown()) {
     return `${STATUS_BLOCKING}${STATUS_PARTS}${blockedWords()}`;
   }
-  if (starting()) {
+  if (startShown()) {
     const state = startPass ? STATUS_NOT_PROTECTED : STATUS_STARTING;
     return `${state}${STATUS_PARTS}${phaseText()}`;
   }
@@ -914,6 +1671,14 @@ function starting(): boolean {
   return started === 'running' && problem?.startsWith(STARTING_PREFIX) === true;
 }
 
+/** Whether a start is shown as under way: `starting`, and also while its
+ * session opens on the ready sidecar, or while it waits for another
+ * sidecar to let go of the address (its own child exited). Nothing is
+ * blocked for a fault then, so the band and the line say starting. */
+function startShown(): boolean {
+  return started !== undefined && problem?.startsWith(STARTING_PREFIX) === true;
+}
+
 /** Whether the band above the prompt has anything to say: it is drawn only
  * when the person has something to know or do (nullpii starting, a prompt
  * sent unprotected while it starts, masking paused, a policy change being
@@ -934,7 +1699,7 @@ function bypassing(): boolean {
  * something is wrong. While the person sends unprotected through a
  * start-up, it says so and keeps the phase. */
 function bandText(): string {
-  if (starting() && problem !== undefined) {
+  if (startShown() && problem !== undefined) {
     return `${startPass ? 'not protected yet' : 'starting'} · ${bandPhase()}`;
   }
   if (problem !== undefined) return `blocking · ${blockedWords()} · run /pii doctor`;
@@ -956,7 +1721,7 @@ function bandPhase(): string {
  * starts (progress, not a fault), green when it is on. */
 function bandColor(): 'red' | 'yellow' | 'green' {
   if (paused) return 'red';
-  if (starting()) return 'yellow';
+  if (startShown()) return 'yellow';
   return problem !== undefined ? 'red' : 'green';
 }
 
@@ -965,7 +1730,7 @@ function bandColor(): 'red' | 'yellow' | 'green' {
  * when broken. */
 function padlockLook(): [boolean, PadlockTone] {
   if (paused) return [true, 'red'];
-  if (starting()) return [true, 'amber'];
+  if (startShown()) return [true, 'amber'];
   return problem !== undefined ? [false, 'grey'] : [false, 'teal'];
 }
 
@@ -996,14 +1761,21 @@ async function holdUntilReady($): Promise<boolean> {
  * dialog dismissed, or one no one can answer (`claude -p`), waits. */
 async function sendUnprotectedWhileStarting($): Promise<boolean> {
   if (!starting()) return false;
+  // A start that began mid-session: the session was masked until then, so
+  // every prompt waits for it, whatever `while_starting` says.
+  if (midSessionStart) return false;
   if (startPass) return true;
   if (whileStarting === 'block') return false;
+  // The mod stopped a sidecar that was masking to make this start: `pass`
+  // would send unprotected what that one would have masked, so it waits.
+  if (whileStarting === 'pass' && startReplacedOne) return false;
   if (whileStarting === 'pass') {
     startPass = true;
     redraw($);
     return true;
   }
   const generation = sessionGeneration;
+  const askedIn = startCount;
   let answer: string;
   try {
     answer = await askUser($, STARTING_QUESTION, [
@@ -1017,9 +1789,10 @@ async function sendUnprotectedWhileStarting($): Promise<boolean> {
     });
     return false;
   }
-  // The answer is for the start it was asked in: after the session ended
-  // (or nullpii came up) it arms nothing and sends nothing unprotected.
-  if (generation !== sessionGeneration || !starting()) return false;
+  // The answer is for the start it was asked in: after the session ended,
+  // nullpii came up, or another start began (a mid-session restart always
+  // waits), it arms nothing and sends nothing unprotected.
+  if (generation !== sessionGeneration || askedIn !== startCount || !starting()) return false;
   if (answer === SEND_UNPROTECTED_UNTIL_READY) {
     startPass = true;
     redraw($);
@@ -1085,7 +1858,18 @@ function preview(value: string): string {
 async function restoredForDisplay($, text: string): Promise<string> {
   const cached = shown.get(text);
   if (cached !== undefined) return cached;
-  const r = (await sidecar($, 'POST', '/restore', { value: text })) as { value: string };
+  const r = (await sidecar($, 'POST', '/restore', { value: text })) as Restored & {
+    value: string;
+  };
+  // A resumed transcript shows first on screen: a placeholder the sidecar
+  // could not put back is still in the text it drew.
+  if ((r.unknownPlaceholders ?? 0) + (r.foreignPlaceholders ?? 0) > 0) {
+    const left = placeholderCategories(text).filter((one) => r.value.includes(one.placeholder));
+    await noticeStale(
+      $,
+      left.map((one) => one.placeholder),
+    );
+  }
   if (shown.size >= SHOWN_MAX) shown.delete(shown.keys().next().value as string);
   shown.set(text, r.value);
   return r.value;
@@ -1304,7 +2088,7 @@ async function statusAndHelp($): Promise<string> {
 
 /** The mod's user-visible state, independent of whether the sidecar answers. */
 function modState(): ModState {
-  if (starting() || phase !== undefined) return 'starting';
+  if (startShown() || phase !== undefined) return 'starting';
   if (problem !== undefined) return 'blocking';
   if (paused) return 'paused';
   return 'on';
@@ -1449,31 +2233,33 @@ export function register(on, options) {
     sessionKey = sessionBase;
     sessionSecret = undefined;
     lastFailure = undefined;
-    // A session starts masked: a pause was the session before it's alone.
+    // A session starts masked: a pause was the session before it's alone,
+    // and so was an Allow all.
     paused = false;
+    allowAll = false;
+    staleAsText = false;
+    staleNoticed = false;
     startPass = false;
+    startReplacedOne = false;
     sessionGeneration += 1;
+    restartGaveUp = undefined;
     const asked = optionString(options, 'while_starting');
     whileStarting = asked === 'block' || asked === 'pass' ? asked : 'ask';
     // The band was drawn under the old state: draw it under this one.
     redraw($);
+    autostartOn = optionFlag(options, 'autostart', true);
+    await replaceOlderSidecar($, autostartOn);
     try {
       await openSession($);
     } catch (err) {
-      // No sidecar answers: start one for this session when allowed. The
-      // band says so, and prompts wait (they are refused) until it answers.
-      const unreachable = err instanceof Error && err.message === UNREACHABLE;
-      if (unreachable && optionFlag(options, 'autostart', true) && sidecarUrl && token) {
-        started = 'running';
-        startSidecar($, sidecarUrl, token);
-        // The band shows each phase of the start as it goes through it:
-        // the packages installing, the model downloading (its bytes, once
-        // the sidecar answers its status), the model loading.
-        phase = 'installing';
-        download = undefined;
-        problem = phaseLine();
-        redraw($);
-        void waitForSidecar($).catch((err) => blocked($, 'sidecar start', failureOf(err)));
+      // No sidecar answers — or the one there answered `sidecar_closing`, its
+      // last word before it goes — so start one for this session when
+      // allowed. The band says so, and prompts wait (they are refused) until
+      // it answers.
+      const closing = isStatus(err, SIDECAR_CLOSING);
+      const gone = (err instanceof Error && err.message === UNREACHABLE) || closing;
+      if (gone && autostartOn && sidecarUrl && token) {
+        beginStart($, sidecarUrl, token, closing);
         return next(e);
       }
       const reason = blocked($, 'session.start', failureOf(err));
@@ -1506,6 +2292,8 @@ export function register(on, options) {
     if (e.isMeta !== true && (await sendUnprotectedWhileStarting($))) return next(e);
     // Not sent unprotected: it waits for the sidecar, then goes masked.
     if (e.isMeta !== true && starting()) await holdUntilReady($);
+    // A sidecar lost mid-session is started again inside: the prompt waits
+    // for it (`untilRestarted`), and is refused if it does not come up.
     const out = (await masked($, { text: e.text, context: e.context ?? [] })) as {
       text: string;
       context: string[];
@@ -1563,6 +2351,7 @@ export function register(on, options) {
     if (isOwnQuestion(e)) return next(e);
     // A sidecar this session started is still coming up: nothing restores
     // and nothing is sent, so the call is refused up front.
+    await untilRestarted($);
     if (phase !== undefined) return { deny: CALL_NOT_RUN };
     // Known to be blocking: reach the sidecar again before the tool runs,
     // so the call is refused up front instead of run with its result
@@ -1570,18 +2359,69 @@ export function register(on, options) {
     if (problem !== undefined) await openSession($);
     const args = restorableArgs(e);
     let call = e;
+    // What goes out with the call, counted only once it has run: the values
+    // the user sent in clear, and the placeholders left in it.
+    let sentInClear: readonly ClearValue[] = [];
+    let heldInCall = 0;
+    let restoredInCall = 0;
+    // Placeholders the sidecar can no longer put back that the user let a
+    // file-writing call write as text: counted and toasted once it ran.
+    let writtenAsText = 0;
     if (hasPlaceholder(args)) {
       // The sidecar decides by the tool's name: nothing for a tool outside
       // the policy's `restoreTools`, and nothing for a shell tool, whose
       // placeholders it lists so the call is refused (SECURITY.md).
-      const r = (await sidecar($, 'POST', '/restore', { value: args, tool: e.tool })) as Restored;
-      counts.held += r.heldForTool ?? 0;
+      const r = (await withRestart($, () =>
+        sidecar($, 'POST', '/restore', { value: args, tool: e.tool }),
+      )) as Restored;
       const kept = r.shellKeptMasked ?? [];
       if (kept.length > 0) return { deny: shellDenied(kept) };
+      // A tool the policy does not list, any tool, Claude Code's own
+      // included: the values the session knows go out in clear only on the
+      // user's word (Allow all: their word for the rest of the session),
+      // else the call is denied, also when no one can answer (claude -p).
+      // Claude's own question to the user is the one exception: it runs as
+      // Claude wrote it, and the user is shown what its placeholders stand
+      // for (`runsWithPlaceholders`).
+      const held = r.heldForTool ?? 0;
+      const asksFirst = held > 0 && !runsWithPlaceholders(e.tool);
+      if (held > 0 && !asksFirst) await showLegend($, e.tool_use_id, args);
+      const destination = asksFirst ? clearDestination(e.tool) : undefined;
+      // Which placeholders the sidecar knows, looked up once: for the
+      // question about sending values in clear, and for the placeholders it
+      // can no longer put back (from before a resume, or a sidecar session
+      // that expired or restarted). The sidecar reports the latter for a
+      // tool it restores into, so the lookup runs there only when it did.
+      const found = placeholderCategories(JSON.stringify(args) ?? '');
+      const reported = (r.unknownPlaceholders ?? 0) + (r.foreignPlaceholders ?? 0);
+      const lookup =
+        destination !== undefined || reported > 0
+          ? await lookUpCall($, e.tool, args, found)
+          : NOTHING_LOOKED_UP;
+      await noticeStale(
+        $,
+        lookup.unknown.map((one) => one.placeholder),
+      );
+      // A call that would write such a placeholder into a file is asked
+      // about first, and refused with no one to answer. It comes before
+      // the question about values in clear: a call that will not run asks
+      // no one to release a value for it.
+      if (!(await staleWriteAllowed($, e.tool, lookup.written))) {
+        return { deny: STALE_NOT_WRITTEN };
+      }
+      writtenAsText = lookup.written.length;
+      const asked =
+        destination === undefined
+          ? { restored: r, values: [] }
+          : await sentHeld($, e.tool, destination, args, r, found, lookup.known);
+      if (asked === undefined) return { deny: HELD_NOT_SENT };
+      sentInClear = asked.values;
+      // The placeholders still in the call if it runs: none the user sent.
+      heldInCall = held > 0 ? held - asked.restored.replacements : 0;
       // Rewrite the call only when a placeholder was replaced: a rewritten
       // call is denied in auto mode, so untouched calls must stay as written.
-      if (r.replacements > 0) {
-        const restored = { ...e, ...r.value };
+      if (asked.restored.replacements > 0) {
+        const restored = { ...e, ...asked.restored.value };
         // `tool.check` judged the masked call: a policy path with a masked
         // segment (`NULLPII_CONFIG=/Users/<name>/…`) shows only now.
         const cwd = await $.session.cwd();
@@ -1592,11 +2432,18 @@ export function register(on, options) {
         ) {
           return { deny: POLICY_DENIED };
         }
-        counts.restored += r.replacements;
+        // Values the user sent in clear count as sent, not as restored into
+        // a local tool: `restoreTools` alone is that path.
+        restoredInCall = destination === undefined ? asked.restored.replacements : 0;
         call = restored;
       }
     }
-    const out = await next(call);
+    const out = await ranCall(next, call, () => {
+      recordSent($, sentInClear);
+      recordWrittenAsText($, e.tool, writtenAsText);
+      counts.held += heldInCall;
+      counts.restored += restoredInCall;
+    });
     // Masking paused for this session, with the sidecar up: what came out
     // of the tool goes to Claude as it is. The placeholders already in the
     // conversation were still put back before it ran, and the call is still
@@ -1615,10 +2462,18 @@ export function register(on, options) {
     if (out.context !== undefined && (await sanitize($, out.context)).captured > 0) {
       return { deny: CONTEXT_WITHHELD };
     }
-    // A new `{ result }` without `ref`: returning core's object would make
-    // core send its own, unmasked messages to the model.
+    // The result masked. For a tool outside `restoreTools` (but Claude's
+    // own AskUserQuestion), with its original object keys where the user
+    // sent them in clear (the sidecar masks a key that holds personal
+    // data), and withheld when they did not; the keys sent are toasted and
+    // counted as the result goes. A new `{ result }` without `ref`: another
+    // plugin's, or core's own, would make core send its own unmasked
+    // messages to the model.
+    const clean = await maskedResult($, e.tool, out.result);
+    if (clean === undefined) return { deny: KEYS_WITHHELD };
+    recordSent($, clean.sent);
     return {
-      result: await masked($, out.result),
+      result: clean.result,
       ...(out.context !== undefined && { context: out.context }),
     };
   }).catch(async ($, e, next) => {

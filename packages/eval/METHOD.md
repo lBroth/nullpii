@@ -57,7 +57,7 @@ nullpii's default is built for a coding agent's traffic (Claude Code): prompts, 
 - **Freeze.** Before any tool runs, the log records the SHA-256 of every file of A (code, lists, gold, README), of B1/B2's sampled id lists and of the scorer, with the canary string `AB1-CANARY-6f3a1c9e-nullpii-agentbench-2026-10-23`. The canary is placed in A's README and gold.
 - **Audit.** Three fresh agents, without the gold, annotated 40 documents each (120, 10% of A, with 1,026 gold items). Cohen's kappa over 28,745 tokens: MUST_MASK 0.9985, MUST_KEEP 0.8743, AMBIGUOUS 0.8544, overall 0.9042. Wrong or missing: 3 of 1,026 gold items (0.29%, threshold 5%), that is two MUST_KEEP items contradicted and one MUST_MASK item missing. No gold MUST_MASK item was contradicted. The corrections are under [Departures](#departures-from-the-specification).
 - **Leak check** (after the freeze, before any tool runs). Every document of A, both splits, carrier and template, is compared with the shipped model's training corpus (100,982 rows), by 13-token shingles as exact sets. A document is flagged when Jaccard ≥ 0.8, or when ≥ 80% of a training row's shingles occur in it, or when ≥ 80% of its own occur in one training row. A MUST_MASK value that was put in is a hit when its token sequence occurs in any training row. Single-token values that are bare given names or surnames from the generator's name lists are exempt, and counted. This is stricter than the pre-registered test (MinHash Jaccard on carrier excerpts), which would miss a training row contained in a longer document. The one exception is the name exemption: common names occur in any large corpus, so a bare name from the generator's lists is not a hit; the exempted values are counted and published. Flagged test documents are dropped and counted, and nothing is added back. All 1,200 documents were compared: 34 test documents were flagged (29 contain a training row, 5 hold a value found in the training data), and 5 dev documents. No document passed the Jaccard or the document-in-training-row threshold, and 112 single-token names were exempt. Dropping the 34 test documents leaves 966.
-- **Runs.** The test split is run once for this release, for every tool, and every number is published, including the ones nullpii loses. Frozen on 25 October 2026, before any tool ran on a test set: A's file manifest `390e4ca5f658f745f23ff883c586c5fc007fcd6c0ac14cc7f1f3f58dcdf6e8ac`, scored test gold `baa5305f7999d1ef04c63831ef51408522b3d2ca6de2818d9947f76c03be7a26`, B1 `c0fb7082ae95ab1f277ebf59ff0363c23c756b572ff7a002df98aa98cd407106`, scorer `1c81d4455f8fba99cd7396c45b43df88ff9a171fc8863e3af9de9d1e739c13a2`. Two files changed later, both listed under Departures: B2's gold, rebuilt before any score was read (`41f144c66a247bf8f01826008621aef26f4769dba8836b011150687c6f08b1bb`), and the scorer, corrected after the scores were first read (`edd49ff03c3eaeb06ac84b85d63c49d37b3adb17f572fb0f01ab41d6bc84a7b8`). Every tool ran once, after an adapter fix (see Departures).
+- **Runs.** The specification has one run of the test split per release, for every tool, with every number published, including the ones nullpii loses. The tables below are the published numbers; the first scoring (before the punctuation rule was corrected, see Departures) and nullpii's 25 October rows are no longer in the tree, and are in the repository at 230ce9f ([`published-bench/ab1/strict-rule/`](https://github.com/lBroth/nullpii/tree/230ce9fd1933f5df5263ca9c87d248e064eddc77/packages/eval/published-bench/ab1/strict-rule), [25 October rows](https://github.com/lBroth/nullpii/blob/230ce9fd1933f5df5263ca9c87d248e064eddc77/packages/eval/METHOD.md?plain=1#L361)). Frozen on 25 October 2026, before any tool ran on a test set: A's file manifest `390e4ca5f658f745f23ff883c586c5fc007fcd6c0ac14cc7f1f3f58dcdf6e8ac`, scored test gold `baa5305f7999d1ef04c63831ef51408522b3d2ca6de2818d9947f76c03be7a26`, B1 `c0fb7082ae95ab1f277ebf59ff0363c23c756b572ff7a002df98aa98cd407106`, scorer `1c81d4455f8fba99cd7396c45b43df88ff9a171fc8863e3af9de9d1e739c13a2`. Two files changed later, both listed under Departures: B2's gold, rebuilt before any score was read (`41f144c66a247bf8f01826008621aef26f4769dba8836b011150687c6f08b1bb`), and the scorer, corrected after the scores were first read (`edd49ff03c3eaeb06ac84b85d63c49d37b3adb17f572fb0f01ab41d6bc84a7b8`). Every tool ran on 25 October 2026, and the run was redone once for every tool after an adapter fix (see Departures). nullpii's rows were measured again on 26 October, after three rules from end-to-end testing (described at the end of [Results](#results)).
 
 ### Metrics
 
@@ -102,7 +102,7 @@ Each was decided and logged before any tool ran on any AB-1 set, unless the entr
 
 ### Results
 
-Every tool ran on the frozen sets, once, with the corrected rule. Rows are sorted by leak rate, then by keep rate. Intervals are paired bootstrap 95% intervals of nullpii minus the tool, in percentage points: a negative leak difference or a positive keep difference favours nullpii. The aggregates are in [`published-bench/ab1/`](https://github.com/lBroth/nullpii/blob/main/packages/eval/published-bench/ab1). nullpii's rows are from the release build, which includes the three rules described at the end of these results. nullpii's round trip, run with the same build: all 16,572 documents, 13,704 of them with something masked, came back as their exact original text after masking and restoring.
+Every tool ran on the frozen sets; the tables use the run redone after the adapter fix, scored with the corrected rule. Rows are sorted by leak rate, then by keep rate. Intervals are paired bootstrap 95% intervals of nullpii minus the tool, in percentage points: a negative leak difference or a positive keep difference favours nullpii. In the main tables, bold marks nullpii's name and the best leak rate, keep rate and docs-with-a-leak value of the rows shown. The aggregates are in [`published-bench/ab1/`](https://github.com/lBroth/nullpii/blob/main/packages/eval/published-bench/ab1). nullpii's rows are from the release build, which includes the three rules described at the end of these results. nullpii's round trip, run with the same build: all 16,572 documents, 13,704 of them with something masked, came back as their exact original text after masking and restoring.
 
 **A. Agent traffic** — one row per tool per operating point, plus its `+agent` variant.
 
@@ -111,8 +111,8 @@ Every tool ran on the frozen sets, once, with the corrected rule. Rows are sorte
 
 | Tool | Leak rate | Keep rate | Docs with a leak | nullpii − tool, leak | nullpii − tool, keep |
 |---|---:|---:|---:|---|---|
-| rizzo-pii (tuned, +agent) | 8.1% | 44.5% | 25.1% | [−0.0, +2.6] | [+38.7, +43.4] |
-| rizzo-pii (tuned) | 8.1% | 32.6% | 25.1% | [−0.0, +2.6] | [+50.2, +55.6] |
+| rizzo-pii (tuned, +agent) | **8.1%** | 44.5% | **25.1%** | [−0.0, +2.6] | [+38.7, +43.4] |
+| rizzo-pii (tuned) | **8.1%** | 32.6% | **25.1%** | [−0.0, +2.6] | [+50.2, +55.6] |
 | **nullpii 0.5 (agent default)** | 9.5% | 85.4% | 27.0% | — | — |
 | openai privacy-filter (tuned) | 14.2% | 71.8% | 32.9% | [−6.6, −3.0] | [+10.5, +16.6] |
 | openai privacy-filter (tuned, +agent) | 14.5% | 77.9% | 33.6% | [−6.9, −3.2] | [+5.0, +9.9] |
@@ -168,7 +168,7 @@ Every tool ran on the frozen sets, once, with the corrected rule. Rows are sorte
 | Presidio (tuned) | 40.4% | 71.6% | 77.6% | [−33.0, −28.8] | [+11.7, +16.2] |
 | Presidio (default, +agent) | 40.5% | 72.5% | 77.7% | [−33.2, −29.0] | [+10.6, +15.5] |
 | Presidio (tuned, +agent) | 40.6% | 82.3% | 77.9% | [−33.2, −29.0] | [+1.4, +5.1] |
-| piiranha (default, +agent) | 48.0% | 97.1% | 83.8% | [−40.7, −36.5] | [−13.1, −10.2] |
+| piiranha (default, +agent) | 48.0% | **97.1%** | 83.8% | [−40.7, −36.5] | [−13.1, −10.2] |
 | piiranha (default) | 48.0% | 97.0% | 83.8% | [−40.7, −36.5] | [−13.1, −10.2] |
 | deberta PII (tuned) | 55.1% | 60.0% | 81.2% | [−48.7, −42.3] | [+22.2, +28.6] |
 | deberta PII (tuned, +agent) | 55.1% | 64.2% | 81.2% | [−48.7, −42.4] | [+18.0, +24.3] |
@@ -221,8 +221,8 @@ Leak rate per category (items in brackets):
 
 | Tool | Leak rate | Keep rate | Docs with a leak | nullpii − tool, leak | nullpii − tool, keep |
 |---|---:|---:|---:|---|---|
-| openai privacy-filter (tuned, +agent) | 13.2% | 77.1% | 13.2% | [+9.0, +13.7] | [−14.7, −10.1] |
-| openai privacy-filter (tuned) | 13.2% | 77.0% | 13.2% | [+9.0, +13.7] | [−14.6, −9.9] |
+| openai privacy-filter (tuned, +agent) | **13.2%** | 77.1% | **13.2%** | [+9.0, +13.7] | [−14.7, −10.1] |
+| openai privacy-filter (tuned) | **13.2%** | 77.0% | **13.2%** | [+9.0, +13.7] | [−14.6, −9.9] |
 | nemotron-pii, library (tuned, +agent) | 14.5% | 34.0% | 14.5% | [+8.0, +12.0] | [+28.2, +33.1] |
 | nemotron-pii, library (tuned) | 14.5% | 32.8% | 14.5% | [+8.0, +12.0] | [+29.4, +34.3] |
 | gliner-pii-large (tuned, +agent) | 16.7% | 61.1% | 16.7% | [+6.0, +9.7] | [+1.1, +6.3] |
@@ -274,8 +274,8 @@ Leak rate per category (items in brackets):
 | piiranha (tuned) | 72.2% | 61.7% | 72.2% | [−50.3, −45.3] | [+0.6, +5.6] |
 | pii-identifier (default, +agent) | 74.9% | 88.5% | 74.9% | [−52.9, −47.8] | [−26.0, −21.7] |
 | pii-identifier (default) | 74.9% | 87.8% | 74.9% | [−52.9, −47.8] | [−25.3, −20.9] |
-| piiranha (default) | 85.2% | 95.0% | 85.2% | [−62.9, −58.6] | [−32.3, −28.0] |
-| piiranha (default, +agent) | 85.2% | 95.0% | 85.2% | [−62.9, −58.6] | [−32.3, −28.0] |
+| piiranha (default) | 85.2% | **95.0%** | 85.2% | [−62.9, −58.6] | [−32.3, −28.0] |
+| piiranha (default, +agent) | 85.2% | **95.0%** | 85.2% | [−62.9, −58.6] | [−32.3, −28.0] |
 | rizzo-pii (default, +agent) | 89.2% | 85.2% | 89.2% | [−66.8, −62.4] | [−22.8, −18.1] |
 | rizzo-pii (default) | 89.2% | 84.2% | 89.2% | [−66.8, −62.4] | [−21.7, −17.1] |
 | Presidio (default) | 94.2% | 63.5% | 94.2% | [−71.8, −67.6] | [−1.6, +4.2] |
@@ -289,8 +289,8 @@ Leak rate per category (items in brackets):
 
 | Tool | Leak rate | Keep rate | Docs with a leak | nullpii − tool, leak | nullpii − tool, keep |
 |---|---:|---:|---:|---|---|
-| openai privacy-filter (tuned, +agent) | 8.2% | 74.6% | 8.2% | [+2.5, +4.2] | [+1.2, +4.1] |
-| openai privacy-filter (tuned) | 8.2% | 74.5% | 8.2% | [+2.5, +4.2] | [+1.3, +4.2] |
+| openai privacy-filter (tuned, +agent) | **8.2%** | 74.6% | **8.2%** | [+2.5, +4.2] | [+1.2, +4.1] |
+| openai privacy-filter (tuned) | **8.2%** | 74.5% | **8.2%** | [+2.5, +4.2] | [+1.3, +4.2] |
 | **nullpii 0.5 (agent default)** | 11.5% | 77.2% | 11.5% | — | — |
 | openai privacy-filter (default, +agent) | 13.5% | 86.2% | 13.5% | [−3.0, −0.9] | [−10.3, −7.6] |
 | openai privacy-filter (default) | 13.5% | 86.2% | 13.5% | [−3.0, −0.9] | [−10.2, −7.6] |
@@ -348,8 +348,8 @@ Leak rate per category (items in brackets):
 | Presidio (tuned, +agent) | 79.1% | 67.3% | 79.1% | [−68.7, −66.3] | [+8.4, +11.6] |
 | piiranha (tuned, +agent) | 92.3% | 72.9% | 92.3% | [−81.8, −79.7] | [+2.8, +5.9] |
 | piiranha (tuned) | 92.3% | 72.7% | 92.3% | [−81.8, −79.7] | [+2.9, +6.1] |
-| piiranha (default) | 99.1% | 98.1% | 99.1% | [−88.4, −86.7] | [−22.0, −19.7] |
-| piiranha (default, +agent) | 99.1% | 98.1% | 99.1% | [−88.4, −86.7] | [−22.0, −19.7] |
+| piiranha (default) | 99.1% | **98.1%** | 99.1% | [−88.4, −86.7] | [−22.0, −19.7] |
+| piiranha (default, +agent) | 99.1% | **98.1%** | 99.1% | [−88.4, −86.7] | [−22.0, −19.7] |
 <!-- ab1-b2:end -->
 
 **Secrets by recognizer coverage.** The secrets' leak rate, in each set, on the items nullpii's recognizer pack covers and on the rest. An item is covered when the pack, run alone on the raw text without the model or the base64 pass, masks every letter and digit of the value. This split was computed after the freeze, from the pack itself, and is only reported. Items: A 88 covered of 585, B1 125 of 2,000, B2 1,979 of 5,776 (the release build's pack no longer has the UUID recognizer).
@@ -377,7 +377,7 @@ Leak rate per category (items in brackets):
 
 **Three rules from end-to-end testing.** Real Claude Code sessions showed values an agent works with being masked: UUIDs as account numbers (a recognizer and the model both labelled them so), IPv4 addresses as phone or account numbers (so the documentation, private and loopback ranges the IP recognizer leaves readable were masked too), and "Claude" as a person. Three rules fix them (`src/uuid-filter.ts`, `src/ip-filter.ts`, `src/product-names.ts`): a UUID labelled an account number stays readable, unless a credential-named key comes right before it on its line; an IPv4 address is left to the IP recognizer; "Claude" alone or with a product word is not a person. Each was decided from the label schema and from this benchmark's specification (written and frozen before the run, it lists UUIDs, documentation addresses, `127.0.0.1` and product names as text to keep), before any score was read. They were added after the first run, so nullpii's rows are from the release code; the other tools' rows are unaffected.
 
-On A they leave the leak rate where it was and raise the keep rate: UUIDs kept readable 97.9%, reserved addresses (`example.com` and `.test` addresses, `127.0.0.1`, `0.0.0.0`, `::1`, documentation IPs) 57.5%. On B1, 197 of nullpii's leaks are items CredData labels `UUID`: B1 inherits CredData's labels, and CredData counts 294 UUIDs as credentials, mostly after keys that name ids (`id`, `uid`, `_postman_id`, `collectionId`) or after no key; this specification lists UUIDs as text to keep. nullpii lets 268 of those 294 through, and 222 of B1's other 1,706 secrets (13.0%). As an analysis made after the scores were read (it changes no published row): with every item of kind `UUID` removed from B1's gold, nullpii lets 13.0% through, the fewest of all tools (openai privacy-filter 13.6%, nemotron-pii as a library 16.2%).
+On A they leave the leak rate where it was and raise the keep rate: UUIDs kept readable 97.9%, reserved addresses (`example.com` and `.test` addresses, `127.0.0.1`, `0.0.0.0`, `::1`, documentation IPs) 57.5%. On B1, 268 of nullpii's leaks are items CredData labels `UUID`: B1 inherits CredData's labels, and CredData counts 294 UUIDs as credentials, mostly after keys that name ids (`id`, `uid`, `_postman_id`, `collectionId`) or after no key; this specification lists UUIDs as text to keep. nullpii lets 268 of those 294 through, and 222 of B1's other 1,706 secrets (13.0%). As an analysis made after the scores were read (it changes no published row): with every item of kind `UUID` removed from B1's gold, nullpii lets 13.0% through, the fewest of all tools (openai privacy-filter 13.6%, nemotron-pii as a library 16.2%).
 
 ### Limits
 
@@ -570,7 +570,7 @@ Without the clinical notes, the lead over everyone but rizzo-pii is gone: two to
 **OpenMed's texts with no output.** `deidentify` refuses some texts as suspicious content: 7 traces-v3 transcripts, 2 PIILO essays, 2 RedactionBench documents and 1 mama-deid text, for both models at both points. It also fails its own safety-sweep check on others, more often at the tuned points' lower thresholds (Small tuned: 7 REDACT, 41 Tonic, 11 PIILO, 1 eu-clinical, 83 mama-deid; Large tuned: 9 REDACT, 3 Tonic, 1 PIILO, 59 mama-deid). These texts score as no spans. The package logs no text, so each failure is matched to its document by length and empty output (`scripts/ab/openmed_no_output.py`).
 
 **PIIMB** (`sentences` subset, 150,022 texts; nullpii with every category masked, the default before 0.5), scored by us with the leaderboard's method (`scripts/ab/piimb_score.py`), not a submitted entry: average F2 0.851, above all 35 listed tools. Next are OpenMed privacy-filter-multilingual-v2 (0.836) and OpenMed PII SuperClinical Large (0.835). nullpii's F2 per task: ai4privacy-en 0.960, ai4privacy-multilingual 0.939, nemotron-pii 0.950, Gretel 0.962, privy 0.713, mapa-eur-lex 0.580. These are the release build's. Caveats:
-- the nemotron-pii task is in nullpii's training family (2.5% of its sampled text overlaps nullpii's training corpus, 5.2% overlaps Nemotron-PII's); without it nullpii averages 0.831, against gliner-stream-pii's 0.826 and privacy-filter-multilingual-v2's 0.822, and the leaderboard gives no intervals;
+- the nemotron-pii task is in nullpii's training family (2.5% of its sampled text overlaps nullpii's training corpus, 5.2% overlaps Nemotron-PII's); without it nullpii averages 0.831, against gliner-stream-pii's 0.827 and privacy-filter-multilingual-v2's 0.822, and the leaderboard gives no intervals;
 - the ai4privacy tasks come from the same family as part of the tuning set;
 - PIIMB shaped one design decision. An earlier result, on which nullpii missed every category it did not mask then, is why the five extended categories exist. They were masked by default until 0.5; the 0.5 default for coding agents leaves them readable. PIIMB has not been used to tune anything.
 

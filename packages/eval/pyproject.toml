@@ -13,6 +13,10 @@ dependencies = [
 presidio = [
   "presidio-analyzer>=2.2.0",
 ]
+# The benchmark pipeline's download of the frozen inputs (scripts/pipeline).
+pipeline = [
+  "huggingface-hub>=1.14,<2",
+]
 dev = ["pytest>=8.0.0", "ruff>=0.7.0"]
 
 [build-system]

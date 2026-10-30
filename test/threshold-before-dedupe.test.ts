@@ -9,8 +9,8 @@ import { NullPii } from '../src/nullpii.js';
 // exactly what the model proposes.
 const model = vi.hoisted(() => ({
   spans: [] as DecodedSpan[],
-  /** The per-label cut the engine handed the decoder on its last call. */
-  cut: undefined as ((label: string) => number) | undefined,
+  /** The per-label cut the engine handed the decoder on each call, in order. */
+  cuts: [] as ((label: string) => number)[],
 }));
 
 vi.mock('../src/backend/backend.js', () => {
@@ -59,7 +59,7 @@ vi.mock('../src/gliner-tokenizer.js', async () => {
 
 vi.mock('../src/gliner-decoder.js', () => ({
   decodeGlinerLogits: (...args: unknown[]): DecodedSpan[] => {
-    model.cut = args[6] as (label: string) => number;
+    model.cuts.push(args[6] as (label: string) => number);
     return model.spans;
   },
 }));
@@ -73,6 +73,7 @@ const at = (text: string, value: string, label: string, score: number): DecodedS
 describe('score thresholds run before dedupe and recognizer deferral', () => {
   afterEach(() => {
     model.spans = [];
+    model.cuts = [];
   });
 
   it('a sub-threshold model span over a MAC does not silence core:mac', async () => {
@@ -116,9 +117,18 @@ describe('score thresholds run before dedupe and recognizer deferral', () => {
       backend: 'cpu',
       disabledCategories: ['account_number'],
     });
-    await n.sanitize('key sk-test-123');
-    expect(model.cut?.('account_number')).toBe(Number.POSITIVE_INFINITY);
-    expect(model.cut?.('secret')).toBeLessThan(1);
+    // The email is for the recognizer pack: with nothing seen by the first
+    // pass, the secret pass would not run.
+    await n.sanitize('key sk-test-123 for mario.rossi@acme.io');
+    // The first pass's masking cut, then the cut that sees every label
+    // (what the first pass found, for the secret pass), then the secret
+    // pass's own (`secret-pass.ts`).
+    const [masking, seen, secretPass] = model.cuts;
+    expect(model.cuts).toHaveLength(3);
+    expect(masking?.('account_number')).toBe(Number.POSITIVE_INFINITY);
+    expect(masking?.('secret')).toBeLessThan(1);
+    expect(seen?.('account_number')).toBeLessThan(1);
+    expect(secretPass?.('secret')).toBe(masking?.('secret'));
     await n.dispose();
   });
 });

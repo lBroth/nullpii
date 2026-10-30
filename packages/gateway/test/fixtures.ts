@@ -27,6 +27,7 @@ export const BASE_TEST_CONFIG: GatewayConfig = {
   bodyLimitBytes: 10 * 1024 * 1024,
   logTraffic: false,
   sidecarMaxSessions: 64,
+  sidecarShutdown: false,
   policy: {},
   policyFile: '/nonexistent/nullpii/config.json',
   policyLoaded: false,

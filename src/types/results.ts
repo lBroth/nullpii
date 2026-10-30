@@ -25,8 +25,11 @@ export interface SanitizeResult extends MaskResult {
   /** Words the model could not read: each is longer, alone, than the
    * model's subword budget (minified code, data blobs). The recognizer
    * pack and the base64 detector still scanned them; only the model did
-   * not. Usually 0. For a text over `MAX_INPUT_CHARS`, read in overlapping
-   * windows, a word in an overlap is counted once per window. */
+   * not. Under a policy that runs a secret pass (`secret-pass.ts`), a
+   * word counted here may still be read for secrets by that pass, whose
+   * prompt is shorter. Usually 0. For a text over `MAX_INPUT_CHARS`, read
+   * in overlapping windows, a word in an overlap is counted once per
+   * window. */
   readonly modelUnscannedWords: number;
 }
 

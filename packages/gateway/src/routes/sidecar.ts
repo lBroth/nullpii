@@ -28,6 +28,9 @@ export interface SidecarRouteOptions {
    * `startup` field. Absent when the server was built with a pre-built
    * engine. */
   readonly startup?: StartupTracker;
+  /** Stops the process, for `POST /v1/sidecar/shutdown`. The route exists
+   * only when it is given (the binary gives it; tests do not). */
+  readonly shutdown?: () => void;
   /** Clock, injectable for tests. */
   readonly now?: () => number;
 }
@@ -50,6 +53,11 @@ export const SESSION_SECRET_HEADER = 'x-nullpii-session-secret';
  * under it. */
 export const POLICY_VERSION_HEADER = 'x-nullpii-policy-version';
 const POLICY_CHANGED = 412;
+/** A shutdown was accepted: until the process ends, new sessions are
+ * refused, since one opened now would die with it. */
+const SIDECAR_CLOSING = 503;
+/** A shutdown refused, for one of `shutdownRefusal`'s reasons. */
+const SHUTDOWN_REFUSED = 409;
 const REFUSAL_REPLIES: Readonly<Record<SessionRefusal, { status: number; error: string }>> = {
   not_found: { status: 404, error: 'session_not_found' },
   forbidden: { status: 403, error: 'bad_session_secret' },
@@ -266,6 +274,9 @@ export async function registerSidecarRoutes(
     clearInterval(sweeper);
     sessions.closeAll();
   });
+  // Set once a shutdown call was accepted: the process is on its way out,
+  // so no session may open in the time the 202 and the exit are apart.
+  let closing = false;
 
   await app.register(async (scope) => {
     // One string leaf over the engine's per-call cap: the caller has to
@@ -307,6 +318,9 @@ export async function registerSidecarRoutes(
       status: 'ok',
       sessions: sessions.size,
       ...opts.runtime(),
+      // What this sidecar can do that an older one could not: a caller
+      // asks before using it, as an older sidecar has no such route.
+      features: { shutdown: opts.shutdown !== undefined },
       policy: policyView(),
       ...(opts.startup !== undefined && { startup: opts.startup.current }),
     }));
@@ -340,6 +354,9 @@ export async function registerSidecarRoutes(
       '/v1/sidecar/sessions/:key',
       { schema: { params: SESSION_PARAMS } },
       async (req, reply) => {
+        // A sidecar that answered 202 is going away: a session opened now
+        // would die with the process, so it is refused.
+        if (closing) return reply.code(SIDECAR_CLOSING).send({ error: 'sidecar_closing' });
         if (!isValidSessionKey(req.params.key)) {
           return reply.code(400).send({ error: 'invalid_session_key' });
         }
@@ -366,6 +383,24 @@ export async function registerSidecarRoutes(
         return reply.code(204).send();
       },
     );
+
+    // Lets a newer mod replace this sidecar with its own release. Only a
+    // sidecar no one may still count on goes (`shutdownRefusal`).
+    if (opts.shutdown !== undefined) {
+      const shutdown = opts.shutdown;
+      scope.post('/v1/sidecar/shutdown', async (_req, reply) => {
+        // A session past its idle TTL counts as ended by it, not as open.
+        sessions.sweep();
+        // Once closing, a second call is told the same, and stops nothing twice.
+        const refusal = closing ? undefined : shutdownRefusal(sessions, opts.startup);
+        if (refusal !== undefined) return reply.code(SHUTDOWN_REFUSED).send(refusal);
+        if (!closing) {
+          closing = true;
+          setImmediate(shutdown);
+        }
+        return reply.code(202).send({ status: 'closing' });
+      });
+    }
 
     scope.post<SanitizeRequest>(
       '/v1/sidecar/sessions/:key/sanitize',
@@ -457,4 +492,27 @@ export async function registerSidecarRoutes(
       },
     );
   });
+}
+
+/** Why this sidecar may not stop now, or undefined when it may. Each
+ * reason is a window that would lose something it is using or waiting for:
+ * - `sessions_active`: a session is open, with real values in its vault
+ *   that would be lost with the process.
+ * - `starting`: the model is still downloading or loading, for the window
+ *   that started this sidecar and is waiting for it.
+ * - `not_used_yet`: no session has opened yet, so the window that started
+ *   it has not opened its session on it (unless the start failed: then no
+ *   one will).
+ * A session that ended by its idle TTL does not count: its vault is gone
+ * already, and the Claude Code mod starts a sidecar again for a window
+ * that finds none at its next prompt. */
+export function shutdownRefusal(
+  sessions: Pick<SidecarSessions, 'size' | 'everOpened'>,
+  startup: StartupTracker | undefined,
+): { readonly error: string; readonly sessions?: number } | undefined {
+  if (sessions.size > 0) return { error: 'sessions_active', sessions: sessions.size };
+  const phase = startup?.current.phase;
+  if (phase === 'downloading' || phase === 'loading') return { error: 'starting' };
+  if (!sessions.everOpened && phase !== 'failed') return { error: 'not_used_yet' };
+  return undefined;
 }

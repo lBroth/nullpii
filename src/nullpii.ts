@@ -542,19 +542,21 @@ export class NullPii {
     }
     const spans = [...(firstRun.spans[0] ?? [])];
     if (secretLabels === null) return { spans, unscannedWords };
-    const secretRun = await runModelPass(normalized, {
-      ...base,
-      labels: secretLabels,
-      cuts: [scoreCut],
-    });
     // What the first pass saw: the model's spans under every label, the
     // words it could not read, and what the recognizer pack finds (most
-    // `https://` URLs are the recognizer's, not the model's).
+    // `https://` URLs are the recognizer's, not the model's). The secret
+    // pass keeps only what overlaps it, so with nothing seen it is skipped.
     const seen = [
       ...(firstRun.spans[1] ?? []),
       ...firstRun.unscanned,
       ...runRecognizers(normalized, this.recognizers, []),
     ];
+    if (seen.length === 0) return { spans, unscannedWords };
+    const secretRun = await runModelPass(normalized, {
+      ...base,
+      labels: secretLabels,
+      cuts: [scoreCut],
+    });
     const secrets = secretsSeenByFirstPass(secretRun.spans[0] ?? [], seen);
     logf(LOG_SCOPE, 'sanitize.secret_pass', {
       chunks: secretRun.windows,

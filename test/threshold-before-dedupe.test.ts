@@ -117,7 +117,9 @@ describe('score thresholds run before dedupe and recognizer deferral', () => {
       backend: 'cpu',
       disabledCategories: ['account_number'],
     });
-    await n.sanitize('key sk-test-123');
+    // The email is for the recognizer pack: with nothing seen by the first
+    // pass, the secret pass would not run.
+    await n.sanitize('key sk-test-123 for mario.rossi@acme.io');
     // The first pass's masking cut, then the cut that sees every label
     // (what the first pass found, for the secret pass), then the secret
     // pass's own (`secret-pass.ts`).

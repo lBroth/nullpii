@@ -62,7 +62,8 @@ export interface NullPiiConfig {
    * readable a category the default prompts and `secret` is masked, the
    * model reads the text a second time for secrets, prompted with the
    * masked categories alone, and its secrets are masked where the first
-   * read found something or could not read (`secret-pass.ts`): a
+   * read found something, a recognizer matched, or the first read could
+   * not read (`secret-pass.ts`); with none of these, no second read: a
    * credential the default's prompt files under a readable category (a
    * token in a URL, a key the model calls an account number) stays
    * masked. Default:

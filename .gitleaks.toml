@@ -36,10 +36,10 @@ regexes = [
 description = "Fake credentials in the policy-prompt tests (#92): typed by hand, no service issued them"
 regexes = [
   '''Qm7Xv2Lp9Rk4''',
-  '''o7ZFVxtM76doa3W5a9HoLDZPOH5DnL0s''',
+  '''Ws4Kn8Tq2Zb6Lm1Rx9Vc3Pd7Hy5Gf0Ja''',
   '''7f6e5d4c3b2a41908f7e''',
   '''JB7K-2M9Q-PX4L-V8RT''',
-  '''VK7JG-NPHTM-C97JM-9MPGT-3V66T''',
+  '''R4TQX-9KMWD-3HVPC-7YBNJ-2GFLZ''',
 ]
 
 [[allowlists]]

@@ -193,6 +193,9 @@ describe('the secret pass in the engine', () => {
     const out = await n.sanitize(text);
     expect(out.spans).toEqual([]);
     expect(out.sanitized).toBe(text);
+    // Nothing seen by the first pass: the secret pass could keep nothing,
+    // so it does not run.
+    expect(model.prompts.filter(isSecretPass)).toHaveLength(0);
     await n.dispose();
   });
 
@@ -236,7 +239,7 @@ describe('the secret pass in the engine', () => {
   it('masks a secret where only the recognizer pack saw something', async () => {
     // `core:url` finds the URL, which the policy leaves readable; the model's
     // first pass finds nothing.
-    const token = 'o7ZFVxtM76doa3W5a9HoLDZPOH5DnL0s';
+    const token = 'Ws4Kn8Tq2Zb6Lm1Rx9Vc3Pd7Hy5Gf0Ja';
     const text = `https://api.acme.io/v1/data?slack_bot_token=${token}&page=2`;
     // The secret pass is the prompt without the readable `private_url`.
     model.propose = (labels) =>

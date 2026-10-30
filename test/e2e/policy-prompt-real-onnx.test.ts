@@ -36,11 +36,11 @@ const MODEL_ONLY_SECRETS: ReadonlyArray<readonly [string, string]> = [
   [`curl "https://api.acme.io/items?api_key=${TOKEN}"`, TOKEN],
   ['Authorization: Basic YWRtaW46UW03WHYyTHA5Ums0', 'YWRtaW46UW03WHYyTHA5Ums0'],
   [
-    'Authorization: token 272d1371c17149d439536b3216fdaeeb975729fa',
-    '272d1371c17149d439536b3216fdaeeb975729fa',
+    'Authorization: token f0e1d2c3b4a5968778695a4b3c2d1e0f9a8b7c6d',
+    'f0e1d2c3b4a5968778695a4b3c2d1e0f9a8b7c6d',
   ],
   ['License key: JB7K-2M9Q-PX4L-V8RT', 'JB7K-2M9Q-PX4L-V8RT'],
-  ['Windows product key: VK7JG-NPHTM-C97JM-9MPGT-3V66T', 'VK7JG-NPHTM-C97JM-9MPGT-3V66T'],
+  ['Windows product key: R4TQX-9KMWD-3HVPC-7YBNJ-2GFLZ', 'R4TQX-9KMWD-3HVPC-7YBNJ-2GFLZ'],
   ['password=Xk9#mQ2vL7pR4tZ', 'Xk9#mQ2vL7pR4tZ'],
   ['DATABASE_URL=postgres://app:Xk9mQ2vL7pR4tZ@db.internal:5432/app', 'Xk9mQ2vL7pR4tZ'],
 ];

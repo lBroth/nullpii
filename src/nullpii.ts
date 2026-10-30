@@ -3,7 +3,7 @@
 import { joinAddressParts } from './address-join.js';
 import { OrtBackend } from './backend/backend.js';
 import { detectBase64Pii } from './base64-detector.js';
-import { dedupeOverlappingSpans, forEachWindow } from './chunking.js';
+import { dedupeOverlappingSpans } from './chunking.js';
 import { NULLPII_MODEL_DIR, readEnvVar } from './config.js';
 import {
   BOUNDARY_REFINE_TRIM_CHARS,
@@ -21,26 +21,22 @@ import {
   MAX_INPUT_CHARS,
   SEGMENT_OVERLAP_CHARS,
 } from './defaults.js';
-import { EngineDisposedError, ModelNotInitializedError, TextTooLongError } from './errors.js';
+import { EngineDisposedError, ModelNotInitializedError } from './errors.js';
 import { resolveNonCoordinateGeolocation } from './geo-filter.js';
-import { decodeGlinerLogits } from './gliner-decoder.js';
-import { buildSpanCandidates } from './gliner-spans.js';
-import {
-  DEFAULT_MAX_SEQUENCE_LENGTH,
-  DEFAULT_MAX_SPAN_WIDTH,
-  GlinerTokenizer,
-} from './gliner-tokenizer.js';
+import { DEFAULT_MAX_SEQUENCE_LENGTH, GlinerTokenizer } from './gliner-tokenizer.js';
 import { dropModelIpv4Spans } from './ip-filter.js';
 import { logf } from './log.js';
 import { dropDatesInsideMachineTimestamps } from './machine-timestamps.js';
 import { ModelManager } from './model-manager.js';
 import { onnxCandidates } from './model-variant.js';
+import { type DecodedSpan, type LabelCut, type ModelPass, runModelPass } from './model-window.js';
 import { normalizeForDetection, remapSpan } from './normalize.js';
 import { nullpiiVersion } from './package-version.js';
 import { escapePlaceholders, unescapePlaceholders } from './placeholder-escape.js';
 import { dropAssistantNameSpans } from './product-names.js';
 import { dropSpansInsidePublicDigests } from './public-digests.js';
 import { runRecognizers } from './recognizers.js';
+import { secretPassLabels, secretsSeenByFirstPass } from './secret-pass.js';
 import { segmentWindows } from './segments.js';
 import {
   type BackendName,
@@ -64,14 +60,6 @@ import { PiiVault } from './vault.js';
 
 const LOG_SCOPE = 'nullpii';
 
-/** A model span with offsets into the normalized text, before remapping. */
-interface DecodedSpan {
-  readonly label: string;
-  readonly start: number;
-  readonly end: number;
-  readonly score: number;
-}
-
 /** Every label the model can be prompted with, in prompt order: trained,
  * zero-shot, then the extended categories. See `types/labels.ts`. */
 const GLINER_LABELS: readonly PiiCategory[] = [
@@ -79,6 +67,10 @@ const GLINER_LABELS: readonly PiiCategory[] = [
   ...GLINER_ZERO_SHOT_EXTRA,
   ...GLINER_EXTENDED_CATEGORIES,
 ];
+
+/** The categories the default policy leaves readable, which are prompted
+ * only when a policy turns them on. */
+const DEFAULT_DISABLED: ReadonlySet<string> = new Set(DEFAULT_DISABLED_CATEGORIES);
 
 /** The text a sanitize call works on: the input with literal `{{`
  * escaped (`escaped`, what the vault sees), its detection-normalised form
@@ -151,8 +143,12 @@ export interface NullPiiDiagnostics {
  */
 export class NullPii {
   private config: NullPiiConfig;
-  /** `GLINER_LABELS` minus `config.disabledCategories`. */
+  /** `GLINER_LABELS` the default policy prompts, plus any
+   * `config.disabledCategories` turns on. */
   private promptLabels: readonly string[] = [];
+  /** The labels of the secret pass, or `null` when none runs
+   * (`secret-pass.ts`). */
+  private secretLabels: readonly string[] | null = null;
   private disabled: ReadonlySet<string> = new Set();
   /** How much of a clean URL stays readable; `null` masks every URL. */
   private urlPolicy: UrlPolicy | null = null;
@@ -211,7 +207,15 @@ export class NullPii {
   private derivePolicy(): void {
     const config = this.config;
     this.disabled = new Set(config.disabledCategories ?? DEFAULT_DISABLED_CATEGORIES);
-    this.promptLabels = GLINER_LABELS.filter((l) => !this.disabled.has(l));
+    // The prompt does not shrink with the policy: the label set moves the
+    // model's scores, and `secret` prompted alone flags words such as `code`
+    // or `OK` (#92). A label the policy leaves readable is prompted but never
+    // decoded (`decodeCut`). The secrets that prompt files under a readable
+    // label come from the secret pass (`secret-pass.ts`).
+    this.promptLabels = GLINER_LABELS.filter(
+      (l) => !DEFAULT_DISABLED.has(l) || !this.disabled.has(l),
+    );
+    this.secretLabels = secretPassLabels(GLINER_LABELS, this.promptLabels, this.disabled);
     this.urlPolicy = config.urlAllowlist === 'none' ? null : urlPolicy(config.urlAllowlist);
   }
 
@@ -474,12 +478,21 @@ export class NullPii {
    * decoding and the post-filter: the decode threshold, raised by the
    * label's post-filter cut. The decoder applies it before NMS, so a span
    * the thresholds would drop never suppresses another. */
-  private decodeCut(): (label: string) => number {
+  private scoreCut(): LabelCut {
     const decode = this.config.threshold ?? DEFAULT_DECODE_THRESHOLD;
     const post = this.config.threshold ?? DEFAULT_POST_FILTER_THRESHOLD;
     const perLabel: Readonly<Partial<Record<string, number>>> =
       this.config.categoryThresholds ?? DEFAULT_CATEGORY_THRESHOLDS;
     return (label) => Math.max(decode, perLabel[label] ?? post);
+  }
+
+  /** `scoreCut`, out of reach for a label the policy leaves readable: its
+   * spans are never decoded, so they cannot suppress a span the policy
+   * masks. */
+  private decodeCut(): LabelCut {
+    const cut = this.scoreCut();
+    const disabled = this.disabled;
+    return (label) => (disabled.has(label) ? Number.POSITIVE_INFINITY : cut(label));
   }
 
   /** The configured global and per-label score cuts, or their defaults. */
@@ -491,66 +504,66 @@ export class NullPii {
     );
   }
 
-  /** Run the model over `normalized` window by window. Windows advance by
-   * what the encoder actually kept, so a window cut by the subword budget
-   * never hides its tail from the model (see `forEachWindow`). Returned
-   * spans carry offsets into `normalized`; `unscannedWords` counts the
-   * words too long, alone, for the encoder. */
+  /** The model's spans on `normalized`, offsets into it, and the count of
+   * words too long, alone, for the encoder under the first pass's prompt.
+   * Under a policy that leaves a default category readable and masks
+   * secrets, a secret pass adds the secrets the policy's own prompt finds
+   * where the first pass or the recognizer pack found something, or the
+   * first pass could not read (`secret-pass.ts`). */
   private async detectWithModel(
     normalized: string,
     tokenizer: GlinerTokenizer,
     backend: OrtBackend,
   ): Promise<{ spans: DecodedSpan[]; unscannedWords: number }> {
-    const minScore = this.decodeCut();
-    const maxLen = this.config.maxSequenceLength ?? DEFAULT_MAX_SEQUENCE_LENGTH;
-    // One label list for the whole text: `updatePolicy` during the await
-    // below must not encode a window with one list and decode it with another.
-    const labels = this.promptLabels;
-    const decoded: DecodedSpan[] = [];
-    const walk = await forEachWindow(normalized, async ({ text: chunk, offset }) => {
-      const enc = await tokenizer.encode(chunk, labels);
-      if (this.config.strictLength === true && enc.truncated) {
-        throw new TextTooLongError(enc.seqLen, maxLen);
-      }
-      // No word to classify: empty or whitespace-only input, or a single
-      // word longer than the subword budget (minified identifiers, data
-      // blobs). The GLiNER head cannot take zero words — its LSTM reshape
-      // fails — and there is nothing for it to label. The recognizer pack
-      // and the base64 detector still scan the full text.
-      if (enc.numWords === 0) return 0;
-      const cand = buildSpanCandidates(enc.numWords, DEFAULT_MAX_SPAN_WIDTH);
-      const out = await backend.infer({
-        inputIds: enc.inputIds,
-        attentionMask: enc.attentionMask,
-        wordsMask: enc.wordsMask,
-        textLength: enc.numWords,
-        spanIdx: cand.spanIdx,
-        spanMask: cand.spanMask,
-        numSpans: cand.numSpans,
-      });
-      const spans = decodeGlinerLogits(
-        out.logits,
-        out.textLength,
-        out.maxWidth,
-        out.numClasses,
-        enc.words,
-        labels,
-        minScore,
-      );
-      for (const s of spans) {
-        decoded.push({
-          label: s.label,
-          start: s.start + offset,
-          end: s.end + offset,
-          score: s.score,
-        });
-      }
-      return enc.numWords;
-    });
-    if (walk.unscannedWords > 0) {
-      logf(LOG_SCOPE, 'sanitize.unscanned', { words: walk.unscannedWords, chunks: walk.windows });
+    // One policy for the whole text: `updatePolicy` during the awaits below
+    // must not encode a window with one label list and decode it with
+    // another, or run a secret pass the first pass was not decoded for.
+    const secretLabels = this.secretLabels;
+    const decodeCut = this.decodeCut();
+    const scoreCut = this.scoreCut();
+    const base = {
+      tokenizer,
+      backend,
+      ...(this.config.strictLength === true && {
+        strictMaxLength: this.config.maxSequenceLength ?? DEFAULT_MAX_SEQUENCE_LENGTH,
+      }),
+    };
+    const first: ModelPass = {
+      ...base,
+      labels: this.promptLabels,
+      // The second cut sees every label, readable ones too: what the
+      // first pass found, for the secret pass to check against.
+      cuts: secretLabels === null ? [decodeCut] : [decodeCut, scoreCut],
+    };
+    const firstRun = await runModelPass(normalized, first);
+    const unscannedWords = firstRun.unscanned.length;
+    if (unscannedWords > 0) {
+      logf(LOG_SCOPE, 'sanitize.unscanned', { words: unscannedWords, chunks: firstRun.windows });
     }
-    return { spans: decoded, unscannedWords: walk.unscannedWords };
+    const spans = [...(firstRun.spans[0] ?? [])];
+    if (secretLabels === null) return { spans, unscannedWords };
+    // What the first pass saw: the model's spans under every label, the
+    // words it could not read, and what the recognizer pack finds (most
+    // `https://` URLs are the recognizer's, not the model's). The secret
+    // pass keeps only what overlaps it, so with nothing seen it is skipped.
+    const seen = [
+      ...(firstRun.spans[1] ?? []),
+      ...firstRun.unscanned,
+      ...runRecognizers(normalized, this.recognizers, []),
+    ];
+    if (seen.length === 0) return { spans, unscannedWords };
+    const secretRun = await runModelPass(normalized, {
+      ...base,
+      labels: secretLabels,
+      cuts: [scoreCut],
+    });
+    const secrets = secretsSeenByFirstPass(secretRun.spans[0] ?? [], seen);
+    logf(LOG_SCOPE, 'sanitize.secret_pass', {
+      chunks: secretRun.windows,
+      spans: secrets.length,
+      dropped: (secretRun.spans[0]?.length ?? 0) - secrets.length,
+    });
+    return { spans: [...spans, ...secrets], unscannedWords };
   }
 
   restore(text: string, sessionId: string, options: RestoreOptions = {}): RestoreResult {

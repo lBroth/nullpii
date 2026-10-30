@@ -7,7 +7,11 @@ import { NullPii } from '../src/nullpii.js';
 // A span the score thresholds drop must not first silence, absorb or
 // outrank another span. The decoder is stubbed so each test controls
 // exactly what the model proposes.
-const model = vi.hoisted(() => ({ spans: [] as DecodedSpan[] }));
+const model = vi.hoisted(() => ({
+  spans: [] as DecodedSpan[],
+  /** The per-label cut the engine handed the decoder on each call, in order. */
+  cuts: [] as ((label: string) => number)[],
+}));
 
 vi.mock('../src/backend/backend.js', () => {
   class OrtBackend {
@@ -54,7 +58,10 @@ vi.mock('../src/gliner-tokenizer.js', async () => {
 });
 
 vi.mock('../src/gliner-decoder.js', () => ({
-  decodeGlinerLogits: (): DecodedSpan[] => model.spans,
+  decodeGlinerLogits: (...args: unknown[]): DecodedSpan[] => {
+    model.cuts.push(args[6] as (label: string) => number);
+    return model.spans;
+  },
 }));
 
 const MAC = '3c:22:fb:7a:10:4e';
@@ -66,6 +73,7 @@ const at = (text: string, value: string, label: string, score: number): DecodedS
 describe('score thresholds run before dedupe and recognizer deferral', () => {
   afterEach(() => {
     model.spans = [];
+    model.cuts = [];
   });
 
   it('a sub-threshold model span over a MAC does not silence core:mac', async () => {
@@ -97,6 +105,30 @@ describe('score thresholds run before dedupe and recognizer deferral', () => {
     const n = new NullPii({ modelDir: '/fake', backend: 'cpu', disabledCategories: [] });
     const out = await n.sanitize(text);
     expect(out.spans.map((s) => [s.label, s.text])).toEqual([['private_date', MAC]]);
+    await n.dispose();
+  });
+
+  it('a label the policy leaves readable is never decoded, so it suppresses nothing', async () => {
+    // Prompted all the same (#92), `account_number` must not outrank a
+    // `secret` on the same characters and then be dropped as readable: the
+    // decoder applies the cut before NMS (`gliner-decoder.test.ts`).
+    const n = new NullPii({
+      modelDir: '/fake',
+      backend: 'cpu',
+      disabledCategories: ['account_number'],
+    });
+    // The email is for the recognizer pack: with nothing seen by the first
+    // pass, the secret pass would not run.
+    await n.sanitize('key sk-test-123 for mario.rossi@acme.io');
+    // The first pass's masking cut, then the cut that sees every label
+    // (what the first pass found, for the secret pass), then the secret
+    // pass's own (`secret-pass.ts`).
+    const [masking, seen, secretPass] = model.cuts;
+    expect(model.cuts).toHaveLength(3);
+    expect(masking?.('account_number')).toBe(Number.POSITIVE_INFINITY);
+    expect(masking?.('secret')).toBeLessThan(1);
+    expect(seen?.('account_number')).toBeLessThan(1);
+    expect(secretPass?.('secret')).toBe(masking?.('secret'));
     await n.dispose();
   });
 });

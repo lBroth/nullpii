@@ -28,6 +28,8 @@ export interface WindowWalk {
   readonly windows: number;
   /** Words no window could consume: each alone exceeds the encoder budget. */
   readonly unscannedWords: number;
+  /** Those words' char ranges in the text, in order. */
+  readonly unscanned: readonly Interval[];
 }
 
 function assertOverlap(maxWords: number, overlapWords: number): void {
@@ -49,6 +51,15 @@ function windowAt(
   const start = words[cursor]?.charStart ?? text.length;
   const stop = end < words.length ? (words[end]?.charStart ?? text.length) : text.length;
   return { text: text.slice(start, stop), offset: start, wordCount: end - cursor };
+}
+
+/** The char range of `words[index]`, which must exist. */
+function wordRange(words: readonly Word[], index: number): Interval {
+  const word = words[index];
+  if (word === undefined) {
+    throw new RangeError(`word ${index} out of range (${words.length} words)`);
+  }
+  return { start: word.charStart, end: word.charEnd };
 }
 
 /** Where the next window starts after the encoder kept only `seen` of a window's words. */
@@ -80,7 +91,7 @@ export async function forEachWindow(
   const words = splitWords(text);
   let cursor = 0;
   let windows = 0;
-  let unscannedWords = 0;
+  const unscanned: Interval[] = [];
   for (;;) {
     const window = windowAt(text, words, cursor, maxWords);
     const seen = await visit(window);
@@ -90,11 +101,11 @@ export async function forEachWindow(
       cursor += maxWords - overlapWords;
       continue;
     }
-    if (seen === 0) unscannedWords += 1;
+    if (seen === 0) unscanned.push(wordRange(words, cursor));
     cursor = nextAfterCut(cursor, seen, overlapWords);
     if (cursor >= words.length) break;
   }
-  return { windows, unscannedWords };
+  return { windows, unscannedWords: unscanned.length, unscanned };
 }
 
 export function chunkText(

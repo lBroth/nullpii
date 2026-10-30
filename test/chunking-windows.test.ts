@@ -78,6 +78,8 @@ describe('forEachWindow', () => {
       OVERLAP,
     );
     expect(walk.unscannedWords).toBe(1);
+    // `w0`: the word the first window could not fit.
+    expect(walk.unscanned).toEqual([{ start: 0, end: 2 }]);
   });
 
   it('rejects overlap >= max words', async () => {

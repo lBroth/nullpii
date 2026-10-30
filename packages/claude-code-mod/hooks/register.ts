@@ -9,7 +9,10 @@
 // user has. Any other tool gets a real value only on the user's word, asked
 // in a dialog (Block / Send once / Allow all); with no one to answer
 // (`claude -p`) its call is refused unless Allow all was given. A shell
-// command never gets one.
+// command never gets one. A call that writes a file and would still hold a
+// placeholder the sidecar can no longer put back (from before a resume, or
+// from a sidecar session that expired or restarted: the vault is never
+// saved to disk) is asked about first, and refused with no one to answer.
 //
 // Fail closed: when the sidecar cannot be reached, a prompt is handed back
 // to the user and a tool call is refused, instead of going out unmasked.
@@ -66,6 +69,7 @@ import {
   substitutePlaceholders,
   touchesPolicyFile,
   unmaskKeys,
+  writtenText,
 } from './policy.ts';
 import { formatPreview } from './preview.ts';
 
@@ -287,6 +291,11 @@ const KEYS_WITHHELD =
  * in `restoreTools` would send every value with no question at all. */
 const HELD_NOT_SENT =
   'nullpii did not run this call: it holds placeholders for real values, and the user did not agree to send those values to this tool, or no one could answer (claude -p). Ask the user how to go on, or do the task without those values.';
+/** The refusal when a call that writes a file would still hold
+ * placeholders the sidecar can no longer put back, and the user did not let
+ * it write them as text, or no one could answer (claude -p). */
+const STALE_NOT_WRITTEN =
+  'nullpii did not run this call: it would write placeholders whose real values are no longer available (they come from an earlier session, or from a nullpii session that expired or restarted, and nullpii keeps no value on disk), so the file would hold the placeholder text instead of the data. Ask the user for those values and use what they give you; never invent them. If the placeholder text itself belongs in the file, say so to the user: nullpii asks them to confirm.';
 const POLICY_DENIED =
   'nullpii refused this call: with the real values put back it would change the nullpii masking policy file, which the user was not asked about. Ask the user to make that change themselves.';
 const POLICY_ASK =
@@ -310,6 +319,11 @@ interface Restored {
   shellKeptMasked?: string[];
   /** For a tool outside the policy's `restoreTools`: the placeholders kept. */
   heldForTool?: number;
+  /** For a tool the sidecar restores into, and a restore with no tool: the
+   * placeholders it could not put back, an index its vault does not hold
+   * (`unknown`) or another vault's prefix (`foreign`). */
+  unknownPlaceholders?: number;
+  foreignPlaceholders?: number;
 }
 
 /** Why a hook failed: what a `.catch` handler reads as `next.error`. */
@@ -378,6 +392,15 @@ let allowAll = false;
 // one at a time, so calls that run side by side never stack dialogs, and an
 // Allow all answers the calls that were waiting behind it.
 let clearQuestions: Promise<void> = Promise.resolve();
+// Whether the user let placeholders the sidecar can no longer put back be
+// written into files as text for the rest of the session (the dialog's
+// "Write as text for the session"). A flag of its own, apart from Allow
+// all: it lets placeholder text into a file and sends no value anywhere.
+// This session's state alone, in memory, like `allowAll`.
+let staleAsText = false;
+// Whether this session showed its one notice about placeholders that can
+// no longer be put back.
+let staleNoticed = false;
 // What to do with a prompt sent while the sidecar this session started is
 // still coming up (the `while_starting` option): ask the person, always
 // wait, or always send it unprotected.
@@ -1299,7 +1322,8 @@ async function knownValues(
  * even if the vault mints it while the dialog is open. When the sidecar
  * knows none (an earlier session's placeholder, or one typed by hand),
  * `held`, the sidecar's answer for the tool, stands and the call runs as
- * written.
+ * written. `found` are the placeholders in `args`, and `known` the values
+ * the sidecar knows of them (`knownValues`), looked up once by the caller.
  */
 async function sentHeld(
   $,
@@ -1307,9 +1331,9 @@ async function sentHeld(
   destination: ClearDestination,
   args: Readonly<Record<string, unknown>>,
   held: Restored,
+  found: readonly FoundPlaceholder[],
+  known: ReadonlyMap<string, string>,
 ): Promise<SentCall | undefined> {
-  const found = placeholderCategories(JSON.stringify(args) ?? '');
-  const known = await knownValues($, found);
   if (known.size === 0) return { restored: held, values: [] };
   const values = found.flatMap(({ placeholder, category }) => {
     const value = known.get(placeholder);
@@ -1325,6 +1349,159 @@ async function sentHeld(
     restored: { value: put.value as Record<string, unknown>, replacements: put.replacements },
     values,
   };
+}
+
+/** A placeholder found in a text, with the category it names. */
+type FoundPlaceholder = { readonly placeholder: string; readonly category: string };
+
+/** The answers to the question about a call that would write placeholders
+ * the sidecar can no longer put back into a file. Block comes first, so a
+ * quick confirm writes nothing. */
+const WRITE_AS_TEXT = 'Write as text';
+const WRITE_AS_TEXT_ALL = 'Write as text for the session';
+/** How that question joins its counts by category. */
+const STALE_JOIN = ', ';
+
+/** What the mod learnt of the placeholders in one tool call: the values
+ * the sidecar knows, keyed by placeholder; the placeholders it can no
+ * longer put back (`unknown`); and those of them the call would write into
+ * a file or name it by (`written`, `writtenText`). */
+interface CallLookup {
+  readonly known: ReadonlyMap<string, string>;
+  readonly unknown: readonly FoundPlaceholder[];
+  readonly written: readonly FoundPlaceholder[];
+}
+
+const NOTHING_LOOKED_UP: CallLookup = { known: new Map(), unknown: [], written: [] };
+
+/**
+ * Look up, once, which of the placeholders `found` in a call to `tool`
+ * (its arguments `args`) the sidecar knows. Only the placeholders Claude
+ * wrote are looked at, never the text the restore put back, so a real
+ * value shaped like a placeholder is a value, not a stale placeholder.
+ */
+async function lookUpCall(
+  $,
+  tool: string,
+  args: Readonly<Record<string, unknown>>,
+  found: readonly FoundPlaceholder[],
+): Promise<CallLookup> {
+  const known = await knownValues($, found);
+  const unknown = found.filter((one) => !known.has(one.placeholder));
+  const text = writtenText(tool, args);
+  const written = text === undefined ? [] : unknown.filter((one) => text.includes(one.placeholder));
+  return { known, unknown, written };
+}
+
+/** `n placeholder(s)`, as the mod's texts count them. */
+function placeholderCount(n: number): string {
+  return `${n} placeholder${n === 1 ? '' : 's'}`;
+}
+
+/** The question about a call that would write placeholders the sidecar can
+ * no longer put back: how many, by category, never a value (the mod has
+ * none) nor a placeholder. */
+function staleQuestion(tool: string, stale: readonly FoundPlaceholder[]): string {
+  const byCategory = new Map<string, number>();
+  for (const one of stale) {
+    const name = shortName(one.category);
+    byCategory.set(name, (byCategory.get(name) ?? 0) + 1);
+  }
+  const listed = [...byCategory].map(([name, n]) => `${name} ${n}`).join(STALE_JOIN);
+  return `nullpii cannot put back ${placeholderCount(stale.length)} in this ${tool} call (${listed}): their real values are no longer available (from an earlier session, or from a sidecar session that expired or restarted; nullpii keeps no value on disk). Written, the file holds the placeholder text, not your data. Write them into the file as text?`;
+}
+
+/**
+ * Whether a call to `tool` may write `stale`, placeholders the sidecar can
+ * no longer put back, into a file as placeholder text: yes once the user
+ * said so for the session, else their answer, put after any question still
+ * open. Block, and no answer at all (a dismissed dialog, `claude -p`), say
+ * no. An answer given after its session ended speaks for nothing. The
+ * session answer belongs to the Claude Code session, not to the sidecar,
+ * as Allow all does: a mid-session restart only makes more placeholders
+ * stale, and the answer lets placeholder text into a file, never a value
+ * anywhere, so it holds across one.
+ */
+function allowedAsText($, tool: string, stale: readonly FoundPlaceholder[]): Promise<boolean> {
+  return afterOtherClearQuestions(async () => {
+    if (staleAsText) return true;
+    const generation = sessionGeneration;
+    let answer: string;
+    try {
+      answer = await askUser($, staleQuestion(tool, stale), [
+        BLOCK,
+        WRITE_AS_TEXT,
+        WRITE_AS_TEXT_ALL,
+      ]);
+    } catch (err) {
+      $.ui.log(
+        `nullpii: no answer about placeholders it cannot put back (${errorName(err)}); call refused`,
+        { to: 'debug' },
+      );
+      return false;
+    }
+    if (generation !== sessionGeneration) return false;
+    if (answer === WRITE_AS_TEXT_ALL) staleAsText = true;
+    return answer === WRITE_AS_TEXT || answer === WRITE_AS_TEXT_ALL;
+  });
+}
+
+/** Whether a call to `tool` that would write `written`, placeholders the
+ * sidecar can no longer put back, may run (`allowedAsText`); a refusal is
+ * counted. A call that writes none goes on with no question. */
+async function staleWriteAllowed(
+  $,
+  tool: string,
+  written: readonly FoundPlaceholder[],
+): Promise<boolean> {
+  if (written.length === 0) return true;
+  if (await allowedAsText($, tool, written)) return true;
+  counts.staleRefused += written.length;
+  return false;
+}
+
+/** Count and toast the placeholders a file-writing call wrote as text on
+ * the user's word, once the call was handed on. Counts only. */
+function recordWrittenAsText($, tool: string, n: number): void {
+  if (n === 0) return;
+  counts.staleWritten += n;
+  $.ui.toast(`nullpii wrote ${placeholderCount(n)} as text with ${tool}, on your word`);
+}
+
+/**
+ * Show, once a session, how many placeholders the conversation holds that
+ * the sidecar can no longer put back, the first time the mod meets one
+ * (`seen`, in a tool call or in a reply drawn on screen). A resume could be
+ * read from the classic `SessionStart` hook (`source: 'resume'`), but a
+ * sidecar restart or an expired sidecar session raises no event, so the
+ * first one met is the one signal that covers all three. A toast, and a
+ * transcript line that is not sent to the model. Counts only. A lookup that fails leaves the notice
+ * to the next placeholder met, and fails the hook.
+ */
+async function noticeStale($, seen: readonly string[]): Promise<void> {
+  if (seen.length === 0 || staleNoticed) return;
+  staleNoticed = true;
+  let count: number;
+  try {
+    count = await staleInConversation($, seen);
+  } catch (err) {
+    staleNoticed = false;
+    throw err;
+  }
+  const text = `nullpii: ${placeholderCount(count)} from before (an earlier session, or a sidecar session that expired or restarted) can no longer be put back: nullpii keeps no value on disk. A call that would write one into a file asks you first.`;
+  $.ui.toast(text);
+  $.ui.log(text);
+}
+
+/** How many distinct placeholders the conversation so far and `seen` hold
+ * that the sidecar does not know. */
+async function staleInConversation($, seen: readonly string[]): Promise<number> {
+  const messages = await $.session.messages();
+  const found = placeholderCategories(JSON.stringify(messages) ?? '');
+  const known = await knownValues($, found);
+  const stale = new Set(seen);
+  for (const one of found) if (!known.has(one.placeholder)) stale.add(one.placeholder);
+  return stale.size;
 }
 
 /** How the legend of Claude's own question (`showLegend`) writes one
@@ -1681,7 +1858,18 @@ function preview(value: string): string {
 async function restoredForDisplay($, text: string): Promise<string> {
   const cached = shown.get(text);
   if (cached !== undefined) return cached;
-  const r = (await sidecar($, 'POST', '/restore', { value: text })) as { value: string };
+  const r = (await sidecar($, 'POST', '/restore', { value: text })) as Restored & {
+    value: string;
+  };
+  // A resumed transcript shows first on screen: a placeholder the sidecar
+  // could not put back is still in the text it drew.
+  if ((r.unknownPlaceholders ?? 0) + (r.foreignPlaceholders ?? 0) > 0) {
+    const left = placeholderCategories(text).filter((one) => r.value.includes(one.placeholder));
+    await noticeStale(
+      $,
+      left.map((one) => one.placeholder),
+    );
+  }
   if (shown.size >= SHOWN_MAX) shown.delete(shown.keys().next().value as string);
   shown.set(text, r.value);
   return r.value;
@@ -2049,6 +2237,8 @@ export function register(on, options) {
     // and so was an Allow all.
     paused = false;
     allowAll = false;
+    staleAsText = false;
+    staleNoticed = false;
     startPass = false;
     startReplacedOne = false;
     sessionGeneration += 1;
@@ -2174,6 +2364,9 @@ export function register(on, options) {
     let sentInClear: readonly ClearValue[] = [];
     let heldInCall = 0;
     let restoredInCall = 0;
+    // Placeholders the sidecar can no longer put back that the user let a
+    // file-writing call write as text: counted and toasted once it ran.
+    let writtenAsText = 0;
     if (hasPlaceholder(args)) {
       // The sidecar decides by the tool's name: nothing for a tool outside
       // the policy's `restoreTools`, and nothing for a shell tool, whose
@@ -2194,10 +2387,33 @@ export function register(on, options) {
       const asksFirst = held > 0 && !runsWithPlaceholders(e.tool);
       if (held > 0 && !asksFirst) await showLegend($, e.tool_use_id, args);
       const destination = asksFirst ? clearDestination(e.tool) : undefined;
+      // Which placeholders the sidecar knows, looked up once: for the
+      // question about sending values in clear, and for the placeholders it
+      // can no longer put back (from before a resume, or a sidecar session
+      // that expired or restarted). The sidecar reports the latter for a
+      // tool it restores into, so the lookup runs there only when it did.
+      const found = placeholderCategories(JSON.stringify(args) ?? '');
+      const reported = (r.unknownPlaceholders ?? 0) + (r.foreignPlaceholders ?? 0);
+      const lookup =
+        destination !== undefined || reported > 0
+          ? await lookUpCall($, e.tool, args, found)
+          : NOTHING_LOOKED_UP;
+      await noticeStale(
+        $,
+        lookup.unknown.map((one) => one.placeholder),
+      );
+      // A call that would write such a placeholder into a file is asked
+      // about first, and refused with no one to answer. It comes before
+      // the question about values in clear: a call that will not run asks
+      // no one to release a value for it.
+      if (!(await staleWriteAllowed($, e.tool, lookup.written))) {
+        return { deny: STALE_NOT_WRITTEN };
+      }
+      writtenAsText = lookup.written.length;
       const asked =
         destination === undefined
           ? { restored: r, values: [] }
-          : await sentHeld($, e.tool, destination, args, r);
+          : await sentHeld($, e.tool, destination, args, r, found, lookup.known);
       if (asked === undefined) return { deny: HELD_NOT_SENT };
       sentInClear = asked.values;
       // The placeholders still in the call if it runs: none the user sent.
@@ -2224,6 +2440,7 @@ export function register(on, options) {
     }
     const out = await ranCall(next, call, () => {
       recordSent($, sentInClear);
+      recordWrittenAsText($, e.tool, writtenAsText);
       counts.held += heldInCall;
       counts.restored += restoredInCall;
     });

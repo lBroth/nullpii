@@ -251,15 +251,17 @@ describe('runRecognizers', () => {
       expect(runRecognizers(`KEY=${test} ok`, r ? [r] : [], [])).toHaveLength(0);
     });
 
-    // Built from parts so the source never holds a whole PEM block (the
-    // secret scanner would flag it); the body is a fixed fake.
+    // Markers and blocks are built from parts so the source never holds a
+    // PEM marker (the secret scanner would flag it); the body is a fixed fake.
+    const pemMarker = (word: 'BEGIN' | 'END', label: string): string =>
+      `${'-'.repeat(5)}${word} ${label}${'-'.repeat(5)}`;
     const pemBlock = (label: string, footLabel = label): string =>
       [
-        `-----BEGIN ${label}-----`,
+        pemMarker('BEGIN', label),
         'Q'.repeat(64),
         'Q'.repeat(64),
         'QQQQ==',
-        `-----END ${footLabel}-----`,
+        pemMarker('END', footLabel),
       ].join('\n');
 
     it('catches a PEM private key block whatever its key type', async () => {
@@ -275,6 +277,7 @@ describe('runRecognizers', () => {
         'OPENSSH PRIVATE KEY',
         'PGP PRIVATE KEY',
         'PGP PRIVATE KEY BLOCK',
+        'TSS2 PRIVATE KEY',
       ]) {
         const block = pemBlock(label);
         const spans = runRecognizers(`key:\n${block}\nend`, r ? [r] : [], []);
@@ -298,6 +301,44 @@ describe('runRecognizers', () => {
       ] satisfies [string, string][]) {
         const text = pemBlock(head, foot);
         expect(runRecognizers(text, r ? [r] : [], []), `${head} / ${foot}`).toHaveLength(0);
+      }
+    });
+
+    it('matches each PEM block on its own, never the text between two', async () => {
+      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+      const r = DEFAULT_RECOGNIZERS.find((r) => r.id === 'core:pem-private-key');
+      expect(r).toBeDefined();
+      const first = pemBlock('PRIVATE KEY');
+      const second = pemBlock('PRIVATE KEY');
+      const text = `${first}\nthen mail bob@acme-mail.io the second:\n${second}`;
+      const spans = runRecognizers(text, r ? [r] : [], []);
+      expect(spans.map((s) => [s.start, s.text])).toEqual([
+        [0, first],
+        [text.length - second.length, second],
+      ]);
+    });
+
+    it('a truncated PEM header takes no later block or text with it', async () => {
+      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+      const r = DEFAULT_RECOGNIZERS.find((r) => r.id === 'core:pem-private-key');
+      expect(r).toBeDefined();
+      const block = pemBlock('PRIVATE KEY');
+      const text = `${pemMarker('BEGIN', 'PRIVATE KEY')}\n${'Q'.repeat(40)}\n\nsorry, cut. Again:\n${block}`;
+      const spans = runRecognizers(text, r ? [r] : [], []);
+      expect(spans.map((s) => [s.start, s.text])).toEqual([[text.length - block.length, block]]);
+    });
+
+    it('leaves text that only names the PEM markers readable', async () => {
+      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+      const r = DEFAULT_RECOGNIZERS.find((r) => r.id === 'core:pem-private-key');
+      expect(r).toBeDefined();
+      const head = pemMarker('BEGIN', 'PRIVATE KEY');
+      const foot = pemMarker('END', 'PRIVATE KEY');
+      for (const text of [
+        `Paste the key between ${head} and ${foot} lines.`,
+        `const HEAD = "${head}";\nconst user = "alice";\nconst FOOT = "${foot}";`,
+      ]) {
+        expect(runRecognizers(text, r ? [r] : [], []), text).toHaveLength(0);
       }
     });
 

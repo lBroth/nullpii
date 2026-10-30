@@ -334,17 +334,20 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
   },
 
   // ─── PEM / JWT ────────────────────────────────────────────────
-  // Full block, header through trailer. The key type is optional: PKCS#8
-  // (`BEGIN PRIVATE KEY`, what `openssl genpkey` writes) and its
-  // encrypted form carry none, and OpenPGP armor ends in `BLOCK`.
-  // Backref `\1` ensures the label in `BEGIN` matches `END`, so an
-  // unterminated header does not eat an unrelated `END` farther down
-  // the document. If the matching trailer is absent (truncated paste),
-  // no match — better to miss than to over-redact.
+  // Full block, header through trailer. Labels: PKCS#8 (`PRIVATE KEY`,
+  // what `openssl genpkey` writes) and its `ENCRYPTED` form, RSA, DSA,
+  // EC, OpenSSH, TPM2 (`TSS2`) and OpenPGP (armor ends in `BLOCK`).
+  // The body never crosses a run of five dashes, so a block ends at the
+  // first marker after its header: a header with no trailer (truncated
+  // paste) matches nothing and takes no later block or text with it, and
+  // the scan from each header stops at the next marker (linear time).
+  // Backref `\1` requires the trailer's label to be the header's. The
+  // body must hold a base64 run, so prose or code that only names the
+  // markers stays readable.
   {
     id: 'core:pem-private-key',
     pattern:
-      /-----BEGIN ((?:(?:RSA|DSA|EC|OPENSSH|ENCRYPTED|PGP) )?PRIVATE KEY(?: BLOCK)?)-----[\s\S]*?-----END \1-----/g,
+      /-----BEGIN ((?:(?:RSA|DSA|EC|OPENSSH|ENCRYPTED|TSS2|PGP) )?PRIVATE KEY(?: BLOCK)?)-----(?=(?:[^-]|-(?!----))*?[A-Za-z0-9+/]{16})(?:[^-]|-(?!----))*-----END \1-----/g,
     label: 'secret',
     confidence: 0.99,
   },
@@ -1059,7 +1062,9 @@ export const MAX_INPUT_CHARS = 1_000_000;
 
 /** Overlap between two windows of a text longer than `MAX_INPUT_CHARS`:
  * a value shorter than this that crosses a window's end lies whole in the
- * next window. Longer than any PEM key block or address. A longer value
+ * next window. Longer than any address, and than a PEM key block (an
+ * OpenPGP export with many subkeys or a photo can exceed it; such a block
+ * crossing a window's end is left to the model). A longer value
  * with no whitespace (an encoded blob) is kept whole another way: the
  * next window starts where its run starts (`segments.ts`). */
 export const SEGMENT_OVERLAP_CHARS = 32_768;

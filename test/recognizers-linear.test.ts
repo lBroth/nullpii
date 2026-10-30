@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_RECOGNIZERS } from '../src/defaults.js';
+import { DEFAULT_RECOGNIZERS, MAX_INPUT_CHARS } from '../src/defaults.js';
 import { runRecognizers } from '../src/recognizers.js';
 
 /** Repeated units that made unbounded quantifiers backtrack: separator
@@ -35,9 +35,22 @@ describe('recognizer patterns run in linear time', () => {
     });
   }
 
-  for (const header of ['-----BEGIN RSA PRIVATE KEY-----\n', '-----BEGIN PRIVATE KEY-----\n']) {
-    it(`the PEM pattern on repeated ${JSON.stringify(header)} with no END line`, () => {
-      const text = header.repeat(Math.ceil(SIZE / header.length)).slice(0, SIZE);
+  // At MAX_INPUT_CHARS, where a quadratic scan from each header takes
+  // seconds; 100k characters took only ~20 ms even then. Headers are
+  // built from parts so the source holds no PEM marker for the secret
+  // scanner to flag.
+  const begin = (label: string): string => `${'-'.repeat(5)}BEGIN ${label}${'-'.repeat(5)}`;
+  for (const header of [
+    `${begin('RSA PRIVATE KEY')}\n`,
+    `${begin('PRIVATE KEY')}\n`,
+    begin('PRIVATE KEY'),
+    `${begin('PRIVATE KEY')}\n${'Q'.repeat(64)}\n`,
+    `${begin('PGP PRIVATE KEY BLOCK')}\n`,
+  ]) {
+    it(`the PEM pattern on ${MAX_INPUT_CHARS} characters of ${JSON.stringify(header)}, no END line`, () => {
+      const text = header
+        .repeat(Math.ceil(MAX_INPUT_CHARS / header.length))
+        .slice(0, MAX_INPUT_CHARS);
       const pem = DEFAULT_RECOGNIZERS.find((r) => r.id === 'core:pem-private-key');
       expect(pem).toBeDefined();
       if (pem) expect(timeMatch(pem.pattern, text)).toBeLessThan(BUDGET_MS);

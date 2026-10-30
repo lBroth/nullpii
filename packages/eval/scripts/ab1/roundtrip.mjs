@@ -5,7 +5,6 @@
 //   node roundtrip.mjs --dist <abs dist> --texts <texts.jsonl> [--model-dir D] [--config '<json>']
 import { createReadStream } from 'node:fs';
 import { join } from 'node:path';
-import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 
 function parseArgs(argv) {
@@ -16,6 +15,30 @@ function parseArgs(argv) {
   }
   for (const k of ['dist', 'texts']) if (!out[k]) throw new Error(`--${k} is required`);
   return out;
+}
+
+/** Lines of a JSONL file, split on '\n' only. readline also ends a line at
+ * U+2028 and U+2029, which JSON leaves unescaped inside strings, and would
+ * cut a row holding one in two. */
+async function* jsonlLines(path) {
+  let rest = '';
+  for await (const chunk of createReadStream(path, { encoding: 'utf8' })) {
+    const lines = (rest + chunk).split('\n');
+    rest = lines.pop();
+    yield* lines;
+  }
+  yield rest;
+}
+
+/** A JSONL row, parsed; a line that is not JSON is reported by its number
+ * alone, never with its text (the frozen inputs hold real secrets, and
+ * JSON.parse's own message quotes the input). */
+function parseRow(line, number, file) {
+  try {
+    return JSON.parse(line);
+  } catch {
+    throw new Error(`${file}:${number}: not a JSON row`);
+  }
 }
 
 const args = parseArgs(process.argv.slice(2));
@@ -29,9 +52,11 @@ const np = new NullPii(config);
 const fails = {};
 let n = 0;
 let masked = 0;
-for await (const line of createInterface({ input: createReadStream(args.texts, 'utf8'), crlfDelay: Infinity })) {
+let lineNumber = 0;
+for await (const line of jsonlLines(args.texts)) {
+  lineNumber += 1;
   if (line.trim() === '') continue;
-  const row = JSON.parse(line);
+  const row = parseRow(line, lineNumber, 'the texts');
   const r = await np.sanitize(row.text);
   if (r.sanitized !== row.text) masked += 1;
   const back = np.restore(r.sanitized, r.sessionId);

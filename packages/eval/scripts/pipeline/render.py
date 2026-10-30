@@ -62,16 +62,13 @@ def output_files(b: views.Bench) -> list[str]:
 
 def published_files(source: Path, b: views.Bench) -> dict[str, bytes]:
     """`published-bench/`'s files from `source`, byte for byte, and the
-    marker that says in whose row names they are."""
+    marker that says in whose row names they are, what they measured and,
+    for the published run's, the frozen revision that holds its outputs."""
     files = {rel: (source / rel).read_bytes() for rel in output_files(b)}
-    marker: dict = {"names": b.names, "files": sorted(files), views.VERSION_KEY: b.version}
-    reference = source / views.REFERENCE_MARKER
-    if reference.is_file():
-        marker["reference_of"] = json.loads(reference.read_text(encoding="utf-8"))["reference_of"]
-    elif (source / views.OUTPUTS_MARKER).is_file():
-        previous = json.loads((source / views.OUTPUTS_MARKER).read_text(encoding="utf-8"))
-        if "reference_of" in previous:
-            marker["reference_of"] = previous["reference_of"]
+    marker: dict = {"names": b.names, "files": sorted(files), views.VERSION_KEY: b.version,
+                    views.MEASURED_KEY: b.measured}
+    if b.names == views.PUBLISHED_NAMES:
+        marker["reference_of"] = f"{settings.FROZEN_REPO}@{settings.FROZEN_REVISION}"
     files[views.OUTPUTS_MARKER] = (json.dumps(marker, indent=1, sort_keys=True) + "\n").encode("utf-8")
     return files
 

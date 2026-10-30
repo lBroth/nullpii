@@ -385,7 +385,8 @@ def _inside_bench(path: Path) -> bool:
 def _published_bench(tmp_path, monkeypatch, names: str, data=None) -> Path:
     from pipeline.tests import outputs as made_up
     bench = made_up.write(tmp_path / "published-bench", data if data is not None else made_up.files())
-    (bench / "OUTPUTS.json").write_text(json.dumps({"names": names, "files": [], "version": "0.6"}))
+    (bench / "OUTPUTS.json").write_text(json.dumps({"names": names, "files": [], "version": "0.6", "measured": {
+        "nullpii": "0.6.1", "model": "lBroth/nullpii@" + "6" * 40, "backend": "cpu"}}))
     monkeypatch.setattr(settings, "PUBLISHED", bench)
     return bench
 
@@ -459,3 +460,66 @@ def test_compare_needs_a_reference_or_published_bench(tmp_path):
         bench_pipeline.main(["compare", "--new", str(tmp_path)])
     with pytest.raises(SystemExit):
         bench_pipeline.main(["compare", "--new", str(tmp_path), "--reference", "R", "--published-bench"])
+
+
+def test_score_records_what_the_parts_measured(tmp_path, children, monkeypatch):
+    from pipeline import build
+    monkeypatch.setattr(build, "cpu_model", lambda: "a CPU")
+    _capture_everything(tmp_path)
+    bench_pipeline.main(["score", "--frozen", str(tmp_path / "frozen"), "--work", str(tmp_path / "w")])
+    measured = json.loads((tmp_path / "w" / "out" / "MEASURED.json").read_text())
+    assert measured == {"nullpii": build.nullpii_version(views_root()), "model": build.model_ref(views_root()),
+                        "backend": "cpu", "cpus": ["a CPU"]}
+    marker = json.loads((_part(tmp_path, "r3-default-1-of-1") / "PART.json").read_text())
+    assert marker["measured"]["cpu"] == "a CPU"
+
+
+def views_root():
+    from pipeline import views
+    return views.ROOT
+
+
+def _measured_run(tmp_path, **over):
+    run = tmp_path / "out"
+    run.mkdir(exist_ok=True)
+    m = {"nullpii": "0.6.1", "model": "lBroth/nullpii@" + "6" * 40, "backend": "cpu", "cpus": ["x"], **over}
+    (run / "MEASURED.json").write_text(json.dumps(m))
+    return run
+
+
+def test_measured_differs_says_when_a_numbers_pr_is_due_though_nothing_moved(tmp_path, monkeypatch, capsys):
+    _published_bench(tmp_path, monkeypatch, "run")
+    assert bench_pipeline.main(["measured-differs", "--run", str(_measured_run(tmp_path))]) == 0
+    assert bench_pipeline.main(["measured-differs", "--run", str(_measured_run(tmp_path, nullpii="0.6.2"))]) == 3
+    assert bench_pipeline.main(["measured-differs", "--run", str(
+        _measured_run(tmp_path, model="lBroth/nullpii@" + "7" * 40))]) == 3
+    # Another CPU model is no new measurement.
+    assert bench_pipeline.main(["measured-differs", "--run", str(_measured_run(tmp_path, cpus=["y"]))]) == 0
+
+
+def test_measured_differs_against_the_published_run_is_always_due(tmp_path, monkeypatch):
+    from pipeline.tests import outputs as made_up
+    _published_bench(tmp_path, monkeypatch, "published", made_up.published())
+    (settings.PUBLISHED / "OUTPUTS.json").write_text(json.dumps({"names": "published", "files": []}))
+    assert bench_pipeline.main(["measured-differs", "--run", str(_measured_run(tmp_path))]) == 3
+
+
+def test_propose_words_a_run_where_nothing_moved(tmp_path, monkeypatch):
+    from pipeline import proposal
+    monkeypatch.setattr(proposal, "changed_paths", lambda root: ["packages/eval/published-bench/OUTPUTS.json"])
+    report = tmp_path / "report.md"
+    report.write_text("**nothing moved**\n")
+    run = _measured_run(tmp_path)
+    bench_pipeline.main(["propose", "--run", str(run), "--report", str(report), "--compare-exit", "0",
+                         "--commit", "c" * 40, "--run-url", "https://github.com/lBroth/nullpii/actions/runs/1",
+                         "--runner", "runners", "--title-out", str(tmp_path / "t"), "--body-out", str(tmp_path / "b")])
+    assert (tmp_path / "t").read_text().strip().endswith("(nothing moved; measured nullpii 0.6.1)")
+    assert "**Nothing moved.**" in (tmp_path / "b").read_text()
+
+
+def test_measured_differs_against_the_published_run_is_due_even_for_its_own_measurement(tmp_path, monkeypatch):
+    from pipeline.tests import outputs as made_up
+    _published_bench(tmp_path, monkeypatch, "published", made_up.published())
+    (settings.PUBLISHED / "OUTPUTS.json").write_text(json.dumps({"names": "published", "files": []}))
+    same = _measured_run(tmp_path, **settings.PUBLISHED_MEASURED)
+    assert bench_pipeline.main(["measured-differs", "--run", str(same)]) == 3

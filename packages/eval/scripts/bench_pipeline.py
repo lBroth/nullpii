@@ -36,6 +36,9 @@
              exits 5 listing each file, region and figure that differs
   propose    after `render`, check it changed only what a numbers PR may
              change, and write that PR's title and body (pipeline/proposal.py)
+  measured-differs
+             exit 3 when published-bench says it measured another nullpii
+             version or model than a run did (a numbers PR is due), 0 when not
   model-card check that MODEL_CARD.md is the card of the release being
              tagged, and with --upload put it on the model repository
              (pipeline/card.py)
@@ -67,7 +70,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from pipeline import (  # noqa: E402
-    artifact, capture, card, compare, frozen, parts, proposal, recipe, render, reproduce, settings, texts, views,
+    artifact, build, capture, card, compare, frozen, parts, proposal, recipe, render, reproduce, settings, texts, views,
 )
 from pipeline.parts import Shard  # noqa: E402
 from pipeline.prose import RenderError  # noqa: E402
@@ -198,7 +201,7 @@ def _capture_part(work: Work, group: str, f: frozen.Frozen, args: argparse.Names
         (part / parts.ROUNDTRIP_FILE).write_text(json.dumps(
             {"docs": 0, "masked": 0, "roundtrip_failures": 0, "failing_idx": {}}) + "\n", encoding="utf-8")
     parts.check_output(part, group, preset, rows)
-    parts.write_marker(part, group, preset, shard, rows, totals, args.limit)
+    parts.write_marker(part, group, preset, shard, rows, totals, args.limit, build.measured(views.ROOT))
     print(f"{part.name}: {sum(rows.values())} of {sum(totals.values())} texts captured as {settings.tool_name(preset)}"
           + (f" (limited to {args.limit} per set: a dry run, never scored)" if args.limit is not None else ""))
 
@@ -208,7 +211,7 @@ def _capture_recognizers(work: Work, dist: Path, f: frozen.Frozen) -> None:
     for key, gold in settings.AB1_GOLD.items():
         out = work.recognizers() / f"{key}.jsonl"
         capture.recognizer_spans(dist, f.dataset("ab1", gold), out)
-        artifact.check_spans(out)
+    artifact.check_recognizers(work.recognizers())
 
 
 def cmd_capture(args: argparse.Namespace) -> None:
@@ -224,10 +227,10 @@ def cmd_capture(args: argparse.Namespace) -> None:
         _capture_part(work, args.group, f, args)
 
 
-def missing_captures(work: Work, assembled: list[tuple[str, str]]) -> list[str]:
+def missing_captures(work: Work, assembled: parts.Assembled) -> list[str]:
     """The captures `score` needs that are not there: a group in a preset
     with no part at all, and the recognizer pack's spans."""
-    missing = [f"capture --group {g} --preset {p}" for g, p in CAPTURES if (g, p) not in assembled]
+    missing = [f"capture --group {g} --preset {p}" for g, p in CAPTURES if (g, p) not in assembled.captures]
     missing += [f"capture --group {UNPRESET_GROUP} ({key})" for key in settings.AB1_GOLD
                 if not (work.recognizers() / f"{key}.jsonl").is_file()]
     return missing
@@ -245,7 +248,11 @@ def cmd_score(args: argparse.Namespace) -> None:
     missing = missing_captures(work, assembled)
     if missing:
         raise SystemExit("score needs every capture; not captured:\n  " + "\n  ".join(missing))
+    artifact.check_recognizers(work.recognizers())
     frozen.install_competitors(f, work.checkpoints)
+    work.out.mkdir(parents=True, exist_ok=True)
+    (work.out / views.MEASURED_FILE).write_text(json.dumps(assembled.measured, indent=1, sort_keys=True) + "\n",
+                                                encoding="utf-8")
     recipe.score_ab1(work.checkpoints, settings.BASELINE, f.dataset("ab1"), work.out / "ab1")
     recipe.score_ab1_coverage(work.checkpoints, work.recognizers(), f.dataset("ab1"), work.out / "ab1")
     recipe.score_ab1_kind_split(work.checkpoints, f.dataset("ab1"), work.out / "ab1")
@@ -372,14 +379,33 @@ def cmd_render(args: argparse.Namespace) -> int:
 def cmd_propose(args: argparse.Namespace) -> None:
     try:
         changed = proposal.check_changes(proposal.changed_paths(views.ROOT))
-    except proposal.ProposalError as e:
+        measured = views.measured(args.run, views.RUN_NAMES)
+    except (proposal.ProposalError, ViewError) as e:
         raise SystemExit(f"propose: {e}") from e
     run = proposal.Run(commit=args.commit, compare_exit=args.compare_exit, run_url=args.run_url,
-                       model=args.model, runner=args.runner)
+                       runner=args.runner, measured=measured)
     report = args.report.read_text(encoding="utf-8")
     args.title_out.write_text(proposal.title(run) + "\n", encoding="utf-8")
     args.body_out.write_text(proposal.body(run, report, changed), encoding="utf-8")
     print(f"propose: {len(changed)} files changed, all published outputs, docs or figures")
+
+
+def cmd_measured_differs(args: argparse.Namespace) -> int:
+    """0 when published-bench says it measured the run's nullpii and model,
+    3 when not (a numbers PR is due even if no number moved)."""
+    try:
+        run = views.measured(args.run, views.RUN_NAMES)
+        names = views.layout_names(settings.PUBLISHED)
+        published = views.measured(settings.PUBLISHED, names)
+    except ViewError as e:
+        raise SystemExit(f"measured-differs: {e}") from e
+    keys = ("nullpii", "model", "backend")
+    if names == views.RUN_NAMES and all(run[k] == published[k] for k in keys):
+        print(f"published-bench measured nullpii {run['nullpii']} with {run['model']}, as this run did")
+        return 0
+    print(f"published-bench measured nullpii {published['nullpii']} with {published['model']} on {published['backend']};"
+          f" this run nullpii {run['nullpii']} with {run['model']} on {run['backend']}")
+    return compare.EXIT_CHANGED
 
 
 def cmd_model_card(args: argparse.Namespace) -> None:
@@ -430,12 +456,13 @@ def _add_compare(sub: argparse._SubParsersAction) -> None:
 
 def _add_propose(sub: argparse._SubParsersAction) -> None:
     s = sub.add_parser("propose")
+    s.add_argument("--run", type=_path, required=True, help="the run's out (its MEASURED.json)")
     s.add_argument("--report", type=_path, required=True, help="compare's report")
-    s.add_argument("--compare-exit", type=int, choices=(compare.EXIT_CHANGED, compare.EXIT_WORSE), required=True)
+    s.add_argument("--compare-exit", type=int, required=True,
+                   choices=(compare.EXIT_UNCHANGED, compare.EXIT_CHANGED, compare.EXIT_WORSE))
     s.add_argument("--commit", required=True, help="the commit measured")
     s.add_argument("--run-url", required=True)
-    s.add_argument("--model", required=True, help="the model the library pins, repo@revision")
-    s.add_argument("--runner", required=True, help="what ran it, e.g. 'GitHub-hosted ubuntu-24.04, CPU'")
+    s.add_argument("--runner", required=True, help="what ran it, e.g. 'GitHub-hosted ubuntu-24.04 runners'")
     s.add_argument("--title-out", type=_path, required=True)
     s.add_argument("--body-out", type=_path, required=True)
 
@@ -467,6 +494,8 @@ def parser() -> argparse.ArgumentParser:
                    help="a run's out, a reference (its REFERENCE.json) or published-bench itself")
     s.add_argument("--check", action="store_true", help="write nothing; exit 5 listing what differs")
     _add_propose(sub)
+    s = sub.add_parser("measured-differs")
+    s.add_argument("--run", type=_path, required=True, help="a run's out (its MEASURED.json)")
     s = sub.add_parser("model-card")
     s.add_argument("--tag", required=True, help="the release tag, vX.Y.Z")
     s.add_argument("--upload", action="store_true", help=f"upload it to {card.MODEL_REPO} (token: {card.TOKEN_ENV})")
@@ -476,7 +505,7 @@ def parser() -> argparse.ArgumentParser:
 COMMANDS = {
     "fetch": cmd_fetch, "reproduce": cmd_reproduce, "capture": cmd_capture,
     "score": cmd_score, "reference": cmd_reference, "compare": cmd_compare, "render": cmd_render,
-    "propose": cmd_propose, "model-card": cmd_model_card,
+    "propose": cmd_propose, "measured-differs": cmd_measured_differs, "model-card": cmd_model_card,
 }
 
 

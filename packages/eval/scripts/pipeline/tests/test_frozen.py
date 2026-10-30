@@ -258,3 +258,12 @@ def test_a_link_to_a_relative_source_is_made_absolute(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     frozen.link(tmp_path / "out" / "a.jsonl", Path("src") / "a.jsonl")
     assert os.readlink(tmp_path / "out" / "a.jsonl") == str((tmp_path / "src" / "a.jsonl").resolve())
+
+
+def test_a_copy_of_the_sets_alone_still_checks_a_listed_file_outside_them_that_is_there(tmp_path):
+    # Only a missing file outside the sets is let be: one that is there,
+    # changed, is refused like in any copy.
+    root = _bundle(tmp_path)
+    (root / "predictions" / "ab1" / "checkpoints" / "presidio-ab1-a.jsonl").write_text('{"tampered": 1}\n')
+    with pytest.raises(frozen.FrozenError, match="predictions/ab1/checkpoints/presidio-ab1-a.jsonl"):
+        frozen.verify(root, _pin(root), only=frozen.SETS)

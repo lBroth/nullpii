@@ -55,12 +55,25 @@ function completedKeys(path, dataset) {
   const text = readFileSync(path, 'utf8');
   const kept = text.slice(0, text.lastIndexOf('\n') + 1);
   if (kept.length < text.length) truncateSync(path, Buffer.byteLength(kept));
+  let number = 0;
   for (const line of kept.split('\n')) {
+    number += 1;
     if (line === '') continue;
-    const row = JSON.parse(line);
+    const row = parseRow(line, number, 'the output to resume');
     keys.add(`${row.dataset ?? dataset}:${row.idx}`);
   }
   return keys;
+}
+
+/** A JSONL row, parsed; a line that is not JSON is reported by its number
+ * alone, never with its text (the frozen inputs hold real secrets, and
+ * JSON.parse's own message quotes the input). */
+function parseRow(line, number, file) {
+  try {
+    return JSON.parse(line);
+  } catch {
+    throw new Error(`${file}:${number}: not a JSON row`);
+  }
 }
 
 /** Lines of a JSONL file, split on '\n' only. readline also ends a line at
@@ -151,9 +164,11 @@ const resume = args.resume === '1';
 const sink = args.out ? spanSink(args.out, resume) : checkpointSink(args.checkpoints, args.tool, resume);
 let n = 0;
 let skipped = 0;
+let lineNumber = 0;
 for await (const line of jsonlLines(args.texts)) {
+  lineNumber += 1;
   if (line.trim() === '') continue;
-  const row = JSON.parse(line);
+  const row = parseRow(line, lineNumber, 'the texts');
   if (sink.isDone(row)) {
     skipped += 1;
     continue;

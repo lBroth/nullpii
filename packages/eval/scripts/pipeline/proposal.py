@@ -24,9 +24,7 @@ REPORT_ARTIFACT = "bench-report"
 ACCEPT_LABEL = "bench-accept-worse"
 APPROVAL_CONTEXT = "bench/approval"
 REPO = "lBroth/nullpii"
-# The published run measured nullpii on CUDA; METHOD.md gives how far its
-# CPU outputs are from those.
-CUDA_CPU_AGREEMENT = "37 of the 14,701 tuning-set documents differ, release build and fp32 on both"
+CUDA_CPU_AGREEMENT = docs.CUDA_CPU_AGREEMENT
 
 
 class ProposalError(Exception):
@@ -83,16 +81,25 @@ class Run:
     commit: str
     compare_exit: int
     run_url: str
-    model: str
     runner: str
+    measured: dict
 
     @property
     def worse(self) -> bool:
         return self.compare_exit == compare.EXIT_WORSE
 
+    @property
+    def unchanged(self) -> bool:
+        return self.compare_exit == compare.EXIT_UNCHANGED
+
 
 def title(run: Run) -> str:
-    what = "something got worse" if run.worse else "numbers moved"
+    if run.worse:
+        what = "something got worse"
+    elif run.unchanged:
+        what = f"nothing moved; measured nullpii {run.measured['nullpii']}"
+    else:
+        what = "numbers moved"
     return f"chore(bench): CPU re-measurement of {run.commit[:12]} ({what})"
 
 
@@ -108,7 +115,18 @@ def _verdict(run: Run) -> str:
         return (f"**Something got worse.** The required check `{APPROVAL_CONTEXT}` stays red until the repository"
                 f" owner adds the `{ACCEPT_LABEL}` label to this PR; removing the label takes the acceptance back, and"
                 " a push to this branch voids the measurement. Read the worse rows first.")
+    if run.unchanged:
+        return (f"**Nothing moved.** Every number and claim is as published-bench has it, but published-bench says it"
+                f" measured another nullpii version or model: this PR records nullpii {run.measured['nullpii']} with"
+                f" `{run.measured['model']}`. `{APPROVAL_CONTEXT}` is green; the normal review applies.")
     return (f"**Numbers moved, none got worse.** `{APPROVAL_CONTEXT}` is green; the normal review applies.")
+
+
+def _cpus(measured: dict) -> str:
+    cpus = measured.get("cpus") or []
+    if not cpus:
+        return "CPU model not recorded"
+    return ("CPU model: " if len(cpus) == 1 else f"{len(cpus)} CPU models: ") + "; ".join(cpus)
 
 
 def _changed_summary(changed: list[str]) -> str:
@@ -127,20 +145,20 @@ def body(run: Run, report: str, changed: list[str]) -> str:
         " nullpii was run again; every other tool's rows are scored from its frozen predictions of the published"
         " run.",
         "",
-        f"- **CPU re-measurement**: {run.runner}. The published {views.PUBLISHED_VERSION} run measured nullpii on CUDA; its CUDA and CPU"
-        f" outputs agree on all but a few documents in a thousand: {CUDA_CPU_AGREEMENT} (METHOD.md, Results).",
-        f"- **Commit measured**: `{run.commit}`",
+        f"- **CPU re-measurement**: {run.runner}, ONNX Runtime on the CPU ({_cpus(run.measured)}). The published"
+        f" {views.PUBLISHED_VERSION} run measured nullpii on CUDA; its CUDA and CPU outputs agreed on all but a few"
+        f" documents in a thousand: {CUDA_CPU_AGREEMENT}, release build and fp32 on both (METHOD.md, Results).",
+        f"- **Commit measured**: `{run.commit}`, nullpii {run.measured['nullpii']}",
         f"- **Frozen inputs**: `{settings.FROZEN_REPO}@{settings.FROZEN_REVISION}` (manifest SHA-256"
         f" `{settings.FROZEN_MANIFEST_SHA256}`)",
-        f"- **Model**: `{run.model}`",
+        f"- **Model**: `{run.measured['model']}`",
         f"- **compare** exited {run.compare_exit}",
         "",
         _verdict(run),
         "",
         f"This PR changes {_changed_summary(changed)}: what `render` writes from the run's outputs. Latency is not"
         " measured here and the CHANGELOG is not touched. Nothing merges it automatically; the owner merges it"
-        f" with `gh pr merge <number> --repo {REPO} --squash`. A newer numbers PR replaces this one: close the"
-        " older.",
+        f" with `gh pr merge <number> --repo {REPO} --squash`. A newer run closes this PR as superseded.",
         "",
         "## compare's report",
         "",

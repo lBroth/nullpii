@@ -72,8 +72,11 @@ def test_a_shard_reads_and_names_itself():
 
 # Putting the parts together -------------------------------------------------------
 
+MEASURED = {"nullpii": "0.5.4", "model": "lBroth/nullpii@" + "5" * 40, "cpu": "CPU A"}
+
+
 def _part(root: Path, group: str, preset: str, shard: Shard, files: dict[str, list[dict]],
-          rows: dict[str, int], totals: dict[str, int], limit=None) -> Path:
+          rows: dict[str, int], totals: dict[str, int], limit=None, measured=None) -> Path:
     part = root / parts.part_name(group, preset, shard)
     part.mkdir(parents=True)
     for name, content in files.items():
@@ -81,7 +84,7 @@ def _part(root: Path, group: str, preset: str, shard: Shard, files: dict[str, li
             (part / name).write_text(json.dumps(content) + "\n")
         else:
             (part / name).write_text("".join(json.dumps(r) + "\n" for r in content))
-    parts.write_marker(part, group, preset, shard, rows, totals, limit)
+    parts.write_marker(part, group, preset, shard, rows, totals, limit, measured or MEASURED)
     return part
 
 
@@ -93,15 +96,19 @@ CK = "nullpii-default-r3-redact.jsonl"
 TOTALS = {"r3-redact": 3}
 
 
-def _two_shards(root: Path, second=None, **kw):
-    _part(root, "r3", "default", Shard(1, 2), {CK: [{"idx": 0, "spans": []}, {"idx": 1, "spans": [[0, 1, "x"]]}]},
+def _two_shards(root: Path, second=None, second_measured=None, **kw):
+    _part(root, "r3", "default", Shard(1, 2), {CK: [{"idx": 0, "spans": []}, {"idx": 1, "spans": [[0, 1, "secret"]]}]},
           {"r3-redact": 2}, TOTALS, **kw)
-    _part(root, "r3", "default", Shard(2, 2), {CK: second or [{"idx": 2, "spans": []}]}, {"r3-redact": 1}, TOTALS, **kw)
+    _part(root, "r3", "default", Shard(2, 2), {CK: second or [{"idx": 2, "spans": []}]}, {"r3-redact": 1}, TOTALS,
+          measured=second_measured, **kw)
 
 
 def test_the_parts_of_a_group_are_put_together_in_order(tmp_path):
-    _two_shards(tmp_path / "parts")
-    assert parts.assemble(tmp_path / "parts", _targets(tmp_path)) == [("r3", "default")]
+    _two_shards(tmp_path / "parts", second_measured={**MEASURED, "cpu": "CPU B"})
+    assembled = parts.assemble(tmp_path / "parts", _targets(tmp_path))
+    assert assembled.captures == [("r3", "default")]
+    assert assembled.measured == {"nullpii": "0.5.4", "model": MEASURED["model"], "backend": "cpu",
+                                  "cpus": ["CPU A", "CPU B"]}
     rows = [json.loads(r) for r in (tmp_path / "run" / "checkpoints" / CK).read_text().splitlines()]
     assert [r["idx"] for r in rows] == [0, 1, 2]
     # Again: the same outputs.
@@ -142,6 +149,34 @@ def test_parts_of_different_splits_or_texts_are_refused(tmp_path):
         parts.assemble(root, _targets(tmp_path))
 
 
+@pytest.mark.parametrize("other", [{"nullpii": "0.5.5"}, {"model": "lBroth/nullpii@" + "6" * 40}])
+def test_parts_of_different_builds_are_never_put_together(tmp_path, other):
+    _two_shards(tmp_path / "parts", second_measured={**MEASURED, **other})
+    with pytest.raises(PartError, match="2 different builds"):
+        parts.assemble(tmp_path / "parts", _targets(tmp_path))
+
+
+def test_a_part_naming_a_set_that_is_not_the_benchmarks_is_refused(tmp_path):
+    part = tmp_path / "r3-default-1-of-1"
+    part.mkdir()
+    with pytest.raises(PartError, match="set names that are not the benchmark's"):
+        parts.write_marker(part, "r3", "default", parts.WHOLE, {"a-secret-value": 1}, {"a-secret-value": 1}, None, MEASURED)
+    good = _part(tmp_path / "p", "r3", "default", parts.WHOLE, {CK: [{"idx": 0, "spans": []}]}, {"r3-redact": 1},
+                 {"r3-redact": 1})
+    marker = json.loads((good / "PART.json").read_text())
+    marker["totals"]["planted"] = 1
+    (good / "PART.json").write_text(json.dumps(marker))
+    with pytest.raises(PartError, match="set names"):
+        parts.assemble(tmp_path / "p", _targets(tmp_path))
+
+
+def test_what_a_part_measured_is_its_version_model_and_cpu(tmp_path):
+    part = tmp_path / "r3-default-1-of-1"
+    part.mkdir()
+    with pytest.raises(PartError, match="nullpii, model, cpu"):
+        parts.write_marker(part, "r3", "default", parts.WHOLE, {}, {}, None, {"nullpii": "0.5.4"})
+
+
 def test_a_limited_part_is_never_put_together(tmp_path):
     _two_shards(tmp_path / "parts", limit=3)
     with pytest.raises(PartError, match="limited capture"):
@@ -153,7 +188,7 @@ def test_an_unfinished_or_misnamed_part_is_refused(tmp_path):
     (tmp_path / "parts" / "r3-default-1-of-1").mkdir(parents=True)
     with pytest.raises(PartError, match="no PART.json, its capture did not finish"):
         parts.assemble(tmp_path / "parts", _targets(tmp_path))
-    part = _part(tmp_path / "p2", "r3", "default", Shard(1, 1), {CK: []}, {}, {})
+    part = _part(tmp_path / "p2", "r3", "default", Shard(1, 1), {}, {}, {})
     part.rename(tmp_path / "p2" / "r3-everything-1-of-1")
     with pytest.raises(PartError, match="its PART.json says r3-default-1-of-1"):
         parts.assemble(tmp_path / "p2", _targets(tmp_path))

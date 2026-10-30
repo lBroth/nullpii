@@ -164,7 +164,7 @@ def check_output(part: Path, group: str, preset: str, rows: dict[str, int]) -> N
                 raise PartError(f"{part.name}: {got} rows of {dataset} captured for {n} texts")
     elif group == PIIMB_GROUP and rows:
         path = part / piimb_file(preset)
-        artifact.check_spans(path)
+        artifact.check_spans(path, datasets=frozenset(rows))
         if rows_by_set(path) != rows:
             raise PartError(f"{part.name}: the PIIMB rows captured are not one per text of the shard")
     elif group == ROUNDTRIP_GROUP:
@@ -173,11 +173,26 @@ def check_output(part: Path, group: str, preset: str, rows: dict[str, int]) -> N
             raise PartError(f"{part.name}: the round trip ran on {result['docs']} texts for {sum(rows.values())}")
 
 
+def check_set_names(names: object, where: str) -> None:
+    """Every set a part names is one of the benchmark's: PART.json is
+    uploaded, so it carries nothing else."""
+    unknown = sorted(set(names) - settings.set_names())
+    if unknown:
+        raise PartError(f"{where}: {len(unknown)} set names that are not the benchmark's")
+
+
+MEASURED_FIELDS = ("nullpii", "model", "cpu")
+
+
 def write_marker(part: Path, group: str, preset: str, shard: Shard, rows: dict[str, int],
-                 totals: dict[str, int], limit: int | None) -> None:
-    """PART.json, last: a part without it is a capture that did not finish."""
+                 totals: dict[str, int], limit: int | None, measured: dict[str, str]) -> None:
+    """PART.json, last: a part without it is a capture that did not finish.
+    `measured` is what it measured and on what (`build.measured`)."""
+    check_set_names([*rows, *totals], part.name)
+    if set(measured) != set(MEASURED_FIELDS):
+        raise PartError(f"{part.name}: what a part measured is {', '.join(MEASURED_FIELDS)}")
     marker = {"group": group, "preset": preset, "shard": [shard.index, shard.count],
-              "rows": rows, "totals": totals, "limit": limit}
+              "rows": rows, "totals": totals, "limit": limit, "measured": measured}
     (part / PART_MARKER).write_text(json.dumps(marker, indent=1, sort_keys=True) + "\n", encoding="utf-8")
 
 
@@ -192,6 +207,7 @@ class Part:
     rows: dict[str, int]
     totals: dict[str, int]
     limit: int | None
+    measured: dict[str, str]
 
 
 def read_parts(parts: Path) -> list[Part]:
@@ -203,7 +219,9 @@ def read_parts(parts: Path) -> list[Part]:
         if not marker.is_file():
             raise PartError(f"{path.name}: no {PART_MARKER}, its capture did not finish (capture it again, or --resume)")
         m = json.loads(marker.read_text(encoding="utf-8"))
-        part = Part(path, m["group"], m["preset"], Shard(*m["shard"]), m["rows"], m["totals"], m["limit"])
+        part = Part(path, m["group"], m["preset"], Shard(*m["shard"]), m["rows"], m["totals"], m["limit"],
+                    m["measured"])
+        check_set_names([*part.rows, *part.totals], path.name)
         if path.name != part_name(part.group, part.preset, part.shard):
             raise PartError(f"{path.name}: its {PART_MARKER} says {part_name(part.group, part.preset, part.shard)}")
         found.append(part)
@@ -278,12 +296,35 @@ class Targets:
     roundtrip: Path
 
 
-def assemble(parts_dir: Path, targets: Targets) -> list[tuple[str, str]]:
+@dataclass(frozen=True)
+class Assembled:
+    """The captures put together, and what they measured: one nullpii
+    version and model, on the CPU, on these CPU models."""
+
+    captures: list[tuple[str, str]]
+    measured: dict
+
+
+def _measured(parts: list[Part]) -> dict:
+    builds = {(p.measured["nullpii"], p.measured["model"]) for p in parts}
+    if len(builds) > 1:
+        raise PartError(f"the parts measured {len(builds)} different builds (nullpii version and model)")
+    if not builds:
+        return {}
+    (nullpii, model), = builds
+    return {"nullpii": nullpii, "model": model, "backend": settings.CAPTURE_BACKEND,
+            "cpus": sorted({p.measured["cpu"] for p in parts})}
+
+
+def assemble(parts_dir: Path, targets: Targets) -> Assembled:
     """Put every capture's parts together in `targets`; returns the
-    (group, preset) of each. Raises naming any capture whose parts are not
-    every row of its group once."""
+    (group, preset) of each and what they measured. Raises naming any
+    capture whose parts are not every row of its group once, or parts of
+    different builds."""
     by_capture: dict[tuple[str, str], list[Part]] = {}
-    for part in read_parts(parts_dir):
+    found = read_parts(parts_dir)
+    measured = _measured(found)
+    for part in found:
         by_capture.setdefault((part.group, part.preset), []).append(part)
     for (group, preset), parts in sorted(by_capture.items()):
         ordered = _complete(group, preset, parts)
@@ -297,4 +338,4 @@ def assemble(parts_dir: Path, targets: Targets) -> list[tuple[str, str]]:
             _concat(sources, targets.spans / piimb_file(preset), keyed_by_set=True)
         else:
             _merge_roundtrip(ordered, targets.roundtrip)
-    return sorted(by_capture)
+    return Assembled(sorted(by_capture), measured)

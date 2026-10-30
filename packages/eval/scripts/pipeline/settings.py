@@ -72,6 +72,23 @@ R3_GATED = ("r3-redact", "r3-tonic-human", "r3-piilo", "r3-eu-clinical", "r3-tra
 R3_REPORTED = ("r3-redactionbench", "r3-mama-deid-val", "r3-traces-v3-nodistract")
 R3_PREFIX = "r3-"
 PIIMB_SENTENCES = "test_sentences.jsonl"
+# PIIMB's six tasks, the `dataset` of each PIIMB row nullpii writes.
+PIIMB_TASKS = frozenset({"ai4privacy-en", "ai4privacy-multi", "gretel", "mapa-eur-lex", "nemotron-pii", "privy"})
+# Every label a nullpii span can carry: PII_LABELS of src/types/labels.ts
+# but its 'O' (a test checks the two agree). A capture whose spans carry
+# another label is refused before it is uploaded.
+SPAN_LABELS = frozenset({
+    "account_number", "private_address", "private_date", "private_demographic", "private_driver_license",
+    "private_email", "private_geolocation", "private_ip", "private_mac", "private_occupation", "private_organization",
+    "private_passport", "private_person", "private_phone", "private_sensitive", "private_title", "private_url",
+    "private_vehicle_id", "secret",
+})
+
+
+def set_names() -> frozenset[str]:
+    """Every name a capture's rows may give their set: AB-1's and R3's
+    sets, PIIMB's tasks."""
+    return frozenset({*AB1_GOLD, *R3_GATED, *R3_REPORTED, *PIIMB_TASKS})
 
 # Bonferroni over the 15 other tools at a 5% family-wise level, written to
 # four decimals as the published run passed it (99.6667).
@@ -84,6 +101,13 @@ def bonferroni_level() -> float:
     """The confidence level, in percent, of the Bonferroni-corrected CIs."""
     return round(100 * (1 - FAMILY_ALPHA / BONFERRONI_COMPARISONS), BONFERRONI_DECIMALS)
 
+
+# What the published 0.5 run measured: nullpii 0.5's release build with the
+# weights the library still pins, on CUDA. A run of the pipeline records
+# its own (MEASURED.json); its captures run on the CPU.
+PUBLISHED_MODEL = "lBroth/nullpii@5dd3c7991483c3b1bccb68beba53890d24cbd2d3"
+PUBLISHED_MEASURED = {"nullpii": "0.5", "model": PUBLISHED_MODEL, "backend": "cuda"}
+CAPTURE_BACKEND = "cpu"
 
 # The names nullpii's rows had in the published run, which `reproduce`
 # scores again to check that the scorers still give the published numbers.

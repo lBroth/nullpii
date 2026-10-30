@@ -9,7 +9,10 @@ change below the printed digit is no change:
 - AB-1: nullpii's rates and their breakdowns per category and kind, its
   leak rate on secrets the recognizer pack covers and on the others, how
   many secrets the pack covers (which also splits every other tool's
-  coverage cells, compared too), and the round trip's counts;
+  coverage cells, compared too), and the round trip's counts; on B1, its
+  leaks on the secrets CredData labels `UUID` and on the other secrets
+  (`kind_split.py`), as counts and as rates, and how many secrets each side
+  of that split holds (a gold fact, so a change is "moved");
 - R3: per set F2, recall and precision; macro F2, F1, F0.5, recall and
   precision (the means of the per-set values, as the README matrix
   prints them) and the leave-one-out range, on the gated, English and
@@ -23,7 +26,8 @@ change below the printed digit is no change:
   by F2 on each set among the same rows, and by macro F2 on each
   leave-one-out report; on
   AB-1, among each tool's tuned `+agent` row (the README's), by leak rate,
-  keep rate and leak rate per category, on each set;
+  keep rate and leak rate per category, on each set, and on B1 by the leak
+  rate on the secrets other than UUIDs;
 - claims: the sign of every paired interval "nullpii minus tool" (ahead,
   too close to call, behind) and its two bounds as printed, on AB-1 (leak
   and keep) and on every R3 report of the recipe (F2), keyed by the
@@ -90,8 +94,6 @@ NOT_COMPARED: tuple[tuple[str, str], ...] = (
      "each is a compared nullpii number minus a frozen tool's, so it moves only when that number moves"),
     ("counts of tools ahead or behind (\"8 of the 14\", \"11 of the 15\") and which column is bold",
      "each is a compared rank; a count of significant leads is the compared interval signs"),
-    ("the split of CredData's leaks into UUIDs and other secrets (\"268 of 490\", \"13.0%\")",
-     "no output holds it: no tracked script computes it"),
     ("the bounds of the F1 and F0.5 paired intervals, and of the per-set intervals",
      "never printed in the docs; their signs, which the verdicts' reversals read, are judged as claims"),
     ("a verdict's text beyond its sentences (its table at four decimals, the mask-all floor)",
@@ -170,6 +172,7 @@ def ab1_file(kind: str, key: str) -> str:
 
 
 ROUNDTRIP_FILE = "ab1/roundtrip.json"
+KIND_SPLIT = "kind-split"
 
 
 def r3_file(report: str) -> str:
@@ -191,7 +194,8 @@ def lodo_reports() -> tuple[str, ...]:
 def expected_files() -> tuple[str, ...]:
     """Every output of a run, relative to its out directory: what `score`
     writes, and the round trip `capture --group ab1` writes."""
-    ab1 = (ab1_file(kind, key) for key in settings.AB1_GOLD for kind in ("scores", "coverage"))
+    ab1 = (*(ab1_file(kind, key) for key in settings.AB1_GOLD for kind in ("scores", "coverage")),
+           *(ab1_file(KIND_SPLIT, key) for key in settings.AB1_KIND_SPLITS))
     r3 = (r3_file(run.name) for run in recipe.R3_RUNS)
     verdicts = (verdict_file(v.name) for v in recipe.VERDICTS)
     return (*ab1, ROUNDTRIP_FILE, *r3, *verdicts, *(piimb_file(p) for p in settings.PRESETS))
@@ -233,6 +237,14 @@ AB1_INTERVALS = {"leak": LOWER, "keep": HIGHER}
 AB1_INTERVAL_DECIMALS = 1
 COVERAGE_COUNTS = ("covered", "uncovered")
 COVERAGE_RATES = ("leak_covered", "leak_uncovered")
+# The kind split: nullpii's leaks on the split kind and on the rest, judged
+# as counts too, since the docs print them ("268 of 490") and one leak
+# fewer among B1's 1,706 other secrets need not move the rate's printed
+# digit; how many secrets each side holds is a gold fact, so "moved".
+KIND_SPLIT_COUNTS = ("leaked", "leaked_other")
+KIND_SPLIT_RATES = ("leak", "leak_other")
+KIND_SPLIT_ITEMS = ("items", "other_items")
+KIND_SPLIT_RANKED = "leak_other"
 ROUNDTRIP_FIELDS = {"roundtrip_failures": LOWER, "masked": EITHER, "docs": EITHER}
 R3_SET_FIELDS = ("f2", "recall", "precision")
 R3_MACRO_FIELDS = ("f2", "f1", "f05")
@@ -302,7 +314,7 @@ def _row_tables(rel: str, data: dict | str) -> list[tuple[str, dict]]:
     """The tables of an output file that hold one row per tool."""
     if rel.startswith("ab1/scores-"):
         return [(rel, data)]
-    if rel.startswith("ab1/coverage-"):
+    if rel.startswith(("ab1/coverage-", f"ab1/{KIND_SPLIT}-")):
         return [(rel, data["tools"])]
     if rel.startswith("r3/") and rel.endswith(".json"):
         return [(f"{rel} {dataset}", rows) for dataset, rows in data.items()]
@@ -393,11 +405,23 @@ def _ab1_coverage_run(o: Outputs, key: str) -> dict[str, Metric]:
     return metrics
 
 
+def _ab1_kind_split_rows(o: Outputs, key: str) -> dict[str, Metric]:
+    """nullpii's leaks on one gold kind of the set's secrets and on the rest."""
+    split = o.files[ab1_file(KIND_SPLIT, key)]
+    where = f"AB-1 {key} · {{}} · {{}} ({split['kind']} split)"
+    metrics = {where.format(name, f): Metric(row[f], LOWER, PLAIN, COUNT_DECIMALS)
+               for name, row in o.rows(split["tools"]).items() for f in KIND_SPLIT_COUNTS}
+    return metrics | {where.format(name, f): Metric(row[f], LOWER, PERCENT, 1)
+                      for name, row in o.rows(split["tools"]).items() for f in KIND_SPLIT_RATES}
+
+
 def ab1_metrics(o: Outputs) -> dict[str, Metric]:
     """AB-1's numbers of the rows the view reads."""
     metrics: dict[str, Metric] = {}
     for key in settings.AB1_GOLD:
         metrics |= _ab1_scores(o, key) | _ab1_coverage_rows(o, key)
+    for key in settings.AB1_KIND_SPLITS:
+        metrics |= _ab1_kind_split_rows(o, key)
     return metrics
 
 
@@ -408,6 +432,10 @@ def run_metrics(o: Outputs) -> dict[str, Metric]:
     metrics: dict[str, Metric] = {}
     for key in settings.AB1_GOLD:
         metrics |= _ab1_coverage_run(o, key)
+    for key in settings.AB1_KIND_SPLITS:
+        split = o.files[ab1_file(KIND_SPLIT, key)]
+        for f in KIND_SPLIT_ITEMS:
+            metrics[f"AB-1 {key} · {f} ({split['kind']} split)"] = Metric(split[f], EITHER, PLAIN, COUNT_DECIMALS)
     roundtrip = o.files[ROUNDTRIP_FILE]
     for attr, better in ROUNDTRIP_FIELDS.items():
         metrics[f"AB-1 · round trip · {attr}"] = Metric(roundtrip[attr], better, PLAIN, COUNT_DECIMALS)
@@ -705,6 +733,12 @@ def ab1_ranks(o: Outputs) -> dict[str, Metric]:
                 rates = [r[AB1_RANKED_BREAKDOWN][part][0] for r in others.values() if part in r[AB1_RANKED_BREAKDOWN]]
                 where = f"AB-1 {key} · {name} · rank by {AB1_RANKED_BREAKDOWN} {part} of {len(rates) + 1}"
                 ranks[where] = Metric(_rank(rate, rates, LOWER), LOWER, PLAIN, 0)
+    for key in settings.AB1_KIND_SPLITS:
+        split = o.files[ab1_file(KIND_SPLIT, key)]
+        others = [r[KIND_SPLIT_RANKED] for r in _ab1_ranked_rows(split["tools"]).values()]
+        for name, row in o.rows(split["tools"]).items():
+            where = f"AB-1 {key} · {name} · rank by {KIND_SPLIT_RANKED} ({split['kind']} split) of {len(others) + 1}"
+            ranks[where] = Metric(_rank(row[KIND_SPLIT_RANKED], others, LOWER), LOWER, PLAIN, 0)
     return ranks
 
 

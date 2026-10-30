@@ -50,6 +50,10 @@ def enrich(out: Files) -> Files:
     for key in settings.AB1_GOLD:
         _ab1(out[compare.ab1_file("scores", key)])
         out[compare.ab1_file("coverage", key)]["secrets"] = 585
+    for key in settings.AB1_KIND_SPLITS:
+        tools = out[compare.ab1_file(compare.KIND_SPLIT, key)]["tools"]
+        tools[RIZZO] = outputs.split_row(280, 400)
+        tools[PRESIDIO] = outputs.split_row(290, 1300)
     for rel, data in out.items():
         if rel.startswith("r3/") and rel.endswith(".json") and compare.MACRO in data:
             _r3(data)

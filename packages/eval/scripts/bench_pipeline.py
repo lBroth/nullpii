@@ -7,7 +7,8 @@
              loaders read them (every other step reads the checked copy)
   reproduce  score the published run again from its frozen predictions and
              check each output they give is the published one (AB-1's
-             scores, R3's 14 reports and 6 verdicts, PIIMB), and that the
+             scores and B1's UUID split, R3's 14 reports and 6 verdicts,
+             PIIMB), and that the
              recipe declares every R3 output the published run has
   capture    run a built nullpii in one preset over one group of texts
              (ab1, r3, piimb) or its recognizer pack alone (recognizers);
@@ -116,7 +117,7 @@ def _published_run_in_published_bench(step: str) -> None:
 def cmd_reproduce(args: argparse.Namespace) -> None:
     _published_run_in_published_bench("reproduce")
     reproduce.check(frozen.verify(args.frozen), args.work / "reproduce")
-    print("the published run reproduces: AB-1's 3 score files, R3's 14 reports and 6 verdicts, and PIIMB"
+    print("the published run reproduces: AB-1's 3 score files and B1's UUID split, R3's 14 reports and 6 verdicts, and PIIMB"
           " (not checked: AB-1's recognizer coverage and the round trip, which need nullpii itself)")
 
 
@@ -158,6 +159,7 @@ def cmd_score(args: argparse.Namespace) -> None:
     frozen.install_competitors(f, work.checkpoints)
     recipe.score_ab1(work.checkpoints, settings.BASELINE, f.dataset("ab1"), work.out / "ab1")
     recipe.score_ab1_coverage(work.checkpoints, work.recognizers(), f.dataset("ab1"), work.out / "ab1")
+    recipe.score_ab1_kind_split(work.checkpoints, f.dataset("ab1"), work.out / "ab1")
     recipe.score_r3(work.run, settings.BASELINE, f.openmed_no_output, work.out / "r3")
     for name, text in recipe.verdicts(work.out / "r3", settings.BASELINE, settings.OTHER_NULLPII).items():
         (work.out / "r3" / f"{name}.txt").write_text(text, encoding="utf-8")

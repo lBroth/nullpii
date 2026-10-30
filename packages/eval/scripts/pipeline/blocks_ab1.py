@@ -5,9 +5,8 @@ every sentence that states a number or a claim about it.
 Each claim is about nullpii's row the intervals are against (the agent
 default), among each other tool's README row (tuned, `+agent`), as
 `compare.ab1_ranks` ranks it. The split of CredData's leaks into UUIDs
-and other secrets is in no output (`compare.NOT_COMPARED`): it is the
-published run's own analysis, so it is printed for the published outputs
-only, never next to another run's numbers."""
+and the other secrets comes from `kind_split.py`'s output, so it is
+rendered from every run like any other number."""
 from __future__ import annotations
 
 import sys
@@ -262,18 +261,92 @@ def _leads_on_secrets(b: views.Bench) -> bool:
     return not standing(b, B1).fewer() and not standing(b, B2).fewer()
 
 
-# The published run's own split of CredData's leaks (no output holds it).
-UUID_SPLIT = ("More than half of nullpii's leaks there (268 of 490) are UUIDs: CredData counts 294 UUIDs as credentials,"
-              " mostly after keys that name ids (`id`, `uid`, `_postman_id`) or after no key, while nullpii, and AB-1's"
-              " own specification, treat a UUID as an id to keep readable. Without them nullpii lets 13.0% through (an"
-              " analysis made after the scores were read).")
-UUID_ASIDE = ", most of it UUIDs that CredData counts as credentials and nullpii keeps readable as ids (13.0% without them)"
-UUID_GLANCE = " (B1: 13.0% without the items CredData labels `UUID`)"
+# B1's secrets split by one gold kind (`kind_split.py`): CredData counts
+# UUIDs as credentials, which AB-1's specification lists as text to keep.
+SPLIT_KIND = "UUID"
+SPLIT_NAMES = {"nemotron-pii-raw": "nemotron-pii as a library"}
+SPLIT_NEAREST = 2
 
 
-def uuid_split(b: views.Bench, text: str) -> str:
-    """The published run's analysis, for its own outputs only."""
-    return text if b.names == views.PUBLISHED_NAMES else ""
+@dataclass(frozen=True)
+class Split:
+    """nullpii's leaks on B1's UUIDs and on its other secrets, and every
+    other tool's README row."""
+
+    kind: str
+    items: int
+    other_items: int
+    me: dict
+    others: dict[str, dict]
+
+    @property
+    def total(self) -> int:
+        return self.me["leaked"] + self.me["leaked_other"]
+
+    def fewer(self) -> list[str]:
+        """The tools that let fewer of the other secrets through, fewest first."""
+        mine = self.me["leak_other"]
+        if ties := [k for k, r in self.others.items() if r["leak_other"] == mine]:
+            raise refuse("a leak rate without UUIDs tied with nullpii's", f"{', '.join(ties)}: no wording for a tie")
+        return sorted((k for k, r in self.others.items() if r["leak_other"] < mine),
+                      key=lambda k: (self.others[k]["leak_other"], k))
+
+    def nearest(self) -> list[str]:
+        return sorted(self.others, key=lambda k: (self.others[k]["leak_other"], k))[:SPLIT_NEAREST]
+
+
+def kind_split(b: views.Bench) -> Split:
+    data = b.file(compare.ab1_file(compare.KIND_SPLIT, B1))
+    if data["kind"] != SPLIT_KIND:
+        raise refuse("B1's split of nullpii's leaks", f"the prose is about {SPLIT_KIND}, the outputs split {data['kind']}")
+    tools = data["tools"]
+    return Split(data["kind"], data["items"], data["other_items"], tools[b.ab1_baseline(B1)],
+                 compare._ab1_ranked_rows(tools))
+
+
+def _without_rank(s: Split) -> str:
+    fewer = s.fewer()
+    if not fewer:
+        return ", the fewest of all tools"
+    return f", and {len(fewer)} of the {len(s.others)} other tools {verb(len(fewer), 'lets', 'let')} fewer through"
+
+
+def _uuid_share(s: Split, most: str, some: str) -> str:
+    return most if 2 * s.me["leaked"] > s.total else some
+
+
+def uuid_split(b: views.Bench) -> str:
+    s = kind_split(b)
+    share = _uuid_share(s, f"More than half of nullpii's leaks there ({s.me['leaked']} of {s.total}) are UUIDs",
+                        f"{s.me['leaked']} of nullpii's {s.total} leaks there are UUIDs")
+    return (f"{share}: CredData counts {s.items:,} UUIDs as credentials, mostly after keys that name ids (`id`, `uid`,"
+            " `_postman_id`) or after no key, while nullpii, and AB-1's own specification, treat a UUID as an id to keep"
+            f" readable. Without them nullpii lets {pct(s.me['leak_other'])} through{_without_rank(s)} (an analysis made"
+            " after the scores were read).")
+
+
+def uuid_aside(b: views.Bench) -> str:
+    s = kind_split(b)
+    share = _uuid_share(s, "most of it UUIDs", f"{s.me['leaked']} of its {s.total} leaks UUIDs")
+    return (f", {share} that CredData counts as credentials and nullpii keeps readable as ids"
+            f" ({pct(s.me['leak_other'])} without them)")
+
+
+def uuid_glance(b: views.Bench) -> str:
+    return f" (B1: {pct(kind_split(b).me['leak_other'])} without the items CredData labels `UUID`)"
+
+
+def uuid_method(b: views.Bench) -> str:
+    s = kind_split(b)
+    nearest = ", ".join(f"{SPLIT_NAMES.get(render_ab1.split(k)[0], table_name(k))} {pct(s.others[k]['leak_other'])}"
+                        for k in s.nearest())
+    return (f" On B1, {s.me['leaked']} of nullpii's leaks are items CredData labels `UUID`: B1 inherits CredData's labels,"
+            f" and CredData counts {s.items:,} UUIDs as credentials, mostly after keys that name ids (`id`, `uid`,"
+            " `_postman_id`, `collectionId`) or after no key; this specification lists UUIDs as text to keep. nullpii"
+            f" lets {s.me['leaked']} of those {s.items:,} through, and {s.me['leaked_other']:,} of B1's other"
+            f" {s.other_items:,} secrets ({pct(s.me['leak_other'])}). As an analysis made after the scores were read (it"
+            f" changes no published row): with every item of kind `UUID` removed from B1's gold, nullpii lets"
+            f" {pct(s.me['leak_other'])} through{_without_rank(s)} ({nearest}).")
 
 
 def _b1_clause(s: Standing) -> str:
@@ -319,9 +392,7 @@ def _secrets_head(b: views.Bench) -> str:
 
 
 def secrets_bullet(b: views.Bench) -> str:
-    split = uuid_split(b, UUID_SPLIT)
-    parts = [f"- **{_secrets_head(b)}.**", _b1_clause(standing(b, B1)), *([split] if split else []),
-             _b2_clause(standing(b, B2))]
+    parts = [f"- **{_secrets_head(b)}.**", _b1_clause(standing(b, B1)), uuid_split(b), _b2_clause(standing(b, B2))]
     return " ".join(parts)
 
 
@@ -342,7 +413,7 @@ def card_weak_bullet(b: views.Bench) -> str:
         issues = f"{len(fewer2)} other tools let fewer GitHub-issue secrets through than its {pct(s2.me['leak_rate'])}"
     return (f"- **Weak spots:** {CATEGORIES[first.category][0]} ({_rate0(first.rate)} let through; {_fewer_count(first)})"
             f" and {CATEGORIES[second.category][0]} ({_rate0(second.rate)}). {_secrets_head(b)}: {issues}, and on CredData"
-            f" nullpii lets {pct(s1.me['leak_rate'])} through{uuid_split(b, UUID_ASIDE)}.")
+            f" nullpii lets {pct(s1.me['leak_rate'])} through{uuid_aside(b)}.")
 
 
 def card_traffic_bullet(b: views.Bench) -> str:

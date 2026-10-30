@@ -118,7 +118,7 @@ def glance(b: views.Bench) -> str:
         f"| Agent traffic (AB-1 A): lets through / keeps readable | {pct(a.me['leak_rate'])} / {pct(a.me['keep_rate'])}"
         f" ({ab1.fewer_aside(a)}) |",
         f"| Agent traffic on CredData (B1) / GitHub issues (B2): lets through | {pct(b1.me['leak_rate'])} /"
-        f" {pct(b2.me['leak_rate'])}{ab1.uuid_split(b, ab1.UUID_GLANCE)} |",
+        f" {pct(b2.me['leak_rate'])}{ab1.uuid_glance(b)} |",
         f"| Documents (R3), macro char-F2 over five held-out sets | {r3.glance_documents(b)} |",
         f"| Scored with the PIIMB leaderboard's method | {r3.glance_piimb(b)} |",
         LATENCY_GLANCE,
@@ -129,19 +129,11 @@ def method_coverage_intro(b: views.Bench) -> str:
     return f"{ab1.coverage_counts(b)} (the release build's pack no longer has the UUID recognizer)."
 
 
-METHOD_UUID = (" On B1, 268 of nullpii's leaks are items CredData labels `UUID`: B1 inherits CredData's labels, and CredData"
-               " counts 294 UUIDs as credentials, mostly after keys that name ids (`id`, `uid`, `_postman_id`,"
-               " `collectionId`) or after no key; this specification lists UUIDs as text to keep. nullpii lets 268 of"
-               " those 294 through, and 222 of B1's other 1,706 secrets (13.0%). As an analysis made after the scores"
-               " were read (it changes no published row): with every item of kind `UUID` removed from B1's gold, nullpii"
-               " lets 13.0% through (openai privacy-filter 13.6%, nemotron-pii as a library 16.2%).")
-
-
 def method_rules(b: views.Bench) -> str:
     return (f"On A they leave the leak rate where it was and raise the keep rate: UUIDs kept readable"
             f" {ab1.kept_kind(b, ab1.UUID_KIND)}, reserved addresses (`example.com` and `.test` addresses, `127.0.0.1`,"
             f" `0.0.0.0`, `::1`, documentation IPs) {ab1.kept_kind(b, ab1.RESERVED_KIND)}."
-            + ab1.uuid_split(b, METHOD_UUID))
+            + ab1.uuid_method(b))
 
 
 PIIMB_CAVEATS = (

@@ -2,7 +2,8 @@
 """Score the published run again from its frozen predictions and check
 that every output that can be scored from them is the published one:
 
-- AB-1: the 3 score files, against `published-bench/ab1/`;
+- AB-1: the 3 score files and the kind split of B1's secrets, against
+  `published-bench/ab1/`;
 - R3: the 14 reports and 6 verdicts of the published run, against the
   run's own outputs (the recipe's 11 and 5, plus the 3 reports and the
   verdict on every category masked scored on core labels);
@@ -47,8 +48,9 @@ def _compare_verdicts(texts: dict[str, str], published: Path) -> list[str]:
 def ab1(frozen: Frozen, work: Path, published: Path = settings.PUBLISHED) -> list[str]:
     out = work / "ab1"
     recipe.score_ab1(frozen.ab1_checkpoints, settings.PUBLISHED_AB1_BASELINE, frozen.dataset("ab1"), out)
-    return [d for key in settings.AB1_GOLD for d in _compare_json(
-        out / f"scores-{key}.json", published / "ab1" / f"scores-{key}.json")]
+    recipe.score_ab1_kind_split(frozen.ab1_checkpoints, frozen.dataset("ab1"), out)
+    files = [f"scores-{key}.json" for key in settings.AB1_GOLD] + [f"kind-split-{k}.json" for k in settings.AB1_KIND_SPLITS]
+    return [d for name in files for d in _compare_json(out / name, published / "ab1" / name)]
 
 
 def _core_label_others() -> tuple[str, ...]:

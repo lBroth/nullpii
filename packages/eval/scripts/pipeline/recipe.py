@@ -106,6 +106,17 @@ def score_ab1_coverage(checkpoints: Path, recognizers: Path, gold_dir: Path, out
         )
 
 
+def score_ab1_kind_split(checkpoints: Path, gold_dir: Path, out_dir: Path) -> None:
+    """Each tool's leak rate on the secrets of one gold kind and on the
+    rest (settings.AB1_KIND_SPLITS), on the gold files in `gold_dir`."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for key, kind in settings.AB1_KIND_SPLITS.items():
+        _python(
+            settings.KIND_SPLIT, "--gold", str(gold_dir / settings.AB1_GOLD[key]), "--dataset", key, "--kind", kind,
+            "--checkpoints", str(checkpoints), "--out", str(out_dir / f"kind-split-{key}.json"),
+        )
+
+
 def score_r3(results: Path, baseline: str, openmed_no_output: Path, out_dir: Path,
              runs: tuple[R3Run, ...] = R3_RUNS) -> None:
     """The R3 reports `runs` (the recipe's), for the run whose

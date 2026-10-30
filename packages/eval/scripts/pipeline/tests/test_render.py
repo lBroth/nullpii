@@ -12,6 +12,7 @@ import pytest
 import bench_pipeline
 from pipeline import blocks_ab1, blocks_r3, compare, docs, render, views
 from pipeline.prose import RenderError
+from pipeline.tests import outputs
 from pipeline.tests import render_outputs as ro
 from pipeline.tests.outputs import DEFAULT, EVERYTHING
 
@@ -228,10 +229,49 @@ def test_on_secrets_nullpii_leads_only_when_no_tool_lets_fewer_through(tmp_path)
     assert "On CredData it lets 5.0% through, and no other tool lets fewer through." in text
 
 
-def test_the_uuid_split_is_printed_for_the_published_outputs_only(tmp_path):
-    assert "268 of 490" not in _a(tmp_path)
+SPLIT = compare.ab1_file(compare.KIND_SPLIT, "ab1-b1")
+
+
+def _split(edit):
+    def apply(f):
+        edit(f[SPLIT]["tools"])
+    return apply
+
+
+def test_the_uuid_split_is_rendered_from_any_run(tmp_path):
+    text = _a(tmp_path)
+    assert ("More than half of nullpii's leaks there (268 of 490) are UUIDs: CredData counts 294 UUIDs as credentials,"
+            in text)
+    assert "Without them nullpii lets 13.0% through, the fewest of all tools (an analysis made" in text
     published = views.load(ro.write_reference(tmp_path / "ref"))
-    assert "268 of 490" in blocks_ab1.readme_bullets(published)
+    assert "(268 of 490)" in blocks_ab1.readme_bullets(published)
+
+
+def test_the_uuid_share_and_the_place_without_uuids_follow_the_data(tmp_path):
+    def fewer_uuids(tools):
+        tools[DEFAULT].update(outputs.split_row(100, 222))
+    text = _a(tmp_path, _split(fewer_uuids))
+    assert "100 of nullpii's 322 leaks there are UUIDs: CredData counts 294" in text
+    assert "More than half" not in text
+    aside = blocks_ab1.card_weak_bullet(_bench(tmp_path, _split(fewer_uuids), "aside"))
+    assert ", 100 of its 322 leaks UUIDs that CredData counts as credentials" in aside
+
+    def rizzo_fewer(tools):
+        tools[ro.RIZZO].update(outputs.split_row(280, 100))
+    text = _a(tmp_path, _split(rizzo_fewer))
+    assert "Without them nullpii lets 13.0% through, and 1 of the 2 other tools lets fewer through (an analysis" in text
+    method = blocks_ab1.uuid_method(_bench(tmp_path, _split(rizzo_fewer), "method"))
+    assert "and 1 of the 2 other tools lets fewer through (rizzo-pii 5.9%, Presidio 76.2%)." in method
+
+
+def test_a_tie_without_uuids_is_refused(tmp_path):
+    with pytest.raises(RenderError, match="refused: a leak rate without UUIDs tied"):
+        _a(tmp_path, _split(lambda tools: tools[ro.RIZZO].update(outputs.split_row(280, 222))))
+
+
+def test_a_split_by_another_kind_has_no_wording_and_is_refused(tmp_path):
+    with pytest.raises(RenderError, match="the prose is about UUID"):
+        _a(tmp_path, lambda f: f[SPLIT].update(kind="Password"))
 
 
 def _r3(tmp_path, block, edit=None):

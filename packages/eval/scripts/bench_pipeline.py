@@ -23,6 +23,11 @@
              4 when something got worse or is not measured any more, and
              fails when either side lacks an output or holds an
              undeclared nullpii row
+  render     write published-bench/ from a run's out (or a reference, or
+             published-bench/ itself), then every marked region of the
+             README, METHOD and the model card, and the README's figures,
+             from it (pipeline/render.py); --check writes nothing and
+             exits 5 listing each file, region and figure that differs
 
 The steps share a work directory:
 
@@ -31,6 +36,8 @@ The steps share a work directory:
   python bench_pipeline.py capture --frozen F --work W --dist D --preset default --group r3
   python bench_pipeline.py score --frozen F --work W
   python bench_pipeline.py compare --new W/out --reference R --report report.md
+  python bench_pipeline.py render --run W/out
+  python bench_pipeline.py render --run ../published-bench --check
 
 Relative paths are taken from the directory the command runs in.
 The frozen inputs hold real secrets: no step prints a row.
@@ -45,7 +52,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from pipeline import capture, compare, frozen, recipe, reproduce, settings, texts  # noqa: E402
+from pipeline import capture, compare, frozen, recipe, render, reproduce, settings, texts  # noqa: E402
+from pipeline.prose import RenderError  # noqa: E402
+from pipeline.views import OUTPUTS_MARKER, PUBLISHED_NAMES, ViewError  # noqa: E402
 
 GROUPS = ("ab1", "r3", "piimb", "recognizers")
 # The recognizer pack alone runs in no preset and writes whole files.
@@ -94,7 +103,18 @@ def cmd_fetch(args: argparse.Namespace) -> None:
               f" of {pinned} (SHA-256 {settings.FROZEN_MANIFEST_SHA256[:12]}, pinned in settings.py)")
 
 
+def _published_run_in_published_bench(step: str) -> None:
+    """`reproduce` and `reference` read the published 0.5 run's AB-1 and
+    PIIMB outputs from published-bench/; once `render` has written a run of
+    the pipeline there, they are not there any more."""
+    marker = settings.PUBLISHED / OUTPUTS_MARKER
+    if marker.is_file() and json.loads(marker.read_text(encoding="utf-8"))["names"] != PUBLISHED_NAMES:
+        raise SystemExit(f"{step}: {settings.PUBLISHED} holds a run of the pipeline ({OUTPUTS_MARKER}), not the"
+                         " published run's outputs it reads")
+
+
 def cmd_reproduce(args: argparse.Namespace) -> None:
+    _published_run_in_published_bench("reproduce")
     reproduce.check(frozen.verify(args.frozen), args.work / "reproduce")
     print("the published run reproduces: AB-1's 3 score files, R3's 14 reports and 6 verdicts, and PIIMB"
           " (not checked: AB-1's recognizer coverage and the round trip, which need nullpii itself)")
@@ -190,6 +210,7 @@ def _clear_reference(out: Path, rels: list[str], force: bool) -> None:
 
 
 def cmd_reference(args: argparse.Namespace) -> None:
+    _published_run_in_published_bench("reference")
     f = frozen.verify(args.frozen)
     for kept in (settings.PUBLISHED.resolve(), f.root):
         if _inside(args.out, kept) or _inside(kept, args.out):
@@ -211,6 +232,28 @@ def cmd_compare(args: argparse.Namespace) -> int:
         args.report.write_text(text, encoding="utf-8")
     print(text)
     return compare.exit_code(changes)
+
+
+EXIT_RENDER_DIFFERS = 5
+
+
+def cmd_render(args: argparse.Namespace) -> int:
+    try:
+        if args.check:
+            diffs = render.check(args.run)
+        else:
+            diffs = render.render(args.run)
+    except (RenderError, ViewError, render.DocError) as e:
+        raise SystemExit(f"render: {e}") from e
+    if args.check:
+        if diffs:
+            print("these differ from what the outputs give (run `render --run <out>` to write them):")
+            print("\n".join(f"  {d}" for d in diffs))
+            return EXIT_RENDER_DIFFERS
+        print(f"published-bench, the docs and the figures say what {args.run} holds")
+        return 0
+    print("\n".join(f"rendered: {d}" for d in diffs) if diffs else "rendered: nothing changed")
+    return 0
 
 
 def _path(text: str) -> Path:
@@ -252,12 +295,16 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--published-names", action="store_true",
                    help="the reference is `reference`'s, in the published run's row names (a first compare): like for like, the core regime listed as dropped")
     s.add_argument("--report", type=_path)
+    s = sub.add_parser("render")
+    s.add_argument("--run", type=_path, required=True,
+                   help="a run's out, a reference (its REFERENCE.json) or published-bench itself")
+    s.add_argument("--check", action="store_true", help="write nothing; exit 5 listing what differs")
     return p
 
 
 COMMANDS = {
     "fetch": cmd_fetch, "reproduce": cmd_reproduce, "capture": cmd_capture,
-    "score": cmd_score, "reference": cmd_reference, "compare": cmd_compare,
+    "score": cmd_score, "reference": cmd_reference, "compare": cmd_compare, "render": cmd_render,
 }
 
 

@@ -78,6 +78,9 @@ jobs:
       - run: python -m pip install pytest==8.4.2
       - run: python -m pytest -q packages/eval/scripts/r3/traces_v3_gen/tests
       - run: python -m pytest -q packages/eval/scripts/pipeline/tests
+      # The docs, the model card's source and the README's figures say what
+      # published-bench/ holds (no frozen input needed).
+      - run: python packages/eval/scripts/bench_pipeline.py render --run packages/eval/published-bench --check
 
   e2e-onnx:
     # Real-ONNX end-to-end suite: the core (test/e2e/) and the gateway on

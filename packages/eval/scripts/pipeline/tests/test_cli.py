@@ -234,3 +234,11 @@ def test_the_piimb_texts_are_written_whole(tmp_path, monkeypatch):
     capture.piimb_texts(tmp_path / "sentences.jsonl", out)
     assert out.read_text() == "rows\n"
     assert [p.name for p in out.parent.iterdir()] == ["piimb.jsonl"]
+
+
+@pytest.mark.parametrize("step", ["reference", "reproduce"])
+def test_the_published_run_steps_refuse_a_published_bench_that_holds_a_run(tmp_path, published, step):
+    (settings.PUBLISHED / "OUTPUTS.json").write_text(json.dumps({"names": "run", "files": []}))
+    args = ["--out", str(tmp_path / "ref")] if step == "reference" else ["--work", str(tmp_path / "w")]
+    with pytest.raises(SystemExit, match="holds a run of the pipeline"):
+        bench_pipeline.main([step, "--frozen", str(published), *args])

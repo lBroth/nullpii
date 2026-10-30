@@ -5,10 +5,14 @@ is drawn by hand.
 - `ab1-agent-traffic.svg`: AB-1 component A, leak and keep rate of the rows
   `ab1/render_ab1.py` puts in the README (`published-bench/ab1/scores-ab1-a.json`).
 - `r3-documents.svg`: R3 macro char-F2 over the five gated sets and over
-  English documents only, from METHOD.md's two tables.
+  English documents only, each tool at its better row
+  (`published-bench/r3/char-r3.json` and `char-r3-en.json`).
 - `latency-gpu.svg`: median milliseconds per call at 30,000 characters on
   GPU, from the README's latency table.
 - `how-it-works.svg`: the data path; no numbers.
+
+The benchmark pipeline (`bench_pipeline.py render`) draws them with the
+docs, from `published-bench/`; this script's own run does the same.
 
 Each file carries its light and dark colours and follows the reader's
 `prefers-color-scheme`. nullpii's rows carry its logo mark
@@ -21,7 +25,6 @@ from __future__ import annotations
 
 import argparse
 import base64
-import json
 import re
 import sys
 from pathlib import Path
@@ -128,12 +131,14 @@ def md_table(md: str, start: str) -> list[dict[str, str]]:
     return rows
 
 
-def ab1_chart(report: dict) -> str:
-    keys = render_ab1.wanted(report, readme=True)
+def ab1_chart(report: dict, nullpii: dict[str, str] | None = None, baseline: str = render_ab1.BASELINE) -> str:
+    """`nullpii`: each nullpii row's key and its label in the chart."""
+    nullpii = nullpii or {render_ab1.BASELINE: "nullpii 0.5"}
+    keys = render_ab1.wanted(report, readme=True, nullpii=nullpii)
     width, row, top, label_x, panel_w = 880, 26, 104, 282, 220
     height = top + len(keys) * row + 58
     panels = [("Leak rate", "lower is better", "leak_rate", 298), ("Keep rate", "higher is better", "keep_rate", 604)]
-    docs = report[render_ab1.BASELINE]["docs"]
+    docs = report[baseline]["docs"]
     body = [logo_defs(), text(16, 30, "Agent traffic (AB-1, component A)", "title"),
             text(16, 50, f"{docs:,} documents. Each tool at its tuned operating point, with the agent-policy filter.", "sub")]
     bottom = top + len(keys) * row
@@ -145,11 +150,11 @@ def ab1_chart(report: dict) -> str:
                      text(x, bottom + 16, f"{v}%", "axis", "middle")]
     for i, k in enumerate(keys):
         tool = render_ab1.split(k)[0]
-        mine = tool == render_ab1.BASELINE
+        mine = tool in nullpii
         y = top + i * row
         if mine:
             body.append(f'<rect class="band" x="8" y="{y}" width="{width - 16}" height="{row}" rx="4"/>')
-        name = "nullpii 0.5" if mine else render_ab1.NAMES[tool]
+        name = chart_name(tool, nullpii)
         body.append(text(label_x, y + row / 2 + 4.5, esc(name), "label np" if mine else "label", "end"))
         if mine:
             body.append(logo_mark(y, row))
@@ -159,25 +164,19 @@ def ab1_chart(report: dict) -> str:
             body.append(text(x0 + w + 6, y + row / 2 + 4, f"{100 * report[k][key]:.1f}%", "val np" if mine else "val"))
     body.append(text(16, height - 14, "Intervals, B1 and B2 and every other row: METHOD.md. "
                      "Data: packages/eval/published-bench/ab1/scores-ab1-a.json.", "note"))
-    desc = "; ".join(f"{'nullpii 0.5' if render_ab1.split(k)[0] == render_ab1.BASELINE else render_ab1.NAMES[render_ab1.split(k)[0]]}: "
+    desc = "; ".join(f"{chart_name(render_ab1.split(k)[0], nullpii)}: "
                      f"leak {100 * report[k]['leak_rate']:.1f}%, keep {100 * report[k]['keep_rate']:.1f}%" for k in keys)
     return svg(width, height, "Agent traffic: leak rate and keep rate per tool", desc, body)
 
 
-def r3_rows(method: str) -> list[tuple[str, float, float]]:
-    gated = md_table(method, "**Gated sets** (")
-    english = {re.sub(r" \(default\)$", "", r["Tool"]): float(r["Macro"])
-               for r in md_table(method, "**Gated sets, English documents only**")}
-    rows = []
-    for r in gated:
-        name = re.sub(r" \(default\)$", "", r["Tool"])
-        if name.startswith("nullpii,") or name == "mask everything":
-            continue
-        rows.append((name, float(r["Macro"]), english[name]))
-    return rows
+def chart_name(tool: str, nullpii: dict[str, str]) -> str:
+    return nullpii[tool] if tool in nullpii else render_ab1.NAMES[tool]
 
 
-def r3_chart(rows: list[tuple[str, float, float]]) -> str:
+def r3_chart(rows: list[tuple[str, float, float, bool]], floor: float) -> str:
+    """`rows`: each tool's name, macro char-F2 on the five sets and on
+    English documents, and whether it is a nullpii row; `floor`: the
+    mask-everything row's macro char-F2."""
     width, row, top, label_x, x0, plot_w, lo, hi = 880, 24, 112, 262, 280, 430, 0.40, 0.80
     height = top + len(rows) * row + 58
     bottom = top + len(rows) * row
@@ -198,10 +197,9 @@ def r3_chart(rows: list[tuple[str, float, float]]) -> str:
         v = lo + i * 0.05
         body += [f'<line class="grid" x1="{x(v):.1f}" x2="{x(v):.1f}" y1="{top - 4}" y2="{bottom}"/>',
                  text(x(v), bottom + 16, f"{v:.2f}", "axis", "middle")]
-    for i, (name, all5, english) in enumerate(rows):
+    for i, (name, all5, english, mine) in enumerate(rows):
         y = top + i * row
         cy = y + row / 2
-        mine = name == "nullpii"
         if mine:
             body.append(f'<rect class="band" x="8" y="{y}" width="{width - 16}" height="{row}" rx="4"/>')
         cls = "np" if mine else ""
@@ -214,8 +212,8 @@ def r3_chart(rows: list[tuple[str, float, float]]) -> str:
         if mine:
             body.append(logo_mark(y, row))
     body.append(text(16, height - 14, "The datasets, intervals and the table per dataset: METHOD.md. "
-                     "Masking everything scores 0.260.", "note"))
-    desc = "; ".join(f"{n}: {a:.3f} on all five sets, {e:.3f} on English only" for n, a, e in rows)
+                     f"Masking everything scores {floor:.3f}.", "note"))
+    desc = "; ".join(f"{n}: {a:.3f} on all five sets, {e:.3f} on English only" for n, a, e, _ in rows)
     return svg(width, height, "Document sets: macro char-F2 per tool", desc, body)
 
 
@@ -303,15 +301,10 @@ def main() -> None:
     ap.add_argument("--out", type=Path, default=ROOT / "assets" / "readme")
     args = ap.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
-    report = json.loads((ROOT / "packages/eval/published-bench/ab1/scores-ab1-a.json").read_text(encoding="utf-8"))
-    method = (ROOT / "packages/eval/METHOD.md").read_text(encoding="utf-8")
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    figures = {
-        "ab1-agent-traffic.svg": ab1_chart(report),
-        "r3-documents.svg": r3_chart(r3_rows(method)),
-        "latency-gpu.svg": latency_chart(latency_rows(readme)),
-        "how-it-works.svg": how_it_works(),
-    }
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from pipeline import render  # the pipeline draws them from published-bench
+
+    figures = render.figures(render.load(render.PUBLISHED_BENCH))
     for name, content in figures.items():
         (args.out / name).write_text(content, encoding="utf-8")
         print(f"{name}: {len(content):,} bytes")

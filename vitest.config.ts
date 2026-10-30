@@ -2,11 +2,19 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
-// Real-ONNX E2E lives under `test/e2e/` and is opt-in via `npm run test:e2e`
-// (which sets `NULLPII_E2E=1`). The default `npm test` excludes that folder
-// so CI stays ONNX-free and fast; the e2e script flips the env so the same
-// vitest config picks the folder back up.
+// Real-ONNX E2E lives under `test/e2e/` (the core) and
+// `packages/gateway/test/e2e/` (the gateway on the real engine), and is
+// opt-in via `npm run test:e2e` (which sets `NULLPII_E2E=1`). The default
+// `npm test` excludes those folders so CI stays ONNX-free and fast; the e2e
+// script flips the env so the same vitest config picks them back up.
 const E2E_ON = process.env.NULLPII_E2E === '1';
+const E2E_DIRS = ['test/e2e/**', 'packages/gateway/test/e2e/**'];
+const MODEL_DIR_ENV = 'NULLPII_MODEL_DIR';
+// Each e2e file skips without a model dir, so an e2e run without one would
+// skip every suite and still pass: refuse it instead.
+if (E2E_ON && !process.env[MODEL_DIR_ENV]) {
+  throw new Error(`NULLPII_E2E=1 needs ${MODEL_DIR_ENV}: the directory of the pinned model`);
+}
 
 export default defineConfig({
   // The gateway (`packages/gateway/src`) imports from `'nullpii'`, its
@@ -21,11 +29,11 @@ export default defineConfig({
   test: {
     globals: false,
     include: E2E_ON
-      ? ['test/e2e/**/*.test.ts']
+      ? E2E_DIRS.map((dir) => `${dir}/*.test.ts`)
       : ['test/**/*.test.ts', 'packages/gateway/test/**/*.test.ts'],
     exclude: E2E_ON
       ? ['**/node_modules/**', '**/dist/**']
-      : ['**/node_modules/**', '**/dist/**', 'test/e2e/**'],
+      : ['**/node_modules/**', '**/dist/**', ...E2E_DIRS],
     coverage: {
       provider: 'v8',
       // Everything that ships: the core, its CLI, and the gateway.

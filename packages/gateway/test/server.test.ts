@@ -2,9 +2,9 @@
 //
 // Gateway unit tests. The ML engine (`NullPii`) and the upstream
 // `fetch` are both mocked — this suite verifies routing, walk-and-
-// rewrite logic, error propagation, and request lifecycle. The real
-// model + real Anthropic round-trip lives in an E2E suite gated on
-// `NULLPII_GATEWAY_E2E=1` (not in this PR).
+// rewrite logic, error propagation, and request lifecycle. The same routes
+// on the real model, against a fake upstream, are in `e2e/` (run by
+// `npm run test:e2e`).
 
 import type { AddressInfo } from 'node:net';
 import type { NullPii } from 'nullpii';

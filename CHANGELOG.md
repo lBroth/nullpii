@@ -15,6 +15,7 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Detection: the PEM private-key recognizer now matches a block whatever its key type. It required one of `RSA`, `DSA`, `EC`, `OPENSSH` or `PGP` before `PRIVATE KEY`, so a PKCS#8 key (`-----BEGIN PRIVATE KEY-----`, what `openssl genpkey` writes), an encrypted one (`ENCRYPTED PRIVATE KEY`) and an OpenPGP one (`PGP PRIVATE KEY BLOCK`) were left to the model alone, which can leave them in clear: in a 1-in-8 sample of the AB-1 secret documents, 3 of 24 PEM private keys reached the output whole under the default policy, in 0.5.4 and since. The `BEGIN` and `END` labels must still match.
 - Docs: the 0.5.0 entry says both AB-1 scorings are published and that nullpii's earlier rows are in `packages/eval/METHOD.md`. Both were true at release, and #71 later removed the first scoring's files and those rows from the tree. They are in the repository at 230ce9f: the first scoring in [`published-bench/ab1/strict-rule/`](https://github.com/lBroth/nullpii/tree/230ce9fd1933f5df5263ca9c87d248e064eddc77/packages/eval/published-bench/ab1/strict-rule), nullpii's 25 October rows in [`METHOD.md`](https://github.com/lBroth/nullpii/blob/230ce9fd1933f5df5263ca9c87d248e064eddc77/packages/eval/METHOD.md?plain=1#L361). README, MODEL_CARD and METHOD now point there.
 
 ### Notes

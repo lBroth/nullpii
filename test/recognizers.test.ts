@@ -251,6 +251,56 @@ describe('runRecognizers', () => {
       expect(runRecognizers(`KEY=${test} ok`, r ? [r] : [], [])).toHaveLength(0);
     });
 
+    // Built from parts so the source never holds a whole PEM block (the
+    // secret scanner would flag it); the body is a fixed fake.
+    const pemBlock = (label: string, footLabel = label): string =>
+      [
+        `-----BEGIN ${label}-----`,
+        'Q'.repeat(64),
+        'Q'.repeat(64),
+        'QQQQ==',
+        `-----END ${footLabel}-----`,
+      ].join('\n');
+
+    it('catches a PEM private key block whatever its key type', async () => {
+      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+      const r = DEFAULT_RECOGNIZERS.find((r) => r.id === 'core:pem-private-key');
+      expect(r).toBeDefined();
+      for (const label of [
+        'PRIVATE KEY',
+        'ENCRYPTED PRIVATE KEY',
+        'RSA PRIVATE KEY',
+        'DSA PRIVATE KEY',
+        'EC PRIVATE KEY',
+        'OPENSSH PRIVATE KEY',
+        'PGP PRIVATE KEY',
+        'PGP PRIVATE KEY BLOCK',
+      ]) {
+        const block = pemBlock(label);
+        const spans = runRecognizers(`key:\n${block}\nend`, r ? [r] : [], []);
+        expect(
+          spans.map((s) => [s.label, s.text]),
+          label,
+        ).toEqual([['secret', block]]);
+      }
+    });
+
+    it('leaves a PEM header alone when its END line does not match', async () => {
+      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+      const r = DEFAULT_RECOGNIZERS.find((r) => r.id === 'core:pem-private-key');
+      expect(r).toBeDefined();
+      for (const [head, foot] of [
+        ['PRIVATE KEY', 'RSA PRIVATE KEY'],
+        ['RSA PRIVATE KEY', 'PRIVATE KEY'],
+        ['PRIVATE KEY', 'PUBLIC KEY'],
+        ['PUBLIC KEY', 'PUBLIC KEY'],
+        ['CERTIFICATE', 'CERTIFICATE'],
+      ] satisfies [string, string][]) {
+        const text = pemBlock(head, foot);
+        expect(runRecognizers(text, r ? [r] : [], []), `${head} / ${foot}`).toHaveLength(0);
+      }
+    });
+
     it('catches a Slack token (xoxa / xoxb / xoxp / xoxr / xoxs)', async () => {
       const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
       const r = DEFAULT_RECOGNIZERS.find((r) => r.id === 'core:slack-token');

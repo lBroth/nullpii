@@ -334,15 +334,17 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
   },
 
   // ─── PEM / JWT ────────────────────────────────────────────────
-  // Full block, header through trailer. Backref `\1` ensures the
-  // algorithm token in `BEGIN` matches `END`, so an unterminated header
-  // does not eat an unrelated `END` farther down the document. If the
-  // matching trailer is absent (truncated paste), no match — better to
-  // miss than to over-redact.
+  // Full block, header through trailer. The key type is optional: PKCS#8
+  // (`BEGIN PRIVATE KEY`, what `openssl genpkey` writes) and its
+  // encrypted form carry none, and OpenPGP armor ends in `BLOCK`.
+  // Backref `\1` ensures the label in `BEGIN` matches `END`, so an
+  // unterminated header does not eat an unrelated `END` farther down
+  // the document. If the matching trailer is absent (truncated paste),
+  // no match — better to miss than to over-redact.
   {
     id: 'core:pem-private-key',
     pattern:
-      /-----BEGIN (RSA|DSA|EC|OPENSSH|PGP) PRIVATE KEY-----[\s\S]*?-----END \1 PRIVATE KEY-----/g,
+      /-----BEGIN ((?:(?:RSA|DSA|EC|OPENSSH|ENCRYPTED|PGP) )?PRIVATE KEY(?: BLOCK)?)-----[\s\S]*?-----END \1-----/g,
     label: 'secret',
     confidence: 0.99,
   },

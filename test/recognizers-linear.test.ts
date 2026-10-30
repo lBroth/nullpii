@@ -35,13 +35,14 @@ describe('recognizer patterns run in linear time', () => {
     });
   }
 
-  it('the PEM pattern on repeated headers with no END line', () => {
-    const header = '-----BEGIN RSA PRIVATE KEY-----\n';
-    const text = header.repeat(Math.ceil(SIZE / header.length)).slice(0, SIZE);
-    const pem = DEFAULT_RECOGNIZERS.find((r) => r.id === 'core:pem-private-key');
-    expect(pem).toBeDefined();
-    if (pem) expect(timeMatch(pem.pattern, text)).toBeLessThan(BUDGET_MS);
-  });
+  for (const header of ['-----BEGIN RSA PRIVATE KEY-----\n', '-----BEGIN PRIVATE KEY-----\n']) {
+    it(`the PEM pattern on repeated ${JSON.stringify(header)} with no END line`, () => {
+      const text = header.repeat(Math.ceil(SIZE / header.length)).slice(0, SIZE);
+      const pem = DEFAULT_RECOGNIZERS.find((r) => r.id === 'core:pem-private-key');
+      expect(pem).toBeDefined();
+      if (pem) expect(timeMatch(pem.pattern, text)).toBeLessThan(BUDGET_MS);
+    });
+  }
 });
 
 describe('runRecognizers', () => {

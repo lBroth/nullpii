@@ -1,0 +1,69 @@
+name: bench approval
+
+# Sets `bench/approval` on a PR's head: the commit status branch
+# protection on main requires (packages/eval/README.md, "Benchmark
+# workflow", says how to require it). It is a success on every PR except a
+# numbers PR (branch bench/run-<run id>, which bench.yml opens) whose
+# numbers got worse, which only the repository owner's `bench-accept-worse`
+# label turns green, and only while the label is on; a numbers PR whose
+# head bench.yml did not measure (a push to its branch) stays red.
+# packages/eval/scripts/pipeline/approval.py decides, from the PR's state
+# as the API reports it, never from the event.
+#
+# pull_request_target, not pull_request: a required status that is never
+# set blocks the merge, so it must be set on every PR to main, a fork's
+# included, and a pull_request run from a fork gets a read-only token. It
+# is safe here because nothing of the PR is checked out or run: the job
+# checks out approval.py alone from the base branch and reads the PR
+# through the API by its number. No secret is used.
+#
+# bench.yml opens its PRs with its GitHub App's token, so `opened` runs this;
+# a label a person adds or removes runs it again. workflow_dispatch, on
+# main only, decides again for one PR (a re-run after an API failure).
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: The number of the PR to decide on.
+        type: number
+        required: true
+
+permissions: {}
+
+jobs:
+  approval:
+    name: bench/approval
+    if: ${{ github.event_name == 'pull_request_target' || github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read        # approval.py, from the base branch
+      pull-requests: read   # the PR, its labels and their events
+      statuses: write       # bench/approval on its head
+    # One decision at a time per PR; each reads the PR's current state, so
+    # the last one to run sets what is true now.
+    concurrency:
+      group: bench-approval-${{ inputs.pr || github.event.pull_request.number }}
+      cancel-in-progress: false
+    steps:
+      # The base branch (pull_request_target's github.sha), or main for a
+      # dispatch: never the PR's head.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: packages/eval/scripts/pipeline/approval.py
+          sparse-checkout-cone-mode: false
+      - name: Decide and set bench/approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pr || github.event.pull_request.number }}
+          OWNER: ${{ github.repository_owner }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 -I packages/eval/scripts/pipeline/approval.py \
+            --repo "$GITHUB_REPOSITORY" --pr "$PR" --owner "$OWNER" --target-url "$RUN_URL"

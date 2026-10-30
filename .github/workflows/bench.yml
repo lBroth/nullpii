@@ -1,0 +1,472 @@
+name: bench
+
+# Re-measures nullpii's published benchmark (AB-1, R3, PIIMB, in the
+# `default` and `everything` configurations) on GitHub-hosted CPU runners
+# after a change on main its numbers depend on, and, when something moved,
+# opens a numbers PR with what `render` writes from the run:
+# packages/eval/published-bench/, the docs' rendered regions and the
+# README's figures. How it works, what the owner configures and how to
+# require its approval: packages/eval/README.md, "Benchmark workflow".
+#
+# Only nullpii runs again. Every other tool's per-document predictions of
+# the published run are frozen, with the sets, in the private Hugging Face
+# dataset lBroth/nullpii-bench-private (revision and manifest SHA-256
+# pinned in packages/eval/scripts/pipeline/settings.py). It holds real
+# secrets and data that may not be passed on, so:
+#   - each job that needs it downloads it with the HF_TOKEN secret into the
+#     runner's temp directory, outside the workspace, and nothing caches it
+#     (pull requests can read the Actions cache); a capture job downloads
+#     the sets alone;
+#   - artifacts hold offsets, labels, scores and counts only, never a text:
+#     each capture reads its output back and refuses anything else, and the
+#     uploads name a part's own directory, never the texts or the frozen
+#     copy;
+#   - no step prints a row.
+#
+# The numbers are CPU re-measurements (the published 0.5 run was CUDA): the
+# PR says so, with the commit measured and the frozen revision, and the
+# docs render the label.
+#
+# Never on pull_request. A numbers PR changes only paths this workflow does
+# not run on (`propose` refuses anything else; a test checks the two never
+# meet), so merging one starts no run. Worse numbers wait for the owner:
+# bench-approval.yml. Latency is never measured here.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      # The library, the model pin (src/defaults.ts) included, and its build.
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.base.json'
+      - 'tsconfig.build.json'
+      # The capture scripts, the scorers and the pipeline, and the loaders
+      # the texts are read with.
+      - 'packages/eval/scripts/**'
+      - 'packages/eval/src/**'
+      - 'packages/eval/requirements-pipeline.txt'
+      - '.github/workflows/bench.yml'
+      # Tests, the approval gate and the release's model card change no
+      # number.
+      - '!packages/eval/scripts/**/tests/**'
+      - '!packages/eval/scripts/pipeline/approval.py'
+      - '!packages/eval/scripts/pipeline/card.py'
+  # From main only (each job checks it): a run proposes main's numbers.
+  workflow_dispatch:
+
+# Each job grants itself what it needs.
+permissions: {}
+
+# Two runs never overlap: a new one waits for the running one (GitHub keeps
+# only the latest waiting run).
+concurrency:
+  group: bench
+  cancel-in-progress: false
+
+env:
+  # The pipeline's Python dependencies, pinned in this file. Wheels only:
+  # no package builds or runs code at install.
+  PIPELINE_REQUIREMENTS: packages/eval/requirements-pipeline.txt
+  PIP_ONLY_BINARY: ':all:'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+  PIPELINE: packages/eval/scripts/bench_pipeline.py
+  HF_HUB_DISABLE_TELEMETRY: '1'
+  HF_HUB_DISABLE_PROGRESS_BARS: '1'
+  # The tests' and the build's CPU runtime: onnxruntime-node's install
+  # script would only fetch its CUDA libraries.
+  ONNXRUNTIME_NODE_INSTALL: skip
+
+jobs:
+  build:
+    name: build nullpii and fetch its model
+    # The frozen inputs' token exists in this repository only, and a run
+    # measures main.
+    if: ${{ github.repository == 'lBroth/nullpii' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      # The model cache, as the real-ONNX CI job keeps it (the model is
+      # public; the frozen inputs are never cached).
+      XDG_CACHE_HOME: ${{ github.workspace }}/.nullpii-bench-cache
+    outputs:
+      model-ref: ${{ steps.model.outputs.ref }}
+      model-dir: ${{ steps.model.outputs.dir }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: The model the library pins
+        id: model
+        run: |
+          # shellcheck disable=SC2016 # the script is JavaScript, quoted for the shell
+          node --input-type=module -e '
+            import { appendFileSync } from "node:fs";
+            const { DEFAULT_MODEL, ModelManager } = await import("./dist/model-manager.js");
+            const ref = `${DEFAULT_MODEL.repo}@${DEFAULT_MODEL.revision}`;
+            if (!/^[0-9a-f]{40}$/.test(DEFAULT_MODEL.revision)) {
+              console.error(`The library pins ${ref}, not a commit: pin DEFAULT_MODEL_REVISION first.`);
+              process.exit(1);
+            }
+            const dir = new ModelManager().modelDir;
+            appendFileSync(process.env.GITHUB_OUTPUT, `ref=${ref}\ndir=${dir}\n`);
+          '
+      - name: Restore the cached model
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.model.outputs.dir }}
+          key: nullpii-bench-model-${{ steps.model.outputs.ref }}
+      - name: Fetch the pinned model as a user's install does
+        run: node bin/nullpii.mjs prefetch --backend cpu
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  reproduce:
+    # The scorers, the recipe and the frozen inputs still give every
+    # published output: a change found later comes from nullpii.
+    name: the published run reproduces
+    if: ${{ github.repository == 'lBroth/nullpii' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r "$PIPELINE_REQUIREMENTS"
+      - name: Download and check the frozen inputs
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          [ -n "$HF_TOKEN" ] || { echo "::error::the HF_TOKEN secret is not set (read access to lBroth/nullpii-bench-private)"; exit 1; }
+          HF_HOME="$RUNNER_TEMP/hf-home" python -I "$PIPELINE" fetch --frozen "$RUNNER_TEMP/frozen" --download
+      - run: python -I "$PIPELINE" reproduce --frozen "$RUNNER_TEMP/frozen" --work "$RUNNER_TEMP/work"
+
+  capture:
+    name: capture ${{ matrix.group }} ${{ matrix.preset }} ${{ matrix.shard }}
+    needs: build
+    runs-on: ubuntu-24.04
+    # Each part holds about 5M characters: about 20 minutes at a laptop
+    # CPU's 25 s per 100,000 characters, so a runner many times slower
+    # still ends well before GitHub's 6-hour limit; this stops it first.
+    timeout-minutes: 300
+    permissions:
+      contents: read
+    env:
+      XDG_CACHE_HOME: ${{ github.workspace }}/.nullpii-bench-cache
+    strategy:
+      # A failed part is re-run alone ("Re-run failed jobs"); the others'
+      # artifacts are kept.
+      fail-fast: false
+      matrix:
+        # AB-1 20.7M characters in 4 parts, R3 39.5M in 8, PIIMB 12.9M (in
+        # 150,022 short texts) in 3, each in both presets; the round trip
+        # over AB-1 in the default preset, in 4.
+        include:
+          - { group: ab1, preset: default, shard: 1/4 }
+          - { group: ab1, preset: default, shard: 2/4 }
+          - { group: ab1, preset: default, shard: 3/4 }
+          - { group: ab1, preset: default, shard: 4/4 }
+          - { group: ab1, preset: everything, shard: 1/4 }
+          - { group: ab1, preset: everything, shard: 2/4 }
+          - { group: ab1, preset: everything, shard: 3/4 }
+          - { group: ab1, preset: everything, shard: 4/4 }
+          - { group: r3, preset: default, shard: 1/8 }
+          - { group: r3, preset: default, shard: 2/8 }
+          - { group: r3, preset: default, shard: 3/8 }
+          - { group: r3, preset: default, shard: 4/8 }
+          - { group: r3, preset: default, shard: 5/8 }
+          - { group: r3, preset: default, shard: 6/8 }
+          - { group: r3, preset: default, shard: 7/8 }
+          - { group: r3, preset: default, shard: 8/8 }
+          - { group: r3, preset: everything, shard: 1/8 }
+          - { group: r3, preset: everything, shard: 2/8 }
+          - { group: r3, preset: everything, shard: 3/8 }
+          - { group: r3, preset: everything, shard: 4/8 }
+          - { group: r3, preset: everything, shard: 5/8 }
+          - { group: r3, preset: everything, shard: 6/8 }
+          - { group: r3, preset: everything, shard: 7/8 }
+          - { group: r3, preset: everything, shard: 8/8 }
+          - { group: piimb, preset: default, shard: 1/3 }
+          - { group: piimb, preset: default, shard: 2/3 }
+          - { group: piimb, preset: default, shard: 3/3 }
+          - { group: piimb, preset: everything, shard: 1/3 }
+          - { group: piimb, preset: everything, shard: 2/3 }
+          - { group: piimb, preset: everything, shard: 3/3 }
+          - { group: roundtrip, preset: default, shard: 1/4 }
+          - { group: roundtrip, preset: default, shard: 2/4 }
+          - { group: roundtrip, preset: default, shard: 3/4 }
+          - { group: roundtrip, preset: default, shard: 4/4 }
+          # The recognizer pack alone, no model: seconds.
+          - { group: recognizers, preset: '', shard: '' }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+      - name: Restore the cached model
+        if: ${{ matrix.group != 'recognizers' }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ needs.build.outputs.model-dir }}
+          key: nullpii-bench-model-${{ needs.build.outputs.model-ref }}
+      # Checks every file's hash, and downloads the model if the cache missed.
+      - name: Fetch the pinned model as a user's install does
+        if: ${{ matrix.group != 'recognizers' }}
+        run: node bin/nullpii.mjs prefetch --backend cpu
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r "$PIPELINE_REQUIREMENTS"
+      - name: Download and check the frozen sets
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          [ -n "$HF_TOKEN" ] || { echo "::error::the HF_TOKEN secret is not set (read access to lBroth/nullpii-bench-private)"; exit 1; }
+          HF_HOME="$RUNNER_TEMP/hf-home" python -I "$PIPELINE" fetch --frozen "$RUNNER_TEMP/frozen" --download --sets-only
+      - name: Capture
+        id: capture
+        env:
+          GROUP: ${{ matrix.group }}
+          PRESET: ${{ matrix.preset }}
+          SHARD: ${{ matrix.shard }}
+        run: |
+          part=()
+          if [ "$GROUP" != recognizers ]; then part=(--preset "$PRESET" --shard "$SHARD"); fi
+          python -I "$PIPELINE" capture --frozen "$RUNNER_TEMP/frozen" --work "$RUNNER_TEMP/work" \
+            --dist "$GITHUB_WORKSPACE/dist" --group "$GROUP" "${part[@]}"
+          if [ "$GROUP" = recognizers ]; then
+            echo "name=recognizers" >> "$GITHUB_OUTPUT"
+            echo "path=$RUNNER_TEMP/work/recognizers/" >> "$GITHUB_OUTPUT"
+          else
+            name="$GROUP-$PRESET-${SHARD/\//-of-}"
+            echo "name=part-$name" >> "$GITHUB_OUTPUT"
+            echo "path=$RUNNER_TEMP/work/parts/$name/" >> "$GITHUB_OUTPUT"
+          fi
+      # A part's own directory: offsets, labels, scores and counts, which
+      # the capture checked; never W/texts/ or the frozen copy.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.capture.outputs.name }}
+          path: ${{ steps.capture.outputs.path }}
+          if-no-files-found: error
+          retention-days: 7
+
+  score:
+    name: score and compare with published-bench
+    needs: [capture, reproduce]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    outputs:
+      compare: ${{ steps.compare.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r "$PIPELINE_REQUIREMENTS"
+      # Each part in a directory of its own name, where `score` puts them
+      # together (it refuses to start unless every part of every capture
+      # is there, each once).
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: part-*
+          path: ${{ runner.temp }}/parts
+      - name: Lay the parts out under the work directory
+        run: |
+          mkdir -p "$RUNNER_TEMP/work/parts"
+          for dir in "$RUNNER_TEMP"/parts/part-*; do
+            mv "$dir" "$RUNNER_TEMP/work/parts/$(basename "$dir" | sed 's/^part-//')"
+          done
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: recognizers
+          path: ${{ runner.temp }}/work/recognizers
+      - name: Download and check the frozen inputs
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          [ -n "$HF_TOKEN" ] || { echo "::error::the HF_TOKEN secret is not set (read access to lBroth/nullpii-bench-private)"; exit 1; }
+          HF_HOME="$RUNNER_TEMP/hf-home" python -I "$PIPELINE" fetch --frozen "$RUNNER_TEMP/frozen" --download
+      - run: python -I "$PIPELINE" score --frozen "$RUNNER_TEMP/frozen" --work "$RUNNER_TEMP/work"
+      # 0 nothing moved, 3 something moved, is new or is dropped, 4 something
+      # got worse or is not measured any more; any other exit fails the step.
+      - name: Compare with what published-bench holds
+        id: compare
+        run: |
+          set +e
+          python -I "$PIPELINE" compare --new "$RUNNER_TEMP/work/out" --published-bench \
+            --frozen "$RUNNER_TEMP/frozen" --report "$RUNNER_TEMP/report.md" > /dev/null
+          code=$?
+          set -e
+          case "$code" in
+            0|3|4) echo "code=$code" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::compare failed with exit $code"; exit "$code" ;;
+          esac
+          { echo "## Benchmark: compare exited $code"; echo; cat "$RUNNER_TEMP/report.md"; } >> "$GITHUB_STEP_SUMMARY"
+      # The scored outputs (aggregates, published as they are) and the
+      # report, for the propose job and for reading.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bench-out
+          path: ${{ runner.temp }}/work/out/
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bench-report
+          path: ${{ runner.temp }}/report.md
+          if-no-files-found: error
+          retention-days: 30
+
+  propose:
+    # The only job that writes to the repository: a new branch, never main,
+    # pushed and opened with the bench GitHub App's token, so the PR runs CI
+    # and bench-approval.yml like any other. It holds no HF_TOKEN and reads
+    # nothing frozen. Nothing here merges.
+    name: open the numbers PR
+    needs: [build, score]
+    if: ${{ needs.score.outputs.compare == '3' || needs.score.outputs.compare == '4' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      statuses: write       # bench/compare on the commit it wrote, as the Actions bot
+      issues: write         # the repository's bench labels
+      pull-requests: write  # put them on the PR
+    env:
+      GH_REPO: ${{ github.repository }}
+      BRANCH: bench/run-${{ github.run_id }}
+      CODE: ${{ needs.score.outputs.compare }}
+      MODEL_REF: ${{ needs.build.outputs.model-ref }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - run: python -m pip install -r "$PIPELINE_REQUIREMENTS"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bench-out
+          path: ${{ runner.temp }}/out
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bench-report
+          path: ${{ runner.temp }}
+      - name: Render published-bench, the docs and the figures from the run
+        run: |
+          python -I "$PIPELINE" render --run "$RUNNER_TEMP/out"
+          python -I "$PIPELINE" render --run packages/eval/published-bench --check
+      # Refuses a change outside published-bench/, the rendered docs and the
+      # figures, which is also what keeps a merge of this PR from starting
+      # another run.
+      - name: Check what changed, and write the PR's title and body
+        run: |
+          python -I "$PIPELINE" propose --report "$RUNNER_TEMP/report.md" --compare-exit "$CODE" \
+            --commit "$GITHUB_SHA" --run-url "$RUN_URL" --model "$MODEL_REF" \
+            --runner "GitHub-hosted ubuntu-24.04 runner, ONNX Runtime on its CPU" \
+            --title-out "$RUNNER_TEMP/title.txt" --body-out "$RUNNER_TEMP/body.md"
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app
+        with:
+          app-id: ${{ secrets.BENCH_APP_ID }}
+          private-key: ${{ secrets.BENCH_APP_PRIVATE_KEY }}
+          # Push the branch, open the PR: nothing else.
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Commit on bench/run-<run id>
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+        run: |
+          bot="${APP_SLUG}[bot]"
+          id=$(gh api "users/$bot" --jq .id)
+          git config user.name "$bot"
+          git config user.email "$id+$bot@users.noreply.github.com"
+          git switch --create "$BRANCH"
+          git add -- packages/eval/published-bench README.md packages/eval/METHOD.md MODEL_CARD.md assets/readme
+          # Nothing left out of the commit: propose checked every change.
+          [ -z "$(git status --porcelain=v1 --untracked-files=all | grep -v '^[MADR] ' || true)" ] \
+            || { echo "::error::a change was left out of the commit"; git status --short; exit 1; }
+          node scripts/check-repo-hygiene.mjs
+          git commit --quiet -m "chore(bench): CPU re-measurement of ${GITHUB_SHA::12}" \
+            -m "Scored by $RUN_URL against the frozen inputs of the published run; compare exited $CODE."
+      - name: Push the branch
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: git -c credential.helper= -c 'credential.helper=!gh auth git-credential' push origin "HEAD:refs/heads/$BRANCH"
+      # bench/compare records what compare found, as the Actions bot (the
+      # one creator approval.py trusts) and is never changed; bench/approval
+      # (bench-approval.yml) is the status the merge waits on. Set before the
+      # PR exists, so the PR's first bench/approval already sees it.
+      - name: Record the verdict on the commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$CODE" = 4 ]; then
+            state=failure; description="Something got worse: see the report in the PR."
+          else
+            state=success; description="Numbers moved, none got worse."
+          fi
+          gh api --method POST "repos/$GH_REPO/statuses/$(git rev-parse HEAD)" -f state="$state" \
+            -f context=bench/compare -f description="$description" -f target_url="$RUN_URL" > /dev/null
+      # Opened with the app's token, so CI and bench-approval.yml run on it
+      # (a PR opened with the workflow's own token starts no workflow).
+      - name: Open the PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          url=$(gh pr create --base main --head "$BRANCH" --title "$(cat "$RUNNER_TEMP/title.txt")" \
+            --body-file "$RUNNER_TEMP/body.md")
+          [[ "${url##*/}" =~ ^[0-9]+$ ]] || { echo "::error::gh pr create gave no PR URL"; exit 1; }
+          echo "number=${url##*/}" >> "$GITHUB_OUTPUT"
+          echo "Opened $url" | tee -a "$GITHUB_STEP_SUMMARY"
+      # The labels say what the PR is; the gate never reads them but the
+      # owner's bench-accept-worse, which this creates for the owner to add.
+      - name: Label the PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ steps.pr.outputs.number }}
+        run: |
+          gh label create bench --force --color 1d76db --description "A benchmark re-measurement opened by bench.yml"
+          gh label create bench-worse --force --color b60205 --description "bench.yml found a published number or claim that got worse"
+          gh label create bench-accept-worse --force --color 0e8a16 --description "The owner accepts the worse numbers of this numbers PR"
+          labels=bench
+          if [ "$CODE" = 4 ]; then labels=bench,bench-worse; fi
+          gh pr edit "$PR" --add-label "$labels"

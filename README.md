@@ -21,9 +21,11 @@ nullpii hides personal data and secrets before your text goes to an LLM, and put
 
 ![How nullpii works: text from your app or Claude Code is decoded, scanned by the model and the recognizers, and each value the policy masks becomes a placeholder kept in an in-memory vault. The LLM provider sees only placeholders. The reply gets the real values back, file tools get real values, shell commands keep the placeholders.](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/how-it-works.svg)
 
+<!-- summary:begin -->
 - **Built for coding agents.** It masks tool output (files, logs, command output), not only prompts. It keeps links to code hosts and documentation readable. It never puts a real value into a shell command (see SECURITY.md). It is built and tested with Claude Code, through the mod (recommended) or the gateway.
 - **Works with any model.** Mask before your LLM call and restore after it. Or run the gateway in front of the Anthropic Messages API or OpenAI Chat Completions. The Codex CLI only speaks the Responses API, so it cannot use the gateway.
-- **Measured, losses included.** On coding-agent traffic it lets 9.5% of the values that must be hidden through, and keeps 85.4% of the values that must stay readable. Only rizzo-pii lets fewer through (8.1%), but it keeps only 44.5% readable. On five held-out document sets it is second of 15 tools, and fifth on English text alone. [Benchmark](#benchmark).
+- **Measured, every result published.** On coding-agent traffic it lets 9.5% of the values that must be hidden through, and keeps 85.4% of the values that must stay readable. Only rizzo-pii lets fewer through (8.1%), and it keeps 44.5% readable. On five held-out document sets, with every category masked, it is tenth of 15 tools by macro char-F2, and ninth on English text alone. [Benchmark](#benchmark).
+<!-- summary:end -->
 
 Status: before 1.0, so the API can still change between minor versions. nullpii replaces values with placeholders it can reverse, and it misses some values. This is pseudonymisation, not anonymisation, and not a compliance certification.
 
@@ -193,19 +195,23 @@ nullpii decodes hidden input before it looks for values: Unicode look-alikes and
 
 ## Benchmark
 
-Every test was fixed before the run, except one AB-1 scoring rule changed afterwards (see below). The results include the cases nullpii loses. How the numbers are made: [`METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md).
+Every test was fixed before the run, except one AB-1 scoring rule changed afterwards (see below). Every result is published. How the numbers are made: [`METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md).
 
 ### Agent traffic (AB-1)
 
 AB-1 checks two things in a coding agent's traffic. What the agent must not give to the model (secrets, contact details and addresses, ids and account numbers, names) should be masked. What it needs to read (dates, versions, paths, hostnames of public services, placeholders, code identifiers) should stay readable. Each item is scored: the leak rate on items that must be hidden, and the keep rate on items that must stay readable. There is no combined score. Every tool ran on the frozen test set, and the run was redone once for every tool after an adapter fix; nullpii's rows are from the release build, which includes three rules found in end-to-end testing (below). Method and limits: [AB-1 in METHOD.md](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md#agent-traffic-benchmark-ab-1).
 
+<!-- fig-ab1:begin -->
 ![Agent traffic, 966 documents, leak rate and keep rate per tool: rizzo-pii 8.1% and 44.5%, nullpii 0.5 9.5% and 85.4%, then openai privacy-filter 14.5% and 77.9%; every other tool lets 15.7% to 55.1% through. The table below has every value.](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/ab1-agent-traffic.svg)
+<!-- fig-ab1:end -->
 
+<!-- ab1-claims:begin -->
 - **Only rizzo-pii lets fewer through** (8.1%; the gap is within the margin of error), and it masks more than half of what the agent needs to read. Every other tool lets 5 to 46 points more through. Only gliner-pii-large keeps as much readable (85.5%, too close to call), and it lets 15.9% through.
 - **Weakest categories:** person names (24% let through) and URLs (31%). On names, 11 of the 15 other tools let fewer through; on URLs, 5 do.
-- **On secrets alone, nullpii does not lead.** On CredData it lets 24.5% through, and 7 of the 15 other tools let fewer through; openai's privacy-filter lets 13.2% through and keeps more readable (77.1% against 64.8%). More than half of nullpii's leaks there (268 of 490) are UUIDs: CredData counts 294 UUIDs as credentials, mostly after keys that name ids (`id`, `uid`, `_postman_id`) or after no key, while nullpii, and AB-1's own specification, treat a UUID as an id to keep readable. Without them nullpii lets 13.0% through, the fewest of all tools (an analysis made after the scores were read). On secrets in GitHub issues, openai's privacy-filter lets fewer through (8.2% against 11.5%), and nullpii keeps more readable (77.2% against 74.6%).
+- **On secrets alone, nullpii does not lead.** On CredData it lets 24.5% through, and 7 of the 15 other tools let fewer through; openai's privacy-filter lets 13.2% through and keeps more readable (77.1% against 64.8%). More than half of nullpii's leaks there (268 of 490) are UUIDs: CredData counts 294 UUIDs as credentials, mostly after keys that name ids (`id`, `uid`, `_postman_id`) or after no key, while nullpii, and AB-1's own specification, treat a UUID as an id to keep readable. Without them nullpii lets 13.0% through (an analysis made after the scores were read). On secrets in GitHub issues, openai's privacy-filter lets fewer through (8.2% against 11.5%), and nullpii keeps more readable (77.2% against 74.6%).
 - **nullpii was measured again after three rules found in end-to-end testing,** added after the first run: a UUID is an id, not an account number; an IP address is labelled as one, so documentation, private and local addresses stay readable; "Claude" is a product, not a person. They raised its keep rate (A: 81.9% → 85.4%; issues: 69.2% → 77.2%) and its CredData leak rate (14.6% → 24.5%, the UUIDs above). The other tools' rows are unchanged.
 - **One scoring rule was changed after the scores were first read, and the change works against nullpii.** Punctuation left between masked pieces of a value (like the comma between a street and a city) no longer counts as a leak. With the first rule nullpii led (11.0% against rizzo-pii's 15.0%). The first scoring's files are kept in the repository's history ([`strict-rule/`](https://github.com/lBroth/nullpii/tree/230ce9fd1933f5df5263ca9c87d248e064eddc77/packages/eval/published-bench/ab1/strict-rule)).
+<!-- ab1-claims:end -->
 
 <details>
 <summary>Table, with the intervals</summary>
@@ -241,12 +247,16 @@ Each row is the tool at its tuned setting, with the agent-policy filter. Bold ma
 
 R3 measures document anonymisation, a different job from agent traffic. It uses five datasets, frozen before any tool ran on them: REDACT, TonicAI's human-annotated Privacy-Bench, PIILO student essays, Greek and German clinical notes, and a synthetic coding-agent trace set built for this benchmark from a specification we wrote. Each has under 1% measured overlap with nullpii's training data and with the public training sets the other tools declare (three declared sources, among them rizzo-pii's Italian sets, were not compared). The score is per character and ignores labels. F2 counts recall twice as much as precision, because a missed character leaks. nullpii's rows are from the release build, with the three rules described under AB-1; they changed only documents that hold a UUID, an IP address, a loopback host or the word "Claude".
 
-![Documents, macro char-F2 per tool over five sets and over English documents only: rizzo-pii 0.770 and 0.742, nullpii 0.758 and 0.714, nvidia/gliner-PII 0.720 and 0.672, OpenMed privacy-filter-multilingual-v2 0.717 and 0.717, openai privacy-filter 0.693 and 0.746. The table below has every value.](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/r3-documents.svg)
+<!-- fig-r3:begin -->
+![Documents, macro char-F2 per tool over five sets and over English documents only: rizzo-pii 0.770 and 0.742, nvidia/gliner-PII (library) 0.720 and 0.672, OpenMed privacy-filter-multilingual-v2 0.717 and 0.717, pii-identifier 0.701 and 0.714, ettin-68m 0.699 and 0.706, openai privacy-filter 0.693 and 0.746, OpenMed PII Large 0.682 and 0.700, OpenMed PII Small 0.673 and 0.683, gliner-pii-large 0.656 and 0.590, nullpii 0.5, every category 0.653 and 0.603. The table below has every value.](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/r3-documents.svg)
+<!-- fig-r3:end -->
 
-- **Second of 15** (counting NVIDIA's two nemotron pipelines as one tool; the chart shows both). rizzo-pii is ahead (0.770 against 0.758), all of it on PIILO's student essays (0.623 against 0.407). There nullpii masks a lot that the gold does not label, and 8 of the 14 other tools are ahead of it. The gap to rizzo-pii is significant in the 95% test fixed before the run, but not with a Bonferroni correction added later.
-- **One dataset carries much of the lead.** Without the clinical notes, nullpii is third (0.725), and two more tools are too close to call. On English documents alone it is fifth (0.714).
-- **It favours recall.** Its recall is the highest of any tool's best row (0.958), and its precision is below most tools' (10th of 15). Ranked by F0.5, which favours precision, it is ninth.
-- **PIIMB**, scored by us with the leaderboard's method (not a submitted entry), with every category masked: average F2 0.851, above the 35 listed tools. Without the one task from its training family it is 0.831, not clearly ahead.
+<!-- r3-claims:begin -->
+- **Tenth of 15** by macro char-F2 with every category masked (0.653; counting NVIDIA's two nemotron pipelines as one tool, the chart shows both). Nine tools are ahead, from rizzo-pii at its default (0.770) to gliner-pii-large (0.656).
+- **English documents only:** with every category masked, ninth of 15 (0.603).
+- **It favours recall.** With every category masked, its macro recall (0.955) is the highest of 15 at each tool's best-F2 row, and its precision (0.368) fourteenth. Ranked by F0.5, which favours precision, it is fourteenth.
+- **PIIMB**, scored by us with the leaderboard's method (not a submitted entry), with every category masked: average F2 0.851, above the 35 listed tools. Without the one task from its training family it is 0.831, above the 35 listed tools; the leaderboard gives no intervals.
+<!-- r3-claims:end -->
 
 Two things compared here are built for documents: PIILO, where only the students' own names count as gold, and rizzo-pii, a document anonymiser (we run its app's own `analyze()`; its model and training data are Italian-first).
 
@@ -259,35 +269,37 @@ Two things compared here are built for documents: PIILO, where only the students
 <!-- matrix:begin -->
 | Tool | Macro char-F2 | F0.5 | Recall | Precision | CI of nullpii − tool (F2) |
 |---|---:|---:|---:|---:|---|
-| rizzo-pii (default) | **0.770** | **0.633** | 0.869 | **0.608** | [−0.020, −0.003] |
-| **nullpii** | 0.758 | 0.534 | **0.958** | 0.490 | — |
-| nemotron-pii (`nvidia/gliner-PII`, library) | 0.720 | 0.612 | 0.808 | 0.591 | [+0.025, +0.051] |
-| OpenMed privacy-filter-multilingual-v2 | 0.717 | 0.585 | 0.841 | 0.560 | [+0.031, +0.049] |
-| pii-identifier | 0.701 | 0.583 | 0.809 | 0.569 | [+0.044, +0.070] |
-| ettin-68m | 0.699 | 0.563 | 0.825 | 0.545 | [+0.050, +0.068] |
-| openai privacy-filter | 0.693 | 0.591 | 0.767 | 0.587 | [+0.052, +0.079] |
-| OpenMed PII Large | 0.682 | 0.587 | 0.783 | 0.578 | [+0.060, +0.090] |
-| OpenMed PII Small | 0.673 | 0.512 | 0.807 | 0.478 | [+0.069, +0.099] |
-| gliner-pii-large | 0.656 | 0.571 | 0.811 | 0.555 | [+0.085, +0.119] |
-| piiranha | 0.651 | 0.465 | 0.840 | 0.428 | [+0.092, +0.120] |
-| gliner_multi_pii (ONNX) | 0.648 | 0.495 | 0.845 | 0.462 | [+0.098, +0.122] |
-| Presidio | 0.628 | 0.492 | 0.790 | 0.465 | [+0.116, +0.142] |
-| gliner-stream-pii | 0.568 | 0.522 | 0.714 | 0.528 | [+0.174, +0.203] |
-| deberta PII (default) | 0.464 | 0.254 | 0.802 | 0.225 | [+0.282, +0.305] |
+| rizzo-pii (default) | **0.770** | **0.633** | 0.869 | **0.608** | — |
+| nemotron-pii (`nvidia/gliner-PII`, library) | 0.720 | 0.612 | 0.808 | 0.591 | — |
+| OpenMed privacy-filter-multilingual-v2 | 0.717 | 0.585 | 0.841 | 0.560 | — |
+| pii-identifier | 0.701 | 0.583 | 0.809 | 0.569 | — |
+| ettin-68m | 0.699 | 0.563 | 0.825 | 0.545 | — |
+| openai privacy-filter | 0.693 | 0.591 | 0.767 | 0.587 | — |
+| OpenMed PII Large | 0.682 | 0.587 | 0.783 | 0.578 | — |
+| OpenMed PII Small | 0.673 | 0.512 | 0.807 | 0.478 | — |
+| gliner-pii-large | 0.656 | 0.571 | 0.811 | 0.555 | — |
+| **nullpii 0.5 (every category masked)** | 0.653 | 0.413 | **0.955** | 0.368 | — |
+| piiranha | 0.651 | 0.465 | 0.840 | 0.428 | — |
+| gliner_multi_pii (ONNX) | 0.648 | 0.495 | 0.845 | 0.462 | — |
+| Presidio | 0.628 | 0.492 | 0.790 | 0.465 | — |
+| gliner-stream-pii | 0.568 | 0.522 | 0.714 | 0.528 | — |
+| deberta PII (default) | 0.464 | 0.254 | 0.802 | 0.225 | — |
 | mask everything | 0.260 | | | | |
+
+Bold marks nullpii's name and the best value in each column. The published run's paired intervals are against nullpii's core regime, which is no longer published, so none is given here; a run of the pipeline gives them against the agent default.
 <!-- matrix:end -->
 
-Bold marks nullpii's name and the best value in each column.
+<!-- r3-configs:begin -->
+nullpii is shown in the configurations it is published in: every category masked (0.653). These datasets label dates, and not organisations, occupations, demographic and sensitive attributes, titles, so masking those five counts as over-masking here. The agent default, which leaves those five categories and dates readable, is not measured on these datasets in the outputs published here; agent traffic (AB-1, above) measures it.
+<!-- r3-configs:end -->
 
-nullpii is measured with its five extended categories off, because the datasets do not label them. With every category masked (the default before 0.5), it scores 0.748 on the same labels, and 0.653 when everything it masks counts, because masking organisations, occupations and the like counts as over-masking here. The 0.5 default for coding agents leaves those five categories and dates readable. That default is measured on agent traffic (AB-1, above), not on these datasets, which label dates.
-
-**Where nullpii is not ahead, in detail.**
-- **One dataset carries much of the lead.** Without the Greek and German clinical notes, nullpii is third (0.725). openai's privacy-filter (+0.030) and rizzo-pii (+0.027) are significantly ahead. pii-identifier and OpenMed privacy-filter-multilingual-v2 are too close to call. Without the student essays, nullpii is first (0.845; rizzo-pii is 0.039 behind).
-- **rizzo-pii is ahead on student essays.** On PIILO nullpii scores 0.407 and rizzo-pii 0.623. nullpii has higher recall and much lower precision there, because it masks a lot the gold does not label. On the other four datasets nullpii is ahead of rizzo-pii. Over all five the gap is −0.012. It is significant in the 95% test fixed before the run, [−0.020, −0.003], but not with a Bonferroni correction added later (99.67%), [−0.024, +0.002]; the 13 leads still hold with it. With every category masked, nullpii is further behind (−0.022), and that gap is significant in both tests: [−0.030, −0.012] at 95%, [−0.034, −0.007] corrected.
-- **Precision.** nullpii's recall is the highest of any tool's best row; only rizzo-pii at its tuned setting goes higher (0.967, at F2 0.583). Its precision is among the lowest. Ranked by F0.5 on the rows above, it is ninth (eight tools ahead). With each tool at its best F0.5 setting, eleven are ahead.
-- **Per dataset.** On PIILO, 8 of the 14 other tools are ahead of nullpii. On Tonic, three are, by up to 0.008. On the clinical notes, gliner_multi_pii is ahead (0.913 against 0.887).
-- **English documents only.** nullpii is fifth (0.714), behind openai's privacy-filter (0.746), rizzo-pii (0.742), OpenMed's privacy-filter-multilingual-v2 (0.717) and pii-identifier (0.714). The first two are significantly ahead. The next two, and ettin-68m and OpenMed Large below nullpii, are too close to call.
-- **PIIMB** ([leaderboard](https://huggingface.co/spaces/piimb/pii-masking-benchmark-leaderboard), `sentences` subset, scored by us with the leaderboard's method, not a submitted entry, with every category masked): average F2 0.851, above all 35 listed tools. Next is OpenMed's privacy-filter-multilingual-v2 at 0.836. One of the six tasks, nemotron-pii, comes from nullpii's training family: 2.5% of its sampled text overlaps nullpii's training data, and 5.2% overlaps Nemotron-PII's. Without that task nullpii averages 0.831, against 0.827 for gliner-stream-pii and 0.822 for privacy-filter-multilingual-v2. The leaderboard gives no intervals, so this lead cannot be called significant. nullpii trails on the ai4privacy, nemotron-pii and Gretel tasks, and on privy, where it masks too much.
+<!-- r3-detail:begin -->
+**In detail**, with every category masked.
+- **Per dataset.** Tools ahead on each set, of the 14 others, each at its best-F2 row: REDACT 6, Tonic 10, PIILO 14, eu-clinical 5, traces-v3 none.
+- **Leaving one set out** (macro char-F2, and the place of 15): without REDACT 0.619 (ninth), without Tonic 0.618 (eleventh), without PIILO 0.783 (third), without eu-clinical 0.618 (ninth), without traces-v3 0.629 (twelfth).
+- **English documents only.** Ninth of 15 (0.603); ahead: openai privacy-filter (0.746), rizzo-pii at its default (0.742), OpenMed privacy-filter-multilingual-v2 at its default (0.717) and 5 more.
+- **PIIMB** ([leaderboard](https://huggingface.co/spaces/piimb/pii-masking-benchmark-leaderboard), `sentences` subset, scored by us with the leaderboard's method, not a submitted entry, with every category masked): average F2 0.851, above all 35 listed tools. One of the six tasks, nemotron-pii, comes from nullpii's training family: 2.5% of its sampled text overlaps nullpii's training data, and 5.2% overlaps Nemotron-PII's. Without that task nullpii averages 0.831, above all 35 listed tools. The leaderboard gives no intervals, so no difference on it can be called significant. Its place on each task, of 36: ai4privacy-en third, ai4privacy-multilingual third, Gretel fifth, mapa-eur-lex first, nemotron-pii fifth, privy seventh.
+<!-- r3-detail:end -->
 
 [`METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md) has the three reported (not gated) sets, the numbers per dataset, and the sensitivity checks.
 
@@ -295,15 +307,15 @@ nullpii is measured with its five extended categories off, because the datasets 
 
 ### Latency
 
-![GPU latency at 30,000 characters, median milliseconds per call: from ettin-68m at 157 to NVIDIA's nemotron server pipeline at 2,835; nullpii 463 with its core labels and 489 with every category masked, seventh of 13 tools. The tables below have every value.](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/latency-gpu.svg)
+![GPU latency at 30,000 characters, median milliseconds per call: from ettin-68m at 157 to NVIDIA's nemotron server pipeline at 2,835; nullpii 463 with its core labels and 489 with every category masked. The tables below have every value.](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/latency-gpu.svg)
 
-nullpii is not the fastest: it is seventh of 13 tools on GPU and fifth of 15 on CPU, at 30,000 characters. Every tool runs the same coding-agent texts on the same idle machine, after a warm-up, at its default setting. nullpii has two rows: its core labels (the five extended categories off, dates on) and every category masked. Its 0.5 default, which also leaves dates readable and so asks the model for fewer labels, takes the same time as the core labels on GPU (458 ms at 30,000 characters) and about 13% less on CPU (6,104 ms); it was timed with the release build, which also matched the other nullpii rows to within 2% ([METHOD](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md)).
+Every tool runs the same coding-agent texts on the same idle machine, after a warm-up, at its default setting. nullpii has two rows: its core labels (the five extended categories off, dates on) and every category masked. Its 0.5 default, which also leaves dates readable and so asks the model for fewer labels, takes the same time as the core labels on GPU (458 ms at 30,000 characters) and about 13% less on CPU (6,104 ms); it was timed with the release build, which also matched the other nullpii rows to within 2% ([METHOD](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md)).
 
 <details>
 <summary>Tables: GPU and CPU, 2,000 to 100,000 characters</summary>
 
 <!-- latency:begin -->
-The tables show the median time per call, in milliseconds, for texts of 2,000, 30,000 and 100,000 characters of coding-agent material (code, logs, prose, tool output). The ranks above count nullpii once and NVIDIA's two nemotron pipelines as one tool. Bold marks nullpii's name and the fastest value in each column. How the texts are chosen: [`METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md).
+The tables show the median time per call, in milliseconds, for texts of 2,000, 30,000 and 100,000 characters of coding-agent material (code, logs, prose, tool output). Bold marks nullpii's name and the fastest value in each column. How the texts are chosen: [`METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md).
 
 **GPU** (Linux, NVIDIA RTX 4070 Ti; 60, 12 and 5 texts per size, three rounds). nullpii loads `model_fp16.onnx` on CUDA.
 
@@ -347,7 +359,7 @@ The tables show the median time per call, in milliseconds, for texts of 2,000, 3
 | OpenMed privacy-filter-multilingual-v2 | 9,133 | 132,528 | 448,206 |
 | openai privacy-filter | 9,514 | 137,526 | 467,769 |
 
-Presidio is fast because it is mostly patterns plus a small spaCy model; its macro char-F2 is 0.628. OpenMed Large's time depends a lot on the text, so its 100k figure, from three texts, is rough. gliner_multi_pii (ONNX) runs on CPU only, and Presidio has no GPU path, so neither is in the GPU table.
+Presidio is mostly patterns plus a small spaCy model; its macro char-F2 is 0.628. OpenMed Large's time depends a lot on the text, so its 100k figure, from three texts, is rough. gliner_multi_pii (ONNX) runs on CPU only, and Presidio has no GPU path, so neither is in the GPU table.
 <!-- latency:end -->
 
 </details>

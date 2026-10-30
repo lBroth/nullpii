@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="880" height="554" viewBox="0 0 880 554" role="img" aria-labelledby="t d">
 <title id="t">Document sets: macro char-F2 per tool</title>
-<desc id="d">rizzo-pii: 0.770 on all five sets, 0.742 on English only; nullpii: 0.758 on all five sets, 0.714 on English only; nvidia/gliner-PII (library): 0.720 on all five sets, 0.672 on English only; OpenMed privacy-filter-multilingual-v2: 0.717 on all five sets, 0.717 on English only; pii-identifier: 0.701 on all five sets, 0.714 on English only; ettin-68m: 0.699 on all five sets, 0.706 on English only; openai privacy-filter: 0.693 on all five sets, 0.746 on English only; OpenMed PII Large: 0.682 on all five sets, 0.700 on English only; OpenMed PII Small: 0.673 on all five sets, 0.683 on English only; gliner-pii-large: 0.656 on all five sets, 0.590 on English only; piiranha: 0.651 on all five sets, 0.593 on English only; gliner_multi_pii (ONNX): 0.648 on all five sets, 0.577 on English only; Presidio: 0.628 on all five sets, 0.598 on English only; nvidia/gliner-PII (NVIDIA server): 0.591 on all five sets, 0.540 on English only; gliner-stream-pii: 0.568 on all five sets, 0.568 on English only; deberta PII: 0.464 on all five sets, 0.543 on English only</desc>
+<desc id="d">rizzo-pii: 0.770 on all five sets, 0.742 on English only; nvidia/gliner-PII (library): 0.720 on all five sets, 0.672 on English only; OpenMed privacy-filter-multilingual-v2: 0.717 on all five sets, 0.717 on English only; pii-identifier: 0.701 on all five sets, 0.714 on English only; ettin-68m: 0.699 on all five sets, 0.706 on English only; openai privacy-filter: 0.693 on all five sets, 0.746 on English only; OpenMed PII Large: 0.682 on all five sets, 0.700 on English only; OpenMed PII Small: 0.673 on all five sets, 0.683 on English only; gliner-pii-large: 0.656 on all five sets, 0.590 on English only; nullpii 0.5, every category: 0.653 on all five sets, 0.603 on English only; piiranha: 0.651 on all five sets, 0.593 on English only; gliner_multi_pii (ONNX): 0.648 on all five sets, 0.577 on English only; Presidio: 0.628 on all five sets, 0.598 on English only; nvidia/gliner-PII (NVIDIA server): 0.591 on all five sets, 0.540 on English only; gliner-stream-pii: 0.568 on all five sets, 0.568 on English only; deberta PII: 0.464 on all five sets, 0.543 on English only</desc>
 <style>svg { --bg: #ffffff; --zone: #f6f8fa; --fg: #1f2328; --muted: #59636e; --grid: #d1d9e0; --other: #818b98; --a: #0d9488; --band: #0d948814; }
 @media (prefers-color-scheme: dark) { svg { --bg: #0d1117; --zone: #151b23; --fg: #f0f6fc; --muted: #9198a1; --grid: #3d444d; --other: #6e7681; --a: #2dd4bf; --band: #2dd4bf1f; } }
 .bg { fill: var(--bg); } .zone { fill: var(--zone); stroke: var(--grid); }
@@ -47,101 +47,101 @@ text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", 
 <line class="grid" x1="710.0" x2="710.0" y1="108" y2="496"/>
 <text x="710.0" y="512.0" class="axis" text-anchor="middle">0.80</text>
 <text x="262.0" y="128.5" class="label" text-anchor="end">rizzo-pii</text>
-<line class="link" x1="677.8" x2="647.6" y1="124.0" y2="124.0"/>
-<circle class="dot-b" cx="647.6" cy="124.0" r="5.5"/>
-<circle class="dot-a" cx="677.8" cy="124.0" r="5.5"/>
+<line class="link" x1="677.4" x2="648.2" y1="124.0" y2="124.0"/>
+<circle class="dot-b" cx="648.2" cy="124.0" r="5.5"/>
+<circle class="dot-a" cx="677.4" cy="124.0" r="5.5"/>
 <text x="790.0" y="128.0" class="val" text-anchor="end">0.770</text>
 <text x="858.0" y="128.0" class="val" text-anchor="end">0.742</text>
-<rect class="band" x="8" y="136" width="864" height="24" rx="4"/>
-<text x="262.0" y="152.5" class="label np" text-anchor="end">nullpii</text>
-<line class="link" x1="664.8" x2="617.5" y1="148.0" y2="148.0"/>
-<circle class="dot-b" cx="617.5" cy="148.0" r="5.5"/>
-<circle class="dot-a" cx="664.8" cy="148.0" r="5.5"/>
-<text x="790.0" y="152.0" class="val np" text-anchor="end">0.758</text>
-<text x="858.0" y="152.0" class="val np" text-anchor="end">0.714</text>
-<use href="#np-logo" x="18" y="139.0"/>
-<text x="262.0" y="176.5" class="label" text-anchor="end">nvidia/gliner-PII (library)</text>
-<line class="link" x1="624.0" x2="572.4" y1="172.0" y2="172.0"/>
-<circle class="dot-b" cx="572.4" cy="172.0" r="5.5"/>
-<circle class="dot-a" cx="624.0" cy="172.0" r="5.5"/>
-<text x="790.0" y="176.0" class="val" text-anchor="end">0.720</text>
-<text x="858.0" y="176.0" class="val" text-anchor="end">0.672</text>
-<text x="262.0" y="200.5" class="label" text-anchor="end">OpenMed privacy-filter-multilingual-v2</text>
-<line class="link" x1="620.8" x2="620.8" y1="196.0" y2="196.0"/>
-<circle class="dot-b" cx="620.8" cy="196.0" r="5.5"/>
-<circle class="dot-a" cx="620.8" cy="196.0" r="5.5"/>
-<text x="790.0" y="200.0" class="val" text-anchor="end">0.717</text>
-<text x="858.0" y="200.0" class="val" text-anchor="end">0.717</text>
-<text x="262.0" y="224.5" class="label" text-anchor="end">pii-identifier</text>
-<line class="link" x1="603.6" x2="617.5" y1="220.0" y2="220.0"/>
-<circle class="dot-b" cx="617.5" cy="220.0" r="5.5"/>
-<circle class="dot-a" cx="603.6" cy="220.0" r="5.5"/>
-<text x="790.0" y="224.0" class="val" text-anchor="end">0.701</text>
-<text x="858.0" y="224.0" class="val" text-anchor="end">0.714</text>
-<text x="262.0" y="248.5" class="label" text-anchor="end">ettin-68m</text>
-<line class="link" x1="601.4" x2="608.9" y1="244.0" y2="244.0"/>
-<circle class="dot-b" cx="608.9" cy="244.0" r="5.5"/>
-<circle class="dot-a" cx="601.4" cy="244.0" r="5.5"/>
-<text x="790.0" y="248.0" class="val" text-anchor="end">0.699</text>
-<text x="858.0" y="248.0" class="val" text-anchor="end">0.706</text>
-<text x="262.0" y="272.5" class="label" text-anchor="end">openai privacy-filter</text>
-<line class="link" x1="595.0" x2="651.9" y1="268.0" y2="268.0"/>
-<circle class="dot-b" cx="651.9" cy="268.0" r="5.5"/>
-<circle class="dot-a" cx="595.0" cy="268.0" r="5.5"/>
-<text x="790.0" y="272.0" class="val" text-anchor="end">0.693</text>
-<text x="858.0" y="272.0" class="val" text-anchor="end">0.746</text>
-<text x="262.0" y="296.5" class="label" text-anchor="end">OpenMed PII Large</text>
-<line class="link" x1="583.2" x2="602.5" y1="292.0" y2="292.0"/>
-<circle class="dot-b" cx="602.5" cy="292.0" r="5.5"/>
-<circle class="dot-a" cx="583.2" cy="292.0" r="5.5"/>
-<text x="790.0" y="296.0" class="val" text-anchor="end">0.682</text>
-<text x="858.0" y="296.0" class="val" text-anchor="end">0.700</text>
-<text x="262.0" y="320.5" class="label" text-anchor="end">OpenMed PII Small</text>
-<line class="link" x1="573.5" x2="584.2" y1="316.0" y2="316.0"/>
-<circle class="dot-b" cx="584.2" cy="316.0" r="5.5"/>
-<circle class="dot-a" cx="573.5" cy="316.0" r="5.5"/>
-<text x="790.0" y="320.0" class="val" text-anchor="end">0.673</text>
-<text x="858.0" y="320.0" class="val" text-anchor="end">0.683</text>
-<text x="262.0" y="344.5" class="label" text-anchor="end">gliner-pii-large</text>
-<line class="link" x1="555.2" x2="484.2" y1="340.0" y2="340.0"/>
-<circle class="dot-b" cx="484.2" cy="340.0" r="5.5"/>
-<circle class="dot-a" cx="555.2" cy="340.0" r="5.5"/>
-<text x="790.0" y="344.0" class="val" text-anchor="end">0.656</text>
-<text x="858.0" y="344.0" class="val" text-anchor="end">0.590</text>
+<text x="262.0" y="152.5" class="label" text-anchor="end">nvidia/gliner-PII (library)</text>
+<line class="link" x1="624.1" x2="572.0" y1="148.0" y2="148.0"/>
+<circle class="dot-b" cx="572.0" cy="148.0" r="5.5"/>
+<circle class="dot-a" cx="624.1" cy="148.0" r="5.5"/>
+<text x="790.0" y="152.0" class="val" text-anchor="end">0.720</text>
+<text x="858.0" y="152.0" class="val" text-anchor="end">0.672</text>
+<text x="262.0" y="176.5" class="label" text-anchor="end">OpenMed privacy-filter-multilingual-v2</text>
+<line class="link" x1="621.2" x2="621.3" y1="172.0" y2="172.0"/>
+<circle class="dot-b" cx="621.3" cy="172.0" r="5.5"/>
+<circle class="dot-a" cx="621.2" cy="172.0" r="5.5"/>
+<text x="790.0" y="176.0" class="val" text-anchor="end">0.717</text>
+<text x="858.0" y="176.0" class="val" text-anchor="end">0.717</text>
+<text x="262.0" y="200.5" class="label" text-anchor="end">pii-identifier</text>
+<line class="link" x1="603.7" x2="618.0" y1="196.0" y2="196.0"/>
+<circle class="dot-b" cx="618.0" cy="196.0" r="5.5"/>
+<circle class="dot-a" cx="603.7" cy="196.0" r="5.5"/>
+<text x="790.0" y="200.0" class="val" text-anchor="end">0.701</text>
+<text x="858.0" y="200.0" class="val" text-anchor="end">0.714</text>
+<text x="262.0" y="224.5" class="label" text-anchor="end">ettin-68m</text>
+<line class="link" x1="601.0" x2="608.5" y1="220.0" y2="220.0"/>
+<circle class="dot-b" cx="608.5" cy="220.0" r="5.5"/>
+<circle class="dot-a" cx="601.0" cy="220.0" r="5.5"/>
+<text x="790.0" y="224.0" class="val" text-anchor="end">0.699</text>
+<text x="858.0" y="224.0" class="val" text-anchor="end">0.706</text>
+<text x="262.0" y="248.5" class="label" text-anchor="end">openai privacy-filter</text>
+<line class="link" x1="594.6" x2="652.0" y1="244.0" y2="244.0"/>
+<circle class="dot-b" cx="652.0" cy="244.0" r="5.5"/>
+<circle class="dot-a" cx="594.6" cy="244.0" r="5.5"/>
+<text x="790.0" y="248.0" class="val" text-anchor="end">0.693</text>
+<text x="858.0" y="248.0" class="val" text-anchor="end">0.746</text>
+<text x="262.0" y="272.5" class="label" text-anchor="end">OpenMed PII Large</text>
+<line class="link" x1="583.4" x2="602.3" y1="268.0" y2="268.0"/>
+<circle class="dot-b" cx="602.3" cy="268.0" r="5.5"/>
+<circle class="dot-a" cx="583.4" cy="268.0" r="5.5"/>
+<text x="790.0" y="272.0" class="val" text-anchor="end">0.682</text>
+<text x="858.0" y="272.0" class="val" text-anchor="end">0.700</text>
+<text x="262.0" y="296.5" class="label" text-anchor="end">OpenMed PII Small</text>
+<line class="link" x1="573.6" x2="584.4" y1="292.0" y2="292.0"/>
+<circle class="dot-b" cx="584.4" cy="292.0" r="5.5"/>
+<circle class="dot-a" cx="573.6" cy="292.0" r="5.5"/>
+<text x="790.0" y="296.0" class="val" text-anchor="end">0.673</text>
+<text x="858.0" y="296.0" class="val" text-anchor="end">0.683</text>
+<text x="262.0" y="320.5" class="label" text-anchor="end">gliner-pii-large</text>
+<line class="link" x1="555.3" x2="484.3" y1="316.0" y2="316.0"/>
+<circle class="dot-b" cx="484.3" cy="316.0" r="5.5"/>
+<circle class="dot-a" cx="555.3" cy="316.0" r="5.5"/>
+<text x="790.0" y="320.0" class="val" text-anchor="end">0.656</text>
+<text x="858.0" y="320.0" class="val" text-anchor="end">0.590</text>
+<rect class="band" x="8" y="328" width="864" height="24" rx="4"/>
+<text x="262.0" y="344.5" class="label np" text-anchor="end">nullpii 0.5, every category</text>
+<line class="link" x1="552.3" x2="498.3" y1="340.0" y2="340.0"/>
+<circle class="dot-b" cx="498.3" cy="340.0" r="5.5"/>
+<circle class="dot-a" cx="552.3" cy="340.0" r="5.5"/>
+<text x="790.0" y="344.0" class="val np" text-anchor="end">0.653</text>
+<text x="858.0" y="344.0" class="val np" text-anchor="end">0.603</text>
+<use href="#np-logo" x="18" y="331.0"/>
 <text x="262.0" y="368.5" class="label" text-anchor="end">piiranha</text>
-<line class="link" x1="549.8" x2="487.5" y1="364.0" y2="364.0"/>
-<circle class="dot-b" cx="487.5" cy="364.0" r="5.5"/>
-<circle class="dot-a" cx="549.8" cy="364.0" r="5.5"/>
+<line class="link" x1="550.3" x2="487.6" y1="364.0" y2="364.0"/>
+<circle class="dot-b" cx="487.6" cy="364.0" r="5.5"/>
+<circle class="dot-a" cx="550.3" cy="364.0" r="5.5"/>
 <text x="790.0" y="368.0" class="val" text-anchor="end">0.651</text>
 <text x="858.0" y="368.0" class="val" text-anchor="end">0.593</text>
 <text x="262.0" y="392.5" class="label" text-anchor="end">gliner_multi_pii (ONNX)</text>
-<line class="link" x1="546.6" x2="470.3" y1="388.0" y2="388.0"/>
+<line class="link" x1="546.3" x2="470.3" y1="388.0" y2="388.0"/>
 <circle class="dot-b" cx="470.3" cy="388.0" r="5.5"/>
-<circle class="dot-a" cx="546.6" cy="388.0" r="5.5"/>
+<circle class="dot-a" cx="546.3" cy="388.0" r="5.5"/>
 <text x="790.0" y="392.0" class="val" text-anchor="end">0.648</text>
 <text x="858.0" y="392.0" class="val" text-anchor="end">0.577</text>
 <text x="262.0" y="416.5" class="label" text-anchor="end">Presidio</text>
-<line class="link" x1="525.1" x2="492.8" y1="412.0" y2="412.0"/>
-<circle class="dot-b" cx="492.8" cy="412.0" r="5.5"/>
-<circle class="dot-a" cx="525.1" cy="412.0" r="5.5"/>
+<line class="link" x1="524.9" x2="493.3" y1="412.0" y2="412.0"/>
+<circle class="dot-b" cx="493.3" cy="412.0" r="5.5"/>
+<circle class="dot-a" cx="524.9" cy="412.0" r="5.5"/>
 <text x="790.0" y="416.0" class="val" text-anchor="end">0.628</text>
 <text x="858.0" y="416.0" class="val" text-anchor="end">0.598</text>
 <text x="262.0" y="440.5" class="label" text-anchor="end">nvidia/gliner-PII (NVIDIA server)</text>
-<line class="link" x1="485.3" x2="430.5" y1="436.0" y2="436.0"/>
-<circle class="dot-b" cx="430.5" cy="436.0" r="5.5"/>
-<circle class="dot-a" cx="485.3" cy="436.0" r="5.5"/>
+<line class="link" x1="485.8" x2="431.0" y1="436.0" y2="436.0"/>
+<circle class="dot-b" cx="431.0" cy="436.0" r="5.5"/>
+<circle class="dot-a" cx="485.8" cy="436.0" r="5.5"/>
 <text x="790.0" y="440.0" class="val" text-anchor="end">0.591</text>
 <text x="858.0" y="440.0" class="val" text-anchor="end">0.540</text>
 <text x="262.0" y="464.5" class="label" text-anchor="end">gliner-stream-pii</text>
-<line class="link" x1="460.6" x2="460.6" y1="460.0" y2="460.0"/>
-<circle class="dot-b" cx="460.6" cy="460.0" r="5.5"/>
-<circle class="dot-a" cx="460.6" cy="460.0" r="5.5"/>
+<line class="link" x1="460.7" x2="460.3" y1="460.0" y2="460.0"/>
+<circle class="dot-b" cx="460.3" cy="460.0" r="5.5"/>
+<circle class="dot-a" cx="460.7" cy="460.0" r="5.5"/>
 <text x="790.0" y="464.0" class="val" text-anchor="end">0.568</text>
 <text x="858.0" y="464.0" class="val" text-anchor="end">0.568</text>
 <text x="262.0" y="488.5" class="label" text-anchor="end">deberta PII</text>
-<line class="link" x1="348.8" x2="433.7" y1="484.0" y2="484.0"/>
-<circle class="dot-b" cx="433.7" cy="484.0" r="5.5"/>
-<circle class="dot-a" cx="348.8" cy="484.0" r="5.5"/>
+<line class="link" x1="348.4" x2="433.9" y1="484.0" y2="484.0"/>
+<circle class="dot-b" cx="433.9" cy="484.0" r="5.5"/>
+<circle class="dot-a" cx="348.4" cy="484.0" r="5.5"/>
 <text x="790.0" y="488.0" class="val" text-anchor="end">0.464</text>
 <text x="858.0" y="488.0" class="val" text-anchor="end">0.543</text>
 <text x="16.0" y="540.0" class="note">The datasets, intervals and the table per dataset: METHOD.md. Masking everything scores 0.260.</text>

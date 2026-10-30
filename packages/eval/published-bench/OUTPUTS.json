@@ -1,0 +1,31 @@
+{
+ "files": [
+  "ab1/coverage-ab1-a.json",
+  "ab1/coverage-ab1-b1.json",
+  "ab1/coverage-ab1-b2.json",
+  "ab1/roundtrip.json",
+  "ab1/scores-ab1-a.json",
+  "ab1/scores-ab1-b1.json",
+  "ab1/scores-ab1-b2.json",
+  "piimb/piimb-everything.json",
+  "r3/char-r3-bonferroni.json",
+  "r3/char-r3-en.json",
+  "r3/char-r3-lodo-r3-eu-clinical.json",
+  "r3/char-r3-lodo-r3-piilo.json",
+  "r3/char-r3-lodo-r3-redact.json",
+  "r3/char-r3-lodo-r3-tonic-human.json",
+  "r3/char-r3-lodo-r3-traces-v3.json",
+  "r3/char-r3-reported.json",
+  "r3/char-r3.json",
+  "r3/sens-cluster-rows-verdict.txt",
+  "r3/sens-cluster-rows.json",
+  "r3/sens-openmed-excluded-verdict.txt",
+  "r3/sens-openmed-excluded.json",
+  "r3/verdict-en.txt",
+  "r3/verdict-reported.txt",
+  "r3/verdict.txt"
+ ],
+ "names": "published",
+ "reference_of": "lBroth/nullpii-bench-private@eadb7b382e3bad85cf8f7b54ca24c1f19642b95f",
+ "version": "0.5"
+}

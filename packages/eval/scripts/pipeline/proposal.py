@@ -26,7 +26,7 @@ APPROVAL_CONTEXT = "bench/approval"
 REPO = "lBroth/nullpii"
 # The published run measured nullpii on CUDA; METHOD.md gives how far its
 # CPU outputs are from those.
-CUDA_CPU_AGREEMENT = "37 of the 14,701 tuning-set documents differ (release build, fp32 on both)"
+CUDA_CPU_AGREEMENT = "37 of the 14,701 tuning-set documents differ, release build and fp32 on both"
 
 
 class ProposalError(Exception):
@@ -128,7 +128,7 @@ def body(run: Run, report: str, changed: list[str]) -> str:
         " run.",
         "",
         f"- **CPU re-measurement**: {run.runner}. The published {views.PUBLISHED_VERSION} run measured nullpii on CUDA; its CUDA and CPU"
-        f" outputs agree on all but a few documents in a thousand ({CUDA_CPU_AGREEMENT}; METHOD.md, Results).",
+        f" outputs agree on all but a few documents in a thousand: {CUDA_CPU_AGREEMENT} (METHOD.md, Results).",
         f"- **Commit measured**: `{run.commit}`",
         f"- **Frozen inputs**: `{settings.FROZEN_REPO}@{settings.FROZEN_REVISION}` (manifest SHA-256"
         f" `{settings.FROZEN_MANIFEST_SHA256}`)",

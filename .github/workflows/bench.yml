@@ -2,7 +2,8 @@ name: bench
 
 # Re-measures nullpii's published benchmark (AB-1, R3, PIIMB, in the
 # `default` and `everything` configurations) on GitHub-hosted CPU runners
-# after a change on main its numbers depend on, and, when something moved,
+# after a change on main its numbers depend on, and, when something moved
+# (or published-bench says it measured another nullpii version or model),
 # opens a numbers PR with what `render` writes from the run:
 # packages/eval/published-bench/, the docs' rendered regions and the
 # README's figures. How it works, what the owner configures and how to
@@ -13,24 +14,28 @@ name: bench
 # dataset lBroth/nullpii-bench-private (revision and manifest SHA-256
 # pinned in packages/eval/scripts/pipeline/settings.py). It holds real
 # secrets and data that may not be passed on, so:
-#   - each job that needs it downloads it with the HF_TOKEN secret into the
-#     runner's temp directory, outside the workspace, and nothing caches it
-#     (pull requests can read the Actions cache); a capture job downloads
-#     the sets alone;
+#   - the jobs that read it, and the job that writes to the repository, run
+#     in the `bench` environment, whose secrets (HF_TOKEN, BENCH_APP_ID,
+#     BENCH_APP_PRIVATE_KEY) only main may use;
+#   - each job that needs it downloads it with HF_TOKEN into the runner's
+#     temp directory, outside the workspace, and nothing caches it (pull
+#     requests can read the Actions cache); a capture job downloads the
+#     sets alone;
 #   - artifacts hold offsets, labels, scores and counts only, never a text:
-#     each capture reads its output back and refuses anything else, and the
-#     uploads name a part's own directory, never the texts or the frozen
-#     copy;
+#     each capture reads its output back (nullpii's labels and the
+#     benchmark's set names only) and refuses anything else, and the uploads
+#     name a part's own directory, never the texts or the frozen copy;
 #   - no step prints a row.
 #
 # The numbers are CPU re-measurements (the published 0.5 run was CUDA): the
-# PR says so, with the commit measured and the frozen revision, and the
-# docs render the label.
+# PR says so, with the commit measured, the CPU models and the frozen
+# revision, and the docs render the label.
 #
 # Never on pull_request. A numbers PR changes only paths this workflow does
 # not run on (`propose` refuses anything else; a test checks the two never
 # meet), so merging one starts no run. Worse numbers wait for the owner:
-# bench-approval.yml. Latency is never measured here.
+# bench-approval.yml. A newer run closes older open numbers PRs. Latency is
+# never measured here.
 
 on:
   push:
@@ -59,15 +64,16 @@ on:
 # Each job grants itself what it needs.
 permissions: {}
 
-# Two runs never overlap: a new one waits for the running one (GitHub keeps
-# only the latest waiting run).
+# Two runs of a ref never overlap: a new one waits for the running one
+# (GitHub keeps only the latest waiting run), and a dispatch on another
+# branch, which skips every job, never takes main's place in the queue.
 concurrency:
-  group: bench
+  group: bench-${{ github.ref }}
   cancel-in-progress: false
 
 env:
-  # The pipeline's Python dependencies, pinned in this file. Wheels only:
-  # no package builds or runs code at install.
+  # The pipeline's Python dependencies, locked with their hashes in this
+  # file. Wheels only: no package builds or runs code at install.
   PIPELINE_REQUIREMENTS: packages/eval/requirements-pipeline.txt
   PIP_ONLY_BINARY: ':all:'
   PIP_DISABLE_PIP_VERSION_CHECK: '1'
@@ -77,6 +83,7 @@ env:
   # The tests' and the build's CPU runtime: onnxruntime-node's install
   # script would only fetch its CUDA libraries.
   ONNXRUNTIME_NODE_INSTALL: skip
+  NUMBERS_BRANCH: bench/run-${{ github.run_id }}
 
 jobs:
   build:
@@ -95,6 +102,7 @@ jobs:
     outputs:
       model-ref: ${{ steps.model.outputs.ref }}
       model-dir: ${{ steps.model.outputs.dir }}
+      npm-key: ${{ steps.npm.outputs.key }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -102,7 +110,14 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
-          cache: npm
+      # This job saves npm's download cache; the capture jobs only restore it.
+      - name: The npm cache key
+        id: npm
+        run: echo "key=bench-npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.npm
+          key: ${{ steps.npm.outputs.key }}
       - run: npm ci
       - run: npm run build
       - name: The model the library pins
@@ -141,6 +156,7 @@ jobs:
     if: ${{ github.repository == 'lBroth/nullpii' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    environment: bench
     permissions:
       contents: read
     steps:
@@ -150,12 +166,12 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
-      - run: python -m pip install -r "$PIPELINE_REQUIREMENTS"
+      - run: python -m pip install --require-hashes -r "$PIPELINE_REQUIREMENTS"
       - name: Download and check the frozen inputs
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          [ -n "$HF_TOKEN" ] || { echo "::error::the HF_TOKEN secret is not set (read access to lBroth/nullpii-bench-private)"; exit 1; }
+          [ -n "$HF_TOKEN" ] || { echo "::error::the HF_TOKEN secret of the bench environment is not set (read access to lBroth/nullpii-bench-private)"; exit 1; }
           HF_HOME="$RUNNER_TEMP/hf-home" python -I "$PIPELINE" fetch --frozen "$RUNNER_TEMP/frozen" --download
       - run: python -I "$PIPELINE" reproduce --frozen "$RUNNER_TEMP/frozen" --work "$RUNNER_TEMP/work"
 
@@ -167,6 +183,7 @@ jobs:
     # CPU's 25 s per 100,000 characters, so a runner many times slower
     # still ends well before GitHub's 6-hour limit; this stops it first.
     timeout-minutes: 300
+    environment: bench
     permissions:
       contents: read
     env:
@@ -223,7 +240,10 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
-          cache: npm
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.npm
+          key: ${{ needs.build.outputs.npm-key }}
       - run: npm ci
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -242,12 +262,12 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
-      - run: python -m pip install -r "$PIPELINE_REQUIREMENTS"
+      - run: python -m pip install --require-hashes -r "$PIPELINE_REQUIREMENTS"
       - name: Download and check the frozen sets
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          [ -n "$HF_TOKEN" ] || { echo "::error::the HF_TOKEN secret is not set (read access to lBroth/nullpii-bench-private)"; exit 1; }
+          [ -n "$HF_TOKEN" ] || { echo "::error::the HF_TOKEN secret of the bench environment is not set (read access to lBroth/nullpii-bench-private)"; exit 1; }
           HF_HOME="$RUNNER_TEMP/hf-home" python -I "$PIPELINE" fetch --frozen "$RUNNER_TEMP/frozen" --download --sets-only
       - name: Capture
         id: capture
@@ -282,10 +302,12 @@ jobs:
     needs: [capture, reproduce]
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    environment: bench
     permissions:
       contents: read
     outputs:
       compare: ${{ steps.compare.outputs.code }}
+      relabel: ${{ steps.relabel.outputs.due }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -293,10 +315,10 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
-      - run: python -m pip install -r "$PIPELINE_REQUIREMENTS"
+      - run: python -m pip install --require-hashes -r "$PIPELINE_REQUIREMENTS"
       # Each part in a directory of its own name, where `score` puts them
       # together (it refuses to start unless every part of every capture
-      # is there, each once).
+      # is there, each once, all of one build).
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: part-*
@@ -315,7 +337,7 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          [ -n "$HF_TOKEN" ] || { echo "::error::the HF_TOKEN secret is not set (read access to lBroth/nullpii-bench-private)"; exit 1; }
+          [ -n "$HF_TOKEN" ] || { echo "::error::the HF_TOKEN secret of the bench environment is not set (read access to lBroth/nullpii-bench-private)"; exit 1; }
           HF_HOME="$RUNNER_TEMP/hf-home" python -I "$PIPELINE" fetch --frozen "$RUNNER_TEMP/frozen" --download
       - run: python -I "$PIPELINE" score --frozen "$RUNNER_TEMP/frozen" --work "$RUNNER_TEMP/work"
       # 0 nothing moved, 3 something moved, is new or is dropped, 4 something
@@ -333,8 +355,23 @@ jobs:
             *) echo "::error::compare failed with exit $code"; exit "$code" ;;
           esac
           { echo "## Benchmark: compare exited $code"; echo; cat "$RUNNER_TEMP/report.md"; } >> "$GITHUB_STEP_SUMMARY"
-      # The scored outputs (aggregates, published as they are) and the
-      # report, for the propose job and for reading.
+      # A numbers PR is due too when nothing moved but published-bench says
+      # it measured another nullpii version or model (a release needs its
+      # card to name the version it measured).
+      - name: Is published-bench's measurement this run's?
+        id: relabel
+        run: |
+          set +e
+          python -I "$PIPELINE" measured-differs --run "$RUNNER_TEMP/work/out"
+          code=$?
+          set -e
+          case "$code" in
+            0) echo "due=false" >> "$GITHUB_OUTPUT" ;;
+            3) echo "due=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::measured-differs failed with exit $code"; exit "$code" ;;
+          esac
+      # The scored outputs (aggregates, published as they are, and what was
+      # measured) and the report, for the propose job and for reading.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: bench-out
@@ -352,22 +389,24 @@ jobs:
     # The only job that writes to the repository: a new branch, never main,
     # pushed and opened with the bench GitHub App's token, so the PR runs CI
     # and bench-approval.yml like any other. It holds no HF_TOKEN and reads
-    # nothing frozen. Nothing here merges.
+    # nothing frozen. Nothing here merges. A re-run reuses what an earlier
+    # attempt pushed and opened, when it is the same change.
     name: open the numbers PR
     needs: [build, score]
-    if: ${{ needs.score.outputs.compare == '3' || needs.score.outputs.compare == '4' }}
+    if: ${{ needs.score.outputs.compare == '3' || needs.score.outputs.compare == '4' || needs.score.outputs.relabel == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    environment: bench
     permissions:
       contents: read
       statuses: write       # bench/compare on the commit it wrote, as the Actions bot
       issues: write         # the repository's bench labels
       pull-requests: write  # put them on the PR
+    outputs:
+      pr: ${{ steps.pr.outputs.number }}
     env:
       GH_REPO: ${{ github.repository }}
-      BRANCH: bench/run-${{ github.run_id }}
       CODE: ${{ needs.score.outputs.compare }}
-      MODEL_REF: ${{ needs.build.outputs.model-ref }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -379,7 +418,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
-      - run: python -m pip install -r "$PIPELINE_REQUIREMENTS"
+      - run: python -m pip install --require-hashes -r "$PIPELINE_REQUIREMENTS"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: bench-out
@@ -397,28 +436,32 @@ jobs:
       # another run.
       - name: Check what changed, and write the PR's title and body
         run: |
-          python -I "$PIPELINE" propose --report "$RUNNER_TEMP/report.md" --compare-exit "$CODE" \
-            --commit "$GITHUB_SHA" --run-url "$RUN_URL" --model "$MODEL_REF" \
-            --runner "GitHub-hosted ubuntu-24.04 runner, ONNX Runtime on its CPU" \
+          python -I "$PIPELINE" propose --run "$RUNNER_TEMP/out" --report "$RUNNER_TEMP/report.md" \
+            --compare-exit "$CODE" --commit "$GITHUB_SHA" --run-url "$RUN_URL" \
+            --runner "GitHub-hosted ubuntu-24.04 runners" \
             --title-out "$RUNNER_TEMP/title.txt" --body-out "$RUNNER_TEMP/body.md"
+      # The bench app's token is used to push and to open or close PRs only,
+      # never in a step that runs repository code.
       - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         id: app
         with:
+          # The secret holds the app's numeric ID; the action's newer
+          # `client-id` input takes the Client ID, another value.
           app-id: ${{ secrets.BENCH_APP_ID }}
           private-key: ${{ secrets.BENCH_APP_PRIVATE_KEY }}
-          # Push the branch, open the PR: nothing else.
+          # Push the branch, open and close PRs: nothing else.
           permission-contents: write
           permission-pull-requests: write
       - name: Commit on bench/run-<run id>
         env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
           APP_SLUG: ${{ steps.app.outputs.app-slug }}
         run: |
           bot="${APP_SLUG}[bot]"
           id=$(gh api "users/$bot" --jq .id)
           git config user.name "$bot"
           git config user.email "$id+$bot@users.noreply.github.com"
-          git switch --create "$BRANCH"
+          git switch --create "$NUMBERS_BRANCH"
           git add -- packages/eval/published-bench README.md packages/eval/METHOD.md MODEL_CARD.md assets/readme
           # Nothing left out of the commit: propose checked every change.
           [ -z "$(git status --porcelain=v1 --untracked-files=all | grep -v '^[MADR] ' || true)" ] \
@@ -426,47 +469,109 @@ jobs:
           node scripts/check-repo-hygiene.mjs
           git commit --quiet -m "chore(bench): CPU re-measurement of ${GITHUB_SHA::12}" \
             -m "Scored by $RUN_URL against the frozen inputs of the published run; compare exited $CODE."
-      - name: Push the branch
+      # A re-run of this job finds the branch an earlier attempt pushed: the
+      # same change (the same tree on the measured commit) is reused as it
+      # is; any other is refused, never forced over.
+      - name: Push the branch, or reuse an earlier attempt's
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
-        run: git -c credential.helper= -c 'credential.helper=!gh auth git-credential' push origin "HEAD:refs/heads/$BRANCH"
+        run: |
+          creds=(-c credential.helper= -c 'credential.helper=!gh auth git-credential')
+          if git "${creds[@]}" ls-remote --exit-code origin "refs/heads/$NUMBERS_BRANCH" > /dev/null; then
+            git "${creds[@]}" fetch --quiet origin "refs/heads/$NUMBERS_BRANCH"
+            if [ "$(git rev-parse 'FETCH_HEAD^{tree}')" != "$(git rev-parse 'HEAD^{tree}')" ] \
+              || [ "$(git rev-parse 'FETCH_HEAD^')" != "$GITHUB_SHA" ]; then
+              echo "::error::$NUMBERS_BRANCH already holds another change: delete it, then re-run"; exit 1
+            fi
+            git reset --quiet --hard FETCH_HEAD
+            echo "$NUMBERS_BRANCH already holds this change: reused"
+          else
+            git "${creds[@]}" push origin "HEAD:refs/heads/$NUMBERS_BRANCH"
+          fi
       # bench/compare records what compare found, as the Actions bot (the
-      # one creator approval.py trusts) and is never changed; bench/approval
-      # (bench-approval.yml) is the status the merge waits on. Set before the
-      # PR exists, so the PR's first bench/approval already sees it.
+      # creator approval.py trusts, with this run as its target) and is never
+      # changed; bench/approval (bench-approval.yml) is the status the merge
+      # waits on. Set before the PR exists, so its first bench/approval sees it.
       - name: Record the verdict on the commit
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if [ "$CODE" = 4 ]; then
             state=failure; description="Something got worse: see the report in the PR."
-          else
+          elif [ "$CODE" = 3 ]; then
             state=success; description="Numbers moved, none got worse."
+          else
+            state=success; description="Nothing moved; another nullpii version or model measured."
           fi
           gh api --method POST "repos/$GH_REPO/statuses/$(git rev-parse HEAD)" -f state="$state" \
             -f context=bench/compare -f description="$description" -f target_url="$RUN_URL" > /dev/null
       # Opened with the app's token, so CI and bench-approval.yml run on it
       # (a PR opened with the workflow's own token starts no workflow).
-      - name: Open the PR
+      - name: Open the PR, or reuse an earlier attempt's
         id: pr
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
-          url=$(gh pr create --base main --head "$BRANCH" --title "$(cat "$RUNNER_TEMP/title.txt")" \
-            --body-file "$RUNNER_TEMP/body.md")
-          [[ "${url##*/}" =~ ^[0-9]+$ ]] || { echo "::error::gh pr create gave no PR URL"; exit 1; }
-          echo "number=${url##*/}" >> "$GITHUB_OUTPUT"
-          echo "Opened $url" | tee -a "$GITHUB_STEP_SUMMARY"
-      # The labels say what the PR is; the gate never reads them but the
-      # owner's bench-accept-worse, which this creates for the owner to add.
+          number=$(gh pr list --head "$NUMBERS_BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -z "$number" ]; then
+            url=$(gh pr create --base main --head "$NUMBERS_BRANCH" --title "$(cat "$RUNNER_TEMP/title.txt")" \
+              --body-file "$RUNNER_TEMP/body.md")
+            number=${url##*/}
+          fi
+          [[ "$number" =~ ^[0-9]+$ ]] || { echo "::error::no PR number for $NUMBERS_BRANCH"; exit 1; }
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+          echo "Numbers PR: #$number" | tee -a "$GITHUB_STEP_SUMMARY"
+      # The labels say what the PR is; the gate reads only the owner's
+      # bench-accept-worse and bench-accept-manual, which exist for the owner
+      # to add. A label that exists is left as the owner set it.
       - name: Label the PR
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ steps.pr.outputs.number }}
         run: |
-          gh label create bench --force --color 1d76db --description "A benchmark re-measurement opened by bench.yml"
-          gh label create bench-worse --force --color b60205 --description "bench.yml found a published number or claim that got worse"
-          gh label create bench-accept-worse --force --color 0e8a16 --description "The owner accepts the worse numbers of this numbers PR"
+          existing=$(gh label list --limit 1000 --json name --jq '.[].name')
+          create() { grep -qxF "$1" <<< "$existing" || gh label create "$1" --color "$2" --description "$3"; }
+          create bench 1d76db "A benchmark re-measurement opened by bench.yml"
+          create bench-worse b60205 "bench.yml found a published number or claim that got worse"
+          create bench-accept-worse 0e8a16 "The owner accepts the worse numbers of this numbers PR"
+          create bench-accept-manual 0e8a16 "The owner accepts a hand edit of published-bench in this PR"
           labels=(-f 'labels[]=bench')
           if [ "$CODE" = 4 ]; then labels+=(-f 'labels[]=bench-worse'); fi
           gh api --method POST "repos/$GH_REPO/issues/$PR/labels" "${labels[@]}" > /dev/null
+
+  supersede:
+    # An open numbers PR of an earlier run proposes numbers of an older
+    # main: once this run has measured, it is closed (and its branch
+    # deleted), so two runs' outputs never merge one over the other. Runs
+    # whether or not this run opened a PR of its own.
+    name: close older numbers PRs
+    needs: [score, propose]
+    if: ${{ always() && needs.score.result == 'success' && (needs.propose.result == 'success' || needs.propose.result == 'skipped') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: bench
+    permissions: {}
+    env:
+      GH_REPO: ${{ github.repository }}
+      NEW_PR: ${{ needs.propose.outputs.pr }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app
+        with:
+          app-id: ${{ secrets.BENCH_APP_ID }}
+          private-key: ${{ secrets.BENCH_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Close the older numbers PRs and delete their branches
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          if [ -n "$NEW_PR" ]; then why="Superseded by #$NEW_PR ($RUN_URL)."; else why="Superseded: $RUN_URL measured main again and found published-bench's numbers."; fi
+          gh pr list --state open --limit 200 --json number,headRefName,isCrossRepository \
+            --jq '.[] | select(.isCrossRepository | not) | select(.headRefName | test("^bench/run-[0-9]+$")) | .number' |
+          while read -r number; do
+            [ "$number" = "$NEW_PR" ] && continue
+            gh pr close "$number" --comment "$why" --delete-branch
+            echo "closed #$number"
+          done

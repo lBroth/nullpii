@@ -251,32 +251,42 @@ jobs:
     # MODEL_CARD.md of the tagged commit becomes the README.md of the model
     # repository lBroth/nullpii, after both packages are published, so the
     # card on Hugging Face is the released version's. `model-card` refuses
-    # unless the tag is the package's version, the card's Files table is the
-    # files and SHA-256 src/defaults.ts pins (and the model repository
-    # holds them at the pinned revision), and its rendered regions say what
-    # published-bench/ holds; it reads the card back after the upload.
-    # A pre-release does not replace the card of the latest release.
+    # unless the tag is the package's version and the highest release
+    # tagged (an older release re-run never replaces a newer card), the
+    # card's Files table is the files and SHA-256 src/defaults.ts pins (and
+    # the model repository holds them at the pinned revision),
+    # published-bench/ holds a run of the pipeline of this very version and
+    # model, and the card's regions say what it holds; it reads the card
+    # back at the commit its upload made. A pre-release does not replace
+    # the card of the latest release.
     #
-    # The token is HF_MODEL_CARD_TOKEN, a fine-grained Hugging Face token
-    # with write access to lBroth/nullpii only (not the frozen benchmark
-    # inputs' HF_TOKEN). The owner creates it on huggingface.co (Settings →
-    # Access Tokens → Fine-grained → Repositories permissions: lBroth/nullpii,
-    # write) and adds it as a repository secret; without it this job fails,
+    # The token is HF_MODEL_CARD_TOKEN, a secret of the `huggingface`
+    # environment: a fine-grained Hugging Face token with write access to
+    # lBroth/nullpii only (not the frozen benchmark inputs' HF_TOKEN). The
+    # owner creates it on huggingface.co (Settings → Access Tokens →
+    # Fine-grained → Repositories permissions: lBroth/nullpii, write) and,
+    # on GitHub, Settings → Environments → `huggingface`: deployment tags
+    # `v*.*.*` only, then adds the secret there. Without it this job fails,
     # saying so.
     name: model card on Hugging Face
     needs: [publish, publish-gateway]
     if: ${{ !contains(github.ref_name, '-') }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
+    environment:
+      name: huggingface
+      url: https://huggingface.co/lBroth/nullpii
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0 # the release tags, to check this is the highest
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
-      - run: python -m pip install --only-binary ':all:' -r packages/eval/requirements-pipeline.txt
+      - run: python -m pip install --require-hashes --only-binary ':all:' -r packages/eval/requirements-pipeline.txt
       - name: Upload MODEL_CARD.md as the model's card
         env:
           HF_MODEL_CARD_TOKEN: ${{ secrets.HF_MODEL_CARD_TOKEN }}
@@ -284,7 +294,7 @@ jobs:
           HF_HUB_DISABLE_PROGRESS_BARS: '1'
         run: |
           if [ -z "$HF_MODEL_CARD_TOKEN" ]; then
-            echo "::error::the HF_MODEL_CARD_TOKEN secret is not set: create a fine-grained Hugging Face token with write access to lBroth/nullpii only, add it as a repository secret, then re-run this job"
+            echo "::error::the HF_MODEL_CARD_TOKEN secret of the huggingface environment is not set: create a fine-grained Hugging Face token with write access to lBroth/nullpii only, add it to that environment, then re-run this job"
             exit 1
           fi
           python -I packages/eval/scripts/bench_pipeline.py model-card --tag "$GITHUB_REF_NAME" --upload

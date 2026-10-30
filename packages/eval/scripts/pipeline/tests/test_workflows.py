@@ -127,7 +127,10 @@ def test_the_workflows_use_the_names_the_gate_reads():
     assert approval.BRANCH.fullmatch(branch.replace("${{ github.run_id }}", "18947312345"))
     assert f"-f context={approval.COMPARE_CONTEXT}" in bench
     assert "bench-accept-worse" == approval.ACCEPT_LABEL == proposal.ACCEPT_LABEL
-    assert f"label create {approval.ACCEPT_LABEL} " in bench
+    assert f"create {approval.ACCEPT_LABEL} " in bench and f"create {approval.MANUAL_LABEL} " in bench
+    assert approval.PUBLISHED_PREFIX == proposal.PUBLISHED_PREFIX
+    assert f"actions/runs/${{{{ github.run_id }}}}" in bench and "context=bench/compare" in bench
+    assert approval.BENCH_WORKFLOW == ".github/workflows/bench.yml"
     assert proposal.APPROVAL_CONTEXT == approval.APPROVAL_CONTEXT
     assert "pipeline/approval.py" in APPROVAL.read_text(encoding="utf-8")
     # The verdict comes from compare's exit codes.
@@ -158,16 +161,19 @@ def test_every_action_is_pinned_and_every_checkout_keeps_no_credentials(workflow
 
 # The PR itself ---------------------------------------------------------------------
 
+MEASURED = {"nullpii": "0.5.4", "model": "lBroth/nullpii@5dd3c799", "backend": "cpu",
+            "cpus": ["AMD EPYC 7763 64-Core Processor"]}
 RUN = proposal.Run(commit="c0ffee" * 6 + "abcd", compare_exit=compare.EXIT_WORSE,
-                   run_url="https://github.com/lBroth/nullpii/actions/runs/1", model="lBroth/nullpii@5dd3c799",
-                   runner="GitHub-hosted ubuntu-24.04 runner, ONNX Runtime on its CPU")
+                   run_url="https://github.com/lBroth/nullpii/actions/runs/1",
+                   runner="GitHub-hosted ubuntu-24.04 runners", measured=MEASURED)
 CHANGED = ["README.md", "packages/eval/published-bench/ab1/scores-ab1-a.json"]
 
 
 def test_the_body_says_what_was_measured_on_what_and_the_report():
     body = proposal.body(RUN, "**1 worse**\n\n- AB-1 a · keep\n", CHANGED)
     for said in (RUN.commit, settings.FROZEN_REVISION, settings.FROZEN_MANIFEST_SHA256, "CPU re-measurement",
-                 RUN.runner, RUN.model, "**1 worse**", "- AB-1 a · keep", "Something got worse",
+                 RUN.runner, MEASURED["model"], "nullpii 0.5.4", "CPU model: AMD EPYC 7763 64-Core Processor",
+                 "**1 worse**", "- AB-1 a · keep", "Something got worse",
                  approval.ACCEPT_LABEL, "gh pr merge <number> --repo lBroth/nullpii --squash", "measured nullpii on CUDA"):
         assert said in body
     assert "auto" not in body.lower().replace("automatically", "")
@@ -215,3 +221,80 @@ def test_every_kind_of_change_is_seen(tmp_path):
     (tmp_path / "new.md").write_text("new")
     assert proposal.changed_paths(tmp_path) == sorted(
         ["edited.md", "gone.md", "moved.md", "dir with space/moved.md", "new.md"])
+
+
+def _jobs(workflow: Path) -> dict[str, str]:
+    """Each job's text, by name."""
+    text = workflow.read_text(encoding="utf-8").split("\njobs:\n", 1)[1]
+    parts = re.split(r"^  ([a-z][a-z0-9-]*):\n", text, flags=re.MULTILINE)
+    return dict(zip(parts[1::2], parts[2::2]))
+
+
+def test_every_job_that_holds_a_bench_secret_runs_in_the_bench_environment():
+    jobs = _jobs(BENCH)
+    holders = {n for n, t in jobs.items() if "secrets." in t}
+    assert holders == {"reproduce", "capture", "score", "propose", "supersede"}
+    assert all("    environment: bench\n" in jobs[n] for n in holders)
+    assert "environment" not in jobs["build"] and "secrets." not in jobs["build"]
+
+
+def test_the_approval_gate_uses_no_secret_and_no_environment():
+    text = APPROVAL.read_text(encoding="utf-8")
+    assert "secrets." not in text and "environment" not in text.split("\njobs:")[1]
+    assert "pull_request_target" in text and "edited" in text
+    assert "if: ${{ failure() }}" in text
+
+
+def test_the_model_cards_token_is_the_huggingface_environments():
+    job = _jobs(WORKFLOWS / "release.yml")["model-card"]
+    assert "name: huggingface" in job and "secrets.HF_MODEL_CARD_TOKEN" in job and "timeout-minutes:" in job
+    assert all("HF_MODEL_CARD_TOKEN" not in t for n, t in _jobs(WORKFLOWS / "release.yml").items() if n != "model-card")
+
+
+def test_two_runs_of_one_ref_never_overlap_and_another_ref_never_evicts_mains():
+    text = BENCH.read_text(encoding="utf-8")
+    assert "  group: bench-${{ github.ref }}\n  cancel-in-progress: false" in text
+
+
+PIP = re.compile(r"pip install [^\n]*")
+
+
+@pytest.mark.parametrize("workflow", ["bench.yml", "ci.yml", "release.yml"])
+def test_every_python_install_is_locked_by_hash(workflow):
+    installs = PIP.findall((WORKFLOWS / workflow).read_text(encoding="utf-8"))
+    assert installs and all("--require-hashes" in i and " -r " in i for i in installs)
+
+
+@pytest.mark.parametrize("lock", ["requirements-pipeline.txt", "requirements-pipeline-test.txt"])
+def test_every_locked_requirement_has_a_hash(lock):
+    text = (settings.EVAL / lock).read_text(encoding="utf-8")
+    entries = re.split(r"\n(?=[a-z])", text.split("\n", 2)[2])
+    assert entries and all("--hash=sha256:" in e for e in entries if e.strip())
+    pins = dict(re.findall(r"^([a-z0-9-]+)==([^ ;\\]+)", text, re.MULTILINE))
+    assert pins["numpy"] == "2.4.4" and pins["huggingface-hub"] == "1.14.0"
+
+
+def test_the_capture_jobs_only_restore_npms_cache():
+    jobs = _jobs(BENCH)
+    assert "actions/cache/restore@" in jobs["capture"] and "cache: npm" not in jobs["capture"]
+    assert "cache: npm" not in BENCH.read_text(encoding="utf-8")
+
+
+def test_the_apps_token_never_reaches_a_step_that_runs_repository_code():
+    job = _jobs(BENCH)["propose"]
+    steps = re.split(r"\n      - ", job)
+    for step in steps:
+        if "steps.app.outputs.token" in step:
+            assert "python" not in step and "node " not in step and "npm" not in step, step[:80]
+
+
+def test_a_rerun_of_propose_reuses_what_it_pushed_and_never_forces():
+    job = _jobs(BENCH)["propose"]
+    assert "ls-remote --exit-code origin" in job and "--force" not in job and "push -f" not in job
+    assert 'gh pr list --head "$NUMBERS_BRANCH"' in job
+
+
+def test_older_numbers_prs_are_closed_by_a_newer_run():
+    job = _jobs(BENCH)["supersede"]
+    assert "gh pr close" in job and "--delete-branch" in job and 'test("^bench/run-[0-9]+$")' in job
+    assert "isCrossRepository | not" in job

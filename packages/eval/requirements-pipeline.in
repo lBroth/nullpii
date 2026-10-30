@@ -1,0 +1,6 @@
+# The benchmark pipeline's direct Python dependencies. requirements-pipeline.txt
+# is this file locked with every transitive dependency and its hashes:
+#   uv pip compile --universal --python-version 3.12 --generate-hashes --exclude-newer 2026-10-16 \
+#     requirements-pipeline.in -o requirements-pipeline.txt
+numpy==2.4.4
+huggingface-hub==1.14.0

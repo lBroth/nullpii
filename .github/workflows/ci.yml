@@ -76,8 +76,9 @@ jobs:
         with:
           python-version: '3.12'
       # The pipeline's own dependencies (numpy for the scorers its tests
-      # run), wheels only, so no test is skipped for want of one.
-      - run: python -m pip install --only-binary ':all:' pytest==8.4.2 -r packages/eval/requirements-pipeline.txt
+      # run) and pytest, locked with their hashes, wheels only, so no test
+      # is skipped for want of one.
+      - run: python -m pip install --require-hashes --only-binary ':all:' -r packages/eval/requirements-pipeline-test.txt
       - run: python -m pytest -q packages/eval/scripts/r3/traces_v3_gen/tests
       # -rs lists any skipped test; none is expected.
       - run: python -m pytest -q -rs packages/eval/scripts/pipeline/tests

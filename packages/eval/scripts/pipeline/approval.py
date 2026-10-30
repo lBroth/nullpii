@@ -1,48 +1,58 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""The owner's decision on a numbers PR, as the commit status
+"""The owner's decision on what a PR would publish, as the commit status
 `bench/approval` on the PR's head.
 
-bench.yml opens a numbers PR from a branch `bench/run-<run id>` when a
-re-measurement moved a published number, and first sets `bench/compare`
-on the commit it wrote: success when numbers only moved, failure when
-something got worse. bench-approval.yml turns it into `bench/approval`,
-the status branch protection requires on every PR to main:
+A status belongs to a commit, not to a PR, so the decision is read from
+the commit and its content, never from the PR's branch name alone:
 
-- a PR from any other branch: success, the gate is not about it;
-- a `bench/run-<id>` PR whose head has no `bench/compare` from the Actions
-  bot: failure, since what it would merge is not what was measured (a
-  push to the branch, or a branch of that name that bench.yml did not
-  write);
-- numbers moved, none worse: success (the normal review still applies);
-- something got worse: failure, until the repository owner adds the
-  `bench-accept-worse` label, and again as soon as it is removed.
+- The head carries a trusted `bench/compare`: one the Actions bot set,
+  whose target is a run of bench.yml on main (a push or a dispatch) that
+  measured the head's parent, the commit bench.yml's numbers commit sits
+  on (and, on a branch of this repository named `bench/run-<id>`, that very
+  run). Then: success when compare found numbers that only moved; when
+  something got worse, success only while the repository owner's
+  `bench-accept-worse` label is on a PR of this head and the owner added
+  it last; any other state, failure.
+- No trusted `bench/compare`: failure for a branch of this repository named
+  `bench/run-<id>` (a push to a numbers PR, or a branch of that name
+  bench.yml did not measure); failure for a PR that changes
+  `packages/eval/published-bench/` (a hand edit of the published outputs),
+  until the owner's `bench-accept-manual` label is on it, added last by the
+  owner; success otherwise.
 
-A PR is a numbers PR by its branch name alone, whoever opened it and from
-whichever repository: bench.yml always opens its PRs from such a branch,
-so a PR wrongly taken for one is held, never one wrongly let through. Everything is read from the API by PR number, never
-from the event that started the run, so each run decides from the PR's
-current state. Only the Actions bot's `bench/compare` counts, and only
-the owner's label.
+A label is replayed: of its `labeled` and `unlabeled` events, in order, the
+last must be `labeled`, by the owner, and the label must be on the PR now.
+The labels of every open PR whose head is this commit count, so two PRs
+of one commit get one decision. Everything is read from the API, never
+from the event that started the run.
 
   python -I approval.py --repo OWNER/NAME --pr N --owner LOGIN --target-url URL
 
 Standard library only (it runs from the base branch, with nothing of the
-PR checked out); the API is called through `gh api` (GH_TOKEN)."""
+PR checked out); the API is called through `gh api` (GH_TOKEN). The
+status is set to pending first, so a run that fails leaves no stale green
+(bench-approval.yml then sets failure)."""
 from __future__ import annotations
 
 import argparse
 import json
 import re
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 BOT = "github-actions[bot]"
-BRANCH = re.compile(r"bench/run-[0-9]+")
+BRANCH = re.compile(r"bench/run-([0-9]+)")
 COMPARE_CONTEXT = "bench/compare"
 APPROVAL_CONTEXT = "bench/approval"
 ACCEPT_LABEL = "bench-accept-worse"
-SUCCESS, FAILURE = "success", "failure"
+MANUAL_LABEL = "bench-accept-manual"
+PUBLISHED_PREFIX = "packages/eval/published-bench/"
+BENCH_WORKFLOW = ".github/workflows/bench.yml"
+BENCH_BRANCH = "main"
+BENCH_EVENTS = frozenset({"push", "workflow_dispatch"})
+SUCCESS, FAILURE, PENDING = "success", "failure", "pending"
+LABEL_EVENTS = frozenset({"labeled", "unlabeled"})
 # GitHub's limit on a commit status description.
 MAX_DESCRIPTION = 140
 PER_PAGE = 100
@@ -62,47 +72,101 @@ class Decision:
             raise ValueError(f"a status description has at most {MAX_DESCRIPTION} characters")
 
 
-def _login(item: dict, field: str) -> str:
-    return (item.get(field) or {}).get("login", "")
+@dataclass(frozen=True)
+class Head:
+    """What the API says about a PR's head commit, and the PRs on it."""
+
+    repo: str
+    pr: dict
+    statuses: list[dict]
+    runs: dict[int, dict]
+    parents: list[str]
+    files: list[str]
+    # (PR, its issue events) for the PR decided on and every other open PR
+    # whose head is this commit.
+    prs: list[tuple[dict, list[dict]]] = field(default_factory=list)
 
 
-def is_numbers_pr(pr: dict) -> bool:
-    """A PR from a branch named as bench.yml names its numbers PRs'
-    (`bench/run-<run id>`), whoever opened it, from whichever repository.
-    Other `bench/` branches are people's own work."""
-    return BRANCH.fullmatch(pr["head"]["ref"]) is not None
+def _login(item: dict, field_name: str) -> str:
+    return (item.get(field_name) or {}).get("login", "")
 
 
-def compare_state(statuses: list[dict]) -> str | None:
-    """The latest `bench/compare` state the Actions bot set on the head, or
-    None when it set none (the head is not a commit bench.yml measured)."""
-    ours = [s for s in statuses if s["context"] == COMPARE_CONTEXT and _login(s, "creator") == BOT]
+def run_id(target_url: str, repo: str) -> int | None:
+    """The run a status points to, when it is a run of `repo`."""
+    m = re.fullmatch(rf"https://github\.com/{re.escape(repo)}/actions/runs/([0-9]+)", target_url or "")
+    return int(m.group(1)) if m else None
+
+
+def same_repo_branch(pr: dict, repo: str) -> str | None:
+    """The head branch, when it is a branch of `repo` (not a fork's)."""
+    head_repo = pr["head"].get("repo") or {}
+    return pr["head"]["ref"] if head_repo.get("full_name") == repo else None
+
+
+def trusted(status: dict, head: Head) -> bool:
+    """A `bench/compare` bench.yml set on this head, from a run on main
+    that measured its parent."""
+    if status.get("context") != COMPARE_CONTEXT or _login(status, "creator") != BOT:
+        return False
+    rid = run_id(status.get("target_url", ""), head.repo)
+    run = head.runs.get(rid) if rid is not None else None
+    if run is None:
+        return False
+    ok = (run.get("path") == BENCH_WORKFLOW and run.get("head_branch") == BENCH_BRANCH
+          and run.get("event") in BENCH_EVENTS and (run.get("repository") or {}).get("full_name") == head.repo
+          and run.get("head_sha") in head.parents)
+    branch = same_repo_branch(head.pr, head.repo)
+    m = BRANCH.fullmatch(branch) if branch else None
+    return ok and (m is None or int(m.group(1)) == rid)
+
+
+def compare_state(head: Head) -> str | None:
+    """The latest trusted `bench/compare` state on the head, or None."""
+    ours = [s for s in head.statuses if trusted(s, head)]
     return max(ours, key=lambda s: s["id"])["state"] if ours else None
 
 
-def accepted_by(pr: dict, events: list[dict]) -> str | None:
-    """Who added the accept label last, when it is on the PR now."""
-    if ACCEPT_LABEL not in {label["name"] for label in pr["labels"]}:
+def label_by(pr: dict, events: list[dict], label: str) -> str | None:
+    """Who added `label` to `pr`, when it is on the PR now and its last
+    labeled/unlabeled event is that addition."""
+    if label not in {item["name"] for item in pr["labels"]}:
         return None
-    added = [e for e in events if e.get("event") == "labeled" and (e.get("label") or {}).get("name") == ACCEPT_LABEL]
-    return _login(max(added, key=lambda e: e["id"]), "actor") if added else None
+    replay = sorted((e for e in events if e.get("event") in LABEL_EVENTS
+                     and (e.get("label") or {}).get("name") == label),
+                    key=lambda e: (e.get("created_at", ""), e["id"]))
+    if not replay or replay[-1]["event"] != "labeled":
+        return None
+    return _login(replay[-1], "actor")
 
 
-def decide(pr: dict, statuses: list[dict], events: list[dict], owner: str) -> Decision:
-    """`bench/approval` for `pr`, from its head's statuses and its events."""
-    if not is_numbers_pr(pr):
-        return Decision(SUCCESS, "Not a numbers PR.")
-    state = compare_state(statuses)
-    if state is None:
-        return Decision(FAILURE, "The head is not a commit bench.yml measured: run the benchmark again.")
+def accepted(head: Head, label: str, owner: str) -> bool:
+    """The owner's `label` is on one of the PRs of this head, added last."""
+    for pr, events in head.prs:
+        who = label_by(pr, events, label)
+        if who is not None and who.lower() == owner.lower():
+            return True
+    return False
+
+
+def decide(head: Head, owner: str) -> Decision:
+    """`bench/approval` for the head of `head.pr`."""
+    state = compare_state(head)
     if state == SUCCESS:
         return Decision(SUCCESS, "Numbers moved, none got worse: the normal review applies.")
-    if state != FAILURE:
+    if state == FAILURE:
+        if accepted(head, ACCEPT_LABEL, owner):
+            return Decision(SUCCESS, f"Something got worse; {owner} accepted it ({ACCEPT_LABEL}).")
+        return Decision(FAILURE, f"Something got worse: needs {owner}'s {ACCEPT_LABEL} label.")
+    if state is not None:
         return Decision(FAILURE, f"{COMPARE_CONTEXT} is {state}, neither {SUCCESS} nor {FAILURE}.")
-    who = accepted_by(pr, events)
-    if who is not None and who.lower() == owner.lower():
-        return Decision(SUCCESS, f"Something got worse; {owner} accepted it ({ACCEPT_LABEL}).")
-    return Decision(FAILURE, f"Something got worse: needs {owner}'s {ACCEPT_LABEL} label.")
+    branch = same_repo_branch(head.pr, head.repo)
+    if branch is not None and BRANCH.fullmatch(branch):
+        return Decision(FAILURE, "The head is not a commit bench.yml measured: run the benchmark again.")
+    if any(path.startswith(PUBLISHED_PREFIX) for path in head.files):
+        if accepted(head, MANUAL_LABEL, owner):
+            return Decision(SUCCESS, f"published-bench edited by hand; {owner} accepted it ({MANUAL_LABEL}).")
+        return Decision(FAILURE, f"Edits published-bench outside bench.yml: needs {owner}'s {MANUAL_LABEL} label.")
+    return Decision(SUCCESS, "Publishes no benchmark output.")
 
 
 def _gh(*args: str) -> object:
@@ -118,23 +182,43 @@ def _all_pages(path: str) -> list[dict]:
     return [item for page in pages for item in page]
 
 
+def _set(repo: str, sha: str, state: str, description: str, target_url: str) -> None:
+    _gh("--method", "POST", f"repos/{repo}/statuses/{sha}", "-f", f"state={state}",
+        "-f", f"context={APPROVAL_CONTEXT}", "-f", f"description={description}", "-f", f"target_url={target_url}")
+
+
+def read_head(repo: str, number: int) -> Head:
+    """Everything `decide` reads, from the API."""
+    pr = _gh(f"repos/{repo}/pulls/{number}")
+    sha = pr["head"]["sha"]
+    statuses = _all_pages(f"repos/{repo}/commits/{sha}/statuses")
+    ids = {rid for s in statuses if s.get("context") == COMPARE_CONTEXT
+           and (rid := run_id(s.get("target_url", ""), repo)) is not None}
+    runs = {rid: _gh(f"repos/{repo}/actions/runs/{rid}") for rid in sorted(ids)}
+    parents = [p["sha"] for p in _gh(f"repos/{repo}/commits/{sha}")["parents"]]
+    files: list[str] = []
+    for f in _all_pages(f"repos/{repo}/pulls/{number}/files"):
+        files += [f["filename"], *([f["previous_filename"]] if f.get("previous_filename") else [])]
+    others = [p for p in _all_pages(f"repos/{repo}/commits/{sha}/pulls")
+              if p["state"] == "open" and p["number"] != number and p["head"]["sha"] == sha]
+    prs = [(p, _all_pages(f"repos/{repo}/issues/{p['number']}/events")) for p in (pr, *others)]
+    return Head(repo, pr, statuses, runs, parents, files, prs)
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Set bench/approval on a PR's head.")
     p.add_argument("--repo", required=True, help="OWNER/NAME")
     p.add_argument("--pr", type=int, required=True)
-    p.add_argument("--owner", required=True, help="the login whose label accepts worse numbers")
+    p.add_argument("--owner", required=True, help="the login whose labels accept")
     p.add_argument("--target-url", required=True, help="the run that decided")
     args = p.parse_args(argv)
-    pr = _gh(f"repos/{args.repo}/pulls/{args.pr}")
-    sha = pr["head"]["sha"]
-    statuses = _all_pages(f"repos/{args.repo}/commits/{sha}/statuses")
-    events = _all_pages(f"repos/{args.repo}/issues/{args.pr}/events")
-    decision = decide(pr, statuses, events, args.owner)
-    _gh(
-        "--method", "POST", f"repos/{args.repo}/statuses/{sha}",
-        "-f", f"state={decision.state}", "-f", f"context={APPROVAL_CONTEXT}",
-        "-f", f"description={decision.description}", "-f", f"target_url={args.target_url}",
-    )
+    sha = _gh(f"repos/{args.repo}/pulls/{args.pr}")["head"]["sha"]
+    _set(args.repo, sha, PENDING, "Deciding.", args.target_url)
+    head = read_head(args.repo, args.pr)
+    if head.pr["head"]["sha"] != sha:
+        raise RuntimeError(f"#{args.pr}'s head moved while deciding: run again")
+    decision = decide(head, args.owner)
+    _set(args.repo, sha, decision.state, decision.description, args.target_url)
     print(f"{APPROVAL_CONTEXT} on {sha[:12]} of #{args.pr}: {decision.state} ({decision.description})")
     return 0
 

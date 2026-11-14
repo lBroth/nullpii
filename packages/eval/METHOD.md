@@ -12,7 +12,9 @@ This page explains how the numbers in the README are made, and what they show an
 ![Documents, macro char-F2 per tool over five sets and over English documents only: rizzo-pii 0.770 and 0.742, nvidia/gliner-PII (library) 0.720 and 0.672, OpenMed privacy-filter-multilingual-v2 0.717 and 0.717, pii-identifier 0.701 and 0.714, ettin-68m 0.699 and 0.706, openai privacy-filter 0.693 and 0.746, OpenMed PII Large 0.682 and 0.700, OpenMed PII Small 0.673 and 0.683, gliner-pii-large 0.656 and 0.590, nullpii 0.5, every category 0.653 and 0.603. The table below has every value.](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/r3-documents.svg)
 <!-- fig-r3:end -->
 
-![GPU latency at 30,000 characters, median milliseconds per call: from ettin-68m at 157 to NVIDIA's nemotron server pipeline at 2,835; nullpii 463 with its core labels and 489 with every category masked. The tables below have every value.](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/latency-gpu.svg)
+<!-- fig-latency:begin -->
+![GPU latency at 30,000 characters, median milliseconds per call: from ettin-68m at 157 to nemotron-pii (NVIDIA server pipeline) at 2,835; nullpii 454 in its agent default and 495 with every category masked. The tables below have every value.](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/latency-gpu.svg)
+<!-- fig-latency:end -->
 
 <!-- glance:begin -->
 | What | Result for nullpii 0.5 |
@@ -21,8 +23,8 @@ This page explains how the numbers in the README are made, and what they show an
 | Agent traffic on CredData (B1) / GitHub issues (B2): lets through | 24.5% / 11.5% (B1: 13.0% without the items CredData labels `UUID`) |
 | Documents (R3), macro char-F2 over five held-out sets | 0.653 with every category masked, tenth of 15 (rizzo-pii 0.770); English only 0.603 |
 | Scored with the PIIMB leaderboard's method | 0.851 average F2 (every category masked) |
-| Latency of nullpii 0.5 (timed by hand) on GPU (RTX 4070 Ti), 30,000 characters | 463 ms; every category masked 489 ms |
-| Latency of nullpii 0.5 (timed by hand) on CPU (Core i7-13700KF), 30,000 characters | 6,984 ms |
+| Latency on GPU (NVIDIA RTX 4070 Ti), 30,000 characters, timed by hand on `main` at 6f44a03 | 454 ms in its agent default; 495 ms with every category masked |
+| Latency on CPU (Intel Core i7-13700KF), 30,000 characters, timed by hand on `main` at 6f44a03 | 6,843 ms in its agent default; 7,603 ms with every category masked |
 <!-- glance:end -->
 
 The sections below say how each number is made, with every tool's row.
@@ -607,9 +609,20 @@ The published run's paired intervals are against nullpii's core regime, which is
 - PIIMB shaped one design decision. An earlier result, on which nullpii missed every category it did not mask then, is why the five extended categories exist. They were masked by default until 0.5; the 0.5 default for coding agents leaves them readable. PIIMB has not been used to tune anything.
 <!-- piimb:end -->
 
-**Latency** is in the README. It is measured on idle machines, every tool on the same texts of coding-agent material (code, logs, prose and tool output) at 2,000, 30,000 and 100,000 characters, after a warm-up. On GPU every tool runs the full plan: 60, 12 and 5 texts per size, in three rounds; the table shows the median of the rounds' medians. On CPU the full plan takes hours for a single tool, so every tool runs the short plan: one text of each kind at 2,000 and 30,000 characters (6 each) and three at 100,000, timed once; the table shows their median. The short plan's texts are a subset of the full plan's.
+## Latency
 
-Every tool was timed on the same idle machine; nullpii's rows were repeated with the release build and moved by less than 2%. The 0.5 default (dates readable, so fewer labels asked of the model) takes 32, 458 and 1,642 ms on GPU and 384, 6,104 and 23,075 ms on CPU, at 2,000, 30,000 and 100,000 characters.
+Latency is timed by hand on a quiet machine, never by the benchmark workflow. Every tool runs on the same texts of coding-agent material (code, logs, prose and tool output) at 2,000, 30,000 and 100,000 characters, after a warm-up, each at its default setting. `scripts/ab/harness.mjs` builds the texts from files of this repository at a fixed commit, recorded with each timing (`dump-corpus` writes them, and `scripts/ab/competitor_latency.py` times the other tools on them). On GPU every tool runs the full plan, in rounds, and the table shows the median of the rounds' medians. On CPU the full plan takes hours for a single tool, so every tool runs the short plan, a subset of the full plan's texts, and the table shows their median. The README's tables and chart, the rows in [Results at a glance](#results-at-a-glance) and the paragraphs below are rendered from [`published-bench/latency/latency.json`](https://github.com/lBroth/nullpii/blob/main/packages/eval/published-bench/latency/latency.json), which no run of the workflow changes; a new timing is added by hand (`bench_pipeline.py latency-run` turns a harness file into the run it keeps) and needs the owner's `bench-accept-manual`.
+
+<!-- latency-method:begin -->
+- **Machine:** Linux, NVIDIA RTX 4070 Ti and Intel Core i7-13700KF, idle.
+- **nullpii:** timed on 30 October 2026 with the build of `main` at 6f44a03 (after release 0.5.4), the model `lBroth/nullpii@5dd3c7991483c3b1bccb68beba53890d24cbd2d3`, onnxruntime-node 1.30.0 and Node v24.15.0 (`scripts/ab/harness.mjs latency`, texts from commit `5130a64`). In each table it was timed in two runs of the agent default and one run of every category masked; a row takes the median of every round's median of its runs.
+- **Every other tool:** timed on 21 October 2026 on the same machine (`scripts/ab/competitor_latency.py`, the same texts, from commit `5130a64`), each at its default operating point.
+- **Plans:** on GPU, 60, 12 and 5 texts per size, three rounds; the table shows the median of the rounds' medians. On CPU, 6, 6 and 3 texts per size, timed once; the table shows their median.
+
+**Partial presets cost an extra model pass.** A preset that masks secrets but leaves readable a category the agent default masks (the secrets-only preset, `/pii allow url`) runs a second model pass, prompted with the labels the preset masks, whenever the first pass finds anything (`src/secret-pass.ts`); the agent default and every category masked run one. Timed in the same session with the secrets-only preset, nullpii took 895 ms at 30,000 characters on GPU and 12,608 ms on CPU, 2.0 and 1.8 times its agent default's (454 ms and 6,843 ms).
+
+The times, with what each row timed, are in [`published-bench/latency/latency.json`](https://github.com/lBroth/nullpii/blob/main/packages/eval/published-bench/latency/latency.json); nullpii's runs keep the harness's aggregates and no text.
+<!-- latency-method:end -->
 
 ## Limits
 
@@ -618,7 +631,8 @@ Every tool was timed on the same idle machine; nullpii's rows were repeated with
 - Five gated datasets is a small sample of the world, and only English, the main EU languages and Greek are covered.
 - Gold labels differ in scope between datasets. PIILO labels only students' names, contact details, addresses, URLs and ids, so another person's name, a date or a place that a tool masks counts against it. Tonic's gold does not include city, state or postcode, which affects every precision figure on it.
 - The tuning set is close to nullpii's training distribution and partly to some competitors' (it is used to choose, never to claim).
-- Latency depends on hardware and load; it is measured on idle machines, every tool on the same corpus.
+- A run of the benchmark workflow measures nullpii alone; the other tools' rows are scored from their predictions of the 0.5 run, at the model revisions pinned then, so a tool's newer release is not in them.
+- Latency depends on hardware and load. Every tool is timed on the same idle machine and texts, but nullpii and the other tools were not timed in one session: nullpii on 30 October 2026, the other tools on 21 October 2026.
 <!-- limits:end -->
 
 ## Reproduce

@@ -13,8 +13,9 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from pipeline import blocks_ab1 as ab1
+from pipeline import blocks_latency as lat
 from pipeline import blocks_r3 as r3
-from pipeline import views
+from pipeline import latency, views
 from pipeline.prose import pct
 
 Block = Callable[[views.Bench], str]
@@ -25,9 +26,6 @@ METHOD = "packages/eval/METHOD.md"
 MODEL_CARD = "MODEL_CARD.md"
 FIGURES = "assets/readme"
 RAW = "https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/"
-# Hand-kept data blocks no step renders yet: latency (measured by hand on
-# quiet machines; `readme_figures.py` draws its chart from this block).
-KEPT = frozenset({"latency"})
 ALT_LISTED = 5
 
 
@@ -65,6 +63,25 @@ def fig_r3(b: views.Bench) -> str:
     text = ", ".join(f"{name} {all5:.3f} and {english:.3f}" for name, all5, english, _ in listed)
     return ("![Documents, macro char-F2 per tool over five sets and over English documents only: "
             f"{text}. The table below has every value.]({RAW}r3-documents.svg)")
+
+
+# Latency: timed by hand, read from published-bench/latency/latency.json
+# whatever outputs are rendered (`latency.py`).
+
+def fig_latency(b: views.Bench) -> str:
+    return lat.fig_alt(latency.load())
+
+
+def readme_latency_intro(b: views.Bench) -> str:
+    return lat.readme_intro(latency.load())
+
+
+def readme_latency(b: views.Bench) -> str:
+    return lat.readme_tables(latency.load())
+
+
+def method_latency(b: views.Bench) -> str:
+    return lat.method(latency.load())
 
 
 # README -------------------------------------------------------------------------
@@ -186,12 +203,6 @@ def method_ab1_intro(b: views.Bench) -> str:
 
 # METHOD -------------------------------------------------------------------------
 
-# Timed by hand on nullpii 0.5, whatever version the other rows measured.
-LATENCY_GLANCE = ("| Latency of nullpii 0.5 (timed by hand) on GPU (RTX 4070 Ti), 30,000 characters | 463 ms; every"
-                  " category masked 489 ms |\n"
-                  "| Latency of nullpii 0.5 (timed by hand) on CPU (Core i7-13700KF), 30,000 characters | 6,984 ms |")
-
-
 def glance(b: views.Bench) -> str:
     a, b1, b2 = (ab1.standing(b, k) for k in (ab1.A, ab1.B1, ab1.B2))
     return "\n".join([
@@ -203,7 +214,7 @@ def glance(b: views.Bench) -> str:
         f" {pct(b2.me['leak_rate'])}{ab1.uuid_glance(b)} |",
         f"| Documents (R3), macro char-F2 over five held-out sets | {r3.glance_documents(b)} |",
         f"| Scored with the PIIMB leaderboard's method | {r3.glance_piimb(b)} |",
-        LATENCY_GLANCE,
+        lat.glance(latency.load()),
     ])
 
 
@@ -237,12 +248,13 @@ METHOD_LIMITS = (
     " not include city, state or postcode, which affects every precision figure on it.\n"
     "- The tuning set is close to nullpii's training distribution and partly to some competitors' (it is used to"
     " choose, never to claim).\n"
-    "- Latency depends on hardware and load; it is measured on idle machines, every tool on the same corpus."
+    "- A run of the benchmark workflow measures nullpii alone; the other tools' rows are scored from their predictions"
+    " of the 0.5 run, at the model revisions pinned then, so a tool's newer release is not in them."
 )
 
 
 def method_limits(b: views.Bench) -> str:
-    return r3.f05_limit(b) + "\n" + METHOD_LIMITS
+    return r3.f05_limit(b) + "\n" + METHOD_LIMITS + "\n" + lat.limit(latency.load())
 
 
 def method_lodo(b: views.Bench) -> str:
@@ -289,10 +301,14 @@ BLOCKS: dict = {
         "matrix": readme_matrix,
         "r3-configs": r3.configs_paragraph,
         "r3-detail": r3.detail,
+        "fig-latency": fig_latency,
+        "latency-intro": readme_latency_intro,
+        "latency": readme_latency,
     },
     METHOD: {
         "fig-ab1": fig_ab1,
         "fig-r3": fig_r3,
+        "fig-latency": fig_latency,
         "glance": glance,
         "ab1-roundtrip": ab1.roundtrip_sentence,
         "ab1-results-intro": method_ab1_intro,
@@ -312,6 +328,7 @@ BLOCKS: dict = {
         "r3-lodo": method_lodo,
         "r3-sensitivity": r3.sensitivity,
         "piimb": method_piimb,
+        "latency-method": method_latency,
         "limits": method_limits,
     },
     MODEL_CARD: {

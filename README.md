@@ -313,15 +313,19 @@ nullpii is shown in the configurations it is published in: every category masked
 
 ### Latency
 
-![GPU latency at 30,000 characters, median milliseconds per call: from ettin-68m at 157 to NVIDIA's nemotron server pipeline at 2,835; nullpii 463 with its core labels and 489 with every category masked. The tables below have every value.](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/latency-gpu.svg)
+<!-- fig-latency:begin -->
+![GPU latency at 30,000 characters, median milliseconds per call: from ettin-68m at 157 to nemotron-pii (NVIDIA server pipeline) at 2,835; nullpii 454 in its agent default and 495 with every category masked. The tables below have every value.](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/latency-gpu.svg)
+<!-- fig-latency:end -->
 
-Every tool runs the same coding-agent texts on the same idle machine, after a warm-up, at its default setting. nullpii has two rows: its core labels (the five extended categories off, dates on) and every category masked. Its 0.5 default, which also leaves dates readable and so asks the model for fewer labels, takes the same time as the core labels on GPU (458 ms at 30,000 characters) and about 13% less on CPU (6,104 ms); it was timed with the release build, which also matched the other nullpii rows to within 2% ([METHOD](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md)).
+<!-- latency-intro:begin -->
+Every tool runs the same coding-agent texts on the same idle machine, after a warm-up, at its default setting. nullpii has two rows, its agent default and every category masked, timed on 30 October 2026 with the build of `main` at 6f44a03 (after release 0.5.4); every other tool was timed on 21 October 2026. Latency is timed by hand, never by the benchmark workflow ([METHOD](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md#latency)).
+<!-- latency-intro:end -->
 
 <details>
 <summary>Tables: GPU and CPU, 2,000 to 100,000 characters</summary>
 
 <!-- latency:begin -->
-The tables show the median time per call, in milliseconds, for texts of 2,000, 30,000 and 100,000 characters of coding-agent material (code, logs, prose, tool output). Bold marks nullpii's name and the fastest value in each column. How the texts are chosen: [`METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md).
+The tables show the median time per call, in milliseconds, for texts of 2,000, 30,000 and 100,000 characters of coding-agent material (code, logs, prose, tool output). Bold marks nullpii's name and the fastest value in each column. How the texts are chosen and when each row was timed: [`METHOD.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/METHOD.md#latency).
 
 **GPU** (Linux, NVIDIA RTX 4070 Ti; 60, 12 and 5 texts per size, three rounds). nullpii loads `model_fp16.onnx` on CUDA.
 
@@ -333,14 +337,14 @@ The tables show the median time per call, in milliseconds, for texts of 2,000, 3
 | piiranha | 25 | 342 | 1,177 |
 | pii-identifier | 19 | 407 | 1,411 |
 | gliner-stream-pii | 30 | 412 | 1,421 |
-| **nullpii** (core labels) | 32 | 463 | 1,650 |
-| **nullpii** (every category masked) | 34 | 489 | 1,747 |
+| **nullpii** (agent default) | 32 | 454 | 1,634 |
 | rizzo-pii | 27 | 494 | 1,715 |
+| **nullpii** (every category masked) | 35 | 495 | 1,750 |
 | deberta PII | 35 | 631 | 2,268 |
 | OpenMed PII Small | 46 | 794 | 3,423 |
 | OpenMed PII Large | 80 | 1,209 | 5,126 |
 | nemotron-pii (`nvidia/gliner-PII`, library) | 136 | 1,478 | 5,208 |
-| gliner-pii-large-v1 | 83 | 1,892 | 6,550 |
+| gliner-pii-large | 83 | 1,892 | 6,550 |
 | nemotron-pii (NVIDIA server pipeline) | 189 | 2,835 | 9,966 |
 
 **CPU** (Linux, Intel Core i7-13700KF, every tool on CPU; 6, 6 and 3 texts per size, timed once, because the full plan takes hours per tool here).
@@ -351,8 +355,8 @@ The tables show the median time per call, in milliseconds, for texts of 2,000, 3
 | OpenMed PII Small | 207 | 2,603 | 5,279 |
 | piiranha | 386 | 6,208 | 20,493 |
 | pii-identifier | 326 | 6,609 | 24,116 |
-| **nullpii** (core labels) | 394 | 6,984 | 24,674 |
-| **nullpii** (every category masked) | 432 | 7,655 | 27,048 |
+| **nullpii** (agent default) | 383 | 6,843 | 24,268 |
+| **nullpii** (every category masked) | 430 | 7,603 | 26,969 |
 | ettin-68m | 535 | 8,882 | 29,640 |
 | rizzo-pii | 413 | 10,962 | 32,918 |
 | deberta PII | 654 | 11,933 | 42,702 |
@@ -360,12 +364,12 @@ The tables show the median time per call, in milliseconds, for texts of 2,000, 3
 | gliner_multi_pii (ONNX) | 1,300 | 15,549 | 55,069 |
 | gliner-stream-pii | 1,351 | 20,613 | 69,957 |
 | nemotron-pii (`nvidia/gliner-PII`, library) | 2,090 | 25,941 | 94,524 |
-| gliner-pii-large-v1 | 1,336 | 35,183 | 116,889 |
+| gliner-pii-large | 1,336 | 35,183 | 116,889 |
 | nemotron-pii (NVIDIA server pipeline) | 3,101 | 48,415 | 168,702 |
 | OpenMed privacy-filter-multilingual-v2 | 9,133 | 132,528 | 448,206 |
 | openai privacy-filter | 9,514 | 137,526 | 467,769 |
 
-Presidio is mostly patterns plus a small spaCy model; its macro char-F2 is 0.628. OpenMed Large's time depends a lot on the text, so its 100k figure, from three texts, is rough. gliner_multi_pii (ONNX) runs on CPU only, and Presidio has no GPU path, so neither is in the GPU table.
+Presidio is mostly patterns plus a small spaCy model; its accuracy is in the benchmark tables above. OpenMed Large's time depends a lot on the text, so its 100k figure, from three texts, is rough. gliner_multi_pii (ONNX) runs on CPU only, and Presidio has no GPU path, so neither is in the GPU table.
 <!-- latency:end -->
 
 </details>

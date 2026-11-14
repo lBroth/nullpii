@@ -24,6 +24,12 @@ const ADVERSARIAL_UNITS = [
   'Basic ',
   'Bearer a1',
   'eyJ',
+  // The key words and separators of the field recognizers.
+  'password',
+  'password=',
+  'password ',
+  'a_',
+  'token: ',
 ];
 const SIZE = 100_000;
 /** A quadratic pattern takes seconds at this size (certificate-context
@@ -110,6 +116,31 @@ describe('the partial PEM walk runs in linear time', () => {
     expect(runRecognizers(text, partial, [])).toHaveLength(2);
     expect(performance.now() - t0).toBeLessThan(BUDGET_MS);
   });
+});
+
+// The field recognizers look back for the whole key and check the value
+// in a function (`credential-fields.ts`), on every key word they match.
+describe('the field recognizers run in linear time', () => {
+  const fields = DEFAULT_RECOGNIZERS.filter(
+    (r) => r.id === 'core:password-field' || r.id === 'core:token-field',
+  );
+  for (const unit of [
+    'password=hunter22 ',
+    'password=password=',
+    '--password ',
+    'a_password: ',
+    `${'a_'.repeat(40)}token: ${'Ab1'.repeat(80)} `,
+    'token: Ab1/Ab1/Ab1/Ab1/Ab1 ',
+    'secret: x.y.z.w.v.u.t.s.r.q ',
+  ]) {
+    it(`on ${MAX_INPUT_CHARS} characters of ${JSON.stringify(unit.slice(0, 40))}`, () => {
+      const text = unit.repeat(Math.ceil(MAX_INPUT_CHARS / unit.length)).slice(0, MAX_INPUT_CHARS);
+      expect(fields).toHaveLength(2);
+      const t0 = performance.now();
+      runRecognizers(text, fields, []);
+      expect(performance.now() - t0).toBeLessThan(BUDGET_MS);
+    });
+  }
 });
 
 describe('runRecognizers', () => {

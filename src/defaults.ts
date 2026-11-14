@@ -8,6 +8,12 @@
 // Strict TS index-access fallbacks (e.g. `arr[i] ?? 0` under
 // `noUncheckedIndexedAccess`) are NOT user-facing defaults and stay inline.
 
+import {
+  PASSWORD_FIELD_PATTERN,
+  TOKEN_FIELD_PATTERN,
+  passwordFieldSpan,
+  tokenFieldSpan,
+} from './credential-fields.js';
 import { partialPemKeySpan } from './pem-partial.js';
 import type { BackendName, ModelVariant, PiiCategory, UrlRelease } from './types/index.js';
 import type { Recognizer } from './types/recognizer.js';
@@ -429,6 +435,29 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
       /(?<![A-Za-z0-9+/=])(?:eyJhdXRocyI6|eyAiYXV0aHMi|ewogICJhdXRocyI6|ewoJImF1dGhz|ewogICAgImF1dGhz)[A-Za-z0-9+/]*={0,2}/g,
     label: 'secret',
     confidence: 0.99,
+  },
+
+  // ─── Credentials after a credential-named key ─────────────────
+  // The literal after a key that names a password (`db_password=`,
+  // `"passwd": "`, `--password `) or a token (`api_key: `, `jwt_secret=`,
+  // `"user_token"=>"`, `session_id=`): the value only. The key list is
+  // `credential-keys.ts`, shared with the UUID filter; the value rules
+  // (a literal, not a reference, call, placeholder, type, path, URL or
+  // UUID; 6+ characters for a password, 16+ with a letter and a digit
+  // for a token) are `credential-fields.ts`.
+  {
+    id: 'core:password-field',
+    pattern: PASSWORD_FIELD_PATTERN,
+    label: 'secret',
+    confidence: 0.95,
+    span: passwordFieldSpan,
+  },
+  {
+    id: 'core:token-field',
+    pattern: TOKEN_FIELD_PATTERN,
+    label: 'secret',
+    confidence: 0.95,
+    span: tokenFieldSpan,
   },
 
   // ─── Google / Discord / Telegram / Mailgun / Mapbox / Square / PayPal / Heroku ──

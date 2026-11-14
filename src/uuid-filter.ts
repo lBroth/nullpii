@@ -16,7 +16,8 @@
  * a bearer token. So a model span labelled `account_number` whose text is
  * a UUID is:
  * - relabelled `secret` right after a credential-named key on its line
- *   (`api_key=`, `"token": "`, `Authorization: Bearer `);
+ *   (`api_key=`, `"token": "`, `Authorization: Bearer `; the list is
+ *   `credential-keys.ts`);
  * - dropped anywhere else, so the UUID stays readable.
  * A UUID with any other label is left as it is.
  *
@@ -25,13 +26,10 @@
  * it overlaps, so a span dropped later could leave a secret in the clear.
  */
 
+import { CREDENTIAL_KEY_BEFORE } from './credential-keys.js';
+
 /** A UUID (any version), with the stray punctuation span boundaries carry. */
 const UUID_SHAPE = /^\W*[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\W*$/i;
-
-/** A credential-named key, with its quote and separator, right before a
- * value: `api_key=`, `"client_secret": "`, `X-Auth-Token: `, `Bearer `. */
-const CREDENTIAL_KEY_BEFORE =
-  /(?:key|token|secret|pass(?:w(?:or)?d)?|pwd|credentials?|auth\w*|bearer)["']?\s*(?::|=>?)?\s*["']?$/i;
 
 /** How far back on its line a span's credential key is looked for. */
 const KEY_WINDOW_CHARS = 48;

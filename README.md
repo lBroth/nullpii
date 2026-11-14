@@ -180,7 +180,7 @@ Or from a shell: `claude plugin marketplace add lBroth/nullpii@v0.5.4`, then `cl
 | `private_vehicle_id` | VIN (checksum), plates IT / FR / DE / UK / ES / US | model + regex |
 | `private_geolocation` | coordinate pairs (range-checked), DMS notation | model + regex |
 | `account_number` | IBAN (mod-97), cards (Luhn), SSN, crypto addresses, national and tax ids (DNI, CPF, EIN, codice fiscale, Partita IVA), Medicare, NPI, insurance policy, IMEI; medical record numbers by the model only | model + regex (validated) |
-| `secret` | API keys (AWS, GitHub, OpenAI, Anthropic, Stripe and 30+ more), JWTs, private keys (whole blocks and cut-off ones), passwords in URLs, `Basic` and `Bearer` credentials, Docker registry configs, passwords and PINs in context, base64-wrapped values | model + regex + base64 |
+| `secret` | API keys (AWS, GitHub, OpenAI, Anthropic, Stripe and 30+ more), JWTs, private keys (whole blocks and cut-off ones), passwords in URLs, `Basic` and `Bearer` credentials, Docker registry configs, passwords and tokens after a key that names them (`db_password=`, `api_key:`), PINs in context, base64-wrapped values | model + regex + base64 |
 | `private_organization` | employers, company names | model |
 | `private_occupation` | job titles, employment status, education | model |
 | `private_demographic` | gender, age, ethnicity, nationality, language | model |

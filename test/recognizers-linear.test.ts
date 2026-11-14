@@ -35,6 +35,10 @@ const SIZE = 100_000;
 /** A quadratic pattern takes seconds at this size (certificate-context
  * took over 20 s at 10k characters); every linear one takes a few ms. */
 const BUDGET_MS = 250;
+/** The same at `MAX_INPUT_CHARS`, ten times the text: a quadratic pattern
+ * would take minutes there, a linear one a few hundred ms on a shared CI
+ * runner under coverage (250 ms was missed at 252 to 534 ms). */
+const MAX_INPUT_BUDGET_MS = 2_000;
 
 function timeMatch(pattern: RegExp, text: string): number {
   const re = new RegExp(
@@ -76,7 +80,7 @@ describe('recognizer patterns run in linear time', () => {
         .slice(0, MAX_INPUT_CHARS);
       const pem = DEFAULT_RECOGNIZERS.find((r) => r.id === 'core:pem-private-key');
       expect(pem).toBeDefined();
-      if (pem) expect(timeMatch(pem.pattern, text)).toBeLessThan(BUDGET_MS);
+      if (pem) expect(timeMatch(pem.pattern, text)).toBeLessThan(MAX_INPUT_BUDGET_MS);
     });
   }
 });
@@ -106,7 +110,7 @@ describe('the partial PEM walk runs in linear time', () => {
       expect(partial).toHaveLength(1);
       const t0 = performance.now();
       runRecognizers(text, partial, []);
-      expect(performance.now() - t0).toBeLessThan(BUDGET_MS);
+      expect(performance.now() - t0).toBeLessThan(MAX_INPUT_BUDGET_MS);
     });
   }
   it(`on one ${MAX_INPUT_CHARS}-character body between two markers`, () => {
@@ -114,7 +118,7 @@ describe('the partial PEM walk runs in linear time', () => {
     const text = `${marker('BEGIN', 'PRIVATE KEY')}\n${body}${marker('END', 'EC PRIVATE KEY')}`;
     const t0 = performance.now();
     expect(runRecognizers(text, partial, [])).toHaveLength(2);
-    expect(performance.now() - t0).toBeLessThan(BUDGET_MS);
+    expect(performance.now() - t0).toBeLessThan(MAX_INPUT_BUDGET_MS);
   });
 });
 
@@ -138,7 +142,7 @@ describe('the field recognizers run in linear time', () => {
       expect(fields).toHaveLength(2);
       const t0 = performance.now();
       runRecognizers(text, fields, []);
-      expect(performance.now() - t0).toBeLessThan(BUDGET_MS);
+      expect(performance.now() - t0).toBeLessThan(MAX_INPUT_BUDGET_MS);
     });
   }
 });

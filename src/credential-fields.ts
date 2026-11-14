@@ -5,6 +5,7 @@ import {
   credentialKeySource,
   credentialKeyValue,
 } from './credential-keys.js';
+import { isStandInValue } from './stand-in-values.js';
 import type { RecognizerSpan } from './types/index.js';
 
 /**
@@ -17,9 +18,9 @@ import type { RecognizerSpan } from './types/index.js';
  * value must be a literal: never a reference (`${DB_PASSWORD}`,
  * `$PASS`, `%(password)s`, `process.env.X`, `os.environ[…]`,
  * `config.password`, `request.form[`, `DB_PASSWORD`, a variable such as
- * `hashedPassword`), a call (`getpass()`), a placeholder (`<password>`,
- * `your_token_here`, `xxx`, `****`), a type or a keyword (`string`,
- * `null`, `required`), a path (`./secret.txt`,
+ * `hashedPassword`), a call (`getpass()`), a placeholder or a stand-in
+ * (`<password>`, `⟦pw⟧`, `stand-in-values.ts`: `your_token_here`, `xxx`,
+ * `****`, `string`, `null`, `changeme`), a path (`./secret.txt`,
  * `/run/secrets/db_password`), a URL, or a UUID (an id: `uuid-filter.ts`
  * keeps one after a credential key masked when the model flags it). A
  * password is at least {@link MIN_PASSWORD_CHARS} characters, a token at
@@ -55,9 +56,10 @@ export const PASSWORD_FIELD_PATTERN = fieldPattern('password');
 export const TOKEN_FIELD_PATTERN = fieldPattern('token');
 
 /** Starts of a value that is not a literal: references and templates
- * (`$`, `%`, `{`), calls and groupings, tags and placeholders (`<`, `[`,
- * `!` of a YAML tag), masks (`*`), decorators and handles (`@`). */
-const NOT_LITERAL_START = /^[$%{(<[*@!]/;
+ * (`$`, `%`, `{`, the `⟦` of a template slot), calls and groupings, tags
+ * and placeholders (`<`, `[`, `!` of a YAML tag), masks (`*`),
+ * decorators and handles (`@`). */
+const NOT_LITERAL_START = /^[$%{(<[*@!⟦]/;
 /** A dotted reference: `config.password`, `settings.DB_PASS`, `process.env.TOKEN`. */
 const DOTTED_REFERENCE = /^[A-Za-z_][\w$]*(?:\.[A-Za-z_$][\w$]*)+$/;
 /** A subscript: `request.form[`, `params[`, `data["`. */
@@ -72,63 +74,6 @@ const WORD_IDENTIFIER = /^[A-Za-z]+(?:_[A-Za-z]+)*$/;
 const ENV_LOOKUP = /^(?:os\.environ|process\.env|ENV)\b/;
 /** An environment variable's name: `DB_PASSWORD`, `API_TOKEN`. */
 const ENV_NAME = /^[A-Z][A-Z0-9]*_[A-Z0-9_]*$/;
-/** A mask or a filler: `xxx`, `****`, `...`, `___`, `###`. */
-const MASK = /^[xX*.#_-]+$/;
-/** A placeholder: `your_password`, `my-token`, `the_secret`, `some_key`, `api_key_here`. */
-const PLACEHOLDER = /^(?:your|my|the|some)[_-]?\w*$|_here$/i;
-/** Type names, keywords and stand-ins written where a value goes. */
-const TYPE_WORDS: ReadonlySet<string> = new Set([
-  'string',
-  'str',
-  'bytes',
-  'number',
-  'int',
-  'integer',
-  'boolean',
-  'bool',
-  'none',
-  'null',
-  'nil',
-  'true',
-  'false',
-  'undefined',
-  'required',
-  'optional',
-  'any',
-  'object',
-  'secretstr',
-  'text',
-  'varchar',
-  'password',
-  'token',
-  'secret',
-  'hidden',
-  'redacted',
-  'masked',
-  'changeme',
-  'example',
-  'value',
-  'env',
-  'type',
-  'char',
-  'function',
-  'func',
-  'lambda',
-  'self',
-  'this',
-  'new',
-  'await',
-  'return',
-  'get',
-  'set',
-  'default',
-  'buffer',
-  'uuid',
-  'date',
-  'datetime',
-  'list',
-  'dict',
-]);
 /** A path: relative (`./`, `../`), home (`~/`) or a drive (`C:\`). */
 const RELATIVE_PATH = /^(?:\.{1,2}|~)[/\\]|^[A-Za-z]:[/\\]/;
 /** An absolute path of at least two segments. A leading `/` alone is
@@ -143,17 +88,13 @@ const LETTER = /[A-Za-z]/;
 const DIGIT = /\d/;
 /** Characters a key is written with. */
 const KEY_CHAR = /[A-Za-z0-9_.-]/;
-/** Trailing `?` or `!` of a type or a keyword (`string?`, `bool!`). */
-const TYPE_SUFFIX = /[?!]+$/;
 
 /** True when `value` is a literal, not a reference, call, placeholder, type, path, URL or UUID. */
 export function isCredentialLiteral(value: string): boolean {
   if (NOT_LITERAL_START.test(value) || value.includes('(')) return false;
   if (DOTTED_REFERENCE.test(value) || SUBSCRIPT.test(value) || URL_SCHEME.test(value)) return false;
   if (ENV_LOOKUP.test(value) || ENV_NAME.test(value) || isCredentialVariable(value)) return false;
-  if (MASK.test(value) || PLACEHOLDER.test(value)) return false;
-  if (TYPE_WORDS.has(value.toLowerCase().replace(TYPE_SUFFIX, ''))) return false;
-  if (UUID.test(value)) return false;
+  if (isStandInValue(value) || UUID.test(value)) return false;
   return !isPathShaped(value);
 }
 

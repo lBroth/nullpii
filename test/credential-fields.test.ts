@@ -31,7 +31,7 @@ describe('credentialKeyValue', () => {
     for (const key of ['api_key', 'x-api-key', 'apiKey', 'APIKEY', 'jwt_secret', 'user_token']) {
       expect(credentialKeyValue(key), key).toBe('token');
     }
-    for (const key of ['auth', 'session_id', 'sessionId', 'sid', 'aws_secret_key', 'credentials']) {
+    for (const key of ['auth', 'session_id', 'sessionId', 'aws_secret_key', 'credentials']) {
       expect(credentialKeyValue(key), key).toBe('token');
     }
   });
@@ -46,6 +46,16 @@ describe('credentialKeyValue', () => {
     for (const key of ['label_new_password', 'title_change_password', 'error_wrong_password']) {
       expect(credentialKeyValue(key), key).toBeNull();
     }
+    for (const key of [
+      'sid',
+      'account_sid',
+      'next_page_token',
+      'pageToken',
+      'continuation_token',
+    ]) {
+      expect(credentialKeyValue(key), key).toBeNull();
+    }
+    expect(credentialKeyValue('cursor_token')).toBeNull();
   });
 });
 
@@ -86,6 +96,7 @@ describe('isCredentialLiteral', () => {
       '{{ secrets.TOKEN }}',
       '<password>',
       '[[SECRET_1]]',
+      '⟦pw⟧',
       '****',
       '@Value',
       '!vault',
@@ -163,6 +174,11 @@ describe('core:password-field and core:token-field', () => {
       'session_id: 42721e36-cd98-43e0-945c-b0e97f58532e',
       'auth: https://auth.example/oauth2/token',
       `label_new_password = "${password}"`,
+      'DB_PASSWORD=⟦pw⟧',
+      `sid: S-1-5-21-3623811015-3361044348-${'30300820'}-1013`,
+      `next_page_token: ${token}`,
+      `"nextPageToken": "${token}"`,
+      `continuation_token=${token}`,
     ]) {
       expect(masked(text), text).toEqual([]);
     }

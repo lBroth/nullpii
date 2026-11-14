@@ -30,9 +30,9 @@ interface CredentialKeyWord {
   readonly stem?: true;
 }
 
-/** The list. `session` and `sid` name a session token for the field
- * recognizers, but a UUID after them is a session id, and stays
- * readable. */
+/** The list. `session` names a session token for the field
+ * recognizers, but a UUID after it is a session id, and stays readable.
+ * `sid` is not on it: Windows SIDs and Twilio SIDs are ids. */
 export const CREDENTIAL_KEY_WORDS: readonly CredentialKeyWord[] = [
   { words: ['password'], value: 'password', uuid: true },
   { words: ['passwd'], value: 'password', uuid: true },
@@ -52,7 +52,6 @@ export const CREDENTIAL_KEY_WORDS: readonly CredentialKeyWord[] = [
   { words: ['session'], value: 'token', uuid: false },
   { words: ['sessionid'], value: 'token', uuid: false },
   { words: ['session', 'id'], value: 'token', uuid: false },
-  { words: ['sid'], value: 'token', uuid: false },
   { words: ['key'], value: null, uuid: true },
   { words: ['bearer'], value: null, uuid: true },
 ];
@@ -84,6 +83,11 @@ const UI_TEXT_WORDS: ReadonlySet<string> = new Set([
   'description',
   'desc',
 ]);
+
+/** Words that make a token key name a page of results, not access:
+ * `next_page_token`, `pageToken`, `continuation_token`, `cursor_token`.
+ * An API hands them out to fetch the next page. */
+const PAGINATION_WORDS: ReadonlySet<string> = new Set(['page', 'next', 'continuation', 'cursor']);
 
 /** Separators between a key's words, and camelCase humps. */
 const KEY_WORD_BREAK = /[_.-]+|(?<=[a-z0-9])(?=[A-Z])/;
@@ -123,7 +127,7 @@ export const CREDENTIAL_KEY_BEFORE = new RegExp(
  * What value the key `key` (as written, with any `-` or `--` of a
  * command-line flag already removed) names, by its last words: `null`
  * when it is not a credential key, names one only for the UUID filter,
- * or names interface text about one.
+ * or names interface text about one or a page of results.
  */
 export function credentialKeyValue(key: string): CredentialValue | null {
   if (NOT_CREDENTIAL_KEYS.has(key)) return null;
@@ -131,7 +135,7 @@ export function credentialKeyValue(key: string): CredentialValue | null {
     .split(KEY_WORD_BREAK)
     .filter((w) => w.length > 0)
     .map((w) => w.toLowerCase());
-  if (words.some((w) => UI_TEXT_WORDS.has(w))) return null;
+  if (words.some((w) => UI_TEXT_WORDS.has(w) || PAGINATION_WORDS.has(w))) return null;
   let best: CredentialKeyWord | undefined;
   for (const entry of CREDENTIAL_KEY_WORDS) {
     const tail = words.slice(-entry.words.length);

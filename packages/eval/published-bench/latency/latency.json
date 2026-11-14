@@ -1,0 +1,555 @@
+{
+ "about": "Latency timed by hand on a quiet machine, never by the benchmark workflow. Times are milliseconds per call. nullpii's runs keep the latency harness's aggregates (bench_pipeline.py latency-run); the other tools' rows are the medians their timing gave. No text is kept.",
+ "machines": {
+  "linux-pc": {
+   "os": "Linux",
+   "gpu": "NVIDIA RTX 4070 Ti",
+   "cpu": "Intel Core i7-13700KF"
+  }
+ },
+ "plans": {
+  "full": {
+   "texts": {
+    "2000": 60,
+    "30000": 12,
+    "100000": 5
+   },
+   "rounds": 3
+  },
+  "short": {
+   "texts": {
+    "2000": 6,
+    "30000": 6,
+    "100000": 3
+   },
+   "rounds": 1
+  }
+ },
+ "tables": {
+  "gpu": {
+   "machine": "linux-pc",
+   "backend": "cuda",
+   "plan": "full"
+  },
+  "cpu": {
+   "machine": "linux-pc",
+   "backend": "cpu",
+   "plan": "short"
+  }
+ },
+ "tools": {
+  "date": "2026-10-21",
+  "timer": "scripts/ab/competitor_latency.py",
+  "corpus_commit": "5130a64",
+  "rows": {
+   "gpu": {
+    "ettin-68m": {
+     "2000": 11,
+     "30000": 157,
+     "100000": 544
+    },
+    "openai-privacy-filter": {
+     "2000": 24,
+     "30000": 205,
+     "100000": 716
+    },
+    "openmed-pf-multi-v2": {
+     "2000": 26,
+     "30000": 311,
+     "100000": 1103
+    },
+    "piiranha": {
+     "2000": 25,
+     "30000": 342,
+     "100000": 1177
+    },
+    "pii-identifier": {
+     "2000": 19,
+     "30000": 407,
+     "100000": 1411
+    },
+    "gliner-stream-pii": {
+     "2000": 30,
+     "30000": 412,
+     "100000": 1421
+    },
+    "rizzo-pii": {
+     "2000": 27,
+     "30000": 494,
+     "100000": 1715
+    },
+    "deberta": {
+     "2000": 35,
+     "30000": 631,
+     "100000": 2268
+    },
+    "openmed-small": {
+     "2000": 46,
+     "30000": 794,
+     "100000": 3423
+    },
+    "openmed-large": {
+     "2000": 80,
+     "30000": 1209,
+     "100000": 5126
+    },
+    "nemotron-pii-raw": {
+     "2000": 136,
+     "30000": 1478,
+     "100000": 5208
+    },
+    "gliner-pii-large-v1": {
+     "2000": 83,
+     "30000": 1892,
+     "100000": 6550
+    },
+    "nemotron-pii-nemo": {
+     "2000": 189,
+     "30000": 2835,
+     "100000": 9966
+    }
+   },
+   "cpu": {
+    "presidio": {
+     "2000": 35,
+     "30000": 511,
+     "100000": 2209
+    },
+    "openmed-small": {
+     "2000": 207,
+     "30000": 2603,
+     "100000": 5279
+    },
+    "piiranha": {
+     "2000": 386,
+     "30000": 6208,
+     "100000": 20493
+    },
+    "pii-identifier": {
+     "2000": 326,
+     "30000": 6609,
+     "100000": 24116
+    },
+    "ettin-68m": {
+     "2000": 535,
+     "30000": 8882,
+     "100000": 29640
+    },
+    "rizzo-pii": {
+     "2000": 413,
+     "30000": 10962,
+     "100000": 32918
+    },
+    "deberta": {
+     "2000": 654,
+     "30000": 11933,
+     "100000": 42702
+    },
+    "openmed-large": {
+     "2000": 1228,
+     "30000": 14291,
+     "100000": 22324
+    },
+    "gliner-onnx-pii-fp32": {
+     "2000": 1300,
+     "30000": 15549,
+     "100000": 55069
+    },
+    "gliner-stream-pii": {
+     "2000": 1351,
+     "30000": 20613,
+     "100000": 69957
+    },
+    "nemotron-pii-raw": {
+     "2000": 2090,
+     "30000": 25941,
+     "100000": 94524
+    },
+    "gliner-pii-large-v1": {
+     "2000": 1336,
+     "30000": 35183,
+     "100000": 116889
+    },
+    "nemotron-pii-nemo": {
+     "2000": 3101,
+     "30000": 48415,
+     "100000": 168702
+    },
+    "openmed-pf-multi-v2": {
+     "2000": 9133,
+     "30000": 132528,
+     "100000": 448206
+    },
+    "openai-privacy-filter": {
+     "2000": 9514,
+     "30000": 137526,
+     "100000": 467769
+    }
+   }
+  }
+ },
+ "nullpii": {
+  "date": "2026-10-30",
+  "commit": "6f44a03",
+  "version": "0.5.4",
+  "timer": "scripts/ab/harness.mjs latency",
+  "corpus_commit": "5130a64",
+  "onnxruntime_node": "1.30.0",
+  "runs": [
+   {
+    "label": "r15-new-cuda-default-a",
+    "at": "2026-10-30T18:29:52.944Z",
+    "plan": "full",
+    "node": "v24.15.0",
+    "model": "lBroth/nullpii@5dd3c7991483c3b1bccb68beba53890d24cbd2d3",
+    "config": {
+     "backend": "cuda"
+    },
+    "bySize": {
+     "2000": {
+      "p50": 32.356933999999455,
+      "p95": 40.137714000000415,
+      "roundP50s": [
+       32.116637999999966,
+       32.356933999999455,
+       32.3953279999987
+      ],
+      "callsPerRound": 60
+     },
+     "30000": {
+      "p50": 455.1494550000025,
+      "p95": 556.8338519999998,
+      "roundP50s": [
+       443.8536100000001,
+       455.1494550000025,
+       467.4278359999953
+      ],
+      "callsPerRound": 12
+     },
+     "100000": {
+      "p50": 1635.5100239999992,
+      "p95": 1857.337532999998,
+      "roundP50s": [
+       1635.5100239999992,
+       1624.1922699999996,
+       1694.3922789999997
+      ],
+      "callsPerRound": 5
+     }
+    }
+   },
+   {
+    "label": "r15-new-cuda-default-b",
+    "at": "2026-10-30T18:34:40.331Z",
+    "plan": "full",
+    "node": "v24.15.0",
+    "model": "lBroth/nullpii@5dd3c7991483c3b1bccb68beba53890d24cbd2d3",
+    "config": {
+     "backend": "cuda"
+    },
+    "bySize": {
+     "2000": {
+      "p50": 32.217672999999195,
+      "p95": 40.17003499999964,
+      "roundP50s": [
+       31.900882999999794,
+       32.47018699999899,
+       32.217672999999195
+      ],
+      "callsPerRound": 60
+     },
+     "30000": {
+      "p50": 453.8132220000007,
+      "p95": 555.8094419999998,
+      "roundP50s": [
+       446.048041,
+       453.8132220000007,
+       465.6297709999999
+      ],
+      "callsPerRound": 12
+     },
+     "100000": {
+      "p50": 1632.8029380000007,
+      "p95": 1855.7189060000019,
+      "roundP50s": [
+       1632.8029380000007,
+       1596.5010520000033,
+       1666.907548999996
+      ],
+      "callsPerRound": 5
+     }
+    }
+   },
+   {
+    "label": "r15-new-cuda-all",
+    "at": "2026-10-30T18:30:45.098Z",
+    "plan": "full",
+    "node": "v24.15.0",
+    "model": "lBroth/nullpii@5dd3c7991483c3b1bccb68beba53890d24cbd2d3",
+    "config": {
+     "backend": "cuda",
+     "disabledCategories": []
+    },
+    "bySize": {
+     "2000": {
+      "p50": 34.8053379999983,
+      "p95": 44.56752200000119,
+      "roundP50s": [
+       34.601741999999376,
+       35.353399999999965,
+       34.8053379999983
+      ],
+      "callsPerRound": 60
+     },
+     "30000": {
+      "p50": 495.0243649999975,
+      "p95": 590.8058430000019,
+      "roundP50s": [
+       479.0021889999998,
+       495.0243649999975,
+       509.73211199999787
+      ],
+      "callsPerRound": 12
+     },
+     "100000": {
+      "p50": 1750.0706659999996,
+      "p95": 1997.8650600000037,
+      "roundP50s": [
+       1750.0706659999996,
+       1737.2814719999988,
+       1803.5052290000021
+      ],
+      "callsPerRound": 5
+     }
+    }
+   },
+   {
+    "label": "r15-new-cuda-secrets",
+    "at": "2026-10-30T18:33:06.476Z",
+    "plan": "full",
+    "node": "v24.15.0",
+    "model": "lBroth/nullpii@5dd3c7991483c3b1bccb68beba53890d24cbd2d3",
+    "config": {
+     "backend": "cuda",
+     "disabledCategories": [
+      "account_number",
+      "private_address",
+      "private_date",
+      "private_demographic",
+      "private_driver_license",
+      "private_email",
+      "private_geolocation",
+      "private_ip",
+      "private_mac",
+      "private_occupation",
+      "private_organization",
+      "private_passport",
+      "private_person",
+      "private_phone",
+      "private_sensitive",
+      "private_title",
+      "private_url",
+      "private_vehicle_id"
+     ]
+    },
+    "bySize": {
+     "2000": {
+      "p50": 54.65294200000062,
+      "p95": 76.99148800000057,
+      "roundP50s": [
+       54.65294200000062,
+       46.831474999999045,
+       60.991594000006444
+      ],
+      "callsPerRound": 60
+     },
+     "30000": {
+      "p50": 895.3179430000018,
+      "p95": 1049.7953269999998,
+      "roundP50s": [
+       860.3036070000007,
+       895.3179430000018,
+       909.3058059999967
+      ],
+      "callsPerRound": 12
+     },
+     "100000": {
+      "p50": 3151.615576999997,
+      "p95": 3511.3544459999976,
+      "roundP50s": [
+       3151.615576999997,
+       3099.5020010000007,
+       3275.0703680000006
+      ],
+      "callsPerRound": 5
+     }
+    }
+   },
+   {
+    "label": "r15-new-cpu-default-a",
+    "at": "2026-10-30T18:39:45.581Z",
+    "plan": "short",
+    "node": "v24.15.0",
+    "model": "lBroth/nullpii@5dd3c7991483c3b1bccb68beba53890d24cbd2d3",
+    "config": {
+     "backend": "cpu"
+    },
+    "bySize": {
+     "2000": {
+      "p50": 384.7134050000004,
+      "p95": 560.1269639999991,
+      "roundP50s": [
+       384.7134050000004
+      ],
+      "callsPerRound": 6
+     },
+     "30000": {
+      "p50": 6859.841753000001,
+      "p95": 8729.291311999998,
+      "roundP50s": [
+       6859.841753000001
+      ],
+      "callsPerRound": 6
+     },
+     "100000": {
+      "p50": 24336.917248000005,
+      "p95": 30208.596667000005,
+      "roundP50s": [
+       24336.917248000005
+      ],
+      "callsPerRound": 3
+     }
+    }
+   },
+   {
+    "label": "r15-new-cpu-default-b",
+    "at": "2026-10-30T18:52:09.791Z",
+    "plan": "short",
+    "node": "v24.15.0",
+    "model": "lBroth/nullpii@5dd3c7991483c3b1bccb68beba53890d24cbd2d3",
+    "config": {
+     "backend": "cpu"
+    },
+    "bySize": {
+     "2000": {
+      "p50": 380.5715170000003,
+      "p95": 560.1565690000007,
+      "roundP50s": [
+       380.5715170000003
+      ],
+      "callsPerRound": 6
+     },
+     "30000": {
+      "p50": 6825.626393999999,
+      "p95": 8693.893911000003,
+      "roundP50s": [
+       6825.626393999999
+      ],
+      "callsPerRound": 6
+     },
+     "100000": {
+      "p50": 24199.089355999997,
+      "p95": 30025.376065999997,
+      "roundP50s": [
+       24199.089355999997
+      ],
+      "callsPerRound": 3
+     }
+    }
+   },
+   {
+    "label": "r15-new-cpu-all",
+    "at": "2026-10-30T18:42:09.994Z",
+    "plan": "short",
+    "node": "v24.15.0",
+    "model": "lBroth/nullpii@5dd3c7991483c3b1bccb68beba53890d24cbd2d3",
+    "config": {
+     "backend": "cpu",
+     "disabledCategories": []
+    },
+    "bySize": {
+     "2000": {
+      "p50": 429.9772270000012,
+      "p95": 621.4171399999996,
+      "roundP50s": [
+       429.9772270000012
+      ],
+      "callsPerRound": 6
+     },
+     "30000": {
+      "p50": 7602.575155999999,
+      "p95": 9577.538911999996,
+      "roundP50s": [
+       7602.575155999999
+      ],
+      "callsPerRound": 6
+     },
+     "100000": {
+      "p50": 26968.57436099999,
+      "p95": 32931.69872599999,
+      "roundP50s": [
+       26968.57436099999
+      ],
+      "callsPerRound": 3
+     }
+    }
+   },
+   {
+    "label": "r15-new-cpu-secrets",
+    "at": "2026-10-30T18:48:14.415Z",
+    "plan": "short",
+    "node": "v24.15.0",
+    "model": "lBroth/nullpii@5dd3c7991483c3b1bccb68beba53890d24cbd2d3",
+    "config": {
+     "backend": "cpu",
+     "disabledCategories": [
+      "account_number",
+      "private_address",
+      "private_date",
+      "private_demographic",
+      "private_driver_license",
+      "private_email",
+      "private_geolocation",
+      "private_ip",
+      "private_mac",
+      "private_occupation",
+      "private_organization",
+      "private_passport",
+      "private_person",
+      "private_phone",
+      "private_sensitive",
+      "private_title",
+      "private_url",
+      "private_vehicle_id"
+     ]
+    },
+    "bySize": {
+     "2000": {
+      "p50": 705.3501039999974,
+      "p95": 1044.394664000003,
+      "roundP50s": [
+       705.3501039999974
+      ],
+      "callsPerRound": 6
+     },
+     "30000": {
+      "p50": 12607.821757999998,
+      "p95": 15850.429430000004,
+      "roundP50s": [
+       12607.821757999998
+      ],
+      "callsPerRound": 6
+     },
+     "100000": {
+      "p50": 42444.712255000006,
+      "p95": 51608.42466399999,
+      "roundP50s": [
+       42444.712255000006
+      ],
+      "callsPerRound": 3
+     }
+    }
+   }
+  ]
+ }
+}

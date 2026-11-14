@@ -25,7 +25,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from pipeline import blocks_ab1, blocks_r3, compare, docs, settings, views
+from pipeline import blocks_ab1, blocks_latency, blocks_r3, compare, docs, latency, settings, views
 from pipeline.prose import RenderError
 
 sys.path.insert(0, str(settings.SCRIPTS))
@@ -136,10 +136,9 @@ def regions(text: str, path: Path) -> list[str]:
 
 def fill(text: str, path: Path, bodies: dict[str, str]) -> str:
     """`text` with each region's body replaced by `bodies[name]`. Every
-    region must have a body (or be a hand-kept one), and every body a
-    region."""
+    region must have a body, and every body a region."""
     names = regions(text, path)
-    unknown = [n for n in names if n not in bodies and n not in docs.KEPT]
+    unknown = [n for n in names if n not in bodies]
     missing = [n for n in bodies if n not in names]
     if unknown or missing:
         raise DocError(f"{path}: regions without a renderer: {unknown}; renderers without a region: {missing}")
@@ -174,15 +173,16 @@ def _body(text: str, name: str) -> str:
 
 # Figures --------------------------------------------------------------------------
 
-def figures(b: views.Bench, readme: str | None = None) -> dict[str, str]:
+def figures(b: views.Bench) -> dict[str, str]:
     """The README's figures, from the outputs (the latency chart from the
-    README's hand-kept latency block)."""
-    readme = readme if readme is not None else (views.ROOT / docs.README).read_text(encoding="utf-8")
+    hand-timed latency, `latency.py`)."""
+    lat = latency.load()
     return {
         "ab1-agent-traffic.svg": readme_figures.ab1_chart(
             b.ab1(blocks_ab1.A), blocks_ab1.chart_labels(b), b.ab1_baseline(blocks_ab1.A)),
         "r3-documents.svg": readme_figures.r3_chart(blocks_r3.chart_rows(b), blocks_r3.chart_floor(b)),
-        "latency-gpu.svg": readme_figures.latency_chart(readme_figures.latency_rows(readme)),
+        "latency-gpu.svg": readme_figures.latency_chart(blocks_latency.chart_rows(lat),
+                                                        blocks_latency.chart_machine(lat)),
         "how-it-works.svg": readme_figures.how_it_works(),
     }
 
@@ -192,7 +192,7 @@ def figures(b: views.Bench, readme: str | None = None) -> dict[str, str]:
 def _rendered(b: views.Bench, root: Path) -> dict[str, str]:
     """Every rendered doc and figure, by its path from `root`."""
     new_docs = rendered_docs(b, root)
-    svgs = {f"{docs.FIGURES}/{name}": content for name, content in figures(b, new_docs[docs.README]).items()}
+    svgs = {f"{docs.FIGURES}/{name}": content for name, content in figures(b).items()}
     return {**new_docs, **svgs}
 
 

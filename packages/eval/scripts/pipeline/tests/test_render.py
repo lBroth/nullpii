@@ -143,15 +143,10 @@ def test_a_region_is_replaced_whole_and_nothing_around_it(tmp_path):
     assert render.fill(text, tmp_path / "d.md", BODIES) == "before\n<!-- a:begin -->\nA\n<!-- a:end -->\nafter\n"
 
 
-def test_a_hand_kept_region_is_left_as_it_is(tmp_path):
-    text = "<!-- latency:begin -->\nby hand\n<!-- latency:end -->\n<!-- a:begin -->\nx\n<!-- a:end -->\n"
-    assert "by hand" in render.fill(text, tmp_path / "d.md", BODIES)
-
-
 def test_every_tracked_doc_has_exactly_its_renderers_regions():
     for rel, blocks in docs.BLOCKS.items():
         names = render.regions((views.ROOT / rel).read_text(), views.ROOT / rel)
-        assert set(names) - docs.KEPT == set(blocks), rel
+        assert set(names) == set(blocks), rel
 
 
 # Claims: worded from the data, or refused --------------------------------------------

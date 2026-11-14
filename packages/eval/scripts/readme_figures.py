@@ -8,7 +8,8 @@ is drawn by hand.
   English documents only, each tool at its better row
   (`published-bench/r3/char-r3.json` and `char-r3-en.json`).
 - `latency-gpu.svg`: median milliseconds per call at 30,000 characters on
-  GPU, from the README's latency table.
+  GPU, every row of the README's GPU latency table
+  (`published-bench/latency/latency.json`, timed by hand).
 - `how-it-works.svg`: the data path; no numbers.
 
 The benchmark pipeline (`bench_pipeline.py render`) draws them with the
@@ -26,7 +27,6 @@ from __future__ import annotations
 import argparse
 import base64
 import math
-import re
 import sys
 from pathlib import Path
 
@@ -112,24 +112,6 @@ def bar(x: float, y: float, w: float, h: float, cls: str, r: float = 4) -> str:
     r = min(r, w, h / 2)
     return (f'<path class="{cls}" d="M{x:.1f},{y:.1f}H{x + w - r:.1f}A{r},{r} 0 0 1 {x + w:.1f},{y + r:.1f}'
             f'V{y + h - r:.1f}A{r},{r} 0 0 1 {x + w - r:.1f},{y + h:.1f}H{x:.1f}Z"/>')
-
-
-def cells(line: str) -> list[str]:
-    return [re.sub(r"[*`]", "", c).strip() for c in line.strip().strip("|").split("|")]
-
-
-def md_table(md: str, start: str) -> list[dict[str, str]]:
-    """The first Markdown table after the line that starts with `start`."""
-    lines = md.split("\n")
-    i = next(k for k, line in enumerate(lines) if line.startswith(start))
-    while not lines[i].startswith("|"):
-        i += 1
-    head, i = cells(lines[i]), i + 2
-    rows = []
-    while i < len(lines) and lines[i].startswith("|"):
-        rows.append(dict(zip(head, cells(lines[i]))))
-        i += 1
-    return rows
 
 
 def ab1_chart(report: dict, nullpii: dict[str, str] | None = None, baseline: str = render_ab1.BASELINE) -> str:
@@ -235,19 +217,16 @@ def r3_chart(rows: list[tuple[str, float, float, bool]], floor: float) -> str:
     return svg(width, height, "Document sets: macro char-F2 per tool", desc, body)
 
 
-def latency_rows(readme: str) -> list[tuple[str, int]]:
-    block = readme.split("<!-- latency:begin -->", 1)[1].split("<!-- latency:end -->", 1)[0]
-    return [(r["Tool"], int(r["30k"].replace(",", ""))) for r in md_table(block, "**GPU**")]
-
-
-def latency_chart(rows: list[tuple[str, int]]) -> str:
+def latency_chart(rows: list[tuple[str, int]], machine: str) -> str:
+    """`rows`: each tool's label and milliseconds, in the order drawn;
+    `machine`: the GPU they were timed on."""
     width, row, top, label_x, x0, plot_w, hi = 880, 24, 84, 318, 334, 440, 3000
     height = top + len(rows) * row + 58
     bottom = top + len(rows) * row
     if max(v for _, v in rows) > hi:
         raise SystemExit("latency above the axis")
     body = [logo_defs(), text(16, 30, "Latency on GPU, 30,000 characters", "title"),
-            text(16, 50, "Median milliseconds per call, lower is better. RTX 4070 Ti, every tool on the same "
+            text(16, 50, f"Median milliseconds per call, lower is better. {esc(machine)}, every tool on the same "
                  "coding-agent texts, after a warm-up.", "sub")]
     for v in range(0, hi + 1, 500):
         xv = x0 + v / hi * plot_w

@@ -7,11 +7,38 @@ import { runRecognizers } from '../src/recognizers.js';
 /** Repeated units that made unbounded quantifiers backtrack: separator
  * runs after a context keyword, local-part characters before an `@`,
  * and repeated PEM headers without an END line. */
-const ADVERSARIAL_UNITS = [' ', '.', '-', 'a.', 'a-', '%2', '1-', '1 ', 'a ', '1.1.'];
+const ADVERSARIAL_UNITS = [
+  ' ',
+  '.',
+  '-',
+  'a.',
+  'a-',
+  '%2',
+  '1-',
+  '1 ',
+  'a ',
+  '1.1.',
+  // The lookbehinds of the userinfo, Basic and Bearer patterns.
+  ':',
+  'a://b:',
+  'Basic ',
+  'Bearer a1',
+  'eyJ',
+  // The key words and separators of the field recognizers.
+  'password',
+  'password=',
+  'password ',
+  'a_',
+  'token: ',
+];
 const SIZE = 100_000;
 /** A quadratic pattern takes seconds at this size (certificate-context
  * took over 20 s at 10k characters); every linear one takes a few ms. */
 const BUDGET_MS = 250;
+/** The same at `MAX_INPUT_CHARS`, ten times the text: a quadratic pattern
+ * would take minutes there, a linear one a few hundred ms on a shared CI
+ * runner under coverage (250 ms was missed at 252 to 534 ms). */
+const MAX_INPUT_BUDGET_MS = 2_000;
 
 function timeMatch(pattern: RegExp, text: string): number {
   const re = new RegExp(
@@ -53,7 +80,69 @@ describe('recognizer patterns run in linear time', () => {
         .slice(0, MAX_INPUT_CHARS);
       const pem = DEFAULT_RECOGNIZERS.find((r) => r.id === 'core:pem-private-key');
       expect(pem).toBeDefined();
-      if (pem) expect(timeMatch(pem.pattern, text)).toBeLessThan(BUDGET_MS);
+      if (pem) expect(timeMatch(pem.pattern, text)).toBeLessThan(MAX_INPUT_BUDGET_MS);
+    });
+  }
+});
+
+// The partial-PEM recognizer walks lines from each marker in a function
+// (`pem-partial.ts`), so its time is the whole scan's, not the pattern's.
+describe('the partial PEM walk runs in linear time', () => {
+  const marker = (word: string, label: string): string =>
+    `${'-'.repeat(5)}${word} ${label}${'-'.repeat(5)}`;
+  const line = 'Q1'.repeat(32);
+  const partial = DEFAULT_RECOGNIZERS.filter((r) => r.id === 'core:pem-private-key-partial');
+  for (const [name, unit] of [
+    ['headers', `${marker('BEGIN', 'PRIVATE KEY')}\n`],
+    ['headers and lines', `${marker('BEGIN', 'PRIVATE KEY')}\n${line}\n`],
+    ['headers and spaced lines', `${marker('BEGIN', 'PRIVATE KEY')} ${line} `],
+    ['headers and escaped lines', `${marker('BEGIN', 'PRIVATE KEY')}\\n${line}`],
+    ['encryption headers', `${marker('BEGIN', 'RSA PRIVATE KEY')}\nProc-Type: 4,ENCRYPTED\n`],
+    ['lines and trailers', `${line}\n${marker('END', 'PRIVATE KEY')}\n`],
+    ['spaced lines and trailers', `${line} ${marker('END', 'PRIVATE KEY')} `],
+    ['escaped lines and trailers', `${line}\\n${marker('END', 'PRIVATE KEY')}`],
+    ['indented lines and trailers', `  ${line}\n  ${marker('END', 'PRIVATE KEY')}`],
+    ['lines', `${line}\n`],
+    ['spaced lines', `${line} `],
+  ] as const) {
+    it(`on ${MAX_INPUT_CHARS} characters of repeated ${name}`, () => {
+      const text = unit.repeat(Math.ceil(MAX_INPUT_CHARS / unit.length)).slice(0, MAX_INPUT_CHARS);
+      expect(partial).toHaveLength(1);
+      const t0 = performance.now();
+      runRecognizers(text, partial, []);
+      expect(performance.now() - t0).toBeLessThan(MAX_INPUT_BUDGET_MS);
+    });
+  }
+  it(`on one ${MAX_INPUT_CHARS}-character body between two markers`, () => {
+    const body = `${line}\n`.repeat(Math.ceil(MAX_INPUT_CHARS / (line.length + 1)));
+    const text = `${marker('BEGIN', 'PRIVATE KEY')}\n${body}${marker('END', 'EC PRIVATE KEY')}`;
+    const t0 = performance.now();
+    expect(runRecognizers(text, partial, [])).toHaveLength(2);
+    expect(performance.now() - t0).toBeLessThan(MAX_INPUT_BUDGET_MS);
+  });
+});
+
+// The field recognizers look back for the whole key and check the value
+// in a function (`credential-fields.ts`), on every key word they match.
+describe('the field recognizers run in linear time', () => {
+  const fields = DEFAULT_RECOGNIZERS.filter(
+    (r) => r.id === 'core:password-field' || r.id === 'core:token-field',
+  );
+  for (const unit of [
+    'password=hunter22 ',
+    'password=password=',
+    '--password ',
+    'a_password: ',
+    `${'a_'.repeat(40)}token: ${'Ab1'.repeat(80)} `,
+    'token: Ab1/Ab1/Ab1/Ab1/Ab1 ',
+    'secret: x.y.z.w.v.u.t.s.r.q ',
+  ]) {
+    it(`on ${MAX_INPUT_CHARS} characters of ${JSON.stringify(unit.slice(0, 40))}`, () => {
+      const text = unit.repeat(Math.ceil(MAX_INPUT_CHARS / unit.length)).slice(0, MAX_INPUT_CHARS);
+      expect(fields).toHaveLength(2);
+      const t0 = performance.now();
+      runRecognizers(text, fields, []);
+      expect(performance.now() - t0).toBeLessThan(MAX_INPUT_BUDGET_MS);
     });
   }
 });

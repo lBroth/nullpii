@@ -64,8 +64,8 @@ jobs:
       - run: claude plugin test packages/claude-code-mod
 
   eval-python:
-    # The tracked Python tests of the eval kit (the traces-v3 generator and
-    # the benchmark pipeline).
+    # The tracked Python tests of the eval kit (the traces-v3 generator,
+    # the AB-1 B2 builder and the benchmark pipeline).
     name: eval kit (pytest)
     runs-on: ubuntu-latest
     steps:
@@ -80,6 +80,7 @@ jobs:
       # is skipped for want of one.
       - run: python -m pip install --require-hashes --only-binary ':all:' -r packages/eval/requirements-pipeline-test.txt
       - run: python -m pytest -q packages/eval/scripts/r3/traces_v3_gen/tests
+      - run: python -m pytest -q packages/eval/scripts/ab1/tests
       # -rs lists any skipped test; none is expected.
       - run: python -m pytest -q -rs packages/eval/scripts/pipeline/tests
       # The docs, the model card's source and the README's figures say what

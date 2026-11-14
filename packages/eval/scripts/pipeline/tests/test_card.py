@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from pipeline import card, views
+from pipeline import card, settings, views
 
 
 def test_the_card_lists_the_files_the_library_pins():
@@ -122,9 +122,15 @@ def test_the_card_regions_are_checked_against_published_bench():
     assert card._card_regions_render(views.ROOT) == []
 
 
-def test_published_bench_holding_the_published_run_reads_as_that_run():
-    names, measured = card.published_measurement(views.ROOT / "packages" / "eval" / "published-bench")
-    assert names == views.PUBLISHED_NAMES and measured["backend"] == "cuda"
+def test_published_bench_reads_as_what_its_marker_records():
+    # The tracked published-bench holds the published 0.5 run until a
+    # numbers PR of bench.yml replaces it with a run of the pipeline.
+    published = views.ROOT / "packages" / "eval" / "published-bench"
+    marker = json.loads((published / views.OUTPUTS_MARKER).read_text())
+    names, measured = card.published_measurement(published)
+    assert names == marker["names"] and measured == marker["measured"]
+    if names == views.PUBLISHED_NAMES:
+        assert measured == settings.PUBLISHED_MEASURED
 
 
 def _checked(root):

@@ -1,6 +1,9 @@
 # The benchmark pipeline's direct Python dependencies. requirements-pipeline.txt
 # is this file locked with every transitive dependency and its hashes:
 #   uv pip compile --universal --python-version 3.12 --generate-hashes --exclude-newer 2026-10-16 \
+#     --exclude-newer-package certifi=2026-10-20 --exclude-newer-package filelock=2026-10-18 \
 #     requirements-pipeline.in -o requirements-pipeline.txt
+# certifi and filelock pass the cutoff for their security fixes (GHSA-6q48-6c7w-9gw2,
+# GHSA-v4x8-3wr5-3wq8 and the other filelock advisories fixed in 4.2.1).
 numpy==2.4.4
 huggingface-hub==1.14.0

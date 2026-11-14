@@ -2,6 +2,9 @@
 # dependencies and pytest, locked the same way into
 # requirements-pipeline-test.txt:
 #   uv pip compile --universal --python-version 3.12 --generate-hashes --exclude-newer 2026-10-16 \
+#     --exclude-newer-package certifi=2026-10-20 --exclude-newer-package filelock=2026-10-18 \
 #     requirements-pipeline-test.in -o requirements-pipeline-test.txt
-pytest==8.4.2
+# certifi and filelock pass the cutoff for their security fixes (GHSA-6q48-6c7w-9gw2,
+# GHSA-v4x8-3wr5-3wq8 and the other filelock advisories fixed in 4.2.1).
+pytest==9.0.3
 -r requirements-pipeline.in

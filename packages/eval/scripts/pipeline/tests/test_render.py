@@ -34,9 +34,11 @@ def test_the_tracked_docs_and_figures_say_what_published_bench_holds():
     assert render.check(render.PUBLISHED_BENCH) == []
 
 
-def test_published_bench_holds_the_published_runs_names_and_lists_its_files():
+def test_published_bench_holds_one_layouts_names_and_lists_its_files():
+    # The published 0.5 run's names, or a run's once a numbers PR of
+    # bench.yml is merged.
     marker = json.loads((render.PUBLISHED_BENCH / views.OUTPUTS_MARKER).read_text())
-    assert marker["names"] == views.PUBLISHED_NAMES
+    assert marker["names"] in (views.PUBLISHED_NAMES, views.RUN_NAMES)
     assert all((render.PUBLISHED_BENCH / rel).is_file() for rel in marker["files"])
     # The core regime's own reports are not published.
     assert not any(rel in marker["files"] for rel in compare.published_dropped_files())

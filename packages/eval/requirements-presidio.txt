@@ -23,7 +23,7 @@ tldextract==5.4.0
 # Tokenizers and morphology the ja, zh and ru pipelines require.
 SudachiPy==0.7.0
 sudachidict-core==20261015
-spacy-pkuseg==1.0.1
+spacy-pkuseg==1.0.2
 pymorphy3==2.0.6
 pymorphy3-dicts-ru==2.4.417150.4580142
 

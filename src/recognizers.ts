@@ -129,34 +129,44 @@ function matchOne(text: string, recognizer: Recognizer, existing: readonly PiiSp
   const out: PiiSpan[] = [];
   let m: RegExpExecArray | null = re.exec(text);
   while (m !== null) {
-    const start = m.index;
-    const end = start + m[0].length;
-    // High-confidence recognizers (≥ 0.9 — secret patterns, IBAN with
-    // mod-97 validator, Luhn-validated CCs) always emit; cross-label
-    // overlaps with ML output are reconciled later by IoU dedupe in
-    // `nullpii.ts`. Lower-confidence recognizers defer to ML only when an
-    // ML span already covers the whole match: deferring on a partial
-    // overlap left the uncovered rest of the match in the clear (a short
-    // low-score model span on the first 4 chars of an IPv6 address
-    // silenced `core:ipv6-full` and exposed the other 35).
-    const overrides = recognizer.confidence >= 0.9;
-    if ((overrides || !isCoveredBy(start, end, existing)) && passesValidate(m[0], recognizer)) {
-      // Validator-passing matches use VALIDATED_RECOGNIZER_SCORE so
-      // cross-label dedupe picks the structurally-correct label over ML
-      // mislabels.
-      const score =
-        recognizer.validate !== undefined ? VALIDATED_RECOGNIZER_SCORE : recognizer.confidence;
-      out.push({
-        label: recognizer.label,
-        start,
-        end,
-        score,
-        text: m[0],
-      });
-    }
+    const span = matchSpan(m, text, recognizer, existing);
+    if (span !== null) out.push(span);
     m = re.exec(text);
   }
   return out;
+}
+
+/** The span `recognizer` emits for match `m`, or `null` when the match
+ * fails `validate`, its `span` hook drops it, or it defers to the model. */
+function matchSpan(
+  m: RegExpExecArray,
+  text: string,
+  recognizer: Recognizer,
+  existing: readonly PiiSpan[],
+): PiiSpan | null {
+  if (!passesValidate(m[0], recognizer)) return null;
+  const resolved =
+    recognizer.span === undefined
+      ? { start: m.index, end: m.index + m[0].length }
+      : recognizer.span(m, text);
+  if (resolved === null) return null;
+  const { start, end } = resolved;
+  // High-confidence recognizers (≥ 0.9 — secret patterns, IBAN with
+  // mod-97 validator, Luhn-validated CCs) always emit; cross-label
+  // overlaps with ML output are reconciled later by IoU dedupe in
+  // `nullpii.ts`. Lower-confidence recognizers defer to ML only when an
+  // ML span already covers the whole match: deferring on a partial
+  // overlap left the uncovered rest of the match in the clear (a short
+  // low-score model span on the first 4 chars of an IPv6 address
+  // silenced `core:ipv6-full` and exposed the other 35).
+  const overrides = recognizer.confidence >= 0.9;
+  if (!overrides && isCoveredBy(start, end, existing)) return null;
+  // Validator-passing matches use VALIDATED_RECOGNIZER_SCORE so
+  // cross-label dedupe picks the structurally-correct label over ML
+  // mislabels.
+  const score =
+    recognizer.validate !== undefined ? VALIDATED_RECOGNIZER_SCORE : recognizer.confidence;
+  return { label: recognizer.label, start, end, score, text: text.slice(start, end) };
 }
 
 /** Cache of `g`-flagged copies of every recognizer pattern seen so far.
@@ -273,13 +283,8 @@ function matchAnchored(
           re.lastIndex = i;
           const m = re.exec(text);
           if (m !== null && m.index === i) {
-            const start = m.index;
-            const end = start + m[0].length;
-            const overrides = r.confidence >= 0.9;
-            if ((overrides || !isCoveredBy(start, end, existing)) && passesValidate(m[0], r)) {
-              const score = r.validate !== undefined ? VALIDATED_RECOGNIZER_SCORE : r.confidence;
-              out.push({ label: r.label, start, end, score, text: m[0] });
-            }
+            const span = matchSpan(m, text, r, existing);
+            if (span !== null) out.push(span);
           }
         }
       }

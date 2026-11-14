@@ -33,4 +33,4 @@ export type {
   UrlRelease,
 } from './config.js';
 export type { InferenceInputs, InferenceOutputs } from './backend.js';
-export type { Recognizer } from './recognizer.js';
+export type { Recognizer, RecognizerSpan } from './recognizer.js';

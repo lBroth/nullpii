@@ -68,15 +68,15 @@ These numbers are for nullpii as a whole: this model plus the recognizers and fi
 ![Agent traffic: leak rate and keep rate per tool](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/ab1-agent-traffic.svg)
 
 <!-- card-ab1:begin -->
-- **Coding-agent traffic (AB-1, 966 documents):** nullpii lets 9.5% of the values that must be hidden through, and keeps 85.4% of the values that must stay readable. Only rizzo-pii lets fewer through (8.1%), and it keeps 44.5% readable.
-- **Weak spots:** person names (24% let through; 11 of the 15 other tools let fewer through) and URLs (31%). On secrets alone, nullpii does not lead: openai's privacy-filter lets fewer GitHub-issue secrets through (8.2% against 11.5%); on CredData nullpii lets 24.5% through, most of it UUIDs that CredData counts as credentials and nullpii keeps readable as ids (13.0% without them), and 7 of the 15 other tools let fewer through there.
+- **Coding-agent traffic (AB-1, 966 documents):** nullpii lets 9.0% of the values that must be hidden through, and keeps 85.4% of the values that must stay readable. Only rizzo-pii lets fewer through (8.1%), and it keeps 44.5% readable.
+- **Weak spots:** person names (24% let through; 11 of the 15 other tools let fewer through) and URLs (31%). On secrets alone, nullpii does not lead: no other tool lets fewer GitHub-issue secrets through (7.8%); on CredData nullpii lets 17.5% through, most of it UUIDs that CredData counts as credentials and nullpii keeps readable as ids (4.8% without them), and 3 of the 15 other tools let fewer through there.
 <!-- card-ab1:end -->
 
 ![Documents: macro char-F2 per tool](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/r3-documents.svg)
 
 <!-- card-r3:begin -->
-- **Documents (five held-out sets):** with every category masked, nullpii is tenth of 15 tools (macro char-F2 0.653; the first is rizzo-pii at its default, 0.770); on English documents alone it is ninth (0.603).
-- **It favours recall.** With every category masked, its macro recall (0.955) is the highest of 15 at each tool's best-F2 row, and its precision (0.368) fourteenth. Ranked by F0.5, which favours precision, it is fourteenth.
+- **Documents (five held-out sets):** in its agent default, nullpii is second of 15 tools (macro char-F2 0.754; the first is rizzo-pii at its default, 0.770); on English documents alone it is first (0.761); with every category masked, nullpii is tenth of 15 tools (macro char-F2 0.653; the first is rizzo-pii at its default, 0.770); on English documents alone it is ninth (0.602).
+- **It favours recall.** In its agent default, its macro recall (0.877) is the highest of 15 at each tool's best-F2 row, and its precision (0.599) second. Ranked by F0.5, which favours precision, it is second.
 <!-- card-r3:end -->
 
 ## Training data
@@ -96,7 +96,7 @@ No benchmark set nullpii reports on was used for training, and neither were data
 ## Limits
 
 <!-- card-limits:begin -->
-- It misses some values: 9.5% of those that must be hidden on coding-agent traffic (AB-1). Do not make it your only privacy control.
+- It misses some values: 9.0% of those that must be hidden on coding-agent traffic (AB-1). Do not make it your only privacy control.
 - The fine-tuning text is mostly English. The base model covers six languages.
 - It finds what is written out. It does not infer facts, such as a health condition, from indirect wording.
 - nullpii replaces values with placeholders that it can reverse. This is pseudonymisation, not anonymisation, and not a compliance certification.

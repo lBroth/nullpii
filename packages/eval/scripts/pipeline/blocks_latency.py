@@ -157,6 +157,25 @@ def readme_tables(lat: Latency) -> str:
     ])
 
 
+# Below this, a time in seconds keeps one decimal ("1.6 seconds").
+WHOLE_SECONDS = 10
+MS_PER_SECOND = 1000
+
+
+def seconds(value: float) -> str:
+    s = round(value / MS_PER_SECOND, 1)
+    return f"{round(s)} seconds" if s >= WHOLE_SECONDS else f"{s:.1f} seconds"
+
+
+def long_inputs(lat: Latency) -> str:
+    """The README's expectation for a long text: the agent default's time
+    at 100,000 characters on each table's backend."""
+    size = latency.SIZES[-1]
+    cpu, gpu = (seconds(lat.nullpii(t, "default")[size]) for t in ("cpu", "gpu"))
+    return (f"Expect about {cpu} per {int(size):,} characters on CPU and about {gpu} on GPU (the agent default, on the"
+            " machine of the [latency tables](#latency)).")
+
+
 def chart_rows(lat: Latency) -> list[tuple[str, int]]:
     """The chart's bars: every GPU row at 30,000 characters."""
     return [(r.plain, round(r.ms[CHART_SIZE])) for r in rows(lat, "gpu")]
@@ -195,7 +214,8 @@ def _partial(lat: Latency) -> str:
     gpu_d, cpu_d = (lat.nullpii(t, "default")[CHART_SIZE] for t in latency.TABLES)
     return ("**Partial presets cost an extra model pass.** A preset that masks secrets but leaves readable a category"
             " the agent default masks (the secrets-only preset, `/pii allow url`) runs a second model pass, prompted"
-            " with the labels the preset masks, whenever the first pass finds anything (`src/secret-pass.ts`); the"
+            " with the labels the preset masks, wherever the first pass or a recognizer found something, or a word"
+            " was too long to read (`src/secret-pass.ts`); the"
             " agent default and every category masked run one. Timed in the same session with the secrets-only"
             f" preset, nullpii took {ms(gpu)} ms at 30,000 characters on GPU and {ms(cpu)} ms on CPU,"
             f" {gpu / gpu_d:.1f} and {cpu / cpu_d:.1f} times its agent default's ({ms(gpu_d)} ms and {ms(cpu_d)} ms).")

@@ -305,3 +305,37 @@ def test_a_run_of_the_pipeline_leaves_the_latency_file_and_its_regions_as_they_a
     assert (published / "latency" / "latency.json").read_text() == "kept"
     readme = (root / docs.README).read_text()
     assert render._body(readme, "latency") == blocks_latency.readme_tables(latency.load()) + "\n"
+
+
+@pytest.mark.parametrize("ms, words", [(24268.0, "24 seconds"), (9960.0, "10 seconds"), (1634.2, "1.6 seconds"),
+                                       (9940.0, "9.9 seconds")])
+def test_a_time_in_seconds_keeps_one_decimal_below_ten(ms, words):
+    assert blocks_latency.seconds(ms) == words
+
+
+def test_the_readmes_long_input_expectation_is_the_agent_defaults_100k_time():
+    # The default's rounds at 100k: GPU 1,600 to 1,650 (median 1,625), CPU 24,000 and 24,500.
+    assert blocks_latency.long_inputs(_lat()) == (
+        "Expect about 24 seconds per 100,000 characters on CPU and about 1.6 seconds on GPU (the agent default, on the"
+        " machine of the [latency tables](#latency)).")
+
+    def slower(data):
+        for run in data["nullpii"]["runs"]:
+            if run["label"].startswith("cpu-default"):
+                run["bySize"]["100000"]["roundP50s"] = [31000.0]
+    assert "about 31 seconds per 100,000 characters on CPU" in blocks_latency.long_inputs(_lat(slower))
+
+
+def test_the_long_input_bullet_is_rendered_and_moves_with_the_data(tmp_path, monkeypatch):
+    run, root, published = ro.write_run(tmp_path / "run"), ro.docs_root(tmp_path), tmp_path / "pb"
+    render.render(run, published, root)
+    readme = (root / docs.README).read_text()
+    assert blocks_latency.long_inputs(latency.load()) in render._body(readme, "doesnt-do")
+    data = json.loads(latency.LATENCY.read_text())
+    for r in data["nullpii"]["runs"]:
+        if r["config"] == {"backend": "cpu"}:
+            r["bySize"]["100000"]["roundP50s"] = [50000.0]
+    moved = tmp_path / "latency.json"
+    moved.write_text(json.dumps(data))
+    monkeypatch.setattr(latency, "LATENCY", moved)
+    assert f"{docs.README} <!-- doesnt-do -->: differs" in {str(d) for d in render.check(run, published, root)}

@@ -84,6 +84,21 @@ def method_latency(b: views.Bench) -> str:
     return lat.method(latency.load())
 
 
+DOESNT_DO = (
+    "- **It does not catch everything.** Detection is statistical, and the benchmark shows how much leaks. Do not make"
+    " it your only privacy control.\n"
+    "- **It is not a HIPAA or GDPR tool.** It finds values that are written out, not facts inferred from context.\n"
+    "- **Images and other binary attachments** pass through the gateway without a scan. The gateway counts them.\n"
+    "- **Long inputs are slow, not refused.** nullpii reads a text over 1,000,000 characters in overlapping windows of"
+    " up to that size, and masks it once. {expect} In the Claude Code mod, if masking takes longer than Claude Code"
+    " waits, the mod withholds the text and says the sidecar took too long."
+)
+
+
+def readme_doesnt_do(b: views.Bench) -> str:
+    return DOESNT_DO.format(expect=lat.long_inputs(latency.load()))
+
+
 # README -------------------------------------------------------------------------
 
 def readme_summary(b: views.Bench) -> str:
@@ -304,6 +319,7 @@ BLOCKS: dict = {
         "fig-latency": fig_latency,
         "latency-intro": readme_latency_intro,
         "latency": readme_latency,
+        "doesnt-do": readme_doesnt_do,
     },
     METHOD: {
         "fig-ab1": fig_ab1,

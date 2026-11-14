@@ -5950,3 +5950,182 @@ test('a notice whose transcript lookup fails comes at the next such placeholder 
   await $.tool.call({ tool: 'Read', file_path: `/work/${oldPh('PERSON', 2)}.md` });
   expect(notices(sidecar)).toHaveLength(1);
 });
+
+// Auto mode (#97): Claude Code refuses a call whose arguments a hook
+// changed, so the mod refuses up front, with no question, a call it would
+// rewrite. It reads the mode where Claude Code reports it, on the classic
+// hook events.
+
+/** What the mod's refusals in auto mode say to Claude. */
+const AUTO_REFUSAL = /in auto mode .*Do not retry it while auto mode is on/;
+const AUTO_TOAST = 'in auto mode it cannot';
+const AUTO_COUNT = 'Calls not run in auto mode, which cannot put real values back or send them';
+
+/** The classic events these tests raise. */
+const CLASSIC_ANSWERED = [
+  'classic.UserPromptSubmit',
+  'classic.PostToolUse',
+  'classic.Stop',
+  'classic.SubagentStop',
+] as const;
+
+/** Report `mode` as Claude Code does at a prompt, for the main loop or,
+ * with `agentId`, for a subagent. */
+async function reportMode($, mode: string, agentId?: string) {
+  await $.classic.UserPromptSubmit({
+    prompt: 'go on',
+    permission_mode: mode,
+    ...(agentId !== undefined && { agent_id: agentId, agent_type: 'general-purpose' }),
+  });
+}
+
+/** A session with a value the sidecar masked, the mod's questions answered
+ * by `answers` in turn (none left: dismissed), and every other tool call
+ * recorded as it reached the tools. */
+async function autoModeSession($, on, answers: readonly string[]) {
+  const sidecar = fakeSidecar();
+  stubSession(on, sidecar);
+  const asked: Asked[] = [];
+  answerMenu(on, answers, asked);
+  const ran: string[] = [];
+  on('tool.call', ($, e) => {
+    ran.push(JSON.stringify(e));
+    return { result: 'ok' };
+  });
+  on('prompt.submit', ($, e) => ({ text: e.text }));
+  // The classic events the tests raise, answered as a session with no
+  // settings hook answers them: with nothing.
+  for (const event of CLASSIC_ANSWERED) on(event, () => ({}));
+  await start($);
+  await $.prompt.submit({ text: 'look up john@acme.io', wait: false, origin: COMPOSER });
+  const webFetch = () =>
+    $.tool.call({ tool: 'WebFetch', url: `https://example.com/?q=${ph('EMAIL', 0)}`, prompt: 'x' });
+  const write = () =>
+    $.tool.call({ tool: 'Write', file_path: '/work/n.md', content: `Mail ${ph('EMAIL', 0)}` });
+  return { sidecar, asked, ran, webFetch, write };
+}
+
+test('in auto mode a call to a tool outside restoreTools holding a known value is refused with no question', async ($, on) => {
+  const { sidecar, asked, ran, webFetch } = await autoModeSession($, on, ['Send once']);
+  await reportMode($, 'auto');
+  const out = await webFetch();
+  expect(asked).toEqual([]);
+  expect(ran).toEqual([]);
+  expect(out.deny).toMatch(AUTO_REFUSAL);
+  expect(out.deny).toContain('the user was not asked');
+  expect(out.deny).toContain('leave auto mode');
+  expect(sidecar.toasts).toContain(
+    'nullpii did not run a WebFetch call: in auto mode it cannot send real values to it. To run it, leave auto mode (shift+tab cycles the permission modes in the terminal).',
+  );
+  const report = await piiStatus($);
+  expect(report).toContain(`${AUTO_COUNT}: 1`);
+  expect(report).not.toContain('Released in clear');
+  expect(report).toContain('Placeholders kept in calls to other tools: 0');
+  expectNoValueShown(sidecar, ['john@acme.io', 'joh…e.io']);
+  expect(out.deny).not.toContain('john@acme.io');
+});
+
+test('in auto mode a local tool call that needs real values put back is refused, not rewritten', async ($, on) => {
+  const { sidecar, asked, ran, write } = await autoModeSession($, on, []);
+  await reportMode($, 'auto');
+  const out = await write();
+  expect(asked).toEqual([]);
+  expect(ran).toEqual([]);
+  expect(out.deny).toMatch(AUTO_REFUSAL);
+  expect(out.deny).toContain('puts back as the real values on this machine');
+  expect(sidecar.toasts).toContain(
+    'nullpii did not run a Write call: in auto mode it cannot put real values back into it. To run it, leave auto mode (shift+tab cycles the permission modes in the terminal).',
+  );
+  const report = await piiStatus($);
+  expect(report).toContain(`${AUTO_COUNT}: 1`);
+  expect(report).toContain('Real values put back into local tool calls: 0');
+  expectNoValueShown(sidecar, ['john@acme.io']);
+});
+
+test('in auto mode Allow all given earlier cannot take effect: the call is refused, and nothing is released', async ($, on) => {
+  const { sidecar, asked, ran, webFetch } = await autoModeSession($, on, ['Allow all']);
+  await reportMode($, 'default');
+  await webFetch();
+  expect(asked).toHaveLength(1);
+  expect(ran).toHaveLength(1);
+  await reportMode($, 'auto');
+  const out = await webFetch();
+  expect(out.deny).toMatch(AUTO_REFUSAL);
+  expect(asked).toHaveLength(1);
+  expect(ran).toHaveLength(1);
+  expect(sidecar.toasts.filter((t) => t.includes('released in clear'))).toHaveLength(1);
+  // Back out of auto mode, Allow all still answers for the session.
+  await reportMode($, 'acceptEdits');
+  await webFetch();
+  expect(asked).toHaveLength(1);
+  expect(ran).toHaveLength(2);
+  expect(ran[1]).toContain('john@acme.io');
+});
+
+test('in auto mode a call the mod leaves as written runs: no placeholder, or none the session knows', async ($, on) => {
+  const { asked, ran } = await autoModeSession($, on, []);
+  await reportMode($, 'auto');
+  await $.tool.call({ tool: 'Write', file_path: '/work/n.md', content: 'no data here' });
+  const unknown = `https://example.com/?q=${ph('EMAIL', 7)}`;
+  await $.tool.call({ tool: 'WebFetch', url: unknown, prompt: 'x' });
+  expect(asked).toEqual([]);
+  expect(ran).toHaveLength(2);
+  expect(ran[1]).toContain(ph('EMAIL', 7));
+  expect(await piiStatus($)).not.toContain(AUTO_COUNT);
+});
+
+test('in auto mode a Write that needs a value put back is refused before the question about a stale placeholder', async ($, on) => {
+  const { asked, ran } = await autoModeSession($, on, ['Write as text']);
+  await reportMode($, 'auto');
+  const out = await $.tool.call({
+    tool: 'Write',
+    file_path: '/work/n.md',
+    content: `${ph('EMAIL', 0)} ${oldPh('PERSON', 1)}`,
+  });
+  expect(out.deny).toMatch(AUTO_REFUSAL);
+  expect(asked).toEqual([]);
+  expect(ran).toEqual([]);
+});
+
+test('out of auto mode the mod asks again; the mode is the last one Claude Code reported', async ($, on) => {
+  const { asked, ran, webFetch, write } = await autoModeSession($, on, ['Send once']);
+  await reportMode($, 'auto');
+  expect((await webFetch()).deny).toMatch(AUTO_REFUSAL);
+  // Any classic event that carries the mode moves it, a tool's own included.
+  await $.classic.PostToolUse({
+    tool_name: 'Read',
+    tool_input: {},
+    tool_response: {},
+    tool_use_id: 'toolu_1',
+    permission_mode: 'default',
+  });
+  await webFetch();
+  await write();
+  expect(asked).toHaveLength(1);
+  expect(ran).toHaveLength(2);
+  expect(ran.every((one) => one.includes('john@acme.io'))).toBe(true);
+});
+
+test("a subagent's mode does not move the main loop's, and an event without a mode keeps it", async ($, on) => {
+  const { asked, ran, webFetch } = await autoModeSession($, on, ['Send once']);
+  await reportMode($, 'default');
+  await reportMode($, 'auto', 'agent-1');
+  await webFetch();
+  expect(asked).toHaveLength(1);
+  expect(ran).toHaveLength(1);
+  await reportMode($, 'auto');
+  // An event that reports no mode leaves the last one standing.
+  await $.classic.Stop({ stop_hook_active: false });
+  expect((await webFetch()).deny).toMatch(AUTO_REFUSAL);
+  // A subagent's stop, with its own mode in it, does not move the main loop's.
+  await $.classic.SubagentStop({
+    stop_hook_active: false,
+    agent_id: 'agent-1',
+    agent_transcript_path: '',
+    agent_type: 'general-purpose',
+    permission_mode: 'default',
+  });
+  expect((await webFetch()).deny).toMatch(AUTO_REFUSAL);
+  expect(asked).toHaveLength(1);
+  expect(ran).toHaveLength(1);
+});

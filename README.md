@@ -182,14 +182,14 @@ Or from a shell: `claude plugin marketplace add lBroth/nullpii@v0.5.4`, then `cl
 | `private_vehicle_id` | VIN (checksum), plates IT / FR / DE / UK / ES / US | model + regex |
 | `private_geolocation` | coordinate pairs (range-checked), DMS notation | model + regex |
 | `account_number` | IBAN (mod-97), cards (Luhn), SSN, crypto addresses, national and tax ids (DNI, CPF, EIN, codice fiscale, Partita IVA), Medicare, NPI, insurance policy, IMEI; medical record numbers by the model only | model + regex (validated) |
-| `secret` | API keys (AWS, GitHub, OpenAI, Anthropic, Stripe and 30+ more), JWTs, private keys, passwords and PINs in context, base64-wrapped values | model + regex + base64 |
+| `secret` | API keys (AWS, GitHub, OpenAI, Anthropic, Stripe and 30+ more), JWTs, private keys (whole blocks and cut-off ones), passwords in URLs, `Basic` and `Bearer` credentials, Docker registry configs, passwords and tokens after a key that names them (`db_password=`, `api_key:`), PINs in context, base64-wrapped values | model + regex + base64 |
 | `private_organization` | employers, company names | model |
 | `private_occupation` | job titles, employment status, education | model |
 | `private_demographic` | gender, age, ethnicity, nationality, language | model |
 | `private_sensitive` | religion, political views, sexual orientation, health, when stated | model |
 | `private_title` | honorifics and titles before a name | model |
 
-By default nullpii masks what is risky to give to a coding agent's model: names, contact details and addresses, ids and accounts, secrets. It leaves readable what the agent needs and what rarely identifies someone on its own: `private_date` (the model cannot tell a birth date from a deadline) and the last five categories in the table. `DEFAULT_DISABLED_CATEGORIES` lists these six. Health, religion or sexual orientation written in your text reaches the model by default; `/pii mask sensitive` (or `disabledCategories`) changes that. Set `disabledCategories` to change the list; `[]` masks every category. nullpii finds values that are written out. It does not infer a health condition or a belief from indirect wording. Add your own patterns with `np.addRecognizer({ id, pattern, label, confidence, validate? })`.
+By default nullpii masks what is risky to give to a coding agent's model: names, contact details and addresses, ids and accounts, secrets. It leaves readable what the agent needs and what rarely identifies someone on its own: `private_date` (the model cannot tell a birth date from a deadline) and the last five categories in the table. `DEFAULT_DISABLED_CATEGORIES` lists these six. Health, religion or sexual orientation written in your text reaches the model by default; `/pii mask sensitive` (or `disabledCategories`) changes that. Set `disabledCategories` to change the list; `[]` masks every category. nullpii finds values that are written out. It does not infer a health condition or a belief from indirect wording. Add your own patterns with `np.addRecognizer({ id, pattern, label, confidence, validate?, span? })`.
 
 nullpii decodes hidden input before it looks for values: Unicode look-alikes and fullwidth characters, zero-width characters, spaced-out text, percent-encoding (two levels deep), numeric HTML entities (`&#64;`, `&#x40;`), and base64 blobs.
 

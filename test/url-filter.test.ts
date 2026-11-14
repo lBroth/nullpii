@@ -261,9 +261,24 @@ describe('dropCleanPublicUrlSpans', () => {
       'https://docs.python.org/3/?api_key=abc123',
       'https://img.shields.io/badge.svg?X-Amz-Signature=abcdef',
       'https://github.com/login/oauth/callback?state=x&code=4f2a9c',
+      'https://docs.python.org/3/?user_token=abc123',
+      'https://docs.python.org/3/?q=x&jwt_secret=abc123',
+      'https://docs.python.org/3/?db_password=abc123',
+      'https://docs.python.org/3/#my-api-key=abc123',
+      'https://docs.python.org/3/?auth=abc123',
     ]) {
       const span = urlSpan(u, 0);
       expect(dropCleanPublicUrlSpans([span], POLICY), u).toEqual([span]);
+    }
+  });
+
+  it('still releases a URL whose query names no credential', () => {
+    for (const u of [
+      'https://docs.python.org/3/?q=tokenizer',
+      'https://docs.python.org/3/?author=guido',
+      'https://docs.python.org/3/?token_type=bearer',
+    ]) {
+      expect(dropCleanPublicUrlSpans([urlSpan(u, 0)], POLICY), u).toEqual([]);
     }
   });
 

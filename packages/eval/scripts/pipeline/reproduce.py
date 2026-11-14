@@ -3,12 +3,12 @@
 that every output that can be scored from them is the published one:
 
 - AB-1: the 3 score files and the kind split of B1's secrets, against
-  `published-bench/ab1/`;
+  the published run's own (the frozen copy's `published-0.5/ab1/`);
 - R3: the 14 reports and 6 verdicts of the published run, against the
   run's own outputs (the recipe's 11 and 5, plus the 3 reports and the
   verdict on every category masked scored on core labels);
 - PIIMB: nullpii's published spans (every category masked), against
-  `published-bench/piimb/`.
+  the published report (the frozen copy's `published-0.5/piimb/`).
 
 It shows the scorers, the frozen inputs and the recipe still give the
 published numbers, so a change in a new run comes from nullpii.
@@ -45,8 +45,8 @@ def _compare_verdicts(texts: dict[str, str], published: Path) -> list[str]:
     ]
 
 
-def ab1(frozen: Frozen, work: Path, published: Path = settings.PUBLISHED) -> list[str]:
-    out = work / "ab1"
+def ab1(frozen: Frozen, work: Path) -> list[str]:
+    out, published = work / "ab1", frozen.published_outputs
     recipe.score_ab1(frozen.ab1_checkpoints, settings.PUBLISHED_AB1_BASELINE, frozen.dataset("ab1"), out)
     recipe.score_ab1_kind_split(frozen.ab1_checkpoints, frozen.dataset("ab1"), out)
     files = [f"scores-{key}.json" for key in settings.AB1_GOLD] + [f"kind-split-{k}.json" for k in settings.AB1_KIND_SPLITS]
@@ -102,7 +102,8 @@ def r3(frozen: Frozen, work: Path) -> list[str]:
     return diffs
 
 
-def piimb(frozen: Frozen, work: Path, published: Path = settings.PUBLISHED) -> list[str]:
+def piimb(frozen: Frozen, work: Path) -> list[str]:
+    published = frozen.published_outputs
     name = f"piimb-{settings.PIIMB_PUBLISHED_PRESET}.json"
     produced = work / "piimb" / name
     recipe.score_piimb(
@@ -112,8 +113,8 @@ def piimb(frozen: Frozen, work: Path, published: Path = settings.PUBLISHED) -> l
     return _compare_json(produced, published / "piimb" / name)
 
 
-def check(frozen: Frozen, work: Path, published: Path = settings.PUBLISHED) -> None:
+def check(frozen: Frozen, work: Path) -> None:
     """Raise listing every difference; return quietly when there is none."""
-    diffs = ab1(frozen, work, published) + r3(frozen, work) + piimb(frozen, work, published)
+    diffs = ab1(frozen, work) + r3(frozen, work) + piimb(frozen, work)
     if diffs:
         raise AssertionError("the published run does not reproduce:\n  " + "\n  ".join(diffs))

@@ -10,7 +10,7 @@ import shutil
 from collections.abc import Callable
 from pathlib import Path
 
-from pipeline import compare, docs, settings, views
+from pipeline import build, compare, docs, settings, views
 from pipeline.tests import outputs
 from pipeline.tests.outputs import Files, against
 
@@ -68,8 +68,17 @@ def published() -> Files:
     return enrich(outputs.published())
 
 
-def write_run(root: Path, edit: Callable[[Files], None] | None = None, data: Files | None = None) -> Path:
-    return outputs.write(root, data if data is not None else files(), edit)
+# What a made-up run measured, as `score` writes it: the tree's version and
+# the published weights, on the CPU.
+RUN_MEASURED = {"nullpii": build.nullpii_version(views.ROOT), "model": settings.PUBLISHED_MODEL,
+                "backend": settings.CAPTURE_BACKEND, "cpus": ["a test CPU"]}
+
+
+def write_run(root: Path, edit: Callable[[Files], None] | None = None, data: Files | None = None,
+              measured: dict | None = None) -> Path:
+    outputs.write(root, data if data is not None else files(), edit)
+    (root / views.MEASURED_FILE).write_text(json.dumps(measured or RUN_MEASURED))
+    return root
 
 
 def write_reference(root: Path, edit: Callable[[Files], None] | None = None) -> Path:

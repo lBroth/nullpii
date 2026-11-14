@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """`kind_split.py` counts each tool's unmasked secrets of one gold kind and
 of the rest by the scorer's own rule, and refuses a split with nothing on
-one side. It needs the scorer's numpy, so it is skipped where the scorers
-are not installed."""
+one side. It needs the scorer's numpy (requirements-pipeline.txt), and
+fails where it is not installed rather than being skipped."""
 import json
 import subprocess
 import sys
@@ -11,7 +11,6 @@ import pytest
 
 from pipeline import settings
 
-pytest.importorskip("numpy")
 sys.path.insert(0, str(settings.SCRIPTS / "ab1"))
 
 import kind_split  # noqa: E402

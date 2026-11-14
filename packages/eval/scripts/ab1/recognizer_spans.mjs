@@ -49,14 +49,27 @@ function codePointOffsets(text) {
   return (offset) => map[offset];
 }
 
+/** A JSONL row, parsed; a line that is not JSON is reported by its number
+ * alone, never with its text (the frozen inputs hold real secrets, and
+ * JSON.parse's own message quotes the input). */
+function parseRow(line, number, file) {
+  try {
+    return JSON.parse(line);
+  } catch {
+    throw new Error(`${file}:${number}: not a JSON row`);
+  }
+}
+
 const args = parseArgs(process.argv.slice(2));
 const { runRecognizers } = await import(pathToFileURL(join(args.dist, 'recognizers.js')).href);
 const { DEFAULT_RECOGNIZERS } = await import(pathToFileURL(join(args.dist, 'defaults.js')).href);
 const rows = [];
 let spans = 0;
+let lineNumber = 0;
 for await (const line of jsonlLines(args.gold)) {
+  lineNumber += 1;
   if (line.trim() === '') continue;
-  const row = JSON.parse(line);
+  const row = parseRow(line, lineNumber, 'the gold');
   // The rows `secret_coverage.py --split` scores, in the same order.
   if (args.split !== undefined && row.split !== args.split) continue;
   const { text } = row;

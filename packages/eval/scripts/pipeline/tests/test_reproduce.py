@@ -20,8 +20,9 @@ def _report(name: str) -> dict:
 
 @pytest.fixture
 def scored(tmp_path, monkeypatch):
-    """Scorers that write fixed outputs, and a published copy equal to them;
-    returns (frozen copy, published-bench, what each scorer was asked)."""
+    """Scorers that write fixed outputs, and the published run's outputs in
+    the frozen copy equal to them; returns (frozen copy, those outputs, what
+    each scorer was asked)."""
     asked: list[tuple] = []
 
     def score_ab1(checkpoints, baseline, gold_dir, out_dir):
@@ -62,7 +63,7 @@ def scored(tmp_path, monkeypatch):
         (f.r3_published / f"{r.name}.log").write_text(f"report {r.name}\n")
     for v in (*recipe.VERDICTS, *recipe.CORE_LABEL_VERDICTS):
         (f.r3_published / f"{v.name}.log").write_text(f"verdict {v.name}\n")
-    bench = tmp_path / "published-bench"
+    bench = f.published_outputs
     (bench / "ab1").mkdir(parents=True)
     for key in settings.AB1_GOLD:
         (bench / "ab1" / f"scores-{key}.json").write_text(json.dumps(_report(key)))
@@ -75,12 +76,15 @@ def scored(tmp_path, monkeypatch):
 
 def test_the_published_run_reproduces_when_every_output_is_the_same(tmp_path, scored):
     f, bench, asked = scored
-    reproduce.check(f, tmp_path / "work", bench)
+    reproduce.check(f, tmp_path / "work")
     assert ("r3", settings.PUBLISHED_R3_CORE_LABELS_BASELINE, tuple(r.name for r in recipe.CORE_LABEL_RUNS)) in asked
     # The sets come from the checked copy, never from what results/ holds.
     assert ("ab1", settings.PUBLISHED_AB1_BASELINE, f.dataset("ab1")) in asked
     assert ("kind split", f.dataset("ab1")) in asked
     assert ("piimb", f.piimb_sentences, f.piimb_published_spans.name, settings.tool_name("everything")) in asked
+    # The published AB-1 and PIIMB outputs are the frozen copy's, never
+    # published-bench's, which a run of the pipeline replaces.
+    assert f.published_outputs == f.root / "published-0.5"
     # 11 reports of the recipe and 3 on core labels: the 14 published.
     assert len(recipe.R3_RUNS) + len(recipe.CORE_LABEL_RUNS) == len(list(f.r3_published.glob("*.json"))) == 14
 
@@ -100,7 +104,7 @@ def test_any_output_that_differs_is_named(tmp_path, scored, spoil, said):
     f, bench, _ = scored
     spoil(f, bench)
     with pytest.raises(AssertionError, match=said):
-        reproduce.check(f, tmp_path / "work", bench)
+        reproduce.check(f, tmp_path / "work")
 
 
 @pytest.mark.parametrize("spoil, said", [
@@ -113,7 +117,7 @@ def test_the_recipe_declares_exactly_the_published_r3_outputs(tmp_path, scored, 
     f, bench, _ = scored
     spoil(f)
     with pytest.raises(AssertionError, match=said):
-        reproduce.check(f, tmp_path / "work", bench)
+        reproduce.check(f, tmp_path / "work")
 
 
 def test_the_core_label_verdict_leaves_out_its_own_baseline():

@@ -126,6 +126,7 @@ License posture:
     part of the npm artifact; their licence is governed by the
     `lBroth/nullpii` model card (see above).
   - Research kit (packages/eval/) is not published to npm. Its
-    Python deps include MPL-2.0 components (`certifi`, `tqdm` is
-    dual-licensed MIT). MPL-2.0 is file-level copyleft and imposes
-    no obligation on this project's own source.
+    Python deps include MPL-2.0 components (`certifi`; `tqdm`, under
+    MPL-2.0 AND MIT) and `typing-extensions` (PSF-2.0). MPL-2.0 is
+    file-level copyleft and imposes no obligation on this project's
+    own source.

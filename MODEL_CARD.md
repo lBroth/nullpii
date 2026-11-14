@@ -63,19 +63,19 @@ By default nullpii masks what is risky to give to a coding agent's model: names,
 
 ## Results
 
-These numbers are for nullpii as a whole: this model plus the recognizers and filters. They are not for the model alone. Every test was fixed before the run, except one AB-1 scoring rule changed after the scores were first read; that change helped the other tools more, and the first scoring's files are kept in the repository's history ([`strict-rule/`](https://github.com/lBroth/nullpii/tree/230ce9fd1933f5df5263ca9c87d248e064eddc77/packages/eval/published-bench/ab1/strict-rule)). Every result is published. The method is in [METHOD.md](https://lbroth.github.io/nullpii/method).
+These numbers are for nullpii as a whole: this model plus the recognizers and filters. They are not for the model alone. Every test was fixed before the run, except one AB-1 scoring rule changed after the 0.5 run's scores were first read; the first scoring's files are kept in the repository's history ([`strict-rule/`](https://github.com/lBroth/nullpii/tree/230ce9fd1933f5df5263ca9c87d248e064eddc77/packages/eval/published-bench/ab1/strict-rule)). Every result is published. The method is in [METHOD.md](https://lbroth.github.io/nullpii/method).
 
 ![Agent traffic: leak rate and keep rate per tool](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/ab1-agent-traffic.svg)
 
 <!-- card-ab1:begin -->
 - **Coding-agent traffic (AB-1, 966 documents):** nullpii lets 9.5% of the values that must be hidden through, and keeps 85.4% of the values that must stay readable. Only rizzo-pii lets fewer through (8.1%), and it keeps 44.5% readable.
-- **Weak spots:** person names (24% let through; 11 of the 15 other tools let fewer through) and URLs (31%). On secrets alone, nullpii does not lead: openai's privacy-filter lets fewer GitHub-issue secrets through (8.2% against 11.5%), and on CredData nullpii lets 24.5% through, most of it UUIDs that CredData counts as credentials and nullpii keeps readable as ids (13.0% without them).
+- **Weak spots:** person names (24% let through; 11 of the 15 other tools let fewer through) and URLs (31%). On secrets alone, nullpii does not lead: openai's privacy-filter lets fewer GitHub-issue secrets through (8.2% against 11.5%); on CredData nullpii lets 24.5% through, most of it UUIDs that CredData counts as credentials and nullpii keeps readable as ids (13.0% without them), and 7 of the 15 other tools let fewer through there.
 <!-- card-ab1:end -->
 
 ![Documents: macro char-F2 per tool](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/r3-documents.svg)
 
 <!-- card-r3:begin -->
-- **Documents (five held-out sets):** with every category masked, nullpii is tenth of 15 tools (macro char-F2 0.653; the first is rizzo-pii at its default (0.770)); on English documents alone it is ninth (0.603).
+- **Documents (five held-out sets):** with every category masked, nullpii is tenth of 15 tools (macro char-F2 0.653; the first is rizzo-pii at its default, 0.770); on English documents alone it is ninth (0.603).
 - **It favours recall.** With every category masked, its macro recall (0.955) is the highest of 15 at each tool's best-F2 row, and its precision (0.368) fourteenth. Ranked by F0.5, which favours precision, it is fourteenth.
 <!-- card-r3:end -->
 

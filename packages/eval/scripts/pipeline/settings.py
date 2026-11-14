@@ -13,17 +13,25 @@ SCRIPTS = EVAL / "scripts"
 RESULTS = EVAL / "results"
 PUBLISHED = EVAL / "published-bench"
 
-# The frozen datasets and every tool's predictions of the published 0.5
-# run, private (it holds real secrets and data that may not be passed on).
+# The frozen datasets, every tool's predictions of the published 0.5 run
+# and that run's scoring outputs, private (it holds real secrets and data
+# that may not be passed on). Revision d6300af added `published-0.5/` to
+# eadb7b38 and changed nothing else but the manifest.
 FROZEN_REPO = "lBroth/nullpii-bench-private"
-FROZEN_REVISION = "eadb7b382e3bad85cf8f7b54ca24c1f19642b95f"
+FROZEN_REVISION = "d6300af293aa49b25e62209c5206faccc6191ce8"
 MANIFEST = "MANIFEST.json"
 # The SHA-256 of MANIFEST.json at FROZEN_REVISION. A copy is checked
 # against its manifest, so pinning the manifest binds every file of the
 # copy to the pinned revision, wherever the copy came from.
-FROZEN_MANIFEST_SHA256 = "b53c4708bff6e1bc4e4265e014e93fc8876ca9ff585f464d191fb5d610cd424c"
+FROZEN_MANIFEST_SHA256 = "7b12cd16747756834c0a6dbdff1a0dcec6cda67d107f17dfcd6596c951d3cf1e"
 # Files of the frozen repository that the manifest does not list.
 UNLISTED = frozenset({MANIFEST, "README.md", ".gitattributes"})
+# The published 0.5 run's AB-1 and PIIMB outputs, as `score` lays its own
+# out (`ab1/`, `piimb/`), in the frozen copy: `reproduce` checks the frozen
+# predictions give them, and `reference` lays them out for a first
+# `compare`. They were in published-bench/ until a run of the pipeline
+# took their place there.
+PUBLISHED_RUN_OUTPUTS = "published-0.5"
 # The folder huggingface_hub keeps its download metadata in, inside the
 # copy: not a frozen file.
 DOWNLOAD_METADATA = (".cache", "huggingface")
@@ -64,6 +72,23 @@ R3_GATED = ("r3-redact", "r3-tonic-human", "r3-piilo", "r3-eu-clinical", "r3-tra
 R3_REPORTED = ("r3-redactionbench", "r3-mama-deid-val", "r3-traces-v3-nodistract")
 R3_PREFIX = "r3-"
 PIIMB_SENTENCES = "test_sentences.jsonl"
+# PIIMB's six tasks, the `dataset` of each PIIMB row nullpii writes.
+PIIMB_TASKS = frozenset({"ai4privacy-en", "ai4privacy-multi", "gretel", "mapa-eur-lex", "nemotron-pii", "privy"})
+# Every label a nullpii span can carry: PII_LABELS of src/types/labels.ts
+# but its 'O' (a test checks the two agree). A capture whose spans carry
+# another label is refused before it is uploaded.
+SPAN_LABELS = frozenset({
+    "account_number", "private_address", "private_date", "private_demographic", "private_driver_license",
+    "private_email", "private_geolocation", "private_ip", "private_mac", "private_occupation", "private_organization",
+    "private_passport", "private_person", "private_phone", "private_sensitive", "private_title", "private_url",
+    "private_vehicle_id", "secret",
+})
+
+
+def set_names() -> frozenset[str]:
+    """Every name a capture's rows may give their set: AB-1's and R3's
+    sets, PIIMB's tasks."""
+    return frozenset({*AB1_GOLD, *R3_GATED, *R3_REPORTED, *PIIMB_TASKS})
 
 # Bonferroni over the 15 other tools at a 5% family-wise level, written to
 # four decimals as the published run passed it (99.6667).
@@ -76,6 +101,13 @@ def bonferroni_level() -> float:
     """The confidence level, in percent, of the Bonferroni-corrected CIs."""
     return round(100 * (1 - FAMILY_ALPHA / BONFERRONI_COMPARISONS), BONFERRONI_DECIMALS)
 
+
+# What the published 0.5 run measured: nullpii 0.5's release build with the
+# weights the library still pins, on CUDA. A run of the pipeline records
+# its own (MEASURED.json); its captures run on the CPU.
+PUBLISHED_MODEL = "lBroth/nullpii@5dd3c7991483c3b1bccb68beba53890d24cbd2d3"
+PUBLISHED_MEASURED = {"nullpii": "0.5", "model": PUBLISHED_MODEL, "backend": "cuda"}
+CAPTURE_BACKEND = "cpu"
 
 # The names nullpii's rows had in the published run, which `reproduce`
 # scores again to check that the scorers still give the published numbers.

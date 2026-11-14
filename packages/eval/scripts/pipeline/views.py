@@ -11,6 +11,7 @@ never read as one against a configuration measured now."""
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, replace
 from functools import cached_property
 from pathlib import Path
@@ -53,27 +54,54 @@ class ViewError(Exception):
     """The outputs do not hold what a rendered doc reads."""
 
 
-# The version the published run measured; a run measures the build of the
-# tree it runs in, whose version `render` records in published-bench's
-# OUTPUTS.json, so a later version bump does not relabel its rows.
+# What a set of outputs measured: a run's `score` writes MEASURED.json
+# (the nullpii version and model of the tree it captured in, the backend,
+# the CPUs), `render` keeps it in published-bench's OUTPUTS.json; the
+# published 0.5 run's is known (settings.PUBLISHED_MEASURED). The version
+# the docs print is its major.minor, never the tree's package.json at
+# render time, so a version bump relabels nothing.
 PUBLISHED_VERSION = "0.5"
 VERSION_KEY = "version"
+MEASURED_KEY = "measured"
+MEASURED_FILE = "MEASURED.json"
+MEASURED_FIELDS = ("nullpii", "model", "backend")
 
 
 def package_version() -> str:
     """The tree's nullpii version as the docs print it (major.minor)."""
-    major, minor = json.loads(PACKAGE_JSON.read_text(encoding="utf-8"))["version"].split(".")[:2]
+    return short_version(json.loads(PACKAGE_JSON.read_text(encoding="utf-8"))["version"])
+
+
+def short_version(version: str) -> str:
+    major, minor = version.split(".")[:2]
     return f"{major}.{minor}"
 
 
-def measured_version(source: Path, names: str) -> str:
-    """The nullpii version the outputs in `source` measured."""
+def _checked_measured(found: object, where: Path) -> dict:
+    if not isinstance(found, dict) or any(not isinstance(found.get(k), str) or not found[k] for k in MEASURED_FIELDS):
+        raise ViewError(f"{where}: what was measured must give {', '.join(MEASURED_FIELDS)}")
+    return found
+
+
+def measured(source: Path, names: str) -> dict:
+    """What the outputs in `source` measured: OUTPUTS.json's record, a
+    run's MEASURED.json, or the published run's; a run's out without
+    MEASURED.json is an error (which build it measured is unknown)."""
     marker = source / OUTPUTS_MARKER
     if marker.is_file():
-        recorded = json.loads(marker.read_text(encoding="utf-8")).get(VERSION_KEY)
+        recorded = json.loads(marker.read_text(encoding="utf-8")).get(MEASURED_KEY)
         if recorded is not None:
-            return recorded
-    return PUBLISHED_VERSION if names == PUBLISHED_NAMES else package_version()
+            return _checked_measured(recorded, marker)
+    if (source / MEASURED_FILE).is_file():
+        return _checked_measured(json.loads((source / MEASURED_FILE).read_text(encoding="utf-8")), source / MEASURED_FILE)
+    if names == PUBLISHED_NAMES:
+        return dict(settings.PUBLISHED_MEASURED)
+    raise ViewError(f"{source} has no {MEASURED_FILE}: which nullpii and model it measured is unknown (`score` writes it)")
+
+
+def measured_version(source: Path, names: str) -> str:
+    """The nullpii version the outputs in `source` measured (major.minor)."""
+    return short_version(measured(source, names)["nullpii"])
 
 
 def preset_of(name: str) -> str:
@@ -148,7 +176,15 @@ class Bench:
 
     o: compare.Outputs
     names: str
-    version: str
+    measured: dict
+
+    @property
+    def version(self) -> str:
+        return short_version(self.measured["nullpii"])
+
+    @property
+    def backend(self) -> str:
+        return self.measured["backend"]
 
     def label(self, name: str) -> str:
         return nullpii_label(name, self.version)
@@ -254,9 +290,24 @@ def load(source: Path) -> Bench:
     """The outputs in `source`, in the layout their markers say."""
     names = layout_names(source)
     try:
-        return Bench(compare.load(source, names_of(names)), names, measured_version(source, names))
+        outputs = compare.load(source, names_of(names))
     except compare.CompareError as e:
         raise ViewError(str(e)) from e
+    _finite(outputs.files, source)
+    return Bench(outputs, names, measured(source, names))
+
+
+def _finite(value: object, where: Path, path: str = "") -> None:
+    """Refuse a NaN or an infinity anywhere in the outputs: no wording
+    states one, and every comparison with one is false."""
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ViewError(f"{where}: {path or 'a value'} is not a finite number")
+    if isinstance(value, dict):
+        for k, v in value.items():
+            _finite(v, where, f"{path}/{k}")
+    elif isinstance(value, list):
+        for i, v in enumerate(value):
+            _finite(v, where, f"{path}/{i}")
 
 
 def rank(value: float, others: list[float]) -> int:

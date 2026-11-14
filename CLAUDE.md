@@ -53,7 +53,7 @@ METHOD, SECURITY and the CHANGELOG rather than copy them.
 - `debug` package, not `console.log`.
 - Defaults in `src/defaults.ts`. Env reads go through `readEnvVar(NAME)` in `src/config.ts` only — declare the env-var name as an exported `const` in `src/config.ts`, never inline `process.env.X` at call sites. One-line per-var wrappers are unnecessary duplication; pass the const to `readEnvVar` instead.
 - Conventional Commits. Named exports only in `index.ts`. JSDoc on public functions. SPDX header in source files.
-- Deps: MIT/Apache-2.0/BSD/ISC/CC0 only.
+- Deps: MIT/Apache-2.0/BSD/ISC/CC0 only. One exception, for the eval kit's pipeline lock only (`packages/eval/requirements-pipeline*.txt`, run in CI, never shipped in a package): what huggingface-hub needs to fetch the frozen inputs, `certifi` (MPL-2.0), `tqdm` (MPL-2.0 AND MIT) and `typing-extensions` (PSF-2.0), allowed by name in `security.yml`'s dependency review.
 
 ## Security
 

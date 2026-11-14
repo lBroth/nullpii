@@ -17,6 +17,11 @@ favours nullpii. Aggregates only; the reports hold no text.
   python render_ab1.py --a scores-ab1-a.json --b1 scores-ab1-b1.json \\
       --b2 scores-ab1-b2.json --readme README.md --method METHOD.md \\
       [--cov-a coverage-ab1-a.json --cov-b1 ... --cov-b2 ...]
+
+The benchmark pipeline (`bench_pipeline.py render`) calls the table
+functions with the nullpii rows of a run (`nullpii`: each row's key and
+label, `baseline`: the row the intervals are against); the defaults are
+the published run's one row.
 """
 from __future__ import annotations
 
@@ -46,6 +51,10 @@ NAMES = {
     "openmed-large": "OpenMed PII Large",
     "presidio": "Presidio",
 }
+# The nullpii rows a report holds, each with its label, as the functions
+# below take them; the published run has one.
+Nullpii = dict[str, str]
+PUBLISHED_NULLPII: Nullpii = {BASELINE: NAMES[BASELINE]}
 HEAD = ("| Tool | Leak rate | Keep rate | Docs with a leak | nullpii − tool, leak | nullpii − tool, keep |\n"
         "|---|---:|---:|---:|---|---|")
 
@@ -68,21 +77,29 @@ def split(key: str) -> tuple[str, bool, bool]:
     return (base[: -len(DEFAULT)] if default else base), not default, agent
 
 
-def label(key: str) -> str:
+def is_nullpii(key: str) -> bool:
+    return key.startswith("nullpii")
+
+
+def label(key: str, nullpii: Nullpii = PUBLISHED_NULLPII) -> str:
     tool, tuned, agent = split(key)
+    if tool in nullpii:
+        return f"**{nullpii[tool]}**"
     if tool not in NAMES:
         raise SystemExit(f"no display name for {tool}")
-    if tool == BASELINE:
-        return f"**{NAMES[tool]}**"
     return f"{NAMES[tool]} ({'tuned' if tuned else 'default'}{', +agent' if agent else ''})"
 
 
-def wanted(report: dict, readme: bool) -> list[str]:
+def wanted(report: dict, readme: bool, nullpii: Nullpii = PUBLISHED_NULLPII) -> list[str]:
+    """The rows a table shows: nullpii's (not their `+agent` variant, which
+    with the readable categories off emits none of them) and every other
+    tool's, all of them in METHOD and the tuned `+agent` ones in the README.
+    A nullpii row not in `nullpii` (an earlier one) is left out."""
     keys = []
     for k in report:
         tool, tuned, agent = split(k)
-        if tool == BASELINE:
-            if not agent:
+        if is_nullpii(tool):
+            if tool in nullpii and not agent:
                 keys.append(k)
         elif not readme or (tuned and agent):
             keys.append(k)
@@ -100,59 +117,59 @@ def best_cells(report: dict, keys: list[str]) -> dict[str, str]:
     return {field: pct(pick(report[k][field] for k in keys)) for field, pick in MAIN_COLUMNS}
 
 
-def row(report: dict, k: str, best: dict[str, str]) -> str:
+def row(report: dict, k: str, best: dict[str, str], nullpii: Nullpii = PUBLISHED_NULLPII) -> str:
     ci = report[k].get("ci", {})
     cells = []
     for field, _ in MAIN_COLUMNS:
         text = pct(report[k][field])
         cells.append(f"**{text}**" if text == best[field] else text)
-    return (f"| {label(k)} | {' | '.join(cells)} | "
+    return (f"| {label(k, nullpii)} | {' | '.join(cells)} | "
             f"{pp(ci.get('baseline_minus_tool_leak'))} | {pp(ci.get('baseline_minus_tool_keep'))} |")
 
 
-def caption(report: dict) -> str:
-    b = report[BASELINE]
+def caption(report: dict, baseline: str = BASELINE) -> str:
+    b = report[baseline]
     return (f"{b['docs']:,} documents, {b['items']['must_mask']:,} items that must be masked and "
             f"{b['items']['must_keep']:,} that must stay readable.")
 
 
-def main_table(report: dict, readme: bool) -> str:
-    keys = wanted(report, readme)
+def main_table(report: dict, readme: bool, nullpii: Nullpii = PUBLISHED_NULLPII, baseline: str = BASELINE) -> str:
+    keys = wanted(report, readme, nullpii)
     best = best_cells(report, keys)
-    return "\n".join([caption(report), "", HEAD] + [row(report, k, best) for k in keys])
+    return "\n".join([caption(report, baseline), "", HEAD] + [row(report, k, best, nullpii) for k in keys])
 
 
-def secondary(report: dict) -> str:
-    keys = wanted(report, readme=True)
+def secondary(report: dict, nullpii: Nullpii = PUBLISHED_NULLPII, baseline: str = BASELINE) -> str:
+    keys = wanted(report, readme=True, nullpii=nullpii)
     out = ["| Tool | Clean docs with anything masked | Masked outside items, per 1,000 chars | Encoded leak rate "
            "| JSON still parses | Diff hunks consistent |", "|---|---:|---:|---:|---:|---:|"]
     for k in keys:
         r = report[k]
-        out.append(f"| {label(k)} | {pct(r['clean_docs_masked'])} | {r['outside_per_1k']:.2f} | "
+        out.append(f"| {label(k, nullpii)} | {pct(r['clean_docs_masked'])} | {r['outside_per_1k']:.2f} | "
                    f"{pct(r['encoded_leak_rate'])} | {pct(r['json_parse_rate'])} | {pct(r['diff_consistent_rate'])} |")
     cats = sorted({c for k in keys for c in report[k]["leak_by_category"]})
-    counts = report[BASELINE]["leak_by_category"]
+    counts = report[baseline]["leak_by_category"]
     out += ["", "Leak rate per category (items in brackets):", "",
             "| Tool | " + " | ".join(f"{c} ({counts[c][1]:,})" if c in counts else c for c in cats) + " |",
             "|---|" + "---:|" * len(cats)]
     for k in keys:
         by = report[k]["leak_by_category"]
-        out.append(f"| {label(k)} | " + " | ".join(pct(by[c][0]) if c in by else "—" for c in cats) + " |")
+        out.append(f"| {label(k, nullpii)} | " + " | ".join(pct(by[c][0]) if c in by else "—" for c in cats) + " |")
     return "\n".join(out)
 
 
-def coverage(reports: dict, cov: dict) -> str:
+def coverage(reports: dict, cov: dict, nullpii: Nullpii = PUBLISHED_NULLPII) -> str:
     """Secrets' leak rate on items the recognizer pack covers and on the rest
     (`secret_coverage.py`), on the README's rows of each set."""
     sets = [k for k in ("a", "b1", "b2") if k in cov]
     head = " | ".join(f"{k.upper()} covered ({cov[k]['covered']:,}) | {k.upper()} not covered ({cov[k]['uncovered']:,})" for k in sets)
     out = [f"| Tool | {head} |", "|---|" + "---:|---:|" * len(sets)]
-    for key in wanted(reports["a"], readme=True):
+    for key in wanted(reports["a"], readme=True, nullpii=nullpii):
         cells = []
         for k in sets:
             t = cov[k]["tools"].get(key)
             cells += [pct(t["leak_covered"]), pct(t["leak_uncovered"])] if t else ["—", "—"]
-        out.append(f"| {label(key)} | " + " | ".join(cells) + " |")
+        out.append(f"| {label(key, nullpii)} | " + " | ".join(cells) + " |")
     return "\n".join(out)
 
 

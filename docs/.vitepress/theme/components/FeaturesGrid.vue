@@ -111,10 +111,10 @@ const METHOD_LINK = withBase('/method');
               <path d="M13 13.5v-4.5" />
             </svg>
           </span>
-          <h3 class="np-feature-title">Measured, losses included</h3>
+          <h3 class="np-feature-title">Measured, every result published</h3>
           <p class="np-feature-details">
-            Benchmarked on coding-agent traffic and held-out document sets, with the cases it
-            loses published too. See
+            Benchmarked on coding-agent traffic and held-out document sets, with every result
+            published. See
             <a :href="METHOD_LINK">the benchmark</a>.
           </p>
         </article>

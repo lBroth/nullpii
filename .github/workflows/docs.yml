@@ -2,7 +2,11 @@ name: docs
 
 # Builds the documentation site with VitePress and publishes it to GitHub
 # Pages. The pages include the README, the package READMEs, METHOD,
-# SECURITY and the CHANGELOG, so a change to any of them redeploys.
+# SECURITY and the CHANGELOG, and the site bundles the README's figures
+# and logo from assets/, so a change to any of them redeploys, as does a
+# change to the VitePress version the build installs (package.json,
+# package-lock.json). The benchmark pipeline's `render` rewrites the
+# README, METHOD and assets/readme/ together.
 # Least privilege per job: the build reads the repository, only the
 # deploy job may write to Pages.
 
@@ -16,6 +20,9 @@ on:
       - 'CHANGELOG.md'
       - 'packages/*/README.md'
       - 'packages/eval/METHOD.md'
+      - 'assets/**'
+      - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 

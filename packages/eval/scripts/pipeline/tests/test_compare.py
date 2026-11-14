@@ -604,3 +604,42 @@ def test_two_rows_that_are_one_configuration_once_renamed_are_refused(tmp_path):
     layout = compare.Layout(aliases={"nullpii-old": DEFAULT}, every_preset=False)
     with pytest.raises(compare.CompareError, match=f"two rows are {DEFAULT} once renamed"):
         compare.compare(run(tmp_path, "after"), reference, layout)
+
+
+SPLIT = compare.ab1_file(compare.KIND_SPLIT, "ab1-b1")
+
+
+def test_the_uuid_split_is_judged_as_counts_and_rates_and_its_item_counts_moved(tmp_path):
+    before = run(tmp_path, "before", lambda f: f[SPLIT]["tools"][DEFAULT].update(outputs.split_row(268, 228)))
+    after = run(tmp_path, "after", lambda f: f[SPLIT]["tools"][DEFAULT].update(outputs.split_row(268, 229)))
+    verdicts = _verdicts(compare.compare(after, before))
+    # One more leak among 1,706 other secrets (13.4% both): the count moves, the rate's printed digit does not.
+    assert verdicts == {f"AB-1 ab1-b1 · {DEFAULT} · leaked_other (UUID split)": compare.WORSE}
+    fewer = run(tmp_path, "fewer", lambda f: f[SPLIT]["tools"][DEFAULT].update(outputs.split_row(200, 228)))
+    verdicts = _verdicts(compare.compare(fewer, before))
+    assert verdicts[f"AB-1 ab1-b1 · {DEFAULT} · leaked (UUID split)"] == compare.BETTER
+    assert verdicts[f"AB-1 ab1-b1 · {DEFAULT} · leak (UUID split)"] == compare.BETTER
+    gold = run(tmp_path, "gold", lambda f: f[SPLIT].update(items=295))
+    assert _verdicts(compare.compare(gold, run(tmp_path, "plain"))) == {"AB-1 ab1-b1 · items (UUID split)": compare.MOVED}
+
+
+def test_the_place_without_uuids_is_judged_among_each_tools_readme_row(tmp_path):
+    def readme_rows(f):
+        f[SPLIT]["tools"]["presidio+agent"] = outputs.split_row(100, 300)
+    before = run(tmp_path, "before", readme_rows)
+
+    def passed(f):
+        readme_rows(f)
+        f[SPLIT]["tools"]["presidio+agent"] = outputs.split_row(100, 200)
+    after = run(tmp_path, "after", passed)
+    where = f"AB-1 ab1-b1 · {DEFAULT} · rank by leak_other (UUID split) of 2"
+    assert _verdicts(compare.compare(after, before)) == {where: compare.WORSE}
+    # A tool's row that is not its README row is not ranked against.
+    o = compare.load(before, compare.RUN)
+    assert compare.ab1_ranks(o)[where].value == 1
+
+
+def test_a_split_without_a_nullpii_row_is_refused(tmp_path):
+    bad = run(tmp_path, "bad", lambda f: f[SPLIT]["tools"].pop(EVERYTHING))
+    with pytest.raises(compare.CompareError, match="kind-split-ab1-b1.json: no row nullpii-everything"):
+        compare.load(bad, compare.RUN)

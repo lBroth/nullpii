@@ -45,7 +45,13 @@ def scored(tmp_path, monkeypatch):
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps({"name": name, "avg_f2": 0.851}))
 
-    for name, fn in [("score_ab1", score_ab1), ("score_r3", score_r3), ("verdicts", verdicts), ("score_piimb", score_piimb)]:
+    def score_ab1_kind_split(checkpoints, gold_dir, out_dir):
+        asked.append(("kind split", gold_dir))
+        for key in settings.AB1_KIND_SPLITS:
+            (out_dir / f"kind-split-{key}.json").write_text(json.dumps(_report(key)))
+
+    for name, fn in [("score_ab1", score_ab1), ("score_ab1_kind_split", score_ab1_kind_split), ("score_r3", score_r3),
+                     ("verdicts", verdicts), ("score_piimb", score_piimb)]:
         monkeypatch.setattr(recipe, name, fn)
     f = Frozen(tmp_path / "frozen")
     f.r3_published.mkdir(parents=True)
@@ -60,6 +66,8 @@ def scored(tmp_path, monkeypatch):
     (bench / "ab1").mkdir(parents=True)
     for key in settings.AB1_GOLD:
         (bench / "ab1" / f"scores-{key}.json").write_text(json.dumps(_report(key)))
+    for key in settings.AB1_KIND_SPLITS:
+        (bench / "ab1" / f"kind-split-{key}.json").write_text(json.dumps(_report(key)))
     (bench / "piimb").mkdir()
     (bench / "piimb" / "piimb-everything.json").write_text(json.dumps({"name": "nullpii-everything", "avg_f2": 0.851}))
     return f, bench, asked
@@ -71,6 +79,7 @@ def test_the_published_run_reproduces_when_every_output_is_the_same(tmp_path, sc
     assert ("r3", settings.PUBLISHED_R3_CORE_LABELS_BASELINE, tuple(r.name for r in recipe.CORE_LABEL_RUNS)) in asked
     # The sets come from the checked copy, never from what results/ holds.
     assert ("ab1", settings.PUBLISHED_AB1_BASELINE, f.dataset("ab1")) in asked
+    assert ("kind split", f.dataset("ab1")) in asked
     assert ("piimb", f.piimb_sentences, f.piimb_published_spans.name, settings.tool_name("everything")) in asked
     # 11 reports of the recipe and 3 on core labels: the 14 published.
     assert len(recipe.R3_RUNS) + len(recipe.CORE_LABEL_RUNS) == len(list(f.r3_published.glob("*.json"))) == 14
@@ -78,6 +87,8 @@ def test_the_published_run_reproduces_when_every_output_is_the_same(tmp_path, sc
 
 @pytest.mark.parametrize("spoil, said", [
     (lambda f, b: (b / "ab1" / "scores-ab1-b2.json").write_text(json.dumps(_report("other"))), "scores-ab1-b2.json: /name"),
+    (lambda f, b: (b / "ab1" / "kind-split-ab1-b1.json").write_text(json.dumps(_report("other"))),
+     "kind-split-ab1-b1.json: /name"),
     (lambda f, b: (f.r3_published / "char-r3-lodo-r3-piilo.json").write_text("{}"), "char-r3-lodo-r3-piilo.json: /_macro"),
     (lambda f, b: (f.r3_published / "char-r3-defcore.json").write_text("{}"), "char-r3-defcore.json: /_macro"),
     (lambda f, b: (f.r3_published / "verdict-en.log").write_text("another verdict"), "verdict-en: the verdict text differs"),

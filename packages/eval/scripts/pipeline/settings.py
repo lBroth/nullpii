@@ -55,6 +55,10 @@ OTHER_NULLPII = tuple(tool_name(p) for p in PRESETS if tool_name(p) != BASELINE)
 
 # AB-1: the dataset key each scorer takes, and its frozen gold file.
 AB1_GOLD = {"ab1-a": "ab1-test.jsonl", "ab1-b1": "b1.jsonl", "ab1-b2": "b2.jsonl"}
+# AB-1: the gold kind each set's secrets are split by (`kind_split.py`):
+# B1 inherits CredData's categories, and CredData counts UUIDs as
+# credentials, which AB-1's specification lists as text to keep.
+AB1_KIND_SPLITS = {"ab1-b1": "UUID"}
 # R3: the gated sets the comparisons are made on, and the reported ones.
 R3_GATED = ("r3-redact", "r3-tonic-human", "r3-piilo", "r3-eu-clinical", "r3-traces-v3")
 R3_REPORTED = ("r3-redactionbench", "r3-mama-deid-val", "r3-traces-v3-nodistract")
@@ -121,6 +125,7 @@ RECOGNIZER_SPANS = SCRIPTS / "ab1" / "recognizer_spans.mjs"
 ROUNDTRIP = SCRIPTS / "ab1" / "roundtrip.mjs"
 AGENT_METRICS = SCRIPTS / "ab1" / "agent_metrics.py"
 SECRET_COVERAGE = SCRIPTS / "ab1" / "secret_coverage.py"
+KIND_SPLIT = SCRIPTS / "ab1" / "kind_split.py"
 CHAR_METRICS = SCRIPTS / "ab" / "char_metrics.py"
 R2_VERDICT = SCRIPTS / "ab" / "r2_verdict.py"
 PIIMB_SCORE = SCRIPTS / "ab" / "piimb_score.py"

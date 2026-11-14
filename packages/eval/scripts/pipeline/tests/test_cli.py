@@ -67,7 +67,10 @@ def test_score_hands_the_scorers_the_checked_copys_sets(tmp_path, children):
     f = frozen.Frozen(tmp_path / "frozen")
     bench_pipeline.main(["score", "--frozen", str(f.root), "--work", str(tmp_path / "w")])
     gold = [_value(c, "--gold") for c in children if "--gold" in c]
-    assert gold == [str(f.dataset("ab1", g)) for g in settings.AB1_GOLD.values()] * 2
+    assert gold == ([str(f.dataset("ab1", g)) for g in settings.AB1_GOLD.values()] * 2
+                    + [str(f.dataset("ab1", settings.AB1_GOLD[k])) for k in settings.AB1_KIND_SPLITS])
+    split = [c for c in children if str(settings.KIND_SPLIT) in c]
+    assert [_value(c, "--kind") for c in split] == list(settings.AB1_KIND_SPLITS.values())
     piimb = [c for c in children if str(settings.PIIMB_SCORE) in c]
     assert [_value(c, "--data") for c in piimb] == [str(f.piimb_sentences)] * len(settings.PRESETS)
     assert all(_value(c, "--leave-out") == settings.PIIMB_TRAINING_FAMILY_TASK for c in piimb)
@@ -234,3 +237,11 @@ def test_the_piimb_texts_are_written_whole(tmp_path, monkeypatch):
     capture.piimb_texts(tmp_path / "sentences.jsonl", out)
     assert out.read_text() == "rows\n"
     assert [p.name for p in out.parent.iterdir()] == ["piimb.jsonl"]
+
+
+@pytest.mark.parametrize("step", ["reference", "reproduce"])
+def test_the_published_run_steps_refuse_a_published_bench_that_holds_a_run(tmp_path, published, step):
+    (settings.PUBLISHED / "OUTPUTS.json").write_text(json.dumps({"names": "run", "files": []}))
+    args = ["--out", str(tmp_path / "ref")] if step == "reference" else ["--work", str(tmp_path / "w")]
+    with pytest.raises(SystemExit, match="holds a run of the pipeline"):
+        bench_pipeline.main([step, "--frozen", str(published), *args])

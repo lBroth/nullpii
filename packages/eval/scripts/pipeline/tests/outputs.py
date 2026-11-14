@@ -67,6 +67,10 @@ def _r3_report(datasets: tuple[str, ...], baseline: str) -> dict:
     return report
 
 
+def split_row(leaked=268, leaked_other=222, items=294, other_items=1706):
+    return {"leaked": leaked, "leaked_other": leaked_other, "leak": leaked / items, "leak_other": leaked_other / other_items}
+
+
 def files(r3_baseline: str = DEFAULT) -> Files:
     out: Files = {}
     for key in settings.AB1_GOLD:
@@ -74,6 +78,11 @@ def files(r3_baseline: str = DEFAULT) -> Files:
         out[compare.ab1_file("coverage", key)] = {
             "covered": 88, "uncovered": 497, "secrets": 585,
             "tools": {name: {"leak_covered": 0.11, "leak_uncovered": 0.05} for name in (DEFAULT, EVERYTHING, "presidio")},
+        }
+    for key, kind in settings.AB1_KIND_SPLITS.items():
+        out[compare.ab1_file(compare.KIND_SPLIT, key)] = {
+            "kind": kind, "items": 294, "other_items": 1706,
+            "tools": {DEFAULT: split_row(), EVERYTHING: split_row(250, 200), "presidio": split_row(100, 900)},
         }
     out[compare.ROUNDTRIP_FILE] = {"docs": 16572, "masked": 13704, "roundtrip_failures": 0, "failing_idx": {}}
     for run in recipe.R3_RUNS:
@@ -102,6 +111,10 @@ def published() -> Files:
         scores[f"{settings.PUBLISHED_AB1_BASELINE}+agent"] = against()
         del scores[EVERYTHING]
         tools = out[compare.ab1_file("coverage", key)]["tools"]
+        tools[settings.PUBLISHED_AB1_BASELINE] = tools.pop(DEFAULT)
+        del tools[EVERYTHING]
+    for key in settings.AB1_KIND_SPLITS:
+        tools = out[compare.ab1_file(compare.KIND_SPLIT, key)]["tools"]
         tools[settings.PUBLISHED_AB1_BASELINE] = tools.pop(DEFAULT)
         del tools[EVERYTHING]
     renamed = json.loads(json.dumps({k: v for k, v in out.items() if k.startswith("r3/") and k.endswith(".json")})

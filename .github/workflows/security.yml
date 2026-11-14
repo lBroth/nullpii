@@ -115,5 +115,11 @@ jobs:
           # (BSD-3-Clause on PyPI; the scan also finds GPL text in its
           # sources; used only by the AB-1 dataset generator), and
           # pymorphy3-dicts-ru (CC-BY-SA-3.0 dictionary data, loaded only when
-          # Presidio runs as a compared tool).
-          allow-dependencies-licenses: pkg:pypi/numpy, pkg:pypi/torch, pkg:pypi/regex, pkg:pypi/pyahocorasick, pkg:pypi/pymorphy3-dicts-ru
+          # Presidio runs as a compared tool). The benchmark pipeline's lock
+          # (requirements-pipeline*.txt, run in CI only) adds three that
+          # huggingface-hub needs to fetch the frozen inputs: certifi
+          # (MPL-2.0, the root CAs for HTTPS), tqdm (MPL-2.0 AND MIT) and
+          # typing-extensions (PSF-2.0; the scan also finds the GPL text of
+          # Python's licence history). MPL-2.0 is file-level copyleft: it
+          # binds changes to those files only.
+          allow-dependencies-licenses: pkg:pypi/numpy, pkg:pypi/torch, pkg:pypi/regex, pkg:pypi/pyahocorasick, pkg:pypi/pymorphy3-dicts-ru, pkg:pypi/certifi, pkg:pypi/tqdm, pkg:pypi/typing-extensions

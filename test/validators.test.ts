@@ -333,4 +333,10 @@ describe('userinfoPasswordLiteral', () => {
       expect(userinfoPasswordLiteral(v), v).toBe(false);
     }
   });
+
+  it('rejects placeholders and stand-in words', () => {
+    for (const v of ['password', 'PASSWORD', 'changeme', 'secret', 'your_password', 'pw_here']) {
+      expect(userinfoPasswordLiteral(v), v).toBe(false);
+    }
+  });
 });

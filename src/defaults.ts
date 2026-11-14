@@ -408,8 +408,9 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
   // The password in a URL's userinfo, any scheme (RFC 3986 §3.2.1:
   // `postgres://user:PASS@host`, `amqp://`, `nats://`, `redis://:PASS@`):
   // the password only, so the rest of the URL stays readable. A
-  // reference or a mask (`${DB_PASSWORD}`, `%(password)s`, `****`) is
-  // left alone. `core:url` covers http(s) URLs whole.
+  // reference, a mask or a stand-in (`${DB_PASSWORD}`, `%(password)s`,
+  // `****`, `password`, `changeme`) is left alone. `core:url` covers
+  // http(s) URLs whole.
   {
     id: 'core:url-userinfo-password',
     pattern:

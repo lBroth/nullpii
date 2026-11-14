@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { createHash } from 'node:crypto';
+import { isStandInValue } from './stand-in-values.js';
 
 /** Post-match checksum / range validators wired via `Recognizer.validate`.
  * Each function below carries its own algorithm doc. */
@@ -476,14 +477,14 @@ function hasControlChar(s: string): boolean {
 }
 
 /** A template or format reference standing for the password
- * (`${DB_PASSWORD}`, `$PASS`, `%(password)s`), or a mask (`****`,
- * `xxx`). */
-const USERINFO_PASSWORD_STAND_IN = /^(?:\$|%\()|^[*xX.]+$/;
+ * (`${DB_PASSWORD}`, `$PASS`, `%(password)s`). */
+const USERINFO_PASSWORD_REFERENCE = /^(?:\$|%\()/;
 
 /** True when the password in a URL's userinfo is a literal, not a
- * reference to one or a mask: what `core:url-userinfo-password` keeps. */
+ * reference to one, a mask, a placeholder or a stand-in word
+ * (`stand-in-values.ts`): what `core:url-userinfo-password` keeps. */
 export function userinfoPasswordLiteral(value: string): boolean {
-  return !USERINFO_PASSWORD_STAND_IN.test(value);
+  return !USERINFO_PASSWORD_REFERENCE.test(value) && !isStandInValue(value);
 }
 
 /** True when `value` holds an ASCII letter and a digit: a token, not a

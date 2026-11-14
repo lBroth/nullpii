@@ -466,6 +466,9 @@ describe('runRecognizers', () => {
         'mysql://%(user)s:%(password)s@db.example/app',
         'amqp://guest:****@mq.example',
         'amqp://guest:xxx@mq.example',
+        'postgres://user:password@localhost:5432/app',
+        'redis://:changeme@cache.example:6379',
+        'mongodb://admin:your_password@db.example',
         'git@github.com:org/repo.git',
         'https://db.example:5432/path@v2',
       ]) {

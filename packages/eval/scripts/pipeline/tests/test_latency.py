@@ -70,12 +70,15 @@ def _lat(edit=None):
 
 # Harness files ------------------------------------------------------------------------
 
+# Where the harness ran: a local path that must not reach latency.json.
+LOCAL_ROOT = "/srv/build"
+
 HARNESS = {
     "mode": "latency", "plan": "short",
     "bySize": {s: {"p50": 1.5, "p95": 2.0, "msPer1k": 0.7, "spreadPct": 0, "roundP50s": [1.5], "callsPerRound": 6}
                for s in SIZES},
-    "label": "r15-new-cpu-all", "dist": "/home/someone/nullpii/dist",
-    "config": json.dumps({"modelDir": "/home/someone/.cache/nullpii/models/lBroth/nullpii/5dd3c79", "backend": "cpu",
+    "label": "r15-new-cpu-all", "dist": f"{LOCAL_ROOT}/nullpii/dist",
+    "config": json.dumps({"modelDir": f"{LOCAL_ROOT}/.cache/nullpii/models/lBroth/nullpii/5dd3c79", "backend": "cpu",
                           "disabledCategories": []}),
     "node": "v24.15.0", "at": "2026-10-30T18:42:09.994Z",
 }
@@ -86,7 +89,7 @@ def test_a_harness_file_is_kept_as_aggregates_without_any_local_path():
     assert run == {"label": "r15-new-cpu-all", "at": "2026-10-30T18:42:09.994Z", "plan": "short", "node": "v24.15.0",
                    "model": "lBroth/nullpii@5dd3c79", "config": {"backend": "cpu", "disabledCategories": []},
                    "bySize": {s: {"p50": 1.5, "p95": 2.0, "roundP50s": [1.5], "callsPerRound": 6} for s in SIZES}}
-    assert "/home/" not in json.dumps(run)
+    assert LOCAL_ROOT not in json.dumps(run)
     assert latency.config_of(run) == "everything"
 
 
@@ -174,7 +177,7 @@ def _wrong_plan(data):
 
 
 def _extra_field(data):
-    data["nullpii"]["runs"][0]["dist"] = "/home/someone/dist"
+    data["nullpii"]["runs"][0]["dist"] = f"{LOCAL_ROOT}/dist"
 
 
 def _no_tools(data):

@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from 'vitest';
-import { base58CheckValid } from '../src/validators.js';
+import {
+  base58CheckValid,
+  basicCredentialsValid,
+  userinfoPasswordLiteral,
+} from '../src/validators.js';
 
 describe('base58CheckValid', () => {
   it('accepts the Bitcoin Genesis Block address (Satoshi)', () => {
@@ -289,5 +293,44 @@ describe('latLonPairInRange', () => {
     expect(latLonPairInRange('41.9028')).toBe(false);
     expect(latLonPairInRange('41.9028, 12.4964, 100')).toBe(false);
     expect(latLonPairInRange('lat, lon')).toBe(false);
+  });
+});
+
+describe('basicCredentialsValid', () => {
+  const b64 = (s: string) => Buffer.from(s).toString('base64');
+
+  it('accepts base64 of user:password, padded or not', () => {
+    expect(basicCredentialsValid(b64('alice:wonder land'))).toBe(true);
+    expect(basicCredentialsValid(b64('ci:p').replace(/=+$/, ''))).toBe(true);
+  });
+
+  it('rejects base64 of anything else', () => {
+    expect(basicCredentialsValid(b64('alice'))).toBe(false);
+    expect(basicCredentialsValid(b64(':password'))).toBe(false);
+    expect(basicCredentialsValid(b64('alice:'))).toBe(false);
+    expect(basicCredentialsValid(b64('{"a":1}'))).toBe(false);
+    expect(basicCredentialsValid(b64('a b:c'))).toBe(false);
+    expect(basicCredentialsValid(b64('alice:pa\nss'))).toBe(false);
+    expect(basicCredentialsValid(Buffer.from([0x61, 0x3a, 0xff, 0xfe]).toString('base64'))).toBe(
+      false,
+    );
+  });
+
+  it('rejects text that is not canonical base64', () => {
+    expect(basicCredentialsValid('authentication')).toBe(false);
+    expect(basicCredentialsValid('YWxpY2U6cGFzcw=x')).toBe(false);
+  });
+});
+
+describe('userinfoPasswordLiteral', () => {
+  it('accepts a literal password', () => {
+    expect(userinfoPasswordLiteral('s3cr3t-Pa55')).toBe(true);
+    expect(userinfoPasswordLiteral('x1')).toBe(true);
+  });
+
+  it('rejects references and masks', () => {
+    for (const v of ['$PGPASSWORD', '$', '%(password)s', '****', 'xxx', 'XXXX', '...']) {
+      expect(userinfoPasswordLiteral(v), v).toBe(false);
+    }
   });
 });

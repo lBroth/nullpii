@@ -435,3 +435,59 @@ export function latLonPairInRange(value: string): boolean {
   if (lat === 0 && lon === 0) return false;
   return true;
 }
+
+// ─── Credentials in HTTP headers and URLs ──────────────────────────
+
+/** Longest user-id and password a `Basic` credential is taken to hold. */
+const MAX_BASIC_USER_ID = 128;
+const MAX_BASIC_PASSWORD = 256;
+/** What `Buffer#toString('utf8')` puts in place of an invalid sequence. */
+const UTF8_REPLACEMENT = '�';
+const TRAILING_PADDING = /=+$/;
+
+/**
+ * RFC 7617 `Basic` credentials: canonical base64 of `user-id ":"
+ * password` in UTF-8. The user-id is non-empty and holds no whitespace,
+ * quote or brace (a JSON or template fragment is not one), neither part
+ * holds a control character, and the password is non-empty. A word that
+ * merely follows `basic` in prose does not decode to that.
+ */
+export function basicCredentialsValid(value: string): boolean {
+  const bytes = Buffer.from(value, 'base64');
+  const canonical = bytes.toString('base64').replace(TRAILING_PADDING, '');
+  if (canonical !== value.replace(TRAILING_PADDING, '')) return false;
+  const decoded = bytes.toString('utf8');
+  if (decoded.includes(UTF8_REPLACEMENT)) return false;
+  const colon = decoded.indexOf(':');
+  if (colon < 1 || colon > MAX_BASIC_USER_ID) return false;
+  const user = decoded.slice(0, colon);
+  const password = decoded.slice(colon + 1);
+  if (password.length === 0 || password.length > MAX_BASIC_PASSWORD) return false;
+  return !/[\s{}"]/.test(user) && !hasControlChar(decoded);
+}
+
+/** True when `s` holds a C0 control character or DEL. */
+function hasControlChar(s: string): boolean {
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c < 0x20 || c === 0x7f) return true;
+  }
+  return false;
+}
+
+/** A template or format reference standing for the password
+ * (`${DB_PASSWORD}`, `$PASS`, `%(password)s`), or a mask (`****`,
+ * `xxx`). */
+const USERINFO_PASSWORD_STAND_IN = /^(?:\$|%\()|^[*xX.]+$/;
+
+/** True when the password in a URL's userinfo is a literal, not a
+ * reference to one or a mask: what `core:url-userinfo-password` keeps. */
+export function userinfoPasswordLiteral(value: string): boolean {
+  return !USERINFO_PASSWORD_STAND_IN.test(value);
+}
+
+/** True when `value` holds an ASCII letter and a digit: a token, not a
+ * word or a name. */
+export function hasLetterAndDigit(value: string): boolean {
+  return /[A-Za-z]/.test(value) && /\d/.test(value);
+}

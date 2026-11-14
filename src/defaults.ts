@@ -8,17 +8,21 @@
 // Strict TS index-access fallbacks (e.g. `arr[i] ?? 0` under
 // `noUncheckedIndexedAccess`) are NOT user-facing defaults and stay inline.
 
+import { partialPemKeySpan } from './pem-partial.js';
 import type { BackendName, ModelVariant, PiiCategory, UrlRelease } from './types/index.js';
 import type { Recognizer } from './types/recognizer.js';
 import {
   base58CheckValid,
+  basicCredentialsValid,
   codiceFiscaleValid,
   cpfValid,
+  hasLetterAndDigit,
   iban97Valid,
   latLonPairInRange,
   luhnValid,
   macAddressNonReserved,
   partitaIvaValid,
+  userinfoPasswordLiteral,
   vinValid,
 } from './validators.js';
 
@@ -339,8 +343,9 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
   // EC, OpenSSH, TPM2 (`TSS2`) and OpenPGP (armor ends in `BLOCK`).
   // The body never crosses a run of five dashes, so a block ends at the
   // first marker after its header: a header with no trailer (truncated
-  // paste) matches nothing and takes no later block or text with it, and
-  // the scan from each header stops at the next marker (linear time).
+  // paste) matches nothing here (`core:pem-private-key-partial` masks it)
+  // and takes no later block or text with it, and the scan from each
+  // header stops at the next marker (linear time).
   // Backref `\1` requires the trailer's label to be the header's. The
   // body must hold a base64 run, so prose or code that only names the
   // markers stays readable.
@@ -356,6 +361,73 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     pattern: /\beyJ[A-Za-z0-9_\-]{8,2048}\.[A-Za-z0-9_\-]{8,2048}\.[A-Za-z0-9_\-]{8,2048}\b/g,
     label: 'secret',
     confidence: 0.95,
+  },
+  // A PEM private key block with one marker in the text (a paste cut
+  // short, a window that starts inside the block): the marker and the
+  // base64 lines on its open side. The pattern finds the markers; the
+  // walk over the lines is a function, linear in the text
+  // (`pem-partial.ts`). A whole block is `core:pem-private-key`'s.
+  {
+    id: 'core:pem-private-key-partial',
+    pattern:
+      /-----(BEGIN|END) ((?:(?:RSA|DSA|EC|OPENSSH|ENCRYPTED|TSS2|PGP) )?PRIVATE KEY(?: BLOCK)?)-----/g,
+    label: 'secret',
+    confidence: 0.99,
+    span: partialPemKeySpan,
+  },
+  // An unsecured JWT (RFC 7519 §6: an empty signature) or one cut before
+  // its signature, which `core:jwt` misses: it needs three segments. Both
+  // segments are base64url JSON objects (`eyJ` is `{"`).
+  {
+    id: 'core:jwt-unsigned',
+    pattern: /\beyJ[A-Za-z0-9_\-]{8,2048}\.eyJ[A-Za-z0-9_\-]{8,2048}(?:\.[A-Za-z0-9_\-]{0,2048})?/g,
+    label: 'secret',
+    confidence: 0.95,
+  },
+
+  // ─── Credentials in HTTP headers and URLs ─────────────────────
+  // The token after `Basic` (RFC 7617), kept only when it decodes to
+  // `user:password`.
+  {
+    id: 'core:basic-auth',
+    pattern: /(?<=\bBasic[ \t]{1,4})[A-Za-z0-9+/]{6,512}={0,2}(?![A-Za-z0-9+/=])/gi,
+    label: 'secret',
+    confidence: 0.95,
+    validate: basicCredentialsValid,
+  },
+  // The token after `Bearer` (RFC 6750 §2.1, b64token): at least 16
+  // characters with a letter and a digit, so a word stays readable; a
+  // template (`Bearer ${token}`, `Bearer <token>`) never matches.
+  {
+    id: 'core:bearer-token',
+    pattern: /(?<=\bBearer[ \t]{1,4})[A-Za-z0-9._~+/\-]{16,4096}={0,2}(?![A-Za-z0-9._~+/=\-])/gi,
+    label: 'secret',
+    confidence: 0.95,
+    validate: hasLetterAndDigit,
+  },
+  // The password in a URL's userinfo, any scheme (RFC 3986 §3.2.1:
+  // `postgres://user:PASS@host`, `amqp://`, `nats://`, `redis://:PASS@`):
+  // the password only, so the rest of the URL stays readable. A
+  // reference or a mask (`${DB_PASSWORD}`, `%(password)s`, `****`) is
+  // left alone. `core:url` covers http(s) URLs whole.
+  {
+    id: 'core:url-userinfo-password',
+    pattern:
+      /(?<=\b[A-Za-z][A-Za-z0-9+.\-]{1,30}:\/\/[^\s:/@"'<>{}]{0,128}:)[^\s/@"'<>{}]{1,256}(?=@[A-Za-z0-9\[])/g,
+    label: 'secret',
+    confidence: 0.95,
+    validate: userinfoPasswordLiteral,
+  },
+  // A base64 Docker registry config (`.dockerconfigjson` of a Kubernetes
+  // secret, a CI variable holding `~/.docker/config.json`), which holds
+  // each registry's `auth`: the encodings of `{"auths":` as compact JSON,
+  // with a space, or pretty-printed with 2 or 4 spaces or a tab.
+  {
+    id: 'core:docker-config-auth',
+    pattern:
+      /(?<![A-Za-z0-9+/=])(?:eyJhdXRocyI6|eyAiYXV0aHMi|ewogICJhdXRocyI6|ewoJImF1dGhz|ewogICAgImF1dGhz)[A-Za-z0-9+/]*={0,2}/g,
+    label: 'secret',
+    confidence: 0.99,
   },
 
   // ─── Google / Discord / Telegram / Mailgun / Mapbox / Square / PayPal / Heroku ──

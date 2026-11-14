@@ -342,6 +342,88 @@ describe('runRecognizers', () => {
       }
     });
 
+    // A partial block: a fake 64-character body line with digits, built
+    // like the markers above.
+    const pemLine = 'Q1'.repeat(32);
+    const partial = async () => {
+      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+      const r = DEFAULT_RECOGNIZERS.find((x) => x.id === 'core:pem-private-key-partial');
+      expect(r).toBeDefined();
+      return (text: string) => runRecognizers(text, r ? [r] : [], []).map((s) => s.text);
+    };
+
+    it('catches a PEM header and the body lines after it when the trailer is cut off', async () => {
+      const run = await partial();
+      const head = pemMarker('BEGIN', 'RSA PRIVATE KEY');
+      for (const sep of ['\n', '\r\n', '\\n', ' ']) {
+        const block = [head, pemLine, pemLine, pemLine.slice(0, 20)].join(sep);
+        expect(run(`key = "${block}`), JSON.stringify(sep)).toEqual([block]);
+      }
+      // A short last line counts only when its padding ends the body.
+      const padded = [head, pemLine, 'QQ=='].join('\n');
+      expect(run(`${padded}\nnext`)).toEqual([padded]);
+      const heredoc = [head, pemLine, pemLine].join('\n');
+      expect(run(`cat > id <<EOF\n${heredoc}\nEOF\n`)).toEqual([heredoc]);
+    });
+
+    it('catches PEM body lines and the trailer when the header is cut off', async () => {
+      const run = await partial();
+      const foot = pemMarker('END', 'PRIVATE KEY');
+      for (const sep of ['\n', '\r\n', '\\n', ' ']) {
+        const block = [pemLine.slice(30), pemLine, 'QQQ', foot].join(sep);
+        expect(run(`${block}${sep}tail`), JSON.stringify(sep)).toEqual([block]);
+      }
+      // The first visible line can follow other text on its line.
+      const block = [pemLine, pemLine, foot].join('\n');
+      expect(run(`  "private_key": "${block}`)).toEqual([block]);
+    });
+
+    it('walks an indented block, its encryption headers and an armor blank line', async () => {
+      const run = await partial();
+      const encrypted = [
+        pemMarker('BEGIN', 'RSA PRIVATE KEY'),
+        'Proc-Type: 4,ENCRYPTED',
+        'DEK-Info: AES-128-CBC,00112233445566778899AABBCCDDEEFF',
+        '',
+        pemLine,
+        pemLine,
+      ];
+      const yaml = encrypted.map((l) => (l === '' ? l : `    ${l}`)).join('\n');
+      const text = `tls:\n  key: |\n${yaml}\n  cert: ${pemLine}\n`;
+      expect(run(text)).toEqual([yaml.trimStart()]);
+      const armor = [pemMarker('BEGIN', 'PGP PRIVATE KEY BLOCK'), '', pemLine, pemLine].join('\n');
+      expect(run(armor)).toEqual([armor]);
+    });
+
+    it('leaves a whole PEM block to the full-block recognizer', async () => {
+      const run = await partial();
+      for (const sep of ['\n', '\\n', ' ']) {
+        const block = [
+          pemMarker('BEGIN', 'EC PRIVATE KEY'),
+          pemLine,
+          'QQ==',
+          pemMarker('END', 'EC PRIVATE KEY'),
+        ].join(sep);
+        expect(run(`k: ${block}`), JSON.stringify(sep)).toEqual([]);
+      }
+    });
+
+    it('leaves PEM markers with no key material after or before them readable', async () => {
+      const run = await partial();
+      const head = pemMarker('BEGIN', 'PRIVATE KEY');
+      const foot = pemMarker('END', 'PRIVATE KEY');
+      for (const text of [
+        `Paste the key between ${head} and ${foot} lines.`,
+        `${head}\n...\n${foot}`,
+        `const pem = \`${head}\n\${body}\n${foot}\`;`,
+        `The file ends with internationalization ${foot}`,
+        `${head}\nQQQQQQQQQQQQQQQQQQQQQQQQ\n`,
+        `${pemMarker('BEGIN', 'CERTIFICATE')}\n${pemLine}\n${pemLine}`,
+      ]) {
+        expect(run(text), text).toEqual([]);
+      }
+    });
+
     it('catches a Slack token (xoxa / xoxb / xoxp / xoxr / xoxs)', async () => {
       const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
       const r = DEFAULT_RECOGNIZERS.find((r) => r.id === 'core:slack-token');
@@ -349,6 +431,103 @@ describe('runRecognizers', () => {
       const corpus = 'bot xoxb-1234567890-abcdefghijklmn user xoxp-1234567890-abcdef';
       const spans = runRecognizers(corpus, r ? [r] : [], []);
       expect(spans.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  describe('credentials in HTTP headers and URLs', () => {
+    // Fake values, built from parts so the source holds no credential
+    // for the secret scanner to flag.
+    const password = ['hunter', '2-', 'Fake9'].join('');
+    const token = ['fakeTok', '0123456789', 'abcdefXYZ'].join('');
+    const only = async (id: string) => {
+      const { DEFAULT_RECOGNIZERS } = await import('../src/defaults.js');
+      const r = DEFAULT_RECOGNIZERS.find((x) => x.id === id);
+      expect(r).toBeDefined();
+      return (text: string) => runRecognizers(text, r ? [r] : [], []).map((s) => s.text);
+    };
+
+    it('masks only the password of a URL userinfo, whatever the scheme', async () => {
+      const run = await only('core:url-userinfo-password');
+      for (const url of [
+        `postgres://app:${password}@db.example:5432/app`,
+        `nats-route://route:${password}@nats.example:6222`,
+        `redis://:${password}@cache.example:6379/0`,
+        `https://deploy:${password}@git.example/org/repo.git`,
+      ]) {
+        expect(run(`DATABASE_URL=${url} # prod`), url).toEqual([password]);
+      }
+    });
+
+    it('leaves a userinfo password that is a reference or a mask readable', async () => {
+      const run = await only('core:url-userinfo-password');
+      for (const url of [
+        'postgres://app:${DB_PASSWORD}@db.example/app',
+        'postgres://app:$PGPASSWORD@db.example/app',
+        'mysql://%(user)s:%(password)s@db.example/app',
+        'amqp://guest:****@mq.example',
+        'amqp://guest:xxx@mq.example',
+        'git@github.com:org/repo.git',
+        'https://db.example:5432/path@v2',
+      ]) {
+        expect(run(url), url).toEqual([]);
+      }
+    });
+
+    it('masks a Basic credential only when it decodes to user:password', async () => {
+      const run = await only('core:basic-auth');
+      const basic = Buffer.from(`alice:${password}`).toString('base64');
+      expect(run(`Authorization: Basic ${basic}`)).toEqual([basic]);
+      expect(run(`-H 'authorization: basic ${basic}'`)).toEqual([basic]);
+      const noColon = Buffer.from('alicewonderland').toString('base64');
+      for (const text of [
+        `Authorization: Basic ${noColon}`,
+        'Basic authentication is disabled',
+        'Authorization: Basic ${CREDENTIALS}',
+        'a basic example of the feature',
+      ]) {
+        expect(run(text), text).toEqual([]);
+      }
+    });
+
+    it('masks a Bearer token, not a word or a template', async () => {
+      const run = await only('core:bearer-token');
+      expect(run(`Authorization: Bearer ${token}`)).toEqual([token]);
+      expect(run(`curl -H "authorization: bearer ${token}=" ...`)).toEqual([`${token}=`]);
+      for (const text of [
+        'Authorization: Bearer ${GITHUB_TOKEN}',
+        'Authorization: Bearer <token>',
+        'Authorization: Bearer $(gcloud auth print-access-token)',
+        'pass it as a Bearer authenticationheader',
+        '`Bearer ` + token',
+      ]) {
+        expect(run(text), text).toEqual([]);
+      }
+    });
+
+    it('masks an unsigned or signature-less JWT', async () => {
+      const run = await only('core:jwt-unsigned');
+      const b64url = (o: object) => Buffer.from(JSON.stringify(o)).toString('base64url');
+      const jwt = `${b64url({ alg: 'none' })}.${b64url({ sub: 'user-1', iat: 1 })}`;
+      expect(run(`token=${jwt}.`)).toEqual([`${jwt}.`]);
+      expect(run(`Bearer ${jwt}`)).toEqual([jwt]);
+      expect(run('eyJhbGciOiJub25lIn0 alone')).toEqual([]);
+    });
+
+    it('masks a base64 Docker registry config', async () => {
+      const run = await only('core:docker-config-auth');
+      const auth = Buffer.from(`ci:${password}`).toString('base64');
+      const auths = { auths: { 'registry.example': { auth } } };
+      for (const json of [
+        JSON.stringify(auths),
+        JSON.stringify(auths, null, 2),
+        JSON.stringify(auths, null, 4),
+        JSON.stringify(auths, null, '\t'),
+      ]) {
+        const blob = Buffer.from(json).toString('base64');
+        expect(run(`  .dockerconfigjson: ${blob}\n`)).toEqual([blob]);
+      }
+      const other = Buffer.from(JSON.stringify({ name: 'x' })).toString('base64');
+      expect(run(`config: ${other}`)).toEqual([]);
     });
   });
 

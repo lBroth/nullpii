@@ -13,6 +13,9 @@
 // placeholder the sidecar can no longer put back (from before a resume, or
 // from a sidecar session that expired or restarted: the vault is never
 // saved to disk) is asked about first, and refused with no one to answer.
+// In auto mode Claude Code refuses a call whose arguments a hook changed, so
+// there a call that needs real values put back or sent is refused up front,
+// with no question, saying how to go on (#97).
 //
 // Fail closed: when the sidecar cannot be reached, a prompt is handed back
 // to the user and a tool call is refused, instead of going out unmasked.
@@ -291,6 +294,21 @@ const KEYS_WITHHELD =
  * in `restoreTools` would send every value with no question at all. */
 const HELD_NOT_SENT =
   'nullpii did not run this call: it holds placeholders for real values, and the user did not agree to send those values to this tool, or no one could answer (claude -p). Ask the user how to go on, or do the task without those values.';
+/** The permission mode in which Claude Code refuses a tool call whose
+ * arguments a hook changed after the model wrote them (#97). */
+const AUTO_MODE = 'auto';
+/** How Claude and the user are told to go on from a call refused in auto
+ * mode: only a mode where the person approves the call lets it run. */
+const LEAVE_AUTO_MODE = 'leave auto mode (shift+tab cycles the permission modes in the terminal)';
+/** The refusal, in auto mode, of a call to a tool in `restoreTools` that
+ * holds placeholders the session knows: put back, the values would change
+ * the call, which Claude Code then refuses. */
+const AUTO_MODE_NOT_RESTORED = `nullpii did not run this call: it holds placeholders that nullpii puts back as the real values on this machine, and in auto mode Claude Code refuses a call whose arguments a hook changed, so it cannot run with those values. Do not retry it while auto mode is on. Tell the user that this call needs the real values, and that to run it they can ${LEAVE_AUTO_MODE} and ask you to try again; or do the task without those values.`;
+/** The refusal, in auto mode, of a call to a tool outside `restoreTools`
+ * that holds placeholders the session knows: the user is not asked, since
+ * neither Send once nor Allow all could take effect there. Like
+ * `HELD_NOT_SENT`, it names no way around the question. */
+const AUTO_MODE_NOT_SENT = `nullpii did not run this call: it holds placeholders for real values, and in auto mode nullpii cannot send those values to this tool (Claude Code refuses a call whose arguments a hook changed), so the user was not asked. Do not retry it while auto mode is on. Tell the user that to be asked about sending those values they can ${LEAVE_AUTO_MODE} and ask you to try again; or do the task without those values.`;
 /** The refusal when a call that writes a file would still hold
  * placeholders the sidecar can no longer put back, and the user did not let
  * it write them as text, or no one could answer (claude -p). */
@@ -447,6 +465,14 @@ let reviewing: Promise<void> | undefined;
 // result names the question, which shows the real value being asked about)
 // or wait on the same policy review.
 const ownQuestions = new Set<string>();
+// The permission mode each loop runs in, as Claude Code last reported it
+// to the classic hook events (`permission_mode`, `notePermissionMode`),
+// keyed by the subagent's id (`MAIN_LOOP` for the main loop). Neither
+// `tool.call` nor `classic.PreToolUse` carries the mode, so a mode changed
+// mid-turn is seen at the next such event. A fact of the process, not of a
+// session: kept across /clear. Bounded, and a subagent's entry goes when it
+// stops.
+const permissionModes = new Map<string, string>();
 
 class SidecarError extends Error {
   constructor(readonly status: number) {
@@ -1528,6 +1554,63 @@ async function showLegend($, toolUseId: unknown, args: Readonly<Record<string, u
   $.ui.notice(toolUseId, LEGEND_PREFIX + lines.join(LEGEND_JOIN));
 }
 
+/** The key of the main loop in `permissionModes`; a subagent's is its id. */
+const MAIN_LOOP = '';
+/** The most loops whose mode is kept: past it, the oldest subagent's goes. */
+const MODES_MAX = 64;
+
+/** Note the permission mode a classic hook event `e` reports, under its
+ * loop (`agent_id`, absent on the main loop); a subagent that stopped is
+ * forgotten. */
+function notePermissionMode(e: Readonly<Record<string, unknown>>): void {
+  const loop = typeof e.agent_id === 'string' ? e.agent_id : MAIN_LOOP;
+  if (e.hook_event_name === 'SubagentStop' && loop !== MAIN_LOOP) {
+    permissionModes.delete(loop);
+    return;
+  }
+  if (typeof e.permission_mode !== 'string') return;
+  // Set anew, so the oldest entry is the one least recently reported.
+  permissionModes.delete(loop);
+  permissionModes.set(loop, e.permission_mode);
+  if (permissionModes.size <= MODES_MAX) return;
+  for (const key of permissionModes.keys()) {
+    if (key === MAIN_LOOP) continue;
+    permissionModes.delete(key);
+    return;
+  }
+}
+
+/** The hook on each classic event that reports the permission mode: it
+ * notes the mode and changes nothing. */
+async function noteMode($, e, next) {
+  notePermissionMode(e);
+  return next(e);
+}
+
+/** Whether the loop a tool call runs in (`agentId`, absent on the main
+ * loop) is in auto mode, as Claude Code last reported it: a subagent the
+ * mod has no mode for runs in its parent's, as Claude Code's do unless
+ * their definition sets one. Unknown (no classic event yet) is not auto. */
+function inAutoMode(agentId: unknown): boolean {
+  const own = typeof agentId === 'string' ? permissionModes.get(agentId) : undefined;
+  return (own ?? permissionModes.get(MAIN_LOOP)) === AUTO_MODE;
+}
+
+/** Refuse, in auto mode, a call the mod would have to rewrite to put real
+ * values in (`sending`: to a tool outside `restoreTools`, which would have
+ * asked first), before any question: Claude Code would refuse the
+ * rewritten call whatever the user answered (#97). Counted, toasted and
+ * logged with the tool's name alone, never a value. */
+function refusedInAutoMode($, tool: string, sending: boolean): { deny: string } {
+  counts.autoModeRefused += 1;
+  const what = sending ? 'send real values to it' : 'put real values back into it';
+  $.ui.toast(
+    `nullpii did not run a ${tool} call: in auto mode it cannot ${what}. To run it, ${LEAVE_AUTO_MODE}.`,
+  );
+  $.ui.log('nullpii: a call that needs real values refused in auto mode', { to: 'debug' });
+  return { deny: sending ? AUTO_MODE_NOT_SENT : AUTO_MODE_NOT_RESTORED };
+}
+
 /**
  * `next(call)`, then `handed` (the values the user released in clear with
  * it toasted and counted, and the restored and held counts), once the call
@@ -2402,6 +2485,16 @@ export function register(on, options) {
         $,
         lookup.unknown.map((one) => one.placeholder),
       );
+      // In auto mode Claude Code refuses a call whose arguments a hook
+      // changed, so a call the mod would rewrite (values put back into a
+      // `restoreTools` tool, or a value the session knows that the user
+      // would be asked to send) cannot run, whatever anyone answers: it is
+      // refused before any question, and Claude and the user are told how
+      // to go on. A call that stays as written runs as before.
+      const rewrites = destination === undefined ? r.replacements > 0 : lookup.known.size > 0;
+      if (rewrites && inAutoMode(e.agentId)) {
+        return refusedInAutoMode($, e.tool, destination !== undefined);
+      }
       // A call that would write such a placeholder into a file is asked
       // about first, and refused with no one to answer. It comes before
       // the question about values in clear: a call that will not run asks
@@ -2495,6 +2588,22 @@ export function register(on, options) {
     if (!touchesPolicyFile(e.tool, e.input, policy?.file, cwd)) return decided;
     return { decision: 'ask', reason: POLICY_ASK };
   }).catch(async ($, e, next) => (next.called ? { decision: 'ask', reason: POLICY_ASK } : next(e)));
+
+  // The permission mode, read where Claude Code reports it (#97): a call
+  // the mod would rewrite is refused up front in auto mode. These classic
+  // events carry it and come often, at each prompt and after each tool
+  // call; `classic.PreToolUse` does not (its `e` is the call's envelope,
+  // whose fields the model writes). `SubagentStop` ends a subagent's entry.
+  // The mods API takes each event name as written at the call.
+  on('classic.SessionStart', noteMode);
+  on('classic.UserPromptSubmit', noteMode);
+  on('classic.PostToolUse', noteMode);
+  on('classic.PostToolUseFailure', noteMode);
+  on('classic.PostToolBatch', noteMode);
+  on('classic.PermissionRequest', noteMode);
+  on('classic.PermissionDenied', noteMode);
+  on('classic.Stop', noteMode);
+  on('classic.SubagentStop', noteMode);
 
   on('command.run', { command: 'pii' }, async ($, e, next) => {
     const origin = e.origin?.kind ?? '';

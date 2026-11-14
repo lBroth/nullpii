@@ -140,10 +140,12 @@ const SEPARATOR_ONLY = /^[\s)\](\[,;:.!?'"`<>]*$/;
 
 /** A query or fragment parameter that carries a credential: access
  * tokens of raw-content and signed links (`?token=`, `X-Amz-Signature=`,
- * `sig=`), API keys and passwords. Such a URL is never released, on any
- * host, even when no recognizer matched the value. */
+ * `sig=`), API keys and passwords, under their own name or a prefixed
+ * one (`user_token=`, `jwt_secret=`, `db_password=`, `my-api-key=`), and
+ * `auth=`. Such a URL is never released, on any host, even when no
+ * recognizer matched the value. */
 const CREDENTIAL_PARAM =
-  /[?&#;](?:access[_-]?token|auth[_-]?token|id[_-]?token|token|api[_-]?key|apikey|key|secret|client[_-]?secret|password|passwd|pwd|sig|signature|x-amz-signature|x-amz-credential|x-goog-signature|x-goog-credential|code)=/i;
+  /[?&#;](?:(?:[a-z0-9]+[_-])+(?:token|secret|password|api[_-]?key)|access[_-]?token|auth[_-]?token|id[_-]?token|token|api[_-]?key|apikey|key|secret|client[_-]?secret|password|passwd|pwd|sig|signature|x-amz-signature|x-amz-credential|x-goog-signature|x-goog-credential|code|auth)=/i;
 
 /** A URL token's scheme (or `www.`) and host, up to its path, query or fragment. */
 const URL_ORIGIN = /^(?:https?:\/\/|www\.)[^/?#]*/i;

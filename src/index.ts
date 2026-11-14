@@ -37,6 +37,7 @@ export {
   type ModelVariant,
   type NullPiiConfig,
   type Recognizer,
+  type RecognizerSpan,
   type PiiCategory,
   type PiiLabel,
   type PiiSpan,

@@ -601,6 +601,9 @@ export interface Counts {
    * placeholder text on the user's word. */
   staleRefused: number;
   staleWritten: number;
+  /** Calls refused in auto mode because they needed real values put back
+   * or sent, which Claude Code refuses there in a call a hook changed. */
+  autoModeRefused: number;
 }
 
 export function emptyCounts(): Counts {
@@ -613,6 +616,7 @@ export function emptyCounts(): Counts {
     sent: Object.create(null),
     staleRefused: 0,
     staleWritten: 0,
+    autoModeRefused: 0,
   };
 }
 
@@ -802,6 +806,15 @@ function formatStale(counts: Counts): string[] {
   ];
 }
 
+/** The report's line on calls refused in auto mode because they needed
+ * real values, as a count. None while there were none. */
+function formatAutoMode(counts: Counts): string[] {
+  if (counts.autoModeRefused === 0) return [];
+  return [
+    `Calls not run in auto mode, which cannot put real values back or send them: ${counts.autoModeRefused}`,
+  ];
+}
+
 /** The `/pii` status: the state, the session's counts on one line, the
  * values released in clear one line per tool and category, the categories by
  * mode, the policy, and where the commands are. Short on purpose: `/pii
@@ -826,6 +839,7 @@ export function formatReport(
     ].join(' · '),
     ...formatSent(counts),
     ...formatStale(counts),
+    ...formatAutoMode(counts),
     ...(policy === undefined
       ? ['Policy: unknown (the sidecar has not answered)']
       : [formatCategories(policy), formatSettings(policy)]),

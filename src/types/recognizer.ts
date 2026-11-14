@@ -22,4 +22,16 @@ export interface Recognizer {
   /** Optional: skip matches whose verbatim text fails this validator
    * (e.g. Luhn for credit cards, IBAN checksum). */
   readonly validate?: (match: string) => boolean;
+  /** Optional: the part of `text` to mask for a match that passed
+   * `validate`, or `null` to drop the match. For a value only its
+   * context identifies (the password after a key name), or a format a
+   * linear regex cannot bound (a PEM block cut off before its trailer).
+   * Must run in time linear in the text it reads. */
+  readonly span?: (match: RegExpExecArray, text: string) => RecognizerSpan | null;
+}
+
+/** Offsets into the scanned text, `start` inclusive, `end` exclusive. */
+export interface RecognizerSpan {
+  readonly start: number;
+  readonly end: number;
 }

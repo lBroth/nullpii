@@ -42,6 +42,10 @@
   model-card check that MODEL_CARD.md is the card of the release being
              tagged, and with --upload put it on the model repository
              (pipeline/card.py)
+  latency-run
+             print a latency harness file as published-bench/latency/
+             latency.json keeps a run of nullpii: aggregates only, no local
+             path (pipeline/latency.py); latency is timed by hand, never here
 
 The steps share a work directory:
 
@@ -70,7 +74,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from pipeline import (  # noqa: E402
-    artifact, build, capture, card, compare, frozen, parts, proposal, recipe, render, reproduce, settings, texts, views,
+    artifact, build, capture, card, compare, frozen, latency, parts, proposal, recipe, render, reproduce, settings,
+    texts, views,
 )
 from pipeline.parts import Shard  # noqa: E402
 from pipeline.prose import RenderError  # noqa: E402
@@ -363,7 +368,7 @@ def cmd_render(args: argparse.Namespace) -> int:
             diffs = render.check(args.run)
         else:
             diffs = render.render(args.run)
-    except (RenderError, ViewError, render.DocError) as e:
+    except (RenderError, ViewError, render.DocError) as e:  # LatencyError is a RenderError
         raise SystemExit(f"render: {e}") from e
     if args.check:
         if diffs:
@@ -417,6 +422,15 @@ def cmd_model_card(args: argparse.Namespace) -> None:
             print(f"model-card: {card.CARD} is the card of {checked.version}; not uploaded (no --upload)")
     except card.CardError as e:
         raise SystemExit(f"model-card: {e}") from e
+
+
+def cmd_latency_run(args: argparse.Namespace) -> None:
+    try:
+        run = latency.harness_run(json.loads(args.harness.read_text(encoding="utf-8")), str(args.harness))
+        latency.config_of(run)
+    except latency.LatencyError as e:
+        raise SystemExit(f"latency-run: {e}") from e
+    print(json.dumps(run, indent=1))
 
 
 def _path(text: str) -> Path:
@@ -499,6 +513,8 @@ def parser() -> argparse.ArgumentParser:
     s = sub.add_parser("model-card")
     s.add_argument("--tag", required=True, help="the release tag, vX.Y.Z")
     s.add_argument("--upload", action="store_true", help=f"upload it to {card.MODEL_REPO} (token: {card.TOKEN_ENV})")
+    s = sub.add_parser("latency-run")
+    s.add_argument("--harness", type=_path, required=True, help="a file `harness.mjs latency --out` wrote")
     return p
 
 
@@ -506,6 +522,7 @@ COMMANDS = {
     "fetch": cmd_fetch, "reproduce": cmd_reproduce, "capture": cmd_capture,
     "score": cmd_score, "reference": cmd_reference, "compare": cmd_compare, "render": cmd_render,
     "propose": cmd_propose, "measured-differs": cmd_measured_differs, "model-card": cmd_model_card,
+    "latency-run": cmd_latency_run,
 }
 
 

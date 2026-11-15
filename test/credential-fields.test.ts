@@ -202,3 +202,86 @@ describe('core:password-field and core:token-field', () => {
     }
   });
 });
+
+// Low-entropy fakes of a key's sizes: base64 of 16, 24, 32 and 64 bytes.
+const key16 = `${'Ab1'.repeat(7)}A==`;
+const key24 = `${'Ab1'.repeat(10)}Ab`;
+const key32 = `${'Ab1'.repeat(14)}A=`;
+const key64 = `${'Ab1'.repeat(28)}Ab==`;
+/** URL-safe base64 of 32 bytes, padded, as a Fernet key is written. */
+const fernet = `${'Ab_1'.repeat(10)}Ab1=`;
+
+const symmetric = DEFAULT_RECOGNIZERS.filter((r) => r.id === 'core:symmetric-key-field');
+
+describe('core:symmetric-key-field', () => {
+  /** The texts `core:symmetric-key-field` masks in `text`. */
+  function keys(text: string): string[] {
+    return runRecognizers(text, symmetric, []).map((s) => s.text);
+  }
+
+  it('masks base64 of a key size after a key whose last word is key, the value only', () => {
+    const cases: [string, string][] = [
+      [`openssl-tool --key=${key32}`, key32],
+      [`age-tool --key ${key16} -o out`, key16],
+      [`APP_KEY=base64:${key32}`, key32],
+      [`encryption_key: "${key32}"`, key32],
+      [`const cipherKey = '${key16}';`, key16],
+      [`hmac_key=${key64}`, key64],
+      [`KEY=${key24}`, key24],
+      [`"data.key": "${key32}"`, key32],
+      [`APP_KEY="base64:${key32}"`, key32],
+      [`"primaryKey": "${key32}"`, key32],
+      [`PresharedKey = ${key32}`, key32],
+      [`AESKey = "${key32}"`, key32],
+      [`fernet_key = ${fernet}`, fernet],
+      [`API key: ${key32}`, key32],
+    ];
+    for (const [text, key] of cases) {
+      expect(keys(text), text).toEqual([key]);
+    }
+  });
+
+  it('leaves public, database, cache and host keys, other words and other sizes readable', () => {
+    for (const text of [
+      `public_key: ${key32}`,
+      `PublicKey = ${key32}`,
+      `cache_key: ${key32}`,
+      `ssh_host_key=${key32}`,
+      `monkey = ${key32}`,
+      `turkey: ${key32}`,
+      'key: d41d8cd98f00b204e9800998ecf8427e',
+      `key: ${'Ab1'.repeat(10)}`,
+      `key: ${'ab1'.repeat(14)}a=`,
+      `key = ${key32.slice(0, -1)}==`,
+      `key:\n  ${key32}`,
+      `the key ${key32}`,
+      `-key ${key32}`,
+      `  public key: ${key32}`,
+      `Public Key: ${key32}`,
+      `foreign_key: ${key32}`,
+      `sort_key: ${key32}`,
+      `partition-key: ${key32}`,
+      `idempotency_key: ${key32}`,
+      `gpg_key: ${key32}`,
+      `pgp.key: ${key32}`,
+      `Sec-WebSocket-Key: ${key16}`,
+      `next_page_key: ${key32}`,
+      `"nextPageKey": "${key32}"`,
+      `label_api_key: ${key32}`,
+      'curl --key /etc/Certs2024/serverKeys/client.key https://example.com',
+      'debug1: Offering public key: /opt/Build2024/.ssh/id_ed25519',
+      'Key: "uploads/2024/Invoices/Q3/Report1"',
+      `fernet_key = ${fernet.slice(0, -1)}A`,
+      `key = ${'Ab_1'.repeat(10)}A+1=`,
+    ]) {
+      expect(keys(text), text).toEqual([]);
+    }
+  });
+
+  it('leaves a credential core:token-field takes to it', () => {
+    for (const text of [`api_key: ${key32}`, `secret_key=${key32}`, `private_key: ${key32}`]) {
+      expect(keys(text), text).toEqual([]);
+      expect(masked(text), text).toEqual([key32]);
+    }
+  });
+});

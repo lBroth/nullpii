@@ -131,11 +131,8 @@ export const CREDENTIAL_KEY_BEFORE = new RegExp(
  */
 export function credentialKeyValue(key: string): CredentialValue | null {
   if (NOT_CREDENTIAL_KEYS.has(key)) return null;
-  const words = key
-    .split(KEY_WORD_BREAK)
-    .filter((w) => w.length > 0)
-    .map((w) => w.toLowerCase());
-  if (words.some((w) => UI_TEXT_WORDS.has(w) || PAGINATION_WORDS.has(w))) return null;
+  const words = keyWords(key);
+  if (namesTextOrPage(words)) return null;
   let best: CredentialKeyWord | undefined;
   for (const entry of CREDENTIAL_KEY_WORDS) {
     const tail = words.slice(-entry.words.length);
@@ -143,4 +140,26 @@ export function credentialKeyValue(key: string): CredentialValue | null {
     if (best === undefined || entry.words.length > best.words.length) best = entry;
   }
   return best?.value ?? null;
+}
+
+/** A key's words, lower case: `nextPageKey` → `next`, `page`, `key`. */
+function keyWords(key: string): string[] {
+  return key
+    .split(KEY_WORD_BREAK)
+    .filter((w) => w.length > 0)
+    .map((w) => w.toLowerCase());
+}
+
+/** True when one of `words` makes a key name interface text or a page of results. */
+function namesTextOrPage(words: readonly string[]): boolean {
+  return words.some((w) => UI_TEXT_WORDS.has(w) || PAGINATION_WORDS.has(w));
+}
+
+/**
+ * True when the key `key` names interface text about a credential
+ * (`label_api_key`) or a page of results (`next_page_key`, `cursorKey`):
+ * the words `credentialKeyValue` refuses a key for.
+ */
+export function namesInterfaceTextOrPage(key: string): boolean {
+  return namesTextOrPage(keyWords(key));
 }

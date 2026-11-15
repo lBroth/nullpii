@@ -4,6 +4,7 @@ import {
   type CredentialValue,
   credentialKeySource,
   credentialKeyValue,
+  namesInterfaceTextOrPage,
 } from './credential-keys.js';
 import { isStandInValue } from './stand-in-values.js';
 import type { RecognizerSpan } from './types/index.js';
@@ -155,4 +156,109 @@ export function passwordFieldSpan(m: RegExpExecArray, text: string): RecognizerS
 /** `Recognizer.span` hook of `core:token-field`. */
 export function tokenFieldSpan(m: RegExpExecArray, text: string): RecognizerSpan | null {
   return fieldSpan('token', m, text);
+}
+
+/**
+ * Pattern of `core:symmetric-key-field`: base64 after a key whose last
+ * word is `key` (`--key=`, `encryption_key: `, `APP_KEY=base64:`,
+ * `cipherKey = "`, `fernet_key=`). The key and the size are checked by
+ * {@link symmetricKeyFieldSpan}. A value followed by `.` is a file name
+ * (`client.key`), not a key.
+ */
+export const SYMMETRIC_KEY_FIELD_PATTERN =
+  /(?<key>key|KEY|Key)["'`]?\]?(?<sep>[ \t]{0,16}(?::=|=>|=|:)[ \t]{0,16}|[ \t]{1,16})["'`]?(?<value>(?:base64:)?[A-Za-z0-9+/_-]{16,90}={0,2})(?![A-Za-z0-9+/=_.-])/g;
+
+/** Byte lengths of a symmetric key: AES-128, -192 and -256, and a 512-bit HMAC key. */
+const SYMMETRIC_KEY_BYTES = new Set([16, 24, 32, 64]);
+/** The prefix Laravel writes before its base64 `APP_KEY`. */
+const BASE64_PREFIX = 'base64:';
+/** Base64 bits per character, bits per byte, and characters per padded quantum. */
+const BASE64_CHAR_BITS = 6;
+const BYTE_BITS = 8;
+const BASE64_QUANTUM = 4;
+const BASE64_PADDING = /=+$/;
+/** The two alphabets: standard (`+`, `/`) and URL-safe (`-`, `_`). */
+const BASE64_STANDARD_ONLY = /[+/]/;
+const BASE64_URL_ONLY = /[-_]/;
+/** `key` as the key's own last word: alone, after `_`, `.` or `-`, a
+ * camelCase `Key` hump (`cipherKey`), or after an acronym (`AESKey`);
+ * not the end of `monkey` or `turkey`. */
+const KEY_LAST_WORD = /(?:^|[_.-])(?:key|KEY|Key)$|[a-z0-9]Key$|[A-Z]{2}Key$/;
+/** Keys that name something other than a secret key: public halves,
+ * database and cache keys, host, SSH and PGP keys (public, or a file's
+ * name), and the WebSocket handshake's nonce (`Sec-WebSocket-Key`). */
+const NOT_SECRET_KEY =
+  /(?:public|pub|foreign|sort|partition|cache|idempotency|host|ssh|gpg|pgp|websocket)[ _.-]?key$/i;
+/** The word before a key written with a blank (`public key:` of `wg show`). */
+const WORD_BEFORE_BLANK = /([A-Za-z]{1,32}) $/;
+/** Longest stretch looked back at for that word. */
+const MAX_WORD_BEFORE_CHARS = 33;
+/** Fewest `/`-separated parts of a value read as a path (`a/b/c`). */
+const MIN_PATH_PARTS = 3;
+const UPPER = /[A-Z]/;
+const LOWER = /[a-z]/;
+
+/** The number of bytes `value` decodes to, or `null` when it is not well-formed base64. */
+function base64Bytes(value: string): number | null {
+  const body = value.replace(BASE64_PADDING, '');
+  if (body.length < value.length && value.length % BASE64_QUANTUM !== 0) return null;
+  if (body.length % BASE64_QUANTUM === 1) return null;
+  return Math.floor((body.length * BASE64_CHAR_BITS) / BYTE_BITS);
+}
+
+/** True when `value` reads as a random symmetric key: base64 of a key's
+ * size in one alphabet, mixing upper case, lower case and digits (hex and
+ * words do not). URL-safe base64 counts only padded (a Fernet key), since
+ * names joined by `-` and `_` can have a key's length too. */
+function isSymmetricKey(value: string): boolean {
+  const body = value.startsWith(BASE64_PREFIX) ? value.slice(BASE64_PREFIX.length) : value;
+  if (!UPPER.test(body) || !LOWER.test(body) || !DIGIT.test(body)) return false;
+  if (BASE64_URL_ONLY.test(body) && (BASE64_STANDARD_ONLY.test(body) || !body.endsWith('='))) {
+    return false;
+  }
+  const bytes = base64Bytes(body);
+  return bytes !== null && SYMMETRIC_KEY_BYTES.has(bytes);
+}
+
+/** True when `value` reads as a path of named parts (`uploads/2024/Q3/Report1`). */
+function isNamedPath(value: string): boolean {
+  const parts = value.split('/');
+  return parts.length >= MIN_PATH_PARTS && parts.every((p) => p === '' || PATH_SEGMENT.test(p));
+}
+
+/** The key as read with the one word before it when they are written
+ * apart (`public key` → `public_key`), else the key itself. */
+function keyWithWordBefore(text: string, keyStart: number, key: string): string {
+  const before = text.slice(Math.max(0, keyStart - MAX_WORD_BEFORE_CHARS), keyStart);
+  const word = WORD_BEFORE_BLANK.exec(before)?.[1];
+  return word === undefined ? key : `${word}_${key}`;
+}
+
+/**
+ * `Recognizer.span` hook of `core:symmetric-key-field`: the value of a
+ * match of {@link SYMMETRIC_KEY_FIELD_PATTERN}, or `null` when `key` is
+ * not the key's own last word; the key, with the word before it when
+ * written apart, names a public, database, cache, host, SSH, PGP or
+ * WebSocket key, interface text or a page of results, or a credential
+ * `core:token-field` takes (`api_key`, `secret_key`); a blank separator
+ * follows anything but a `--flag`; or the value is a path, or not base64
+ * of 16, 24, 32 or 64 bytes. Laravel's `base64:` prefix stays readable.
+ */
+export function symmetricKeyFieldSpan(m: RegExpExecArray, text: string): RecognizerSpan | null {
+  const word = m.groups?.key;
+  const sep = m.groups?.sep;
+  const value = m.groups?.value;
+  if (word === undefined || sep === undefined || value === undefined) return null;
+  const keyEnd = m.index + word.length;
+  const rawKey = keyBefore(text, m.index, keyEnd);
+  const key = rawKey.replace(FLAG_PREFIX, '');
+  if (!KEY_LAST_WORD.test(key)) return null;
+  const named = keyWithWordBefore(text, keyEnd - rawKey.length, key);
+  if (NOT_SECRET_KEY.test(named) || namesInterfaceTextOrPage(named)) return null;
+  if (credentialKeyValue(key) !== null) return null;
+  if (sep.trim() === '' && !rawKey.startsWith(LONG_FLAG)) return null;
+  if (isNamedPath(value) || !isSymmetricKey(value)) return null;
+  const end = m.index + m[0].length;
+  const prefix = value.startsWith(BASE64_PREFIX) ? BASE64_PREFIX.length : 0;
+  return { start: end - value.length + prefix, end };
 }

@@ -10,6 +10,26 @@ updates:
     groups:
       dev-dependencies:
         dependency-type: development
+    ignore:
+      # Major updates of the dev tools need config or code migrations:
+      # each is a dedicated job, not a weekly bump.
+      - dependency-name: '@biomejs/biome'
+        update-types: ['version-update:semver-major']
+      - dependency-name: typescript
+        update-types: ['version-update:semver-major']
+      - dependency-name: vitest
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@vitest/coverage-v8'
+        update-types: ['version-update:semver-major']
+      - dependency-name: lefthook
+        update-types: ['version-update:semver-major']
+      # The types follow the oldest Node release nullpii supports (22).
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+      # The runtime nullpii is measured with: a new minor or major one
+      # needs a re-measure, so it is a dedicated job too.
+      - dependency-name: onnxruntime-node
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
   - package-ecosystem: github-actions
     directory: /
     schedule:

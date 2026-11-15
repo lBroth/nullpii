@@ -126,7 +126,10 @@ describe('the partial PEM walk runs in linear time', () => {
 // in a function (`credential-fields.ts`), on every key word they match.
 describe('the field recognizers run in linear time', () => {
   const fields = DEFAULT_RECOGNIZERS.filter(
-    (r) => r.id === 'core:password-field' || r.id === 'core:token-field',
+    (r) =>
+      r.id === 'core:password-field' ||
+      r.id === 'core:token-field' ||
+      r.id === 'core:symmetric-key-field',
   );
   for (const unit of [
     'password=hunter22 ',
@@ -136,10 +139,13 @@ describe('the field recognizers run in linear time', () => {
     `${'a_'.repeat(40)}token: ${'Ab1'.repeat(80)} `,
     'token: Ab1/Ab1/Ab1/Ab1/Ab1 ',
     'secret: x.y.z.w.v.u.t.s.r.q ',
+    `${'a_'.repeat(40)}key: ${'Ab1'.repeat(30)} `,
+    'key=key=key=',
+    '--key Ab1Ab1Ab1Ab1Ab1Ab1A ',
   ]) {
     it(`on ${MAX_INPUT_CHARS} characters of ${JSON.stringify(unit.slice(0, 40))}`, () => {
       const text = unit.repeat(Math.ceil(MAX_INPUT_CHARS / unit.length)).slice(0, MAX_INPUT_CHARS);
-      expect(fields).toHaveLength(2);
+      expect(fields).toHaveLength(3);
       const t0 = performance.now();
       runRecognizers(text, fields, []);
       expect(performance.now() - t0).toBeLessThan(MAX_INPUT_BUDGET_MS);

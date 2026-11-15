@@ -202,3 +202,62 @@ describe('core:password-field and core:token-field', () => {
     }
   });
 });
+
+// Low-entropy fakes of a key's sizes: base64 of 16, 24, 32 and 64 bytes.
+const key16 = `${'Ab1'.repeat(7)}A==`;
+const key24 = `${'Ab1'.repeat(10)}Ab`;
+const key32 = `${'Ab1'.repeat(14)}A=`;
+const key64 = `${'Ab1'.repeat(28)}Ab==`;
+
+const symmetric = DEFAULT_RECOGNIZERS.filter((r) => r.id === 'core:symmetric-key-field');
+
+describe('core:symmetric-key-field', () => {
+  /** The texts `core:symmetric-key-field` masks in `text`. */
+  function keys(text: string): string[] {
+    return runRecognizers(text, symmetric, []).map((s) => s.text);
+  }
+
+  it('masks base64 of a key size after a key whose last word is key, the value only', () => {
+    const cases: [string, string][] = [
+      [`openssl-tool --key=${key32}`, key32],
+      [`age-tool --key ${key16} -o out`, key16],
+      [`APP_KEY=base64:${key32}`, key32],
+      [`encryption_key: "${key32}"`, key32],
+      [`const cipherKey = '${key16}';`, key16],
+      [`hmac_key=${key64}`, key64],
+      [`KEY=${key24}`, key24],
+      [`"data.key": "${key32}"`, key32],
+    ];
+    for (const [text, key] of cases) {
+      expect(keys(text), text).toEqual([key]);
+    }
+  });
+
+  it('leaves public, database, cache and host keys, other words and other sizes readable', () => {
+    for (const text of [
+      `public_key: ${key32}`,
+      `PublicKey = ${key32}`,
+      `primary_key: ${key32}`,
+      `cache_key: ${key32}`,
+      `ssh_host_key=${key32}`,
+      `monkey = ${key32}`,
+      `turkey: ${key32}`,
+      'key: d41d8cd98f00b204e9800998ecf8427e',
+      `key: ${'Ab1'.repeat(10)}`,
+      `key: ${'ab1'.repeat(14)}a=`,
+      `key = ${key32.slice(0, -1)}==`,
+      `key:\n  ${key32}`,
+      `the key ${key32}`,
+      `-key ${key32}`,
+    ]) {
+      expect(keys(text), text).toEqual([]);
+    }
+  });
+
+  it('leaves a credential core:token-field takes to it', () => {
+    for (const text of [`api_key: ${key32}`, `secret_key=${key32}`, `private_key: ${key32}`]) {
+      expect(keys(text), text).toEqual([]);
+      expect(masked(text), text).toEqual([key32]);
+    }
+  });
+});

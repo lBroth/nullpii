@@ -10,8 +10,10 @@
 
 import {
   PASSWORD_FIELD_PATTERN,
+  SYMMETRIC_KEY_FIELD_PATTERN,
   TOKEN_FIELD_PATTERN,
   passwordFieldSpan,
+  symmetricKeyFieldSpan,
   tokenFieldSpan,
 } from './credential-fields.js';
 import { partialPemKeySpan } from './pem-partial.js';
@@ -458,6 +460,18 @@ export const DEFAULT_RECOGNIZERS: readonly Recognizer[] = [
     label: 'secret',
     confidence: 0.95,
     span: tokenFieldSpan,
+  },
+  // A symmetric key in base64 after a key whose last word is `key`
+  // (`--key=`, `encryption_key: `, `APP_KEY=base64:`): the value only,
+  // and only when it decodes to 16, 24, 32 or 64 bytes (AES-128/192/256,
+  // a 512-bit HMAC key) and mixes upper case, lower case and digits.
+  // Public, database, cache, host, SSH and PGP keys stay readable.
+  {
+    id: 'core:symmetric-key-field',
+    pattern: SYMMETRIC_KEY_FIELD_PATTERN,
+    label: 'secret',
+    confidence: 0.95,
+    span: symmetricKeyFieldSpan,
   },
 
   // ─── Google / Discord / Telegram / Mailgun / Mapbox / Square / PayPal / Heroku ──

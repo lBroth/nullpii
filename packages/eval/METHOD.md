@@ -7,11 +7,11 @@ Every benchmark number, table, chart and comparison on this page, in the README 
 ## Results at a glance
 
 <!-- fig-ab1:begin -->
-![Agent traffic, 966 documents, leak rate and keep rate per tool: rizzo-pii 8.1% and 44.5%, nullpii 0.5 9.5% and 85.4%, then openai privacy-filter 14.5% and 77.9%; every other tool lets 15.7% to 55.1% through. The table below has every value.](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/ab1-agent-traffic.svg)
+![Agent traffic, 966 documents, leak rate and keep rate per tool: nullpii 0.5, every category 6.6% and 67.6%, rizzo-pii 8.1% and 44.5%, nullpii 0.5 9.0% and 85.4%, then openai privacy-filter 14.5% and 77.9%; every other tool lets 15.7% to 55.1% through. The table below has every value.](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/ab1-agent-traffic.svg)
 <!-- fig-ab1:end -->
 
 <!-- fig-r3:begin -->
-![Documents, macro char-F2 per tool over five sets and over English documents only: rizzo-pii 0.770 and 0.742, nvidia/gliner-PII (library) 0.720 and 0.672, OpenMed privacy-filter-multilingual-v2 0.717 and 0.717, pii-identifier 0.701 and 0.714, ettin-68m 0.699 and 0.706, openai privacy-filter 0.693 and 0.746, OpenMed PII Large 0.682 and 0.700, OpenMed PII Small 0.673 and 0.683, gliner-pii-large 0.656 and 0.590, nullpii 0.5, every category 0.653 and 0.603. The table below has every value.](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/r3-documents.svg)
+![Documents, macro char-F2 per tool over five sets and over English documents only: rizzo-pii 0.770 and 0.742, nullpii 0.5 0.754 and 0.761, nvidia/gliner-PII (library) 0.720 and 0.672, OpenMed privacy-filter-multilingual-v2 0.717 and 0.717, pii-identifier 0.701 and 0.714, ettin-68m 0.699 and 0.706, openai privacy-filter 0.693 and 0.746, OpenMed PII Large 0.682 and 0.700, OpenMed PII Small 0.673 and 0.683, gliner-pii-large 0.656 and 0.590, nullpii 0.5, every category 0.653 and 0.602. The table below has every value.](https://raw.githubusercontent.com/lBroth/nullpii/main/assets/readme/r3-documents.svg)
 <!-- fig-r3:end -->
 
 <!-- fig-latency:begin -->
@@ -21,10 +21,10 @@ Every benchmark number, table, chart and comparison on this page, in the README 
 <!-- glance:begin -->
 | What | Result for nullpii 0.5 |
 |---|---|
-| Agent traffic (AB-1 A): lets through / keeps readable | 9.5% / 85.4% (only rizzo-pii lets fewer through, 8.1%, keeping 44.5%) |
-| Agent traffic on CredData (B1) / GitHub issues (B2): lets through | 24.5% / 11.5% (B1: 13.0% without the items CredData labels `UUID`) |
-| Documents (R3), macro char-F2 over five held-out sets | 0.653 with every category masked, tenth of 15 (rizzo-pii 0.770); English only 0.603 |
-| Scored with the PIIMB leaderboard's method | 0.851 average F2 (every category masked) |
+| Agent traffic (AB-1 A): lets through / keeps readable | 9.0% / 85.4% (only rizzo-pii lets fewer through, 8.1%, keeping 44.5%) |
+| Agent traffic on CredData (B1) / GitHub issues (B2): lets through | 17.5% / 7.8% (B1: 4.8% without the items CredData labels `UUID`) |
+| Documents (R3), macro char-F2 over five held-out sets | 0.754 in its agent default, second of 15 (rizzo-pii 0.770); English only 0.761; 0.653 with every category masked, tenth of 15 (rizzo-pii 0.770); English only 0.602 |
+| Scored with the PIIMB leaderboard's method | 0.678 average F2 (agent default); 0.851 average F2 (every category masked) |
 | Latency on GPU (NVIDIA RTX 4070 Ti), 30,000 characters, timed by hand on `main` at 6f44a03 | 454 ms in its agent default; 495 ms with every category masked |
 | Latency on CPU (Intel Core i7-13700KF), 30,000 characters, timed by hand on `main` at 6f44a03 | 6,843 ms in its agent default; 7,603 ms with every category masked |
 <!-- glance:end -->
@@ -126,11 +126,11 @@ Each was decided and logged before any tool ran on any AB-1 set, unless the entr
 ### Results
 
 <!-- ab1-results-intro:begin -->
-Every tool ran on the frozen sets; the tables use the run redone after the adapter fix, scored with the corrected rule. Rows are sorted by leak rate, then by keep rate. Intervals are paired bootstrap 95% intervals of nullpii minus the tool, in percentage points: a negative leak difference or a positive keep difference favours nullpii. In the main tables, bold marks nullpii's name and the best leak rate, keep rate and docs-with-a-leak value of the rows shown. The aggregates are in [`published-bench/ab1/`](https://github.com/lBroth/nullpii/blob/main/packages/eval/published-bench/ab1). nullpii's rows are from the release build, which includes the three rules described at the end of these results.
+Every tool ran on the frozen sets; the tables use the run redone after the adapter fix, scored with the corrected rule. Rows are sorted by leak rate, then by keep rate. Intervals are paired bootstrap 95% intervals of nullpii minus the tool, in percentage points: a negative leak difference or a positive keep difference favours nullpii. In the main tables, bold marks nullpii's name and the best leak rate, keep rate and docs-with-a-leak value of the rows shown. The aggregates are in [`published-bench/ab1/`](https://github.com/lBroth/nullpii/blob/main/packages/eval/published-bench/ab1). nullpii's rows are a CPU re-measurement of nullpii 0.5 by the benchmark pipeline (see the R3 results), a build with the three rules described at the end of these results.
 <!-- ab1-results-intro:end -->
 
 <!-- ab1-roundtrip:begin -->
-nullpii's round trip, run with the same build: all 16,572 documents, 13,704 of them with something masked, came back as their exact original text after masking and restoring.
+nullpii's round trip, run with the same build: all 16,572 documents, 13,804 of them with something masked, came back as their exact original text after masking and restoring.
 <!-- ab1-roundtrip:end -->
 
 **A. Agent traffic** — one row per tool per operating point, plus its `+agent` variant.
@@ -140,72 +140,74 @@ nullpii's round trip, run with the same build: all 16,572 documents, 13,704 of t
 
 | Tool | Leak rate | Keep rate | Docs with a leak | nullpii − tool, leak | nullpii − tool, keep |
 |---|---:|---:|---:|---|---|
-| rizzo-pii (tuned, +agent) | **8.1%** | 44.5% | **25.1%** | [−0.0, +2.6] | [+38.7, +43.4] |
-| rizzo-pii (tuned) | **8.1%** | 32.6% | **25.1%** | [−0.0, +2.6] | [+50.2, +55.6] |
-| **nullpii 0.5 (agent default)** | 9.5% | 85.4% | 27.0% | — | — |
-| openai privacy-filter (tuned) | 14.2% | 71.8% | 32.9% | [−6.6, −3.0] | [+10.5, +16.6] |
-| openai privacy-filter (tuned, +agent) | 14.5% | 77.9% | 33.6% | [−6.9, −3.2] | [+5.0, +9.9] |
-| OpenMed PII Large (tuned) | 15.6% | 70.1% | 39.2% | [−8.1, −4.3] | [+13.1, +17.5] |
-| OpenMed PII Large (tuned, +agent) | 15.7% | 82.2% | 39.7% | [−8.2, −4.4] | [+1.6, +5.0] |
-| gliner-pii-large (tuned) | 15.9% | 78.2% | 37.8% | [−8.5, −4.3] | [+5.0, +9.6] |
-| OpenMed PII Small (tuned) | 15.9% | 70.9% | 39.8% | [−8.1, −4.8] | [+12.3, +16.8] |
-| gliner-pii-large (tuned, +agent) | 15.9% | 85.5% | 37.8% | [−8.5, −4.4] | [−1.9, +1.6] |
-| nemotron-pii, NVIDIA's server (tuned, +agent) | 16.0% | 75.8% | 42.8% | [−8.2, −4.9] | [+7.7, +11.9] |
-| nemotron-pii, NVIDIA's server (tuned) | 16.0% | 67.3% | 42.8% | [−8.2, −4.9] | [+15.6, +20.7] |
-| OpenMed PII Small (tuned, +agent) | 16.1% | 83.0% | 40.4% | [−8.3, −4.9] | [+0.8, +4.1] |
-| gliner-stream-pii (tuned) | 16.3% | 56.2% | 43.3% | [−9.0, −4.9] | [+26.7, +31.8] |
-| gliner-stream-pii (tuned, +agent) | 16.4% | 67.5% | 43.3% | [−9.0, −4.9] | [+15.9, +19.9] |
-| nemotron-pii, library (tuned, +agent) | 17.6% | 68.4% | 47.9% | [−9.9, −6.3] | [+14.6, +19.4] |
-| nemotron-pii, library (tuned) | 17.6% | 62.8% | 47.9% | [−9.9, −6.3] | [+20.0, +25.3] |
-| ettin-68m (tuned) | 17.6% | 52.4% | 43.6% | [−10.1, −6.2] | [+30.7, +35.5] |
-| ettin-68m (tuned, +agent) | 17.7% | 65.3% | 43.6% | [−10.1, −6.3] | [+18.0, +22.4] |
-| pii-identifier (tuned) | 18.7% | 64.5% | 52.5% | [−11.0, −7.6] | [+18.3, +23.6] |
-| pii-identifier (tuned, +agent) | 18.8% | 77.7% | 52.5% | [−11.0, −7.7] | [+5.7, +9.8] |
-| gliner_multi_pii (ONNX) (tuned) | 19.0% | 48.6% | 44.2% | [−11.4, −7.8] | [+34.1, +39.5] |
-| gliner_multi_pii (ONNX) (tuned, +agent) | 19.2% | 56.9% | 44.2% | [−11.6, −7.9] | [+26.0, +31.2] |
-| nemotron-pii, NVIDIA's server (default, +agent) | 19.4% | 80.5% | 48.8% | [−11.6, −8.4] | [+3.1, +6.9] |
-| nemotron-pii, NVIDIA's server (default) | 19.4% | 69.6% | 48.8% | [−11.6, −8.4] | [+13.1, +18.4] |
-| OpenMed privacy-filter-multilingual-v2 (tuned, +agent) | 20.1% | 81.6% | 48.3% | [−12.0, −9.1] | [+2.2, +5.6] |
-| OpenMed privacy-filter-multilingual-v2 (tuned) | 20.1% | 69.8% | 48.3% | [−12.0, −9.1] | [+13.4, +18.1] |
-| nemotron-pii, library (default, +agent) | 20.9% | 80.8% | 52.1% | [−13.2, −9.6] | [+2.6, +6.7] |
-| nemotron-pii, library (default) | 20.9% | 70.1% | 52.1% | [−13.2, −9.6] | [+12.7, +18.1] |
-| OpenMed privacy-filter-multilingual-v2 (default, +agent) | 22.7% | 84.4% | 52.1% | [−14.8, −11.7] | [−0.6, +2.7] |
-| OpenMed privacy-filter-multilingual-v2 (default) | 22.7% | 73.2% | 52.1% | [−14.8, −11.7] | [+10.2, +14.5] |
-| piiranha (tuned, +agent) | 23.8% | 68.8% | 56.5% | [−16.5, −12.3] | [+14.5, +18.8] |
-| piiranha (tuned) | 23.8% | 62.3% | 56.5% | [−16.5, −12.3] | [+20.6, +25.5] |
-| openai privacy-filter (default) | 24.8% | 86.2% | 48.4% | [−17.8, −13.0] | [−3.1, +1.4] |
-| openai privacy-filter (default, +agent) | 24.9% | 89.3% | 48.8% | [−18.0, −13.2] | [−5.8, −1.9] |
-| OpenMed PII Large (default) | 25.6% | 59.7% | 59.6% | [−18.2, −14.1] | [+23.6, +28.3] |
-| OpenMed PII Large (default, +agent) | 25.6% | 70.6% | 59.8% | [−18.2, −14.1] | [+12.7, +17.3] |
-| OpenMed PII Small (default) | 26.1% | 57.5% | 58.6% | [−18.6, −14.7] | [+25.6, +30.8] |
-| OpenMed PII Small (default, +agent) | 26.2% | 68.8% | 58.9% | [−18.6, −14.7] | [+14.4, +19.1] |
-| gliner-pii-large (default) | 30.0% | 87.1% | 55.1% | [−23.2, −18.0] | [−3.3, −0.1] |
-| gliner-pii-large (default, +agent) | 30.1% | 90.3% | 55.1% | [−23.2, −18.0] | [−6.3, −3.4] |
-| gliner-stream-pii (default, +agent) | 30.2% | 88.3% | 64.0% | [−23.3, −18.4] | [−4.5, −1.3] |
-| gliner-stream-pii (default) | 30.2% | 76.9% | 64.0% | [−23.3, −18.4] | [+6.6, +10.6] |
-| pii-identifier (default) | 31.8% | 70.3% | 69.5% | [−24.6, −20.4] | [+13.0, +17.4] |
-| pii-identifier (default, +agent) | 31.9% | 83.2% | 69.6% | [−24.6, −20.5] | [+0.7, +3.8] |
-| rizzo-pii (default) | 32.6% | 65.5% | 68.6% | [−25.7, −20.9] | [+17.3, +22.6] |
-| rizzo-pii (default, +agent) | 32.6% | 78.3% | 68.6% | [−25.8, −21.0] | [+5.1, +9.0] |
-| ettin-68m (default, +agent) | 33.6% | 80.6% | 65.2% | [−26.6, −21.8] | [+3.0, +6.7] |
-| ettin-68m (default) | 33.6% | 67.7% | 65.2% | [−26.6, −21.8] | [+15.5, +20.0] |
-| deberta PII (default) | 35.8% | 48.9% | 60.8% | [−29.9, −22.7] | [+33.3, +40.0] |
-| deberta PII (default, +agent) | 35.9% | 53.1% | 60.8% | [−29.9, −22.8] | [+29.0, +35.6] |
-| gliner_multi_pii (ONNX) (default) | 36.2% | 79.9% | 67.9% | [−29.3, −24.5] | [+3.7, +7.6] |
-| gliner_multi_pii (ONNX) (default, +agent) | 36.3% | 86.1% | 67.9% | [−29.4, −24.6] | [−2.3, +0.9] |
-| Presidio (default) | 40.3% | 61.8% | 77.5% | [−33.0, −28.8] | [+21.2, +26.1] |
-| Presidio (tuned) | 40.4% | 71.6% | 77.6% | [−33.0, −28.8] | [+11.7, +16.2] |
-| Presidio (default, +agent) | 40.5% | 72.5% | 77.7% | [−33.2, −29.0] | [+10.6, +15.5] |
-| Presidio (tuned, +agent) | 40.6% | 82.3% | 77.9% | [−33.2, −29.0] | [+1.4, +5.1] |
-| piiranha (default, +agent) | 48.0% | **97.1%** | 83.8% | [−40.7, −36.5] | [−13.1, −10.2] |
-| piiranha (default) | 48.0% | 97.0% | 83.8% | [−40.7, −36.5] | [−13.1, −10.2] |
-| deberta PII (tuned) | 55.1% | 60.0% | 81.2% | [−48.7, −42.3] | [+22.2, +28.6] |
-| deberta PII (tuned, +agent) | 55.1% | 64.2% | 81.2% | [−48.7, −42.4] | [+18.0, +24.3] |
+| **nullpii 0.5 (every category masked)** | **6.6%** | 67.6% | **19.5%** | [+1.8, +3.0] | [+16.0, +19.5] |
+| rizzo-pii (tuned, +agent) | 8.1% | 44.5% | 25.1% | [−0.4, +2.2] | [+38.6, +43.3] |
+| rizzo-pii (tuned) | 8.1% | 32.6% | 25.1% | [−0.4, +2.2] | [+50.2, +55.5] |
+| **nullpii 0.5 (agent default)** | 9.0% | 85.4% | 26.3% | — | — |
+| openai privacy-filter (tuned) | 14.2% | 71.8% | 32.9% | [−7.1, −3.5] | [+10.4, +16.5] |
+| openai privacy-filter (tuned, +agent) | 14.5% | 77.9% | 33.6% | [−7.3, −3.7] | [+5.0, +9.9] |
+| OpenMed PII Large (tuned) | 15.6% | 70.1% | 39.2% | [−8.5, −4.7] | [+13.1, +17.4] |
+| OpenMed PII Large (tuned, +agent) | 15.7% | 82.2% | 39.7% | [−8.6, −4.8] | [+1.6, +4.9] |
+| gliner-pii-large (tuned) | 15.9% | 78.2% | 37.8% | [−8.9, −4.8] | [+5.0, +9.6] |
+| OpenMed PII Small (tuned) | 15.9% | 70.9% | 39.8% | [−8.6, −5.2] | [+12.3, +16.7] |
+| gliner-pii-large (tuned, +agent) | 15.9% | 85.5% | 37.8% | [−9.0, −4.8] | [−1.9, +1.6] |
+| nemotron-pii, NVIDIA's server (tuned, +agent) | 16.0% | 75.8% | 42.8% | [−8.7, −5.3] | [+7.7, +11.8] |
+| nemotron-pii, NVIDIA's server (tuned) | 16.0% | 67.3% | 42.8% | [−8.7, −5.3] | [+15.5, +20.6] |
+| OpenMed PII Small (tuned, +agent) | 16.1% | 83.0% | 40.4% | [−8.7, −5.4] | [+0.8, +4.1] |
+| gliner-stream-pii (tuned) | 16.3% | 56.2% | 43.3% | [−9.5, −5.3] | [+26.7, +31.7] |
+| gliner-stream-pii (tuned, +agent) | 16.4% | 67.5% | 43.3% | [−9.6, −5.3] | [+15.8, +19.8] |
+| nemotron-pii, library (tuned, +agent) | 17.6% | 68.4% | 47.9% | [−10.2, −6.7] | [+14.5, +19.4] |
+| nemotron-pii, library (tuned) | 17.6% | 62.8% | 47.9% | [−10.2, −6.7] | [+19.9, +25.3] |
+| ettin-68m (tuned) | 17.6% | 52.4% | 43.6% | [−10.5, −6.6] | [+30.7, +35.4] |
+| ettin-68m (tuned, +agent) | 17.7% | 65.3% | 43.6% | [−10.6, −6.7] | [+18.0, +22.4] |
+| pii-identifier (tuned) | 18.7% | 64.5% | 52.5% | [−11.4, −8.0] | [+18.2, +23.6] |
+| pii-identifier (tuned, +agent) | 18.8% | 77.7% | 52.5% | [−11.4, −8.1] | [+5.7, +9.7] |
+| gliner_multi_pii (ONNX) (tuned) | 19.0% | 48.6% | 44.2% | [−11.8, −8.1] | [+34.1, +39.5] |
+| gliner_multi_pii (ONNX) (tuned, +agent) | 19.2% | 56.9% | 44.2% | [−12.0, −8.3] | [+26.0, +31.1] |
+| nemotron-pii, NVIDIA's server (default, +agent) | 19.4% | 80.5% | 48.8% | [−12.1, −8.7] | [+3.0, +6.9] |
+| nemotron-pii, NVIDIA's server (default) | 19.4% | 69.6% | 48.8% | [−12.1, −8.7] | [+13.1, +18.4] |
+| OpenMed privacy-filter-multilingual-v2 (tuned, +agent) | 20.1% | 81.6% | 48.3% | [−12.4, −9.5] | [+2.1, +5.5] |
+| OpenMed privacy-filter-multilingual-v2 (tuned) | 20.1% | 69.8% | 48.3% | [−12.4, −9.5] | [+13.3, +18.1] |
+| nemotron-pii, library (default, +agent) | 20.9% | 80.8% | 52.1% | [−13.6, −9.9] | [+2.6, +6.6] |
+| nemotron-pii, library (default) | 20.9% | 70.1% | 52.1% | [−13.6, −9.9] | [+12.6, +18.0] |
+| OpenMed privacy-filter-multilingual-v2 (default, +agent) | 22.7% | 84.4% | 52.1% | [−15.2, −12.1] | [−0.6, +2.6] |
+| OpenMed privacy-filter-multilingual-v2 (default) | 22.7% | 73.2% | 52.1% | [−15.2, −12.1] | [+10.1, +14.4] |
+| piiranha (tuned, +agent) | 23.8% | 68.8% | 56.5% | [−16.9, −12.7] | [+14.5, +18.7] |
+| piiranha (tuned) | 23.8% | 62.3% | 56.5% | [−16.9, −12.7] | [+20.6, +25.4] |
+| openai privacy-filter (default) | 24.8% | 86.2% | 48.4% | [−18.3, −13.5] | [−3.1, +1.3] |
+| openai privacy-filter (default, +agent) | 24.9% | 89.3% | 48.8% | [−18.4, −13.6] | [−5.9, −2.0] |
+| OpenMed PII Large (default) | 25.6% | 59.7% | 59.6% | [−18.7, −14.5] | [+23.5, +28.3] |
+| OpenMed PII Large (default, +agent) | 25.6% | 70.6% | 59.8% | [−18.7, −14.5] | [+12.6, +17.2] |
+| OpenMed PII Small (default) | 26.1% | 57.5% | 58.6% | [−19.1, −15.1] | [+25.6, +30.7] |
+| OpenMed PII Small (default, +agent) | 26.2% | 68.8% | 58.9% | [−19.2, −15.1] | [+14.3, +19.1] |
+| gliner-pii-large (default) | 30.0% | 87.1% | 55.1% | [−23.6, −18.4] | [−3.3, −0.2] |
+| gliner-pii-large (default, +agent) | 30.1% | 90.3% | 55.1% | [−23.7, −18.5] | [−6.3, −3.5] |
+| gliner-stream-pii (default, +agent) | 30.2% | 88.3% | 64.0% | [−23.7, −18.7] | [−4.5, −1.4] |
+| gliner-stream-pii (default) | 30.2% | 76.9% | 64.0% | [−23.7, −18.7] | [+6.6, +10.5] |
+| pii-identifier (default) | 31.8% | 70.3% | 69.5% | [−25.0, −20.8] | [+13.0, +17.3] |
+| pii-identifier (default, +agent) | 31.9% | 83.2% | 69.6% | [−25.0, −20.9] | [+0.7, +3.8] |
+| rizzo-pii (default) | 32.6% | 65.5% | 68.6% | [−26.4, −21.3] | [+17.2, +22.6] |
+| rizzo-pii (default, +agent) | 32.6% | 78.3% | 68.6% | [−26.4, −21.3] | [+5.1, +9.0] |
+| ettin-68m (default, +agent) | 33.6% | 80.6% | 65.2% | [−27.0, −22.2] | [+3.0, +6.6] |
+| ettin-68m (default) | 33.6% | 67.7% | 65.2% | [−27.0, −22.2] | [+15.5, +20.0] |
+| deberta PII (default) | 35.8% | 48.9% | 60.8% | [−30.3, −23.2] | [+33.3, +39.9] |
+| deberta PII (default, +agent) | 35.9% | 53.1% | 60.8% | [−30.5, −23.3] | [+29.0, +35.6] |
+| gliner_multi_pii (ONNX) (default) | 36.2% | 79.9% | 67.9% | [−29.8, −25.0] | [+3.6, +7.5] |
+| gliner_multi_pii (ONNX) (default, +agent) | 36.3% | 86.1% | 67.9% | [−29.8, −25.0] | [−2.3, +0.9] |
+| Presidio (default) | 40.3% | 61.8% | 77.5% | [−33.6, −29.1] | [+21.2, +26.0] |
+| Presidio (tuned) | 40.4% | 71.6% | 77.6% | [−33.6, −29.2] | [+11.7, +16.1] |
+| Presidio (default, +agent) | 40.5% | 72.5% | 77.7% | [−33.7, −29.4] | [+10.5, +15.4] |
+| Presidio (tuned, +agent) | 40.6% | 82.3% | 77.9% | [−33.8, −29.4] | [+1.4, +5.0] |
+| piiranha (default, +agent) | 48.0% | **97.1%** | 83.8% | [−41.2, −36.8] | [−13.1, −10.3] |
+| piiranha (default) | 48.0% | 97.0% | 83.8% | [−41.2, −36.8] | [−13.1, −10.3] |
+| deberta PII (tuned) | 55.1% | 60.0% | 81.2% | [−49.1, −42.7] | [+22.1, +28.5] |
+| deberta PII (tuned, +agent) | 55.1% | 64.2% | 81.2% | [−49.2, −42.7] | [+18.0, +24.3] |
 
 | Tool | Clean docs with anything masked | Masked outside items, per 1,000 chars | Encoded leak rate | JSON still parses | Diff hunks consistent |
 |---|---:|---:|---:|---:|---:|
+| **nullpii 0.5 (every category masked)** | 84.5% | 25.17 | 0.0% | 90.2% | 100.0% |
 | rizzo-pii (tuned, +agent) | 99.5% | 63.64 | 14.5% | 50.0% | 0.0% |
-| **nullpii 0.5 (agent default)** | 61.1% | 10.87 | 2.0% | 91.2% | 100.0% |
+| **nullpii 0.5 (agent default)** | 62.2% | 11.01 | 1.3% | 91.2% | 100.0% |
 | openai privacy-filter (tuned, +agent) | 61.7% | 19.15 | 17.1% | 90.2% | 90.9% |
 | OpenMed PII Large (tuned, +agent) | 71.0% | 8.90 | 28.3% | 99.0% | 100.0% |
 | gliner-pii-large (tuned, +agent) | 87.0% | 39.55 | 53.3% | 100.0% | 90.9% |
@@ -225,8 +227,9 @@ Leak rate per category (items in brackets):
 
 | Tool | account (194) | address (158) | card (53) | driver_license (9) | email (536) | iban (76) | ip (431) | mac (104) | national_id (31) | passport (12) | person (969) | phone (169) | secret (585) | url (59) |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| **nullpii 0.5 (every category masked)** | 11.9% | 0.6% | 0.0% | 0.0% | 0.0% | 0.0% | 0.5% | 4.8% | 0.0% | 0.0% | 17.5% | 0.0% | 0.9% | 30.5% |
 | rizzo-pii (tuned, +agent) | 0.5% | 1.9% | 0.0% | 0.0% | 0.7% | 0.0% | 3.5% | 32.7% | 0.0% | 0.0% | 6.2% | 4.7% | 25.5% | 0.0% |
-| **nullpii 0.5 (agent default)** | 11.3% | 3.8% | 0.0% | 0.0% | 0.0% | 0.0% | 2.3% | 7.7% | 0.0% | 0.0% | 23.5% | 0.0% | 4.8% | 30.5% |
+| **nullpii 0.5 (agent default)** | 11.3% | 3.8% | 0.0% | 0.0% | 0.0% | 0.0% | 2.3% | 7.7% | 0.0% | 0.0% | 23.6% | 0.0% | 2.1% | 30.5% |
 | openai privacy-filter (tuned, +agent) | 17.0% | 10.1% | 3.8% | 0.0% | 1.1% | 1.3% | 32.9% | 28.8% | 6.5% | 0.0% | 22.3% | 3.0% | 5.5% | 8.5% |
 | OpenMed PII Large (tuned, +agent) | 34.0% | 17.1% | 1.9% | 0.0% | 2.6% | 5.3% | 0.9% | 9.6% | 9.7% | 25.0% | 10.1% | 42.0% | 34.7% | 49.2% |
 | gliner-pii-large (tuned, +agent) | 20.6% | 10.8% | 1.9% | 0.0% | 6.3% | 7.9% | 12.1% | 70.2% | 12.9% | 0.0% | 22.9% | 1.2% | 9.4% | 57.6% |
@@ -250,67 +253,68 @@ Leak rate per category (items in brackets):
 
 | Tool | Leak rate | Keep rate | Docs with a leak | nullpii − tool, leak | nullpii − tool, keep |
 |---|---:|---:|---:|---|---|
-| openai privacy-filter (tuned, +agent) | **13.2%** | 77.1% | **13.2%** | [+9.0, +13.7] | [−14.7, −10.1] |
-| openai privacy-filter (tuned) | **13.2%** | 77.0% | **13.2%** | [+9.0, +13.7] | [−14.6, −9.9] |
-| nemotron-pii, library (tuned, +agent) | 14.5% | 34.0% | 14.5% | [+8.0, +12.0] | [+28.2, +33.1] |
-| nemotron-pii, library (tuned) | 14.5% | 32.8% | 14.5% | [+8.0, +12.0] | [+29.4, +34.3] |
-| gliner-pii-large (tuned, +agent) | 16.7% | 61.1% | 16.7% | [+6.0, +9.7] | [+1.1, +6.3] |
-| gliner-pii-large (tuned) | 16.7% | 59.8% | 16.7% | [+6.0, +9.7] | [+2.4, +7.6] |
-| gliner-stream-pii (tuned) | 17.7% | 22.5% | 17.7% | [+4.9, +8.6] | [+39.7, +44.7] |
-| gliner-stream-pii (tuned, +agent) | 17.8% | 23.1% | 17.8% | [+4.7, +8.5] | [+39.0, +44.1] |
-| gliner_multi_pii (ONNX) (tuned, +agent) | 20.5% | 16.1% | 20.5% | [+2.0, +5.8] | [+46.2, +51.1] |
-| gliner_multi_pii (ONNX) (tuned) | 20.5% | 14.5% | 20.5% | [+2.0, +5.8] | [+47.8, +52.7] |
-| rizzo-pii (tuned, +agent) | 20.6% | 49.8% | 20.6% | [+1.6, +6.1] | [+12.6, +17.4] |
-| rizzo-pii (tuned) | 20.6% | 48.4% | 20.6% | [+1.6, +6.1] | [+13.9, +18.7] |
-| openai privacy-filter (default) | 21.1% | 92.7% | 21.1% | [+0.9, +6.1] | [−30.0, −25.8] |
-| openai privacy-filter (default, +agent) | 21.1% | 92.7% | 21.1% | [+0.9, +6.1] | [−30.0, −25.8] |
-| nemotron-pii, library (default, +agent) | 21.6% | 58.1% | 21.6% | [+0.7, +5.2] | [+4.4, +9.1] |
-| nemotron-pii, library (default) | 21.6% | 56.5% | 21.6% | [+0.7, +5.2] | [+5.8, +10.7] |
-| nemotron-pii, NVIDIA's server (tuned, +agent) | 21.9% | 53.7% | 21.9% | [+0.4, +5.1] | [+8.5, +13.6] |
-| nemotron-pii, NVIDIA's server (tuned) | 21.9% | 52.3% | 21.9% | [+0.4, +5.1] | [+9.7, +15.0] |
-| gliner-pii-large (default, +agent) | 24.3% | 76.2% | 24.3% | [−1.6, +2.1] | [−14.1, −9.1] |
-| gliner-pii-large (default) | 24.3% | 75.4% | 24.3% | [−1.6, +2.1] | [−13.3, −8.1] |
-| **nullpii 0.5 (agent default)** | 24.5% | 64.8% | 24.5% | — | — |
-| nemotron-pii, NVIDIA's server (default, +agent) | 32.1% | 68.2% | 32.1% | [−10.0, −4.9] | [−5.9, −1.0] |
-| nemotron-pii, NVIDIA's server (default) | 32.1% | 66.8% | 32.1% | [−10.0, −4.9] | [−4.6, +0.5] |
-| OpenMed PII Large (tuned, +agent) | 32.2% | 83.7% | 32.2% | [−10.0, −5.3] | [−21.2, −16.7] |
-| OpenMed PII Large (tuned) | 32.2% | 82.1% | 32.2% | [−10.0, −5.3] | [−19.6, −15.0] |
-| OpenMed privacy-filter-multilingual-v2 (tuned, +agent) | 42.9% | 76.6% | 42.9% | [−20.9, −15.6] | [−14.2, −9.4] |
-| OpenMed privacy-filter-multilingual-v2 (tuned) | 42.9% | 75.1% | 42.9% | [−20.9, −15.6] | [−12.7, −7.9] |
-| OpenMed PII Small (tuned, +agent) | 43.8% | 78.8% | 43.8% | [−22.0, −16.5] | [−16.4, −11.9] |
-| OpenMed PII Small (tuned) | 43.8% | 77.3% | 43.8% | [−22.0, −16.5] | [−15.0, −10.5] |
-| ettin-68m (tuned, +agent) | 45.4% | 64.0% | 45.4% | [−23.6, −18.0] | [−1.5, +2.8] |
-| ettin-68m (tuned) | 45.4% | 63.0% | 45.4% | [−23.6, −18.0] | [−0.5, +4.0] |
-| gliner-stream-pii (default) | 46.6% | 63.5% | 46.6% | [−24.6, −19.6] | [−1.3, +3.8] |
-| gliner-stream-pii (default, +agent) | 46.7% | 64.5% | 46.7% | [−24.7, −19.6] | [−2.4, +2.7] |
-| OpenMed privacy-filter-multilingual-v2 (default, +agent) | 46.8% | 82.0% | 46.8% | [−24.8, −19.6] | [−19.5, −14.9] |
-| OpenMed privacy-filter-multilingual-v2 (default) | 46.8% | 80.5% | 46.8% | [−24.8, −19.6] | [−18.0, −13.4] |
-| OpenMed PII Large (default, +agent) | 52.4% | 74.6% | 52.4% | [−30.5, −25.4] | [−12.6, −7.0] |
-| OpenMed PII Large (default) | 52.4% | 73.3% | 52.4% | [−30.5, −25.4] | [−11.3, −5.7] |
-| deberta PII (default, +agent) | 54.4% | 63.4% | 54.4% | [−32.3, −27.5] | [−1.5, +4.2] |
-| deberta PII (default) | 54.4% | 63.3% | 54.4% | [−32.3, −27.5] | [−1.4, +4.3] |
-| pii-identifier (tuned, +agent) | 54.5% | 78.5% | 54.5% | [−32.9, −27.2] | [−16.3, −11.4] |
-| pii-identifier (tuned) | 54.5% | 77.5% | 54.5% | [−32.9, −27.2] | [−15.2, −10.4] |
-| deberta PII (tuned, +agent) | 58.3% | 74.2% | 58.3% | [−36.1, −31.2] | [−12.3, −6.6] |
-| deberta PII (tuned) | 58.3% | 74.0% | 58.3% | [−36.1, −31.2] | [−12.0, −6.5] |
-| gliner_multi_pii (ONNX) (default, +agent) | 61.2% | 39.0% | 61.2% | [−39.2, −34.2] | [+23.1, +28.5] |
-| gliner_multi_pii (ONNX) (default) | 61.2% | 37.4% | 61.2% | [−39.2, −34.2] | [+24.5, +30.1] |
-| OpenMed PII Small (default, +agent) | 62.6% | 68.7% | 62.6% | [−40.9, −35.4] | [−6.5, −1.4] |
-| OpenMed PII Small (default) | 62.6% | 67.4% | 62.6% | [−40.9, −35.4] | [−5.2, −0.1] |
-| ettin-68m (default, +agent) | 63.6% | 82.0% | 63.6% | [−42.0, −36.4] | [−19.5, −15.0] |
-| ettin-68m (default) | 63.6% | 81.2% | 63.6% | [−42.0, −36.4] | [−18.7, −14.1] |
-| piiranha (tuned, +agent) | 72.2% | 63.2% | 72.2% | [−50.3, −45.3] | [−0.9, +4.0] |
-| piiranha (tuned) | 72.2% | 61.7% | 72.2% | [−50.3, −45.3] | [+0.6, +5.6] |
-| pii-identifier (default, +agent) | 74.9% | 88.5% | 74.9% | [−52.9, −47.8] | [−26.0, −21.7] |
-| pii-identifier (default) | 74.9% | 87.8% | 74.9% | [−52.9, −47.8] | [−25.3, −20.9] |
-| piiranha (default) | 85.2% | **95.0%** | 85.2% | [−62.9, −58.6] | [−32.3, −28.0] |
-| piiranha (default, +agent) | 85.2% | **95.0%** | 85.2% | [−62.9, −58.6] | [−32.3, −28.0] |
-| rizzo-pii (default, +agent) | 89.2% | 85.2% | 89.2% | [−66.8, −62.4] | [−22.8, −18.1] |
-| rizzo-pii (default) | 89.2% | 84.2% | 89.2% | [−66.8, −62.4] | [−21.7, −17.1] |
-| Presidio (default) | 94.2% | 63.5% | 94.2% | [−71.8, −67.6] | [−1.6, +4.2] |
-| Presidio (tuned) | 94.3% | 74.5% | 94.3% | [−71.9, −67.7] | [−12.2, −7.1] |
-| Presidio (default, +agent) | 94.8% | 65.6% | 94.8% | [−72.3, −68.2] | [−3.6, +2.1] |
-| Presidio (tuned, +agent) | 95.0% | 76.6% | 95.0% | [−72.4, −68.4] | [−14.3, −9.4] |
+| openai privacy-filter (tuned, +agent) | **13.2%** | 77.1% | **13.2%** | [+2.3, +6.6] | [−15.9, −11.1] |
+| openai privacy-filter (tuned) | **13.2%** | 77.0% | **13.2%** | [+2.3, +6.6] | [−15.8, −11.0] |
+| nemotron-pii, library (tuned, +agent) | 14.5% | 34.0% | 14.5% | [+0.6, +5.2] | [+27.2, +31.9] |
+| nemotron-pii, library (tuned) | 14.5% | 32.8% | 14.5% | [+0.6, +5.2] | [+28.3, +33.2] |
+| gliner-pii-large (tuned, +agent) | 16.7% | 61.1% | 16.7% | [−1.3, +3.1] | [−0.0, +5.1] |
+| gliner-pii-large (tuned) | 16.7% | 59.8% | 16.7% | [−1.3, +3.1] | [+1.3, +6.5] |
+| **nullpii 0.5 (every category masked)** | 17.0% | 58.1% | 17.0% | [+0.0, +1.0] | [+4.4, +6.5] |
+| **nullpii 0.5 (agent default)** | 17.5% | 63.6% | 17.5% | — | — |
+| gliner-stream-pii (tuned) | 17.7% | 22.5% | 17.7% | [−2.5, +1.8] | [+38.5, +43.5] |
+| gliner-stream-pii (tuned, +agent) | 17.8% | 23.1% | 17.8% | [−2.5, +1.8] | [+37.8, +43.0] |
+| gliner_multi_pii (ONNX) (tuned, +agent) | 20.5% | 16.1% | 20.5% | [−5.2, −0.8] | [+45.0, +50.0] |
+| gliner_multi_pii (ONNX) (tuned) | 20.5% | 14.5% | 20.5% | [−5.2, −0.8] | [+46.7, +51.6] |
+| rizzo-pii (tuned, +agent) | 20.6% | 49.8% | 20.6% | [−5.6, −0.6] | [+11.3, +16.3] |
+| rizzo-pii (tuned) | 20.6% | 48.4% | 20.6% | [−5.6, −0.6] | [+12.7, +17.7] |
+| openai privacy-filter (default) | 21.1% | 92.7% | 21.1% | [−5.8, −1.1] | [−31.2, −26.9] |
+| openai privacy-filter (default, +agent) | 21.1% | 92.7% | 21.1% | [−5.8, −1.1] | [−31.2, −26.9] |
+| nemotron-pii, library (default, +agent) | 21.6% | 58.1% | 21.6% | [−6.7, −1.6] | [+3.1, +7.9] |
+| nemotron-pii, library (default) | 21.6% | 56.5% | 21.6% | [−6.7, −1.6] | [+4.7, +9.5] |
+| nemotron-pii, NVIDIA's server (tuned, +agent) | 21.9% | 53.7% | 21.9% | [−6.9, −1.8] | [+7.3, +12.4] |
+| nemotron-pii, NVIDIA's server (tuned) | 21.9% | 52.3% | 21.9% | [−6.9, −1.8] | [+8.5, +13.9] |
+| gliner-pii-large (default, +agent) | 24.3% | 76.2% | 24.3% | [−8.9, −4.8] | [−15.2, −10.2] |
+| gliner-pii-large (default) | 24.3% | 75.4% | 24.3% | [−8.9, −4.8] | [−14.4, −9.4] |
+| nemotron-pii, NVIDIA's server (default, +agent) | 32.1% | 68.2% | 32.1% | [−17.3, −11.8] | [−7.1, −2.1] |
+| nemotron-pii, NVIDIA's server (default) | 32.1% | 66.8% | 32.1% | [−17.3, −11.8] | [−5.6, −0.6] |
+| OpenMed PII Large (tuned, +agent) | 32.2% | 83.7% | 32.2% | [−17.3, −12.0] | [−22.4, −17.8] |
+| OpenMed PII Large (tuned) | 32.2% | 82.1% | 32.2% | [−17.3, −12.0] | [−20.8, −16.2] |
+| OpenMed privacy-filter-multilingual-v2 (tuned, +agent) | 42.9% | 76.6% | 42.9% | [−28.1, −22.6] | [−15.3, −10.6] |
+| OpenMed privacy-filter-multilingual-v2 (tuned) | 42.9% | 75.1% | 42.9% | [−28.1, −22.6] | [−13.8, −9.0] |
+| OpenMed PII Small (tuned, +agent) | 43.8% | 78.8% | 43.8% | [−29.2, −23.4] | [−17.5, −13.2] |
+| OpenMed PII Small (tuned) | 43.8% | 77.3% | 43.8% | [−29.2, −23.4] | [−16.1, −11.6] |
+| ettin-68m (tuned, +agent) | 45.4% | 64.0% | 45.4% | [−30.5, −25.0] | [−2.6, +1.7] |
+| ettin-68m (tuned) | 45.4% | 63.0% | 45.4% | [−30.5, −25.0] | [−1.5, +2.9] |
+| gliner-stream-pii (default) | 46.6% | 63.5% | 46.6% | [−31.7, −26.5] | [−2.4, +2.5] |
+| gliner-stream-pii (default, +agent) | 46.7% | 64.5% | 46.7% | [−31.7, −26.6] | [−3.5, +1.4] |
+| OpenMed privacy-filter-multilingual-v2 (default, +agent) | 46.8% | 82.0% | 46.8% | [−32.0, −26.5] | [−20.6, −16.0] |
+| OpenMed privacy-filter-multilingual-v2 (default) | 46.8% | 80.5% | 46.8% | [−32.0, −26.5] | [−19.1, −14.5] |
+| OpenMed PII Large (default, +agent) | 52.4% | 74.6% | 52.4% | [−37.6, −32.3] | [−13.8, −8.1] |
+| OpenMed PII Large (default) | 52.4% | 73.3% | 52.4% | [−37.6, −32.3] | [−12.5, −6.7] |
+| deberta PII (default, +agent) | 54.4% | 63.4% | 54.4% | [−39.3, −34.5] | [−2.6, +3.1] |
+| deberta PII (default) | 54.4% | 63.3% | 54.4% | [−39.3, −34.5] | [−2.6, +3.3] |
+| pii-identifier (tuned, +agent) | 54.5% | 78.5% | 54.5% | [−39.9, −34.2] | [−17.4, −12.5] |
+| pii-identifier (tuned) | 54.5% | 77.5% | 54.5% | [−39.9, −34.2] | [−16.3, −11.4] |
+| deberta PII (tuned, +agent) | 58.3% | 74.2% | 58.3% | [−43.2, −38.2] | [−13.4, −7.9] |
+| deberta PII (tuned) | 58.3% | 74.0% | 58.3% | [−43.2, −38.2] | [−13.2, −7.7] |
+| gliner_multi_pii (ONNX) (default, +agent) | 61.2% | 39.0% | 61.2% | [−46.2, −41.1] | [+21.9, +27.3] |
+| gliner_multi_pii (ONNX) (default) | 61.2% | 37.4% | 61.2% | [−46.2, −41.1] | [+23.4, +28.9] |
+| OpenMed PII Small (default, +agent) | 62.6% | 68.7% | 62.6% | [−48.0, −42.5] | [−7.6, −2.6] |
+| OpenMed PII Small (default) | 62.6% | 67.4% | 62.6% | [−48.0, −42.5] | [−6.4, −1.2] |
+| ettin-68m (default, +agent) | 63.6% | 82.0% | 63.6% | [−49.0, −43.3] | [−20.7, −16.1] |
+| ettin-68m (default) | 63.6% | 81.2% | 63.6% | [−49.0, −43.3] | [−19.9, −15.2] |
+| piiranha (tuned, +agent) | 72.2% | 63.2% | 72.2% | [−57.0, −52.5] | [−2.0, +2.9] |
+| piiranha (tuned) | 72.2% | 61.7% | 72.2% | [−57.0, −52.5] | [−0.7, +4.6] |
+| pii-identifier (default, +agent) | 74.9% | 88.5% | 74.9% | [−59.9, −54.9] | [−27.2, −22.8] |
+| pii-identifier (default) | 74.9% | 87.8% | 74.9% | [−59.9, −54.9] | [−26.5, −22.0] |
+| piiranha (default) | 85.2% | **95.0%** | 85.2% | [−69.7, −65.6] | [−33.5, −29.2] |
+| piiranha (default, +agent) | 85.2% | **95.0%** | 85.2% | [−69.7, −65.6] | [−33.5, −29.2] |
+| rizzo-pii (default, +agent) | 89.2% | 85.2% | 89.2% | [−73.8, −69.6] | [−23.9, −19.2] |
+| rizzo-pii (default) | 89.2% | 84.2% | 89.2% | [−73.8, −69.6] | [−22.9, −18.2] |
+| Presidio (default) | 94.2% | 63.5% | 94.2% | [−78.5, −74.8] | [−2.6, +3.0] |
+| Presidio (tuned) | 94.3% | 74.5% | 94.3% | [−78.6, −75.0] | [−13.5, −8.3] |
+| Presidio (default, +agent) | 94.8% | 65.6% | 94.8% | [−79.1, −75.4] | [−4.7, +0.9] |
+| Presidio (tuned, +agent) | 95.0% | 76.6% | 95.0% | [−79.2, −75.6] | [−15.5, −10.6] |
 <!-- ab1-b1:end -->
 
 <!-- ab1-b2:begin -->
@@ -318,100 +322,102 @@ Leak rate per category (items in brackets):
 
 | Tool | Leak rate | Keep rate | Docs with a leak | nullpii − tool, leak | nullpii − tool, keep |
 |---|---:|---:|---:|---|---|
-| openai privacy-filter (tuned, +agent) | **8.2%** | 74.6% | **8.2%** | [+2.5, +4.2] | [+1.2, +4.1] |
-| openai privacy-filter (tuned) | **8.2%** | 74.5% | **8.2%** | [+2.5, +4.2] | [+1.3, +4.2] |
-| **nullpii 0.5 (agent default)** | 11.5% | 77.2% | 11.5% | — | — |
-| openai privacy-filter (default, +agent) | 13.5% | 86.2% | 13.5% | [−3.0, −0.9] | [−10.3, −7.6] |
-| openai privacy-filter (default) | 13.5% | 86.2% | 13.5% | [−3.0, −0.9] | [−10.2, −7.6] |
-| rizzo-pii (tuned) | 19.5% | 52.9% | 19.5% | [−9.2, −6.8] | [+23.0, +25.9] |
-| rizzo-pii (tuned, +agent) | 19.5% | 53.0% | 19.5% | [−9.2, −6.8] | [+22.8, +25.8] |
-| gliner-pii-large (tuned, +agent) | 21.3% | 66.7% | 21.3% | [−10.9, −8.6] | [+9.0, +12.0] |
-| gliner-pii-large (tuned) | 21.3% | 66.6% | 21.3% | [−10.9, −8.6] | [+9.0, +12.1] |
-| gliner-stream-pii (tuned) | 24.3% | 58.2% | 24.3% | [−13.9, −11.6] | [+17.5, +20.7] |
-| gliner-stream-pii (tuned, +agent) | 24.4% | 58.5% | 24.4% | [−14.0, −11.7] | [+17.1, +20.4] |
-| nemotron-pii, NVIDIA's server (tuned) | 30.4% | 54.5% | 30.4% | [−20.2, −17.5] | [+21.2, +24.5] |
-| nemotron-pii, NVIDIA's server (tuned, +agent) | 30.4% | 54.6% | 30.4% | [−20.2, −17.5] | [+21.0, +24.4] |
-| gliner_multi_pii (ONNX) (tuned) | 31.0% | 45.0% | 31.0% | [−20.7, −18.2] | [+30.6, +33.9] |
-| gliner_multi_pii (ONNX) (tuned, +agent) | 31.1% | 45.2% | 31.1% | [−20.9, −18.3] | [+30.3, +33.7] |
-| OpenMed PII Small (tuned) | 31.9% | 79.5% | 31.9% | [−21.6, −19.0] | [−3.4, −1.0] |
-| OpenMed PII Small (tuned, +agent) | 31.9% | 79.9% | 31.9% | [−21.6, −19.0] | [−3.8, −1.5] |
-| nemotron-pii, library (tuned) | 32.3% | 54.4% | 32.3% | [−22.1, −19.5] | [+21.2, +24.4] |
-| nemotron-pii, library (tuned, +agent) | 32.3% | 54.6% | 32.3% | [−22.1, −19.5] | [+21.0, +24.3] |
-| ettin-68m (tuned) | 33.0% | 54.9% | 33.0% | [−22.7, −20.1] | [+20.8, +23.8] |
-| ettin-68m (tuned, +agent) | 33.0% | 55.1% | 33.0% | [−22.7, −20.1] | [+20.7, +23.7] |
-| OpenMed privacy-filter-multilingual-v2 (tuned) | 35.6% | 65.0% | 35.6% | [−25.4, −22.7] | [+10.7, +13.8] |
-| OpenMed privacy-filter-multilingual-v2 (tuned, +agent) | 35.6% | 65.1% | 35.6% | [−25.4, −22.7] | [+10.6, +13.6] |
-| pii-identifier (tuned) | 37.4% | 75.6% | 37.4% | [−27.3, −24.6] | [+0.2, +2.9] |
-| pii-identifier (tuned, +agent) | 37.4% | 75.9% | 37.4% | [−27.3, −24.6] | [−0.1, +2.7] |
-| OpenMed PII Large (tuned) | 39.4% | 77.9% | 39.4% | [−29.3, −26.4] | [−1.9, +0.7] |
-| OpenMed PII Large (tuned, +agent) | 39.5% | 78.2% | 39.5% | [−29.4, −26.6] | [−2.3, +0.3] |
-| OpenMed privacy-filter-multilingual-v2 (default) | 40.2% | 69.8% | 40.2% | [−30.0, −27.4] | [+6.0, +9.0] |
-| OpenMed privacy-filter-multilingual-v2 (default, +agent) | 40.2% | 69.9% | 40.2% | [−30.1, −27.4] | [+5.9, +8.8] |
-| nemotron-pii, library (default) | 40.7% | 69.9% | 40.7% | [−30.5, −27.9] | [+5.9, +8.8] |
-| nemotron-pii, library (default, +agent) | 40.7% | 70.1% | 40.7% | [−30.5, −27.9] | [+5.7, +8.6] |
-| nemotron-pii, NVIDIA's server (default) | 42.5% | 64.8% | 42.5% | [−32.3, −29.5] | [+11.0, +14.0] |
-| nemotron-pii, NVIDIA's server (default, +agent) | 42.5% | 64.9% | 42.5% | [−32.3, −29.5] | [+10.8, +13.8] |
-| gliner-pii-large (default) | 42.9% | 72.7% | 42.9% | [−32.6, −30.1] | [+3.2, +5.8] |
-| gliner-pii-large (default, +agent) | 42.9% | 72.8% | 42.9% | [−32.6, −30.1] | [+3.2, +5.8] |
-| deberta PII (default) | 50.9% | 69.7% | 50.9% | [−40.9, −37.7] | [+5.9, +9.2] |
-| deberta PII (default, +agent) | 50.9% | 70.2% | 50.9% | [−41.0, −37.8] | [+5.5, +8.7] |
-| deberta PII (tuned) | 55.0% | 78.8% | 55.0% | [−45.1, −41.8] | [−3.0, −0.1] |
-| deberta PII (tuned, +agent) | 55.0% | 79.2% | 55.0% | [−45.1, −41.8] | [−3.5, −0.5] |
-| OpenMed PII Small (default) | 57.4% | 54.4% | 57.4% | [−47.4, −44.5] | [+21.2, +24.5] |
-| OpenMed PII Small (default, +agent) | 57.4% | 54.7% | 57.4% | [−47.4, −44.5] | [+20.9, +24.2] |
-| ettin-68m (default, +agent) | 64.8% | 65.9% | 64.8% | [−54.5, −51.9] | [+9.9, +12.9] |
-| ettin-68m (default) | 64.8% | 65.7% | 64.8% | [−54.5, −51.9] | [+10.0, +13.0] |
-| gliner-stream-pii (default) | 64.8% | 80.4% | 64.8% | [−54.7, −52.0] | [−4.5, −1.7] |
-| gliner-stream-pii (default, +agent) | 64.9% | 80.7% | 64.9% | [−54.7, −52.0] | [−4.8, −2.0] |
-| gliner_multi_pii (ONNX) (default) | 68.2% | 75.0% | 68.2% | [−58.0, −55.4] | [+0.7, +3.7] |
-| gliner_multi_pii (ONNX) (default, +agent) | 68.3% | 75.2% | 68.3% | [−58.0, −55.4] | [+0.5, +3.5] |
-| rizzo-pii (default) | 75.0% | 68.1% | 75.0% | [−64.8, −62.1] | [+7.6, +10.7] |
-| rizzo-pii (default, +agent) | 75.0% | 68.3% | 75.0% | [−64.8, −62.2] | [+7.5, +10.5] |
-| pii-identifier (default) | 76.7% | 70.7% | 76.7% | [−66.3, −64.0] | [+5.1, +8.0] |
-| pii-identifier (default, +agent) | 76.7% | 70.9% | 76.7% | [−66.4, −64.0] | [+5.0, +7.9] |
-| Presidio (default) | 77.2% | 55.1% | 77.2% | [−66.9, −64.4] | [+20.5, +23.9] |
-| Presidio (default, +agent) | 77.8% | 55.5% | 77.8% | [−67.5, −65.0] | [+20.1, +23.5] |
-| OpenMed PII Large (default) | 77.8% | 55.8% | 77.8% | [−67.6, −65.0] | [+19.8, +23.2] |
-| OpenMed PII Large (default, +agent) | 77.9% | 56.1% | 77.9% | [−67.6, −65.1] | [+19.5, +22.8] |
-| Presidio (tuned) | 78.4% | 66.9% | 78.4% | [−68.1, −65.6] | [+8.8, +11.9] |
-| Presidio (tuned, +agent) | 79.1% | 67.3% | 79.1% | [−68.7, −66.3] | [+8.4, +11.6] |
-| piiranha (tuned, +agent) | 92.3% | 72.9% | 92.3% | [−81.8, −79.7] | [+2.8, +5.9] |
-| piiranha (tuned) | 92.3% | 72.7% | 92.3% | [−81.8, −79.7] | [+2.9, +6.1] |
-| piiranha (default) | 99.1% | **98.1%** | 99.1% | [−88.4, −86.7] | [−22.0, −19.7] |
-| piiranha (default, +agent) | 99.1% | **98.1%** | 99.1% | [−88.4, −86.7] | [−22.0, −19.7] |
+| **nullpii 0.5 (every category masked)** | **6.9%** | 72.5% | **6.9%** | [+0.6, +1.3] | [+4.0, +5.1] |
+| **nullpii 0.5 (agent default)** | 7.8% | 77.0% | 7.8% | — | — |
+| openai privacy-filter (tuned, +agent) | 8.2% | 74.6% | 8.2% | [−1.1, +0.4] | [+1.1, +4.0] |
+| openai privacy-filter (tuned) | 8.2% | 74.5% | 8.2% | [−1.1, +0.4] | [+1.1, +4.0] |
+| openai privacy-filter (default, +agent) | 13.5% | 86.2% | 13.5% | [−6.6, −4.8] | [−10.5, −7.7] |
+| openai privacy-filter (default) | 13.5% | 86.2% | 13.5% | [−6.6, −4.8] | [−10.4, −7.7] |
+| rizzo-pii (tuned) | 19.5% | 52.9% | 19.5% | [−12.8, −10.7] | [+22.8, +25.8] |
+| rizzo-pii (tuned, +agent) | 19.5% | 53.0% | 19.5% | [−12.8, −10.7] | [+22.6, +25.7] |
+| gliner-pii-large (tuned, +agent) | 21.3% | 66.7% | 21.3% | [−14.5, −12.4] | [+8.8, +11.9] |
+| gliner-pii-large (tuned) | 21.3% | 66.6% | 21.3% | [−14.5, −12.4] | [+8.9, +12.0] |
+| gliner-stream-pii (tuned) | 24.3% | 58.2% | 24.3% | [−17.6, −15.4] | [+17.2, +20.5] |
+| gliner-stream-pii (tuned, +agent) | 24.4% | 58.5% | 24.4% | [−17.7, −15.5] | [+16.9, +20.2] |
+| nemotron-pii, NVIDIA's server (tuned) | 30.4% | 54.5% | 30.4% | [−23.9, −21.3] | [+21.0, +24.4] |
+| nemotron-pii, NVIDIA's server (tuned, +agent) | 30.4% | 54.6% | 30.4% | [−23.9, −21.3] | [+20.9, +24.2] |
+| gliner_multi_pii (ONNX) (tuned) | 31.0% | 45.0% | 31.0% | [−24.4, −22.0] | [+30.4, +33.8] |
+| gliner_multi_pii (ONNX) (tuned, +agent) | 31.1% | 45.2% | 31.1% | [−24.5, −22.2] | [+30.2, +33.6] |
+| OpenMed PII Small (tuned) | 31.9% | 79.5% | 31.9% | [−25.4, −22.8] | [−3.6, −1.2] |
+| OpenMed PII Small (tuned, +agent) | 31.9% | 79.9% | 31.9% | [−25.4, −22.9] | [−3.9, −1.6] |
+| nemotron-pii, library (tuned) | 32.3% | 54.4% | 32.3% | [−25.7, −23.3] | [+21.0, +24.3] |
+| nemotron-pii, library (tuned, +agent) | 32.3% | 54.6% | 32.3% | [−25.8, −23.3] | [+20.9, +24.1] |
+| ettin-68m (tuned) | 33.0% | 54.9% | 33.0% | [−26.5, −23.8] | [+20.7, +23.7] |
+| ettin-68m (tuned, +agent) | 33.0% | 55.1% | 33.0% | [−26.5, −23.8] | [+20.6, +23.5] |
+| OpenMed privacy-filter-multilingual-v2 (tuned) | 35.6% | 65.0% | 35.6% | [−29.1, −26.5] | [+10.6, +13.6] |
+| OpenMed privacy-filter-multilingual-v2 (tuned, +agent) | 35.6% | 65.1% | 35.6% | [−29.1, −26.5] | [+10.4, +13.5] |
+| pii-identifier (tuned) | 37.4% | 75.6% | 37.4% | [−30.8, −28.3] | [+0.0, +2.7] |
+| pii-identifier (tuned, +agent) | 37.4% | 75.9% | 37.4% | [−30.9, −28.3] | [−0.3, +2.6] |
+| OpenMed PII Large (tuned) | 39.4% | 77.9% | 39.4% | [−33.0, −30.2] | [−2.0, +0.5] |
+| OpenMed PII Large (tuned, +agent) | 39.5% | 78.2% | 39.5% | [−33.1, −30.3] | [−2.4, +0.1] |
+| OpenMed privacy-filter-multilingual-v2 (default) | 40.2% | 69.8% | 40.2% | [−33.7, −31.1] | [+5.8, +8.8] |
+| OpenMed privacy-filter-multilingual-v2 (default, +agent) | 40.2% | 69.9% | 40.2% | [−33.7, −31.1] | [+5.6, +8.7] |
+| nemotron-pii, library (default) | 40.7% | 69.9% | 40.7% | [−34.2, −31.7] | [+5.8, +8.6] |
+| nemotron-pii, library (default, +agent) | 40.7% | 70.1% | 40.7% | [−34.2, −31.7] | [+5.6, +8.4] |
+| nemotron-pii, NVIDIA's server (default) | 42.5% | 64.8% | 42.5% | [−36.0, −33.3] | [+10.9, +13.9] |
+| nemotron-pii, NVIDIA's server (default, +agent) | 42.5% | 64.9% | 42.5% | [−36.0, −33.3] | [+10.7, +13.7] |
+| gliner-pii-large (default) | 42.9% | 72.7% | 42.9% | [−36.3, −33.9] | [+3.0, +5.6] |
+| gliner-pii-large (default, +agent) | 42.9% | 72.8% | 42.9% | [−36.3, −33.9] | [+3.0, +5.6] |
+| deberta PII (default) | 50.9% | 69.7% | 50.9% | [−44.6, −41.5] | [+5.7, +9.0] |
+| deberta PII (default, +agent) | 50.9% | 70.2% | 50.9% | [−44.7, −41.6] | [+5.3, +8.5] |
+| deberta PII (tuned) | 55.0% | 78.8% | 55.0% | [−48.7, −45.7] | [−3.2, −0.2] |
+| deberta PII (tuned, +agent) | 55.0% | 79.2% | 55.0% | [−48.7, −45.7] | [−3.6, −0.7] |
+| OpenMed PII Small (default) | 57.4% | 54.4% | 57.4% | [−51.0, −48.2] | [+21.0, +24.4] |
+| OpenMed PII Small (default, +agent) | 57.4% | 54.7% | 57.4% | [−51.0, −48.3] | [+20.7, +24.0] |
+| ettin-68m (default, +agent) | 64.8% | 65.9% | 64.8% | [−58.2, −55.7] | [+9.7, +12.7] |
+| ettin-68m (default) | 64.8% | 65.7% | 64.8% | [−58.2, −55.7] | [+9.8, +12.9] |
+| gliner-stream-pii (default) | 64.8% | 80.4% | 64.8% | [−58.3, −55.7] | [−4.7, −1.9] |
+| gliner-stream-pii (default, +agent) | 64.9% | 80.7% | 64.9% | [−58.3, −55.7] | [−5.0, −2.1] |
+| gliner_multi_pii (ONNX) (default) | 68.2% | 75.0% | 68.2% | [−61.7, −59.2] | [+0.6, +3.5] |
+| gliner_multi_pii (ONNX) (default, +agent) | 68.3% | 75.2% | 68.3% | [−61.7, −59.2] | [+0.4, +3.2] |
+| rizzo-pii (default) | 75.0% | 68.1% | 75.0% | [−68.5, −65.9] | [+7.4, +10.5] |
+| rizzo-pii (default, +agent) | 75.0% | 68.3% | 75.0% | [−68.5, −66.0] | [+7.3, +10.4] |
+| pii-identifier (default) | 76.7% | 70.7% | 76.7% | [−70.0, −67.7] | [+4.9, +7.9] |
+| pii-identifier (default, +agent) | 76.7% | 70.9% | 76.7% | [−70.0, −67.7] | [+4.8, +7.7] |
+| Presidio (default) | 77.2% | 55.1% | 77.2% | [−70.6, −68.1] | [+20.3, +23.7] |
+| Presidio (default, +agent) | 77.8% | 55.5% | 77.8% | [−71.2, −68.8] | [+19.9, +23.3] |
+| OpenMed PII Large (default) | 77.8% | 55.8% | 77.8% | [−71.3, −68.8] | [+19.7, +23.0] |
+| OpenMed PII Large (default, +agent) | 77.9% | 56.1% | 77.9% | [−71.4, −68.9] | [+19.3, +22.7] |
+| Presidio (tuned) | 78.4% | 66.9% | 78.4% | [−71.8, −69.5] | [+8.6, +11.8] |
+| Presidio (tuned, +agent) | 79.1% | 67.3% | 79.1% | [−72.4, −70.1] | [+8.2, +11.4] |
+| piiranha (tuned, +agent) | 92.3% | 72.9% | 92.3% | [−85.4, −83.6] | [+2.6, +5.8] |
+| piiranha (tuned) | 92.3% | 72.7% | 92.3% | [−85.4, −83.6] | [+2.8, +5.9] |
+| piiranha (default) | 99.1% | **98.1%** | 99.1% | [−91.9, −90.5] | [−22.2, −19.8] |
+| piiranha (default, +agent) | 99.1% | **98.1%** | 99.1% | [−91.9, −90.5] | [−22.2, −19.8] |
 <!-- ab1-b2:end -->
 
 **Secrets by recognizer coverage.** The secrets' leak rate, in each set, on the items nullpii's recognizer pack covers and on the rest. An item is covered when the pack, run alone on the raw text without the model or the base64 pass, masks every letter and digit of the value. This split was computed after the freeze, from the pack itself, and is only reported.
 
 <!-- ab1-coverage-items:begin -->
-Items: A 88 covered of 585, B1 125 of 2,000, B2 1,979 of 5,776 (the release build's pack no longer has the UUID recognizer).
+Items: A 356 covered of 585, B1 837 of 2,000, B2 3,739 of 5,776 (the release build's pack no longer has the UUID recognizer).
 <!-- ab1-coverage-items:end -->
 
 <!-- ab1-coverage:begin -->
-| Tool | A covered (88) | A not covered (497) | B1 covered (125) | B1 not covered (1,875) | B2 covered (1,979) | B2 not covered (3,797) |
+| Tool | A covered (356) | A not covered (229) | B1 covered (837) | B1 not covered (1,163) | B2 covered (3,739) | B2 not covered (2,037) |
 |---|---:|---:|---:|---:|---:|---:|
-| rizzo-pii (tuned, +agent) | 20.5% | 26.4% | 44.0% | 19.0% | 12.1% | 23.4% |
-| **nullpii 0.5 (agent default)** | 0.0% | 5.6% | 0.8% | 26.1% | 0.7% | 17.2% |
-| openai privacy-filter (tuned, +agent) | 6.8% | 5.2% | 8.0% | 13.5% | 4.3% | 10.2% |
-| OpenMed PII Large (tuned, +agent) | 20.5% | 37.2% | 66.4% | 29.9% | 51.0% | 33.5% |
-| gliner-pii-large (tuned, +agent) | 15.9% | 8.2% | 51.2% | 14.4% | 17.6% | 23.2% |
-| nemotron-pii, NVIDIA's server (tuned, +agent) | 30.7% | 15.1% | 60.0% | 19.3% | 45.8% | 22.4% |
-| OpenMed PII Small (tuned, +agent) | 15.9% | 21.7% | 59.2% | 42.7% | 45.3% | 24.9% |
-| gliner-stream-pii (tuned, +agent) | 10.2% | 10.5% | 63.2% | 14.8% | 22.2% | 25.5% |
-| nemotron-pii, library (tuned, +agent) | 29.5% | 9.7% | 59.2% | 11.6% | 55.2% | 20.4% |
-| ettin-68m (tuned, +agent) | 39.8% | 31.6% | 52.0% | 44.9% | 19.6% | 40.0% |
-| pii-identifier (tuned, +agent) | 45.5% | 31.8% | 72.8% | 53.3% | 28.0% | 42.3% |
-| gliner_multi_pii (ONNX) (tuned, +agent) | 19.3% | 17.9% | 50.4% | 18.5% | 28.7% | 32.4% |
-| OpenMed privacy-filter-multilingual-v2 (tuned, +agent) | 30.7% | 26.0% | 50.4% | 42.3% | 40.0% | 33.3% |
-| piiranha (tuned, +agent) | 94.3% | 73.4% | 88.8% | 71.1% | 96.3% | 90.3% |
-| Presidio (tuned, +agent) | 90.9% | 93.6% | 61.6% | 97.2% | 45.9% | 96.3% |
-| deberta PII (tuned, +agent) | 65.9% | 46.9% | 86.4% | 56.4% | 45.6% | 59.9% |
+| **nullpii 0.5 (every category masked)** | 0.0% | 2.2% | 0.1% | 29.1% | 0.2% | 19.1% |
+| rizzo-pii (tuned, +agent) | 19.4% | 34.9% | 34.2% | 10.8% | 15.1% | 27.8% |
+| **nullpii 0.5 (agent default)** | 0.0% | 5.2% | 0.1% | 30.0% | 0.2% | 21.6% |
+| openai privacy-filter (tuned, +agent) | 3.4% | 8.7% | 1.9% | 21.2% | 3.2% | 17.3% |
+| OpenMed PII Large (tuned, +agent) | 33.7% | 36.2% | 38.9% | 27.3% | 41.0% | 36.8% |
+| gliner-pii-large (tuned, +agent) | 11.2% | 6.6% | 22.6% | 12.5% | 15.2% | 32.4% |
+| nemotron-pii, NVIDIA's server (tuned, +agent) | 19.7% | 14.0% | 33.5% | 13.5% | 31.9% | 27.6% |
+| OpenMed PII Small (tuned, +agent) | 20.8% | 21.0% | 41.2% | 45.6% | 33.1% | 29.6% |
+| gliner-stream-pii (tuned, +agent) | 8.7% | 13.1% | 24.6% | 12.9% | 20.5% | 31.5% |
+| nemotron-pii, library (tuned, +agent) | 15.2% | 8.7% | 25.9% | 6.4% | 36.3% | 25.0% |
+| ettin-68m (tuned, +agent) | 34.0% | 31.0% | 29.6% | 56.7% | 27.7% | 42.6% |
+| pii-identifier (tuned, +agent) | 37.9% | 27.5% | 46.1% | 60.6% | 31.0% | 49.3% |
+| gliner_multi_pii (ONNX) (tuned, +agent) | 15.7% | 21.8% | 31.7% | 12.5% | 26.8% | 39.0% |
+| OpenMed privacy-filter-multilingual-v2 (tuned, +agent) | 26.4% | 27.1% | 35.6% | 48.1% | 33.9% | 38.7% |
+| piiranha (tuned, +agent) | 81.5% | 69.0% | 62.1% | 79.4% | 92.8% | 91.4% |
+| Presidio (tuned, +agent) | 94.9% | 90.4% | 90.4% | 98.2% | 69.6% | 96.3% |
+| deberta PII (tuned, +agent) | 58.1% | 36.7% | 70.3% | 49.7% | 54.8% | 55.5% |
 <!-- ab1-coverage:end -->
 
 **Three rules from end-to-end testing.** Real Claude Code sessions showed values an agent works with being masked: UUIDs as account numbers (a recognizer and the model both labelled them so), IPv4 addresses as phone or account numbers (so the documentation, private and loopback ranges the IP recognizer leaves readable were masked too), and "Claude" as a person. Three rules fix them (`src/uuid-filter.ts`, `src/ip-filter.ts`, `src/product-names.ts`): a UUID labelled an account number stays readable, unless a credential-named key comes right before it on its line; an IPv4 address is left to the IP recognizer; "Claude" alone or with a product word is not a person. Each was decided from the label schema and from this benchmark's specification (written and frozen before the run, it lists UUIDs, documentation addresses, `127.0.0.1` and product names as text to keep), before any score was read. They were added after the first run, so nullpii's rows are from the release code; the other tools' rows are unaffected.
 
 <!-- ab1-rules:begin -->
-On A they leave the leak rate where it was and raise the keep rate: UUIDs kept readable 97.9%, reserved addresses (`example.com` and `.test` addresses, `127.0.0.1`, `0.0.0.0`, `::1`, documentation IPs) 57.5%. On B1, 268 of nullpii's leaks are items CredData labels `UUID`: B1 inherits CredData's labels, and CredData counts 294 UUIDs as credentials, mostly after keys that name ids (`id`, `uid`, `_postman_id`, `collectionId`) or after no key; this specification lists UUIDs as text to keep. nullpii lets 268 of those 294 through, and 222 of B1's other 1,706 secrets (13.0%). As an analysis made after the scores were read (it changes no published row): with every item of kind `UUID` removed from B1's gold, nullpii lets 13.0% through, the fewest of all tools (openai privacy-filter 13.6%, nemotron-pii as a library 16.2%).
+On A they leave the leak rate where it was and raise the keep rate: UUIDs kept readable 97.2%, reserved addresses (`example.com` and `.test` addresses, `127.0.0.1`, `0.0.0.0`, `::1`, documentation IPs) 57.5%. On B1, 268 of nullpii's leaks are items CredData labels `UUID`: B1 inherits CredData's labels, and CredData counts 294 UUIDs as credentials, mostly after keys that name ids (`id`, `uid`, `_postman_id`, `collectionId`) or after no key; this specification lists UUIDs as text to keep. nullpii lets 268 of those 294 through, and 82 of B1's other 1,706 secrets (4.8%). As an analysis made after the scores were read (it changes no published row): with every item of kind `UUID` removed from B1's gold, nullpii lets 4.8% through, the fewest of all tools (openai privacy-filter 13.6%, nemotron-pii as a library 16.2%).
 <!-- ab1-rules:end -->
 
 ### Limits
@@ -506,7 +512,7 @@ Two of the things compared here are built for documents. PIILO is a set of stude
 ## Results
 
 <!-- results-measured:begin -->
-nullpii 0.5 (the release build and the published weights, in fp32), in the configurations it is published in, measured on CUDA. Its CUDA and CPU outputs agree on all but a few documents in a thousand (37 of the 14,701 tuning-set documents differ; release build, fp32 on both). The fp16 model that nullpii loads on CUDA by default scored the same macro F2 on these sets as fp32 in the 0.5 run's core regime, which is no longer published (0.7576 against 0.7575), with the same macro recall (0.9577). It takes 14–15% less time at 30k and 100k characters (463 ms against 537 ms, and 1,650 ms against 1,945 ms; median per call on the RTX 4070 Ti). Competitors run at their default and tuned operating points, and each row shows a tool's better one. The rows are from the release build, which includes the three rules from end-to-end testing described under AB-1; they changed only documents holding a UUID, an IPv4 address, a loopback host or the word "Claude". The CUDA and CPU agreement above was measured on the build before those rules, and the timings were checked on the release build, which takes the same time (fp16 459 ms and 1,640 ms, fp32 535 ms and 1,909 ms at 30k and 100k characters).
+nullpii 0.5 (the build of `main` the benchmark workflow measured, with the published weights in fp32), in the configurations it is published in, re-measured on CPU on a GitHub-hosted runner by the benchmark pipeline ([`packages/eval/README.md`](https://github.com/lBroth/nullpii/blob/main/packages/eval/README.md#benchmark-workflow)). Every other tool's rows are scored from its predictions in the published 0.5 run, on the same documents. That run measured nullpii on CUDA, and nullpii's CUDA and CPU outputs agreed then on all but a few documents in a thousand (37 of the 14,701 tuning-set documents differ; fp32 on both, on the build before the three rules from end-to-end testing described under AB-1). The fp16 model that nullpii loads on CUDA by default scored the same macro F2 on these sets as fp32 in the 0.5 run's core regime, which is no longer published (0.7576 against 0.7575), with the same macro recall (0.9577). It takes 14–15% less time at 30k and 100k characters (463 ms against 537 ms, and 1,650 ms against 1,945 ms; median per call on the RTX 4070 Ti). Competitors run at their default and tuned operating points, and each row shows a tool's better one.
 <!-- results-measured:end -->
 
 **Gated sets** (char-F2; each tool at its better row, `(default)` where that is its default)
@@ -515,15 +521,16 @@ nullpii 0.5 (the release build and the published weights, in fp32), in the confi
 | Tool | REDACT | Tonic | PIILO | eu-clinical | traces-v3 | Macro | LODO |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | rizzo-pii (default) | 0.818 | 0.849 | **0.623** | 0.840 | 0.718 | **0.770** | 0.750–0.806 |
+| **nullpii 0.5 (agent default)** | 0.822 | **0.933** | 0.500 | 0.703 | **0.813** | 0.754 | 0.710–0.818 |
 | nvidia/gliner-PII (library) | 0.779 | 0.833 | 0.442 | 0.875 | 0.672 | 0.720 | 0.681–0.790 |
 | OpenMed privacy-filter-multilingual-v2 | 0.784 | 0.874 | 0.480 | 0.725 | 0.725 | 0.717 | 0.678–0.777 |
-| pii-identifier | 0.796 | **0.879** | 0.492 | 0.632 | 0.706 | 0.701 | 0.657–0.753 |
+| pii-identifier | 0.796 | 0.879 | 0.492 | 0.632 | 0.706 | 0.701 | 0.657–0.753 |
 | ettin-68m | 0.805 | 0.844 | 0.483 | 0.647 | 0.713 | 0.699 | 0.662–0.752 |
 | openai privacy-filter | 0.814 | 0.872 | 0.611 | 0.442 | 0.723 | 0.693 | 0.648–0.755 |
 | OpenMed PII Large | 0.784 | 0.869 | 0.528 | 0.589 | 0.642 | 0.682 | 0.635–0.721 |
 | OpenMed PII Small | 0.777 | 0.866 | 0.478 | 0.609 | 0.635 | 0.673 | 0.625–0.722 |
 | gliner-pii-large | **0.844** | 0.801 | 0.191 | 0.863 | 0.582 | 0.656 | 0.604–0.772 |
-| **nullpii 0.5 (every category masked)** | 0.789 | 0.793 | 0.136 | 0.796 | **0.753** | 0.653 | 0.618–0.783 |
+| **nullpii 0.5 (every category masked)** | 0.788 | 0.793 | 0.136 | 0.796 | 0.753 | 0.653 | 0.618–0.783 |
 | piiranha | 0.784 | 0.760 | 0.239 | 0.857 | 0.617 | 0.651 | 0.600–0.755 |
 | gliner_multi_pii (ONNX) | 0.817 | 0.795 | 0.163 | **0.913** | 0.551 | 0.648 | 0.581–0.769 |
 | Presidio | 0.706 | 0.779 | 0.280 | 0.729 | 0.645 | 0.628 | 0.590–0.715 |
@@ -538,12 +545,13 @@ nullpii 0.5 (the release build and the published weights, in fp32), in the confi
 <!-- r3-reported:begin -->
 | Tool | RedactionBench | mama-deid | traces-v3, distractors ignored | Macro | LODO |
 |---|---:|---:|---:|---:|---:|
-| openai privacy-filter | 0.727 | 0.701 | 0.804 | **0.744** | 0.714–0.765 |
-| **nullpii 0.5 (every category masked)** | 0.679 | 0.655 | **0.856** | 0.730 | 0.667–0.768 |
+| **nullpii 0.5 (agent default)** | **0.787** | 0.585 | **0.865** | **0.746** | 0.686–0.826 |
+| openai privacy-filter | 0.727 | 0.701 | 0.804 | 0.744 | 0.714–0.765 |
+| **nullpii 0.5 (every category masked)** | 0.684 | 0.655 | 0.856 | 0.732 | 0.670–0.770 |
 | ettin-68m | 0.738 | 0.591 | 0.818 | 0.716 | 0.665–0.778 |
 | rizzo-pii | 0.632 | 0.648 | 0.824 | 0.701 | 0.640–0.736 |
 | OpenMed privacy-filter-multilingual-v2 | 0.691 | 0.591 | 0.821 | 0.701 | 0.641–0.756 |
-| pii-identifier | **0.753** | 0.541 | 0.808 | 0.700 | 0.647–0.780 |
+| pii-identifier | 0.753 | 0.541 | 0.808 | 0.700 | 0.647–0.780 |
 | nvidia/gliner-PII (library) | 0.658 | 0.610 | 0.746 | 0.671 | 0.634–0.702 |
 | gliner-stream-pii | 0.561 | 0.605 | 0.697 | 0.621 | 0.583–0.651 |
 | gliner_multi_pii (ONNX) | 0.426 | **0.768** | 0.602 | 0.599 | 0.514–0.685 |
@@ -562,7 +570,8 @@ nullpii 0.5 (the release build and the published weights, in fp32), in the confi
 <!-- r3-en:begin -->
 | Tool | REDACT | Tonic | PIILO | traces-v3 | Macro | LODO |
 |---|---:|---:|---:|---:|---:|---:|
-| openai privacy-filter | 0.783 | **0.872** | 0.611 | 0.717 | **0.746** | 0.704–0.791 |
+| **nullpii 0.5 (agent default)** | 0.791 | **0.933** | 0.500 | **0.821** | **0.761** | 0.704–0.848 |
+| openai privacy-filter | 0.783 | 0.872 | 0.611 | 0.717 | 0.746 | 0.704–0.791 |
 | rizzo-pii (default) | 0.768 | 0.849 | **0.623** | 0.729 | 0.742 | 0.707–0.782 |
 | OpenMed privacy-filter-multilingual-v2 (default) | 0.791 | 0.868 | 0.507 | 0.704 | 0.717 | 0.667–0.788 |
 | pii-identifier (default) | 0.771 | 0.858 | 0.575 | 0.654 | 0.714 | 0.667–0.761 |
@@ -570,7 +579,7 @@ nullpii 0.5 (the release build and the published weights, in fp32), in the confi
 | OpenMed PII Large | 0.772 | 0.869 | 0.528 | 0.630 | 0.700 | 0.643–0.757 |
 | OpenMed PII Small | 0.766 | 0.866 | 0.478 | 0.623 | 0.683 | 0.622–0.751 |
 | nvidia/gliner-PII (library) | 0.746 | 0.833 | 0.442 | 0.666 | 0.672 | 0.618–0.748 |
-| **nullpii 0.5 (every category masked)** | 0.717 | 0.793 | 0.136 | **0.766** | 0.603 | 0.540–0.759 |
+| **nullpii 0.5 (every category masked)** | 0.714 | 0.793 | 0.136 | 0.766 | 0.602 | 0.539–0.758 |
 | Presidio | 0.688 | 0.779 | 0.280 | 0.646 | 0.598 | 0.538–0.705 |
 | piiranha | 0.770 | 0.760 | 0.239 | 0.605 | 0.593 | 0.534–0.711 |
 | gliner-pii-large | 0.792 | 0.801 | 0.191 | 0.577 | 0.590 | 0.520–0.723 |
@@ -582,43 +591,43 @@ nullpii 0.5 (the release build and the published weights, in fp32), in the confi
 <!-- r3-en:end -->
 
 <!-- r3-en-intervals:begin -->
-On English documents, the published run's paired intervals are against nullpii's core regime, which is no longer published, so none is given here; a run of the pipeline gives them against the agent default.
+On English documents, openai privacy-filter [−0.007, +0.042] is within the interval; nullpii 0.5 (agent default) is significantly ahead of 13.
 <!-- r3-en-intervals:end -->
 
 <!-- r3-configs:begin -->
-nullpii is shown with every category masked. With every category masked (the default before 0.5) it also masks five categories outside the core labels these datasets are scored on (organisations, occupations, demographic and sensitive attributes, titles); counted on everything it masks, it scores 0.653 on the gated sets, 0.136 on PIILO. The default nullpii now ships for coding agents leaves those five categories and dates readable (`DEFAULT_DISABLED_CATEGORIES`). The outputs published here do not measure it on these sets; the agent-traffic benchmark above measures it.
+nullpii is shown in its agent default and with every category masked. With every category masked (the default before 0.5) it also masks five categories outside the core labels these datasets are scored on (organisations, occupations, demographic and sensitive attributes, titles); counted on everything it masks, it scores 0.653 on the gated sets, 0.136 on PIILO. The agent default (`DEFAULT_DISABLED_CATEGORIES`) leaves those five categories and dates readable; the core labels count dates, so a date it leaves readable counts as missed.
 <!-- r3-configs:end -->
 
 <!-- r3-comparisons:begin -->
-**Comparisons (gated sets, F2).** The published run's paired intervals are against nullpii's core regime, which is no longer published, so none is given here; a run of the pipeline gives them against the agent default. With every category masked, nullpii's macro recall (0.955) is the highest of 16 at each tool's better row; rizzo-pii at its tuned setting reaches 0.967, at a macro char-F2 of 0.583. At F0.5 it is fifteenth on these rows (14 tools ahead), and fifteenth with each tool at its best F0.5 row.
+**Comparisons (gated sets, F2).** On the macro over the five sets, against each other tool (15 tools) at its better row, 95% (the test fixed before the run), nullpii 0.5 (agent default) is significantly ahead of 14, too close to call with 0 and significantly behind 1 (rizzo-pii at its default). The narrowest margins ahead are nvidia/gliner-PII (library) [+0.022, +0.047] and OpenMed privacy-filter-multilingual-v2 [+0.028, +0.046]. With 99.67% intervals (a Bonferroni correction for 15 comparisons, added after the run), it is significantly ahead of 14, too close to call with 1 (rizzo-pii at its default) and significantly behind 0. A tool has significantly higher recall at a precision not significantly lower (S2): on eu-clinical, gliner_multi_pii (ONNX), gliner_multi_pii (ONNX) (default), gliner-pii-large, nvidia/gliner-PII (NVIDIA server) (default), nvidia/gliner-PII (library), nvidia/gliner-PII (library) (default), Presidio, Presidio (default) and rizzo-pii (default). In its agent default, nullpii's macro recall (0.877) is the highest of 16 at each tool's better row; rizzo-pii at its tuned setting reaches 0.967, at a macro char-F2 of 0.583. At F0.5 it is second on these rows (1 tool ahead), and fourth with each tool at its best F0.5 row.
 <!-- r3-comparisons:end -->
 
 <!-- r3-lodo:begin -->
-**Leaving one set out**, nullpii with every category masked. Each set left out in turn (each tool at its better row; the tool's score minus nullpii's):
+**Leaving one set out**, nullpii in its agent default. Each set left out in turn (each tool at its better row; the tool's score minus nullpii's, with the paired 95% CI):
 
 | Left out | nullpii | Tools ahead of nullpii | Closest behind |
 |---|---:|---|---|
-| REDACT | 0.619 | 8 tools; the nearest, OpenMed PII Small +0.028 | piiranha −0.001 |
-| Tonic | 0.618 | 10 tools; the nearest, gliner-pii-large +0.001 | gliner_multi_pii (ONNX) −0.007 |
-| PIILO | 0.783 | rizzo-pii at its default +0.024, nvidia/gliner-PII (library) +0.007 | OpenMed privacy-filter-multilingual-v2 −0.006 |
-| eu-clinical | 0.618 | 8 tools; the nearest, nvidia/gliner-PII (library) +0.064 | gliner-pii-large −0.013 |
-| traces-v3 | 0.629 | 11 tools; the nearest, piiranha +0.031 | Presidio −0.005 |
+| REDACT | 0.737 | rizzo-pii at its default +0.020 [+0.009, +0.031] | nvidia/gliner-PII (library) −0.032 [−0.048, −0.016] |
+| Tonic | 0.710 | rizzo-pii at its default +0.040 [+0.028, +0.051] | nvidia/gliner-PII (library) −0.018 [−0.035, −0.002] |
+| PIILO | 0.818 | none | rizzo-pii at its default −0.011 [−0.023, −0.000] |
+| eu-clinical | 0.767 | none | openai privacy-filter −0.012 [−0.028, +0.004] |
+| traces-v3 | 0.740 | rizzo-pii at its default +0.043 [+0.036, +0.049] | nvidia/gliner-PII (library) −0.008 [−0.016, +0.000] |
 <!-- r3-lodo:end -->
 
 The clinical notes are the only medical text, and the only Greek, in the gated sets.
 
 <!-- r3-sensitivity:begin -->
-**Sensitivity checks**, nullpii with every category masked. They are reported, and none decides. Both include NVIDIA's server row:
-- without the documents any OpenMed row returned no output for (77 gated documents, for every tool): macro char-F2 0.655;
-- every set resampled by its recorded clusters: macro char-F2 0.653.
-
-The published run's paired intervals are against nullpii's core regime, which is no longer published, so none is given here; a run of the pipeline gives them against the agent default.
+**Sensitivity checks**, nullpii in its agent default. They are reported, and none decides. Both include NVIDIA's server row:
+- without the documents any OpenMed row returned no output for (77 gated documents, for every tool): conclusions unchanged;
+- every set resampled by its recorded clusters: conclusions unchanged.
 <!-- r3-sensitivity:end -->
 
 **OpenMed's texts with no output.** `deidentify` refuses some texts as suspicious content: 7 traces-v3 transcripts, 2 PIILO essays, 2 RedactionBench documents and 1 mama-deid text, for both models at both points. It also fails its own safety-sweep check on others, more often at the tuned points' lower thresholds (Small tuned: 7 REDACT, 41 Tonic, 11 PIILO, 1 eu-clinical, 83 mama-deid; Large tuned: 9 REDACT, 3 Tonic, 1 PIILO, 59 mama-deid). These texts score as no spans. The package logs no text, so each failure is matched to its document by length and empty output (`scripts/ab/openmed_no_output.py`).
 
 <!-- piimb:begin -->
-**PIIMB** (`sentences` subset, 150,022 texts; nullpii with every category masked, the default before 0.5), scored by us with the leaderboard's method (`scripts/ab/piimb_score.py`), not a submitted entry: average F2 0.851, above all 35 listed tools. nullpii's F2 per task: ai4privacy-en 0.960, ai4privacy-multilingual 0.939, nemotron-pii 0.950, Gretel 0.962, privy 0.713, mapa-eur-lex 0.580. These are the release build's. Caveats:
+**PIIMB** (`sentences` subset, 150,022 texts; nullpii's agent default), scored by us with the leaderboard's method (`scripts/ab/piimb_score.py`), not a submitted entry: average F2 0.678, 22nd of 36 on the leaderboard. nullpii's F2 per task: ai4privacy-en 0.819, ai4privacy-multilingual 0.822, nemotron-pii 0.726, Gretel 0.858, privy 0.621, mapa-eur-lex 0.223. These are nullpii 0.5's, re-measured on the CPU. Caveats:
+- the nemotron-pii task is in nullpii's training family (2.5% of its sampled text overlaps nullpii's training corpus, 5.2% overlaps Nemotron-PII's); without it nullpii averages 0.669, twentieth of 36 on the leaderboard, and the leaderboard gives no intervals;
+**PIIMB** (`sentences` subset, 150,022 texts; nullpii with every category masked, the default before 0.5), scored by us with the leaderboard's method (`scripts/ab/piimb_score.py`), not a submitted entry: average F2 0.851, above all 35 listed tools. nullpii's F2 per task: ai4privacy-en 0.960, ai4privacy-multilingual 0.939, nemotron-pii 0.950, Gretel 0.962, privy 0.713, mapa-eur-lex 0.580. These are nullpii 0.5's, re-measured on the CPU. Caveats:
 - the nemotron-pii task is in nullpii's training family (2.5% of its sampled text overlaps nullpii's training corpus, 5.2% overlaps Nemotron-PII's); without it nullpii averages 0.831, above all 35 listed tools, and the leaderboard gives no intervals;
 - the ai4privacy tasks come from the same family as part of the tuning set;
 - PIIMB shaped one design decision. An earlier result, on which nullpii missed every category it did not mask then, is why the five extended categories exist. They were masked by default until 0.5; the 0.5 default for coding agents leaves them readable. PIIMB has not been used to tune anything.
@@ -642,7 +651,7 @@ The times, with what each row timed, are in [`published-bench/latency/latency.js
 ## Limits
 
 <!-- limits:begin -->
-- F2 rewards over-masking. At F0.5, 13 of the 14 other tools rank above nullpii 0.5 (every category masked), each at its best-F2 row.
+- F2 rewards over-masking. At F0.5, 1 of the 14 other tools rank above nullpii 0.5 (agent default), each at its best-F2 row.
 - Five gated datasets is a small sample of the world, and only English, the main EU languages and Greek are covered.
 - Gold labels differ in scope between datasets. PIILO labels only students' names, contact details, addresses, URLs and ids, so another person's name, a date or a place that a tool masks counts against it. Tonic's gold does not include city, state or postcode, which affects every precision figure on it.
 - The tuning set is close to nullpii's training distribution and partly to some competitors' (it is used to choose, never to claim).

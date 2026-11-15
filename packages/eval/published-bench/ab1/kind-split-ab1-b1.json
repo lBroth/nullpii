@@ -171,17 +171,29 @@
    "leaked": 27,
    "leaked_other": 406
   },
-  "nullpii-H3b-cuda-agent": {
+  "nullpii-default": {
    "leak": 0.9115646258503401,
-   "leak_other": 0.13012895662368112,
+   "leak_other": 0.04806565064478312,
    "leaked": 268,
-   "leaked_other": 222
+   "leaked_other": 82
   },
-  "nullpii-H3b-cuda-agent+agent": {
+  "nullpii-default+agent": {
    "leak": 0.9115646258503401,
-   "leak_other": 0.13012895662368112,
+   "leak_other": 0.04806565064478312,
    "leaked": 268,
-   "leaked_other": 222
+   "leaked_other": 82
+  },
+  "nullpii-everything": {
+   "leak": 0.9047619047619048,
+   "leak_other": 0.04337631887456037,
+   "leaked": 266,
+   "leaked_other": 74
+  },
+  "nullpii-everything+agent": {
+   "leak": 0.9047619047619048,
+   "leak_other": 0.04337631887456037,
+   "leaked": 266,
+   "leaked_other": 74
   },
   "openai-privacy-filter": {
    "leak": 0.1054421768707483,

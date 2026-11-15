@@ -66,15 +66,15 @@
     "@types/debug": "^4.1.13",
     "@types/node": "^22.19.17",
     "@vitest/coverage-v8": "4.1.12",
-    "fast-check": "^4.7.0",
-    "fastify": "5.12.6",
+    "fast-check": "^4.10.2",
+    "fastify": "5.12.7",
     "lefthook": "^1.10.0",
     "license-checker": "^25.0.1",
     "madge": "^8.0.0",
     "onnxruntime-node": "1.30.0",
     "tsx": "^4.23.15",
     "typescript": "^5.7.2",
-    "vite": "8.3.3",
+    "vite": "8.3.5",
     "vitepress": "1.6.4",
     "vitest": "4.1.12"
   },
@@ -94,7 +94,10 @@
   "author": "nullpii contributors",
   "keywords": ["pii", "redaction", "pseudonymization", "sanitize", "privacy", "onnx", "local"],
   "overrides": {
-    "fast-uri": "3.1.8",
-    "find-my-way": "9.9.0"
+    "fast-uri": "3.1.9",
+    "find-my-way": "9.9.0",
+    "vitepress": {
+      "vite": "6.4.5"
+    }
   }
 }

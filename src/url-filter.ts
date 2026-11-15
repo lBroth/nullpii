@@ -142,8 +142,9 @@ const SEPARATOR_ONLY = /^[\s)\](\[,;:.!?'"`<>]*$/;
  * tokens of raw-content and signed links (`?token=`, `X-Amz-Signature=`,
  * `x-oss-signature=`, `sig=`), API keys and passwords, under their own
  * name or a prefixed one (`user_token=`, `jwt_secret=`, `db_password=`,
- * `my-api-key=`, `X-Amz-Security-Token=`), and `auth=`. Such a URL is never released, on any host, even when no
- * recognizer matched the value. */
+ * `my-api-key=`, `X-Amz-Security-Token=`), and `auth=`. Such a URL is
+ * never released, on any host, even when no recognizer matched the
+ * value. */
 const CREDENTIAL_PARAM =
   /[?&#;](?:(?:[a-z0-9]+[_-])+(?:token|secret|password|api[_-]?key)|access[_-]?token|auth[_-]?token|id[_-]?token|token|api[_-]?key|apikey|key|secret|client[_-]?secret|password|passwd|pwd|sig|signature|x-amz-signature|x-amz-credential|x-goog-signature|x-goog-credential|x-oss-signature|x-oss-credential|code|auth)=/i;
 

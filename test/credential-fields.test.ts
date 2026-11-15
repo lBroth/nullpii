@@ -208,6 +208,8 @@ const key16 = `${'Ab1'.repeat(7)}A==`;
 const key24 = `${'Ab1'.repeat(10)}Ab`;
 const key32 = `${'Ab1'.repeat(14)}A=`;
 const key64 = `${'Ab1'.repeat(28)}Ab==`;
+/** URL-safe base64 of 32 bytes, padded, as a Fernet key is written. */
+const fernet = `${'Ab_1'.repeat(10)}Ab1=`;
 
 const symmetric = DEFAULT_RECOGNIZERS.filter((r) => r.id === 'core:symmetric-key-field');
 
@@ -227,6 +229,12 @@ describe('core:symmetric-key-field', () => {
       [`hmac_key=${key64}`, key64],
       [`KEY=${key24}`, key24],
       [`"data.key": "${key32}"`, key32],
+      [`APP_KEY="base64:${key32}"`, key32],
+      [`"primaryKey": "${key32}"`, key32],
+      [`PresharedKey = ${key32}`, key32],
+      [`AESKey = "${key32}"`, key32],
+      [`fernet_key = ${fernet}`, fernet],
+      [`API key: ${key32}`, key32],
     ];
     for (const [text, key] of cases) {
       expect(keys(text), text).toEqual([key]);
@@ -237,7 +245,6 @@ describe('core:symmetric-key-field', () => {
     for (const text of [
       `public_key: ${key32}`,
       `PublicKey = ${key32}`,
-      `primary_key: ${key32}`,
       `cache_key: ${key32}`,
       `ssh_host_key=${key32}`,
       `monkey = ${key32}`,
@@ -249,6 +256,23 @@ describe('core:symmetric-key-field', () => {
       `key:\n  ${key32}`,
       `the key ${key32}`,
       `-key ${key32}`,
+      `  public key: ${key32}`,
+      `Public Key: ${key32}`,
+      `foreign_key: ${key32}`,
+      `sort_key: ${key32}`,
+      `partition-key: ${key32}`,
+      `idempotency_key: ${key32}`,
+      `gpg_key: ${key32}`,
+      `pgp.key: ${key32}`,
+      `Sec-WebSocket-Key: ${key16}`,
+      `next_page_key: ${key32}`,
+      `"nextPageKey": "${key32}"`,
+      `label_api_key: ${key32}`,
+      'curl --key /etc/Certs2024/serverKeys/client.key https://example.com',
+      'debug1: Offering public key: /opt/Build2024/.ssh/id_ed25519',
+      'Key: "uploads/2024/Invoices/Q3/Report1"',
+      `fernet_key = ${fernet.slice(0, -1)}A`,
+      `key = ${'Ab_1'.repeat(10)}A+1=`,
     ]) {
       expect(keys(text), text).toEqual([]);
     }

@@ -8,6 +8,7 @@
   "ab1/scores-ab1-a.json",
   "ab1/scores-ab1-b1.json",
   "ab1/scores-ab1-b2.json",
+  "piimb/piimb-default.json",
   "piimb/piimb-everything.json",
   "r3/char-r3-bonferroni.json",
   "r3/char-r3-en.json",
@@ -27,11 +28,17 @@
   "r3/verdict.txt"
  ],
  "measured": {
-  "backend": "cuda",
+  "backend": "cpu",
+  "cpus": [
+   "AMD EPYC 7763 64-Core Processor",
+   "AMD EPYC 9V45 96-Core Processor",
+   "AMD EPYC 9V74 80-Core Processor",
+   "INTEL(R) XEON(R) PLATINUM 8573C",
+   "Intel(R) Xeon(R) 6975P-C"
+  ],
   "model": "lBroth/nullpii@5dd3c7991483c3b1bccb68beba53890d24cbd2d3",
-  "nullpii": "0.5"
+  "nullpii": "0.5.4"
  },
- "names": "published",
- "reference_of": "lBroth/nullpii-bench-private@d6300af293aa49b25e62209c5206faccc6191ce8",
+ "names": "run",
  "version": "0.5"
 }

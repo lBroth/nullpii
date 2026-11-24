@@ -442,7 +442,7 @@ jobs:
             --title-out "$RUNNER_TEMP/title.txt" --body-out "$RUNNER_TEMP/body.md"
       # The bench app's token is used to push and to open or close PRs only,
       # never in a step that runs repository code.
-      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+      - uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         id: app
         with:
           # The secret holds the app's numeric ID; the action's newer
@@ -556,7 +556,7 @@ jobs:
       NEW_PR: ${{ needs.propose.outputs.pr }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
-      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+      - uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         id: app
         with:
           app-id: ${{ secrets.BENCH_APP_ID }}
